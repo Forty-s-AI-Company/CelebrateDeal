@@ -1,0 +1,709 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Vendor {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  email        String   @unique
+  passwordHash String
+  logoUrl      String?
+  primaryColor String   @default("#2563eb")
+  ctaColor     String   @default("#f97316")
+  timezone     String   @default("Asia/Taipei")
+  supportEmail String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members              VendorMember[]
+  tracking             TrackingSetting?
+  videos               Video[]
+  products             Product[]
+  forms                RegistrationForm[]
+  lives                Live[]
+  templates            MessageTemplate[]
+  analytics            AnalyticsEvent[]
+  interactionScripts   InteractionScript[]
+  interactionRoles     InteractionRole[]
+  blacklists           Blacklist[]
+  affiliates           Affiliate[]
+  affiliateClicks      AffiliateClick[]
+  affiliateCommissions AffiliateCommission[]
+  affiliatePayouts     AffiliatePayout[]
+  usageRecords         UsageRecord[]
+  usageLimit           VendorUsageLimit?
+  subscriptions        VendorSubscription[]
+  invoices             Invoice[]
+  settlements          Settlement[]
+  payoutItems          PayoutItem[]
+  paymentAccounts      PaymentAccount[]
+  paymentTransactions  PaymentTransaction[]
+  refundRecords        RefundRecord[]
+  auditLogs            AuditLog[]
+  webhookEvents        WebhookEvent[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships VendorMember[]
+}
+
+model VendorMember {
+  id        String   @id @default(cuid())
+  vendorId  String
+  userId    String
+  role      String   @default("owner")
+  createdAt DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, userId])
+}
+
+model TrackingSetting {
+  id                  String   @id @default(cuid())
+  vendorId            String   @unique
+  facebookPixelId     String?
+  tiktokPixelId       String?
+  googleTagManagerId  String?
+  enablePageView      Boolean  @default(true)
+  enableLeadEvent     Boolean  @default(true)
+  enablePurchaseEvent Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+model Video {
+  id                      String   @id @default(cuid())
+  vendorId                String
+  title                   String
+  description             String?
+  sourceType              String   @default("cloudflare_stream")
+  videoUrl                String
+  thumbnailUrl            String?
+  durationSec             Int      @default(0)
+  status                  String   @default("ready")
+  cloudflareStreamUid     String?
+  cloudflareLiveInputUid  String?
+  cloudflarePlaybackId    String?
+  cloudflareReadyToStream Boolean  @default(false)
+  liveStreamKey           String?
+  liveInputStatus         String?
+  estimatedMinutes        Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  lives  Live[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  vendorId       String
+  name           String
+  slug           String   @unique
+  description    String?
+  priceCents     Int
+  compareAtCents Int?
+  currency       String   @default("TWD")
+  imageUrl       String?
+  checkoutUrl    String?
+  inventory      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  liveProducts LiveProduct[]
+}
+
+model RegistrationForm {
+  id             String   @id @default(cuid())
+  vendorId       String
+  name           String
+  slug           String   @unique
+  headline       String
+  description    String?
+  submitLabel    String   @default("送出報名")
+  fields         Json
+  successMessage String   @default("已收到你的資料，開播前會再提醒你。")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  vendor      Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  submissions FormSubmission[]
+  lives       Live[]
+}
+
+model FormSubmission {
+  id        String   @id @default(cuid())
+  formId    String
+  liveId    String?
+  name      String
+  email     String
+  phone     String?
+  answers   Json?
+  source    String   @default("form")
+  createdAt DateTime @default(now())
+
+  form RegistrationForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  live Live?            @relation(fields: [liveId], references: [id], onDelete: SetNull)
+}
+
+model Live {
+  id                     String   @id @default(cuid())
+  vendorId               String
+  videoId                String?
+  formId                 String?
+  messageTemplateId      String?
+  interactionScriptId    String?
+  title                  String
+  slug                   String   @unique
+  description            String?
+  scheduledAt            DateTime
+  status                 String   @default("draft")
+  heroImageUrl           String?
+  accentCopy             String?
+  replayEnabled          Boolean  @default(true)
+  streamMode             String   @default("vod")
+  cloudflareLiveInputUid String?
+  quotaPolicy            Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  vendor            Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  video             Video?             @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  form              RegistrationForm?  @relation(fields: [formId], references: [id], onDelete: SetNull)
+  messageTemplate   MessageTemplate?   @relation(fields: [messageTemplateId], references: [id], onDelete: SetNull)
+  interactionScript InteractionScript? @relation(fields: [interactionScriptId], references: [id], onDelete: SetNull)
+  products          LiveProduct[]
+  submissions       FormSubmission[]
+  analytics         AnalyticsEvent[]
+  affiliateClicks   AffiliateClick[]
+}
+
+model LiveProduct {
+  id         String  @id @default(cuid())
+  liveId     String
+  productId  String
+  sortOrder  Int     @default(0)
+  offerLabel String?
+  isPinned   Boolean @default(false)
+
+  live    Live    @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([liveId, productId])
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  vendorId  String
+  name      String
+  channel   String   @default("email")
+  trigger   String   @default("registration_confirmed")
+  subject   String?
+  body      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  lives  Live[]
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  vendorId  String
+  liveId    String?
+  eventType String
+  visitorId String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([liveId, createdAt])
+}
+
+model InteractionRole {
+  id        String   @id @default(cuid())
+  vendorId  String
+  name      String
+  avatarUrl String?
+  label     String   @default("官方角色")
+  roleType  String   @default("official")
+  tone      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  events InteractionEvent[]
+}
+
+model InteractionScript {
+  id          String   @id @default(cuid())
+  vendorId    String
+  name        String
+  description String?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vendor Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  events InteractionEvent[]
+  lives  Live[]
+}
+
+model InteractionEvent {
+  id         String   @id @default(cuid())
+  scriptId   String
+  roleId     String?
+  eventType  String
+  triggerSec Int      @default(0)
+  title      String
+  message    String?
+  productId  String?
+  ctaLabel   String?
+  ctaUrl     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  script InteractionScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  role   InteractionRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+}
+
+model Blacklist {
+  id             String    @id @default(cuid())
+  vendorId       String
+  identifier     String
+  identifierType String    @default("email")
+  reason         String
+  notes          String?
+  isActive       Boolean   @default(true)
+  blockedAt      DateTime  @default(now())
+  unblockedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, identifier])
+}
+
+model Affiliate {
+  id                String   @id @default(cuid())
+  vendorId          String
+  name              String
+  code              String   @unique
+  source            String?
+  contactEmail      String?
+  commissionRateBps Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vendor      Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  clicks      AffiliateClick[]
+  commissions AffiliateCommission[]
+  payouts     AffiliatePayout[]
+}
+
+model AffiliateClick {
+  id           String    @id @default(cuid())
+  vendorId     String
+  affiliateId  String?
+  liveId       String?
+  referralCode String?
+  visitorId    String
+  landingPath  String
+  convertedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+  live      Live?      @relation(fields: [liveId], references: [id], onDelete: SetNull)
+
+  @@index([referralCode, createdAt])
+  @@index([liveId, createdAt])
+}
+
+model BillingPlan {
+  id                              String   @id @default(cuid())
+  name                            String
+  code                            String   @unique
+  monthlyPriceCents               Int      @default(0)
+  includedStreamMinutes           Int      @default(0)
+  includedStorageMinutes          Int      @default(0)
+  includedCredits                 Int      @default(0)
+  includedEvents                  Int      @default(0)
+  includedAffiliates              Int      @default(0)
+  overageCreditCostCents          Int      @default(0)
+  overflowWatchHourPriceCents     Int      @default(0)
+  overflowEventUnitPriceCents     Int      @default(0)
+  overflowAffiliateUnitPriceCents Int      @default(0)
+  overflowStorageMinutePriceCents Int      @default(0)
+  paymentServiceFeeCents          Int      @default(0)
+  transactionFeeRateBps           Int      @default(0)
+  affiliateManagementFeeCents     Int      @default(0)
+  isActive                        Boolean  @default(true)
+  description                     String?
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+
+  usageLimits   VendorUsageLimit[]
+  subscriptions VendorSubscription[]
+}
+
+model VendorSubscription {
+  id               String    @id @default(cuid())
+  vendorId         String
+  planId           String
+  paymentMode      String    @default("byo")
+  status           String    @default("active")
+  customFeeRateBps Int?
+  billingCycleDay  Int       @default(5)
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  vendor Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  plan   BillingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([vendorId, status])
+}
+
+model VendorUsageLimit {
+  id                  String   @id @default(cuid())
+  vendorId            String   @unique
+  billingPlanId       String?
+  streamMinutesLimit  Int      @default(0)
+  storageMinutesLimit Int      @default(0)
+  creditsLimit        Int      @default(0)
+  streamMinutesUsed   Int      @default(0)
+  storageMinutesUsed  Int      @default(0)
+  creditsUsed         Int      @default(0)
+  resetAt             DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  billingPlan BillingPlan? @relation(fields: [billingPlanId], references: [id], onDelete: SetNull)
+}
+
+model UsageRecord {
+  id                     String   @id @default(cuid())
+  vendorId               String
+  monthKey               String?
+  recordType             String
+  quantity               Int
+  unit                   String
+  creditsDelta           Int      @default(0)
+  totalWatchMinutes      Int      @default(0)
+  totalEvents            Int      @default(0)
+  totalAffiliates        Int      @default(0)
+  totalStorageMinutes    Int      @default(0)
+  overflowWatchMinutes   Int      @default(0)
+  overflowEvents         Int      @default(0)
+  overflowAffiliates     Int      @default(0)
+  overflowStorageMinutes Int      @default(0)
+  description            String?
+  metadata               Json?
+  createdAt              DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, monthKey])
+  @@index([vendorId, createdAt])
+  @@index([recordType, createdAt])
+}
+
+model Invoice {
+  id                          String    @id @default(cuid())
+  vendorId                    String
+  monthKey                    String
+  invoiceNumber               String    @unique
+  invoiceType                 String    @default("monthly")
+  monthlyFeeCents             Int       @default(0)
+  overflowFeeCents            Int       @default(0)
+  paymentServiceFeeCents      Int       @default(0)
+  transactionServiceFeeCents  Int       @default(0)
+  affiliateManagementFeeCents Int       @default(0)
+  subtotalCents               Int       @default(0)
+  taxCents                    Int       @default(0)
+  totalCents                  Int       @default(0)
+  status                      String    @default("draft")
+  dueAt                       DateTime?
+  paidAt                      DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, monthKey])
+}
+
+model Settlement {
+  id                          String    @id @default(cuid())
+  vendorId                    String
+  monthKey                    String
+  monthlyFeeCents             Int       @default(0)
+  overflowFeeCents            Int       @default(0)
+  paymentServiceFeeCents      Int       @default(0)
+  transactionServiceFeeCents  Int       @default(0)
+  affiliateManagementFeeCents Int       @default(0)
+  paymentGatewayFeeCents      Int       @default(0)
+  grossRevenueCents           Int       @default(0)
+  payoutableAmountCents       Int       @default(0)
+  adjustmentAmountCents       Int       @default(0)
+  adjustmentReason            String?
+  finalPayoutAmountCents      Int       @default(0)
+  status                      String    @default("draft")
+  lockedAt                    DateTime?
+  lockedBy                    String?
+  paidAt                      DateTime?
+  reviewedBy                  String?
+  payoutBatchId               String?
+  payoutDate                  DateTime?
+  batchNumber                 String?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  payoutBatch PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
+  payoutItems PayoutItem[]
+
+  @@unique([vendorId, monthKey])
+  @@index([status, monthKey])
+}
+
+model PayoutBatch {
+  id               String    @id @default(cuid())
+  batchNumber      String    @unique
+  batchDate        DateTime
+  totalAmountCents Int       @default(0)
+  totalCount       Int       @default(0)
+  status           String    @default("draft")
+  exportedFilePath String?
+  exportedAt       DateTime?
+  executedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  settlements Settlement[]
+  items       PayoutItem[]
+}
+
+model PayoutItem {
+  id                String    @id @default(cuid())
+  payoutBatchId     String
+  vendorId          String
+  settlementId      String?
+  bankAccountName   String
+  bankCode          String
+  bankAccountNumber String
+  payoutAmountCents Int
+  status            String    @default("pending")
+  failReason        String?
+  paidAt            DateTime?
+  retryCount        Int       @default(0)
+  retriedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  payoutBatch PayoutBatch @relation(fields: [payoutBatchId], references: [id], onDelete: Cascade)
+  vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  settlement  Settlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+
+  @@index([payoutBatchId, status])
+  @@index([vendorId, createdAt])
+}
+
+model PaymentAccount {
+  id                String   @id @default(cuid())
+  vendorId          String
+  mode              String   @default("byo")
+  providerName      String
+  accountLabel      String
+  status            String   @default("pending")
+  apiKeyRef         String?
+  merchantIdRef     String?
+  bankAccountName   String?
+  bankCode          String?
+  bankAccountNumber String?
+  riskHoldEnabled   Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, mode])
+}
+
+model PaymentTransaction {
+  id                  String    @id @default(cuid())
+  vendorId            String
+  providerName        String
+  providerTradeNo     String?
+  orderNumber         String?
+  paymentMode         String    @default("platform")
+  grossAmountCents    Int       @default(0)
+  gatewayFeeCents     Int       @default(0)
+  platformFeeCents    Int       @default(0)
+  netAmountCents      Int       @default(0)
+  currency            String    @default("TWD")
+  status              String    @default("paid")
+  refundedAmountCents Int       @default(0)
+  refundReason        String?
+  refundedAt          DateTime?
+  occurredAt          DateTime  @default(now())
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+
+  vendor  Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  refunds RefundRecord[]
+
+  @@index([vendorId, occurredAt])
+  @@index([vendorId, orderNumber])
+  @@index([status, occurredAt])
+}
+
+model WebhookEvent {
+  id           String    @id @default(cuid())
+  vendorId     String?
+  provider     String
+  eventId      String
+  eventType    String
+  status       String    @default("received")
+  payload      Json
+  errorMessage String?
+  processedAt  DateTime?
+  retryCount   Int       @default(0)
+  maxRetries   Int       @default(5)
+  nextRetryAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([status, createdAt])
+  @@index([vendorId, createdAt])
+}
+
+model RefundRecord {
+  id                     String   @id @default(cuid())
+  vendorId               String
+  paymentTransactionId   String
+  providerEventId        String?
+  monthKey               String
+  refundAmountCents      Int
+  gatewayFeeRefundCents  Int      @default(0)
+  platformFeeRefundCents Int      @default(0)
+  reason                 String?
+  status                 String   @default("processed")
+  processedAt            DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, monthKey])
+  @@index([paymentTransactionId, processedAt])
+  @@index([paymentTransactionId, providerEventId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  vendorId   String?
+  actorId    String?
+  actorLabel String?
+  action     String
+  targetType String
+  targetId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+}
+
+model AffiliateCommission {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  affiliateId           String?
+  monthKey              String
+  sourceType            String    @default("product")
+  sourceId              String?
+  referralCode          String?
+  orderNumber           String?
+  orderAmountCents      Int       @default(0)
+  commissionRateBps     Int       @default(0)
+  commissionAmountCents Int       @default(0)
+  status                String    @default("pending")
+  attributedAt          DateTime  @default(now())
+  settledAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, monthKey])
+  @@index([affiliateId, status])
+}
+
+model AffiliatePayout {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  affiliateId           String?
+  monthKey              String
+  commissionAmountCents Int       @default(0)
+  adjustmentAmountCents Int       @default(0)
+  finalAmountCents      Int       @default(0)
+  status                String    @default("pending")
+  payoutItemId          String?
+  paidAt                DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, monthKey])
+  @@index([affiliateId, status])
+}

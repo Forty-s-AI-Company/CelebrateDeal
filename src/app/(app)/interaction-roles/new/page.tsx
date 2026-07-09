@@ -1,0 +1,25 @@
+import { importSystemRolesAction } from "@/app/actions";
+import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
+import { PageHeader } from "@/components/ui";
+import { requireVendor } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+
+export default async function NewInteractionRolePage() {
+  const vendor = await requireVendor();
+  const roles = await getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } });
+
+  return (
+    <>
+      <PageHeader
+        title="互動角色"
+        description="新增使用者時只需要選頭像、輸入暱稱，再按新增。"
+        action={
+          <form action={importSystemRolesAction}>
+            <button className="h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100">匯入 10 個官方角色</button>
+          </form>
+        }
+      />
+      <InteractionRolesWorkbench roles={roles} />
+    </>
+  );
+}
