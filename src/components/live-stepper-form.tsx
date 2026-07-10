@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import { Ban, Bell, Calendar, Check, ClipboardList, Gauge, Package, PlaySquare, ScrollText, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { SubmitButton } from "@/components/ui";
 
 const steps = [
@@ -34,6 +35,7 @@ export function LiveStepperForm({
   templates,
   scripts,
   affiliates,
+  csrfToken,
 }: {
   videos: Video[];
   products: Product[];
@@ -41,11 +43,13 @@ export function LiveStepperForm({
   templates: MessageTemplate[];
   scripts: InteractionScript[];
   affiliates: Affiliate[];
+  csrfToken: string;
 }) {
   const [activeStep, setActiveStep] = useState(0);
 
   return (
     <form action={upsertLiveAction} className="grid gap-5">
+      <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button

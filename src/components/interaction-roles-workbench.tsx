@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { InteractionRole } from "@prisma/client";
 import { ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
 import { deleteInteractionRoleAction, upsertInteractionRoleAction } from "@/app/actions";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 
 const avatarGroups = {
   male: [
@@ -48,9 +49,11 @@ function roleTypeLabel(roleType: string) {
 export function InteractionRolesWorkbench({
   roles,
   selectedRole,
+  csrfToken,
 }: {
   roles: InteractionRole[];
   selectedRole?: InteractionRole | null;
+  csrfToken: string;
 }) {
   const [gender, setGender] = useState<"male" | "female">("male");
   const allSeeds = useMemo(() => avatarGroups[gender], [gender]);
@@ -128,6 +131,7 @@ export function InteractionRolesWorkbench({
         </div>
 
         <form action={upsertInteractionRoleAction} className="grid gap-6 p-5">
+          <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
           {selectedRole ? <input type="hidden" name="id" value={selectedRole.id} /> : null}
           <input type="hidden" name="avatarUrl" value={selectedAvatar} />
 

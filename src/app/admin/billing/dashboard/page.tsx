@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCards } from "lucide-react";
 import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -89,6 +90,7 @@ export default async function AdminBillingDashboardPage() {
                 <div className="min-w-[280px]">
                   <p className="text-right text-lg font-bold text-slate-950">{formatCurrency(transaction.grossAmountCents)}</p>
                   <form action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
+                    <CsrfField />
                     <input type="hidden" name="id" value={transaction.id} />
                     <input name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
                     <div className="grid grid-cols-3 gap-2">
@@ -145,6 +147,7 @@ export default async function AdminBillingDashboardPage() {
                     <p className="font-bold text-slate-950">{formatCurrency(commission.commissionAmountCents)}</p>
                   </div>
                   <form action={voidAffiliateCommissionAction} className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                    <CsrfField />
                     <input type="hidden" name="id" value={commission.id} />
                     <input name="reason" placeholder="作廢原因" className="h-9 rounded-md border border-border px-2 text-xs" />
                     <button className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</button>
@@ -192,6 +195,7 @@ export default async function AdminBillingDashboardPage() {
                   <td className="px-4 py-3">
                     {event.status === "failed" ? (
                       <form action={retryWebhookEventAction}>
+                        <CsrfField />
                         <input type="hidden" name="id" value={event.id} />
                         <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</button>
                       </form>

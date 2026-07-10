@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { getCloudflareStreamDiagnostics } from "@/lib/cloudflare-diagnostics";
 import { getDb } from "@/lib/db";
 import { getEnvCheckReport } from "@/lib/env";
+import { getRateLimitProviderStatus } from "@/lib/rate-limit";
 
 export async function GET(request: Request) {
-  const secret = process.env.JOB_SECRET;
-  const auth = request.headers.get("authorization");
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!requireJobSecret(request)) {
+    return unauthorizedJson();
   }
 
   const envReport = getEnvCheckReport();
@@ -14,10 +15,10 @@ export async function GET(request: Request) {
 
   try {
     await getDb().$queryRaw`SELECT 1`;
-  } catch (error) {
+  } catch {
     database = {
       status: "fail",
-      message: error instanceof Error ? error.message : "Database unreachable",
+      message: "Database unreachable",
     };
   }
 
@@ -25,5 +26,7 @@ export async function GET(request: Request) {
     ok: envReport.ok && database.status === "pass",
     environment: envReport,
     database,
+    rateLimit: getRateLimitProviderStatus(),
+    cloudflare: getCloudflareStreamDiagnostics(),
   });
 }

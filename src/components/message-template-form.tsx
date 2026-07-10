@@ -1,11 +1,13 @@
 import type { MessageTemplate } from "@prisma/client";
 import { upsertTemplateAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 
 export function MessageTemplateForm({ template }: { template?: MessageTemplate }) {
   return (
     <Card>
       <form action={upsertTemplateAction} className="grid gap-4">
+        <CsrfField />
         {template ? <input type="hidden" name="id" value={template.id} /> : null}
         <Field label="模板名稱" name="name" required defaultValue={template?.name} />
         <div className="grid gap-4 md:grid-cols-2">

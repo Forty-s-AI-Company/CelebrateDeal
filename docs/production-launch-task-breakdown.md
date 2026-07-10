@@ -13,7 +13,19 @@
 - Next.js App Router + Prisma + PostgreSQL baseline 架構；舊 SQLite migration 已歸檔。
 - 已完成 Cloudflare-first 直播導購頁、互動腳本、互動角色、商品、報名表、聯盟追蹤。
 - 已完成定價、用量、月結、批次出款、audit log、webhook provider adapter、webhook retry worker、reconciliation checks。
-- 尚未完成 Supabase staging / production 實際 migration 驗證、Cloudflare Stream API、PayUni production adapter、Email provider、Sentry、PostHog 與正式部署流程。
+- 已完成 Vercel Production deployment、custom domain、Production env vars、Supabase production migration、production bootstrap seed 與 `/api/health` 驗證。
+- 已完成正式 Auth MVP 與第一個 platform admin bootstrap 流程；production `/login` 已隱藏 demo 帳密提示。
+- 尚未完成第一個 platform admin production 實際建立、Cloudflare Stream 真實 upload / webhook / Live Input 驗證、PayUni sandbox / production 真實 payload 驗證、Email domain verification、Sentry alert rules、PostHog funnel dashboard 與完整 go-live drill。
+
+目前正式環境：
+
+- Domain：`https://celebratedeal.carry-digital-nomad.in.net`
+- Health check：`https://celebratedeal.carry-digital-nomad.in.net/api/health`
+- Supabase project：`CelebrateDeal`
+- Production DB 狀態：PostgreSQL baseline migration 已套用；production seed 只 upsert 3 筆 `billing_plans`，未灌入 demo vendor / demo live / demo payment data。
+- Auth 狀態：已新增 `UserSession` session table migration、`VendorMember.status` member lifecycle migration 與 `npm run admin:bootstrap`，待正式 Supabase env 與 admin email / password 設定後執行 production migration / bootstrap。
+- 本機 `.env.local` 原則：保留本機開發用途，不改成 production DB URL，避免日常開發誤寫正式資料庫。
+- 本輪驗證狀態：`lint` / `typecheck` / `test` / `build` 均已通過；本機 route smoke test 已確認 `/login` 不顯示 demo 帳密提示，受保護頁未登入會導向 `/login`。
 
 優先級定義：
 
@@ -148,7 +160,22 @@
 - 已新增 production-safe seed guard：production 只允許 `SEED_MODE=production-bootstrap`。
 - 已建立正式資料庫操作文件：`docs/production-database-runbook.md`。
 - 已使用 Docker PostgreSQL 驗證 baseline migration、production bootstrap seed、lint、typecheck、test、build。
-- 尚待接入真實 Supabase production / staging 連線字串後，在雲端環境執行 migration 與 restore drill。
+- 已在 Supabase production 執行 `prisma migrate status`，確認 baseline migration 尚未套用且 public schema 無 user tables。
+- 已在 Supabase production 執行 `prisma migrate deploy`，成功套用 `20260709090000_postgresql_baseline`。
+- 已在 Supabase production 執行 `NODE_ENV=production SEED_MODE=production-bootstrap npm run db:seed`，成功 upsert 3 筆 billing plans。
+- 已再次執行 `prisma migrate status`，結果為 `Database schema is up to date!`。
+- 已驗證 production DB 筆數：`billingPlans=3`、`vendors=0`、`users=0`、`lives=0`、`forms=0`。
+- 已新增 Auth session migration：`20260709110000_auth_sessions`，用於正式登入 session、platform admin role 與 user status。
+- 已新增第一個 platform admin bootstrap script：`scripts/bootstrap-platform-admin.ts`，production 不透過 demo seed 建立管理員。
+- 已新增 vendor member lifecycle migration：`20260709113000_vendor_member_status`，支援商家 owner 停用成員但保留歷史紀錄。
+- 已在本機 Docker PostgreSQL 驗證 `npm run admin:bootstrap` 可建立 platform admin，並可用 session 進入 `/admin/billing/dashboard`。
+- 本輪第一次執行 production migrate status 時，Prisma 讀到本機 `file:dev.db`，因此未執行 production deploy。
+- 後續使用 Vercel CLI 將 production env 拉到 gitignored `.env.production.local`，但 `DATABASE_URL` / `DIRECT_URL` key 的值為空字串，Prisma 因 `DIRECT_URL` empty 拒絕 `migrate status`；需先補齊 Vercel production env value 或以安全 shell env 注入後再執行。
+- 已取得 Supabase Transaction pooler connection string，並將 Vercel Production `DATABASE_URL` 改為 pooler URL；`DIRECT_URL` 保留 Supabase direct URL。
+- 已成功套用 Auth production migrations，並完成第一個 platform admin bootstrap。
+- Production `/api/health` 已恢復 200，確認 Vercel runtime 可透過 pooler 連 Supabase。
+- Production smoke test 已確認 `/login` 200、未登入 protected routes 會導向 `/login`、platform admin 短效 session 可進入 `/admin/billing/dashboard`。
+- 尚待完成 restore drill 與 staging DB 長期流程。
 
 ### 2.1 Prisma SQLite 改 PostgreSQL
 
@@ -179,8 +206,10 @@
   - `prisma.config.ts`
 - 驗收標準：
   - Vercel production env 已設定 `DATABASE_URL`
+  - Vercel production env 已設定 `DIRECT_URL`
   - migration 使用 direct URL
-  - app runtime 使用 pooled URL 或明確連線策略
+  - app runtime 使用 Supabase transaction pooler URL
+  - `DATABASE_URL` 已加上 `pgbouncer=true`，避免 Prisma prepared statement 與 Supavisor transaction mode 衝突
   - production build 不暴露 DB secret
 - 風險：
   - 錯把 production URL 放入 client env 會外洩。
@@ -201,6 +230,9 @@
   - migration 先在 staging DB 測試
   - migration 執行前有 backup
   - migration 執行後有 smoke test
+  - production migration 使用 `npx prisma migrate deploy`
+  - production migration 前先跑 `npx prisma migrate status`
+  - production migration 前查詢 public schema user tables，避免誤把 baseline 套到既有資料庫
 - 風險：
   - migration 未測試可能造成 production schema lock 或資料遺失。
 - 預估優先級：P0
@@ -217,8 +249,11 @@
   - production 不自動執行 demo seed
   - 若需 production seed，只允許建立必要 billing plans / admin account
   - seed script 有環境保護，例如 `NODE_ENV !== "production"` 時才建立 demo data
+  - production seed 目前只允許 `SEED_MODE=production-bootstrap`
+  - production bootstrap 只 upsert `billing_plans`
+  - production seed 後確認 `vendors/users/lives/forms` 仍為 0，避免 demo data 混入正式資料庫
 - 風險：
-  - 現有 seed 會清空平台層資料與 vendor data，不可直接在 production 執行。
+  - demo seed 模式會清空平台層資料與 vendor data，不可直接在 production 執行。
 - 預估優先級：P0
 
 ### 2.5 Backup policy
@@ -238,9 +273,56 @@
   - 財務資料無備份會造成不可接受的營運風險。
 - 預估優先級：P0
 
+### 2.6 正式 Auth 與 platform admin bootstrap
+
+- 任務名稱：建立正式 Auth MVP 與第一個平台管理員
+- 目的：替換 demo cookie auth，讓 production 可以用真實平台管理員登入 admin billing，並保留商家 owner / accountant 權限分流。
+- 涉及檔案：
+  - `prisma/schema.prisma`
+  - `prisma/migrations/20260709110000_auth_sessions/migration.sql`
+  - `src/lib/auth.ts`
+  - `src/lib/password.ts`
+  - `src/app/actions.ts`
+  - `src/app/login/page.tsx`
+  - `src/app/admin/layout.tsx`
+  - `scripts/bootstrap-platform-admin.ts`
+  - `.env.example`
+- 驗收標準：
+  - `UserSession` table 已建立
+  - `VendorMember.status` 可標記 active / inactive
+  - login 使用 `User.email/passwordHash`
+  - session token 只以 hash 形式保存於資料庫
+  - cookie 使用 httpOnly、sameSite lax、production secure
+  - login 失敗寫入 audit log
+  - login 失敗達門檻時 rate limit
+  - platform admin 可進入 `/admin/billing/dashboard`
+  - vendor owner / admin / accountant 可操作 finance admin route
+  - vendor owner 可新增與停用 member
+  - 停用 member 後會撤銷該 vendor 的 active sessions
+  - 使用者可在 `/settings/security` 查看 session list，並撤銷其他 session / 全部 session
+  - production `/login` 不顯示 demo 帳密提示
+  - `npm run admin:bootstrap` 可重複執行，不重複建立同 email user
+  - bootstrap 不會建立 demo vendor / demo live，不會清空 production data
+- 風險：
+  - 尚未有 MFA、完整密碼重設與 vendor member email 邀請 UI；可收費 MVP 前需要補上。
+  - 本輪 rate limit 是基於 audit log 的 MVP 實作，正式高流量環境建議改用 Redis / Upstash / Vercel KV 這類集中式計數。
+  - 密碼重設目前是流程規劃與 UI 說明，尚未實作 reset token / email。
+  - 第一個 platform admin password 不應放在 repo 或一般聊天紀錄，需用本機 env 或 Vercel / Supabase 安全流程保存。
+- 預估優先級：P0
+
 ---
 
 ## 3. Phase 2：部署與環境變數
+
+目前執行狀態（2026-07-09）：
+
+- 已建立 Vercel project：`a25814740s-projects/celebrate-deal`。
+- 已完成 Production env vars，包含 DB、Cloudflare、PayUni、Resend、Sentry、PostHog 與 job secret。
+- 已完成 custom domain：`celebratedeal.carry-digital-nomad.in.net`。
+- 已完成 Production redeploy，latest deployment 狀態為 `Ready`。
+- 已驗證 `/api/health` 回傳 `ok=true`、`database=ok`。
+- 尚待 Email domain verification、Cloudflare WAF baseline 與完整 alert rules。
+- Auth runtime env 不強制要求 `PLATFORM_ADMIN_*`，因為 bootstrap 是一次性 CLI；正式建立管理員時再以本機安全 env 執行。
 
 ### 3.1 Vercel production env vars
 
@@ -253,11 +335,14 @@
   - `src/lib/payment-providers/**`
 - 驗收標準：
   - 已設定 `DATABASE_URL`
+  - 已設定 `DIRECT_URL`
   - 已設定 `NEXT_PUBLIC_APP_URL`
   - 已設定 `JOB_SECRET`
   - 已設定 Cloudflare Stream 相關 env
   - 已設定 PayUni / ECPay provider secrets
   - 已設定 Resend / Sentry / PostHog env
+  - env 更新後已重新部署 production
+  - `/api/health` 已通過
 - 風險：
   - env var 漏設會造成 build 可過但 runtime webhook / DB / email 失敗。
 - 預估優先級：P0
@@ -585,10 +670,13 @@
   - Vercel Production Deployment
 - 驗收標準：
   - `/login` 200
+  - production `/login` 不顯示 demo 帳密提示
   - `/dashboard` 登入後可開
   - `/videos` 可開
   - `/lives` 可開
   - `/admin/billing/dashboard` 可開
+  - platform admin 登入後會導向 `/admin/billing/dashboard`
+  - 未登入存取 `/admin/billing/dashboard` 會導向 `/login`
 - 風險：
   - 首頁可開不代表 admin / API / DB 可用，要測核心路徑。
 - 預估優先級：P0
@@ -726,3 +814,4 @@
 - Live page test
 - Backup restore drill
 - Rollback plan
+- 第一個 platform admin bootstrap

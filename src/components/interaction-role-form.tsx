@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { InteractionRole } from "@prisma/client";
 import { Bot, CheckCircle2, Sparkles } from "lucide-react";
 import { upsertInteractionRoleAction } from "@/app/actions";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { SubmitButton } from "@/components/ui";
 
 const avatarSeeds = [
@@ -30,12 +31,13 @@ function avatarUrl(seed: string) {
   return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
 }
 
-export function InteractionRoleForm({ role }: { role?: InteractionRole }) {
+export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRole; csrfToken: string }) {
   const [selectedAvatar, setSelectedAvatar] = useState(role?.avatarUrl ?? avatarUrl(avatarSeeds[0]));
   const [roleType, setRoleType] = useState(role?.roleType ?? "official");
 
   return (
     <form action={upsertInteractionRoleAction} className="grid gap-6">
+      <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
       {role ? <input type="hidden" name="id" value={role.id} /> : null}
       <input type="hidden" name="avatarUrl" value={selectedAvatar} />
 

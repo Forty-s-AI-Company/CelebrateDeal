@@ -6,6 +6,7 @@ import {
   lockSettlementAction,
   updateSettlementAdjustmentAction,
 } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader, SubmitButton } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -68,6 +69,7 @@ export default async function AdminBillingSettlementsPage() {
           <h2 className="text-lg font-semibold text-slate-950">產生 / 重算月結</h2>
         </div>
         <form action={generateSettlementAction} className="mt-4 grid gap-3 md:grid-cols-[1.4fr_1fr_auto] md:items-end">
+          <CsrfField />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             商家
             <select name="vendorId" className="h-10 rounded-md border border-border bg-white px-3 text-sm">
@@ -122,6 +124,7 @@ export default async function AdminBillingSettlementsPage() {
 
             <div className="grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-end">
               <form action={updateSettlementAdjustmentAction} className="grid gap-3 md:grid-cols-[150px_1fr_auto] md:items-end">
+                <CsrfField />
                 <input type="hidden" name="id" value={settlement.id} />
                 <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                   調整金額
@@ -151,6 +154,7 @@ export default async function AdminBillingSettlementsPage() {
 
               {!settlement.lockedAt ? (
                 <form action={lockSettlementAction}>
+                  <CsrfField />
                   <input type="hidden" name="id" value={settlement.id} />
                   <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
                     <ShieldCheck size={16} />
@@ -161,6 +165,7 @@ export default async function AdminBillingSettlementsPage() {
 
               {settlement.lockedAt && !settlement.payoutBatchId && settlement.finalPayoutAmountCents > 0 ? (
                 <form action={createPayoutBatchAction}>
+                  <CsrfField />
                   <input type="hidden" name="settlementIds" value={settlement.id} />
                   <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-dark">
                     <Banknote size={16} />

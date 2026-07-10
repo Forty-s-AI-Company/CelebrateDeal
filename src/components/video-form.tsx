@@ -1,11 +1,13 @@
 import type { Video } from "@prisma/client";
 import { upsertVideoAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 
 export function VideoForm({ video }: { video?: Video }) {
   return (
     <Card>
       <form action={upsertVideoAction} className="grid gap-4">
+        <CsrfField />
         {video ? <input type="hidden" name="id" value={video.id} /> : null}
         <Field label="影片名稱" name="title" required defaultValue={video?.title} />
         <TextArea label="影片描述" name="description" defaultValue={video?.description} />
@@ -22,7 +24,12 @@ export function VideoForm({ video }: { video?: Video }) {
           <Field label="Stream Video UID" name="cloudflareStreamUid" defaultValue={video?.cloudflareStreamUid} />
           <Field label="Live Input UID" name="cloudflareLiveInputUid" defaultValue={video?.cloudflareLiveInputUid} />
           <Field label="Playback ID" name="cloudflarePlaybackId" defaultValue={video?.cloudflarePlaybackId} />
-          <Field label="Live Stream Key" name="liveStreamKey" defaultValue={video?.liveStreamKey} />
+          <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+            <p className="text-sm font-semibold text-slate-700">Stream Key</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {video?.liveStreamKey ? `已安全保存，streamKeyRef: ${video.id}` : "尚未建立 Live Input"}
+            </p>
+          </div>
         </div>
         <Field label="Live Input 狀態" name="liveInputStatus" defaultValue={video?.liveInputStatus} placeholder="connected / idle" />
         <SelectField label="狀態" name="status" defaultValue={video?.status ?? "ready"}>

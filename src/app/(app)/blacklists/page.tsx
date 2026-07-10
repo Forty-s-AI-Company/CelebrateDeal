@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import { unblockBlacklistAction, upsertBlacklistAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -33,6 +34,7 @@ export default async function BlacklistsPage({
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">新增封鎖項目</h2>
           <form action={upsertBlacklistAction} className="grid gap-4">
+            <CsrfField />
             <Field label="識別值" name="identifier" required placeholder="Email、手機、IP 或 visitorId" />
             <label className="grid gap-1.5 text-sm font-medium text-slate-700">
               類型
@@ -71,6 +73,7 @@ export default async function BlacklistsPage({
                 </div>
                 {entry.isActive ? (
                   <form action={unblockBlacklistAction}>
+                    <CsrfField />
                     <input type="hidden" name="id" value={entry.id} />
                     <button className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">解除封鎖</button>
                   </form>

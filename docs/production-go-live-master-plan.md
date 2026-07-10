@@ -39,8 +39,10 @@
 | 任務 | 狀態 | 驗收方式 |
 |---|---|---|
 | Vercel production env vars | Ready for credential | `.env.example` 已列出必要 keys |
+| Staging / production env vars matrix | Done in repo | `docs/staging-production-env-vars.md` |
 | Production env validation | Done in repo | `src/lib/env.ts` |
 | Preflight CLI | Done in repo | `npm run preflight` |
+| External smoke CLI | Done in repo | `npm run external:smoke` |
 | Admin preflight API | Done in repo | `GET /api/admin/preflight` with Bearer `JOB_SECRET` |
 | Health check API | Done in repo | `GET /api/health` |
 | Cloudflare DNS / custom domain | External required | Cloudflare / Vercel dashboard 完成 |
@@ -80,7 +82,7 @@
 | Product analytics service layer | Done in repo | `src/lib/product-analytics.ts` |
 | Analytics API 同步 PostHog | Done in repo | `src/app/api/analytics/route.ts` |
 | Monitoring abstraction | Done in repo | `src/lib/monitoring.ts` |
-| Sentry SDK 實際安裝 | Ready for credential | 需 Sentry project / DSN，之後可接 SDK |
+| Sentry SDK 實際安裝 | Done in repo | `@sentry/nextjs`、instrumentation files、global error |
 | Resend domain verification | External required | DNS records |
 | PostHog project setup | External required | project key |
 | Alert rules | External required | Sentry / Vercel / Supabase / Cloudflare dashboards |
@@ -95,6 +97,7 @@
 | Live page test | Ready for credential | 需 Cloudflare Stream asset |
 | Backup restore drill | External required | 需 Supabase staging / restore project |
 | Rollback plan | Done in repo | `docs/production-database-runbook.md` |
+| Go-live 實際勾核表 | Done in repo | `docs/production-go-live-checklist.md` |
 
 ## 8. 一次性執行順序
 
@@ -121,6 +124,7 @@
 - `npm run preflight`
 - `/api/health`
 - `/api/admin/preflight`
+- `npm run external:smoke`
 - PayUni sandbox paid / refunded webhook
 - Cloudflare Stream upload / ready webhook
 - Resend test email

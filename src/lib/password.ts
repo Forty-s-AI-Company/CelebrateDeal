@@ -1,9 +1,8 @@
-import { scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 const KEY_LENGTH = 64;
-const DEFAULT_SALT = "celebrate-deal-mvp";
 
-export function hashPassword(password: string, salt = DEFAULT_SALT) {
+export function hashPassword(password: string, salt = randomBytes(16).toString("hex")) {
   const hash = scryptSync(password, salt, KEY_LENGTH).toString("hex");
   return `scrypt:${salt}:${hash}`;
 }

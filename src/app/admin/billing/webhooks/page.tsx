@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { RotateCcw, Webhook } from "lucide-react";
 import { retryWebhookEventAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -80,6 +81,7 @@ export default async function AdminBillingWebhooksPage() {
                   <td className="px-5 py-4">
                     {event.status === "failed" ? (
                       <form action={retryWebhookEventAction}>
+                        <CsrfField />
                         <input type="hidden" name="id" value={event.id} />
                         <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                           <RotateCcw size={13} />

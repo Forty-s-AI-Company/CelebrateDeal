@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
+import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
 export async function POST(request: Request) {
-  const auth = request.headers.get("authorization");
-  const secret = process.env.JOB_SECRET;
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!requireJobSecret(request)) {
+    return unauthorizedJson();
   }
 
   const results = await processDueWebhookRetries();

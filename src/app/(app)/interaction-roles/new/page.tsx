@@ -1,12 +1,17 @@
 import { importSystemRolesAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
 import { PageHeader } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
+import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function NewInteractionRolePage() {
   const vendor = await requireVendor();
-  const roles = await getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } });
+  const [roles, csrfToken] = await Promise.all([
+    getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
+    getCsrfToken(),
+  ]);
 
   return (
     <>
@@ -15,11 +20,12 @@ export default async function NewInteractionRolePage() {
         description="新增使用者時只需要選頭像、輸入暱稱，再按新增。"
         action={
           <form action={importSystemRolesAction}>
+            <CsrfField />
             <button className="h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100">匯入 10 個官方角色</button>
           </form>
         }
       />
-      <InteractionRolesWorkbench roles={roles} />
+      <InteractionRolesWorkbench roles={roles} csrfToken={csrfToken} />
     </>
   );
 }

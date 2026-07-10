@@ -1,17 +1,27 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { createLiveInput } from "@/lib/cloudflare-stream";
-
-const LiveInputRequest = z.object({
-  name: z.string().min(1).max(120),
-});
+import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { createLiveInputMapping, LiveInputRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
+  if (!requireJobSecret(request)) {
+    return unauthorizedJson();
+  }
+
   const parsed = LiveInputRequest.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid live input request" }, { status: 400 });
   }
 
-  const liveInput = await createLiveInput(parsed.data.name);
-  return NextResponse.json({ ok: true, liveInput });
+  const { video, liveInput } = await createLiveInputMapping(parsed.data);
+
+  return NextResponse.json({
+    ok: true,
+    videoId: video.id,
+    liveInput: {
+      uid: liveInput.uid,
+      rtmpsUrl: liveInput.rtmps?.url ?? null,
+      webRTCUrl: liveInput.webRTC?.url ?? null,
+      streamKeyRef: video.id,
+    },
+  });
 }

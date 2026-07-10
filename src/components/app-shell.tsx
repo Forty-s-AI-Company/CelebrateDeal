@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, CreditCard, Gauge, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, WalletCards } from "lucide-react";
+import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, CreditCard, Gauge, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, WalletCards } from "lucide-react";
 import { logoutAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 
 const navGroups = [
   {
@@ -33,6 +34,7 @@ const navGroups = [
       { href: "/billing/payouts", label: "批次出款", icon: Banknote },
       { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield },
       { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText },
+      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud },
     ],
   },
   {
@@ -86,6 +88,7 @@ export function AppShell({
         </nav>
 
         <form action={logoutAction} className="absolute bottom-4 left-4 right-4">
+          <CsrfField />
           <button className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
             <Lock size={16} />
             登出
@@ -97,6 +100,7 @@ export function AppShell({
         <div className="flex items-center justify-between">
           <Link href="/dashboard" className="font-bold text-slate-950">CelebrateDeal</Link>
           <form action={logoutAction}>
+            <CsrfField />
             <button className="rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-slate-600">登出</button>
           </form>
         </div>

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { deleteInteractionScriptAction, duplicateInteractionScriptAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -81,12 +82,14 @@ export default async function InteractionScriptsPage({
                     <Pencil size={17} />
                   </Link>
                   <form action={duplicateInteractionScriptAction}>
+                    <CsrfField />
                     <input type="hidden" name="id" value={script.id} />
                     <button title="複製" className="grid h-10 w-10 place-items-center rounded-md border border-border bg-white text-slate-600 shadow-sm hover:bg-blue-50 hover:text-primary">
                       <Copy size={17} />
                     </button>
                   </form>
                   <form action={deleteInteractionScriptAction}>
+                    <CsrfField />
                     <input type="hidden" name="id" value={script.id} />
                     <button title="刪除" className="grid h-10 w-10 place-items-center rounded-md border border-red-100 bg-white text-red-500 shadow-sm hover:bg-red-50">
                       <Trash2 size={17} />

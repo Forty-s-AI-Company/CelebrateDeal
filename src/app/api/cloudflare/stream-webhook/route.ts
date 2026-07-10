@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { verifyCloudflareStreamWebhookRequest } from "@/lib/cloudflare-webhook-signature";
 import { getDb } from "@/lib/db";
 
 const StreamWebhookPayload = z.object({
@@ -17,18 +18,27 @@ const StreamWebhookPayload = z.object({
   }).optional(),
 });
 
-function verifyCloudflareWebhook(request: Request) {
-  const secret = process.env.CLOUDFLARE_STREAM_WEBHOOK_SECRET;
-  if (!secret) return true;
-  return request.headers.get("x-cloudflare-stream-webhook-secret") === secret;
-}
-
 export async function POST(request: Request) {
-  if (!verifyCloudflareWebhook(request)) {
-    return NextResponse.json({ error: "Invalid Cloudflare Stream webhook secret" }, { status: 401 });
+  const rawBody = await request.text();
+  const verification = verifyCloudflareStreamWebhookRequest({ request, body: rawBody });
+  if (!verification.ok) {
+    return NextResponse.json(
+      {
+        error: "Invalid Cloudflare Stream webhook signature",
+        reason: verification.reason,
+      },
+      { status: 401 },
+    );
   }
 
-  const parsed = StreamWebhookPayload.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid Cloudflare Stream webhook JSON" }, { status: 400 });
+  }
+
+  const parsed = StreamWebhookPayload.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid Cloudflare Stream webhook payload" }, { status: 400 });
   }
@@ -36,14 +46,22 @@ export async function POST(request: Request) {
   const payload = parsed.data;
   const status = payload.readyToStream ? "ready" : payload.status?.state ?? "processing";
   const video = await getDb().video.updateMany({
-    where: { cloudflareStreamUid: payload.uid },
+    where: {
+      OR: [
+        { cloudflareStreamUid: payload.uid },
+        { cloudflareLiveInputUid: payload.uid },
+        { cloudflarePlaybackId: payload.uid },
+      ],
+    },
     data: {
       status,
       cloudflareReadyToStream: payload.readyToStream ?? false,
+      cloudflarePlaybackId: payload.uid,
+      videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
       thumbnailUrl: payload.thumbnail,
       durationSec: payload.duration ? Math.round(payload.duration) : undefined,
     },
   });
 
-  return NextResponse.json({ ok: true, updated: video.count });
+  return NextResponse.json({ ok: true, updated: video.count, verificationMode: verification.mode });
 }

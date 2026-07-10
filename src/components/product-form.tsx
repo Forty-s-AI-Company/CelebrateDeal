@@ -1,11 +1,13 @@
 import type { Product } from "@prisma/client";
 import { upsertProductAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SubmitButton, TextArea } from "@/components/ui";
 
 export function ProductForm({ product }: { product?: Product }) {
   return (
     <Card>
       <form action={upsertProductAction} className="grid gap-4">
+        <CsrfField />
         {product ? <input type="hidden" name="id" value={product.id} /> : null}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="商品名稱" name="name" required defaultValue={product?.name} />

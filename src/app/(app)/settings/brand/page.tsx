@@ -1,4 +1,5 @@
 import { saveBrandSettingsAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 
@@ -10,6 +11,7 @@ export default async function BrandSettingsPage() {
       <PageHeader title="品牌設定" description="控制公開直播頁的品牌名稱、Logo、主色與 CTA 顏色。" />
       <Card>
         <form action={saveBrandSettingsAction} className="grid gap-4">
+          <CsrfField />
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="品牌名稱" name="name" required defaultValue={vendor.name} />
             <Field label="品牌 Slug" name="slug" required defaultValue={vendor.slug} />

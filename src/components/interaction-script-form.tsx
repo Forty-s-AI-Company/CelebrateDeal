@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, Link2Off, Plus, Trash2, VideoIcon } from "lucide-react";
 import { upsertInteractionScriptAction } from "@/app/actions";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 
 type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
@@ -79,11 +80,13 @@ export function InteractionScriptForm({
   script,
   roles,
   boundLives = [],
+  csrfToken,
 }: {
   script?: ScriptWithEvents;
   roles: InteractionRole[];
   products: Product[];
   boundLives?: BoundLive[];
+  csrfToken: string;
 }) {
   const initialEvents = useMemo<TimelineEvent[]>(() => (script?.events.length ? script.events : timelineTemplates[1].events), [script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
@@ -116,6 +119,7 @@ export function InteractionScriptForm({
 
   return (
     <form action={upsertInteractionScriptAction} className="grid gap-5">
+      <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
       {script ? <input type="hidden" name="id" value={script.id} /> : null}
       <input type="hidden" name="status" value={script?.status ?? "published"} />
       <input type="hidden" name="description" value={script?.description ?? "留言組快速編輯"} />

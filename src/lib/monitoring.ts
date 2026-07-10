@@ -1,11 +1,14 @@
+import * as Sentry from "@sentry/nextjs";
+
 export function captureOperationalError(error: unknown, context?: Record<string, unknown>) {
   const message = error instanceof Error ? error.message : String(error);
 
-  // Sentry SDK can be wired here after the production project is created.
-  if (!process.env.SENTRY_DSN) {
-    console.error("[monitoring]", message, context ?? {});
+  if (process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN) {
+    Sentry.captureException(error, { extra: context });
     return;
   }
 
-  console.error("[sentry-pending-sdk]", message, context ?? {});
+  if (process.env.NODE_ENV !== "test") {
+    console.error("[monitoring]", message, context ?? {});
+  }
 }

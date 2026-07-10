@@ -3,6 +3,18 @@ import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
 export const demoPaymentProvider: PaymentProviderAdapter = {
   id: "demo",
+  async createCheckoutSession({ transaction }) {
+    return {
+      provider: "demo",
+      mode: "manual",
+      checkoutUrl: null,
+      nextAction: "demo_checkout_transaction_created",
+      formPayload: {
+        orderNumber: transaction.orderNumber ?? transaction.id,
+        transactionId: transaction.id,
+      },
+    };
+  },
   async verifySignature() {
     return true;
   },

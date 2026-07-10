@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { redactedJsonSnapshot } from "@/lib/redaction";
 
 export async function requestAuditMeta() {
   try {
@@ -42,5 +43,5 @@ export async function writeAuditLog(input: {
 }
 
 export function auditSnapshot<T>(value: T): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+  return redactedJsonSnapshot(value);
 }

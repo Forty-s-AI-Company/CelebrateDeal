@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Download, Landmark, RotateCcw } from "lucide-react";
 import { markPayoutBatchExportedAction, updatePayoutItemStatusAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -52,6 +53,7 @@ export default async function AdminBillingPayoutsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <form action={markPayoutBatchExportedAction}>
+                    <CsrfField />
                     <input type="hidden" name="id" value={batch.id} />
                     <button className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                       <Download size={16} />
@@ -99,17 +101,20 @@ export default async function AdminBillingPayoutsPage() {
                         <td className="px-5 py-4">
                           <div className="grid gap-2">
                             <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
+                              <CsrfField />
                               <input type="hidden" name="id" value={item.id} />
                               <input type="hidden" name="status" value="paid" />
                               <button className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">標記 paid</button>
                             </form>
                             <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
+                              <CsrfField />
                               <input type="hidden" name="id" value={item.id} />
                               <input type="hidden" name="status" value="failed" />
                               <input name="failReason" placeholder="失敗原因" className="h-9 w-40 rounded-md border border-border px-2 text-xs" />
                               <button className="h-9 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700">標記 failed</button>
                             </form>
                             <form action={updatePayoutItemStatusAction}>
+                              <CsrfField />
                               <input type="hidden" name="id" value={item.id} />
                               <input type="hidden" name="status" value="retrying" />
                               <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">標記 retry</button>

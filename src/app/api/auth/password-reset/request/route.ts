@@ -1,0 +1,37 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requireSameOriginRequest } from "@/lib/api-security";
+import { sendPasswordResetLink } from "@/lib/password-reset";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const PasswordResetRequest = z.object({
+  email: z.string().email(),
+});
+
+export async function POST(request: Request) {
+  const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
+  if (sameOrigin) return sameOrigin;
+
+  const limited = await checkRateLimit(request, "password-reset-request", 5, 60_000);
+  if (limited) return limited;
+
+  const parsed = PasswordResetRequest.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid password reset request" }, { status: 400 });
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+  const reset = await sendPasswordResetLink({
+    email: parsed.data.email,
+    appUrl,
+    ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    userAgent: request.headers.get("user-agent"),
+  });
+
+  const response: Record<string, unknown> = { ok: true };
+  if (reset && process.env.NODE_ENV !== "production") {
+    response.resetUrl = reset.resetUrl;
+  }
+
+  return NextResponse.json(response);
+}

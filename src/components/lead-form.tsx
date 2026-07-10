@@ -15,31 +15,43 @@ export function LeadForm({
   fields,
   submitLabel,
   successMessage,
+  redirectTo,
 }: {
   formId: string;
   liveId?: string | null;
   fields: FieldSpec[];
   submitLabel: string;
   successMessage: string;
+  redirectTo?: string;
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("loading");
+    const form = event.currentTarget;
 
-    const formData = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(formData.entries());
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(
+      [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "redirectTo"].includes(key)),
+    );
     const referralCode = new URLSearchParams(window.location.search).get("ref");
-    const response = await fetch("/api/form-submissions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ formId, liveId, payload, referralCode }),
-    });
+    try {
+      const response = await fetch("/api/form-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CelebrateDeal-Client": "web",
+        },
+        body: JSON.stringify({ formId, liveId, payload, referralCode }),
+      });
 
-    setStatus(response.ok ? "success" : "error");
-    if (response.ok) {
-      event.currentTarget.reset();
+      setStatus(response.ok ? "success" : "error");
+      if (response.ok) {
+        form.reset();
+      }
+    } catch {
+      setStatus("error");
     }
   }
 
@@ -48,7 +60,10 @@ export function LeadForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-3">
+    <form method="post" action="/api/form-submissions" onSubmit={onSubmit} className="grid gap-3">
+      <input type="hidden" name="formId" value={formId} />
+      {liveId ? <input type="hidden" name="liveId" value={liveId} /> : null}
+      {redirectTo ? <input type="hidden" name="redirectTo" value={redirectTo} /> : null}
       {fields.map((field) => (
         <label key={field.key} className="grid gap-1.5 text-sm font-medium text-slate-700">
           {field.label}

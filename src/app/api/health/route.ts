@@ -11,13 +11,12 @@ export async function GET() {
       database: "ok",
       latencyMs: Date.now() - startedAt,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown health check error";
+  } catch {
     return NextResponse.json({
       ok: false,
       database: "failed",
       latencyMs: Date.now() - startedAt,
-      error: message,
+      error: "Database health check failed",
     }, { status: 503 });
   }
 }

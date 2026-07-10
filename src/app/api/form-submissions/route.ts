@@ -1,17 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import { requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const SubmissionPayload = z.object({
   formId: z.string().min(1),
   liveId: z.string().nullable().optional(),
   payload: z.record(z.string(), z.unknown()),
   referralCode: z.string().nullable().optional(),
+  redirectTo: z.string().optional(),
 });
 
 export async function POST(request: Request) {
-  const parsed = SubmissionPayload.safeParse(await request.json());
+  const contentType = request.headers.get("content-type") ?? "";
+  const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
+  const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: !isNativeFormPost });
+  if (sameOrigin) return sameOrigin;
+
+  const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
+  if (limited) return limited;
+
+  const parsed = SubmissionPayload.safeParse(isNativeFormPost ? await nativeFormPayload(request) : await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
@@ -27,6 +38,16 @@ export async function POST(request: Request) {
   const form = await getDb().registrationForm.findUnique({ where: { id: parsed.data.formId } });
   if (!form || !form.isActive) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  }
+
+  if (parsed.data.liveId) {
+    const live = await getDb().live.findFirst({
+      where: { id: parsed.data.liveId, vendorId: form.vendorId },
+      select: { id: true },
+    });
+    if (!live) {
+      return NextResponse.json({ error: "Live not found" }, { status: 404 });
+    }
   }
 
   const blocked = await getDb().blacklist.findFirst({
@@ -79,5 +100,34 @@ export async function POST(request: Request) {
     });
   }
 
+  if (isNativeFormPost && parsed.data.redirectTo) {
+    const redirectUrl = new URL(parsed.data.redirectTo, request.url);
+    redirectUrl.searchParams.set("submitted", "1");
+    return NextResponse.redirect(redirectUrl, { status: 303 });
+  }
+
   return NextResponse.json({ ok: true });
+}
+
+async function nativeFormPayload(request: Request) {
+  const formData = await request.formData();
+  const reserved = new Set(["formId", "liveId", "referralCode", "redirectTo"]);
+  const payload: Record<string, unknown> = {};
+
+  for (const [key, value] of formData.entries()) {
+    if (!reserved.has(key)) {
+      payload[key] = typeof value === "string" ? value : value.name;
+    }
+  }
+
+  const liveId = formData.get("liveId");
+  const referralCode = formData.get("referralCode");
+  const redirectTo = formData.get("redirectTo");
+  return {
+    formId: String(formData.get("formId") ?? ""),
+    liveId: typeof liveId === "string" && liveId ? liveId : null,
+    payload,
+    referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
+    redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
+  };
 }

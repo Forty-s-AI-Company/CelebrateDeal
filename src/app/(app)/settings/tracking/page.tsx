@@ -1,4 +1,5 @@
 import { saveTrackingSettingsAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 
@@ -11,6 +12,7 @@ export default async function TrackingSettingsPage() {
       <PageHeader title="追蹤設定" description="設定 Pixel、GTM 與事件開關；公開頁會先記錄平台內部 analytics_events。" />
       <Card>
         <form action={saveTrackingSettingsAction} className="grid gap-4">
+          <CsrfField />
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Facebook Pixel ID" name="facebookPixelId" defaultValue={tracking?.facebookPixelId} />
             <Field label="TikTok Pixel ID" name="tiktokPixelId" defaultValue={tracking?.tiktokPixelId} />

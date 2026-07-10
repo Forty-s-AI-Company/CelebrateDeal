@@ -1,5 +1,6 @@
 import type { RegistrationForm } from "@prisma/client";
 import { upsertFormAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SubmitButton, TextArea } from "@/components/ui";
 
 const defaultFields = JSON.stringify(
@@ -16,6 +17,7 @@ export function FormBuilder({ form }: { form?: RegistrationForm }) {
   return (
     <Card>
       <form action={upsertFormAction} className="grid gap-4">
+        <CsrfField />
         {form ? <input type="hidden" name="id" value={form.id} /> : null}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="表單名稱" name="name" required defaultValue={form?.name} />

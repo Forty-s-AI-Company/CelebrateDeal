@@ -6,6 +6,11 @@ import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRou
 import { LeadForm } from "@/components/lead-form";
 import { formatCurrency } from "@/lib/format";
 
+const clientHeaders = {
+  "Content-Type": "application/json",
+  "X-CelebrateDeal-Client": "web",
+};
+
 type LivePageData = {
   id: string;
   title: string;
@@ -58,6 +63,13 @@ type LivePageData = {
   }>;
 };
 
+type CheckoutResponse = {
+  checkoutUrl?: string | null;
+  formAction?: string;
+  formMethod?: "POST";
+  formPayload?: Record<string, string>;
+};
+
 function getVisitorId() {
   const key = "celebrate_visitor_id";
   const existing = window.localStorage.getItem(key);
@@ -71,6 +83,34 @@ function secondsLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainSeconds = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function submitCheckout(checkout: CheckoutResponse) {
+  if (checkout.formAction && checkout.formPayload) {
+    const form = document.createElement("form");
+    form.method = checkout.formMethod ?? "POST";
+    form.action = checkout.formAction;
+    form.style.display = "none";
+
+    for (const [name, value] of Object.entries(checkout.formPayload)) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+    return true;
+  }
+
+  if (checkout.checkoutUrl) {
+    window.location.href = checkout.checkoutUrl;
+    return true;
+  }
+
+  return false;
 }
 
 export function LivePlayback({ live }: { live: LivePageData }) {
@@ -96,7 +136,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   useEffect(() => {
     void fetch("/api/analytics", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: clientHeaders,
       body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "page_view", payload: { slug: live.slug } }),
     });
   }, [live.id, live.slug, live.vendorId, visitorId]);
@@ -105,7 +145,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     if (!referralCode || typeof window === "undefined") return;
     void fetch("/api/affiliate-clicks", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: clientHeaders,
       body: JSON.stringify({
         liveId: live.id,
         vendorId: live.vendorId,
@@ -128,7 +168,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     setReportedProgress(nextReported);
     void fetch("/api/analytics", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: clientHeaders,
       body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "play_progress", payload: { seconds: checkpoint, ref: referralCode } }),
     });
   }
@@ -136,11 +176,22 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   async function trackProduct(productId: string, checkoutUrl: string | null) {
     await fetch("/api/analytics", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: clientHeaders,
       body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "product_click", payload: { productId, ref: referralCode } }),
     });
+
+    const checkoutResponse = await fetch("/api/payments/checkout", {
+      method: "POST",
+      headers: clientHeaders,
+      body: JSON.stringify({ vendorId: live.vendorId, productId, referralCode: referralCode ?? undefined }),
+    });
+
+    if (checkoutResponse.ok && submitCheckout(await checkoutResponse.json() as CheckoutResponse)) {
+      return;
+    }
+
     if (checkoutUrl) {
-      window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+      window.location.href = checkoutUrl;
     }
   }
 
@@ -148,7 +199,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     if (!latestCtaEvent) return;
     await fetch("/api/analytics", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: clientHeaders,
       body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "cta_click", payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode } }),
     });
     if (latestCtaEvent.ctaUrl) {
@@ -175,7 +226,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               onPlay={() => {
                 void fetch("/api/analytics", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: clientHeaders,
                   body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "video_play", payload: { slug: live.slug, ref: referralCode } }),
                 });
               }}

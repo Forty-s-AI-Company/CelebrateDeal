@@ -12,8 +12,15 @@ function normalizeFields(fields: unknown) {
   })).filter((field) => field.key && field.label);
 }
 
-export default async function PublicFormPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicFormPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ submitted?: string }>;
+}) {
   const { slug } = await params;
+  const query = await searchParams;
   const form = await getDb().registrationForm.findUnique({ where: { slug }, include: { vendor: true } });
   if (!form || !form.isActive) notFound();
 
@@ -24,7 +31,17 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
         <h1 className="mt-2 text-2xl font-bold text-slate-950">{form.headline}</h1>
         {form.description ? <p className="mt-2 text-sm leading-6 text-slate-500">{form.description}</p> : null}
         <div className="mt-5">
-          <LeadForm formId={form.id} fields={normalizeFields(form.fields)} submitLabel={form.submitLabel} successMessage={form.successMessage} />
+          {query.submitted === "1" ? (
+            <p className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-700">{form.successMessage}</p>
+          ) : (
+            <LeadForm
+              formId={form.id}
+              fields={normalizeFields(form.fields)}
+              submitLabel={form.submitLabel}
+              successMessage={form.successMessage}
+              redirectTo={`/form/${form.slug}`}
+            />
+          )}
         </div>
       </section>
     </main>

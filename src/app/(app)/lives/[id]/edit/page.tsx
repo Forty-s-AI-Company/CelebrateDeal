@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { upsertLiveAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -24,6 +25,7 @@ export default async function EditLivePage({ params }: { params: Promise<{ id: s
       <PageHeader title="編輯直播間" description="調整直播頁素材、狀態與商品綁定。" />
       <Card>
         <form action={upsertLiveAction} className="grid gap-4">
+          <CsrfField />
           <input type="hidden" name="id" value={live.id} />
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="直播標題" name="title" required defaultValue={live.title} />

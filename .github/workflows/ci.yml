@@ -24,6 +24,19 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
+      NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
+      JOB_SECRET: ci-job-secret-123456
+      CSRF_SECRET: ci-csrf-secret-123456
+      RATE_LIMIT_PROVIDER: memory
+      CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
+      CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
+      CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
+      PAYMENT_PROVIDER: demo
+      RESEND_API_KEY: ci-resend-key
+      EMAIL_FROM: CelebrateDeal CI <no-reply@example.com>
+      SENTRY_DSN: https://ci@sentry.invalid/1
+      NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
+      NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,3 +64,17 @@ jobs:
 
       - name: Unit tests
         run: npm run test
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E smoke
+        run: npm run e2e:smoke
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
+
+      - name: Build
+        run: npm run build
+
+      - name: Preflight
+        run: npm run preflight

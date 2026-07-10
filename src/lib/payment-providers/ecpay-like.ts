@@ -16,8 +16,8 @@ function eventType(value: unknown) {
 }
 
 function verifyHmac(rawBody: string, signature: string | null) {
-  const secret = process.env.ECPAY_WEBHOOK_SECRET ?? "demo-ecpay-secret";
-  if (!signature) return false;
+  const secret = process.env.ECPAY_WEBHOOK_SECRET;
+  if (!secret || !signature) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   const incoming = signature.trim();
   const expectedBuffer = Buffer.from(expected);
@@ -27,6 +27,16 @@ function verifyHmac(rawBody: string, signature: string | null) {
 
 export const ecpayLikePaymentProvider: PaymentProviderAdapter = {
   id: "ecpay-like",
+  async createCheckoutSession({ transaction }) {
+    return {
+      provider: "ecpay-like",
+      mode: "manual",
+      checkoutUrl: null,
+      nextAction: "ecpay_like_checkout_adapter_pending",
+      formPayload: { orderNumber: transaction.orderNumber ?? transaction.id },
+      externalRequired: true,
+    };
+  },
   async verifySignature(request, rawBody) {
     return verifyHmac(rawBody, request.headers.get("x-ecpay-signature") ?? request.headers.get("x-payment-signature"));
   },

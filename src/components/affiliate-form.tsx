@@ -1,11 +1,13 @@
 import type { Affiliate } from "@prisma/client";
 import { upsertAffiliateAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, SubmitButton } from "@/components/ui";
 
 export function AffiliateForm({ affiliate }: { affiliate?: Affiliate }) {
   return (
     <Card>
       <form action={upsertAffiliateAction} className="grid gap-4">
+        <CsrfField />
         {affiliate ? <input type="hidden" name="id" value={affiliate.id} /> : null}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="夥伴名稱" name="name" required defaultValue={affiliate?.name} />

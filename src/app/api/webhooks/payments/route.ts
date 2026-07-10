@@ -3,12 +3,19 @@ import type { Prisma } from "@prisma/client";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
+import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
+import { redactedJsonSnapshot } from "@/lib/redaction";
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
-  const providerId = request.headers.get("x-payment-provider") ?? request.headers.get("x-webhook-provider") ?? "demo";
+  const requestUrl = new URL(request.url);
+  const providerId = requestUrl.searchParams.get("provider")
+    ?? request.headers.get("x-payment-provider")
+    ?? request.headers.get("x-webhook-provider")
+    ?? "demo";
   const adapter = getPaymentProvider(providerId);
+  const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
   const verified = await adapter.verifySignature(request, rawBody);
 
   if (!verified) {
@@ -16,7 +23,7 @@ export async function POST(request: Request) {
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_signature_failed",
       targetType: "WebhookEvent",
-      before: auditSnapshot({ providerId, rawBody }),
+      before: auditSnapshot({ providerId, bodyBytes: rawBody.length }),
     });
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -30,7 +37,7 @@ export async function POST(request: Request) {
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_invalid",
       targetType: "WebhookEvent",
-      before: auditSnapshot({ providerId, rawBody }),
+      before: auditSnapshot({ providerId, bodyBytes: rawBody.length }),
       after: auditSnapshot({ error: message }),
     });
     return NextResponse.json({ error: message }, { status: 400 });
@@ -54,8 +61,9 @@ export async function POST(request: Request) {
       status: "received",
       maxRetries: 5,
       payload: {
-        raw: normalized.rawPayload,
-        normalized: payload,
+        raw: redactedJsonSnapshot(normalized.rawPayload),
+        normalized: redactedJsonSnapshot(payload),
+        diagnostics: redactedJsonSnapshot(diagnostics),
       } as Prisma.InputJsonObject,
     },
   });

@@ -1,7 +1,6 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import NextError from "next/error";
 import { useEffect } from "react";
 
 export default function GlobalError({
@@ -14,13 +13,13 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
-      <body>
-        {/* `NextError` is the default Next.js error page component. Its type
-        definition requires a `statusCode` prop. However, since the App Router
-        does not expose status codes for errors, we simply pass 0 to render a
-        generic error message. */}
-        <NextError statusCode={0} />
+    <html lang="zh-Hant">
+      <body className="min-h-screen bg-slate-100 px-6 py-12 text-slate-900">
+        <main className="mx-auto max-w-xl rounded-2xl bg-white p-8 shadow-sm">
+          <p className="text-sm font-semibold text-blue-600">CelebrateDeal</p>
+          <h1 className="mt-3 text-2xl font-bold">系統暫時無法顯示這個頁面</h1>
+          <p className="mt-3 text-sm text-slate-600">錯誤已送出給維運團隊，請稍後重新整理或返回後台。</p>
+        </main>
       </body>
     </html>
   );
