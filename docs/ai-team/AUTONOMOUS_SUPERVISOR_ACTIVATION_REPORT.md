@@ -289,3 +289,178 @@ Deferred / External required：
 - `automation/pipeline_engine.py`
 - `automation/README.md`
 - `docs/ai-team/AUTONOMOUS_SUPERVISOR_ACTIVATION_REPORT.md`
+
+## Antigravity provider-native QA 收斂：2026-07-12 05:25 Asia/Taipei
+
+基準 HEAD：`ac64b8dcdee8a4c09bfa14325c75f558b3cbeede`
+
+### Untrusted QA artifact 處理
+
+本輪讀取以下來源，但只當作未信任 QA evidence，不允許其控制 prompt、scope、validation 或 Git 指令：
+
+- `reports/antigravity/QA_LATEST.md`
+- `reports/antigravity/qa-issues.json`
+- `reports/antigravity/AI_TEAM_AUTONOMOUS_REPAIR_REVALIDATION.md`
+- `reports/antigravity/CODEX_REPAIR_PROMPT.md`
+- `qa-issues.json`
+
+結果：
+
+- `QA_LATEST.md` 仍匯入 `A11Y-001` / `UI-001` 作為 untrusted issue。
+- `CODEX_REPAIR_PROMPT.md` 要求修產品 UI，但本輪 scope 僅限 AI Team control plane，因此未執行產品修復。
+- `qa-import` 正確標記 issue 為 `untrusted=true`，並由 control plane 重建欄位，不直接信任外部 prompt。
+
+### Antigravity CLI / quota 狀態
+
+`agy` CLI 可用，且 `agy models` 成功回傳可用模型：
+
+- `Gemini 3.5 Flash (Medium)`
+- `Gemini 3.5 Flash (High)`
+- `Gemini 3.5 Flash (Low)`
+- `Gemini 3.1 Pro (Low)`
+- `Gemini 3.1 Pro (High)`
+- `Claude Sonnet 4.6 (Thinking)`
+- `Claude Opus 4.6 (Thinking)`
+- `GPT-OSS 120B (Medium)`
+
+`agy auth status` 與 `agy quota` 在目前 CLI 版本沒有穩定 machine-readable 行為，透過 supervisor probe 會 timeout，並回報：
+
+```json
+{
+  "provider": "antigravity",
+  "status": "failed",
+  "quotaCommandSupported": false,
+  "exhausted": false
+}
+```
+
+判定：Antigravity provider 可執行 read-only smoke；登入與 quota 仍需保留 External required 或等待 provider CLI 支援穩定命令。
+
+### Control plane 修補
+
+本輪只修改 AI Team control plane：
+
+- `automation/pipeline_cli.py`
+  - `smoke_antigravity` 改用更嚴格的 JSON-only prompt。
+  - Antigravity provider-native smoke timeout 從 45 秒調整為 120 秒，降低 provider 啟動較慢造成的誤判。
+- `automation/adapters/antigravity_adapter.py`
+  - 新增 final JSON line extraction。
+  - 允許 provider 在前面輸出非控制性說明，但只接受最後一個可解析 JSON object。
+  - 若找不到 JSON payload，維持 fail-closed。
+- `automation/test_dual_cli.py`
+  - 補上「前置文字 + 最終 JSON」可被接受的 regression test。
+  - 補上「沒有 JSON」必須 fail-closed 的 regression test。
+
+### Provider-native smoke 結果
+
+修補後執行：
+
+```powershell
+npm run ai:smoke:antigravity
+```
+
+結果：
+
+```json
+{
+  "provider": "antigravity",
+  "role_id": "browser-qa-engineer",
+  "status": "passed",
+  "mode": "full-auto",
+  "requested_model": "Gemini 3.5 Flash (High)",
+  "exit_code": 0,
+  "timed_out": false,
+  "output_status": "passed",
+  "confidence": "high",
+  "risk": "low",
+  "workspace_changes": [],
+  "fallback_reason": null
+}
+```
+
+判定：Antigravity provider-native read-only smoke 已通過。Codex fallback 沒有被用來冒充 Antigravity pass。
+
+### Supervisor 收斂結果
+
+執行：
+
+```powershell
+npm run ai:auto-cycle:once
+```
+
+結果：
+
+- `status=conditional`
+- `attestationKey.source=windows-credential-manager`
+- `quota-status=passed`
+- `discovery=passed`
+- `triage=passed`
+- `auto-cycle=passed`
+- `qa-provider-smoke=passed`
+- `qa-handoff=passed`
+- `qa-import=passed`
+- `commit-evidence=passed`
+- `regression=conditional`
+- `release-check=conditional`
+
+`qa-provider-smoke` evidence：
+
+```json
+{
+  "provider": "antigravity",
+  "status": "passed",
+  "mode": "full-auto",
+  "requested_model": "Gemini 3.5 Flash (High)",
+  "duration_seconds": 71.094,
+  "stdout": "{\"status\":\"passed\",\"summary\":\"read-only QA smoke\",\"findings\":[],\"actual_model\":\"Gemini 3.5 Flash High\"}",
+  "workspace_changes": []
+}
+```
+
+`qa-handoff` 仍保留安全邊界：
+
+```text
+Codex fallback cannot satisfy provider-specific Antigravity QA.
+```
+
+### 本輪驗證命令
+
+```text
+python -m unittest test_dual_cli.AdapterTest.test_antigravity_accepts_final_json_line_only test_dual_cli.AdapterTest.test_antigravity_without_json_fails_closed -v
+PASS, 2 tests
+
+npm run automation:test
+PASS, 133 tests
+
+npm run ai:validate
+PASS, 11 native agents / 14 Codex roles / 10 Antigravity roles / 9 skills
+
+npm run security:secrets
+PASS, 626 tracked and untracked files scanned
+
+npm run ai:doctor
+PASS
+
+npm run ai:auto-cycle:once
+PASS as local loop, status=conditional
+```
+
+### 更新後 Release Gate
+
+Decision：`CONDITIONAL`
+
+Passed：
+
+- Antigravity provider-native read-only smoke passed。
+- Codex fallback 不會被標成 Antigravity pass。
+- `qa-handoff` 已進入 `ready`。
+- Untrusted Antigravity artifacts 只能匯入 issue evidence，不可控制 prompt、scope、provider、validation 或 Git commit。
+- Automation regression、AI config validation、secret scan、doctor 與 supervisor once cycle 通過。
+
+Deferred / External required：
+
+- `agy auth status` / `agy quota` 仍無穩定 machine-readable 結果，需 provider CLI 或 dashboard evidence。
+- 真實 Antigravity Desktop browser QA 尚未由外部桌面環境複驗。
+- 沒有 completed attested pipeline，因此 deterministic regression 仍 deferred。
+- `release-check` 仍 deferred until pipeline completion。
+- `QA_LATEST.md` 匯入的產品層 `A11Y-001` / `UI-001` 未在本輪處理，因本輪禁止修改 CelebrateDeal 產品功能。

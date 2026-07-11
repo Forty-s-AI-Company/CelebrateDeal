@@ -119,6 +119,34 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(capability.mode, "full-auto")
         self.assertEqual(capability.models, ["Gemini 3.5 Flash (High)"])
 
+    @patch("adapters.antigravity_adapter.AntigravityAdapter.capability")
+    @patch("adapters.base_adapter.subprocess.run")
+    def test_antigravity_accepts_final_json_line_only(self, run_mock, capability_mock) -> None:
+        from adapters import AdapterCapability
+
+        capability_mock.return_value = AdapterCapability("antigravity", "agy", True, "full-auto")
+        run_mock.return_value = CompletedProcess(
+            [],
+            0,
+            'No tools are needed now.\n{"status":"passed","summary":"ok","findings":[],"actual_model":"Gemini"}\n',
+            "",
+        )
+        result = AntigravityAdapter().run(AdapterRequest("browser-qa-engineer", "prompt", Path.cwd(), "Gemini", "high"))
+        self.assertEqual(result.status, "passed")
+        self.assertEqual(result.output_status, "passed")
+        self.assertEqual(result.stdout, '{"status":"passed","summary":"ok","findings":[],"actual_model":"Gemini"}')
+
+    @patch("adapters.antigravity_adapter.AntigravityAdapter.capability")
+    @patch("adapters.base_adapter.subprocess.run")
+    def test_antigravity_without_json_fails_closed(self, run_mock, capability_mock) -> None:
+        from adapters import AdapterCapability
+
+        capability_mock.return_value = AdapterCapability("antigravity", "agy", True, "full-auto")
+        run_mock.return_value = CompletedProcess([], 0, "Looks good to me", "")
+        result = AntigravityAdapter().run(AdapterRequest("browser-qa-engineer", "prompt", Path.cwd(), "Gemini", "high"))
+        self.assertEqual(result.status, "failed")
+        self.assertIn("status", result.error or "")
+
     @patch("adapters.base_adapter.subprocess.run")
     def test_process_success_does_not_override_failed_model_output(self, run_mock) -> None:
         run_mock.return_value = CompletedProcess([], 0, '{"status":"failed"}', "")

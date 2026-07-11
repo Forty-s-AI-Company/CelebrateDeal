@@ -43,6 +43,19 @@ class AntigravityAdapter(BaseAdapter):
             "--model", request.requested_model, "--sandbox",
         ]
 
+    def extract_json_payload(self, stdout: str) -> str | None:
+        for line in reversed(stdout.splitlines()):
+            candidate = line.strip()
+            if not candidate.startswith("{") or not candidate.endswith("}"):
+                continue
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return candidate
+        return None
+
     def run(self, request: AdapterRequest, retries: int = 0):  # type: ignore[override]
         prompt = request.prompt
         request.prompt = "Return only valid JSON. " + prompt
@@ -50,7 +63,11 @@ class AntigravityAdapter(BaseAdapter):
         request.prompt = prompt
         if result.status == "passed":
             try:
-                json.loads(result.stdout.strip())
+                payload = self.extract_json_payload(result.stdout)
+                if not payload:
+                    raise json.JSONDecodeError("No JSON object found", result.stdout, 0)
+                json.loads(payload)
+                result.stdout = payload
             except json.JSONDecodeError:
                 result.status = "failed"
                 result.error = "Antigravity output was not valid JSON"
@@ -69,7 +86,10 @@ class AntigravityAdapter(BaseAdapter):
 
     def parse_output_status(self, stdout: str) -> str | None:
         try:
-            payload = json.loads(stdout.strip())
+            payload_text = self.extract_json_payload(stdout)
+            if not payload_text:
+                return None
+            payload = json.loads(payload_text)
         except json.JSONDecodeError:
             return None
         status = payload.get("status") if isinstance(payload, dict) else None

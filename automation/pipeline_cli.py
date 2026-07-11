@@ -382,7 +382,13 @@ def smoke_codex(_: argparse.Namespace) -> int:
 
 
 def smoke_antigravity(_: argparse.Namespace) -> int:
-    primary = run_role("browser-qa-engineer", 'Inspect docs/qa/TEST_MATRIX.md only. Return {"status":"passed","summary":"read-only QA smoke","findings":[],"actual_model":"Gemini 3.5 Flash (High)"}. Do not modify files.', 45)
+    primary = run_role(
+        "browser-qa-engineer",
+        'STRICT OUTPUT: print exactly one minified JSON object and nothing else. No prose. No markdown. '
+        'Inspect docs/qa/TEST_MATRIX.md only. Do not modify files. '
+        'Return {"status":"passed","summary":"read-only QA smoke","findings":[],"actual_model":"Gemini 3.5 Flash High"}.',
+        120,
+    )
     payload: dict[str, Any] = primary
     if primary["status"] != "passed":
         fallback = run_role("test-engineer", 'Act as the codex-fallback browser QA role. Inspect docs/qa/TEST_MATRIX.md only and return JSON with status, summary, findings and actual_model. Do not modify files.', 180)
