@@ -88,4 +88,15 @@ describe("PayUni provider", () => {
     expect(normalized.payload.refundAmountCents).toBe(199000);
     expect(normalized.payload.gatewayFeeRefundCents).toBe(3500);
   });
+
+  it.each([
+    [{ EventId: "evt-missing-status", MerTradeNo: "ORDER-1", TradeAmt: 100 }, "status"],
+    [{ EventId: "evt-missing-amount", EventType: "paid", MerTradeNo: "ORDER-2" }, "positive gross amount"],
+    [{ EventId: "evt-unknown-status", EventType: "pending_review", MerTradeNo: "ORDER-3", TradeAmt: 100 }, "status"],
+    [{ EventType: "paid", MerTradeNo: "ORDER-4", TradeAmt: 100 }, "event ID"],
+    [{ EventId: "evt-missing-order", EventType: "paid", TradeAmt: 100 }, "order number"],
+    [{ EventId: "evt-refund-no-amount", EventType: "refunded", MerTradeNo: "ORDER-5" }, "positive refund amount"],
+  ])("rejects malformed callback payloads instead of inferring paid: %j", async (payload, message) => {
+    await expect(payUniPaymentProvider.normalizePayload(JSON.stringify(payload))).rejects.toThrow(message);
+  });
 });

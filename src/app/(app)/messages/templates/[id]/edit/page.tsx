@@ -1,11 +1,14 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { MessageTemplateForm } from "@/components/message-template-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { canManageMessageDelivery } from "@/lib/vendor-capabilities";
 
 export default async function EditMessageTemplatePage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const auth = await requireAuth();
+  if (!auth.vendor || !canManageMessageDelivery(auth.member?.role)) redirect("/messages/templates?error=message_manager_required");
+  const vendor = auth.vendor;
   const { id } = await params;
   const template = await getDb().messageTemplate.findFirst({ where: { id, vendorId: vendor.id } });
   if (!template) notFound();

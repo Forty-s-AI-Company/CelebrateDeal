@@ -1,7 +1,7 @@
 import type { Product } from "@prisma/client";
 import { upsertProductAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
-import { Card, Field, SubmitButton, TextArea } from "@/components/ui";
+import { Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 
 export function ProductForm({ product }: { product?: Product }) {
   return (
@@ -16,10 +16,20 @@ export function ProductForm({ product }: { product?: Product }) {
           <Field label="原價（分）" name="compareAtCents" type="number" defaultValue={product?.compareAtCents} />
           <Field label="幣別" name="currency" defaultValue={product?.currency ?? "TWD"} />
           <Field label="庫存" name="inventory" type="number" defaultValue={product?.inventory ?? 0} />
+          <SelectField label="結帳模式" name="checkoutMode" defaultValue={product?.checkoutMode ?? "platform"}>
+            <option value="platform">平台結帳</option>
+            <option value="external">外部商城</option>
+          </SelectField>
+          <Field
+            label="外部商城預設 URL"
+            name="checkoutUrl"
+            type="url"
+            defaultValue={product?.checkoutUrl}
+            placeholder="https://..."
+          />
         </div>
         <TextArea label="商品描述" name="description" defaultValue={product?.description} />
         <Field label="圖片 URL" name="imageUrl" defaultValue={product?.imageUrl} placeholder="https://..." />
-        <Field label="結帳 URL" name="checkoutUrl" defaultValue={product?.checkoutUrl} placeholder="https://..." />
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <input name="isActive" type="checkbox" defaultChecked={product?.isActive ?? true} className="h-4 w-4 accent-blue-600" />
           上架商品

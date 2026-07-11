@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkRateLimit, resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
+import { checkRateLimit, resetInMemoryRateLimitForTests, resetRateLimit } from "@/lib/rate-limit";
 
 function request(ip = "203.0.113.10") {
   return new Request("https://app.example.test/api/test", {
@@ -40,5 +40,18 @@ describe("rate limit providers", () => {
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ Authorization: "Bearer test-token" });
     expect(JSON.parse(String(init?.body))[0]).toBe("EVAL");
+  });
+
+  it("shares a global security bucket across client IPs", async () => {
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+    expect(await checkRateLimit(request("203.0.113.1"), "mfa:user-1", 1, 60_000, { scope: "global" })).toBeNull();
+    expect((await checkRateLimit(request("203.0.113.2"), "mfa:user-1", 1, 60_000, { scope: "global" }))?.status).toBe(429);
+    await expect(resetRateLimit(request("203.0.113.2"), "mfa:user-1", { scope: "global" })).resolves.toBe(true);
+    expect(await checkRateLimit(request("203.0.113.3"), "mfa:user-1", 1, 60_000, { scope: "global" })).toBeNull();
+  });
+
+  it("fails closed for a global application key when only WAF mode is selected", async () => {
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "cloudflare_waf");
+    expect((await checkRateLimit(request(), "invitation:token", 5, 60_000, { scope: "global" }))?.status).toBe(503);
   });
 });

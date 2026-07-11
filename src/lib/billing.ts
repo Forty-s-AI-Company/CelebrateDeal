@@ -1,4 +1,4 @@
-import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
+import type { BillingPlan, PaymentTransaction, Prisma, UsageRecord, VendorSubscription } from "@prisma/client";
 import { getDb } from "@/lib/db";
 
 type SubscriptionWithPlan = VendorSubscription & { plan: BillingPlan };
@@ -34,10 +34,10 @@ function usageTotals(records: UsageRecord[]) {
   };
 }
 
-export async function calculateSettlement(vendorId: string, monthKey: string) {
-  const db = getDb();
+export async function calculateSettlement(vendorId: string, monthKey: string, client?: Prisma.TransactionClient) {
+  const db = client ?? getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, transactions, refundTotal, commissionTotal] = await Promise.all([
+  const [subscription, usageRecords, transactions, refundRecords, commissionTotal, priorLockedSettlement] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -53,20 +53,19 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
       where: {
         vendorId,
         status: { in: ["paid", "partially_refunded", "refunded"] },
-        occurredAt: { gte: start, lt: end },
+        OR: [
+          { bookingMonthKey: monthKey },
+          { bookingMonthKey: null, occurredAt: { gte: start, lt: end } },
+        ],
       },
     }),
-    db.refundRecord.aggregate({
+    db.refundRecord.findMany({
       where: {
         vendorId,
         monthKey,
         status: "processed",
       },
-      _sum: {
-        refundAmountCents: true,
-        gatewayFeeRefundCents: true,
-        platformFeeRefundCents: true,
-      },
+      include: { paymentTransaction: { select: { paymentMode: true } } },
     }),
     db.affiliateCommission.aggregate({
       where: {
@@ -75,6 +74,15 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         status: { in: ["pending", "approved", "locked"] },
       },
       _sum: { commissionAmountCents: true },
+    }),
+    db.settlement.findFirst({
+      where: {
+        vendorId,
+        monthKey: { lt: monthKey },
+        lockedAt: { not: null },
+      },
+      orderBy: { monthKey: "desc" },
+      select: { carryForwardAmountCents: true },
     }),
   ]);
 
@@ -95,25 +103,23 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     ceilCharge(overflowAffiliates, 10, plan.overflowAffiliateUnitPriceCents) +
     ceilCharge(overflowStorageMinutes, 100, plan.overflowStorageMinutePriceCents * 100);
 
-  const paymentMode = subscription.paymentMode;
-  const refundAmountCents = refundTotal._sum.refundAmountCents ?? 0;
-  const gatewayFeeRefundCents = refundTotal._sum.gatewayFeeRefundCents ?? 0;
-  const platformFeeRefundCents = refundTotal._sum.platformFeeRefundCents ?? 0;
-  const grossRevenueBeforeRefundCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
-  const grossRevenueCents = Math.max(0, grossRevenueBeforeRefundCents - refundAmountCents);
-  const paymentGatewayFeeCents = paymentMode === "platform"
-    ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
-    : 0;
-  const transactionFeeRateBps = subscription.customFeeRateBps ?? plan.transactionFeeRateBps;
-  const transactionServiceFeeCents = paymentMode === "platform"
-    ? Math.max(0, Math.round((grossRevenueCents * transactionFeeRateBps) / 10000) - platformFeeRefundCents)
-    : 0;
-  const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
+  const platformTransactions = transactions.filter((transaction) => transaction.paymentMode === "platform");
+  const platformRefunds = refundRecords.filter((refund) => refund.paymentTransaction.paymentMode === "platform");
+  const refundAmountCents = platformRefunds.reduce((sum, refund) => sum + refund.refundAmountCents, 0);
+  const gatewayFeeRefundCents = platformRefunds.reduce((sum, refund) => sum + refund.gatewayFeeRefundCents, 0);
+  const platformFeeRefundCents = platformRefunds.reduce((sum, refund) => sum + refund.platformFeeRefundCents, 0);
+  const grossRevenueBeforeRefundCents = platformTransactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
+  const grossRevenueCents = grossRevenueBeforeRefundCents - refundAmountCents;
+  const paymentGatewayFeeCents = platformTransactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents;
+  const transactionServiceFeeCents = platformTransactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents, 0) - platformFeeRefundCents;
+  const paymentServiceFeeCents = platformTransactions.length > 0 || platformRefunds.length > 0 ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
   const monthlyFeeCents = plan.monthlyPriceCents;
-  const payoutableAmountCents = paymentMode === "platform"
-    ? grossRevenueCents - paymentGatewayFeeCents - transactionServiceFeeCents - (commissionTotal._sum.commissionAmountCents ?? 0)
-    : 0;
+  const payoutableAmountCents = grossRevenueCents
+    - paymentGatewayFeeCents
+    - transactionServiceFeeCents
+    - (commissionTotal._sum.commissionAmountCents ?? 0);
+  const carryInAmountCents = priorLockedSettlement?.carryForwardAmountCents ?? 0;
 
   return {
     subscription,
@@ -134,7 +140,7 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     gatewayFeeRefundCents,
     platformFeeRefundCents,
     payoutableAmountCents,
-    finalPayoutAmountCents: payoutableAmountCents,
+    carryInAmountCents,
   };
 }
 

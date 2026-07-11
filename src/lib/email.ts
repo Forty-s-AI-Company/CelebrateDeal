@@ -3,6 +3,7 @@ type SendEmailInput = {
   subject: string;
   html?: string;
   text?: string;
+  idempotencyKey?: string;
 };
 
 function escapeHtml(value: string) {
@@ -27,6 +28,7 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from,
@@ -38,7 +40,7 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
   });
 
   if (!response.ok) {
-    throw new Error(`Resend email failed: ${await response.text()}`);
+    throw new Error(`Resend email failed with HTTP ${response.status}`);
   }
 
   return response.json();

@@ -8,7 +8,7 @@ import {
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader, SubmitButton } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -24,7 +24,7 @@ function statusTone(status: string) {
 }
 
 export default async function AdminBillingSettlementsPage() {
-  await requireFinanceAdmin();
+  await requirePlatformAdmin();
   const db = getDb();
   const [vendors, settlements] = await Promise.all([
     db.vendor.findMany({

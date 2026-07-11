@@ -21,8 +21,8 @@ export const demoPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const rawPayload = JSON.parse(rawBody);
     const payload = PaymentWebhookPayload.parse({
-      provider: "demo",
       ...rawPayload,
+      provider: "demo",
     });
     return { payload, rawPayload };
   },

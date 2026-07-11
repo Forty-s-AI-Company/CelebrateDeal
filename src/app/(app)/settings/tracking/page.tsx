@@ -30,6 +30,17 @@ export default async function TrackingSettingsPage() {
               </label>
             ))}
           </div>
+          <div className="grid gap-4 border-t border-border pt-5 md:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+              推薦歸因規則
+              <select name="attributionPolicy" defaultValue={tracking?.attributionPolicy ?? "last_touch"} className="h-10 rounded-md border border-border bg-white px-3 text-sm">
+                <option value="last_touch">Last touch（最後一次有效推薦）</option>
+                <option value="first_touch">First touch（第一次有效推薦）</option>
+              </select>
+            </label>
+            <Field label="歸因期限（天）" name="attributionWindowDays" type="number" min={1} max={90} defaultValue={tracking?.attributionWindowDays ?? 30} />
+          </div>
+          <p className="text-sm text-slate-500">每次來源點擊都會記錄；First touch 會保留期限內第一筆有效推薦，Last touch 會更新為最新一筆。跨裝置不自動合併。</p>
           <SubmitButton />
         </form>
       </Card>

@@ -1,4 +1,4 @@
-import { Plus, WalletCards } from "lucide-react";
+import { FileCheck2, Link2, Plus, WalletCards } from "lucide-react";
 import { Badge, ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -18,6 +18,8 @@ export default async function AffiliatesPage() {
         description="管理推廣碼、來源渠道、點擊、報名與轉換摘要。"
         action={
           <div className="flex flex-wrap gap-2">
+            <ButtonLink href="/affiliates/external-orders" tone="secondary"><FileCheck2 size={16} />外部訂單</ButtonLink>
+            <ButtonLink href="/affiliates/links" tone="secondary"><Link2 size={16} />個人商城連結</ButtonLink>
             <ButtonLink href="/affiliates/commissions" tone="secondary"><WalletCards size={16} />分潤報表</ButtonLink>
             <ButtonLink href="/affiliates/new"><Plus size={16} />新增夥伴</ButtonLink>
           </div>

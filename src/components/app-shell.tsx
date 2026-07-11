@@ -1,18 +1,20 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, CreditCard, Gauge, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, WalletCards } from "lucide-react";
+import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, CreditCard, Gauge, GraduationCap, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, WalletCards } from "lucide-react";
 import { logoutAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 
-const navGroups = [
+const vendorNavGroups = [
   {
     label: "營運",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Gauge },
       { href: "/lives", label: "直播間", icon: Radio },
+      { href: "/courses", label: "課程與銷講", icon: GraduationCap },
       { href: "/videos", label: "影片", icon: PlaySquare },
       { href: "/products", label: "商品", icon: Boxes },
       { href: "/forms", label: "報名表", icon: ClipboardList },
       { href: "/messages/templates", label: "訊息模板", icon: Bell },
+      { href: "/messages/deliveries", label: "通知紀錄", icon: Bell },
     ],
   },
   {
@@ -32,9 +34,6 @@ const navGroups = [
       { href: "/billing/invoices", label: "帳單", icon: ReceiptText },
       { href: "/billing/settlements", label: "月結", icon: WalletCards },
       { href: "/billing/payouts", label: "批次出款", icon: Banknote },
-      { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield },
-      { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText },
-      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud },
     ],
   },
   {
@@ -47,17 +46,35 @@ const navGroups = [
   },
 ];
 
+const adminNavGroups = [
+  {
+    label: "平台營運",
+    items: [
+      { href: "/admin/billing/dashboard", label: "財務總覽", icon: Shield },
+      { href: "/admin/billing/settlements", label: "月結管理", icon: WalletCards },
+      { href: "/admin/billing/payouts", label: "批次出款", icon: Banknote },
+      { href: "/admin/billing/affiliate-payouts", label: "聯盟出款", icon: Handshake },
+      { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText },
+      { href: "/admin/billing/external-orders", label: "外部訂單證據", icon: ClipboardList },
+      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud },
+    ],
+  },
+];
+
 export function AppShell({
   children,
   vendorName,
+  mode = "vendor",
 }: {
   children: React.ReactNode;
   vendorName: string;
+  mode?: "vendor" | "admin";
 }) {
+  const navGroups = mode === "admin" ? adminNavGroups : vendorNavGroups;
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-white p-4 lg:block">
-        <Link href="/dashboard" className="mb-8 flex items-center gap-3">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-border bg-white p-4 lg:flex">
+        <Link href={mode === "admin" ? "/admin/billing/dashboard" : "/dashboard"} className="mb-6 flex shrink-0 items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-white">
             <Tags size={20} />
           </span>
@@ -67,7 +84,7 @@ export function AppShell({
           </span>
         </Link>
 
-        <nav className="space-y-6">
+        <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
           {navGroups.map((group) => (
             <div key={group.label}>
               <p className="mb-2 px-2 text-xs font-semibold uppercase text-slate-400">{group.label}</p>
@@ -87,7 +104,7 @@ export function AppShell({
           ))}
         </nav>
 
-        <form action={logoutAction} className="absolute bottom-4 left-4 right-4">
+        <form action={logoutAction} className="mt-4 shrink-0">
           <CsrfField />
           <button className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
             <Lock size={16} />
@@ -98,7 +115,7 @@ export function AppShell({
 
       <header className="sticky top-0 z-20 border-b border-border bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="font-bold text-slate-950">CelebrateDeal</Link>
+          <Link href={mode === "admin" ? "/admin/billing/dashboard" : "/dashboard"} className="font-bold text-slate-950">CelebrateDeal</Link>
           <form action={logoutAction}>
             <CsrfField />
             <button className="rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-slate-600">登出</button>

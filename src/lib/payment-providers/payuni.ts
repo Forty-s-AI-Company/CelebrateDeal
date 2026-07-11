@@ -8,11 +8,12 @@ function cents(value: unknown) {
 }
 
 function normalizeEventType(value: unknown) {
-  const raw = String(value ?? "").toLowerCase();
-  if (raw.includes("partial")) return "partially_refunded";
-  if (raw.includes("refund")) return "refunded";
-  if (raw.includes("fail") || raw.includes("cancel")) return "failed";
-  return "paid";
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (["paid", "success", "succeeded", "1"].includes(raw)) return "paid" as const;
+  if (["partially_refunded", "partial_refund", "partial-refund"].includes(raw)) return "partially_refunded" as const;
+  if (["refunded", "refund", "fully_refunded", "full_refund"].includes(raw)) return "refunded" as const;
+  if (["failed", "fail", "cancel", "canceled", "cancelled", "0"].includes(raw)) return "failed" as const;
+  throw new Error("Unsupported or missing PayUni event status.");
 }
 
 function safeEqual(a: string, b: string) {
@@ -157,22 +158,33 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
-    const orderNumber = rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber;
-    const eventId = rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber;
+    const orderNumber = String(rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber ?? "").trim();
+    const eventId = String(rawPayload.EventId ?? rawPayload.TsNo ?? "").trim();
+    if (!orderNumber) throw new Error("Missing PayUni order number.");
+    if (!eventId) throw new Error("Missing PayUni event ID.");
+    const eventType = normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus);
+    const grossAmountCents = cents(rawPayload.Amount ?? rawPayload.TradeAmt);
+    const refundAmountCents = cents(rawPayload.RefundAmount);
+    if (eventType === "paid" && grossAmountCents <= 0) {
+      throw new Error("PayUni paid event requires a positive gross amount.");
+    }
+    if ((eventType === "refunded" || eventType === "partially_refunded") && refundAmountCents <= 0) {
+      throw new Error("PayUni refund event requires a positive refund amount.");
+    }
     const normalized = {
       provider: "payuni",
-      eventId: String(eventId),
-      eventType: normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus),
+      eventId,
+      eventType,
       vendorSlug: rawPayload.VendorSlug ? String(rawPayload.VendorSlug) : undefined,
       vendorId: rawPayload.VendorId ? String(rawPayload.VendorId) : undefined,
-      orderNumber: String(orderNumber),
+      orderNumber,
       providerTradeNo: rawPayload.TradeNo ? String(rawPayload.TradeNo) : undefined,
       paymentMode: "platform",
-      grossAmountCents: cents(rawPayload.Amount ?? rawPayload.TradeAmt),
+      grossAmountCents,
       gatewayFeeCents: cents(rawPayload.GatewayFee),
       platformFeeCents: cents(rawPayload.PlatformFee),
       netAmountCents: cents(rawPayload.NetAmount),
-      refundAmountCents: cents(rawPayload.RefundAmount),
+      refundAmountCents,
       gatewayFeeRefundCents: cents(rawPayload.GatewayFeeRefund),
       platformFeeRefundCents: cents(rawPayload.PlatformFeeRefund),
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,

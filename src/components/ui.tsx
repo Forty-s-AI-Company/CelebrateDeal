@@ -78,6 +78,8 @@ export function Field({
   type = "text",
   required,
   placeholder,
+  min,
+  max,
 }: {
   label: string;
   name: string;
@@ -85,6 +87,8 @@ export function Field({
   type?: string;
   required?: boolean;
   placeholder?: string;
+  min?: number;
+  max?: number;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -95,6 +99,8 @@ export function Field({
         type={type}
         required={required}
         placeholder={placeholder}
+        min={min}
+        max={max}
         defaultValue={defaultValue ?? ""}
       />
     </label>

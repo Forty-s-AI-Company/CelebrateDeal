@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRound } from "lucide-react";
 import { LeadForm } from "@/components/lead-form";
 import { formatCurrency } from "@/lib/format";
+import { safeCommerceUrlOrNull } from "@/lib/safe-commerce-url";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -64,6 +65,8 @@ type LivePageData = {
 };
 
 type CheckoutResponse = {
+  checkoutMode?: "platform" | "external";
+  redirectUrl?: string | null;
   checkoutUrl?: string | null;
   formAction?: string;
   formMethod?: "POST";
@@ -86,10 +89,17 @@ function secondsLabel(seconds: number) {
 }
 
 function submitCheckout(checkout: CheckoutResponse) {
-  if (checkout.formAction && checkout.formPayload) {
+  const safeRedirectUrl = safeCommerceUrlOrNull(checkout.redirectUrl);
+  if (checkout.checkoutMode === "external" && safeRedirectUrl) {
+    window.location.href = safeRedirectUrl;
+    return true;
+  }
+
+  const safeFormAction = safeCommerceUrlOrNull(checkout.formAction);
+  if (safeFormAction && checkout.formPayload) {
     const form = document.createElement("form");
     form.method = checkout.formMethod ?? "POST";
-    form.action = checkout.formAction;
+    form.action = safeFormAction;
     form.style.display = "none";
 
     for (const [name, value] of Object.entries(checkout.formPayload)) {
@@ -105,8 +115,9 @@ function submitCheckout(checkout: CheckoutResponse) {
     return true;
   }
 
-  if (checkout.checkoutUrl) {
-    window.location.href = checkout.checkoutUrl;
+  const safeCheckoutUrl = safeCommerceUrlOrNull(checkout.checkoutUrl);
+  if (safeCheckoutUrl) {
+    window.location.href = safeCheckoutUrl;
     return true;
   }
 
@@ -190,8 +201,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       return;
     }
 
-    if (checkoutUrl) {
-      window.location.href = checkoutUrl;
+    const safeCheckoutUrl = safeCommerceUrlOrNull(checkoutUrl);
+    if (safeCheckoutUrl) {
+      window.location.href = safeCheckoutUrl;
     }
   }
 
@@ -202,8 +214,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       headers: clientHeaders,
       body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "cta_click", payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode } }),
     });
-    if (latestCtaEvent.ctaUrl) {
-      window.open(latestCtaEvent.ctaUrl, "_blank", "noopener,noreferrer");
+    const safeCtaUrl = safeCommerceUrlOrNull(latestCtaEvent.ctaUrl);
+    if (safeCtaUrl) {
+      window.open(safeCtaUrl, "_blank", "noopener,noreferrer");
     }
   }
 

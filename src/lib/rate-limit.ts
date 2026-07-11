@@ -22,6 +22,8 @@ type RateLimitDecision = {
   retryAfterSeconds?: number;
 };
 
+type RateLimitOptions = { scope?: "ip" | "global" };
+
 function clientIp(request: Request) {
   return (
     request.headers.get("cf-connecting-ip")
@@ -80,11 +82,11 @@ function serviceUnavailable() {
   );
 }
 
-async function memoryDecision(request: Request, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+async function memoryDecision(request: Request, key: string, limit: number, windowMs: number, options: RateLimitOptions): Promise<RateLimitDecision> {
   const now = Date.now();
   cleanup(now);
 
-  const bucketKey = `${key}:${clientIp(request)}`;
+  const bucketKey = options.scope === "global" ? key : `${key}:${clientIp(request)}`;
   const current = buckets.get(bucketKey);
   const bucket = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs };
 
@@ -101,14 +103,14 @@ async function memoryDecision(request: Request, key: string, limit: number, wind
   };
 }
 
-async function upstashDecision(request: Request, key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+async function upstashDecision(request: Request, key: string, limit: number, windowMs: number, options: RateLimitOptions): Promise<RateLimitDecision> {
   const restUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!restUrl || !token) {
     throw new Error("Upstash Redis REST env is not configured.");
   }
 
-  const bucketKey = `celebratedeal:rl:${key}:${clientIp(request)}`;
+  const bucketKey = `celebratedeal:rl:${key}${options.scope === "global" ? "" : `:${clientIp(request)}`}`;
   const response = await fetch(restUrl, {
     method: "POST",
     headers: {
@@ -136,19 +138,19 @@ async function upstashDecision(request: Request, key: string, limit: number, win
   };
 }
 
-export async function checkRateLimit(request: Request, key: string, limit: number, windowMs: number) {
+export async function checkRateLimit(request: Request, key: string, limit: number, windowMs: number, options: RateLimitOptions = {}) {
   const provider = getRateLimitProviderId();
 
   if (provider === "cloudflare_waf") {
     // Cloudflare WAF is enforced before the request reaches Next.js.
-    return null;
+    return options.scope === "global" ? serviceUnavailable() : null;
   }
 
   let decision: RateLimitDecision;
   try {
     decision = provider === "upstash_redis"
-      ? await upstashDecision(request, key, limit, windowMs)
-      : await memoryDecision(request, key, limit, windowMs);
+      ? await upstashDecision(request, key, limit, windowMs, options)
+      : await memoryDecision(request, key, limit, windowMs, options);
   } catch {
     return serviceUnavailable();
   }
@@ -158,6 +160,27 @@ export async function checkRateLimit(request: Request, key: string, limit: numbe
   }
 
   return tooManyRequests(decision.retryAfterSeconds ?? Math.ceil(windowMs / 1000));
+}
+
+export async function resetRateLimit(request: Request, key: string, options: RateLimitOptions = {}) {
+  const provider = getRateLimitProviderId();
+  const suffix = options.scope === "global" ? key : `${key}:${clientIp(request)}`;
+  if (provider === "memory") {
+    buckets.delete(suffix);
+    return true;
+  }
+  if (provider !== "upstash_redis") return false;
+
+  const restUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!restUrl || !token) return false;
+  const response = await fetch(restUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(["DEL", `celebratedeal:rl:${suffix}`]),
+    cache: "no-store",
+  });
+  return response.ok;
 }
 
 export function resetInMemoryRateLimitForTests() {

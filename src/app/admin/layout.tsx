@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { vendor, isPlatformAdmin } = await requireFinanceAdmin();
-  return <AppShell vendorName={isPlatformAdmin ? "平台管理" : vendor?.name ?? "財務管理"}>{children}</AppShell>;
+  await requirePlatformAdmin();
+  return <AppShell vendorName="平台管理" mode="admin">{children}</AppShell>;
 }

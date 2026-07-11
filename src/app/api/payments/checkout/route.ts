@@ -3,13 +3,17 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
-import { getPaymentProvider } from "@/lib/payment-providers";
+import { getPaymentProvider, UnsupportedPaymentProviderError } from "@/lib/payment-providers";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { resolveRequestAttribution } from "@/lib/attribution";
+import {
+  ExternalStorefrontError,
+  resolveExternalStorefrontRedirect,
+} from "@/lib/external-storefront";
 
 const CheckoutRequest = z.object({
   vendorId: z.string().min(1),
   productId: z.string().min(1),
-  referralCode: z.string().optional(),
 });
 
 function orderNumber() {
@@ -44,12 +48,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
 
+  const attribution = await resolveRequestAttribution(request, product.vendorId);
+  if (product.checkoutMode === "external") {
+    try {
+      const redirect = await resolveExternalStorefrontRedirect({
+        vendorId: product.vendorId,
+        productId: product.id,
+        affiliateId: attribution?.affiliate.id,
+      });
+      return NextResponse.json({
+        ok: true,
+        checkoutMode: "external",
+        redirectUrl: redirect.redirectUrl,
+        trackingIdentity: {
+          vendorId: product.vendorId,
+          productId: product.id,
+          affiliateId: attribution?.affiliate.id ?? null,
+          referralCode: attribution?.affiliate.code ?? null,
+          attributionClickId: attribution?.id ?? null,
+          affiliateProductLinkId: redirect.affiliateProductLinkId,
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof ExternalStorefrontError)) throw error;
+      const status = error.code === "ownership_mismatch" ? 404 : 422;
+      return NextResponse.json({ error: error.message, code: error.code }, { status });
+    }
+  }
+
   if (product.inventory <= 0) {
     return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
   }
 
   const order = orderNumber();
-  const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
+  let provider: ReturnType<typeof getPaymentProvider>;
+  try {
+    provider = getPaymentProvider(process.env.PAYMENT_PROVIDER);
+  } catch (error) {
+    if (!(error instanceof UnsupportedPaymentProviderError)) throw error;
+    return NextResponse.json({ error: "Payment service is not configured" }, { status: 503 });
+  }
   const transaction = await db.paymentTransaction.create({
     data: {
       vendorId: parsed.data.vendorId,
@@ -63,7 +101,11 @@ export async function POST(request: Request) {
       metadata: {
         productId: parsed.data.productId,
         productName: product.name,
-        referralCode: parsed.data.referralCode,
+        referralCode: attribution?.affiliate.code,
+        affiliateId: attribution?.affiliate.id,
+        commissionRateBps: attribution?.affiliate.commissionRateBps,
+        attributionPolicyVersion: attribution?.policyVersion,
+        attributionClickId: attribution?.id,
       },
     },
   });
@@ -73,7 +115,7 @@ export async function POST(request: Request) {
         transaction,
         product,
         vendor: product.vendor,
-        referralCode: parsed.data.referralCode,
+        referralCode: attribution?.affiliate.code,
         appUrl,
       })
     : {
@@ -90,7 +132,11 @@ export async function POST(request: Request) {
       metadata: {
         productId: parsed.data.productId,
         productName: product.name,
-        referralCode: parsed.data.referralCode,
+        referralCode: attribution?.affiliate.code,
+        affiliateId: attribution?.affiliate.id,
+        commissionRateBps: attribution?.affiliate.commissionRateBps,
+        attributionPolicyVersion: attribution?.policyVersion,
+        attributionClickId: attribution?.id,
         checkoutSession: {
           provider: checkoutSession.provider,
           mode: checkoutSession.mode,

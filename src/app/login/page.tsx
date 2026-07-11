@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { loginAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 
@@ -42,8 +43,8 @@ export default async function LoginPage({
           <button className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">登入</button>
         </form>
         <div className="mt-4 flex items-center justify-between text-sm">
-          <a href="/password-reset/request" className="font-semibold text-primary hover:underline">忘記密碼</a>
-          <a href="/dashboard" className="text-slate-400 hover:text-slate-600">返回首頁</a>
+          <Link href="/password-reset/request" className="font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">忘記密碼</Link>
+          <Link href="/dashboard" className="text-slate-600 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">返回首頁</Link>
         </div>
       </section>
     </main>

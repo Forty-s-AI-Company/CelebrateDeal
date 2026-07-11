@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getCloudflareStreamDiagnostics } from "@/lib/cloudflare-diagnostics";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
@@ -13,7 +13,7 @@ function statusTone(status: string, ready: boolean) {
 }
 
 export default async function AdminCloudflareVideosPage() {
-  const auth = await requireFinanceAdmin();
+  const auth = await requirePlatformAdmin();
   const diagnostics = getCloudflareStreamDiagnostics();
   const videos = await getDb().video.findMany({
     where: auth.isPlatformAdmin ? {} : { vendorId: auth.vendor?.id ?? "__none" },

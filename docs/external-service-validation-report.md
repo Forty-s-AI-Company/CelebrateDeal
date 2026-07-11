@@ -122,7 +122,7 @@ SMOKE_TEST_EMAIL=you@example.com npm run external:smoke
 - Cloudflare Stream direct upload / ready webhook 驗證通過。
 - Supabase restore drill 完成。
 
-## 6. 2026-07-09 Sandbox 閉環實測結果
+## 6. 2026-07-09 Repo Fixture Replay（非 PayUni Dashboard 驗收）
 
 本輪使用本機 dev server `http://localhost:31023` 執行：
 
@@ -132,6 +132,7 @@ RUN_CLOUDFLARE_SMOKE=true \
 RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true \
 SMOKE_VENDOR_ID=cmrd3zwyn0004vdx0nceozret \
 SMOKE_VENDOR_SLUG=wuhe-select \
+SMOKE_PRODUCT_ID=<active-platform-product-id> \
 npm run external:smoke
 ```
 
@@ -151,7 +152,8 @@ npm run external:smoke
 
 判讀：
 
-- PayUni sandbox webhook 閉環在本機已可重播驗收，代表 provider adapter、idempotency、refund attribution、reconciliation 基本流程可用。
+- 此段僅證明 repo 產生的 signed fixture 可通過 adapter、idempotency、refund attribution 與 reconciliation；不等於 PayUni dashboard 或真實 sandbox callback 驗收。
+- 最新 smoke 必須先以 `SMOKE_PRODUCT_ID` 呼叫 checkout 建立 pending transaction，才會重播 paid／duplicate／refund；舊版直接使用自製 order number 的結果不再作為 release evidence。
 - Cloudflare Stream 目前的阻塞點是外部帳號或 Token 權限，不是 repo 內 direct upload / webhook 寫回邏輯。需修正 Cloudflare account mapping 或 token scope 後，再重跑 ready webhook 與 live input 驗收。External required。
 - Resend transactional email 發送程式已接上，但實際送達驗收尚未執行。External required。
 
@@ -311,3 +313,21 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 - Cloudflare dashboard 修正 token / account 後，才能完成 direct upload、ready webhook、Live Input 真實驗收。
 - 真實 VOD webhook signing secret 需從 Cloudflare Stream webhook subscription 取得，不能使用 local smoke secret。
+
+## 11. 2026-07-11 Repo-local Staging Handoff
+
+Repo 內 adapter、fixture、diagnostics、redaction、retry、reconciliation、preflight 與 staging workflow 均已具備；PayUni smoke 現在會先透過 checkout 建立 pending transaction，再重播 paid／duplicate／refund fixture。本輪未使用或提交任何真實 secret，也未執行 production deployment。
+
+外部驗收仍須依序完成：
+
+1. Supabase staging migration、health check、snapshot/restore drill。
+2. Vercel staging env 與 protected deployment。
+3. Cloudflare Stream token/account 修正後，direct upload、Live Input、真實 official-signature ready callback。
+4. PayUni sandbox checkout、paid/refunded/duplicate webhook 與 reconciliation。
+5. Resend verified domain、password reset 與通知實收。
+6. Upstash Redis 或 Cloudflare WAF durable rate limit smoke。
+7. Sentry/PostHog event、source map/funnel 與 alert rules。
+
+以上均為 `External required`，不因本機 fixture 通過而視為完成。
+
+Repo-local release gate 於 2026-07-11 更新為：25 migrations、169 tests、72-route build、13 smoke、7 axe、32 visual comparisons 與 Lighthouse。新增逐交易 paymentMode 月結、晚到退款跨月 carry ledger、immutable paid fee snapshot、processed-only RefundRecord counter trigger、composite tenant FK、DB caps、按月 lock、clean deploy、legacy/missing-subscription fail-closed 與 atomic partial-failure drills。這些結果只允許進入 Staging 外部驗收，不替代上列 dashboard/sandbox evidence。

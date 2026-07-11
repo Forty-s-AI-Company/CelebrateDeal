@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { LivePlayback } from "@/components/live-playback";
 import { getDb } from "@/lib/db";
+import {
+  getLivePublicationIssue,
+  hasForeignLiveRelations,
+  isLivePubliclyAccessible,
+} from "@/lib/live-publication";
 
 function normalizeFields(fields: unknown) {
   if (!Array.isArray(fields)) return [];
@@ -36,7 +41,15 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     },
   });
 
-  if (!live) notFound();
+  if (!live || !isLivePubliclyAccessible(live.status, live.replayEnabled)) notFound();
+  if (hasForeignLiveRelations(live)) notFound();
+  if (getLivePublicationIssue({
+    status: live.status,
+    streamMode: live.streamMode,
+    videoId: live.videoId,
+    videoStatus: live.video?.status ?? null,
+    cloudflareLiveInputUid: live.cloudflareLiveInputUid,
+  })) notFound();
 
   return (
     <LivePlayback

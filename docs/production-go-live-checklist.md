@@ -45,6 +45,7 @@
 - [ ] `/admin/cloudflare/videos` 可看到 ready 狀態、playback URL 與 streamKeyRef
 - [ ] Checkout API 使用 Product price 建立 transaction，任意前端金額不可影響訂單金額
 - [ ] PayUni sandbox checkout redirect / form post 成功（External required）
+- [ ] `STAGING_SMOKE_PRODUCT_ID` 指向 active platform-checkout product，且屬於 `STAGING_SMOKE_VENDOR_ID`
 - [ ] PayUni sandbox paid webhook 成功建立 payment transaction（External required）
 - [ ] PayUni sandbox refunded webhook 成功建立 refund record（External required）
 - [ ] PayUni duplicate webhook 不重複入帳（External required）
@@ -90,6 +91,15 @@
 - [ ] PostHog production project 可收到事件（External required）
 
 ## 4. Go / No-go
+
+Repo-local evidence（2026-07-11）：
+
+- [x] PostgreSQL 25 migrations clean deploy/status
+- [x] Legacy locked-refund migration fail-closed drill
+- [x] Fee over-cap atomic rollback drill
+- [x] Unit/integration/API、lint、typecheck、build、preflight
+- [x] E2E smoke、axe accessibility、desktop/laptop/tablet/mobile visual baseline
+- [ ] Staging sandbox 與 dashboard evidence（External required）
 
 正式收費前必須全部通過：
 

@@ -59,6 +59,7 @@ export default async function BillingUsagePage() {
           <Card><UsageBar label="串流分鐘" used={limit.streamMinutesUsed} limit={limit.streamMinutesLimit} unit="分鐘" /></Card>
           <Card><UsageBar label="儲存分鐘" used={limit.storageMinutesUsed} limit={limit.storageMinutesLimit} unit="分鐘" /></Card>
           <Card><UsageBar label="點數" used={limit.creditsUsed} limit={limit.creditsLimit} unit="點" /></Card>
+          <Card><UsageBar label="通知 Email" used={limit.notificationEmailsUsed} limit={limit.notificationEmailsLimit} unit="封" /></Card>
         </div>
       ) : null}
       <Card className="mt-6">

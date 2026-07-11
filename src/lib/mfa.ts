@@ -164,6 +164,10 @@ export function verifyRecoveryCode(code: string, codeHash: string) {
   return verifyPassword(normalizeCode(code), codeHash);
 }
 
+export function isRecoveryCodeFormat(code: string) {
+  return /^[A-F0-9]{10}$/i.test(normalizeCode(code));
+}
+
 export function serializePendingMfaSetup(secret: string) {
   return encryptText(JSON.stringify({ secret, createdAt: Date.now() }));
 }

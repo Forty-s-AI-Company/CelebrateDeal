@@ -1,7 +1,9 @@
 import { Download, Landmark } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { maskBankAccount } from "@/lib/financial-data";
 
 function statusTone(status: string) {
   if (status === "executed" || status === "paid") return "green" as const;
@@ -11,12 +13,27 @@ function statusTone(status: string) {
 }
 
 export default async function BillingPayoutsPage() {
+  const vendor = await requireVendor();
   const batches = await getDb().payoutBatch.findMany({
+    where: { items: { some: { vendorId: vendor.id } } },
     orderBy: { batchDate: "desc" },
-    include: {
+    select: {
+      id: true,
+      batchNumber: true,
+      batchDate: true,
+      status: true,
       items: {
-        include: { vendor: true, settlement: true },
+        where: { vendorId: vendor.id },
         orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          bankAccountName: true,
+          bankCode: true,
+          bankAccountNumber: true,
+          payoutAmountCents: true,
+          status: true,
+          failReason: true,
+        },
       },
     },
   });
@@ -58,7 +75,7 @@ export default async function BillingPayoutsPage() {
                     <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    批次日 {formatDateTime(batch.batchDate)} · {batch.totalCount} 筆 · {formatCurrency(batch.totalAmountCents)}
+                    批次日 {formatDateTime(batch.batchDate)} · {batch.items.length} 筆 · {formatCurrency(batch.items.reduce((sum, item) => sum + item.payoutAmountCents, 0))}
                   </p>
                 </div>
                 <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -82,10 +99,10 @@ export default async function BillingPayoutsPage() {
                   <tbody className="divide-y divide-border">
                     {batch.items.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-50/70">
-                        <td className="px-5 py-4 font-semibold text-slate-950">{item.vendor.name}</td>
+                        <td className="px-5 py-4 font-semibold text-slate-950">{vendor.name}</td>
                         <td className="px-5 py-4">
                           <Landmark className="mr-2 inline text-slate-400" size={16} />
-                          {item.bankCode} / {item.bankAccountNumber}
+                          {item.bankCode} / {maskBankAccount(item.bankAccountNumber)}
                         </td>
                         <td className="px-5 py-4">{item.bankAccountName}</td>
                         <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(item.payoutAmountCents)}</td>

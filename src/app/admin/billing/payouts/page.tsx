@@ -3,7 +3,7 @@ import { Download, Landmark, RotateCcw } from "lucide-react";
 import { markPayoutBatchExportedAction, updatePayoutItemStatusAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -15,7 +15,7 @@ function statusTone(status: string) {
 }
 
 export default async function AdminBillingPayoutsPage() {
-  await requireFinanceAdmin();
+  await requirePlatformAdmin();
   const batches = await getDb().payoutBatch.findMany({
     orderBy: { batchDate: "desc" },
     include: {

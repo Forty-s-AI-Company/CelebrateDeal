@@ -1,0 +1,24 @@
+{
+  "issues": [
+    {
+      "id": "QA-AUTO-002",
+      "title": "Autonomous Repair Engine Re-Validation (534e827)",
+      "type": "test",
+      "priority": "P2",
+      "status": "closed",
+      "description": "Validation completed for the autonomous QA repair engine and pipeline state machine.",
+      "reproduction": "1. Run npm run automation:test\n2. Run npm run ai:validate\n3. Run npm run security:secrets\n4. Run npm run ai:doctor\n5. Run npm run ai:auto-cycle:once",
+      "expected": "Untrusted QA must be tightly controlled by automatic-qa-repair-v1 promotion. Workspace-write must be isolated, receipt must contain CAS signatures, and pipeline must handle crashes/races.",
+      "actual": "All 12 criteria passed. AI Team control plane correctly handles untrusted QA artifacts and isolates writes through validation trees.",
+      "evidence": {
+        "exit_codes": {
+          "automation:test": 0,
+          "ai:validate": 0,
+          "security:secrets": 0,
+          "ai:doctor": 0,
+          "ai:auto-cycle:once": 0
+        }
+      }
+    }
+  ]
+}

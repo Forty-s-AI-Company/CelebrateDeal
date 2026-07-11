@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createDirectCreatorUpload, createLiveInput } from "@/lib/cloudflare-stream";
 import { getDb } from "@/lib/db";
+import { assertVendorEntitlement } from "@/lib/entitlements";
 
 export const DirectUploadRequest = z.object({
   vendorId: z.string().min(1),
@@ -17,12 +18,16 @@ export const LiveInputRequest = z.object({
 });
 
 export async function createDirectUploadMapping(input: z.infer<typeof DirectUploadRequest>) {
-  const upload = await createDirectCreatorUpload(input.maxDurationSeconds);
   const db = getDb();
-  const videoUrl = `https://videodelivery.net/${upload.uid}/manifest/video.m3u8`;
   const existingVideo = input.videoId
     ? await db.video.findFirst({ where: { id: input.videoId, vendorId: input.vendorId }, select: { id: true } })
     : null;
+  if (input.videoId && !existingVideo) throw new Error("Cloudflare video mapping is not available");
+  await assertVendorEntitlement(input.vendorId, "direct_upload", {
+    requestedUnits: Math.ceil(input.maxDurationSeconds / 60),
+  });
+  const upload = await createDirectCreatorUpload(input.maxDurationSeconds);
+  const videoUrl = `https://videodelivery.net/${upload.uid}/manifest/video.m3u8`;
   const video = existingVideo
     ? await db.video.update({
         where: { id: existingVideo.id },
@@ -55,11 +60,18 @@ export async function createDirectUploadMapping(input: z.infer<typeof DirectUplo
 }
 
 export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequest>) {
-  const liveInput = await createLiveInput(input.name);
   const db = getDb();
   const existingVideo = input.videoId
     ? await db.video.findFirst({ where: { id: input.videoId, vendorId: input.vendorId }, select: { id: true } })
     : null;
+  const existingLive = input.liveId
+    ? await db.live.findFirst({ where: { id: input.liveId, vendorId: input.vendorId }, select: { id: true } })
+    : null;
+  if (input.videoId && !existingVideo || input.liveId && !existingLive) {
+    throw new Error("Cloudflare live input mapping is not available");
+  }
+  await assertVendorEntitlement(input.vendorId, "live_input", { requestedUnits: 1 });
+  const liveInput = await createLiveInput(input.name);
   const videoUrl = `https://videodelivery.net/${liveInput.uid}/manifest/video.m3u8`;
   const video = existingVideo
     ? await db.video.update({
@@ -89,9 +101,9 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
         },
       });
 
-  if (input.liveId) {
+  if (existingLive) {
     await db.live.updateMany({
-      where: { id: input.liveId, vendorId: input.vendorId },
+      where: { id: existingLive.id, vendorId: input.vendorId },
       data: {
         videoId: video.id,
         streamMode: "live",

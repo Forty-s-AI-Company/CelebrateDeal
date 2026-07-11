@@ -5,7 +5,21 @@ import { Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
-export default async function EditLivePage({ params }: { params: Promise<{ id: string }> }) {
+const publicationErrors: Record<string, string> = {
+  vod_video_required: "公開 VOD 直播前必須選擇一支影片。",
+  vod_video_not_ready: "選擇的影片尚未 ready，請等待 Cloudflare Stream 處理完成。",
+  live_input_required: "公開 Live 模式前必須建立並綁定 Cloudflare Live Input UID。",
+  live_input_mapping_required: "Live Input 必須透過 Stream 操作工具建立並綁定播放映射，不能只手動填 UID。",
+};
+
+export default async function EditLivePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const query = await searchParams;
   const vendor = await requireVendor();
   const { id } = await params;
   const db = getDb();
@@ -23,6 +37,7 @@ export default async function EditLivePage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader title="編輯直播間" description="調整直播頁素材、狀態與商品綁定。" />
+      {query.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{publicationErrors[query.error] ?? "直播間尚未符合發布條件。"}</p> : null}
       <Card>
         <form action={upsertLiveAction} className="grid gap-4">
           <CsrfField />

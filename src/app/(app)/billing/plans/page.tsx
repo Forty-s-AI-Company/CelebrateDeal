@@ -2,12 +2,26 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
-export default async function BillingPlansPage() {
+const entitlementMessages: Record<string, string> = {
+  no_subscription: "目前工作區沒有有效方案，建立或更新營運資源前請先啟用方案。",
+  subscription_inactive: "目前方案已停權或取消。既有資料仍可查看，但暫時不能修改或發布。",
+  subscription_expired: "試用或方案已到期。既有資料仍可查看，續用後即可恢復操作。",
+  quota_unavailable: "目前方案未提供這項資源額度。",
+  quota_exceeded: "本期額度已用完，請升級方案或等待下次重置。",
+};
+
+export default async function BillingPlansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const params = await searchParams;
   const plans = await getDb().billingPlan.findMany({ orderBy: { monthlyPriceCents: "asc" } });
 
   return (
     <>
       <PageHeader title="方案" description="混合式計費：平台月費、超額用量、平台金流服務費、交易服務費與聯盟結算管理費分開計算。" />
+      {params.error ? <p className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">{entitlementMessages[params.error] ?? "目前方案無法執行這項操作。"}</p> : null}
       <div className="grid gap-4 lg:grid-cols-3">
         {plans.map((plan) => (
           <Card key={plan.id} className="grid gap-4 bg-gradient-to-br from-white to-slate-50">

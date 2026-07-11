@@ -70,6 +70,8 @@ https://<app-domain>/api/webhooks/payments?provider=payuni&source=notify
 
 ## Sandbox Fixtures
 
+自動 smoke 另需設定 `SMOKE_VENDOR_ID` 與同商家的 `SMOKE_PRODUCT_ID`。腳本會先呼叫 `/api/payments/checkout` 建立 pending PayUni transaction，再以回傳的 `orderNumber` 與 server-side product amount 建立 paid／duplicate／refund fixtures。缺少 pending transaction 的直接 webhook replay 不算有效驗收。
+
 Repo 已提供：
 
 - `src/lib/payment-providers/payuni-fixtures.ts`

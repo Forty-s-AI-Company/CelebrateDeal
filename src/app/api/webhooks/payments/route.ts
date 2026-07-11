@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
-import { getPaymentProvider } from "@/lib/payment-providers";
+import { getPaymentProvider, UnsupportedPaymentProviderError } from "@/lib/payment-providers";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
@@ -12,9 +12,20 @@ export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
   const providerId = requestUrl.searchParams.get("provider")
     ?? request.headers.get("x-payment-provider")
-    ?? request.headers.get("x-webhook-provider")
-    ?? "demo";
-  const adapter = getPaymentProvider(providerId);
+    ?? request.headers.get("x-webhook-provider");
+  let adapter: ReturnType<typeof getPaymentProvider>;
+  try {
+    adapter = getPaymentProvider(providerId);
+  } catch (error) {
+    if (!(error instanceof UnsupportedPaymentProviderError)) throw error;
+    await writeAuditLog({
+      actorLabel: "webhook:rejected",
+      action: "payment_webhook_provider_rejected",
+      targetType: "WebhookEvent",
+      before: auditSnapshot({ providerId: providerId ?? null, bodyBytes: rawBody.length }),
+    });
+    return NextResponse.json({ error: "Unsupported payment provider" }, { status: 400 });
+  }
   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
   const verified = await adapter.verifySignature(request, rawBody);
 
@@ -44,17 +55,20 @@ export async function POST(request: Request) {
   }
 
   const payload = normalized.payload;
-  const db = getDb();
-  const existing = await db.webhookEvent.findUnique({
-    where: { provider_eventId: { provider: payload.provider, eventId: payload.eventId } },
-  });
-
-  if (existing?.status === "processed") {
-    return NextResponse.json({ ok: true, duplicate: true, eventId: existing.id });
+  if (payload.provider !== adapter.id) {
+    await writeAuditLog({
+      actorLabel: `webhook:${adapter.id}`,
+      action: "payment_webhook_provider_mismatch",
+      targetType: "WebhookEvent",
+      before: auditSnapshot({ adapter: adapter.id, normalizedProvider: payload.provider }),
+    });
+    return NextResponse.json({ error: "Payment provider mismatch" }, { status: 400 });
   }
-
-  const event = existing ?? await db.webhookEvent.create({
-    data: {
+  const db = getDb();
+  let event;
+  try {
+    event = await db.webhookEvent.create({
+      data: {
       provider: payload.provider,
       eventId: payload.eventId,
       eventType: payload.eventType,
@@ -65,8 +79,24 @@ export async function POST(request: Request) {
         normalized: redactedJsonSnapshot(payload),
         diagnostics: redactedJsonSnapshot(diagnostics),
       } as Prisma.InputJsonObject,
-    },
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+    event = await db.webhookEvent.findUniqueOrThrow({
+      where: { provider_eventId: { provider: payload.provider, eventId: payload.eventId } },
+    });
+  }
+  if (event.status === "processed") {
+    return NextResponse.json({ ok: true, duplicate: true, eventId: event.id });
+  }
+  const claimed = await db.webhookEvent.updateMany({
+    where: { id: event.id, status: { in: ["received", "failed"] } },
+    data: { status: "processing", nextRetryAt: null },
   });
+  if (claimed.count !== 1) {
+    return NextResponse.json({ ok: true, duplicate: true, processing: true, eventId: event.id }, { status: 202 });
+  }
 
   try {
     const result = await processPaymentWebhook(payload, event);

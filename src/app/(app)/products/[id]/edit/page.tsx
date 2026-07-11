@@ -1,11 +1,14 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ProductForm } from "@/components/product-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { canManageCommerceProducts } from "@/lib/vendor-capabilities";
 
 export default async function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const auth = await requireAuth();
+  if (!auth.vendor || !canManageCommerceProducts(auth.member?.role)) redirect("/products?error=commerce_manager_required");
+  const vendor = auth.vendor;
   const { id } = await params;
   const product = await getDb().product.findFirst({ where: { id, vendorId: vendor.id } });
   if (!product) notFound();

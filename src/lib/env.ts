@@ -10,13 +10,14 @@ export const ProductionEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: RequiredUrl,
   JOB_SECRET: z.string().min(16),
   CSRF_SECRET: OptionalSecret,
+  ATTRIBUTION_SECRET: OptionalSecret,
   RATE_LIMIT_PROVIDER: z.enum(["memory", "cloudflare_waf", "upstash_redis"]).default("memory"),
   UPSTASH_REDIS_REST_URL: OptionalSecret,
   UPSTASH_REDIS_REST_TOKEN: OptionalSecret,
   CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
   CLOUDFLARE_STREAM_TOKEN: z.string().min(1),
   CLOUDFLARE_STREAM_WEBHOOK_SECRET: z.string().min(1),
-  PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]).default("demo"),
+  PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]),
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
   PAYUNI_MERCHANT_ID: OptionalSecret,
@@ -26,6 +27,7 @@ export const ProductionEnvSchema = z.object({
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(3),
+  NOTIFICATION_DELIVERY_MODE: z.enum(["fixture", "resend"]).default("resend"),
   SENTRY_DSN: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: OptionalSecret,
   SENTRY_ORG: OptionalSecret,
@@ -90,6 +92,16 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
+  checks.push({
+    key: "ATTRIBUTION_SECRET",
+    status: secretPresent(env.ATTRIBUTION_SECRET) ? "pass" : env.NODE_ENV === "production" ? "fail" : "warning",
+    message: secretPresent(env.ATTRIBUTION_SECRET)
+      ? "已設定"
+      : env.NODE_ENV === "production"
+        ? "production 必須設定獨立 ATTRIBUTION_SECRET"
+        : "本機可暫用 CSRF_SECRET/JOB_SECRET fallback；staging 與 production 必須獨立設定",
+  });
+
   if (env.PAYMENT_PROVIDER === "payuni") {
     for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID", "PAYUNI_WEBHOOK_SECRET"]) {
       const value = env[key];
@@ -101,12 +113,28 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     }
   }
 
+  if (env.NODE_ENV === "production" && env.PAYMENT_PROVIDER === "demo") {
+    checks.push({
+      key: "PAYMENT_PROVIDER",
+      status: "fail",
+      message: "production 禁止使用 demo payment provider",
+    });
+  }
+
   if (env.PAYMENT_PROVIDER === "ecpay-like" || env.PAYMENT_PROVIDER === "platform-ecpay") {
     const value = env.ECPAY_WEBHOOK_SECRET;
     checks.push({
       key: "ECPAY_WEBHOOK_SECRET",
       status: secretPresent(value) ? "pass" : "fail",
       message: `${env.PAYMENT_PROVIDER} provider 必須設定 ECPAY_WEBHOOK_SECRET`,
+    });
+  }
+
+  if (env.NODE_ENV === "production" && env.NOTIFICATION_DELIVERY_MODE !== "resend") {
+    checks.push({
+      key: "NOTIFICATION_DELIVERY_MODE",
+      status: "fail",
+      message: "production 必須使用 resend notification delivery mode",
     });
   }
 
@@ -137,8 +165,16 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   if ((env.RATE_LIMIT_PROVIDER ?? "memory") === "memory" && env.NODE_ENV === "production") {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
-      status: "warning",
-      message: "production 建議使用 Cloudflare WAF 或 Upstash Redis，in-memory 無法跨部署節點持久控流",
+      status: "fail",
+      message: "production 必須使用 Upstash Redis；in-memory 無法跨部署節點持久控流",
+    });
+  }
+
+  if (env.RATE_LIMIT_PROVIDER === "cloudflare_waf" && env.NODE_ENV === "production") {
+    checks.push({
+      key: "RATE_LIMIT_PROVIDER",
+      status: "fail",
+      message: "MFA 與邀請 token 需要應用層全域 key，僅使用 Cloudflare WAF 會 fail closed；請改用 upstash_redis，WAF 可另外保留於邊緣層",
     });
   }
 

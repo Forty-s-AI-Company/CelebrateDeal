@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-
-function csvCell(value: string | number | null | undefined) {
-  const raw = String(value ?? "");
-  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
-  return `"${safe.replaceAll('"', '""')}"`;
-}
+import { safeCsvCell } from "@/lib/financial-data";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { member } = await requireFinanceAdmin();
+  const { member } = await requirePlatformAdmin();
   const { id } = await params;
   const batch = await getDb().payoutBatch.findUnique({
     where: { id },
@@ -47,7 +42,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     item.payoutAmountCents / 100,
     item.status,
   ]);
-  const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  const csv = [header, ...rows].map((row) => row.map(safeCsvCell).join(",")).join("\n");
 
   return new NextResponse(`\uFEFF${csv}`, {
     headers: {

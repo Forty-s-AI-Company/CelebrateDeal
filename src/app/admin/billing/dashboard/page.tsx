@@ -3,7 +3,7 @@ import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCar
 import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -15,13 +15,13 @@ function sevenDaysAgo() {
 
 function statusTone(status: string) {
   if (status === "paid" || status === "approved") return "green" as const;
-  if (status.includes("refund") || status === "failed" || status === "void") return "orange" as const;
+  if (status.includes("refund") || status === "failed" || status === "reversed") return "orange" as const;
   if (status === "locked" || status === "ready_for_payout") return "blue" as const;
   return "gray" as const;
 }
 
 export default async function AdminBillingDashboardPage() {
-  await requireFinanceAdmin();
+  await requirePlatformAdmin();
   const db = getDb();
   const start = sevenDaysAgo();
   const [subscriptions, unlockedSettlements, readySettlements, failedPayouts, recentTransactions, recentCommissions, webhookEvents, failedWebhookCount, auditLogs] = await Promise.all([
@@ -30,7 +30,7 @@ export default async function AdminBillingDashboardPage() {
     db.settlement.findMany({ where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, include: { vendor: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
     db.payoutItem.findMany({ where: { status: "failed" }, include: { vendor: true, payoutBatch: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
     db.paymentTransaction.findMany({ where: { occurredAt: { gte: start } }, include: { vendor: true, refunds: true }, orderBy: { occurredAt: "desc" }, take: 10 }),
-    db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved", "locked"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 }),
+    db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 }),
     db.webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 }),
     db.webhookEvent.count({ where: { status: "failed" } }),
     db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
@@ -47,8 +47,8 @@ export default async function AdminBillingDashboardPage() {
         action={<Link href="/admin/billing/settlements" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">月結管理</Link>}
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Card className="bg-gradient-to-br from-white to-blue-50">
+      <div data-testid="billing-kpis" className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><ReceiptText size={16} />本月 MRR</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{formatCurrency(mrr)}</p>
         </Card>
@@ -56,7 +56,7 @@ export default async function AdminBillingDashboardPage() {
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><ShieldCheck size={16} />待鎖單</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{unlockedSettlements.length}</p>
         </Card>
-        <Card className="bg-gradient-to-br from-white to-orange-50">
+        <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><Banknote size={16} />待出款金額</p>
           <p className="mt-2 text-3xl font-bold text-orange-700">{formatCurrency(pendingPayoutAmount)}</p>
         </Card>

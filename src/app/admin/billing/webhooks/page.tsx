@@ -3,7 +3,7 @@ import { RotateCcw, Webhook } from "lucide-react";
 import { retryWebhookEventAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
@@ -15,7 +15,7 @@ function statusTone(status: string) {
 }
 
 export default async function AdminBillingWebhooksPage() {
-  await requireFinanceAdmin();
+  await requirePlatformAdmin();
   const [events, failedCount, queuedCount] = await Promise.all([
     getDb().webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 50 }),
     getDb().webhookEvent.count({ where: { status: "failed" } }),
@@ -30,12 +30,12 @@ export default async function AdminBillingWebhooksPage() {
         action={<Link href="/admin/billing/dashboard" className="text-sm font-semibold text-primary hover:underline">回財務總覽</Link>}
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div data-testid="webhook-kpis" className="mb-6 grid gap-4 md:grid-cols-3">
         <Card>
           <p className="text-sm text-slate-500">最近事件</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{events.length}</p>
         </Card>
-        <Card className="bg-gradient-to-br from-white to-orange-50">
+        <Card>
           <p className="text-sm text-slate-500">Failed</p>
           <p className="mt-2 text-3xl font-bold text-orange-700">{failedCount}</p>
         </Card>

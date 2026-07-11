@@ -997,4 +997,121 @@ npm run e2e:smoke
   - health / admin preflight / Sentry / PostHog：PASS
   - PayUni paid / duplicate / refunded：PASS
   - Cloudflare direct upload：FAIL，Cloudflare API 回 `code=10000 Authentication error`
-  - Resend email：SKIP，`SMOKE_TEST_EMAIL` 未設定
+- Resend email：SKIP，`SMOKE_TEST_EMAIL` 未設定
+
+## 20. AI Team、Skills 與自動化治理底座
+
+2026-07-10 已在 `codex/ai-team-skills-automation-foundation` 分支完成：
+
+- 11 個 Codex project custom agents，max threads 6、max depth 1。
+- 3 個經安全檢查的 project external Skills 與 6 個 CelebrateDeal 專屬 Skills。
+- 根目錄 AGENTS.md、CURRENT_STATE、Assumptions、Skills lock、Blockers。
+- Design direction/tokens/component inventory/UX flows/anti-AI checklist。
+- QA test matrix、release checklist、coverage、axe、visual、Lighthouse 與 artifacts。
+- Python non-interactive orchestrator、P0 backlog、Antigravity `qa-issues.json` ingestion、三次 retry 與 Markdown/JSON report。
+- GitHub Actions CI 與 manual staging release gate；不包含 deployment/merge。
+
+本輪驗證：
+
+- AI setup：11 agents、9 skills，Codex strict config `CONFIG_OK 11`。
+- Skills：6/6 quick validation passed。
+- Unit：8 files、25 tests passed。
+- Coverage：statements 78.97%、branches 65.78%、functions 82.29%、lines 80.04%。
+- Build：60 routes passed。
+- E2E smoke：7 passed。
+- Accessibility：1 passed，並修復登入頁低對比連結。
+- Visual：4 viewport baseline 與 comparison passed。
+- Lighthouse：Performance 0.87、Accessibility/Best Practices/SEO 1.00，使用動態獨立 port 避免量到既有 dev server。
+- Orchestrator security regression：10 tests passed；untrusted QA 不進模型、supply-chain path 在 validation 前阻擋、shell metacharacter 被拒絕。
+
+安全盤點同時確認 release 目前仍為 `BLOCKED`：
+
+- payment webhook 未知 provider 會回退永遠驗簽成功的 demo adapter。
+- vendor finance roles 與 platform billing admin scope 未完全分離。
+- vendor payout payment account query 缺少 tenant filter。
+- 另有 external URL、relation ownership、unknown order/refund/commission idempotency 等 high findings。
+
+完整報告與下一輪 gate：`docs/ai-team/AI_TEAM_BOOTSTRAP_REPORT.md`、`BLOCKERS.md`。
+
+## 21. Autonomous Staging Readiness Delivery
+
+更新日期：2026-07-11
+
+本輪不是新增空頁，而是依 Database → API/action → UI → authorization → error state → tests → docs 完成以下垂直切片與收斂：
+
+- 外部商城導購：商品可設定平台或外部 checkout；支援商家預設連結、有效推廣者個人連結與安全回退。外部 click 不建立平台付款，成交只能由可信 provider 或人工證據覆核建立。
+- 課程／銷講：新增 Course、Lesson、CourseSession、Enrollment、公開銷講頁、免費報名、容量與黑名單檢查、通知與名單權限。依 A010，不宣稱付費 LMS 權限。
+- 通知：新增 transactional outbox、delivery attempts、worker、retry、Resend/fixture adapter、atomic quota、單一收件者日限額、PII access audit 與商家操作頁。
+- 歸因：區分 `leadAt` 與可信付款 `convertedAt`；immutable click snapshot 才能建立 paid conversion，退款先到與重複 webhook 不會誤標成交。
+- 直播／媒體：發布時驗證 ready VOD 或完整 Live Input mapping；公開頁 fail closed。商家可建立 Cloudflare 一次性 direct upload，檔案不經應用伺服器，provider mapping 不可由表單偽造，stream key 不回傳前台。
+- 租戶與角色：course enrollment、notification recipient、external order evidence、video mapping、live publication、finance/admin 操作均補 vendor ownership 或 platform admin guard。
+- UX：商家與平台管理導覽分離；共用 CTA/secondary text token 提升至 WCAG AA；完成 course/live/operations/admin/login 的 desktop、laptop、tablet、mobile visual baselines。
+- CI/Staging：Playwright 禁止 retry 掩蓋不穩定，支援 `E2E_BASE_URL`；CI 保存 browser artifacts，staging workflow 只跑無副作用 health/login smoke，不自動部署或修改 production。
+
+新增 PostgreSQL migrations：
+
+- `20260710220000_external_storefront_vertical_slice`
+- `20260711021000_notification_outbox`
+- `20260711022500_external_storefront_tenant_fks`
+- `20260711030000_course_vertical_slice`
+- `20260711033000_notification_abuse_quota`
+- `20260711040000_attribution_lead_conversion_semantics`
+
+本機 release evidence：
+
+- Prisma：15 migrations，schema up to date。
+- Secret scan：496 個 tracked/untracked files 通過 pattern baseline。
+- AI team：11 agents、9 skills；orchestrator security regression 10/10。
+- Unit/integration/API：28 files、145 tests 通過。
+- Coverage：statements 77.02%、branches 64.48%、functions 76.47%、lines 80.66%。
+- Build：Next.js production build 71 routes 通過。
+- Browser、visual、a11y、Lighthouse：以 `docs/qa/RELEASE_CHECKLIST.md` 的最新 evidence 為準。
+
+判定：repo-local release gate 已完成，獨立 audit 找到的 PayUni fail-open、settlement/commission lock race 與晚到退款跨月債務 P1 均已修正並補 regression tests。可交付 Staging QA，但不得宣稱 production ready 或開始正式收費，直到 `BLOCKERS.md` 的外部驗收完成。
+
+## 22. Payment、Attribution 與 Affiliate Ledger Final Hardening
+
+更新日期：2026-07-11
+
+- PayUni adapter 對 event status 採明確 allowlist；缺少／未知 status、event ID、order number、paid amount 或 refund amount 一律拒絕，不再推定為 paid。
+- `PaymentWebhookPayload` 以 event-specific schema 做第二層正數金額驗證。
+- PayUni 與 demo external smoke 都必須先呼叫 server-side checkout 建立 pending transaction，再用該 `orderNumber` 與 Product amount 驗證 paid／duplicate／refund。
+- Provider 將部分金額標成 `refunded` 時，佣金依累計 transaction status 正規化為 partial adjustment，不會過度沖銷；out-of-order refund-before-paid 仍可依 immutable checkout rate 建立淨額佣金。
+- TrackingSetting 支援 first/last touch 與 1–90 天期限；DB CHECK 防止未知 policy，signed HttpOnly cookie 維持 vendor scope。
+- Affiliate payout ledger 完成 pending／approved／locked／paid／reversed，使用 advisory lock、唯一 vendor/affiliate/month、immutable commission relation、跨租戶 composite FK 與 concurrency tests。
+- Locked settlement 的同月份人工 adjustment 會被拒絕；admin 應改記下一個 open period。Webhook ledger、event status 與 audit log 已在同一 DB transaction。
+- 新增 migration preflight/rollback：`docs/database/payout-ledger-migration.md`。
+
+最終非瀏覽器 evidence：
+
+- 25 migrations，schema up to date。
+- Secret scan：503 files passed。
+- AI team：11 agents／9 skills；orchestrator 10 tests passed。
+- Unit/integration/API：31 files／169 tests passed；coverage statements 78.92%、branches 67.71%、functions 79.03%、lines 82.88%。
+- Coverage：statements 78.60%、branches 67.00%、functions 77.51%、lines 82.68%。
+- Next.js production build：72 routes passed。
+- Preflight：通過；`NEXT_PUBLIC_SENTRY_DSN`、獨立 `ATTRIBUTION_SECRET`、durable `RATE_LIMIT_PROVIDER` 仍需 staging env 收斂。
+- Browser：13 smoke、7 axe、32 visual comparisons 全部通過；Lighthouse 0.79/1/1/1。
+- Settlement generate／adjustment／lock 已抽成共用 transaction service，三者取得相同 period advisory lock；concurrency tests 證明 locked settlement 不會被 reopen 或事後 adjustment。
+- Disposable PostgreSQL drills：25 migrations clean deploy；0630 index conflict 與 0655 fee over-cap 完整 rollback；legacy locked refund、missing subscription fail closed；processed-only RefundRecord trigger、composite tenant FK 與 recovery runbook已驗證；所有暫存 DB 均已移除。
+# AI Team Dual CLI Upgrade (2026-07-11)
+
+- Added provider adapters for detected Codex CLI and Antigravity `agy.exe`, with environment allowlisting, timeout, redaction and requested/actual model evidence.
+- Added a canonical registry of 14 Codex roles and 10 Antigravity QA roles, plus repair/new-feature DAGs, persistent state, QA normalization and runtime reports.
+- Codex read-only smoke passed through documented model fallback. Antigravity non-interactive smoke timed out after 180 seconds, so operational mode is `hybrid`; Codex QA fallback completed with semantic status `conditional`, and Antigravity is not reported as passed.
+- Deterministic checks passed: 18 automation tests, setup validation, lint, typecheck, 169 Vitest tests, build, preflight and 604-file secret scan.
+- Corrected stale Prisma fields in `tests/e2e/comprehensive-qa.spec.ts`; no product behavior or production service was changed.
+- Full evidence: `reports/ai-team/DUAL_CLI_UPGRADE_REPORT.md`. Automation release-check is currently `BLOCKED` on Antigravity hybrid verification and downstream stages; this does not invalidate the green product gates. Remaining External required items are in `BLOCKERS.md`.
+
+## 24. AI Team QA Repair Closure (2026-07-11)
+
+- 依 `reports/ai-team-qa/FINAL_DELIVERY.md` 與同目錄稽核證據修復 P1 動態 role routing，UI、API、RLS、歸因、佣金與複合 task 現在會編譯完整 specialist review/QA DAG；未知 domain、role、provider 與 manifest path 一律 fail closed。
+- Pipeline state 升級至 schema v2，加入 CAS revision、stage receipt、run/role/provider binding、artifact SHA-256 與 dependency blocking；release check 不再只信任可改寫的 status。
+- Pipeline evidence 另加入 coordinator-only HMAC、Git HEAD、dirty-worktree fingerprint、pipeline revision 與 trusted DAG digest；`AI_PIPELINE_ATTESTATION_KEY` 不透傳 child adapter，未設定時 release fail closed。
+- Workspace policy 以 role manifest 和 task scope 交集決定可寫路徑，forbidden path、`..`、sibling prefix 與 symlink escape 都有 regression test。
+- QA importer 會移除外部 assigned role、reviewer、dependency、status、provider 與 validation 控制權；malformed boundary fixture 只作 parser test，不列成可信 P0。
+- Automation 68 tests、setup validator、603-file secret scan、lint、typecheck、169 Vitest tests、72-route build 與 preflight 全部通過。
+- Codex CLI read-only smoke 通過；設定模型因 CLI 不支援而明確 fallback 到 `gpt-5.4`，actual runtime model 未由 CLI 權威確認。Antigravity `agy` smoke 45 秒 timeout，Codex fallback 僅列 `fallback-conditional`，不具 provider 等價性。
+- Handoff contract smoke 通過，但 provider-native Antigravity handoff 與 execution receipts 尚未完成；Antigravity、handoff 與 release blocked 都以 exit 2 fail closed，automation release check 正確維持 `BLOCKED`、`productionApproved=false`。
+- `automation/` 目前仍是 untracked；attested regression 會驗證 coordinator/control files 必須存在於 Git `sourceRevision` 且內容一致。人類 review/commit 前，只能宣稱 deterministic checks passed，不能宣稱 attested automation release passed。
+- 完整修復矩陣：`reports/ai-team-qa/CODEX_AI_TEAM_REPAIR_RESULT.md`；Antigravity Desktop 複驗提示詞：`reports/ai-team-qa/ANTIGRAVITY_DESKTOP_REVALIDATION_PROMPT.md`。

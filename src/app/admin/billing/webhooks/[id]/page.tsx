@@ -4,7 +4,7 @@ import { RotateCcw } from "lucide-react";
 import { retryWebhookEventAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { reconcileWebhookEvent } from "@/lib/reconciliation";
@@ -80,7 +80,7 @@ function PayUniDiagnosticsCard({ diagnostics }: { diagnostics: unknown }) {
 }
 
 export default async function AdminBillingWebhookDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireFinanceAdmin();
+  await requirePlatformAdmin();
   const { id } = await params;
   const event = await getDb().webhookEvent.findUnique({
     where: { id },

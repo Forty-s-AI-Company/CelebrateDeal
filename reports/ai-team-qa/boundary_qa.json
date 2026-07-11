@@ -1,0 +1,24 @@
+{
+  "issues": [
+    {
+      "id": "BOUNDARY-1",
+      "title": "Malformed data test",
+      "severity": "P0",
+      "status": "open",
+      "actual": "Missing properties but has id",
+      "expected": "Should be normalized"
+    },
+    {
+      "title": "Missing ID",
+      "severity": "UNKNOWN_PRIORITY",
+      "status": "open",
+      "actual": "This issue has no ID and an unknown severity"
+    },
+    {
+      "id": "BOUNDARY-3",
+      "severity": "P4",
+      "affected_paths": "src/app/page.tsx, src/components/Button.tsx",
+      "reproduction": "Step 1\nStep 2\nStep 3"
+    }
+  ]
+}

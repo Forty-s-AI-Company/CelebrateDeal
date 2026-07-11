@@ -122,6 +122,8 @@ async function main() {
       ctaColor: "#f97316",
       timezone: "Asia/Taipei",
       supportEmail: "support@celebratedeal.local",
+      onboardingStatus: "completed",
+      onboardingCompletedAt: new Date(),
       tracking: {
         create: {
           facebookPixelId: "1234567890",
@@ -141,6 +143,7 @@ async function main() {
           streamMinutesLimit: growthPlan.includedStreamMinutes,
           storageMinutesLimit: growthPlan.includedStorageMinutes,
           creditsLimit: growthPlan.includedCredits,
+          notificationEmailsLimit: growthPlan.includedNotificationEmails,
           streamMinutesUsed: 36240,
           storageMinutesUsed: 1460,
           creditsUsed: 7280,

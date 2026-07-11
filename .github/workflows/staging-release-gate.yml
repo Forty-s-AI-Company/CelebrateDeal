@@ -1,0 +1,153 @@
+name: Staging Release Gate
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: staging-release-gate
+  cancel-in-progress: false
+
+jobs:
+  trusted-ref:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require master branch
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "Staging release gate only accepts refs/heads/master."
+            exit 1
+          fi
+
+  gate:
+    needs: trusted-ref
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: celebratedeal_staging_gate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d celebratedeal_staging_gate"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_staging_gate?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_staging_gate?schema=public
+      NEXT_PUBLIC_APP_URL: https://staging-gate.celebratedeal.local
+      JOB_SECRET: staging-gate-job-secret-123456
+      CSRF_SECRET: staging-gate-csrf-secret-123456
+      PAYMENT_PROVIDER: demo
+      RATE_LIMIT_PROVIDER: memory
+      CLOUDFLARE_ACCOUNT_ID: staging-gate-placeholder
+      CLOUDFLARE_STREAM_TOKEN: staging-gate-placeholder
+      CLOUDFLARE_STREAM_WEBHOOK_SECRET: staging-gate-placeholder
+      RESEND_API_KEY: staging-gate-placeholder
+      EMAIL_FROM: CelebrateDeal Staging Gate <no-reply@example.com>
+      SENTRY_DSN: https://staging-gate@sentry.invalid/1
+      NEXT_PUBLIC_POSTHOG_KEY: staging-gate-placeholder
+      NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies without staging secrets
+        run: npm ci
+
+      - run: npm run security:secrets
+      - run: npm run ai:validate
+      - run: npm run automation:test
+      - run: npm run db:generate
+      - run: npm run db:migrate:deploy
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Staging browser smoke without side effects
+        run: npx playwright test tests/e2e/staging.spec.ts --project=chromium-desktop
+        env:
+          E2E_BASE_URL: ${{ vars.STAGING_APP_URL }}
+          STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+
+      - name: Check staging migration status
+        run: npm run db:migrate:status
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+
+      - name: Validate staging environment contract
+        run: npm run preflight
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.STAGING_APP_URL }}
+          JOB_SECRET: ${{ secrets.STAGING_JOB_SECRET }}
+          CSRF_SECRET: ${{ secrets.STAGING_CSRF_SECRET }}
+          PAYMENT_PROVIDER: ${{ vars.STAGING_PAYMENT_PROVIDER }}
+          RATE_LIMIT_PROVIDER: ${{ vars.STAGING_RATE_LIMIT_PROVIDER }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.STAGING_CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_STREAM_TOKEN: ${{ secrets.STAGING_CLOUDFLARE_STREAM_TOKEN }}
+          CLOUDFLARE_STREAM_WEBHOOK_SECRET: ${{ secrets.STAGING_CLOUDFLARE_STREAM_WEBHOOK_SECRET }}
+          PAYUNI_MERCHANT_ID: ${{ secrets.STAGING_PAYUNI_MERCHANT_ID }}
+          PAYUNI_HASH_KEY: ${{ secrets.STAGING_PAYUNI_HASH_KEY }}
+          PAYUNI_HASH_IV: ${{ secrets.STAGING_PAYUNI_HASH_IV }}
+          RESEND_API_KEY: ${{ secrets.STAGING_RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.STAGING_EMAIL_FROM }}
+          SENTRY_DSN: ${{ secrets.STAGING_SENTRY_DSN }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.STAGING_NEXT_PUBLIC_SENTRY_DSN }}
+          SENTRY_ORG: ${{ vars.STAGING_SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.STAGING_SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.STAGING_SENTRY_AUTH_TOKEN }}
+          NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.STAGING_POSTHOG_KEY }}
+          NEXT_PUBLIC_POSTHOG_HOST: ${{ vars.STAGING_POSTHOG_HOST }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.STAGING_UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.STAGING_UPSTASH_REDIS_REST_TOKEN }}
+
+      - name: External staging smoke (required)
+        run: npm run external:smoke
+        env:
+          TARGET_APP_URL: ${{ vars.STAGING_APP_URL }}
+          JOB_SECRET: ${{ secrets.STAGING_JOB_SECRET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.STAGING_CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_STREAM_TOKEN: ${{ secrets.STAGING_CLOUDFLARE_STREAM_TOKEN }}
+          CLOUDFLARE_STREAM_WEBHOOK_SECRET: ${{ secrets.STAGING_CLOUDFLARE_STREAM_WEBHOOK_SECRET }}
+          PAYUNI_MERCHANT_ID: ${{ secrets.STAGING_PAYUNI_MERCHANT_ID }}
+          PAYUNI_HASH_KEY: ${{ secrets.STAGING_PAYUNI_HASH_KEY }}
+          PAYUNI_HASH_IV: ${{ secrets.STAGING_PAYUNI_HASH_IV }}
+          SMOKE_VENDOR_ID: ${{ vars.STAGING_SMOKE_VENDOR_ID }}
+          SMOKE_VENDOR_SLUG: ${{ vars.STAGING_SMOKE_VENDOR_SLUG }}
+          SMOKE_PRODUCT_ID: ${{ vars.STAGING_SMOKE_PRODUCT_ID }}
+          SMOKE_TEST_EMAIL: ${{ secrets.STAGING_SMOKE_TEST_EMAIL }}
+          RUN_CLOUDFLARE_SMOKE: "true"
+          RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE: "true"
+          REQUIRED_SMOKE_CHECKS: "health,admin preflight,resend test email,posthog smoke event,sentry smoke event,cloudflare direct upload,cloudflare upload file,cloudflare stream ready,cloudflare ready webhook replay,cloudflare live input,payuni sandbox checkout setup,payuni paid webhook,payuni duplicate webhook,payuni refunded webhook"
+
+      - name: Release decision reminder
+        run: echo "Staging evidence only. Production merge and deployment remain manual."
+
+      - name: Upload staging browser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-browser-evidence
+          path: |
+            reports/playwright-results
+            reports/playwright-html
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,4 @@
+nextjs-portal,
+script[data-nextjs-dev-overlay] {
+  display: none !important;
+}

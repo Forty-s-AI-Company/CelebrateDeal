@@ -190,6 +190,8 @@ npm run db:seed
 
 資料庫 rollback 不能只依賴「反向 migration」。
 
+Payout 與 affiliate ledger 的專屬 duplicate preflight、additive rollback boundary 與 snapshot restore 規則見 `docs/database/payout-ledger-migration.md`。
+
 建議策略：
 
 1. App rollback 優先使用 Vercel previous deployment。

@@ -5,6 +5,7 @@ import type { Prisma, User, VendorMember } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPassword } from "@/lib/password";
+import { getPlatformAdminAuthorizationFailure } from "@/lib/platform-authorization";
 
 export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
@@ -183,38 +184,38 @@ export async function requireVendor() {
   return auth.vendor as VendorWithTracking;
 }
 
-export async function requireFinanceAdmin() {
+export async function requirePlatformAdmin() {
   const auth = await requireAuth();
+  const authorizationFailure = getPlatformAdminAuthorizationFailure({
+    platformRole: auth.user.platformRole,
+    hasMfaFactor: Boolean(auth.user.mfaFactor),
+    isMfaVerified: auth.isMfaVerified,
+  });
 
-  if (auth.requiresAdminMfa) {
-    if (!auth.user.mfaFactor) {
-      redirect("/mfa/setup");
-    }
-
-    if (!auth.isMfaVerified) {
-      redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
-    }
-  }
-
-  if (auth.isPlatformAdmin) {
-    return {
-      user: auth.user,
-      vendor: auth.vendor,
-      member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
-      isPlatformAdmin: true,
-    };
-  }
-
-  if (!auth.vendor || !auth.member || !FINANCE_ROLES.includes(auth.member.role as (typeof FINANCE_ROLES)[number])) {
+  if (authorizationFailure === "platform_role_required") {
     redirect("/dashboard");
   }
 
+  if (authorizationFailure === "mfa_setup_required") {
+    redirect("/mfa/setup");
+  }
+
+  if (authorizationFailure === "mfa_verification_required") {
+    redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
+  }
+
   return {
+    session: auth.session,
     user: auth.user,
     vendor: auth.vendor,
-    member: auth.member as FinanceActor,
-    isPlatformAdmin: false,
+    member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
+    isPlatformAdmin: true as const,
   };
+}
+
+export async function requireFinanceAdmin() {
+  // Platform finance mutations are global, so legacy call sites share the platform-only boundary.
+  return requirePlatformAdmin();
 }
 
 export async function requireVendorOwner() {
@@ -225,9 +226,11 @@ export async function requireVendorOwner() {
   }
 
   return {
+    session: auth.session,
     user: auth.user,
     vendor: auth.vendor,
     member: auth.member,
+    isMfaVerified: auth.isMfaVerified,
   };
 }
 

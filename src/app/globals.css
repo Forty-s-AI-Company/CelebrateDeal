@@ -8,8 +8,8 @@
   --border: #dbe3ef;
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
-  --cta: #f97316;
-  --cta-dark: #ea580c;
+  --cta: #c2410c;
+  --cta-dark: #9a3412;
 }
 
 @theme inline {
@@ -22,6 +22,10 @@
   --color-primary-dark: var(--primary-dark);
   --color-cta: var(--cta);
   --color-cta-dark: var(--cta-dark);
+  --color-orange-500: #c2410c;
+  --color-orange-600: #9a3412;
+  --color-slate-400: #52627a;
+  --color-slate-500: #475569;
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }

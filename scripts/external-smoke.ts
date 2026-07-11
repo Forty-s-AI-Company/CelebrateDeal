@@ -15,6 +15,12 @@ type SmokeResult = {
 const baseUrl = (process.env.TARGET_APP_URL ?? "http://localhost:31023").replace(/\/$/, "");
 const jobSecret = process.env.JOB_SECRET;
 const results: SmokeResult[] = [];
+const requiredChecks = new Set(
+  (process.env.REQUIRED_SMOKE_CHECKS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 const sampleVideoUrl = "https://storage.googleapis.com/stream-example-bucket/video.mp4";
 
 function record(result: SmokeResult) {
@@ -110,42 +116,64 @@ async function main() {
   }
 
   if (process.env.RUN_DEMO_PAYMENT_WEBHOOK_SMOKE === "true") {
+    const vendorId = process.env.SMOKE_VENDOR_ID;
     const vendorSlug = process.env.SMOKE_VENDOR_SLUG;
-    if (!vendorSlug) {
-      record({ name: "demo payment webhook", status: "fail", detail: "SMOKE_VENDOR_SLUG is required" });
+    const productId = process.env.SMOKE_PRODUCT_ID;
+    if (!vendorId || !vendorSlug || !productId) {
+      record({ name: "demo payment webhook", status: "fail", detail: "SMOKE_VENDOR_ID, SMOKE_VENDOR_SLUG, and SMOKE_PRODUCT_ID are required" });
     } else {
-      const orderNumber = `SMOKE-${Date.now()}`;
-      await checkJson("demo paid webhook", "/api/webhooks/payments", {
+      const checkoutResponse = await fetch(`${baseUrl}/api/payments/checkout`, {
         method: "POST",
-        headers: { "x-payment-provider": "demo" },
-        body: JSON.stringify({
-          eventId: `evt-${orderNumber}`,
-          eventType: "paid",
-          vendorSlug,
-          orderNumber,
-          grossAmountCents: 1000,
-          gatewayFeeCents: 20,
-          platformFeeCents: 10,
-        }),
+        headers: { "Content-Type": "application/json", Origin: baseUrl, "X-CelebrateDeal-Client": "web" },
+        body: JSON.stringify({ vendorId, productId }),
       });
-      await checkJson("demo refund webhook", "/api/webhooks/payments", {
-        method: "POST",
-        headers: { "x-payment-provider": "demo" },
-        body: JSON.stringify({
-          eventId: `evt-refund-${orderNumber}`,
-          eventType: "refunded",
-          vendorSlug,
-          orderNumber,
-          refundAmountCents: 1000,
-          refundReason: "smoke test",
-        }),
-      });
+      const checkoutPayload = await readResponsePayload(checkoutResponse);
+      if (!checkoutResponse.ok || !isRecord(checkoutPayload) || checkoutPayload.provider !== "demo" || typeof checkoutPayload.orderNumber !== "string" || typeof checkoutPayload.amountCents !== "number") {
+        record({ name: "demo payment checkout setup", status: "fail", detail: `HTTP ${checkoutResponse.status}: ${formatPayload(checkoutPayload)}` });
+      } else {
+        record({ name: "demo payment checkout setup", status: "pass", detail: `transaction=${String(checkoutPayload.transactionId)}` });
+        const orderNumber = checkoutPayload.orderNumber;
+        const amountCents = checkoutPayload.amountCents;
+        await checkJson("demo paid webhook", "/api/webhooks/payments", {
+          method: "POST",
+          headers: { "x-payment-provider": "demo" },
+          body: JSON.stringify({
+            eventId: `evt-${orderNumber}`,
+            eventType: "paid",
+            vendorSlug,
+            orderNumber,
+            grossAmountCents: amountCents,
+            gatewayFeeCents: 20,
+            platformFeeCents: 10,
+          }),
+        });
+        await checkJson("demo refund webhook", "/api/webhooks/payments", {
+          method: "POST",
+          headers: { "x-payment-provider": "demo" },
+          body: JSON.stringify({
+            eventId: `evt-refund-${orderNumber}`,
+            eventType: "refunded",
+            vendorSlug,
+            orderNumber,
+            refundAmountCents: amountCents,
+            refundReason: "smoke test",
+          }),
+        });
+      }
     }
   } else {
     record({ name: "demo payment webhook", status: "skip", detail: "Set RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true and SMOKE_VENDOR_SLUG to create test transactions" });
   }
 
-  if (results.some((result) => result.status === "fail")) {
+  const requiredFailures = [...requiredChecks].filter((name) => {
+    const result = results.find((item) => item.name === name);
+    return !result || result.status !== "pass";
+  });
+  if (requiredFailures.length > 0) {
+    console.error(`[FAIL] required smoke checks did not pass: ${requiredFailures.join(", ")}`);
+  }
+
+  if (results.some((result) => result.status === "fail") || requiredFailures.length > 0) {
     process.exitCode = 1;
   }
 }
@@ -272,7 +300,34 @@ async function runPayUniSmoke() {
 
   const vendorId = process.env.SMOKE_VENDOR_ID;
   const vendorSlug = process.env.SMOKE_VENDOR_SLUG;
-  const orderNumber = `PAYUNI-SMOKE-${Date.now()}`;
+  const productId = process.env.SMOKE_PRODUCT_ID;
+  if (!vendorId || !productId) {
+    record({ name: "payuni sandbox webhook", status: "skip", detail: "SMOKE_VENDOR_ID and SMOKE_PRODUCT_ID are required to create a pending checkout" });
+    return;
+  }
+
+  const checkoutResponse = await fetch(`${baseUrl}/api/payments/checkout`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: baseUrl,
+      "X-CelebrateDeal-Client": "web",
+    },
+    body: JSON.stringify({ vendorId, productId }),
+  });
+  const checkoutPayload = await readResponsePayload(checkoutResponse);
+  if (!checkoutResponse.ok || !isRecord(checkoutPayload) || typeof checkoutPayload.orderNumber !== "string" || typeof checkoutPayload.amountCents !== "number") {
+    record({ name: "payuni sandbox checkout setup", status: "fail", detail: `HTTP ${checkoutResponse.status}: ${formatPayload(checkoutPayload)}` });
+    return;
+  }
+  if (checkoutPayload.provider !== "payuni") {
+    record({ name: "payuni sandbox checkout setup", status: "fail", detail: `Expected payuni provider, received ${String(checkoutPayload.provider)}` });
+    return;
+  }
+  record({ name: "payuni sandbox checkout setup", status: "pass", detail: `transaction=${String(checkoutPayload.transactionId)}` });
+
+  const orderNumber = checkoutPayload.orderNumber;
+  const tradeAmount = checkoutPayload.amountCents / 100;
   const fixtures = [
     { name: "payuni paid webhook", fixture: "paid" as const, eventId: `${orderNumber}-paid` },
     { name: "payuni duplicate webhook", fixture: "duplicate_paid" as const, eventId: `${orderNumber}-paid` },
@@ -291,6 +346,8 @@ async function runPayUniSmoke() {
           ...(vendorSlug ? { VendorSlug: vendorSlug } : {}),
           MerTradeNo: orderNumber,
           EventId: item.eventId,
+          TradeAmt: tradeAmount,
+          ...(item.fixture === "refunded" ? { RefundAmount: tradeAmount } : {}),
         },
       });
       const response = await fetch(`${baseUrl}/api/webhooks/payments?provider=payuni`, {

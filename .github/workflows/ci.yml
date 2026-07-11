@@ -71,8 +71,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm run test
+      - name: Unit tests and coverage
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
@@ -82,8 +85,40 @@ jobs:
         env:
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
 
-      - name: Build
-        run: npm run build
+      - name: Accessibility smoke
+        run: npm run e2e:a11y
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
+
+      - name: Visual regression
+        run: npm run e2e:visual
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
+
+      - name: Lighthouse baseline
+        run: npm run lighthouse
 
       - name: Preflight
         run: npm run preflight
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload browser and Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-reports
+          path: |
+            reports/playwright-results
+            reports/playwright-html
+            reports/lighthouse/report.html
+            reports/lighthouse/report.json
+          if-no-files-found: ignore
+          retention-days: 14

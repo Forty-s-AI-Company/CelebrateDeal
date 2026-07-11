@@ -372,3 +372,35 @@ External required 仍未完成：
 - `scripts/external-smoke.ts` 的 Cloudflare ready webhook replay 已改用官方 `Webhook-Signature`。
 - Production go-live 前，Cloudflare VOD webhook 必須以官方簽章通過；shared secret fallback 僅可作 staging/local smoke。
 - 本機 `npm run cloudflare:fixtures` 已通過：ready / processing / error 回 200，invalid / expired 回 401。
+
+## 11. 2026-07-11 Autonomous Delivery Review
+
+本輪關閉先前列出的 repo 內 critical/high finding，並新增外部商城證據、通知 outbox、免費銷講／課程、lead vs paid conversion、live publication、商家 direct upload 與瀏覽器品質 gate。
+
+獨立 release audit 隨後找出 PayUni unknown/missing status 被推定為 paid，以及 staging smoke 未建立 pending transaction兩項 P1。兩項均已改為 fail closed／先建立 server-side checkout，並新增 malformed callback 與 smoke setup regression evidence。後續財務 review 找到晚到退款跨期可能遺失債務的 P1，已新增 signed settlement balance、carry in/out ledger、按月 lock、lock-time recompute 與跨月回歸測試。
+
+本輪新增邊界：
+
+- Course Enrollment 只代表免費報名，不授予付費內容權限。
+- AffiliateClick `leadAt` 與 `convertedAt` 分離，只有可信 paid webhook 可寫 conversion。
+- 外部商城 click 不建立 PaymentTransaction，也不直接建立 commission。
+- 商家 direct upload 只取得一次性 URL，Cloudflare UID/status/playback 由 API/webhook 管理。
+- Notification quota 以 database atomic update 保留額度，週期過期時原子重設，不靠 application read-modify-write。
+
+目前 release decision：`CONDITIONAL` for Staging QA。外部 dashboard 與真實 sandbox 項目仍列於 `BLOCKERS.md` 與 go-live checklist；未完成前不得標記 production ready。
+
+2026-07-11 財務終局 hardening 補充：晚到退款採 signed period balance 與 carry in/out，不改寫 locked settlement；settlement 依月份順序 lock 並在 lock transaction 重算。首次 paid 以 booking snapshot 凍結 provider gateway fee 與 server-side plan platform fee，paid replay 不可改寫。RefundRecord 由 processed-only PostgreSQL trigger 同步 principal/gateway/platform counters，DB CHECK 禁止超額。月結依每筆 PaymentTransaction.paymentMode 計算，BYO 與 platform 混合交易不再由當月訂閱模式一刀切。25 migrations 已通過 clean deploy、legacy/missing-subscription fail-closed、0630/0655 atomic rollback 與 recovery runbook 驗證。
+
+## 12. Financial Integrity Re-review Fixes
+
+Release/security reviewers 找到並已修正：
+
+- PayUni malformed callback 不再 fail-open 成 paid。
+- Staging PayUni/demo smoke 先建立 pending checkout，不再對不存在的 order 重播。
+- Full-refund label 與實際 partial amount 不一致時，佣金依 transaction 累計退款狀態做比例 adjustment。
+- Locked period 不允許補登同月份 manual affiliate adjustment。
+- Affiliate commission/payout 對 Affiliate 使用 vendor composite FK。
+- Attribution policy 有 database CHECK。
+- Payment webhook 的 ledger、event status 與 audit log 共用 transaction boundary。
+
+對應 regression tests 與 migration safety 文件：`src/lib/payment-providers/payuni.test.ts`、`src/app/api/webhooks/payments/route.test.ts`、`src/lib/payment-webhooks.test.ts`、`src/lib/affiliate-payouts.test.ts`、`docs/database/payout-ledger-migration.md`。

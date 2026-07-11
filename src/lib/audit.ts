@@ -24,9 +24,13 @@ export async function writeAuditLog(input: {
   targetId?: string | null;
   before?: Prisma.InputJsonValue | null;
   after?: Prisma.InputJsonValue | null;
-}) {
-  const meta = await requestAuditMeta();
-  await getDb().auditLog.create({
+}, options: {
+  client?: Prisma.TransactionClient;
+  meta?: Awaited<ReturnType<typeof requestAuditMeta>>;
+} = {}) {
+  const meta = options.meta ?? await requestAuditMeta();
+  const client = options.client ?? getDb();
+  await client.auditLog.create({
     data: {
       vendorId: input.vendorId ?? null,
       actorId: input.actorId ?? null,

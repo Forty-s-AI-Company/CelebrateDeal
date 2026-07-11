@@ -76,11 +76,12 @@ https://app.celebratedeal.com/api/cloudflare/stream-webhook
 6. 跑 direct upload smoke test。
 7. 跑 Live Input smoke test。
 8. 準備一個 staging vendor，取得 `SMOKE_VENDOR_ID`，讓 smoke test 可把 Cloudflare UID 寫回 `videos`。
+9. 準備同一商家的 active platform-checkout product，將 ID 設為 `SMOKE_PRODUCT_ID`；PayUni smoke 會先建立 pending transaction，再重播事件。
 
 驗收標準：
 
 ```bash
-RUN_CLOUDFLARE_SMOKE=true SMOKE_VENDOR_ID=vendor_xxx npm run external:smoke
+RUN_CLOUDFLARE_SMOKE=true SMOKE_VENDOR_ID=vendor_xxx SMOKE_PRODUCT_ID=product_xxx npm run external:smoke
 ```
 
 - direct upload 回傳 `uid` 與 `uploadURL`。
