@@ -20,7 +20,9 @@ from orchestrator import (
     select_task,
     verify_reusable_worktree,
     ensure_clean_base,
+    _execute_unlocked,
 )
+from routing import RoleDag, RoleStage
 
 
 class OrchestratorTest(unittest.TestCase):
@@ -194,6 +196,28 @@ class OrchestratorTest(unittest.TestCase):
         changed_files_mock.return_value = {"src/lib/payment-providers/payuni.ts"}
         with self.assertRaisesRegex(RuntimeError, "write scope"):
             assert_role_change_scope({"id": "QA-1", "write_paths": ["src/**"], "forbidden_paths": ["src/lib/payment*"]}, dag, Path.cwd())
+
+    @patch("orchestrator.agent_instructions", return_value="repair instructions")
+    @patch("orchestrator.run", return_value=CompletedProcess([], 1, stdout="You've hit your usage limit. Try again at 2099-01-01 00:00", stderr=""))
+    def test_workspace_write_quota_persists_resumable_state(self, _run_mock, _instructions_mock) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_path = root / "task-state.json"
+            pipeline_path = root / "pipeline-state.json"
+            quota_path = root / "quota-state.json"
+            state_path.write_text("{}", encoding="utf-8")
+            pipeline_path.write_text(json.dumps({"runId": "run-1", "taskId": "QA-QUOTA", "currentStage": "01-repair", "sourceRevision": "source", "pipelineDigest": "digest", "sourceFingerprint": "fingerprint", "stages": []}), encoding="utf-8")
+            task = {"id": "QA-QUOTA", "type": "repair", "prompt": "repair", "validation": ["npm run lint"], "manual_merge_required": False}
+            dag = RoleDag("QA-QUOTA", "repair", "repair", (RoleStage("01-repair", "repair-engineer", "codex", "workspace-write", ()),))
+            config = {"max_retries": 3, "cli_fallback_model": "gpt-5.4", "autonomy": {"auto_commit": True}}
+            route = Route("repair-engineer", "gpt-5.6-terra", "medium")
+            with patch("orchestrator.STATE_PATH", state_path), patch("orchestrator.PIPELINE_STATE", pipeline_path), patch("orchestrator.QUOTA_STATE_PATH", quota_path):
+                result = _execute_unlocked(config, task, route, "branch", root, dag)
+            self.assertEqual(result["status"], "waiting-for-quota")
+            self.assertTrue(result["quota"]["exhausted"])
+            self.assertEqual(json.loads(quota_path.read_text(encoding="utf-8"))["status"], "waiting-for-quota")
 
     @patch("orchestrator.changed_files")
     def test_automation_rejects_supply_chain_changes_before_validation(self, changed_files_mock) -> None:
