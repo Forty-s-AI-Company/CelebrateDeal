@@ -17,9 +17,9 @@ class CodexAdapter(BaseAdapter):
         if not executable:
             return AdapterCapability(self.provider, None, False, "unsupported", notes=["codex not found"])
         safe_env = self.safe_environment({})
-        completed = subprocess.run([executable, "exec", "--help"], text=True, capture_output=True, timeout=20, env=safe_env, encoding="utf-8", errors="replace")
+        completed = subprocess.run(self.command(executable, "exec", "--help"), text=True, capture_output=True, timeout=20, env=safe_env, encoding="utf-8", errors="replace")
         help_text = completed.stdout + completed.stderr
-        version = subprocess.run([executable, "--version"], text=True, capture_output=True, timeout=20, env=safe_env, encoding="utf-8", errors="replace").stdout.strip()
+        version = subprocess.run(self.command(executable, "--version"), text=True, capture_output=True, timeout=20, env=safe_env, encoding="utf-8", errors="replace").stdout.strip()
         expected = {
             "noninteractive": "Run Codex non-interactively",
             "stdin": "read from stdin",
@@ -37,12 +37,12 @@ class CodexAdapter(BaseAdapter):
         )
 
     def build_command(self, request: AdapterRequest, executable: str) -> list[str]:
-        command = [
+        command = self.command(
             executable, "exec", "-", "--model", request.requested_model,
             "--config", f'model_reasoning_effort="{request.requested_reasoning}"',
             "--sandbox", request.sandbox, "--json", "--ephemeral",
             "--cd", str(request.workdir),
-        ]
+        )
         if request.output_schema:
             command.extend(["--output-schema", str(request.output_schema)])
         return command

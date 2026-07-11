@@ -108,6 +108,12 @@ class BaseAdapter:
                 return found
         return None
 
+    def command(self, executable: str, *arguments: str) -> list[str]:
+        """Invoke PowerShell shims explicitly because shell=False cannot run .ps1 files."""
+        if executable.lower().endswith(".ps1"):
+            return ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", executable, *arguments]
+        return [executable, *arguments]
+
     def capability(self) -> AdapterCapability:
         raise NotImplementedError
 
