@@ -107,3 +107,48 @@ The supervisor is single-instance, uses a persistent restart-safe state, stops a
 Codex usage-limit messages and Antigravity 429/`RESOURCE_EXHAUSTED` messages persist a resumable quota state. A future provider reset time is honored; missing or expired timestamps fall back to one probe per hour. The Windows scheduler entry point is `automation/run-supervisor.ps1`.
 
 The Ollama fallback is intentionally narrow. Only `qwen3:8b`, `qwen2.5-coder:7b`, `qwen2.5-coder:1.5b`, `qwen2.5vl:3b` and `nomic-embed-text:latest` are allowed. Local output is stored as a report artifact and never satisfies Codex or Antigravity provider requirements.
+
+## Windows unattended activation
+
+The production-like local supervisor uses Windows Credential Manager for the coordinator-only attestation key and Windows Task Scheduler for hourly unattended cycles. The scheduled task intentionally runs the unified supervisor once per trigger, not the quota-only probe.
+
+```powershell
+.\automation\store-attestation-key.ps1
+python automation\windows_credentials.py status
+
+.\automation\register-supervisor-task.ps1
+Get-ScheduledTask -TaskName "CelebrateDeal-AI-Autonomous-Supervisor"
+```
+
+Expected scheduler action:
+
+```text
+Execute: <absolute python.exe>
+Arguments: "<repo>\automation\autonomous_supervisor.py" --once
+WorkingDirectory: <repo>
+```
+
+Manual validation commands:
+
+```powershell
+npm run ai:auto-cycle:once
+Get-Content reports\ai-team\runtime\autonomous-supervisor-diagnostics.json
+Get-Content reports\ai-team\runtime\autonomous-supervisor-state.json
+Get-Content reports\ai-team\runtime\autonomous-supervisor.jsonl -Tail 20
+```
+
+Stop or remove the unattended task:
+
+```powershell
+Stop-ScheduledTask -TaskName "CelebrateDeal-AI-Autonomous-Supervisor"
+.\automation\unregister-supervisor-task.ps1
+.\automation\remove-attestation-key.ps1
+```
+
+Activation notes:
+
+- `credential-ready` means the key exists in Windows Credential Manager. The key must never be printed, committed, or forwarded to Codex/Antigravity adapters.
+- Exit code `0` with supervisor status `conditional` means the local loop finished and deferred provider-specific or attested-pipeline requirements. It is not a production release approval.
+- Exit code `2` remains the fail-closed signal for quota wait, provider-specific QA requirements, or release stages that have not completed.
+- Exit code `3` means the single-instance lock rejected a duplicate supervisor process.
+- If multiple Python launchers are installed, the PowerShell scripts select the first resolved `python` command instead of concatenating all candidates.

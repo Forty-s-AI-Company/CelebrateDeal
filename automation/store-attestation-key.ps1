@@ -2,7 +2,7 @@
 param()
 
 $ErrorActionPreference = "Stop"
-$python = (Get-Command python -CommandType Application -ErrorAction Stop).Source
+$python = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 & $python (Join-Path $PSScriptRoot "windows_credentials.py") generate
 if ($LASTEXITCODE -ne 0) {
     throw "Credential Manager 金鑰產生失敗"

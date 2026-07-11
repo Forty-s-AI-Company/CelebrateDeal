@@ -375,6 +375,20 @@ def atomic_compare_and_swap(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
+
+    def remove_lock_with_retry() -> None:
+        remove_deadline = time.monotonic() + 2
+        while True:
+            try:
+                lock_path.unlink()
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError:
+                if os.name != "nt" or time.monotonic() >= remove_deadline:
+                    raise
+                time.sleep(0.02)
+
     deadline = time.monotonic() + 10
     lock_fd: int | None = None
     while lock_fd is None:
@@ -399,7 +413,7 @@ def atomic_compare_and_swap(
                     except OSError:
                         pass
                 if not alive:
-                    lock_path.unlink()
+                    remove_lock_with_retry()
                     continue
             except FileNotFoundError:
                 continue
@@ -428,7 +442,4 @@ def atomic_compare_and_swap(
         os.replace(temporary, path)
     finally:
         os.close(lock_fd)
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        remove_lock_with_retry()

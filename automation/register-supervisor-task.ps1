@@ -4,7 +4,7 @@ param([string]$TaskName = "CelebrateDeal-AI-Autonomous-Supervisor")
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $supervisor = Join-Path $PSScriptRoot "autonomous_supervisor.py"
-$python = (Get-Command python -CommandType Application -ErrorAction Stop).Source
+$python = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $action = New-ScheduledTaskAction `
     -Execute $python `
     -Argument "`"$supervisor`" --once" `
