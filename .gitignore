@@ -14,6 +14,9 @@
 /coverage
 /test-results
 /playwright-report
+/reports/playwright-results
+/reports/playwright-html
+/reports/lighthouse
 
 # next.js
 /.next/
@@ -31,6 +34,24 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Python and autonomous AI runtime artifacts
+**/__pycache__/
+*.py[cod]
+/automation/logs/
+/automation/reports/
+/automation/backlog-candidates.json
+/automation/pipeline-state.json
+/automation/task-state.json
+/reports/ai-team/runtime/
+/reports/ai-team/NEXT_ACTION.json
+/reports/ai-team/NEXT_ACTION.md
+/reports/ai-team/PIPELINE_STATUS.json
+/reports/ai-team/PIPELINE_STATUS.md
+/reports/ai-team/QA_IMPORT_REPORT.md
+/reports/ai-team/discovered-issues.json
+/reports/ai-team/discovery-report.md
+/reports/ai-team/normalized-qa-issues.json
 
 # env files (can opt-in for committing if needed)
 .env*
