@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
@@ -113,16 +114,20 @@ def discover(root: Path, run_quality: bool = False, runner: Callable[[Path, list
             "dependencies": [],
             "autoExecuteEligibility": False,
         })
-    todo = subprocess.run(
-        ["rg", "-n", "TODO|FIXME", "automation", "docs/ai-team"], cwd=root,
-        text=True, capture_output=True, shell=False, env=_safe_env(), encoding="utf-8", errors="replace",
-    )
+    todo_lines: list[str] = []
+    ripgrep = shutil.which("rg", path=_safe_env().get("PATH"))
+    if ripgrep:
+        todo = subprocess.run(
+            [ripgrep, "-n", "TODO|FIXME", "automation", "docs/ai-team"], cwd=root,
+            text=True, capture_output=True, shell=False, env=_safe_env(), encoding="utf-8", errors="replace",
+        )
+        todo_lines = [line for line in todo.stdout.splitlines() if line.strip()]
     payload = {
         "schemaVersion": 1,
         "generatedAt": now(),
         "baseline": snapshot,
         "checks": checks,
-        "todoCount": len([line for line in todo.stdout.splitlines() if line.strip()]),
+        "todoCount": len(todo_lines),
         "issues": issues,
         "counts": {severity: len([issue for issue in issues if issue["severity"] == severity]) for severity in ("P0", "P1", "P2", "P3")},
     }

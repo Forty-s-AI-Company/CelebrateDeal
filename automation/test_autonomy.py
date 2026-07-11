@@ -9,12 +9,15 @@ from autonomy import _run, baseline, discover, triage
 
 class AutonomyTest(unittest.TestCase):
     @patch("autonomy.baseline", return_value={"fingerprint": "baseline", "status": []})
+    @patch("autonomy.shutil.which", return_value=None)
     @patch("autonomy.subprocess.run")
-    def test_empty_queue_discovery_is_successful_and_has_no_fabricated_tasks(self, subprocess_mock, _baseline_mock) -> None:
+    def test_empty_queue_discovery_is_successful_without_ripgrep(self, subprocess_mock, _which_mock, _baseline_mock) -> None:
         subprocess_mock.return_value.stdout = ""
         runner = lambda _root, command, _timeout: {"command": command, "status": "passed", "exitCode": 0, "stdout": "", "stderr": ""}
         payload = discover(__import__("pathlib").Path.cwd(), runner=runner)
         self.assertEqual(payload["issues"], [])
+        self.assertEqual(payload["todoCount"], 0)
+        subprocess_mock.assert_not_called()
         self.assertTrue(all(value == 0 for value in payload["counts"].values()))
 
     def test_triage_rebuilds_controls_and_rejects_injected_provider_command(self) -> None:
