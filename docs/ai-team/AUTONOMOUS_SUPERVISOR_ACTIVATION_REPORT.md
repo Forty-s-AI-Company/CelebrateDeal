@@ -154,6 +154,132 @@ Blocked / Deferred：
 - Release-check after required stages
 - Production external service validation
 
+## 長時間 dry-run 驗收：2026-07-12 04:47-04:59 Asia/Taipei
+
+基準 HEAD：`dd1b2d586fbf0e828c0c5f7c42e62fde7d3e5c99`
+
+### 啟用狀態
+
+- Credential Manager：`credential-ready`
+- Task Scheduler：`CelebrateDeal-AI-Autonomous-Supervisor` 為 `Ready`
+- Scheduler action：
+
+```text
+Execute: C:\Program Files\Python311\python.exe
+Arguments: "C:\Users\eden\Downloads\AI\CelebrateDeal\automation\autonomous_supervisor.py" --once
+WorkingDirectory: C:\Users\eden\Downloads\AI\CelebrateDeal
+```
+
+### 每小時輪巡證據
+
+Structured log 顯示 Task Scheduler 已自動每小時觸發 unified supervisor，不是 quota-only probe：
+
+```text
+2026-07-11T18:38:24Z cycle-started keyAvailable=true keySource=windows-credential-manager
+2026-07-11T18:41:58Z cycle-finished status=conditional stepCount=10 consecutiveFailures=0
+2026-07-11T19:38:24Z cycle-started keyAvailable=true keySource=windows-credential-manager
+2026-07-11T19:41:48Z cycle-finished status=conditional stepCount=10 consecutiveFailures=0
+2026-07-11T20:38:24Z cycle-started keyAvailable=true keySource=windows-credential-manager
+2026-07-11T20:41:57Z cycle-finished status=conditional stepCount=10 consecutiveFailures=0
+```
+
+### 連續 supervisor cycle
+
+手動執行至少兩個連續 dry-run cycle，另加一輪收尾 cycle：
+
+```powershell
+npm run ai:auto-cycle:once
+npm run ai:auto-cycle:once
+npm run ai:auto-cycle:once
+```
+
+結果：
+
+- 第 1 輪：`status=conditional`，`stepCount=10`，`consecutiveFailures=0`
+- 第 2 輪：`status=conditional`，`stepCount=10`，`consecutiveFailures=0`
+- 收尾輪：`status=conditional`，`stepCount=10`，`consecutiveFailures=0`
+- Final state：`lastStatus=conditional`，`consecutiveFailures=0`
+- Final discovery counts：`P0=0`、`P1=0`、`P2=0`、`P3=0`
+
+最後兩筆手動輪巡 structured log：
+
+```text
+2026-07-11T20:51:14Z cycle-started keyAvailable=true keySource=windows-credential-manager
+2026-07-11T20:54:51Z cycle-finished status=conditional stepCount=10 consecutiveFailures=0
+2026-07-11T20:56:09Z cycle-started keyAvailable=true keySource=windows-credential-manager
+2026-07-11T20:59:56Z cycle-finished status=conditional stepCount=10 consecutiveFailures=0
+```
+
+### Antigravity provider-native 狀態
+
+Provider-native Antigravity smoke 未通過，必須維持 `External required`：
+
+```json
+{
+  "provider_requirement_satisfied": false,
+  "capability_equivalent": false,
+  "antigravity": {
+    "status": "failed",
+    "timed_out": true,
+    "duration_seconds": 45.016,
+    "error": "Non-interactive Antigravity smoke timed out; manual login or UI validation is required"
+  }
+}
+```
+
+Codex fallback 有執行，但不可視為 Antigravity QA pass。`qa-handoff` 仍正確回報：
+
+```text
+Codex fallback cannot satisfy provider-specific Antigravity QA.
+```
+
+### Quota recovery 狀態
+
+本次 dry-run 沒有遇到真實 Codex 或 Antigravity 額度耗盡，因此沒有產生 `reports/ai-team/runtime/quota-state.json`。
+
+已由 `npm run automation:test` 覆蓋 mock evidence：
+
+- Codex usage-limit reset time parsing
+- Antigravity `HTTP 429` / `RESOURCE_EXHAUSTED`
+- Antigravity `Reset Time: ... (Local Time)`
+- expired / far-future reset time 防護
+- provider available 但缺少 coordinator key 時不得 resume
+- stale pipeline binding 不得 resume
+- Ollama docs-only fallback 不滿足 provider-native stage
+
+### 本輪驗證命令
+
+```text
+npm run automation:test      PASS, 131 tests
+npm run ai:validate          PASS, 11 native agents / 14 Codex roles / 10 Antigravity roles / 9 skills
+npm run security:secrets     PASS, 626 tracked and untracked files scanned
+npm run ai:doctor            PASS
+npm run ai:auto-cycle:once   PASS as local loop, status=conditional
+```
+
+### Dry-run release gate
+
+Decision：`CONDITIONAL`
+
+Passed：
+
+- Credential Manager key available from Windows Credential Manager
+- Task Scheduler registered and hourly trigger observed
+- Three manual supervisor cycles completed without hard failure
+- `consecutiveFailures=0`
+- Discovery counts `P0/P1/P2/P3=0`
+- Secret scan passed
+- Automation tests passed
+- Codex and Antigravity CLIs are discoverable
+
+Deferred / External required：
+
+- Antigravity provider-native smoke timed out and requires manual login / Desktop validation
+- No real quota exhausted event occurred during this run; quota recovery remains mock-validated
+- No completed attested pipeline exists, so deterministic regression remains deferred
+- `release-check` remains deferred until required planned stages complete
+- Production external services remain dashboard/sandbox gated
+
 ## 本輪修改
 
 - `automation/store-attestation-key.ps1`
