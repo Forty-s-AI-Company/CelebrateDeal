@@ -37,7 +37,7 @@ Stage receipts and deterministic regression evidence require `AI_PIPELINE_ATTEST
 - 每個任務建立 `codex/automation/<task-id>` 分支與 `.worktrees/<task-id>` 隔離 worktree。
 - Codex 使用 `workspace-write`，不使用 bypass approvals/sandbox。
 - 最多三次嘗試；驗證失敗只把精簡 log 交給修復回合。
-- 不部署、不 push、不 merge。Database、auth、payment、billing、webhook 變更一律標記 manual merge required。
+- 不部署、不 push。低風險 task branch 可自動建立 scoped commit；自動 merge 在 branch protection 與 required-review evidence 可被機器驗證前維持關閉。Database、auth、payment、billing、webhook 與 production 變更一律標記 manual merge required。
 - 驗證命令有 allowlist；禁止 production deploy、force push、migration reset。
 - Role manifest 必須位於 `automation/roles`，registry/manifest 的 role ID 與 provider 必須完全一致；未知角色、未知 provider 與路徑逸出一律拒絕。
 
@@ -62,10 +62,37 @@ npm run ai:smoke
 .\automation\run-team.ps1 -Task SEC-001
 ```
 
-產物位於 `automation/logs` 與 `automation/reports`，兩者不提交 Git。代理設定的 model/reasoning 是 Prompt 預期值；只有 Codex runtime 明確回報時才能稱為實際使用值。目前 Codex CLI v0.134.0 無法執行 gpt-5.6-terra/sol，若 CLI 明確回傳版本不支援，orchestrator 會改用 `gpt-5.4` 並在報告寫入 `runtimeModel`。升級 CLI 後會優先使用代理設定模型。
+產物位於 `automation/logs` 與 `automation/reports`，兩者不提交 Git。代理設定的 model/reasoning 是 Prompt 預期值；只有 Codex runtime 明確回報時才能稱為實際使用值。已偵測 Codex CLI v0.144.1；若 requested model 仍被 runtime 明確拒絕，orchestrator 會改用 `gpt-5.4` 並在報告寫入 fallback 與 actual model evidence。
 
 ## Antigravity QA
 
 Antigravity 可將問題寫入根目錄 `qa-issues.json`。每筆只採用 `id`、`title`、`description`、`priority`、`type` 與 `status`；`prompt`、自訂 validation 與命令一律忽略。內容會標記為 untrusted evidence。
 
 Untrusted QA 只會被登錄為 `awaiting-approval` 報告，不會送入 Codex、不建立 worktree、不取得 workspace-write，也不執行 npm validation。人工審閱後，將可信任的修復目標另寫入 `automation/backlog.json`，下一次 orchestrator 才會執行。若 trusted automation task 修改 `.github`、`.codex`、`.agents`、`automation`、`package.json`、lockfile 或 `scripts`，仍會在執行任何 npm script 前失敗，除非該 backlog task 由人工明確設定 `allow_supply_chain_changes: true`。
+
+## Autonomous discovery and quota resume
+
+An empty trusted queue now triggers deterministic discovery instead of returning an error:
+
+```powershell
+npm run ai:discover
+npm run ai:triage
+npm run ai:auto-cycle:once
+npm run ai:auto-cycle
+npm run ai:status
+```
+
+Discovery captures a protected Git baseline and writes runtime evidence. Triage discards model-supplied provider, role, command, validation and scope controls, then rebuilds candidate tasks from server policy. P0/P1 and protected financial/security paths cannot enter auto-execution.
+
+Quota-aware commands:
+
+```powershell
+npm run ai:quota:status
+npm run ai:quota:probe -- --provider antigravity
+npm run ai:supervisor
+npm run ai:resume
+```
+
+Codex usage-limit messages and Antigravity 429/`RESOURCE_EXHAUSTED` messages persist a resumable quota state. A future provider reset time is honored; missing or expired timestamps fall back to one probe per hour. The Windows scheduler entry point is `automation/run-supervisor.ps1`.
+
+The Ollama fallback is intentionally narrow. Only `qwen3:8b`, `qwen2.5-coder:7b`, `qwen2.5-coder:1.5b`, `qwen2.5vl:3b` and `nomic-embed-text:latest` are allowed. Local output is stored as a report artifact and never satisfies Codex or Antigravity provider requirements.

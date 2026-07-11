@@ -7,7 +7,7 @@
 | A-003 | 2026-07-10 | Orchestrator 的 `team-config.yaml` 使用 JSON-compatible YAML，避免新增 Python PyYAML 依賴。 | Windows/Linux 皆可用 Python stdlib 執行。 | `python automation/orchestrator.py --dry-run`。 | Accepted |
 | A-004 | 2026-07-10 | 目前外部商城沒有統一訂單 API/Webhook。 | click 不得視為 conversion。 | 每個商城 adapter 個別驗收。 | External required |
 | A-005 | 2026-07-10 | Prompt 內模型名稱是期望設定，不代表本輪執行環境實際採用相同模型。 | 報告不得虛報模型。 | 只有 runtime 可回報時才標記 actual。 | Accepted |
-| A-006 | 2026-07-10 | 本機 Codex CLI v0.134.0 尚不支援 gpt-5.6-terra/sol。 | Non-interactive orchestrator 需要明確 fallback。 | CLI 升級前使用 `gpt-5.4` 並在報告記錄 runtime model。 | Temporary |
+| A-006 | 2026-07-10 | 本機 Codex CLI 已升級至 v0.144.1，但 requested model 是否可用仍須由每次 runtime evidence 證明。 | Non-interactive orchestrator 保留明確 fallback。 | requested model 被 CLI 拒絕時使用 `gpt-5.4`，並分開記錄 requested/actual。 | Accepted |
 | A-007 | 2026-07-10 | Repo 尚未建立 `docs/product/`，產品完成矩陣需由本輪依 schema、routes、UI 與測試證據重建。 | 不可把 prompt 中的功能清單直接視為已實作。 | 建立 `docs/product/PRODUCT_COMPLETION_MATRIX.md` 並逐項連結證據。 | Accepted |
 | A-008 | 2026-07-10 | 外部直銷商城目前沒有可信任的訂單 API/Webhook。 | 外部商品 click 只能作為導流事件，佣金 conversion 必須由人工確認或可信 provider evidence 建立。 | Adapter fixture、狀態機與 reconciliation 測試。 | External required |
 | A-009 | 2026-07-10 | MVP 歸因採 30 天 last-touch，僅限同一瀏覽器的 signed HttpOnly cookie。 | URL ref 只提出候選；停權、過期、跨 vendor 或被竄改 token 不產生佣金；跨裝置不承諾自動合併。 | `attribution.test.ts`、checkout metadata 與 webhook commission tests。 | Accepted |
@@ -47,3 +47,6 @@
 - The requested QA filenames were absent at repair time. `reports/ai-team-qa/FINAL_DELIVERY.md` and its linked reports are treated as the auditable equivalent source; missing files are not recreated as if they were original QA evidence.
 - A CLI flag/capability probe proves interface availability, not authentication or quota. Only a successful provider-native smoke can satisfy a provider-specific stage.
 - Pipeline evidence authenticity uses a coordinator/CI-only `AI_PIPELINE_ATTESTATION_KEY`. The key is never stored in the repository or forwarded to Codex/Antigravity child processes; a missing key blocks stage completion and release.
+- Empty backlog is an operational idle state, not a setup failure. The auto-cycle performs deterministic discovery and schedules the next scan without fabricating product work.
+- Ollama is a docs/reports/metadata-only continuity provider. It cannot complete a Codex or Antigravity stage and never satisfies provider-native QA.
+- A provider reset time is accepted only when it parses in local time and is in the future. Missing or expired values schedule an hourly probe.

@@ -14,11 +14,31 @@ from orchestrator import (
     route_task,
     route_task_dag,
     safe_slug,
+    select_task,
     verify_reusable_worktree,
+    ensure_clean_base,
 )
 
 
 class OrchestratorTest(unittest.TestCase):
+    @patch("orchestrator.git")
+    def test_dirty_primary_checkout_is_allowed_only_for_protected_baseline_mode(self, git_mock) -> None:
+        git_mock.return_value = CompletedProcess([], 0, stdout=" M src/file.ts\n", stderr="")
+        ensure_clean_base(True)
+        with self.assertRaises(RuntimeError):
+            ensure_clean_base(False)
+
+    @patch("orchestrator.STATE_PATH")
+    @patch("orchestrator.load_qa_tasks", return_value=[])
+    @patch("orchestrator.load_json")
+    def test_passed_runtime_task_is_not_selected_again(self, load_mock, _qa_mock, state_path_mock) -> None:
+        state_path_mock.exists.return_value = True
+        load_mock.side_effect = [
+            {"tasks": [{"id": "DONE-1", "status": "ready"}, {"id": "NEXT-1", "status": "ready"}]},
+            {"status": "passed", "taskId": "DONE-1"},
+        ]
+        selected = select_task({}, None)
+        self.assertEqual(selected["id"], "NEXT-1")
     def test_safe_slug_rejects_path_syntax(self) -> None:
         self.assertEqual(safe_slug("SEC/../../001"), "sec-001")
 

@@ -29,6 +29,15 @@
       "sandbox_required": true,
       "preferred_models": ["Gemini 3.5 Flash (High)", "Gemini 3.1 Pro (High)"],
       "fallback_provider": "codex"
+    },
+    "ollama": {
+      "executables": ["ollama", "ollama.exe"],
+      "interface": "run",
+      "mode": "local-docs-only",
+      "allowed_models": ["qwen3:8b", "qwen2.5-coder:7b", "qwen2.5-coder:1.5b", "qwen2.5vl:3b", "nomic-embed-text:latest"],
+      "supervisor_model": "qwen2.5-coder:1.5b",
+      "provider_requirement_satisfied": false,
+      "capability_equivalent": false
     }
   },
   "models": {
@@ -36,13 +45,29 @@
     "engineering": {"requested": "gpt-5.6-terra", "reasoning": "medium", "fallback": "gpt-5.4"},
     "qa_fast": {"requested": "Gemini 3.5 Flash (High)", "reasoning": "high", "fallback": "gpt-5.4"},
     "qa_deep": {"requested": "Gemini 3.1 Pro (High)", "reasoning": "high", "fallback": "gpt-5.4"}
+    ,"local_supervisor": {"requested": "qwen2.5-coder:1.5b", "reasoning": "low", "fallback": null}
+    ,"local_docs": {"requested": "qwen2.5-coder:7b", "reasoning": "low", "fallback": "qwen2.5-coder:1.5b"}
+  },
+  "autonomy": {
+    "empty_queue_action": "discover",
+    "max_iterations": 8,
+    "max_commits": 5,
+    "max_changed_files": 80,
+    "quota_probe_interval_seconds": 3600,
+    "auto_commit": true,
+    "auto_merge_low_risk": false,
+    "protected_baseline": true,
+    "production_merge": false
   },
   "environment": {
     "allowlist": ["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "ALLUSERSPROFILE", "SYSTEMDRIVE", "HOMEDRIVE", "HOMEPATH", "CODEX_HOME"],
     "redact_name_patterns": ["SECRET", "TOKEN", "PASSWORD", "KEY", "HASH_IV", "HASH_KEY", "DSN", "COOKIE"]
   },
   "safety": {
-    "blocked_operations": ["production deploy", "production database mutation", "real payment", "real email", "force push", "automatic merge"],
+    "blocked_operations": ["production deploy", "production database mutation", "real payment", "real email", "force push", "destructive git"],
+    "manual_merge_required_patterns": ["prisma/", "src/lib/auth", "src/lib/payment", "src/lib/billing", "src/app/api/webhooks/", "src/app/admin/billing/"],
+    "ollama_allowed_write_paths": ["reports/ai-team/runtime/"],
+    "ollama_forbidden_write_paths": ["src/", "prisma/", ".env", ".github/", "package.json", "package-lock.json", "automation/policy.py", "automation/pipeline_engine.py"],
     "antigravity_allowed_write_paths": ["tests/", "docs/qa/", "reports/", "playwright-report/", "test-results/"],
     "antigravity_forbidden_write_paths": ["src/", "prisma/", ".env", ".github/", "package.json", "package-lock.json"],
     "human_approval_required": ["production", "payment", "email", "destructive migration", "legal decision", "OTP", "CAPTCHA"]

@@ -134,6 +134,9 @@ def select_task(config: dict[str, Any], requested_id: str | None) -> dict[str, A
         raise ValueError("automation/backlog.json tasks must be an array")
     candidates = [*load_qa_tasks(config), *[task for task in backlog if isinstance(task, dict)]]
     candidates = [task for task in candidates if task.get("status") in {"pending", "ready"}]
+    runtime_state = load_json(STATE_PATH) if STATE_PATH.exists() else {}
+    if runtime_state.get("status") == "passed" and runtime_state.get("taskId"):
+        candidates = [task for task in candidates if task.get("id") != runtime_state.get("taskId")]
     if requested_id:
         matches = [task for task in candidates if task.get("id") == requested_id]
         if not matches:
@@ -165,6 +168,26 @@ def ensure_clean_base(dry_run: bool) -> None:
     status = git("status", "--porcelain").stdout.strip()
     if status and not dry_run:
         raise RuntimeError("Working tree must be clean before creating an automation worktree.")
+
+
+def commit_validated_task(config: dict[str, Any], task: dict[str, Any], worktree: Path) -> str | None:
+    if config.get("autonomy", {}).get("auto_commit") is not True:
+        return None
+    paths = sorted(changed_files(worktree))
+    if not paths:
+        return None
+    git("add", "--", *paths, cwd=worktree)
+    staged_scan = run(
+        ["npm.cmd" if os.name == "nt" else "npm", "run", "security:secrets:staged"],
+        cwd=worktree, check=False,
+    )
+    if staged_scan.returncode != 0:
+        raise RuntimeError("Staged secret scan failed; task commit blocked")
+    subject = f"chore(auto): {task['id']} {str(task.get('title') or 'scoped task')[:60]}"
+    committed = git("commit", "-m", subject, cwd=worktree, check=False)
+    if committed.returncode != 0:
+        raise RuntimeError("Task validation passed but Git commit failed: " + redact(committed.stderr or committed.stdout)[-1000:])
+    return git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
 
 
 def prepare_worktree(config: dict[str, Any], task: dict[str, Any], dry_run: bool) -> tuple[str, Path]:
@@ -434,6 +457,13 @@ def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: 
 
     protected = protected_changes(config, worktree)
     manual = bool(task.get("manual_merge_required")) or bool(protected)
+    commit_hash: str | None = None
+    if success:
+        try:
+            commit_hash = commit_validated_task(config, task, worktree)
+        except RuntimeError as error:
+            success = False
+            failure_summary = str(error)
     return {
         "status": "passed" if success else "failed",
         "task": task,
@@ -449,6 +479,7 @@ def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: 
         "failureSummary": "" if success else failure_summary,
         "deployed": False,
         "merged": False,
+        "commit": commit_hash,
     }
 
 
@@ -485,7 +516,8 @@ def main() -> int:
     route = route_task(config, task)
     is_untrusted_qa = task.get("source") == "qa-issues.json"
     role_dag = None if is_untrusted_qa else route_task_dag(config, task)
-    ensure_clean_base(args.dry_run or is_untrusted_qa)
+    protected_baseline = config.get("autonomy", {}).get("protected_baseline") is True
+    ensure_clean_base(args.dry_run or is_untrusted_qa or protected_baseline)
     branch, worktree = (
         ("not-created", ROOT)
         if is_untrusted_qa
@@ -531,6 +563,7 @@ def main() -> int:
         write_state(
             status=payload["status"], taskId=task["id"], attempt=payload["attempts"],
             branch=branch, worktree=str(worktree), lastReport=str(markdown_report.relative_to(ROOT)),
+            commit=payload.get("commit"),
             **({"triagedQa": triaged_qa} if triaged_qa is not None else {}),
         )
     print(json.dumps({

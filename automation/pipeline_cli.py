@@ -14,7 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from adapters import AdapterRequest, AntigravityAdapter, CodexAdapter
+from adapters.ollama_adapter import OllamaAdapter
 from adapters.base_adapter import BaseAdapter, redact
+from autonomy import discover as discover_workspace, markdown_report as discovery_markdown, triage as triage_discovery
+from quota_supervisor import build_waiting_state, detect_quota, local_now, probe_antigravity, quota_status
 from routing import assert_acyclic, build_role_dag, enabled_roles, validate_stage_graph
 from policy import assert_write_scope, changed_since, workspace_snapshot
 from pipeline_engine import (
@@ -37,6 +40,8 @@ REPORTS = ROOT / "reports" / "ai-team"
 RUNTIME = REPORTS / "runtime"
 PIPELINE_STATE = AUTOMATION / "pipeline-state.json"
 TASK_STATE = AUTOMATION / "task-state.json"
+QUOTA_STATE = AUTOMATION / "quota-state.json"
+AUTONOMOUS_BACKLOG = AUTOMATION / "backlog-candidates.json"
 ROLE_REGISTRY = AUTOMATION / "role-registry.yaml"
 CONFIG = AUTOMATION / "team-config.yaml"
 QA_SEARCH_PATHS = [
@@ -57,6 +62,10 @@ def now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def safe_child_environment() -> dict[str, str]:
+    return BaseAdapter().safe_environment({})
+
+
 def workspace_fingerprint() -> str:
     digest = hashlib.sha256()
     diff = subprocess.run([
@@ -64,9 +73,12 @@ def workspace_fingerprint() -> str:
         ":(exclude)automation/pipeline-state.json", ":(exclude)automation/task-state.json",
         ":(exclude)reports/ai-team/runtime/**", ":(exclude)reports/ai-team/PIPELINE_STATUS.*",
         ":(exclude)reports/ai-team/NEXT_ACTION.*", ":(exclude)automation/logs/**", ":(exclude)automation/reports/**",
-    ], cwd=ROOT, capture_output=True, check=True, shell=False)
+    ], cwd=ROOT, capture_output=True, check=True, shell=False, env=safe_child_environment())
     digest.update(diff.stdout)
-    untracked = subprocess.run(["git", "ls-files", "-o", "--exclude-standard", "-z"], cwd=ROOT, capture_output=True, check=True, shell=False)
+    untracked = subprocess.run(
+        ["git", "ls-files", "-o", "--exclude-standard", "-z"],
+        cwd=ROOT, capture_output=True, check=True, shell=False, env=safe_child_environment(),
+    )
     for raw_path in sorted(path for path in untracked.stdout.decode("utf-8", errors="replace").split("\0") if path):
         normalized = raw_path.replace("\\", "/")
         if normalized in {
@@ -104,16 +116,18 @@ def coordinator_trust_status(source_revision: str) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     committed_manifest = subprocess.run(
         ["git", "show", f"{source_revision}:{TRUST_MANIFEST_PATH}"], cwd=ROOT, capture_output=True, shell=False,
+        env=safe_child_environment(),
     )
     if committed_manifest.returncode != 0:
         return False, [f"untracked:{TRUST_MANIFEST_PATH}"]
     current_manifest = ROOT / TRUST_MANIFEST_PATH
     manifest_oid = subprocess.run(
         ["git", "rev-parse", f"{source_revision}:{TRUST_MANIFEST_PATH}"], cwd=ROOT, capture_output=True, text=True, shell=False,
+        env=safe_child_environment(),
     )
     working_manifest_oid = subprocess.run(
         ["git", "hash-object", "--filters", f"--path={TRUST_MANIFEST_PATH}", TRUST_MANIFEST_PATH],
-        cwd=ROOT, capture_output=True, text=True, shell=False,
+        cwd=ROOT, capture_output=True, text=True, shell=False, env=safe_child_environment(),
     )
     if not current_manifest.is_file() or manifest_oid.stdout.strip() != working_manifest_oid.stdout.strip():
         return False, [f"modified:{TRUST_MANIFEST_PATH}"]
@@ -142,7 +156,7 @@ def coordinator_trust_status(source_revision: str) -> tuple[bool, list[str]]:
         }
         committed = subprocess.run(
             ["git", "ls-tree", "-r", "--name-only", source_revision, "--", root_name],
-            cwd=ROOT, capture_output=True, text=True, shell=False,
+            cwd=ROOT, capture_output=True, text=True, shell=False, env=safe_child_environment(),
         )
         committed_files = {line.strip().replace("\\", "/") for line in committed.stdout.splitlines() if line.strip() and not is_excluded(line.strip())}
         for extra in sorted(current_files - committed_files):
@@ -153,7 +167,10 @@ def coordinator_trust_status(source_revision: str) -> tuple[bool, list[str]]:
     for relative in sorted(paths):
         if is_excluded(relative):
             continue
-        exists = subprocess.run(["git", "cat-file", "-e", f"{source_revision}:{relative}"], cwd=ROOT, capture_output=True, shell=False)
+        exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{source_revision}:{relative}"],
+            cwd=ROOT, capture_output=True, shell=False, env=safe_child_environment(),
+        )
         if exists.returncode != 0:
             reasons.append(f"untracked:{relative}")
             continue
@@ -163,10 +180,11 @@ def coordinator_trust_status(source_revision: str) -> tuple[bool, list[str]]:
             continue
         committed_oid = subprocess.run(
             ["git", "rev-parse", f"{source_revision}:{relative}"], cwd=ROOT, capture_output=True, text=True, check=True, shell=False,
+            env=safe_child_environment(),
         ).stdout.strip()
         working_oid = subprocess.run(
             ["git", "hash-object", "--filters", f"--path={relative}", relative],
-            cwd=ROOT, capture_output=True, text=True, shell=False,
+            cwd=ROOT, capture_output=True, text=True, shell=False, env=safe_child_environment(),
         ).stdout.strip()
         if committed_oid != working_oid:
             reasons.append(f"modified:{relative}")
@@ -341,6 +359,14 @@ def run_role(role_id: str, prompt: str, timeout: int = 120):
         result = fallback
     result["attempt_evidence"] = attempt_evidence
     result["workspace_changes"] = sorted({path for attempt in attempt_evidence for path in attempt["workspace_changes"]})
+    # Model-authored stdout is untrusted and must not control provider quota state.
+    quota = detect_quota(str(provider), str(result.get("stderr", "")) + "\n" + str(result.get("error", "")))
+    result["quota"] = quota.to_dict()
+    if quota.exhausted:
+        pipeline = load_object(PIPELINE_STATE, {})
+        atomic_json(QUOTA_STATE, build_waiting_state(quota, pipeline))
+        result["status"] = "blocked"
+        result["error"] = "Provider quota exhausted; resumable state persisted"
     return result
 
 
@@ -725,6 +751,207 @@ def state_command(args: argparse.Namespace) -> int:
     return 0 if payload.get("status") in {"ready", "completed", "passed", "planned", "running", "awaiting-human-approval", "no-matching-issues", "awaiting-human-promotion"} else 2
 
 
+def discovery_command(args: argparse.Namespace) -> int:
+    payload = discover_workspace(ROOT, run_quality=bool(getattr(args, "quality", False)))
+    atomic_json(REPORTS / "discovered-issues.json", payload)
+    write_text(REPORTS / "discovery-report.md", discovery_markdown(payload))
+    atomic_json(RUNTIME / "discovery.json", payload)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if all(check.get("status") == "passed" for check in payload.get("checks", {}).values()) else 2
+
+
+def triage_command(_: argparse.Namespace) -> int:
+    discovery = load_object(REPORTS / "discovered-issues.json", {"issues": []})
+    payload = triage_discovery(discovery)
+    atomic_json(AUTONOMOUS_BACKLOG, payload)
+    atomic_json(RUNTIME / "triage.json", payload)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_local_supervisor_report(state: dict[str, Any]) -> dict[str, Any]:
+    adapter = OllamaAdapter()
+    capability = adapter.capability()
+    if not capability.available or "qwen2.5-coder:1.5b" not in capability.models:
+        return {"status": "unsupported", "provider": "ollama", "reason": "qwen2.5-coder:1.5b is not available"}
+    prompt = json.dumps({
+        "instruction": "Return JSON only with status, summary, findings and actual_model. Summarize this quota wait state. Do not propose or perform source-code changes.",
+        "quotaState": state,
+    }, ensure_ascii=False)
+    request = AdapterRequest(
+        role_id="local-quota-supervisor", prompt=prompt, workdir=ROOT,
+        requested_model="qwen2.5-coder:1.5b", requested_reasoning="low", timeout_seconds=60,
+        sandbox="read-only",
+    )
+    result = adapter.run(request).to_dict()
+    result.update({
+        "providerRequirementSatisfied": False,
+        "capabilityEquivalent": False,
+        "requiresProviderResume": True,
+        "localScope": "report-artifact-only",
+    })
+    atomic_json(RUNTIME / "ollama-supervisor.json", result)
+    return result
+
+
+def quota_command(args: argparse.Namespace) -> int:
+    command = args.command
+    if command == "quota-status":
+        payload = quota_status(QUOTA_STATE)
+    elif command == "quota-probe":
+        state = quota_status(QUOTA_STATE)
+        provider = str(state.get("preferredProvider") or getattr(args, "provider", None) or "antigravity")
+        if provider == "antigravity":
+            payload = probe_antigravity()
+        elif provider == "codex":
+            result = run_role(
+                "ai-team-orchestrator",
+                'Return {"status":"passed","summary":"quota probe","findings":[],"actual_model":null}. Do not modify files.',
+                90,
+            )
+            payload = {
+                "provider": "codex",
+                "status": "available" if result.get("status") == "passed" else "waiting-for-quota" if result.get("quota", {}).get("exhausted") else "failed",
+                "quota": result.get("quota"),
+                "result": result,
+            }
+        else:
+            raise ValueError(f"Unsupported quota provider: {provider}")
+        atomic_json(RUNTIME / f"quota-probe-{provider}.json", payload)
+    elif command == "supervisor":
+        state = quota_status(QUOTA_STATE)
+        if state.get("status") != "waiting-for-quota":
+            payload = {"status": "idle", "generatedAt": now(), "reason": "No provider is waiting for quota"}
+        elif int(state.get("retryCount", 0)) >= int(state.get("maxRetries", 3)):
+            payload = {
+                "status": "retry-exhausted", "generatedAt": now(),
+                "retryCount": state.get("retryCount"), "maxRetries": state.get("maxRetries"),
+                "nextAction": "external-provider-check",
+            }
+        else:
+            next_probe = dt.datetime.fromisoformat(str(state["nextProbeAt"]))
+            current = local_now()
+            local_result = _run_local_supervisor_report(state)
+            if next_probe > current:
+                payload = {"status": "waiting-for-quota", "generatedAt": now(), "nextProbeAt": state["nextProbeAt"], "localFallback": local_result}
+            else:
+                provider = str(state.get("preferredProvider"))
+                probe_args = argparse.Namespace(command="quota-probe", provider=provider)
+                probe_exit = quota_command(probe_args)
+                probe = load_object(RUNTIME / f"quota-probe-{provider}.json", {})
+                if probe.get("status") == "available":
+                    if not os.environ.get("AI_PIPELINE_ATTESTATION_KEY"):
+                        payload = {
+                            "status": "provider-available-awaiting-attestation", "generatedAt": now(),
+                            "provider": provider, "nextAction": "resume-with-coordinator-secret",
+                            "probeExit": probe_exit, "localFallback": local_result,
+                        }
+                    else:
+                        resume_exit = state_command(argparse.Namespace(command="resume"))
+                        if resume_exit == 0:
+                            QUOTA_STATE.unlink(missing_ok=True)
+                        resumed = load_object(PIPELINE_STATE, {"status": "not-planned"})
+                        payload = {
+                            "status": "provider-resumed" if resume_exit == 0 else "provider-available",
+                            "generatedAt": now(), "provider": provider,
+                            "nextAction": "continue-auto-cycle" if resume_exit == 0 else "inspect-resume-failure",
+                            "probeExit": probe_exit, "resumeExit": resume_exit,
+                            "pipelineStatus": resumed.get("status"), "currentStage": resumed.get("currentStage"),
+                            "localFallback": local_result,
+                        }
+                else:
+                    detection = probe.get("quota") or detect_quota(provider, str(probe)).to_dict()
+                    state["detectedAt"] = detection.get("detected_at", state.get("detectedAt"))
+                    state["resumeAt"] = detection.get("resume_at")
+                    state["nextProbeAt"] = detection.get("next_probe_at", (current + dt.timedelta(hours=1)).isoformat())
+                    state["retryCount"] = int(state.get("retryCount", 0)) + 1
+                    if state["retryCount"] >= int(state.get("maxRetries", 3)):
+                        state["status"] = "waiting-for-quota"
+                        atomic_json(QUOTA_STATE, state)
+                        payload = {"status": "retry-exhausted", "generatedAt": now(), "retryCount": state["retryCount"], "nextAction": "external-provider-check", "localFallback": local_result}
+                    else:
+                        atomic_json(QUOTA_STATE, state)
+                        payload = {"status": "waiting-for-quota", "generatedAt": now(), "nextProbeAt": state["nextProbeAt"], "localFallback": local_result}
+        atomic_json(RUNTIME / "supervisor.json", payload)
+    else:
+        raise ValueError(f"Unsupported quota command: {command}")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("status") in {"available", "idle", "provider-available", "provider-resumed", "not-waiting"} else 2 if payload.get("status") in {"waiting-for-quota", "retry-exhausted", "provider-available-awaiting-attestation"} else 1
+
+
+def auto_cycle_command(args: argparse.Namespace) -> int:
+    backlog = load_object(AUTOMATION / "backlog.json", {"tasks": []})
+    pending = [task for task in backlog.get("tasks", []) if isinstance(task, dict) and task.get("status") in {"pending", "ready"}]
+    task_runtime = load_object(TASK_STATE, {})
+    if task_runtime.get("status") == "passed" and task_runtime.get("taskId"):
+        pending = [task for task in pending if task.get("id") != task_runtime.get("taskId")]
+    if pending:
+        selected = sorted(pending, key=lambda task: (SEVERITY_ORDER.get(str(task.get("priority")), 9), str(task.get("id"))))[0]
+        task_id = str(selected.get("id"))
+        command = [sys.executable, str(AUTOMATION / "orchestrator.py"), "--task", task_id]
+        try:
+            completed = subprocess.run(
+                command, cwd=ROOT, text=True, capture_output=True, timeout=3600, shell=False,
+                env=BaseAdapter().safe_environment({}), encoding="utf-8", errors="replace",
+            )
+        except subprocess.TimeoutExpired as error:
+            completed = subprocess.CompletedProcess(
+                command, -1, str(error.stdout or ""), str(error.stderr or "") + "\nTask executor timed out after 3600s",
+            )
+        quota = detect_quota("codex", completed.stderr)
+        if quota.exhausted:
+            atomic_json(QUOTA_STATE, build_waiting_state(quota, {"taskId": task_id, "stages": []}))
+        execution_status = "completed" if completed.returncode == 0 else "waiting-for-quota" if quota.exhausted else "failed"
+        payload = {
+            "schemaVersion": 1,
+            "generatedAt": now(),
+            "status": execution_status,
+            "taskId": task_id,
+            "nextAction": "scheduled-discovery" if execution_status == "completed" else "quota-supervisor" if quota.exhausted else "inspect-task-failure",
+            "exitCode": completed.returncode,
+            "stdout": redact(completed.stdout[-4000:]),
+            "stderr": redact(completed.stderr[-4000:]),
+            "quota": quota.to_dict(),
+        }
+    else:
+        discovery = discover_workspace(ROOT, run_quality=bool(getattr(args, "quality", False)))
+        triage = triage_discovery(discovery)
+        atomic_json(REPORTS / "discovered-issues.json", discovery)
+        write_text(REPORTS / "discovery-report.md", discovery_markdown(discovery))
+        atomic_json(AUTONOMOUS_BACKLOG, triage)
+        auto_tasks = [task for task in triage.get("tasks", []) if task.get("auto_execute") is True]
+        payload = {
+            "schemaVersion": 1,
+            "generatedAt": now(),
+            "status": "candidates-ready" if auto_tasks else "idle",
+            "discoveredIssues": len(discovery.get("issues", [])),
+            "autoExecutableTasks": [task.get("id") for task in auto_tasks],
+            "nextAction": "review-server-validated-candidates" if auto_tasks else "scheduled-discovery",
+            "note": "Autonomous candidates are server-rebuilt and remain separate from committed trusted backlog until the control-plane commit gate records provenance.",
+        }
+    atomic_json(RUNTIME / "auto-cycle.json", payload)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    remaining = int(getattr(args, "remaining_iterations", getattr(args, "max_iterations", 1)))
+    if args.command == "auto-cycle" and payload.get("status") == "completed" and remaining > 1:
+        args.remaining_iterations = remaining - 1
+        return auto_cycle_command(args)
+    return 0
+
+
+def autonomous_commit_command(_: argparse.Namespace) -> int:
+    task_state = load_object(TASK_STATE, {})
+    commit_hash = task_state.get("commit")
+    payload = {
+        "status": "commit-recorded" if commit_hash else "no-commit-evidence",
+        "generatedAt": now(), "taskId": task_state.get("taskId"), "commit": commit_hash,
+        "note": "Commits are created only by the trusted isolated task executor after scope, validation and staged-secret gates.",
+    }
+    exit_code = 0
+    atomic_json(RUNTIME / "autonomous-commit.json", payload)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return exit_code
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CelebrateDeal dual-CLI role-based orchestrator")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -740,6 +967,21 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--task-id", help="Expand a trusted backlog task into its dynamic role DAG")
     plan_parser.set_defaults(handler=plan_pipeline)
     sub.add_parser("regression").set_defaults(handler=run_regression)
+    discover_parser = sub.add_parser("discover")
+    discover_parser.add_argument("--quality", action="store_true")
+    discover_parser.set_defaults(handler=discovery_command)
+    sub.add_parser("triage").set_defaults(handler=triage_command)
+    sub.add_parser("autonomous-commit").set_defaults(handler=autonomous_commit_command)
+    for name in ["auto-cycle", "auto-cycle-once"]:
+        item = sub.add_parser(name)
+        item.add_argument("--quality", action="store_true")
+        item.add_argument("--max-iterations", type=int, default=8 if name == "auto-cycle" else 1)
+        item.set_defaults(handler=auto_cycle_command)
+    for name in ["quota-status", "quota-probe", "supervisor"]:
+        item = sub.add_parser(name)
+        if name == "quota-probe":
+            item.add_argument("--provider", choices=["codex", "antigravity"])
+        item.set_defaults(handler=quota_command)
     for name in ["repair-qa", "verify-fixes", "deep-qa", "repair-deep-qa", "full-cycle", "repair-cycle", "resume", "status", "release-check"]:
         item = sub.add_parser(name)
         if name == "repair-qa":

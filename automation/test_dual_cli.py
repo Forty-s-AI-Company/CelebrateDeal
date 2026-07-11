@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from adapters import AdapterRequest, AntigravityAdapter, CodexAdapter
 from adapters.base_adapter import BaseAdapter, redact
-from pipeline_cli import PIPELINE_STATE, atomic_json, expand_trust_paths, import_files, normalize_issue, plan_pipeline, run_regression, run_role, state_command
+from pipeline_cli import PIPELINE_STATE, QUOTA_STATE, atomic_json, coordinator_trust_status, expand_trust_paths, import_files, normalize_issue, plan_pipeline, quota_command, run_regression, run_role, state_command, workspace_fingerprint
 from pipeline_cli import smoke_antigravity, smoke_handoff
 
 
@@ -45,6 +45,32 @@ class AdapterTest(unittest.TestCase):
         env = adapter.safe_environment({"PATH": "ok", "API_TOKEN": "nope"})
         self.assertEqual(env["PATH"], "ok")
         self.assertNotIn("API_TOKEN", env)
+
+    @patch("pipeline_cli.atomic_json")
+    @patch("pipeline_cli.probe_antigravity")
+    @patch("pipeline_cli.quota_status")
+    def test_retry_exhausted_supervisor_does_not_probe_provider(self, status_mock, probe_mock, _atomic_mock) -> None:
+        status_mock.return_value = {
+            "status": "waiting-for-quota", "retryCount": 3, "maxRetries": 3,
+            "preferredProvider": "antigravity", "nextProbeAt": "2026-07-11T00:00:00+08:00",
+        }
+        self.assertEqual(quota_command(argparse.Namespace(command="supervisor")), 2)
+        probe_mock.assert_not_called()
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("pipeline_cli.state_command")
+    @patch("pipeline_cli.load_object", return_value={"status": "available"})
+    @patch("pipeline_cli._run_local_supervisor_report", return_value={"status": "passed"})
+    @patch("pipeline_cli.probe_antigravity", return_value={"provider": "antigravity", "status": "available"})
+    @patch("pipeline_cli.atomic_json")
+    @patch("pipeline_cli.quota_status")
+    def test_provider_available_without_attestation_key_does_not_resume(self, status_mock, _atomic_mock, _probe_mock, _local_mock, _load_mock, resume_mock) -> None:
+        status_mock.return_value = {
+            "status": "waiting-for-quota", "retryCount": 0, "maxRetries": 3,
+            "preferredProvider": "antigravity", "nextProbeAt": "2026-01-01T00:00:00+08:00",
+        }
+        self.assertEqual(quota_command(argparse.Namespace(command="supervisor")), 2)
+        resume_mock.assert_not_called()
 
     @patch("adapters.codex_adapter.subprocess.run")
     @patch("adapters.base_adapter.shutil.which", return_value="codex")
@@ -91,6 +117,19 @@ class AdapterTest(unittest.TestCase):
 
 
 class PipelineTest(unittest.TestCase):
+    @patch("pipeline_cli.subprocess.run")
+    def test_git_trust_commands_do_not_forward_attestation_key(self, run_mock) -> None:
+        run_mock.side_effect = [
+            CompletedProcess([], 0, b"", b""),
+            CompletedProcess([], 0, b"", b""),
+            CompletedProcess([], 1, b"", b"missing"),
+        ]
+        with patch.dict("os.environ", {"AI_PIPELINE_ATTESTATION_KEY": "never-forward"}, clear=False):
+            workspace_fingerprint()
+            self.assertEqual(coordinator_trust_status("HEAD"), (False, ["untracked:automation/trust-manifest.json"]))
+        self.assertTrue(all("env" in call.kwargs for call in run_mock.call_args_list))
+        self.assertTrue(all("AI_PIPELINE_ATTESTATION_KEY" not in call.kwargs["env"] for call in run_mock.call_args_list))
+
     def test_atomic_json_replaces_complete_document(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state.json"
@@ -186,6 +225,25 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(adapter.run.call_count, 1)
         self.assertEqual(result["workspace_changes"], [".env.local"])
         self.assertTrue(result["attempt_evidence"][0]["policy_violation"])
+
+    @patch("pipeline_cli.atomic_json")
+    @patch("pipeline_cli.workspace_snapshot", side_effect=[{}, {}])
+    @patch("pipeline_cli.role")
+    @patch("pipeline_cli.CodexAdapter")
+    def test_model_authored_stdout_cannot_trigger_quota_state(self, adapter_type, role_mock, _snapshot_mock, atomic_mock) -> None:
+        role_mock.return_value = {
+            "role_id": "reader", "provider": "codex", "requested_model": "gpt-5.4",
+            "reasoning": "medium", "write_paths": [], "forbidden_paths": [],
+        }
+        adapter = adapter_type.return_value
+        adapter.capability.return_value.models = []
+        adapter.run.return_value.to_dict.return_value = {
+            "status": "passed", "stderr": "", "stdout": "Documentation example: HTTP 429 Too Many Requests",
+            "error": None, "risk": "low",
+        }
+        result = run_role("reader", "read only")
+        self.assertFalse(result["quota"]["exhausted"])
+        self.assertFalse(any(call.args and call.args[0] == QUOTA_STATE for call in atomic_mock.call_args_list))
 
     @patch("pipeline_cli.atomic_json")
     @patch("pipeline_cli.validate_release_evidence", return_value=["blocked"])

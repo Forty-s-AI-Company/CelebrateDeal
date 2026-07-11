@@ -37,6 +37,8 @@
 /automation/reports/*.md
 /automation/pipeline-state.json
 /automation/task-state.json
+/automation/quota-state.json
+/automation/backlog-candidates.json
 **/__pycache__/
 *.py[cod]
 

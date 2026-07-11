@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "status", "preferredProvider", "localProvider",
+    "localFallbackModel", "detectedAt", "nextProbeAt", "completedStages",
+    "pendingStages", "providerRequirementSatisfied", "capabilityEquivalent",
+    "requiresProviderResume", "retryCount", "maxRetries"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {"const": "waiting-for-quota"},
+    "taskId": {"type": ["string", "null"]},
+    "runId": {"type": ["string", "null"]},
+    "stageId": {"type": ["string", "null"]},
+    "preferredProvider": {"enum": ["codex", "antigravity"]},
+    "actualProvider": {"enum": ["codex", "antigravity"]},
+    "requestedModel": {"type": ["string", "null"]},
+    "actualModel": {"type": ["string", "null"]},
+    "localProvider": {"const": "ollama"},
+    "localFallbackModel": {"enum": ["qwen3:8b", "qwen2.5-coder:7b", "qwen2.5-coder:1.5b", "qwen2.5vl:3b", "nomic-embed-text:latest"]},
+    "reason": {"type": ["string", "null"]},
+    "detectedAt": {"type": "string", "format": "date-time"},
+    "resumeAt": {"type": ["string", "null"], "format": "date-time"},
+    "nextProbeAt": {"type": "string", "format": "date-time"},
+    "completedStages": {"type": "array", "items": {"type": ["string", "null"]}},
+    "pendingStages": {"type": "array", "items": {"type": ["string", "null"]}},
+    "localScope": {"const": "docs-reports-metadata-only"},
+    "providerRequirementSatisfied": {"const": false},
+    "capabilityEquivalent": {"const": false},
+    "requiresProviderResume": {"const": true},
+    "retryCount": {"type": "integer", "minimum": 0},
+    "maxRetries": {"type": "integer", "minimum": 1},
+    "sourceRevision": {"type": ["string", "null"]},
+    "pipelineDigest": {"type": ["string", "null"]},
+    "workspaceFingerprint": {"type": ["string", "null"]}
+  }
+}
