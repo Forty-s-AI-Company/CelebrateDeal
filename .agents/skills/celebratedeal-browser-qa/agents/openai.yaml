@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Browser QA"
+  short_description: "Run role-based browser, visual, and accessibility QA"
+  default_prompt: "Use $celebratedeal-browser-qa to verify this CelebrateDeal workflow across supported viewports."

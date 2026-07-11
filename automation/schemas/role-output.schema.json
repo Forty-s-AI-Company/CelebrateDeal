@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["status", "summary", "findings", "actual_model"],
+  "properties": {
+    "status": {"enum": ["passed", "failed", "conditional", "blocked"]},
+    "summary": {"type": "string"},
+    "findings": {"type": "array", "items": {"type": "string"}},
+    "actual_model": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

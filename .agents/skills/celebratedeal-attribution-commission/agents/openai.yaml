@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Attribution"
+  short_description: "Implement auditable attribution and commission flows"
+  default_prompt: "Use $celebratedeal-attribution-commission to design or review this referral and commission flow."

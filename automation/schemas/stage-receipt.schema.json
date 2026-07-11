@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "stageId", "roleId", "provider", "status", "attempt", "pipelineDigest", "sourceRevision", "sourceFingerprint", "artifacts", "findings", "attestation"],
+  "properties": {
+    "runId": {"type": "string"},
+    "stageId": {"type": "string"},
+    "roleId": {"type": "string"},
+    "provider": {"enum": ["codex", "antigravity"]},
+    "status": {"enum": ["completed", "failed", "blocked", "conditional"]},
+    "attempt": {"type": "integer", "minimum": 1},
+    "pipelineDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sourceRevision": {"type": "string", "minLength": 1},
+    "sourceFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "attestation": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "artifacts": {"type": "array", "items": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "additionalProperties": false}},
+    "findings": {"type": "array", "items": {"type": "object"}}
+  }
+}

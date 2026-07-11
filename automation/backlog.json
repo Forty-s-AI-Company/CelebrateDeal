@@ -1,0 +1,86 @@
+{
+  "tasks": [
+    {
+      "id": "SEC-001",
+      "title": "拒絕 production demo 與未知 payment webhook provider",
+      "type": "database-security",
+      "priority": "P0",
+      "status": "completed",
+      "prompt": "修復 payment webhook provider 選擇：production 禁止 demo，未知 provider 直接拒絕，不可回退；補偽造 paid/refund、unknown provider 與 duplicate regression tests。維持既有 PayUni fixture。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "SEC-002",
+      "title": "分離 platform billing admin 與 vendor finance scope",
+      "type": "database-security",
+      "priority": "P0",
+      "status": "completed",
+      "prompt": "修復 admin billing 與 vendor finance 權限邊界，確保 vendor 只能查看自己資料、平台 mutation 只允許 platform admin + MFA；補兩租戶負向測試。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run e2e:smoke", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "SEC-003",
+      "title": "修復 payout payment account 跨租戶查詢",
+      "type": "database-security",
+      "priority": "P0",
+      "status": "completed",
+      "prompt": "限制 vendor payout/payment account query 只讀目前 vendor，避免銀行資料跨租戶洩漏，並補兩租戶 regression test。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "SAAS-001",
+      "title": "完成 trial、subscription 與 quota entitlement gate",
+      "type": "backend",
+      "priority": "P1",
+      "status": "completed",
+      "prompt": "建立 vendor entitlement service，讓 trialing/active 可建立與發布，expired/suspended/canceled 保留唯讀但拒絕付費資源與發布；串接 video、live、form、affiliate 與 Cloudflare 操作，補 audit、UI error state 與 tests。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "NOTIF-001",
+      "title": "建立 notification outbox 與 idempotent delivery worker",
+      "type": "backend",
+      "priority": "P1",
+      "status": "completed",
+      "prompt": "建立通知 outbox、delivery attempts、idempotency key、scheduledAt、sent/failed/retry 狀態；報名成功與開播提醒先用 fixture/Resend adapter，禁止本機誤寄真信。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "COURSE-001",
+      "title": "完成課程、單元、場次與 enrollment 最小垂直切片",
+      "type": "backend",
+      "priority": "P1",
+      "status": "completed",
+      "prompt": "沿用 Live/Video/Form/Product 建立 Course、Lesson、CourseSession、Enrollment 最小 domain；包含 vendor ownership、draft/published 狀態、後台 UI、錯誤狀態與 tests，不重構既有 live flow。",
+      "validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run e2e:smoke", "npm run build"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "QA-001",
+      "title": "擴充主要頁面 visual、a11y 與 staging release evidence",
+      "type": "test",
+      "priority": "P1",
+      "status": "completed",
+      "prompt": "為 live、dashboard、admin billing、team/onboarding 建立 desktop/mobile visual baseline、axe 與 smoke evidence；更新 release checklist 與 Antigravity QA handoff。",
+      "validation": ["npm run e2e:smoke", "npm run e2e:a11y", "npm run e2e:visual", "npm run lighthouse"],
+      "manual_merge_required": true
+    },
+    {
+      "id": "AI-TEAM-REPAIR-001",
+      "title": "修復雙 CLI 動態角色 DAG 與 pipeline 證據鏈",
+      "type": "backend",
+      "types": ["backend", "test", "security-review"],
+      "priority": "P1",
+      "status": "completed",
+      "prompt": "只修復 AI Team orchestrator、adapters、role registry、pipeline、schemas、權限與安全控制；加入領域角色 DAG、fail-closed provider、工作區寫入邊界、stage receipts、CAS state 與 regression tests。",
+      "validation": ["npm run automation:test", "npm run ai:validate", "npm run security:secrets", "npm run lint", "npm run typecheck", "npm run test", "npm run build", "npm run preflight"],
+      "manual_merge_required": true,
+      "allow_supply_chain_changes": true
+    }
+  ]
+}

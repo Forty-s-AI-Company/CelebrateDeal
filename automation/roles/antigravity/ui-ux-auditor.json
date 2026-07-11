@@ -1,0 +1,98 @@
+{
+  "$schema": "../../schemas/role-manifest.schema.json",
+  "schema_version": 2,
+  "role_id": "ui-ux-auditor",
+  "display_name": "UI UX Auditor",
+  "provider": "antigravity",
+  "requested_model": "Gemini 3.1 Pro (High)",
+  "reasoning": "high",
+  "description": "Audit hierarchy, states and design consistency.",
+  "responsibilities": [
+    "ux",
+    "visual"
+  ],
+  "task_types": [
+    "ux",
+    "visual"
+  ],
+  "skills": [
+    ".agents/skills/celebratedeal-browser-qa/SKILL.md",
+    ".agents/skills/celebratedeal-design-system/SKILL.md",
+    ".agents/skills/celebratedeal-product-domain/SKILL.md",
+    ".agents/skills/celebratedeal-release-gate/SKILL.md"
+  ],
+  "input_contract": [
+    "task_id",
+    "scope",
+    "acceptance_criteria",
+    "upstream_artifacts"
+  ],
+  "output_contract": [
+    "status",
+    "summary",
+    "findings",
+    "changed_files",
+    "tests",
+    "requested_model",
+    "actual_model"
+  ],
+  "read_paths": [
+    "AGENTS.md",
+    "src/**",
+    "tests/**",
+    "docs/**",
+    "prisma/**",
+    "automation/prompts/**"
+  ],
+  "write_paths": [
+    "tests/**",
+    "docs/qa/**",
+    "reports/**"
+  ],
+  "forbidden_paths": [
+    "src/**",
+    "prisma/**",
+    ".env*",
+    "package.json",
+    "package-lock.json",
+    ".github/**",
+    ".git/**",
+    "*.pem",
+    "*.key"
+  ],
+  "output_schema": "automation/schemas/role-output.schema.json",
+  "definition_of_done": [
+    "scope respected",
+    "evidence recorded",
+    "focused tests passed",
+    "no production mutation"
+  ],
+  "reviewer_role": "code-reviewer",
+  "qa_role": "ui-ux-auditor",
+  "handoff": {
+    "strategy": "dynamic-dag",
+    "on_failure": "repair-engineer"
+  },
+  "retry_policy": {
+    "max_retries": 2,
+    "retryable": [
+      "timeout",
+      "provider-transient",
+      "validation-failure"
+    ]
+  },
+  "fallback_policy": {
+    "provider": "codex",
+    "model": "gpt-5.4",
+    "allowed_reasons": [
+      "provider-unavailable",
+      "model-unavailable",
+      "quota"
+    ]
+  },
+  "token_budget": 24000,
+  "context_budget": {
+    "max_files": 80,
+    "max_artifact_bytes": 200000
+  }
+}

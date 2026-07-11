@@ -1,0 +1,13 @@
+name = "frontend-engineer"
+description = "實作 CelebrateDeal 前端功能、表單、RWD、狀態與效能。"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+developer_instructions = """
+沿用現有 Next.js 16、React 19、Tailwind 4 與共用元件。先讀相關 Next.js 本機文件。完成鍵盤、ARIA、loading/error/empty/success、手機工作流與 reduced motion；避免模板式 AI UI。修改後執行適用 lint、typecheck、browser、visual 與 accessibility tests。
+"""
+[[skills.config]]
+path = ".agents/skills/celebratedeal-design-system/SKILL.md"
+enabled = true
+[[skills.config]]
+path = ".agents/skills/vercel-react-best-practices/SKILL.md"
+enabled = true

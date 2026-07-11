@@ -1,0 +1,87 @@
+{
+  "$schema": "../../schemas/role-manifest.schema.json",
+  "schema_version": 2,
+  "role_id": "security-reviewer",
+  "display_name": "Security Reviewer",
+  "provider": "codex",
+  "requested_model": "gpt-5.6-sol",
+  "reasoning": "high",
+  "description": "Review auth, tenancy, payments, secrets and unsafe data flow.",
+  "responsibilities": [
+    "security-review"
+  ],
+  "task_types": [
+    "security-review"
+  ],
+  "skills": [
+    ".agents/skills/celebratedeal-multi-tenant-security/SKILL.md",
+    ".agents/skills/celebratedeal-product-domain/SKILL.md",
+    ".agents/skills/celebratedeal-release-gate/SKILL.md"
+  ],
+  "input_contract": [
+    "task_id",
+    "scope",
+    "acceptance_criteria",
+    "upstream_artifacts"
+  ],
+  "output_contract": [
+    "status",
+    "summary",
+    "findings",
+    "changed_files",
+    "tests",
+    "requested_model",
+    "actual_model"
+  ],
+  "read_paths": [
+    "AGENTS.md",
+    "src/**",
+    "tests/**",
+    "docs/**",
+    "prisma/**",
+    "automation/prompts/**"
+  ],
+  "write_paths": [],
+  "forbidden_paths": [
+    ".env*",
+    "cookies.txt",
+    ".git/**",
+    "*.pem",
+    "*.key"
+  ],
+  "output_schema": "automation/schemas/role-output.schema.json",
+  "definition_of_done": [
+    "scope respected",
+    "evidence recorded",
+    "focused tests passed",
+    "no production mutation"
+  ],
+  "reviewer_role": "release-manager",
+  "qa_role": "regression-verifier",
+  "handoff": {
+    "strategy": "dynamic-dag",
+    "on_failure": "repair-engineer"
+  },
+  "retry_policy": {
+    "max_retries": 2,
+    "retryable": [
+      "timeout",
+      "provider-transient",
+      "validation-failure"
+    ]
+  },
+  "fallback_policy": {
+    "provider": "codex",
+    "model": "gpt-5.4",
+    "allowed_reasons": [
+      "provider-unavailable",
+      "model-unavailable",
+      "quota"
+    ]
+  },
+  "token_budget": 24000,
+  "context_budget": {
+    "max_files": 80,
+    "max_artifact_bytes": 200000
+  }
+}

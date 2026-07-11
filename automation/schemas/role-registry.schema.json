@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "minimum_codex_roles", "minimum_antigravity_roles", "roles"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "minimum_codex_roles": {"type": "integer", "minimum": 14},
+    "minimum_antigravity_roles": {"type": "integer", "minimum": 10},
+    "roles": {
+      "type": "array",
+      "minItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role_id", "provider", "manifest", "enabled"],
+        "properties": {
+          "role_id": {"type": "string", "minLength": 1},
+          "provider": {"enum": ["codex", "antigravity"]},
+          "manifest": {"type": "string", "pattern": "^automation/roles/(codex|antigravity)/[a-z0-9-]+\\.json$"},
+          "enabled": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Design System"
+  short_description: "Apply CelebrateDeal product and marketing UI rules"
+  default_prompt: "Use $celebratedeal-design-system to design or audit this CelebrateDeal interface."

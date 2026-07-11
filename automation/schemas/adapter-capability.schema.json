@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://celebratedeal.local/schemas/adapter-capability.schema.json",
+  "title": "Automation Adapter Capability",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "executable", "available", "mode", "version", "features", "models", "notes"],
+  "properties": {
+    "provider": { "enum": ["codex", "antigravity"] },
+    "executable": { "type": ["string", "null"] },
+    "available": { "type": "boolean" },
+    "mode": { "type": "string" },
+    "version": { "type": ["string", "null"] },
+    "features": { "type": "array", "items": { "type": "string" } },
+    "models": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

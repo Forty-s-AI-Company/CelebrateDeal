@@ -1,0 +1,151 @@
+{
+  "schema_version": 2,
+  "minimum_codex_roles": 14,
+  "minimum_antigravity_roles": 10,
+  "roles": [
+    {
+      "role_id": "ai-team-orchestrator",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/ai-team-orchestrator.json",
+      "enabled": true
+    },
+    {
+      "role_id": "product-architect",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/product-architect.json",
+      "enabled": true
+    },
+    {
+      "role_id": "system-architect",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/system-architect.json",
+      "enabled": true
+    },
+    {
+      "role_id": "ux-design-lead",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/ux-design-lead.json",
+      "enabled": true
+    },
+    {
+      "role_id": "frontend-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/frontend-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "backend-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/backend-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "database-security-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/database-security-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "attribution-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/attribution-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "commission-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/commission-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "test-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/test-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "repair-engineer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/repair-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "code-reviewer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/code-reviewer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "security-reviewer",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/security-reviewer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "release-manager",
+      "provider": "codex",
+      "manifest": "automation/roles/codex/release-manager.json",
+      "enabled": true
+    },
+    {
+      "role_id": "browser-qa-engineer",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/browser-qa-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "product-flow-auditor",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/product-flow-auditor.json",
+      "enabled": true
+    },
+    {
+      "role_id": "ui-ux-auditor",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/ui-ux-auditor.json",
+      "enabled": true
+    },
+    {
+      "role_id": "mobile-qa-engineer",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/mobile-qa-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "accessibility-auditor",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/accessibility-auditor.json",
+      "enabled": true
+    },
+    {
+      "role_id": "tenant-isolation-auditor",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/tenant-isolation-auditor.json",
+      "enabled": true
+    },
+    {
+      "role_id": "attribution-qa-engineer",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/attribution-qa-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "commission-qa-engineer",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/commission-qa-engineer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "visual-regression-reviewer",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/visual-regression-reviewer.json",
+      "enabled": true
+    },
+    {
+      "role_id": "regression-verifier",
+      "provider": "antigravity",
+      "manifest": "automation/roles/antigravity/regression-verifier.json",
+      "enabled": true
+    }
+  ]
+}

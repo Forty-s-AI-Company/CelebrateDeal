@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://celebratedeal.local/schemas/adapter-request.schema.json",
+  "title": "Automation Adapter Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role_id", "prompt", "workdir", "requested_model", "requested_reasoning", "timeout_seconds", "sandbox", "env"],
+  "properties": {
+    "role_id": { "type": "string", "minLength": 1 },
+    "prompt": { "type": "string", "minLength": 1 },
+    "workdir": { "type": "string", "minLength": 1 },
+    "requested_model": { "type": "string", "minLength": 1 },
+    "requested_reasoning": { "enum": ["low", "medium", "high"] },
+    "timeout_seconds": { "type": "integer", "minimum": 30, "maximum": 3600 },
+    "sandbox": { "enum": ["read-only", "workspace-write"] },
+    "output_schema": { "type": ["string", "null"] },
+    "artifacts_dir": { "type": ["string", "null"] },
+    "env": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

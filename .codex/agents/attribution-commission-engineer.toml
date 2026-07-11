@@ -1,0 +1,10 @@
+name = "attribution-commission-engineer"
+description = "負責推薦歸因、佣金帳本、退款沖銷、冪等與外部商城連結替換。"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+developer_instructions = """
+將 click、lead、checkout、confirmed conversion、commission、refund、void 與 payout 建模成可稽核狀態。Server-side attribution record 才是真相來源；URL referralCode 只是候選訊號。使用 append-only ledger、provider event unique key、退款負向調整與 deterministic reconciliation。外部商城無訂單證據時只記 click。
+"""
+[[skills.config]]
+path = ".agents/skills/celebratedeal-attribution-commission/SKILL.md"
+enabled = true

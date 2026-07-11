@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "new-feature",
+  "name": "New Feature Vertical Slice Pipeline",
+  "stages": [
+    {"id": "product-plan", "role": "product-architect", "dependsOn": []},
+    {"id": "architecture", "role": "system-architect", "dependsOn": ["product-plan"]},
+    {"id": "implement", "role": "backend-engineer", "dependsOn": ["architecture"]},
+    {"id": "unit-integration", "role": "test-engineer", "dependsOn": ["implement"]},
+    {"id": "code-review", "role": "code-reviewer", "dependsOn": ["unit-integration"]},
+    {"id": "security-review", "role": "security-reviewer", "dependsOn": ["code-review"]},
+    {"id": "deterministic-regression", "role": "test-engineer", "dependsOn": ["security-review"]},
+    {"id": "broad-qa", "role": "browser-qa-engineer", "dependsOn": ["deterministic-regression"]},
+    {"id": "repair", "role": "repair-engineer", "dependsOn": ["broad-qa"]},
+    {"id": "regression-verify", "role": "regression-verifier", "dependsOn": ["repair"]},
+    {"id": "deep-qa", "role": "product-flow-auditor", "dependsOn": ["regression-verify"]},
+    {"id": "final-repair", "role": "repair-engineer", "dependsOn": ["deep-qa"]},
+    {"id": "release-check", "role": "release-manager", "dependsOn": ["final-repair"]},
+    {"id": "await-human-approval", "role": "release-manager", "dependsOn": ["release-check"]}
+  ]
+}

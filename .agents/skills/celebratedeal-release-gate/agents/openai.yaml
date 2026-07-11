@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Release Gate"
+  short_description: "Apply production release gates and blocker policy"
+  default_prompt: "Use $celebratedeal-release-gate to decide whether this CelebrateDeal change is releasable."

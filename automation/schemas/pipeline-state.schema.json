@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "revision", "pipelineId", "sourceRevision", "sourceFingerprint", "pipelineDigest", "status", "mode", "createdAt", "updatedAt", "stages"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "runId": {"type": "string"},
+    "revision": {"type": "integer", "minimum": 1},
+    "pipelineId": {"type": "string"},
+    "sourceRevision": {"type": "string", "minLength": 1},
+    "sourceFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "pipelineDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "status": {"enum": ["planned", "running", "blocked", "failed", "completed", "awaiting-human-approval"]},
+    "mode": {"enum": ["full-auto", "hybrid", "codex-fallback"]},
+    "currentStage": {"type": ["string", "null"]},
+    "createdAt": {"type": "string"},
+    "updatedAt": {"type": "string"},
+    "milestone": {"type": ["string", "null"]},
+    "taskId": {"type": ["string", "null"]},
+    "taskType": {"type": ["string", "null"]},
+    "taskDomain": {"type": ["string", "null"]},
+    "stages": {"type": "array"}
+  },
+  "additionalProperties": false
+}

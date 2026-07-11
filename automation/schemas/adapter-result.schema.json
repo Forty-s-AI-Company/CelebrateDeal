@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "role_id", "status", "mode", "requested_model", "actual_model", "requested_reasoning", "actual_reasoning", "fallback_reason", "command", "exit_code", "started_at", "finished_at", "duration_seconds", "stdout", "stderr", "timed_out", "cancelled", "attempts", "artifacts", "error", "output_status", "confidence", "risk"],
+  "properties": {
+    "provider": {"enum": ["codex", "antigravity"]},
+    "role_id": {"type": "string"},
+    "status": {"enum": ["passed", "failed", "conditional", "blocked", "unsupported", "cancelled"]},
+    "mode": {"enum": ["full-auto", "hybrid", "codex-fallback", "unsupported"]},
+    "requested_model": {"type": "string"},
+    "actual_model": {"type": ["string", "null"]},
+    "requested_reasoning": {"enum": ["low", "medium", "high", "xhigh"]},
+    "actual_reasoning": {"type": ["string", "null"]},
+    "fallback_reason": {"type": ["string", "null"]},
+    "command": {"type": "array", "items": {"type": "string"}},
+    "exit_code": {"type": ["integer", "null"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "stdout": {"type": "string"},
+    "stderr": {"type": "string"},
+    "timed_out": {"type": "boolean"},
+    "cancelled": {"type": "boolean"},
+    "attempts": {"type": "integer", "minimum": 1},
+    "artifacts": {"type": "array", "items": {"type": "string"}},
+    "error": {"type": ["string", "null"]},
+    "output_status": {"type": ["string", "null"]},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "risk": {"enum": ["low", "medium", "high", "critical"]}
+    ,"workspace_changes": {"type": "array", "items": {"type": "string"}}
+    ,"configuredRequestedModel": {"type": ["string", "null"]}
+    ,"attempt_evidence": {"type": "array", "items": {"type": "object"}}
+  }
+}

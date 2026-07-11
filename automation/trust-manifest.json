@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "roots": [
+    ".agents",
+    ".codex",
+    "automation"
+  ],
+  "files": [
+    ".gitignore",
+    "AGENTS.md",
+    "eslint.config.mjs",
+    "package-lock.json",
+    "package.json",
+    "scripts/preflight.ts",
+    "scripts/secret-scan.ts",
+    "skills-lock.json",
+    "vitest.config.ts"
+  ],
+  "excluded": [
+    "automation/logs/",
+    "automation/reports/",
+    "automation/pipeline-state.json",
+    "automation/task-state.json",
+    "__pycache__/"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-11T11:08:00Z",
+  "scope": "dual-cli-ai-team-only",
+  "status": "conditional",
+  "resolved": {
+    "P0": 0,
+    "P1": 7,
+    "P2": 15,
+    "P3": 4
+  },
+  "open": {
+    "P0": 0,
+    "P1": 0,
+    "P2": 0,
+    "P3": 0
+  },
+  "externalRequired": [
+    "Antigravity agy CLI login/quota/first-run validation; current non-interactive smoke times out after 45 seconds",
+    "Configure coordinator-only AI_PIPELINE_ATTESTATION_KEY in staging/CI secret storage"
+  ],
+  "verification": {
+    "automationTests": 73,
+    "vitestTests": 169,
+    "lint": "passed",
+    "typecheck": "passed",
+    "build": "passed",
+    "preflight": "passed",
+    "codexSmoke": "passed-with-documented-model-fallback",
+    "antigravitySmoke": "fallback-conditional",
+    "handoffContract": "passed",
+    "handoffExecution": "blocked-exit-2",
+    "deterministicRegression": "passed",
+    "attestedRegression": "passed-signed-exit-0",
+    "coordinatorTrust": "passed-committed-head",
+    "releaseCheck": "blocked-required-stages-only-exit-2"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "requested_type", "domain", "status", "stages"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "requested_type": {"type": "string"},
+    "domain": {"type": "string"},
+    "status": {"const": "planned"},
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage_id", "role_id", "provider", "mode", "depends_on", "required"],
+        "properties": {
+          "stage_id": {"type": "string"},
+          "role_id": {"type": "string"},
+          "provider": {"enum": ["codex", "antigravity"]},
+          "mode": {"enum": ["read-only", "workspace-write"]},
+          "depends_on": {"type": "array", "items": {"type": "string"}},
+          "required": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

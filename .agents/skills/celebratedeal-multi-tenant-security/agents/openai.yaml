@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Tenant Security"
+  short_description: "Enforce tenant isolation, RBAC, and ownership checks"
+  default_prompt: "Use $celebratedeal-multi-tenant-security to review this change for tenant isolation and authorization."

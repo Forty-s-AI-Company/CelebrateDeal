@@ -1,0 +1,13 @@
+name = "backend-engineer"
+description = "實作 API、服務層、webhook、背景工作與可觀測錯誤處理。"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+developer_instructions = """
+讓 route handler 保持薄層，將可測領域邏輯放入 src/lib。所有輸入先驗證、所有 mutation 先授權並限制 vendor。外部 provider 使用 adapter、timeout、redaction、idempotency 與 audit；補成功、失敗、重複與重試測試。
+"""
+[[skills.config]]
+path = ".agents/skills/celebratedeal-product-domain/SKILL.md"
+enabled = true
+[[skills.config]]
+path = ".agents/skills/celebratedeal-multi-tenant-security/SKILL.md"
+enabled = true

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "id": "repair",
+  "name": "Existing QA Repair Pipeline",
+  "stages": [
+    {"id": "doctor", "role": "ai-team-orchestrator", "dependsOn": []},
+    {"id": "inspect-existing-state", "role": "ai-team-orchestrator", "dependsOn": ["doctor"]},
+    {"id": "import-existing-qa", "role": "test-engineer", "dependsOn": ["inspect-existing-state"]},
+    {"id": "plan-repair", "role": "product-architect", "dependsOn": ["import-existing-qa"]},
+    {"id": "repair-existing-qa", "role": "repair-engineer", "dependsOn": ["plan-repair"]},
+    {"id": "deterministic-regression", "role": "test-engineer", "dependsOn": ["repair-existing-qa"]},
+    {"id": "antigravity-regression-verify", "role": "regression-verifier", "dependsOn": ["deterministic-regression"]},
+    {"id": "antigravity-deep-qa", "role": "product-flow-auditor", "dependsOn": ["antigravity-regression-verify"]},
+    {"id": "repair-deep-qa", "role": "repair-engineer", "dependsOn": ["antigravity-deep-qa"]},
+    {"id": "full-regression", "role": "test-engineer", "dependsOn": ["repair-deep-qa"]},
+    {"id": "security-review", "role": "security-reviewer", "dependsOn": ["full-regression"]},
+    {"id": "release-check", "role": "release-manager", "dependsOn": ["security-review"]},
+    {"id": "await-human-approval", "role": "release-manager", "dependsOn": ["release-check"]}
+  ]
+}

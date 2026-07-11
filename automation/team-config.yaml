@@ -1,0 +1,128 @@
+{
+  "version": 2,
+  "project": {
+    "name": "CelebrateDeal",
+    "root": "..",
+    "production_mutation_allowed": false
+  },
+  "execution": {
+    "mode_preference": ["full-auto", "hybrid", "codex-fallback"],
+    "max_readers": 6,
+    "max_writers": 2,
+    "max_depth": 1,
+    "writers_are_sequential": true,
+    "max_retries": 3,
+    "default_timeout_seconds": 300,
+    "state_write": "atomic"
+  },
+  "engines": {
+    "codex": {
+      "executables": ["codex", "codex.exe", "codex.cmd", "codex.ps1"],
+      "interface": "exec",
+      "default_sandbox": "workspace-write",
+      "read_only_sandbox": "read-only",
+      "fallback_model": "gpt-5.4"
+    },
+    "antigravity": {
+      "executables": ["agy", "agy.exe", "antigravity", "antigravity-cli"],
+      "interface": "--print",
+      "sandbox_required": true,
+      "preferred_models": ["Gemini 3.5 Flash (High)", "Gemini 3.1 Pro (High)"],
+      "fallback_provider": "codex"
+    }
+  },
+  "models": {
+    "architecture": {"requested": "gpt-5.6-sol", "reasoning": "high", "fallback": "gpt-5.4"},
+    "engineering": {"requested": "gpt-5.6-terra", "reasoning": "medium", "fallback": "gpt-5.4"},
+    "qa_fast": {"requested": "Gemini 3.5 Flash (High)", "reasoning": "high", "fallback": "gpt-5.4"},
+    "qa_deep": {"requested": "Gemini 3.1 Pro (High)", "reasoning": "high", "fallback": "gpt-5.4"}
+  },
+  "environment": {
+    "allowlist": ["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "ALLUSERSPROFILE", "SYSTEMDRIVE", "HOMEDRIVE", "HOMEPATH", "CODEX_HOME"],
+    "redact_name_patterns": ["SECRET", "TOKEN", "PASSWORD", "KEY", "HASH_IV", "HASH_KEY", "DSN", "COOKIE"]
+  },
+  "safety": {
+    "blocked_operations": ["production deploy", "production database mutation", "real payment", "real email", "force push", "automatic merge"],
+    "antigravity_allowed_write_paths": ["tests/", "docs/qa/", "reports/", "playwright-report/", "test-results/"],
+    "antigravity_forbidden_write_paths": ["src/", "prisma/", ".env", ".github/", "package.json", "package-lock.json"],
+    "human_approval_required": ["production", "payment", "email", "destructive migration", "legal decision", "OTP", "CAPTCHA"]
+  },
+  "max_retries": 3,
+  "cli_fallback_model": "gpt-5.4",
+  "worktree_root": ".worktrees",
+  "reports_dir": "automation/reports",
+  "qa_issues_path": "qa-issues.json",
+  "default_validation": ["npm run lint", "npm run typecheck", "npm run test", "npm run build", "npm run preflight"],
+  "task_routing": {
+    "product": {"agent": "product-architect", "model": "gpt-5.6-sol", "reasoning": "high"},
+    "frontend": {"agent": "frontend-engineer", "model": "gpt-5.6-terra", "reasoning": "medium"},
+    "ux": {"agent": "ux-design-lead", "model": "gpt-5.6-sol", "reasoning": "high"},
+    "backend": {"agent": "backend-engineer", "model": "gpt-5.6-terra", "reasoning": "medium"},
+    "database-security": {"agent": "database-security-engineer", "model": "gpt-5.6-sol", "reasoning": "high"},
+    "attribution-commission": {"agent": "attribution-commission-engineer", "model": "gpt-5.6-sol", "reasoning": "high"},
+    "test": {"agent": "test-engineer", "model": "gpt-5.6-terra", "reasoning": "medium"},
+    "security-review": {"agent": "security-reviewer", "model": "gpt-5.6-sol", "reasoning": "high"},
+    "release": {"agent": "release-manager", "model": "gpt-5.6-sol", "reasoning": "high"}
+  },
+  "task_type_aliases": {
+    "ui": "frontend",
+    "visual": "frontend",
+    "mobile": "frontend",
+    "api": "backend",
+    "rls": "database-security",
+    "rbac": "database-security",
+    "tenant-security": "database-security",
+    "attribution": "attribution",
+    "referral": "attribution",
+    "commission": "commission",
+    "refund": "commission",
+    "payout": "commission"
+  },
+  "primary_route_by_domain": {
+    "default": "backend",
+    "product": "product",
+    "frontend": "frontend",
+    "ux": "frontend",
+    "backend": "backend",
+    "database-security": "database-security",
+    "attribution": "attribution-commission",
+    "commission": "attribution-commission",
+    "attribution-commission": "attribution-commission",
+    "test": "test",
+    "security-review": "security-review",
+    "release": "release"
+  },
+  "role_chains": {
+    "default": ["product-architect", "system-architect", "backend-engineer", "test-engineer", "code-reviewer", "browser-qa-engineer", "regression-verifier", "release-manager"],
+    "product": ["product-architect", "system-architect", "backend-engineer", "test-engineer", "code-reviewer", "product-flow-auditor", "regression-verifier", "release-manager"],
+    "frontend": ["product-architect", "ux-design-lead", "frontend-engineer", "test-engineer", "code-reviewer", "ui-ux-auditor", "mobile-qa-engineer", "accessibility-auditor", "visual-regression-reviewer", "regression-verifier", "release-manager"],
+    "ux": ["product-architect", "ux-design-lead", "frontend-engineer", "test-engineer", "code-reviewer", "ui-ux-auditor", "accessibility-auditor", "visual-regression-reviewer", "regression-verifier", "release-manager"],
+    "backend": ["product-architect", "system-architect", "backend-engineer", "test-engineer", "code-reviewer", "browser-qa-engineer", "regression-verifier", "release-manager"],
+    "database-security": ["system-architect", "database-security-engineer", "test-engineer", "security-reviewer", "tenant-isolation-auditor", "regression-verifier", "release-manager"],
+    "attribution": ["product-architect", "system-architect", "attribution-engineer", "test-engineer", "security-reviewer", "attribution-qa-engineer", "regression-verifier", "release-manager"],
+    "commission": ["product-architect", "system-architect", "commission-engineer", "database-security-engineer", "test-engineer", "security-reviewer", "commission-qa-engineer", "regression-verifier", "release-manager"],
+    "attribution-commission": ["product-architect", "system-architect", "attribution-engineer", "commission-engineer", "database-security-engineer", "test-engineer", "security-reviewer", "attribution-qa-engineer", "commission-qa-engineer", "regression-verifier", "release-manager"],
+    "test": ["test-engineer", "code-reviewer", "browser-qa-engineer", "accessibility-auditor", "visual-regression-reviewer", "regression-verifier", "release-manager"],
+    "security-review": ["security-reviewer", "tenant-isolation-auditor", "regression-verifier", "release-manager"],
+    "release": ["security-reviewer", "release-manager"]
+  },
+  "role_order": [
+    "product-architect", "ux-design-lead", "system-architect", "frontend-engineer",
+    "backend-engineer", "attribution-engineer", "commission-engineer",
+    "database-security-engineer", "repair-engineer", "test-engineer", "code-reviewer",
+    "security-reviewer", "browser-qa-engineer", "product-flow-auditor",
+    "ui-ux-auditor", "mobile-qa-engineer", "accessibility-auditor",
+    "tenant-isolation-auditor", "attribution-qa-engineer", "commission-qa-engineer",
+    "visual-regression-reviewer", "regression-verifier", "release-manager"
+  ],
+  "required_roles_by_domain": {
+    "frontend": ["ux-design-lead", "frontend-engineer", "code-reviewer", "ui-ux-auditor", "visual-regression-reviewer"],
+    "backend": ["system-architect", "backend-engineer", "code-reviewer", "browser-qa-engineer"],
+    "database-security": ["database-security-engineer", "security-reviewer", "tenant-isolation-auditor"],
+    "attribution": ["attribution-engineer", "security-reviewer", "attribution-qa-engineer"],
+    "commission": ["commission-engineer", "database-security-engineer", "security-reviewer", "commission-qa-engineer"],
+    "attribution-commission": ["attribution-engineer", "commission-engineer", "database-security-engineer", "security-reviewer", "attribution-qa-engineer", "commission-qa-engineer"]
+  },
+  "protected_change_patterns": [".github/", ".codex/", ".agents/", "automation/", "package.json", "package-lock.json", "scripts/", "prisma/schema.prisma", "prisma/migrations/", "src/lib/auth.ts", "src/lib/payment", "src/lib/billing", "src/app/admin/billing/", "src/app/api/webhooks/"],
+  "automation_forbidden_paths": [".github/", ".codex/", ".agents/", "automation/", "package.json", "package-lock.json", "scripts/"]
+}

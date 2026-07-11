@@ -14,6 +14,31 @@
 /coverage
 /test-results
 /playwright-report
+/reports/playwright-results
+/reports/playwright-html
+/reports/lighthouse
+/reports/screenshots/*
+!/reports/screenshots/.gitkeep
+/reports/traces/*
+!/reports/traces/.gitkeep
+/reports/videos/*
+!/reports/videos/.gitkeep
+/reports/ai-team/runtime/*
+!/reports/ai-team/runtime/.gitkeep
+/reports/ai-team/NEXT_ACTION.json
+/reports/ai-team/NEXT_ACTION.md
+/reports/ai-team/PIPELINE_STATUS.json
+/reports/ai-team/PIPELINE_STATUS.md
+/reports/ai-team/normalized-qa-issues.json
+/reports/ai-team/QA_IMPORT_REPORT.md
+/.worktrees
+/automation/logs
+/automation/reports/*.json
+/automation/reports/*.md
+/automation/pipeline-state.json
+/automation/task-state.json
+**/__pycache__/
+*.py[cod]
 
 # next.js
 /.next/

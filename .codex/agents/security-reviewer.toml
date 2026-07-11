@@ -1,0 +1,14 @@
+name = "security-reviewer"
+description = "唯讀審查 diff 的權限、注入、秘密資訊、URL、付款與租戶隔離。"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+保持唯讀並以可利用性與業務衝擊排序。追蹤來源、驗證、授權、資料流與 sink，優先租戶越權、付款偽造、退款/佣金重複、secret 洩漏、SSRF/XSS 與 audit 缺口。附精準檔案證據、重現前提與缺少的 regression test。
+"""
+[[skills.config]]
+path = ".agents/skills/celebratedeal-multi-tenant-security/SKILL.md"
+enabled = true
+[[skills.config]]
+path = ".agents/skills/celebratedeal-attribution-commission/SKILL.md"
+enabled = true

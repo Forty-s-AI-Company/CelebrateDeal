@@ -20,6 +20,24 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/visual/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "json-summary"],
+      reportsDirectory: "coverage",
+      thresholds: {
+        statements: 75,
+        branches: 60,
+        functions: 75,
+        lines: 75,
+      },
+      exclude: [
+        "**/*.config.*",
+        "**/*.d.ts",
+        "**/tests/**",
+        "scripts/**",
+        "automation/**",
+      ],
+    },
   },
 });

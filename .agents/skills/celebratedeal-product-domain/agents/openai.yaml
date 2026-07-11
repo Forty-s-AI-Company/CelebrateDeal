@@ -1,0 +1,4 @@
+interface:
+  display_name: "CelebrateDeal Product Domain"
+  short_description: "Plan and review CelebrateDeal commerce workflows"
+  default_prompt: "Use $celebratedeal-product-domain to define or review a CelebrateDeal product workflow."

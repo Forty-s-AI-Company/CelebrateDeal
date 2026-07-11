@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "role_id", "display_name", "provider", "requested_model", "reasoning", "description", "responsibilities", "task_types", "skills", "input_contract", "output_contract", "read_paths", "write_paths", "forbidden_paths", "output_schema", "definition_of_done", "reviewer_role", "qa_role", "handoff", "retry_policy", "fallback_policy", "token_budget", "context_budget"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 2},
+    "role_id": {"type": "string", "minLength": 1},
+    "display_name": {"type": "string", "minLength": 1},
+    "provider": {"enum": ["codex", "antigravity"]},
+    "requested_model": {"type": "string", "minLength": 1},
+    "reasoning": {"enum": ["low", "medium", "high", "xhigh"]},
+    "description": {"type": "string"},
+    "responsibilities": {"type": "array", "items": {"type": "string"}},
+    "task_types": {"type": "array", "items": {"type": "string"}},
+    "skills": {"type": "array", "items": {"type": "string"}},
+    "input_contract": {"type": "array", "items": {"type": "string"}},
+    "output_contract": {"type": "array", "items": {"type": "string"}},
+    "read_paths": {"type": "array", "items": {"type": "string"}},
+    "write_paths": {"type": "array", "items": {"type": "string"}},
+    "forbidden_paths": {"type": "array", "items": {"type": "string"}},
+    "output_schema": {"type": "string"},
+    "definition_of_done": {"type": "array", "items": {"type": "string"}},
+    "reviewer_role": {"type": "string"},
+    "qa_role": {"type": "string"},
+    "handoff": {"type": "object"},
+    "retry_policy": {"type": "object"},
+    "fallback_policy": {"type": "object"},
+    "token_budget": {"type": "integer", "minimum": 1},
+    "context_budget": {"type": "object"}
+  },
+  "additionalProperties": false
+}
