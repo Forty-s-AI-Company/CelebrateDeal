@@ -12,6 +12,13 @@ KEY = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 
 
 class AutonomousSupervisorTest(unittest.TestCase):
+    def test_windows_console_output_is_reconfigured_to_utf8(self) -> None:
+        with patch.object(supervisor.sys.stdout, "reconfigure") as stdout_mock, patch.object(supervisor.sys.stderr, "reconfigure") as stderr_mock:
+            with patch("autonomous_supervisor.InstanceLock.acquire", return_value=False), patch("autonomous_supervisor.write_diagnostics", return_value={}):
+                supervisor.main(["--once"])
+        stdout_mock.assert_called_once_with(encoding="utf-8", errors="replace")
+        stderr_mock.assert_called_once_with(encoding="utf-8", errors="replace")
+
     def test_cli_timing_defaults_and_overrides(self) -> None:
         defaults = supervisor.build_parser().parse_args([])
         self.assertFalse(defaults.once)
