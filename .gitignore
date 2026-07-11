@@ -30,6 +30,8 @@
 /reports/ai-team/PIPELINE_STATUS.json
 /reports/ai-team/PIPELINE_STATUS.md
 /reports/ai-team/normalized-qa-issues.json
+/reports/ai-team/discovered-issues.json
+/reports/ai-team/discovery-report.md
 /reports/ai-team/QA_IMPORT_REPORT.md
 /.worktrees
 /automation/logs

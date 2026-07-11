@@ -72,7 +72,8 @@ def workspace_fingerprint() -> str:
         "git", "diff", "--binary", "HEAD", "--", ".",
         ":(exclude)automation/pipeline-state.json", ":(exclude)automation/task-state.json",
         ":(exclude)reports/ai-team/runtime/**", ":(exclude)reports/ai-team/PIPELINE_STATUS.*",
-        ":(exclude)reports/ai-team/NEXT_ACTION.*", ":(exclude)automation/logs/**", ":(exclude)automation/reports/**",
+        ":(exclude)reports/ai-team/NEXT_ACTION.*", ":(exclude)reports/ai-team/discovered-issues.json",
+        ":(exclude)reports/ai-team/discovery-report.md", ":(exclude)automation/logs/**", ":(exclude)automation/reports/**",
     ], cwd=ROOT, capture_output=True, check=True, shell=False, env=safe_child_environment())
     digest.update(diff.stdout)
     untracked = subprocess.run(
@@ -85,6 +86,7 @@ def workspace_fingerprint() -> str:
             "automation/pipeline-state.json", "automation/task-state.json",
             "reports/ai-team/PIPELINE_STATUS.json", "reports/ai-team/PIPELINE_STATUS.md",
             "reports/ai-team/NEXT_ACTION.json", "reports/ai-team/NEXT_ACTION.md",
+            "reports/ai-team/discovered-issues.json", "reports/ai-team/discovery-report.md",
         } or normalized.startswith(("reports/ai-team/runtime/", "automation/logs/", "automation/reports/")):
             continue
         path = ROOT / raw_path

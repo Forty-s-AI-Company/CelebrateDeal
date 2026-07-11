@@ -148,6 +148,11 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("scripts/secret-scan.ts", paths)
         self.assertNotIn("automation/pipeline-state.json", paths)
 
+    def test_generated_discovery_evidence_is_gitignored(self) -> None:
+        ignore = (Path.cwd() / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("/reports/ai-team/discovered-issues.json", ignore)
+        self.assertIn("/reports/ai-team/discovery-report.md", ignore)
+
     @patch("pipeline_cli.coordinator_trust_status", return_value=(False, ["modified:package.json"]))
     def test_plan_rejects_dirty_trust_input(self, _trust_mock) -> None:
         with self.assertRaisesRegex(RuntimeError, "committed and clean"):
