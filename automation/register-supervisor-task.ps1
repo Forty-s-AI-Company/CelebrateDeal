@@ -1,19 +1,19 @@
 [CmdletBinding()]
-param(
-    [string]$TaskName = "CelebrateDeal-AI-Quota-Supervisor"
-)
+param([string]$TaskName = "CelebrateDeal-AI-Autonomous-Supervisor")
 
 $ErrorActionPreference = "Stop"
-$runner = Join-Path $PSScriptRoot "run-supervisor.ps1"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$supervisor = Join-Path $PSScriptRoot "autonomous_supervisor.py"
+$python = (Get-Command python -CommandType Application -ErrorAction Stop).Source
 $action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runner`"" `
-    -WorkingDirectory (Split-Path -Parent $PSScriptRoot)
+    -Execute $python `
+    -Argument "`"$supervisor`" --once" `
+    -WorkingDirectory $repoRoot
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
     -RepetitionInterval (New-TimeSpan -Hours 1)
 $settings = New-ScheduledTaskSettingsSet `
     -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 15) `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 55) `
     -StartWhenAvailable
 
 Register-ScheduledTask `
@@ -21,5 +21,5 @@ Register-ScheduledTask `
     -Action $action `
     -Trigger $trigger `
     -Settings $settings `
-    -Description "Hourly CelebrateDeal Codex/Antigravity quota probe and resumable AI pipeline supervisor." `
+    -Description "Hourly unified CelebrateDeal discovery, QA, regression, quota resume and commit-evidence supervisor." `
     -Force

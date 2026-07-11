@@ -1,13 +1,16 @@
 import unittest
+import tempfile
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from orchestrator import (
     PRIORITY,
     Route,
     assert_automation_change_scope,
     assert_role_change_scope,
+    commit_validated_task,
+    prepare_validation_snapshot,
     parse_validation_command,
     qa_issue_to_task,
     record_untrusted_qa,
@@ -21,6 +24,71 @@ from orchestrator import (
 
 
 class OrchestratorTest(unittest.TestCase):
+    @patch("orchestrator.assert_role_change_scope")
+    @patch("orchestrator.assert_automation_change_scope")
+    @patch("orchestrator.run", return_value=CompletedProcess([], 0, stdout="", stderr=""))
+    def test_commit_tree_cas_creates_exact_clean_commit(self, _run, _automation_scope, _role_scope) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            import subprocess
+
+            def command_runner(command, cwd, check=True):
+                if len(command) >= 3 and command[1:3] == ["run", "security:secrets:staged"]:
+                    return CompletedProcess(command, 0, stdout="", stderr="")
+                return subprocess.run(command, cwd=cwd, check=check, text=True, capture_output=True)
+
+            _run.side_effect = command_runner
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            path = root / "note.md"
+            path.write_text("before", encoding="utf-8")
+            subprocess.run(["git", "add", "note.md"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "seed"], cwd=root, check=True, capture_output=True)
+            path.write_text("after", encoding="utf-8")
+            config = {"autonomy": {"auto_commit": True}}
+            task = {"id": "T-1", "title": "Task", "write_paths": ["note.md"]}
+            approved_tree, parent, paths, validation_worktree = prepare_validation_snapshot(config, task, root, Mock(), 1)
+            subprocess.run(["git", "worktree", "remove", "--force", str(validation_worktree)], cwd=root, check=True)
+            commit = commit_validated_task(config, task, root, Mock(), approved_tree, parent, paths)
+            self.assertEqual(subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip(), commit)
+            self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=root, check=True, capture_output=True, text=True).stdout, "")
+
+    @patch("orchestrator.assert_role_change_scope")
+    @patch("orchestrator.assert_automation_change_scope")
+    @patch("orchestrator.changed_files", return_value={"src/lib/a.ts"})
+    @patch("orchestrator.git")
+    def test_commit_rejects_staged_files_added_after_validation(self, git_mock, _changed, _automation_scope, _role_scope) -> None:
+        def result(*args, **_kwargs):
+            stdout = "package.json\n" if args[:3] == ("diff", "--cached", "--name-only") else ""
+            return CompletedProcess(args, 0, stdout=stdout, stderr="")
+        git_mock.side_effect = result
+        with self.assertRaisesRegex(RuntimeError, "changed after immutable"):
+            commit_validated_task(
+                {"autonomy": {"auto_commit": True}}, {"id": "T-1", "title": "Task"}, Path("worktree"), Mock(),
+                "approved-tree", "parent", ["src/lib/a.ts"],
+            )
+        self.assertFalse(any(call.args and call.args[0] == "commit" for call in git_mock.call_args_list))
+
+    @patch("orchestrator.run", return_value=CompletedProcess([], 0, stdout="", stderr=""))
+    @patch("orchestrator.assert_role_change_scope")
+    @patch("orchestrator.assert_automation_change_scope")
+    @patch("orchestrator.changed_files", return_value={"src/lib/a.ts"})
+    @patch("orchestrator.git")
+    def test_commit_rejects_tree_changed_after_final_policy_gate(self, git_mock, _changed, _automation_scope, _role_scope, _run) -> None:
+        def result(*args, **_kwargs):
+            if args[:3] == ("diff", "--cached", "--name-only"):
+                return CompletedProcess(args, 0, stdout="src/lib/a.ts\n", stderr="")
+            if args[0] == "write-tree":
+                return CompletedProcess(args, 0, stdout="different-tree\n", stderr="")
+            return CompletedProcess(args, 0, stdout="", stderr="")
+        git_mock.side_effect = result
+        with self.assertRaisesRegex(RuntimeError, "changed after immutable"):
+            commit_validated_task(
+                {"autonomy": {"auto_commit": True}}, {"id": "T-1", "title": "Task"}, Path("worktree"), Mock(),
+                "approved-tree", "parent", ["src/lib/a.ts"],
+            )
+
     @patch("orchestrator.git")
     def test_dirty_primary_checkout_is_allowed_only_for_protected_baseline_mode(self, git_mock) -> None:
         git_mock.return_value = CompletedProcess([], 0, stdout=" M src/file.ts\n", stderr="")

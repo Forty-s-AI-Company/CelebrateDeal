@@ -93,6 +93,17 @@ npm run ai:supervisor
 npm run ai:resume
 ```
 
+The default `ai:auto-cycle` and `ai:supervisor` commands now run the unified unattended loop. Each cycle performs quality discovery, server-side triage, trusted backlog execution, Antigravity QA smoke/handoff/import, deterministic regression and Git commit-evidence capture. Runtime candidates never directly control a Git commit; only the isolated trusted executor can create one after scope, validation and staged-secret gates.
+
+```powershell
+npm run ai:auto-cycle
+npm run ai:auto-cycle:once
+npm run ai:supervisor -- --interval-minutes 60 --max-runtime-minutes 120
+npm run ai:quota:supervisor
+```
+
+The supervisor is single-instance, uses a persistent restart-safe state, stops after three consecutive hard failures, checks free disk space and enforces the configured daily autonomous commit limit. Exit code `2` means a fail-closed conditional state such as quota wait or circuit-open; exit code `3` means another supervisor owns the process lock.
+
 Codex usage-limit messages and Antigravity 429/`RESOURCE_EXHAUSTED` messages persist a resumable quota state. A future provider reset time is honored; missing or expired timestamps fall back to one probe per hour. The Windows scheduler entry point is `automation/run-supervisor.ps1`.
 
 The Ollama fallback is intentionally narrow. Only `qwen3:8b`, `qwen2.5-coder:7b`, `qwen2.5-coder:1.5b`, `qwen2.5vl:3b` and `nomic-embed-text:latest` are allowed. Local output is stored as a report artifact and never satisfies Codex or Antigravity provider requirements.

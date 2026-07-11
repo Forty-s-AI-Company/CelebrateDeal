@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from routing import validate_stage_graph
 TERMINAL_FAILURES = {"failed", "blocked", "cancelled", "exhausted"}
 COMPLETED = "completed"
 STAGE_STATUSES = {"pending", "running", "completed", "failed", "blocked", "conditional", "cancelled", "exhausted"}
+ATTESTATION_KEY_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def pipeline_digest(stages: list[dict[str, Any]]) -> str:
@@ -35,6 +37,8 @@ def pipeline_digest(stages: list[dict[str, Any]]) -> str:
 
 
 def sign_payload(payload: dict[str, Any], key: str) -> str:
+    if not ATTESTATION_KEY_PATTERN.fullmatch(key) or len(set(key.lower())) < 8:
+        raise ValueError("Attestation key must be a 256-bit hexadecimal value")
     unsigned = {name: value for name, value in payload.items() if name != "attestation"}
     encoded = json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hmac.new(key.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
@@ -42,7 +46,9 @@ def sign_payload(payload: dict[str, Any], key: str) -> str:
 
 def verify_attestation(payload: dict[str, Any], key: str | None) -> bool:
     signature = payload.get("attestation")
-    return bool(key and isinstance(signature, str) and hmac.compare_digest(signature, sign_payload(payload, key)))
+    if not key or not ATTESTATION_KEY_PATTERN.fullmatch(key) or len(set(key.lower())) < 8 or not isinstance(signature, str):
+        return False
+    return hmac.compare_digest(signature, sign_payload(payload, key))
 
 
 def file_sha256(path: Path) -> str:

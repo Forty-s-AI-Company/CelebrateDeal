@@ -50,3 +50,5 @@
 - Empty backlog is an operational idle state, not a setup failure. The auto-cycle performs deterministic discovery and schedules the next scan without fabricating product work.
 - Ollama is a docs/reports/metadata-only continuity provider. It cannot complete a Codex or Antigravity stage and never satisfies provider-native QA.
 - A provider reset time is accepted only when it parses in local time and is in the future. Missing or expired values schedule an hourly probe.
+- Windows Credential Manager provides encrypted-at-rest persistence, not isolation from every process running as the same Windows identity. Production-like unattended operation therefore assumes a dedicated coordinator Windows account; its Task Scheduler principal, Credential Manager entry and filesystem ACL remain External required workstation setup.
+- Runtime discovery candidates may be marked eligible, but unsigned candidate JSON cannot directly drive a Git commit. Only a committed trusted backlog task executed in an isolated worktree can reach the commit sink.

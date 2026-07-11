@@ -170,24 +170,63 @@ def ensure_clean_base(dry_run: bool) -> None:
         raise RuntimeError("Working tree must be clean before creating an automation worktree.")
 
 
-def commit_validated_task(config: dict[str, Any], task: dict[str, Any], worktree: Path) -> str | None:
-    if config.get("autonomy", {}).get("auto_commit") is not True:
-        return None
+def prepare_validation_snapshot(
+    config: dict[str, Any], task: dict[str, Any], worktree: Path, role_dag: RoleDag, attempt: int,
+) -> tuple[str, str, list[str], Path]:
     paths = sorted(changed_files(worktree))
     if not paths:
-        return None
+        raise RuntimeError("Task produced no files to validate")
+    expected_parent = git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
     git("add", "--", *paths, cwd=worktree)
+    assert_automation_change_scope(config, task, worktree)
+    assert_role_change_scope(task, role_dag, worktree)
+    staged_paths = sorted(git("diff", "--cached", "--name-only", cwd=worktree).stdout.splitlines())
+    if staged_paths != paths:
+        raise RuntimeError("Staged task tree differs from the scoped change set")
     staged_scan = run(
         ["npm.cmd" if os.name == "nt" else "npm", "run", "security:secrets:staged"],
         cwd=worktree, check=False,
     )
     if staged_scan.returncode != 0:
-        raise RuntimeError("Staged secret scan failed; task commit blocked")
+        raise RuntimeError("Staged secret scan failed; task validation blocked")
+    approved_tree = git("write-tree", cwd=worktree).stdout.strip()
+    snapshot = git(
+        "commit-tree", approved_tree, "-p", expected_parent, "-m", f"validation snapshot {task['id']}",
+        cwd=worktree, check=False,
+    )
+    if snapshot.returncode != 0:
+        raise RuntimeError("Could not create immutable validation snapshot: " + redact(snapshot.stderr or snapshot.stdout)[-1000:])
+    validation_worktree = worktree.parent / f"{safe_slug(str(task['id']))}-validation-{os.getpid()}-{attempt}"
+    added = git("worktree", "add", "--detach", str(validation_worktree), snapshot.stdout.strip(), cwd=worktree, check=False)
+    if added.returncode != 0:
+        raise RuntimeError("Could not materialize immutable validation worktree: " + redact(added.stderr or added.stdout)[-1000:])
+    return approved_tree, expected_parent, paths, validation_worktree
+
+
+def commit_validated_task(
+    config: dict[str, Any], task: dict[str, Any], worktree: Path, role_dag: RoleDag,
+    approved_tree: str, expected_parent: str, approved_paths: list[str],
+) -> str | None:
+    if config.get("autonomy", {}).get("auto_commit") is not True:
+        return None
+    assert_automation_change_scope(config, task, worktree)
+    assert_role_change_scope(task, role_dag, worktree)
+    staged_paths = sorted(git("diff", "--cached", "--name-only", cwd=worktree).stdout.splitlines())
+    current_tree = git("write-tree", cwd=worktree).stdout.strip()
+    worktree_stable = git("diff", "--quiet", cwd=worktree, check=False).returncode == 0
+    if staged_paths != approved_paths or current_tree != approved_tree or not worktree_stable:
+        raise RuntimeError("Task files changed after immutable validation; commit blocked")
     subject = f"chore(auto): {task['id']} {str(task.get('title') or 'scoped task')[:60]}"
-    committed = git("commit", "-m", subject, cwd=worktree, check=False)
+    committed = git("commit-tree", approved_tree, "-p", expected_parent, "-m", subject, cwd=worktree, check=False)
     if committed.returncode != 0:
-        raise RuntimeError("Task validation passed but Git commit failed: " + redact(committed.stderr or committed.stdout)[-1000:])
-    return git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+        raise RuntimeError("Task validation passed but Git commit-tree failed: " + redact(committed.stderr or committed.stdout)[-1000:])
+    commit_hash = committed.stdout.strip()
+    updated = git("update-ref", "HEAD", commit_hash, expected_parent, cwd=worktree, check=False)
+    if updated.returncode != 0:
+        raise RuntimeError("Task branch changed concurrently; commit was not attached to the branch")
+    if git("status", "--porcelain", cwd=worktree).stdout.strip():
+        raise RuntimeError("Task worktree changed during commit; evidence is not stable")
+    return commit_hash
 
 
 def prepare_worktree(config: dict[str, Any], task: dict[str, Any], dry_run: bool) -> tuple[str, Path]:
@@ -395,7 +434,53 @@ def write_report(config: dict[str, Any], payload: dict[str, Any]) -> tuple[Path,
     return json_path, md_path
 
 
-def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: str, worktree: Path, role_dag: RoleDag) -> dict[str, Any]:
+class TaskExecutionLock:
+    def __init__(self, task_id: str):
+        self.path = ROOT / "automation" / "logs" / "locks" / f"{safe_slug(task_id)}.lock"
+        self.acquired = False
+
+    def acquire(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor: int | None = None
+        for _ in range(2):
+            try:
+                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError as error:
+                try:
+                    owner = json.loads(self.path.read_text(encoding="utf-8"))
+                    pid = int(owner.get("pid", 0)) if isinstance(owner, dict) else 0
+                except (OSError, ValueError, json.JSONDecodeError):
+                    raise RuntimeError(f"Task executor lock is unreadable: {self.path.name}") from error
+                alive = False
+                if pid > 0 and os.name == "nt":
+                    import ctypes
+                    process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+                    if process:
+                        ctypes.windll.kernel32.CloseHandle(process)
+                        alive = True
+                elif pid > 0:
+                    try:
+                        os.kill(pid, 0)
+                        alive = True
+                    except OSError:
+                        pass
+                if alive:
+                    raise RuntimeError(f"Task already has an active executor lock: {self.path.name}") from error
+                self.path.unlink(missing_ok=True)
+        if descriptor is None:
+            raise RuntimeError(f"Could not acquire task executor lock: {self.path.name}")
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump({"pid": os.getpid(), "taskId": self.path.stem}, handle)
+        self.acquired = True
+
+    def release(self) -> None:
+        if self.acquired:
+            self.path.unlink(missing_ok=True)
+            self.acquired = False
+
+
+def _execute_unlocked(config: dict[str, Any], task: dict[str, Any], route: Route, branch: str, worktree: Path, role_dag: RoleDag) -> dict[str, Any]:
     logs_dir = ROOT / "automation" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     commands = validation_commands(config, task)
@@ -405,6 +490,9 @@ def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: 
     runtime_model = route.model
     fallback_model = str(config.get("cli_fallback_model", "")).strip()
     role_instructions = agent_instructions(route.agent)
+    approved_tree: str | None = None
+    expected_parent: str | None = None
+    approved_paths: list[str] = []
 
     write_state(status="running", taskId=task["id"], attempt=0, branch=branch, worktree=str(worktree))
     for attempt in range(1, max_retries + 1):
@@ -449,18 +537,32 @@ def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: 
         except RuntimeError as error:
             failure_summary = str(error)
             break
-        success, failure_summary = run_validation(
-            commands, worktree, logs_dir / f"{safe_slug(str(task['id']))}-attempt-{attempt}-validation.log"
-        )
+        validation_worktree: Path | None = None
+        try:
+            approved_tree, expected_parent, approved_paths, validation_worktree = prepare_validation_snapshot(
+                config, task, worktree, role_dag, attempt,
+            )
+            success, failure_summary = run_validation(
+                commands, validation_worktree,
+                logs_dir / f"{safe_slug(str(task['id']))}-attempt-{attempt}-validation.log",
+            )
+        except RuntimeError as error:
+            success = False
+            failure_summary = str(error)
+        finally:
+            if validation_worktree is not None:
+                git("worktree", "remove", "--force", str(validation_worktree), cwd=worktree, check=False)
         if success:
             break
 
     protected = protected_changes(config, worktree)
     manual = bool(task.get("manual_merge_required")) or bool(protected)
     commit_hash: str | None = None
-    if success:
+    if success and approved_tree and expected_parent:
         try:
-            commit_hash = commit_validated_task(config, task, worktree)
+            commit_hash = commit_validated_task(
+                config, task, worktree, role_dag, approved_tree, expected_parent, approved_paths,
+            )
         except RuntimeError as error:
             success = False
             failure_summary = str(error)
@@ -481,6 +583,15 @@ def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: 
         "merged": False,
         "commit": commit_hash,
     }
+
+
+def execute(config: dict[str, Any], task: dict[str, Any], route: Route, branch: str, worktree: Path, role_dag: RoleDag) -> dict[str, Any]:
+    lock = TaskExecutionLock(str(task["id"]))
+    lock.acquire()
+    try:
+        return _execute_unlocked(config, task, route, branch, worktree, role_dag)
+    finally:
+        lock.release()
 
 
 def record_untrusted_qa(task: dict[str, Any], route: Route) -> dict[str, Any]:
