@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "source": "independent-control-plane-review",
+  "issues": [
+    {"id": "AI-CTRL-P1-UNTRUSTED-QA", "priority": "P1", "status": "resolved", "title": "Untrusted QA control leakage"},
+    {"id": "AI-CTRL-P1-RELEASE-MISREPORT", "priority": "P1", "status": "resolved", "title": "Blocked release reported as completed"},
+    {"id": "AI-CTRL-P2-ISSUE-FINGERPRINT", "priority": "P2", "status": "resolved", "title": "Issue ID-only resolution"},
+    {"id": "AI-CTRL-P2-GIT-LINEAGE", "priority": "P2", "status": "resolved", "title": "Missing writer Git lineage verification"},
+    {"id": "AI-CTRL-P2-RECEIPT-EVIDENCE", "priority": "P2", "status": "resolved", "title": "Receipt evidence not re-verifiable"},
+    {"id": "AI-CTRL-P2-QUOTA-RESUME", "priority": "P2", "status": "resolved", "title": "Workspace-write quota recovery"}
+  ]
+}

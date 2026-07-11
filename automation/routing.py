@@ -89,8 +89,24 @@ def build_role_dag(
     task: dict[str, Any],
     registry_path: Path = REGISTRY_PATH,
 ) -> RoleDag:
-    if task.get("untrustedEvidence") is True or task.get("untrusted") is True or task.get("source") == "qa-issues.json":
-        raise ValueError("Untrusted QA evidence cannot create an executable role DAG")
+    if (
+        task.get("untrustedEvidence") is True
+        or task.get("untrusted") is True
+        or task.get("sourceEvidenceUntrusted") is True
+        or task.get("source") == "qa-issues.json"
+    ):
+        if not (
+            task.get("sourceEvidenceUntrusted") is True
+            and task.get("policyPromoted") is True
+            and task.get("policyId") == "automatic-qa-repair-v1"
+            and isinstance(task.get("policyPromotion"), dict)
+            and task["policyPromotion"].get("promptFromEvidence") is False
+            and task["policyPromotion"].get("scopeFromEvidence") is False
+            and task["policyPromotion"].get("providerFromEvidence") is False
+            and task["policyPromotion"].get("validationFromEvidence") is False
+            and task["policyPromotion"].get("commitFromEvidence") is False
+        ):
+            raise ValueError("Untrusted QA evidence cannot create an executable role DAG without policy promotion")
     raw_types = task.get("types") if isinstance(task.get("types"), list) else [task.get("type")]
     if not raw_types or len(raw_types) > 8:
         raise ValueError("Task must define between one and eight trusted types")

@@ -33,6 +33,7 @@ EXPECTED_NONZERO = {
     "qa-provider-smoke": {2},
     "qa-handoff": {2},
     "regression": {2},
+    "release-check": {2},
 }
 
 
@@ -240,13 +241,21 @@ def run_cycle(attestation_key: str | None, key_source: str) -> tuple[str, list[S
     if commit_count is None:
         steps.append(StepResult("auto-cycle", "failed", None, 0, "", "autonomous commit quota could not be verified"))
     elif commit_count < max_commits:
-        steps.append(run_step("auto-cycle", ["auto-cycle-once", "--quality"], None))
+        steps.append(run_step("auto-cycle", ["auto-cycle-once", "--quality", "--defer-gate"], None))
     else:
         steps.append(StepResult("auto-cycle", "conditional", 2, 0, "", "daily autonomous commit limit reached"))
     steps.append(run_step("qa-provider-smoke", ["smoke-antigravity"], None, 300))
     steps.append(run_step("qa-handoff", ["smoke-role-handoff"], None, 120))
     steps.append(run_step("qa-import", ["import-existing-qa"], None, 120))
-    steps.append(run_step("regression", ["regression"], attestation_key, 3600))
+    pipeline = load_json(AUTOMATION / "pipeline-state.json", {})
+    task_state = load_json(AUTOMATION / "task-state.json", {})
+    gate_ready = pipeline.get("status") == "completed" or task_state.get("status") == "gate-pending"
+    if gate_ready:
+        steps.append(run_step("regression", ["regression"], attestation_key, 3600))
+        steps.append(run_step("release-check", ["release-check"], attestation_key, 300))
+    else:
+        steps.append(StepResult("regression", "conditional", 2, 0, "", "No completed attested pipeline is ready for regression"))
+        steps.append(StepResult("release-check", "conditional", 2, 0, "", "Release-check deferred until pipeline completion"))
     steps.append(run_step("commit-evidence", ["autonomous-commit"], None, 120))
     failed = [step for step in steps if step.status == "failed"]
     return ("failed" if failed else "conditional" if any(step.status == "conditional" for step in steps) else "passed"), steps

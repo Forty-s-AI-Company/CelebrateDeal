@@ -52,3 +52,5 @@
 - A provider reset time is accepted only when it parses in local time and is in the future. Missing or expired values schedule an hourly probe.
 - Windows Credential Manager provides encrypted-at-rest persistence, not isolation from every process running as the same Windows identity. Production-like unattended operation therefore assumes a dedicated coordinator Windows account; its Task Scheduler principal, Credential Manager entry and filesystem ACL remain External required workstation setup.
 - Runtime discovery candidates may be marked eligible, but unsigned candidate JSON cannot directly drive a Git commit. Only a committed trusted backlog task executed in an isolated worktree can reach the commit sink.
+- Automatic QA repair is enabled by policy, not by trusting QA text: `automatic-qa-repair-v1` rebuilds all execution controls and keeps production merge/deploy blocked.
+- A workspace-write receipt is considered auditable only when its attempt-nonce-bound runtime artifact, validation log, staged secret-scan log, commit tree and writer parent can be revalidated from Git and the attested receipt.

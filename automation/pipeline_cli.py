@@ -24,8 +24,10 @@ from pipeline_engine import (
     atomic_compare_and_swap,
     build_receipt,
     complete_stage,
+    object_digest,
     pipeline_digest,
     ready_stage_ids,
+    recover_interrupted_stage,
     start_stage,
     validate_pipeline_state,
     validate_release_evidence,
@@ -216,11 +218,11 @@ def write_text(path: Path, value: str) -> None:
     path.write_text(value.rstrip() + "\n", encoding="utf-8")
 
 
-def command_result(command: list[str], timeout: int = 30) -> dict[str, Any]:
+def command_result(command: list[str], timeout: int = 30, cwd: Path = ROOT) -> dict[str, Any]:
     started = now()
     try:
         result = subprocess.run(
-            command, cwd=ROOT, text=True, capture_output=True, timeout=timeout, shell=False,
+            command, cwd=cwd, text=True, capture_output=True, timeout=timeout, shell=False,
             env=BaseAdapter().safe_environment({}), encoding="utf-8", errors="replace",
         )
         return {
@@ -298,7 +300,7 @@ def role(role_id: str) -> dict[str, Any]:
     return item
 
 
-def run_role(role_id: str, prompt: str, timeout: int = 120):
+def run_role(role_id: str, prompt: str, timeout: int = 120, workdir: Path = ROOT):
     item = role(role_id)
     provider = item.get("provider", "codex")
     adapters = {"codex": CodexAdapter, "antigravity": AntigravityAdapter}
@@ -314,7 +316,7 @@ def run_role(role_id: str, prompt: str, timeout: int = 120):
         fallback_reason = f"Requested model unavailable; selected {available_models[0]}"
         model = available_models[0]
     request = AdapterRequest(
-        role_id=role_id, prompt=prompt, workdir=ROOT, requested_model=model,
+        role_id=role_id, prompt=prompt, workdir=workdir, requested_model=model,
         requested_reasoning=str(item.get("reasoning", item.get("requested_reasoning", "medium"))),
         timeout_seconds=timeout, sandbox="read-only",
         output_schema=AUTOMATION / "schemas" / "role-output.schema.json" if provider == "codex" else None,
@@ -322,13 +324,13 @@ def run_role(role_id: str, prompt: str, timeout: int = 120):
     attempt_evidence: list[dict[str, Any]] = []
 
     def execute_attempt() -> tuple[dict[str, Any], bool]:
-        before = workspace_snapshot(ROOT)
+        before = workspace_snapshot(workdir)
         attempt_result = adapter.run(request).to_dict()
-        after = workspace_snapshot(ROOT)
+        after = workspace_snapshot(workdir)
         changed_paths = changed_since(before, after)
         policy_violation = False
         try:
-            assert_write_scope(ROOT, item, changed_paths, [] if request.sandbox == "read-only" else None)
+            assert_write_scope(workdir, item, changed_paths, [] if request.sandbox == "read-only" else None)
         except ValueError as error:
             attempt_result["status"] = "failed"
             attempt_result["error"] = str(error)
@@ -427,7 +429,7 @@ def normalize_issue(issue: dict[str, Any], source: Path, index: int) -> dict[str
     repro = issue.get("reproduction") or issue.get("reproduction_steps") or []
     if isinstance(repro, str):
         repro = [line.strip() for line in repro.splitlines() if line.strip()]
-    return {
+    normalized = {
         "issue_id": issue_id, "severity": severity,
         "domain": str(issue.get("domain") or issue.get("category") or issue.get("type") or "qa"),
         "title": str(issue.get("title") or issue_id)[:300],
@@ -445,6 +447,16 @@ def normalize_issue(issue: dict[str, Any], source: Path, index: int) -> dict[str
             "fallback_policy", "artifactPaths", "productionApproved", "externalRequired",
         }),
     }
+    fingerprint_payload = {
+        "id": normalized["issue_id"], "title": normalized["title"],
+        "description": normalized["description"],
+        "reproduction": str(normalized["reproduction"]),
+        "expected": normalized["expected"], "actual": normalized["actual"],
+    }
+    normalized["fingerprint"] = hashlib.sha256(
+        json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return normalized
 
 
 def import_files(paths: list[Path], persist: bool = True) -> dict[str, Any]:
@@ -512,7 +524,10 @@ def plan_pipeline(args: argparse.Namespace) -> int:
         backlog = load_object(AUTOMATION / "backlog.json", {"tasks": []})
         task = next((item for item in backlog.get("tasks", []) if isinstance(item, dict) and item.get("id") == task_id), None)
         if not task:
-            raise ValueError(f"Trusted backlog task not found: {task_id}")
+            from orchestrator import load_qa_tasks
+            task = next((item for item in load_qa_tasks(load_object(CONFIG)) if item.get("id") == task_id), None)
+        if not task:
+            raise ValueError(f"Policy-promoted task not found: {task_id}")
         dynamic_dag = build_role_dag(load_object(CONFIG), task)
         assert_acyclic(dynamic_dag)
     definition_path = AUTOMATION / "pipelines" / f"{pipeline_name}.pipeline.json"
@@ -564,6 +579,9 @@ def plan_pipeline(args: argparse.Namespace) -> int:
         "createdAt": now(), "updatedAt": now(), "milestone": getattr(args, "milestone", None),
         "taskId": task_id, "taskType": dynamic_dag.requested_type if dynamic_dag else None,
         "taskDomain": dynamic_dag.domain if dynamic_dag else None,
+        "taskSnapshot": task if task_id else None,
+        "taskDigest": object_digest(task) if task_id else None,
+        "executionBranch": None, "executionWorktree": None, "outputRevision": None,
         "stages": compiled_stages,
     }
     atomic_json(PIPELINE_STATE, state)
@@ -593,26 +611,87 @@ def update_next_action(state: dict[str, Any]) -> None:
     write_text(REPORTS / "NEXT_ACTION.md", "# Next Action\n\n```markdown\n" + payload["prompt"] + f"\n```\n\n- Provider: `{payload['provider']}`\n- Role: `{payload['role']}`\n- Model: `{payload['requestedModel']}`\n- Reasoning: `high`")
 
 
+def writer_base_revision(state: dict[str, Any], stage_id: str) -> str:
+    stages = {str(item.get("stageId")): item for item in state.get("stages", []) if isinstance(item, dict)}
+    current = stages.get(stage_id)
+    visited: set[str] = set()
+    while isinstance(current, dict):
+        dependencies = current.get("dependsOn", [])
+        if not isinstance(dependencies, list):
+            break
+        for dependency in reversed([str(item) for item in dependencies]):
+            if dependency in visited:
+                continue
+            visited.add(dependency)
+            predecessor = stages.get(dependency)
+            if not isinstance(predecessor, dict):
+                continue
+            if predecessor.get("mode") == "workspace-write":
+                receipt = predecessor.get("receipt")
+                commit = receipt.get("commitSha") if isinstance(receipt, dict) else None
+                if isinstance(commit, str) and commit:
+                    return commit
+            current = predecessor
+            break
+        else:
+            break
+    source = state.get("sourceRevision")
+    if not isinstance(source, str) or not source:
+        raise RuntimeError("Workspace-write stage has no attested source revision")
+    return source
+
+
+def lease_owner_alive(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = re.match(r"^(\d+):", value)
+    if not match:
+        return False
+    pid = int(match.group(1))
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def run_regression(_: argparse.Namespace) -> int:
-    scripts = ["automation:test", "ai:validate", "security:secrets", "lint", "typecheck", "test", "build", "preflight"]
-    results = [command_result(["npm.cmd" if os.name == "nt" else "npm", "run", script], timeout=900) for script in scripts]
     pipeline = load_object(PIPELINE_STATE, {})
+    worktree_value = pipeline.get("executionWorktree")
+    regression_root = Path(worktree_value) if isinstance(worktree_value, str) and Path(worktree_value).is_dir() else ROOT
+    scripts = ["automation:test", "ai:validate", "security:secrets", "lint", "typecheck", "test", "build", "preflight"]
+    results = [command_result(["npm.cmd" if os.name == "nt" else "npm", "run", script], timeout=900, cwd=regression_root) for script in scripts]
     deterministic_status = "passed" if all(item["status"] == "passed" for item in results) else "failed"
     attestation_key = os.environ.get("AI_PIPELINE_ATTESTATION_KEY")
     coordinator_trusted, trust_reasons = coordinator_trust_status(str(pipeline.get("sourceRevision", "")))
     current_fingerprint = workspace_fingerprint()
+    output_revision_result = command_result(["git", "rev-parse", "HEAD"], cwd=regression_root)
+    actual_output_revision = output_revision_result.get("stdout", "").strip() if output_revision_result.get("status") == "passed" else None
+    output_clean = command_result(["git", "status", "--porcelain"], cwd=regression_root).get("stdout", "") == ""
     blockers = []
     if not attestation_key:
         blockers.append("attestation:key-unavailable")
     if not coordinator_trusted:
         blockers.append("coordinator:not-tracked-or-modified-at-source-revision")
-    if current_fingerprint != pipeline.get("sourceFingerprint"):
+    if regression_root == ROOT and current_fingerprint != pipeline.get("sourceFingerprint"):
         blockers.append("source:worktree-changed-after-plan")
+    if pipeline.get("outputRevision") and (actual_output_revision != pipeline.get("outputRevision") or not output_clean):
+        blockers.append("output:revision-mismatch-or-dirty")
     if deterministic_status != "passed":
         blockers.append("deterministic-regression:failed")
     payload = {
         "generatedAt": now(), "runId": pipeline.get("runId"), "pipelineRevision": pipeline.get("revision"),
         "pipelineDigest": pipeline.get("pipelineDigest"), "sourceRevision": pipeline.get("sourceRevision"),
+        "outputRevision": actual_output_revision,
         "sourceFingerprint": current_fingerprint, "deterministicStatus": deterministic_status,
         "coordinatorTrusted": coordinator_trusted, "coordinatorTrustReasons": trust_reasons,
         "status": "passed" if not blockers else "blocked" if deterministic_status == "passed" else "failed",
@@ -633,6 +712,43 @@ def state_command(args: argparse.Namespace) -> int:
         update_next_action(payload)
     elif command == "resume":
         state = load_object(PIPELINE_STATE, {"status": "not-planned"})
+        running = next((item for item in state.get("stages", []) if item.get("status") == "running"), None)
+        if running:
+            attestation_key = os.environ.get("AI_PIPELINE_ATTESTATION_KEY")
+            attempt = int(running.get("attempts", 0))
+            nonce = str(running.get("attemptNonce") or "missing")
+            receipt_path = RUNTIME / f"{state.get('runId')}-{running.get('stageId')}-a{attempt}-{nonce}.receipt.json"
+            if attestation_key and receipt_path.is_file():
+                try:
+                    receipt = load_object(receipt_path)
+                    completed = complete_stage(state, receipt, ROOT, attestation_key)
+                except (ValueError, json.JSONDecodeError):
+                    completed = None
+                if completed is not None:
+                    completed["updatedAt"] = now()
+                    atomic_compare_and_swap(PIPELINE_STATE, state["revision"], completed, state.get("runId"), object_digest(state))
+                    receipt_path.replace(receipt_path.with_suffix(".consumed.json"))
+                    payload = {"status": "recovered", "stageId": running.get("stageId"), "replayedReceipt": True, "generatedAt": now()}
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                    return 0
+            lease_value = running.get("leaseExpiresAt")
+            try:
+                lease_active = bool(lease_value and dt.datetime.fromisoformat(str(lease_value)) > dt.datetime.now(dt.timezone.utc))
+            except ValueError:
+                lease_active = False
+            if lease_active and lease_owner_alive(running.get("leaseOwner")):
+                payload = {"status": "running", "stageId": running.get("stageId"), "leaseOwner": running.get("leaseOwner"), "generatedAt": now()}
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                return 0
+            if receipt_path.exists():
+                quarantine = receipt_path.with_suffix(f".invalid-{uuid.uuid4().hex}.json")
+                receipt_path.replace(quarantine)
+            recovered = recover_interrupted_stage(state, str(running.get("stageId")))
+            recovered["updatedAt"] = now()
+            atomic_compare_and_swap(PIPELINE_STATE, state["revision"], recovered, state.get("runId"), object_digest(state))
+            payload = {"status": "recovered", "stageId": running.get("stageId"), "replayedReceipt": False, "generatedAt": now()}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
         try:
             ready = ready_stage_ids(state)
         except ValueError as error:
@@ -643,40 +759,92 @@ def state_command(args: argparse.Namespace) -> int:
             else:
                 stage_id = ready[0]
                 stage = next(item for item in state["stages"] if item["stageId"] == stage_id)
+                attestation_key = os.environ.get("AI_PIPELINE_ATTESTATION_KEY")
+                if not attestation_key:
+                    payload = {"status": "blocked", "stageId": stage_id, "reason": "AI_PIPELINE_ATTESTATION_KEY is required for stage execution receipts", "generatedAt": now()}
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                    return 2
+                started = start_stage(state, stage_id)
+                started["updatedAt"] = now()
+                atomic_compare_and_swap(PIPELINE_STATE, state["revision"], started, state.get("runId"), object_digest(state))
+                execution_evidence = None
                 if stage.get("mode") == "workspace-write":
-                    state["status"] = "awaiting-human-approval"
-                    state["currentStage"] = stage_id
-                    state["revision"] += 1
-                    state["updatedAt"] = now()
-                    atomic_compare_and_swap(PIPELINE_STATE, state["revision"] - 1, state)
-                    payload = {"status": "awaiting-human-approval", "stageId": stage_id, "roleId": stage.get("roleId"), "reason": "Workspace-write stages require an approved isolated worktree and task scope.", "generatedAt": now()}
+                    from orchestrator import execute_isolated_stage
+                    task = state.get("taskSnapshot")
+                    if not isinstance(task, dict) or task.get("id") != state.get("taskId"):
+                        raise RuntimeError("Workspace-write stage requires a policy-built task snapshot")
+                    stage_attempt = next(item for item in started["stages"] if item["stageId"] == stage_id)
+                    evidence_prefix = (
+                        f"{state['runId']}-{stage_id}-a{stage_attempt['attempts']}-{stage_attempt['attemptNonce']}"
+                    )
+                    result = execute_isolated_stage(
+                        load_object(CONFIG), task, stage,
+                        expected_parent=writer_base_revision(started, stage_id),
+                        evidence_prefix=evidence_prefix,
+                    )
+                    execution_evidence = {
+                        "commitSha": result.get("commit"), "approvedTree": result.get("approvedTree"),
+                        "validationLogHash": result.get("validationLogHash"),
+                        "stagedSecretScan": result.get("stagedSecretScan"),
+                        "qaEvidence": task.get("qaEvidence", []),
+                    }
                 else:
-                    attestation_key = os.environ.get("AI_PIPELINE_ATTESTATION_KEY")
-                    if not attestation_key:
-                        payload = {"status": "blocked", "stageId": stage_id, "reason": "AI_PIPELINE_ATTESTATION_KEY is required for stage execution receipts", "generatedAt": now()}
-                        print(json.dumps(payload, ensure_ascii=False, indent=2))
-                        return 2
-                    started = start_stage(state, stage_id)
-                    started["updatedAt"] = now()
-                    atomic_compare_and_swap(PIPELINE_STATE, state["revision"], started)
-                    result = run_role(str(stage["roleId"]), f"Execute read-only pipeline stage {stage_id} for trusted task {state.get('taskId') or state.get('pipelineId')}. Return structured status and findings. Do not modify files.")
-                    artifact = RUNTIME / f"{state['runId']}-{stage_id}.json"
-                    atomic_json(artifact, result)
-                    semantic = "completed" if result.get("status") == "passed" else "conditional" if result.get("status") == "conditional" else "failed"
-                    receipt = build_receipt(started, stage_id, semantic, [str(artifact.relative_to(ROOT))], ROOT, attestation_key=attestation_key)
-                    completed = complete_stage(started, receipt, ROOT, attestation_key)
-                    completed["updatedAt"] = now()
-                    atomic_compare_and_swap(PIPELINE_STATE, started["revision"], completed)
-                    payload = {"status": completed["status"], "stageId": stage_id, "roleId": stage.get("roleId"), "result": result.get("status"), "generatedAt": now()}
+                    workdir_value = state.get("executionWorktree")
+                    workdir = Path(workdir_value) if isinstance(workdir_value, str) and Path(workdir_value).is_dir() else ROOT
+                    result = run_role(str(stage["roleId"]), f"Execute read-only pipeline stage {stage_id} for trusted task {state.get('taskId') or state.get('pipelineId')}. Return structured status and findings. Do not modify files.", workdir=workdir)
+                attempt_stage = next(item for item in started["stages"] if item["stageId"] == stage_id)
+                artifact = RUNTIME / f"{state['runId']}-{stage_id}-a{attempt_stage['attempts']}-{attempt_stage['attemptNonce']}.json"
+                atomic_json(artifact, result)
+                if result.get("quota", {}).get("exhausted"):
+                    recovered = recover_interrupted_stage(started, stage_id)
+                    recovered["updatedAt"] = now()
+                    atomic_compare_and_swap(PIPELINE_STATE, started["revision"], recovered, started.get("runId"), object_digest(started))
+                    payload = {"status": "waiting-for-quota", "stageId": stage_id, "roleId": stage.get("roleId"), "generatedAt": now()}
+                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                    return 2
+                semantic = "completed" if result.get("status") == "passed" else "conditional" if result.get("status") == "conditional" else "failed"
+                evidence_paths = [str(item) for item in result.get("evidenceArtifacts", []) if isinstance(item, str)]
+                receipt = build_receipt(
+                    started, stage_id, semantic,
+                    [str(artifact.relative_to(ROOT)), *evidence_paths], ROOT,
+                    execution_evidence=execution_evidence, attestation_key=attestation_key,
+                )
+                receipt_path = RUNTIME / f"{state['runId']}-{stage_id}-a{attempt_stage['attempts']}-{attempt_stage['attemptNonce']}.receipt.json"
+                atomic_json(receipt_path, receipt)
+                completed = complete_stage(started, receipt, ROOT, attestation_key)
+                if stage.get("mode") == "workspace-write" and semantic == "completed":
+                    completed["executionBranch"] = result.get("branch")
+                    completed["executionWorktree"] = result.get("worktree")
+                    completed["outputRevision"] = result.get("commit")
+                completed["updatedAt"] = now()
+                atomic_compare_and_swap(PIPELINE_STATE, started["revision"], completed, started.get("runId"), object_digest(started))
+                receipt_path.replace(receipt_path.with_suffix(".consumed.json"))
+                payload = {"status": completed["status"], "stageId": stage_id, "roleId": stage.get("roleId"), "result": result.get("status"), "generatedAt": now()}
     elif command == "release-check":
         regression = load_object(RUNTIME / "deterministic-regression.json", {"status": "not-run"})
         pipeline = load_object(PIPELINE_STATE, {"stages": []})
         issue_payload = load_object(REPORTS / "normalized-qa-issues.json", {"issues": []})
+        resolved_issue_evidence = [
+            item for item in (pipeline.get("taskSnapshot") or {}).get("qaEvidence", [])
+            if isinstance(item, dict) and item.get("issueId") and pipeline.get("status") == "completed"
+        ]
+        unresolved_issues = [
+            item for item in issue_payload.get("issues", [])
+            if isinstance(item, dict) and not any(
+                str(item.get("issue_id") or item.get("id")) == str(evidence.get("issueId"))
+                and str(item.get("fingerprint")) == str(evidence.get("fingerprint"))
+                and str(item.get("source", "")).replace("\\", "/") == str(evidence.get("source", "")).replace("\\", "/")
+                for evidence in resolved_issue_evidence
+            )
+        ]
         expected_digest = None
         task_id = pipeline.get("taskId")
         if task_id:
             backlog = load_object(AUTOMATION / "backlog.json", {"tasks": []})
             trusted_task = next((item for item in backlog.get("tasks", []) if isinstance(item, dict) and item.get("id") == task_id), None)
+            if not trusted_task and isinstance(pipeline.get("taskSnapshot"), dict):
+                candidate = pipeline["taskSnapshot"]
+                trusted_task = candidate if candidate.get("id") == task_id else None
             if trusted_task:
                 trusted_dag = build_role_dag(load_object(CONFIG), trusted_task)
                 expected_stages = [
@@ -694,7 +862,7 @@ def state_command(args: argparse.Namespace) -> int:
         coordinator_trusted, trust_reasons = coordinator_trust_status(str(pipeline.get("sourceRevision", "")))
         try:
             evidence_blockers = validate_release_evidence(
-                pipeline, ROOT, issue_payload.get("issues", []), expected_digest, expected_source_revision,
+                pipeline, ROOT, unresolved_issues, expected_digest, expected_source_revision,
                 expected_source_fingerprint, attestation_key,
             )
         except ValueError as error:
@@ -703,6 +871,8 @@ def state_command(args: argparse.Namespace) -> int:
             evidence_blockers.append("regression:missing-or-stale-run")
         if regression.get("pipelineDigest") != pipeline.get("pipelineDigest") or regression.get("sourceRevision") != pipeline.get("sourceRevision"):
             evidence_blockers.append("regression:unbound-pipeline-or-source")
+        if regression.get("outputRevision") != (pipeline.get("outputRevision") or pipeline.get("sourceRevision")):
+            evidence_blockers.append("regression:unbound-output-revision")
         if regression.get("pipelineRevision") != pipeline.get("revision") or regression.get("sourceFingerprint") != pipeline.get("sourceFingerprint"):
             evidence_blockers.append("regression:stale-revision-or-worktree")
         if not coordinator_trusted or regression.get("coordinatorTrusted") is not True:
@@ -735,7 +905,7 @@ def state_command(args: argparse.Namespace) -> int:
         payload = {
             "status": "awaiting-human-promotion" if issues else "no-matching-issues",
             "command": command, "generatedAt": now(), "issues": issues,
-            "note": "Imported QA is untrusted evidence. Promote reviewed tasks before workspace-write execution.",
+            "note": "Imported QA is untrusted evidence. When auto_promote_qa is enabled, only the fixed automatic-qa-repair-v1 policy may promote it; evidence never supplies prompt, scope, provider, validation or commit controls.",
         }
         atomic_json(RUNTIME / "repair-qa-selection.json", payload)
     elif command in {"verify-fixes", "deep-qa"}:
@@ -849,6 +1019,23 @@ def quota_command(args: argparse.Namespace) -> int:
                             "probeExit": probe_exit, "localFallback": local_result,
                         }
                     else:
+                        pipeline = load_object(PIPELINE_STATE, {})
+                        quota_binding_valid = all([
+                            state.get("runId") == pipeline.get("runId"),
+                            state.get("taskId") == pipeline.get("taskId"),
+                            state.get("pipelineDigest") == pipeline.get("pipelineDigest"),
+                            state.get("sourceRevision") == pipeline.get("sourceRevision"),
+                            state.get("workspaceFingerprint") == pipeline.get("sourceFingerprint"),
+                        ])
+                        if not quota_binding_valid:
+                            payload = {
+                                "status": "blocked", "generatedAt": now(), "provider": provider,
+                                "nextAction": "discard-stale-quota-state", "probeExit": probe_exit,
+                                "localFallback": local_result,
+                            }
+                            atomic_json(RUNTIME / "supervisor.json", payload)
+                            print(json.dumps(payload, ensure_ascii=False, indent=2))
+                            return 1
                         resume_exit = state_command(argparse.Namespace(command="resume"))
                         if resume_exit == 0:
                             QUOTA_STATE.unlink(missing_ok=True)
@@ -884,36 +1071,60 @@ def quota_command(args: argparse.Namespace) -> int:
 def auto_cycle_command(args: argparse.Namespace) -> int:
     backlog = load_object(AUTOMATION / "backlog.json", {"tasks": []})
     pending = [task for task in backlog.get("tasks", []) if isinstance(task, dict) and task.get("status") in {"pending", "ready"}]
+    from orchestrator import load_qa_tasks
+    pending = [*load_qa_tasks(load_object(CONFIG)), *pending]
     task_runtime = load_object(TASK_STATE, {})
-    if task_runtime.get("status") == "passed" and task_runtime.get("taskId"):
+    if task_runtime.get("status") in {"passed", "gate-pending", "gate-passed"} and task_runtime.get("taskId"):
         pending = [task for task in pending if task.get("id") != task_runtime.get("taskId")]
     if pending:
         selected = sorted(pending, key=lambda task: (SEVERITY_ORDER.get(str(task.get("priority")), 9), str(task.get("id"))))[0]
         task_id = str(selected.get("id"))
-        command = [sys.executable, str(AUTOMATION / "orchestrator.py"), "--task", task_id]
-        try:
-            completed = subprocess.run(
-                command, cwd=ROOT, text=True, capture_output=True, timeout=3600, shell=False,
-                env=BaseAdapter().safe_environment({}), encoding="utf-8", errors="replace",
-            )
-        except subprocess.TimeoutExpired as error:
-            completed = subprocess.CompletedProcess(
-                command, -1, str(error.stdout or ""), str(error.stderr or "") + "\nTask executor timed out after 3600s",
-            )
-        quota = detect_quota("codex", completed.stderr)
-        if quota.exhausted:
-            atomic_json(QUOTA_STATE, build_waiting_state(quota, {"taskId": task_id, "stages": []}))
-        execution_status = "completed" if completed.returncode == 0 else "waiting-for-quota" if quota.exhausted else "failed"
+        pipeline = load_object(PIPELINE_STATE, {})
+        if pipeline.get("taskId") != task_id or pipeline.get("status") in {"completed", "failed", "blocked"}:
+            plan_pipeline(argparse.Namespace(pipeline="repair", milestone="autonomous", task_id=task_id))
+        stage_results: list[dict[str, Any]] = []
+        max_iterations = max(1, int(getattr(args, "max_iterations", 8)))
+        execution_status = "running"
+        for _ in range(max_iterations):
+            code = state_command(argparse.Namespace(command="resume"))
+            pipeline = load_object(PIPELINE_STATE, {})
+            stage_results.append({"exitCode": code, "status": pipeline.get("status"), "currentStage": pipeline.get("currentStage"), "revision": pipeline.get("revision")})
+            if code != 0 or pipeline.get("status") in {"completed", "failed", "blocked"}:
+                break
+        quota_state = quota_status(QUOTA_STATE)
+        quota_exhausted = quota_state.get("status") == "waiting-for-quota"
+        if pipeline.get("status") == "completed" and bool(getattr(args, "defer_gate", False)):
+            regression_code = None
+            release_code = None
+            execution_status = "pipeline-completed-awaiting-gate"
+            atomic_json(TASK_STATE, {
+                "schemaVersion": 1, "status": "gate-pending", "taskId": task_id,
+                "pipelineRunId": pipeline.get("runId"), "commit": pipeline.get("outputRevision"),
+                "updatedAt": now(),
+            })
+        elif pipeline.get("status") == "completed":
+            regression_code = run_regression(argparse.Namespace())
+            release_code = state_command(argparse.Namespace(command="release-check")) if regression_code == 0 else 2
+            release_payload = load_object(RUNTIME / "release-check.json", {})
+            if release_code == 0:
+                execution_status = "completed"
+            elif release_code == 2:
+                execution_status = str(release_payload.get("status") or "blocked")
+            else:
+                execution_status = "failed"
+        else:
+            regression_code = None
+            release_code = None
+            execution_status = "waiting-for-quota" if quota_exhausted else str(pipeline.get("status") or "failed")
         payload = {
             "schemaVersion": 1,
             "generatedAt": now(),
             "status": execution_status,
             "taskId": task_id,
-            "nextAction": "scheduled-discovery" if execution_status == "completed" else "quota-supervisor" if quota.exhausted else "inspect-task-failure",
-            "exitCode": completed.returncode,
-            "stdout": redact(completed.stdout[-4000:]),
-            "stderr": redact(completed.stderr[-4000:]),
-            "quota": quota.to_dict(),
+            "nextAction": "scheduled-discovery" if execution_status == "completed" else "quota-supervisor" if quota_exhausted else "resume-attested-pipeline",
+            "pipelineRunId": pipeline.get("runId"), "pipelineStatus": pipeline.get("status"),
+            "stageResults": stage_results, "regressionExitCode": regression_code, "releaseCheckExitCode": release_code,
+            "quota": quota_state,
         }
     else:
         discovery = discover_workspace(ROOT, run_quality=bool(getattr(args, "quality", False)))
@@ -978,6 +1189,7 @@ def build_parser() -> argparse.ArgumentParser:
         item = sub.add_parser(name)
         item.add_argument("--quality", action="store_true")
         item.add_argument("--max-iterations", type=int, default=8 if name == "auto-cycle" else 1)
+        item.add_argument("--defer-gate", action="store_true", help="Leave regression and release-check to the supervisor after QA")
         item.set_defaults(handler=auto_cycle_command)
     for name in ["quota-status", "quota-probe", "supervisor"]:
         item = sub.add_parser(name)

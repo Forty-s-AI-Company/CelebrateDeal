@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -9,6 +11,7 @@ from pipeline_engine import (
     build_receipt,
     complete_stage,
     ready_stage_ids,
+    recover_interrupted_stage,
     start_stage,
     pipeline_digest,
     sign_payload,
@@ -18,6 +21,13 @@ from pipeline_engine import (
 from routing import validate_stage_graph
 
 KEY = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+WRITE_EVIDENCE = {
+    "commitSha": "1" * 40,
+    "approvedTree": "2" * 40,
+    "validationLogHash": "3" * 64,
+    "stagedSecretScan": {"status": "passed", "sha256": "4" * 64},
+    "qaEvidence": [],
+}
 
 
 def state() -> dict:
@@ -67,7 +77,7 @@ class PipelineEngineTest(unittest.TestCase):
             artifact = root / "report.json"
             artifact.write_text("{}", encoding="utf-8")
             started = start_stage(state(), "01-implement")
-            receipt = build_receipt(started, "01-implement", "completed", ["report.json"], root, attestation_key=KEY)
+            receipt = build_receipt(started, "01-implement", "completed", ["report.json"], root, execution_evidence=WRITE_EVIDENCE, attestation_key=KEY)
             completed = complete_stage(started, receipt, root, KEY)
             self.assertEqual(completed["stages"][0]["status"], "completed")
             self.assertEqual(ready_stage_ids(completed), ["02-review"])
@@ -111,7 +121,7 @@ class PipelineEngineTest(unittest.TestCase):
             started = start_stage(state(), "01-implement")
             with self.assertRaisesRegex(ValueError, "ATTESTATION_KEY"):
                 build_receipt(started, "01-implement", "completed", ["evidence.json"], root)
-            receipt = build_receipt(started, "01-implement", "completed", ["evidence.json"], root, attestation_key=KEY)
+            receipt = build_receipt(started, "01-implement", "completed", ["evidence.json"], root, execution_evidence=WRITE_EVIDENCE, attestation_key=KEY)
             receipt["attestation"] = "0" * 64
             with self.assertRaisesRegex(ValueError, "attestation"):
                 complete_stage(started, receipt, root, KEY)
@@ -148,7 +158,7 @@ class PipelineEngineTest(unittest.TestCase):
             artifact = root / "evidence.json"
             artifact.write_text("{}", encoding="utf-8")
             started = start_stage(state(), "01-implement")
-            receipt = build_receipt(started, "01-implement", "completed", ["evidence.json"], root, attestation_key=KEY)
+            receipt = build_receipt(started, "01-implement", "completed", ["evidence.json"], root, execution_evidence=WRITE_EVIDENCE, attestation_key=KEY)
             completed = complete_stage(started, receipt, root, KEY)
             for field, forged in [("roleId", "wrong-role"), ("provider", "antigravity"), ("stageId", "02-review"), ("status", "conditional")]:
                 value = json.loads(json.dumps(completed))
@@ -162,6 +172,25 @@ class PipelineEngineTest(unittest.TestCase):
             blockers = validate_release_evidence(value, Path(directory), [], "0" * 64, value["sourceRevision"], value["sourceFingerprint"], KEY)
             self.assertIn("pipeline:untrusted-or-changed-definition", blockers)
 
+    def test_release_accepts_attempt_nonce_bound_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            value = state()
+            value["stages"] = [value["stages"][0]]
+            value["stages"][0]["mode"] = "read-only"
+            value["pipelineDigest"] = pipeline_digest(value["stages"])
+            started = start_stage(value, "01-implement")
+            stage = started["stages"][0]
+            artifact = root / "reports" / "ai-team" / "runtime" / f"run-1-01-implement-a{stage['attempts']}-{stage['attemptNonce']}.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text("{}", encoding="utf-8")
+            receipt = build_receipt(started, "01-implement", "completed", [str(artifact.relative_to(root))], root, attestation_key=KEY)
+            completed = complete_stage(started, receipt, root, KEY)
+            blockers = validate_release_evidence(
+                completed, root, [], completed["pipelineDigest"], completed["sourceRevision"], completed["sourceFingerprint"], KEY,
+            )
+            self.assertNotIn("artifact:01-implement:unbound-or-reused", blockers)
+
     def test_release_rejects_forged_source_revision_and_reused_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -173,7 +202,7 @@ class PipelineEngineTest(unittest.TestCase):
             artifact = root / "reports" / "ai-team" / "runtime" / f"{value['runId']}-01-implement.json"
             artifact.parent.mkdir(parents=True)
             artifact.write_text("{}", encoding="utf-8")
-            receipt = build_receipt(value, "01-implement", "completed", [str(artifact.relative_to(root))], root, attestation_key=KEY)
+            receipt = build_receipt(value, "01-implement", "completed", [str(artifact.relative_to(root))], root, execution_evidence=WRITE_EVIDENCE, attestation_key=KEY)
             value["stages"][0]["receipt"] = receipt
             value["stages"][0]["artifactPaths"] = [receipt["artifacts"][0]["path"]]
             blockers = validate_release_evidence(value, root, [], value["pipelineDigest"], "different-commit", value["sourceFingerprint"], KEY)
@@ -224,6 +253,63 @@ class PipelineEngineTest(unittest.TestCase):
                 thread.join()
             self.assertEqual(sorted(outcomes), ["passed", "stale"])
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["revision"], 2)
+
+    def test_interrupted_stage_recovery_retries_then_exhausts(self) -> None:
+        running = start_stage(state(), "01-implement")
+        recovered = recover_interrupted_stage(running, "01-implement")
+        self.assertEqual(recovered["stages"][0]["status"], "pending")
+        self.assertEqual(recovered["stages"][0]["attempts"], 1)
+        running_again = start_stage(recovered, "01-implement")
+        running_again["stages"][0]["attempts"] = 3
+        exhausted = recover_interrupted_stage(running_again, "01-implement")
+        self.assertEqual(exhausted["stages"][0]["status"], "exhausted")
+        self.assertEqual(exhausted["status"], "blocked")
+
+    def test_completed_receipt_cannot_be_replayed_or_used_for_new_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "evidence.json").write_text("{}", encoding="utf-8")
+            started = start_stage(state(), "01-implement")
+            receipt = build_receipt(started, "01-implement", "completed", ["evidence.json"], root, execution_evidence=WRITE_EVIDENCE, attestation_key=KEY)
+            completed = complete_stage(started, receipt, root, KEY)
+            with self.assertRaisesRegex(ValueError, "not running"):
+                complete_stage(completed, receipt, root, KEY)
+            recovered = recover_interrupted_stage(start_stage(state(), "01-implement"), "01-implement")
+            second_attempt = start_stage(recovered, "01-implement")
+            with self.assertRaisesRegex(ValueError, "attempt mismatch"):
+                complete_stage(second_attempt, receipt, root, KEY)
+
+    def test_compare_and_swap_is_process_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "state.json"
+            template = root / "template.json"
+            start_file = root / "start"
+            value = state()
+            target.write_text(json.dumps(value), encoding="utf-8")
+            updated = json.loads(json.dumps(value))
+            updated["revision"] = 2
+            template.write_text(json.dumps(updated), encoding="utf-8")
+            automation = Path(__file__).resolve().parent
+            code = (
+                "import json,sys,time; from pathlib import Path; "
+                f"sys.path.insert(0,{str(automation)!r}); from pipeline_engine import atomic_compare_and_swap; "
+                "target=Path(sys.argv[1]); template=Path(sys.argv[2]); gate=Path(sys.argv[3]); "
+                "\nwhile not gate.exists(): time.sleep(0.005)\n"
+                "value=json.loads(template.read_text(encoding='utf-8')); "
+                "\ntry: atomic_compare_and_swap(target,1,value); print('passed')\n"
+                "except RuntimeError: print('stale')\n"
+            )
+            processes = [subprocess.Popen([sys.executable, "-c", code, str(target), str(template), str(start_file)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
+            start_file.write_text("go", encoding="utf-8")
+            outputs: list[str] = []
+            errors: list[str] = []
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                outputs.append(stdout.strip())
+                errors.append(stderr.strip())
+            self.assertEqual(sorted(outputs), ["passed", "stale"], errors)
+            self.assertFalse(target.with_suffix(".json.lock").exists())
 
     def test_pipeline_state_requires_role_provider_and_mode(self) -> None:
         value = state()

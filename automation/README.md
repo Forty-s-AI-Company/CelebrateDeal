@@ -23,7 +23,7 @@ Runtime evidence is written under `reports/ai-team/runtime`. Pipeline state uses
 
 Trusted backlog tasks use `type` or `types` to compile a domain-aware role DAG. The DAG automatically includes required specialist reviewers and QA roles, validates that every role is enabled, and fails closed for unknown domains or providers. Static files in `automation/pipelines` are reference templates; task execution and release evidence must use the compiled DAG stored in schema v2 pipeline state.
 
-Each completed stage must have a receipt containing the current run ID, role, provider, output artifact and SHA-256 digest. A downstream stage cannot start from a failed, blocked or conditional predecessor, and `release-check` verifies the artifact hashes again. Workspace-write stages are never resumed in the primary checkout: they stop at `awaiting-human-approval` until an isolated approved worktree is supplied.
+Each completed stage must have an attested receipt containing the current run ID, role, provider, attempt nonce, output artifact hashes and (for workspace-write) commit SHA, approved tree, validation log hash and staged secret-scan evidence. A downstream stage cannot start from a failed, blocked or conditional predecessor. Workspace-write stages run only through the isolated executor; the primary checkout never receives model writes directly. `release-check` revalidates artifact hashes, receipt identity, commit tree and writer ancestry.
 
 Provider-specific smoke, handoff and release commands return exit code `2` when they are conditional or blocked. This is an expected fail-closed signal for CI and shell callers; read the JSON artifact to distinguish External required from deterministic test failure.
 
@@ -37,7 +37,7 @@ Stage receipts and deterministic regression evidence require `AI_PIPELINE_ATTEST
 - 每個任務建立 `codex/automation/<task-id>` 分支與 `.worktrees/<task-id>` 隔離 worktree。
 - Codex 使用 `workspace-write`，不使用 bypass approvals/sandbox。
 - 最多三次嘗試；驗證失敗只把精簡 log 交給修復回合。
-- 不部署、不 push。低風險 task branch 可自動建立 scoped commit；自動 merge 在 branch protection 與 required-review evidence 可被機器驗證前維持關閉。Database、auth、payment、billing、webhook 與 production 變更一律標記 manual merge required。
+- 不部署、不 push。通過固定政策、隔離 worktree、reviewer/QA、回歸、secret scan、attested receipt 與 release-check 的 task branch 可自動建立 scoped commit；production merge 仍維持關閉。高風險自動執行是 machine-gated，不代表可部署 production 或修改正式資料。
 - 驗證命令有 allowlist；禁止 production deploy、force push、migration reset。
 - Role manifest 必須位於 `automation/roles`，registry/manifest 的 role ID 與 provider 必須完全一致；未知角色、未知 provider 與路徑逸出一律拒絕。
 
@@ -68,7 +68,7 @@ npm run ai:smoke
 
 Antigravity 可將問題寫入根目錄 `qa-issues.json`。每筆只採用 `id`、`title`、`description`、`priority`、`type` 與 `status`；`prompt`、自訂 validation 與命令一律忽略。內容會標記為 untrusted evidence。
 
-Untrusted QA 只會被登錄為 `awaiting-approval` 報告，不會送入 Codex、不建立 worktree、不取得 workspace-write，也不執行 npm validation。人工審閱後，將可信任的修復目標另寫入 `automation/backlog.json`，下一次 orchestrator 才會執行。若 trusted automation task 修改 `.github`、`.codex`、`.agents`、`automation`、`package.json`、lockfile 或 `scripts`，仍會在執行任何 npm script 前失敗，除非該 backlog task 由人工明確設定 `allow_supply_chain_changes: true`。
+Untrusted QA 可以在 `autonomy.auto_promote_qa=true` 時自動進入 policy promotion，但 QA 原文永遠只是 evidence。Orchestrator 會重建固定 task ID、prompt、role DAG、provider、validation、write/forbidden paths、commit policy 與 evidence source；未取得 `automatic-qa-repair-v1` promotion record 的資料仍不能建立 executable DAG。若 promoted repair task 修改高風險產品路徑，固定 forbidden paths 會阻擋，不得由 QA payload 放寬。若 trusted automation task 修改 `.github`、`.codex`、`.agents`、`automation`、`package.json`、lockfile 或 `scripts`，仍會在執行任何 npm script 前失敗，除非該 task 由可信任控制面明確設定 `allow_supply_chain_changes: true`。
 
 ## Autonomous discovery and quota resume
 

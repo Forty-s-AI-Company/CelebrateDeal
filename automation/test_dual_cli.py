@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from adapters import AdapterRequest, AntigravityAdapter, CodexAdapter
 from adapters.base_adapter import BaseAdapter, redact
-from pipeline_cli import PIPELINE_STATE, QUOTA_STATE, atomic_json, coordinator_trust_status, expand_trust_paths, import_files, normalize_issue, plan_pipeline, quota_command, run_regression, run_role, state_command, workspace_fingerprint
+from pipeline_cli import PIPELINE_STATE, QUOTA_STATE, atomic_json, coordinator_trust_status, expand_trust_paths, import_files, lease_owner_alive, normalize_issue, plan_pipeline, quota_command, run_regression, run_role, state_command, workspace_fingerprint
 from pipeline_cli import smoke_antigravity, smoke_handoff
 
 
@@ -70,6 +70,27 @@ class AdapterTest(unittest.TestCase):
             "preferredProvider": "antigravity", "nextProbeAt": "2026-01-01T00:00:00+08:00",
         }
         self.assertEqual(quota_command(argparse.Namespace(command="supervisor")), 2)
+        resume_mock.assert_not_called()
+
+    @patch.dict("os.environ", {"AI_PIPELINE_ATTESTATION_KEY": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}, clear=False)
+    @patch("pipeline_cli.state_command")
+    @patch("pipeline_cli.load_object")
+    @patch("pipeline_cli._run_local_supervisor_report", return_value={"status": "passed"})
+    @patch("pipeline_cli.quota_command", return_value=0)
+    @patch("pipeline_cli.atomic_json")
+    @patch("pipeline_cli.quota_status")
+    def test_quota_recovery_rejects_stale_pipeline_binding(self, status_mock, _atomic_mock, _probe_command, _local_mock, load_mock, resume_mock) -> None:
+        status_mock.return_value = {
+            "status": "waiting-for-quota", "retryCount": 0, "maxRetries": 3,
+            "preferredProvider": "antigravity", "nextProbeAt": "2026-01-01T00:00:00+08:00",
+            "runId": "old-run", "taskId": "T-1", "pipelineDigest": "old-digest",
+            "sourceRevision": "old-source", "workspaceFingerprint": "old-fingerprint",
+        }
+        load_mock.side_effect = [
+            {"status": "available"},
+            {"runId": "new-run", "taskId": "T-1", "pipelineDigest": "new-digest", "sourceRevision": "new-source", "sourceFingerprint": "new-fingerprint"},
+        ]
+        self.assertEqual(quota_command(argparse.Namespace(command="supervisor")), 1)
         resume_mock.assert_not_called()
 
     @patch("adapters.codex_adapter.subprocess.run")
@@ -163,6 +184,10 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(issue["issue_id"], "A11Y-1")
         self.assertEqual(issue["affected_paths"], ["src/a.ts", "src/b.ts"])
         self.assertTrue(issue["untrusted"])
+
+    def test_dead_pipeline_lease_can_be_recovered(self) -> None:
+        self.assertFalse(lease_owner_alive("999999999:dead-owner"))
+        self.assertFalse(lease_owner_alive("unparseable"))
 
     def test_untrusted_issue_cannot_select_execution_controls(self) -> None:
         issue = normalize_issue({

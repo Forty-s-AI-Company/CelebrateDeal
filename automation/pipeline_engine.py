@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import hashlib
 import hmac
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +36,11 @@ def pipeline_digest(stages: list[dict[str, Any]]) -> str:
         for stage in stages
     ]
     encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def object_digest(value: object) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -66,6 +74,8 @@ def validate_pipeline_state(state: dict[str, Any]) -> None:
         raise ValueError("Pipeline state requires runId and positive revision")
     if not state.get("sourceRevision") or not state.get("sourceFingerprint") or not state.get("pipelineDigest"):
         raise ValueError("Pipeline state requires source revision, fingerprint and pipeline digest")
+    if state.get("taskSnapshot") is not None and state.get("taskDigest") != object_digest(state.get("taskSnapshot")):
+        raise ValueError("Pipeline task snapshot digest mismatch")
     stages = state.get("stages")
     if not isinstance(stages, list) or not stages:
         raise ValueError("Pipeline state requires stages")
@@ -109,6 +119,9 @@ def start_stage(state: dict[str, Any], stage_id: str) -> dict[str, Any]:
     stage = next(item for item in updated["stages"] if item["stageId"] == stage_id)
     stage["status"] = "running"
     stage["attempts"] = int(stage.get("attempts", 0)) + 1
+    stage["attemptNonce"] = uuid.uuid4().hex
+    stage["leaseOwner"] = f"{os.getpid()}:{uuid.uuid4().hex}"
+    stage["leaseExpiresAt"] = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=4)).isoformat()
     updated["status"] = "running"
     updated["currentStage"] = stage_id
     updated["revision"] += 1
@@ -122,6 +135,7 @@ def build_receipt(
     artifact_paths: list[str],
     root: Path,
     findings: list[dict[str, Any]] | None = None,
+    execution_evidence: dict[str, Any] | None = None,
     attestation_key: str | None = None,
 ) -> dict[str, Any]:
     validate_pipeline_state(state)
@@ -141,12 +155,53 @@ def build_receipt(
     receipt = {
         "runId": state["runId"], "stageId": stage_id, "roleId": stage["roleId"],
         "provider": stage["provider"], "status": status, "attempt": stage.get("attempts"),
+        "attemptNonce": stage.get("attemptNonce"),
         "pipelineDigest": state["pipelineDigest"], "sourceRevision": state["sourceRevision"],
         "sourceFingerprint": state["sourceFingerprint"], "artifacts": artifacts,
         "findings": findings or [],
+        "commitSha": None,
+        "approvedTree": None,
+        "validationLogHash": None,
+        "stagedSecretScan": None,
+        "qaEvidence": [],
     }
+    if execution_evidence:
+        for name in ["commitSha", "approvedTree", "validationLogHash", "stagedSecretScan", "qaEvidence"]:
+            if name in execution_evidence:
+                receipt[name] = execution_evidence[name]
+    if stage.get("mode") == "workspace-write" and status == "completed":
+        for name in ["commitSha", "approvedTree", "validationLogHash"]:
+            if not isinstance(receipt.get(name), str) or not re.fullmatch(r"[0-9a-f]{40,64}", str(receipt[name])):
+                raise ValueError(f"Workspace-write receipt requires {name}: {stage_id}")
+        scan = receipt.get("stagedSecretScan")
+        if not isinstance(scan, dict) or scan.get("status") != "passed" or not re.fullmatch(r"[0-9a-f]{64}", str(scan.get("sha256", ""))):
+            raise ValueError(f"Workspace-write receipt requires passed staged secret scan: {stage_id}")
     receipt["attestation"] = sign_payload(receipt, attestation_key)
     return receipt
+
+
+def recover_interrupted_stage(state: dict[str, Any], stage_id: str) -> dict[str, Any]:
+    """Return a crashed running stage to pending without accepting orphaned artifacts."""
+    validate_pipeline_state(state)
+    updated = copy.deepcopy(state)
+    stage = next((item for item in updated["stages"] if item["stageId"] == stage_id), None)
+    if not stage or stage.get("status") != "running":
+        raise ValueError(f"Stage is not recoverable: {stage_id}")
+    if int(stage.get("attempts", 0)) >= 3:
+        stage["status"] = "exhausted"
+        updated["status"] = "blocked"
+    else:
+        stage["status"] = "pending"
+        updated["status"] = "running"
+    stage["receipt"] = None
+    stage["artifactPaths"] = []
+    stage["attemptNonce"] = None
+    stage["leaseOwner"] = None
+    stage["leaseExpiresAt"] = None
+    stage["error"] = "Recovered after coordinator interruption; orphaned evidence was discarded"
+    updated["currentStage"] = None
+    updated["revision"] += 1
+    return updated
 
 
 def complete_stage(state: dict[str, Any], receipt: dict[str, Any], root: Path, attestation_key: str | None = None) -> dict[str, Any]:
@@ -160,6 +215,7 @@ def complete_stage(state: dict[str, Any], receipt: dict[str, Any], root: Path, a
         ("attempt", stage.get("attempts")), ("pipelineDigest", state["pipelineDigest"]),
         ("sourceRevision", state["sourceRevision"]),
         ("sourceFingerprint", state["sourceFingerprint"]),
+        ("attemptNonce", stage.get("attemptNonce")),
     ]:
         if receipt.get(key) != expected:
             raise ValueError(f"Receipt {key} mismatch for stage {stage_id}")
@@ -237,6 +293,7 @@ def validate_release_evidence(
                 "pipelineDigest": state["pipelineDigest"],
                 "sourceRevision": state["sourceRevision"],
                 "sourceFingerprint": state["sourceFingerprint"],
+                "attemptNonce": stage.get("attemptNonce"),
             }
             if not isinstance(receipt, dict) or any(receipt.get(key) != value for key, value in expected_receipt.items()):
                 blockers.append(f"receipt:{stage.get('stageId')}:missing-or-stale")
@@ -244,26 +301,78 @@ def validate_release_evidence(
             if not verify_attestation(receipt, attestation_key):
                 blockers.append(f"receipt:{stage.get('stageId')}:invalid-attestation")
                 continue
+            if stage.get("mode") == "workspace-write":
+                if not all(isinstance(receipt.get(name), str) for name in ["commitSha", "approvedTree", "validationLogHash"]):
+                    blockers.append(f"receipt:{stage.get('stageId')}:missing-write-evidence")
+                scan = receipt.get("stagedSecretScan")
+                if not isinstance(scan, dict) or scan.get("status") != "passed":
+                    blockers.append(f"receipt:{stage.get('stageId')}:missing-secret-scan")
+                if not any(str(item.get("path", "")).endswith("-validation.log") for item in receipt.get("artifacts", [])):
+                    blockers.append(f"receipt:{stage.get('stageId')}:missing-validation-log")
+                if not any(str(item.get("path", "")).endswith("-secret-scan.log") for item in receipt.get("artifacts", [])):
+                    blockers.append(f"receipt:{stage.get('stageId')}:missing-secret-scan-log")
             if not receipt.get("artifacts"):
                 blockers.append(f"receipt:{stage.get('stageId')}:missing-artifacts")
                 continue
+            expected_prefix = f"reports/ai-team/runtime/{state['runId']}-{stage.get('stageId')}-a{stage.get('attempts')}-{stage.get('attemptNonce')}"
+            expected_artifacts = {f"{expected_prefix}.json"}
+            if stage.get("mode") == "workspace-write":
+                expected_artifacts.update({f"{expected_prefix}-validation.log", f"{expected_prefix}-secret-scan.log"})
+            receipt_paths = {str(item.get("path", "")).replace("\\", "/") for item in receipt.get("artifacts", [])}
+            if receipt_paths != expected_artifacts:
+                blockers.append(f"artifact:{stage.get('stageId')}:unbound-or-reused")
             for artifact in receipt.get("artifacts", []):
                 relative = str(artifact.get("path", "")).replace("\\", "/")
-                expected_artifact = f"reports/ai-team/runtime/{state['runId']}-{stage.get('stageId')}.json"
-                if relative != expected_artifact or relative in used_artifacts:
+                if relative not in expected_artifacts or relative in used_artifacts:
                     blockers.append(f"artifact:{stage.get('stageId')}:unbound-or-reused")
                     continue
                 used_artifacts.add(relative)
                 path = (root / relative).resolve()
                 if root.resolve() not in path.parents or not path.is_file() or file_sha256(path) != artifact.get("sha256"):
                     blockers.append(f"artifact:{stage.get('stageId')}:missing-or-changed")
+            if stage.get("mode") == "workspace-write":
+                validation_path = next((item for item in receipt.get("artifacts", []) if str(item.get("path", "")).endswith("-validation.log")), None)
+                secret_path = next((item for item in receipt.get("artifacts", []) if str(item.get("path", "")).endswith("-secret-scan.log")), None)
+                if validation_path and receipt.get("validationLogHash") != validation_path.get("sha256"):
+                    blockers.append(f"receipt:{stage.get('stageId')}:validation-log-hash-mismatch")
+                if secret_path and isinstance(receipt.get("stagedSecretScan"), dict) and receipt["stagedSecretScan"].get("sha256") != secret_path.get("sha256"):
+                    blockers.append(f"receipt:{stage.get('stageId')}:secret-scan-hash-mismatch")
+                commit_sha = receipt.get("commitSha")
+                approved_tree = receipt.get("approvedTree")
+                commit_result = subprocess.run(
+                    ["git", "show", "-s", "--format=%T%n%P", str(commit_sha)],
+                    cwd=root, text=True, capture_output=True, shell=False,
+                )
+                if commit_result.returncode != 0:
+                    blockers.append(f"receipt:{stage.get('stageId')}:commit-not-found")
+                else:
+                    commit_lines = commit_result.stdout.splitlines()
+                    commit_tree = commit_lines[0] if commit_lines else ""
+                    parents = commit_lines[1].split() if len(commit_lines) > 1 else []
+                    if commit_tree != approved_tree:
+                        blockers.append(f"receipt:{stage.get('stageId')}:commit-tree-mismatch")
+                    completed_writer_commits: list[str] = []
+                    for prior in state["stages"]:
+                        if prior.get("stageId") == stage.get("stageId"):
+                            break
+                        if prior.get("mode") == "workspace-write" and prior.get("status") == "completed":
+                            prior_commit = prior.get("receipt", {}).get("commitSha")
+                            if isinstance(prior_commit, str):
+                                completed_writer_commits.append(prior_commit)
+                    writer_predecessor = completed_writer_commits[-1] if completed_writer_commits else None
+                    expected_parent = writer_predecessor or state.get("sourceRevision")
+                    if expected_parent and (not parents or parents[0] != expected_parent):
+                        blockers.append(f"receipt:{stage.get('stageId')}:commit-parent-mismatch")
     for issue in unresolved_issues:
         if issue.get("severity") in {"P0", "P1"} and issue.get("status", "open") not in {"resolved", "dismissed", "closed"}:
             blockers.append(f"issue:{issue.get('issue_id') or issue.get('id')}")
     return sorted(set(blockers))
 
 
-def atomic_compare_and_swap(path: Path, expected_revision: int, state: dict[str, Any]) -> None:
+def atomic_compare_and_swap(
+    path: Path, expected_revision: int, state: dict[str, Any],
+    expected_run_id: str | None = None, expected_state_digest: str | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
     deadline = time.monotonic() + 10
@@ -271,21 +380,44 @@ def atomic_compare_and_swap(path: Path, expected_revision: int, state: dict[str,
     while lock_fd is None:
         try:
             lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(lock_fd, f"pid={os.getpid()}\n".encode("ascii"))
+            os.write(lock_fd, json.dumps({"pid": os.getpid(), "createdAt": time.time()}).encode("ascii"))
         except FileExistsError:
             try:
-                if time.time() - lock_path.stat().st_mtime > 60:
+                owner = json.loads(lock_path.read_text(encoding="ascii"))
+                owner_pid = int(owner.get("pid", 0)) if isinstance(owner, dict) else 0
+                alive = False
+                if owner_pid > 0 and os.name == "nt":
+                    import ctypes
+                    process = ctypes.windll.kernel32.OpenProcess(0x1000, False, owner_pid)
+                    if process:
+                        ctypes.windll.kernel32.CloseHandle(process)
+                        alive = True
+                elif owner_pid > 0:
+                    try:
+                        os.kill(owner_pid, 0)
+                        alive = True
+                    except OSError:
+                        pass
+                if not alive:
                     lock_path.unlink()
                     continue
             except FileNotFoundError:
                 continue
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
             if time.monotonic() >= deadline:
                 raise RuntimeError("Timed out waiting for pipeline state lock")
             time.sleep(0.01)
     try:
         current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-        if current is not None and current.get("revision") != expected_revision:
+        if current is None:
+            raise RuntimeError("Pipeline state disappeared; refusing stale worker recreation")
+        if current.get("revision") != expected_revision:
             raise RuntimeError("Pipeline state revision changed; refusing stale worker update")
+        if expected_run_id is not None and current.get("runId") != expected_run_id:
+            raise RuntimeError("Pipeline run identity changed; refusing ABA worker update")
+        if expected_state_digest is not None and object_digest(current) != expected_state_digest:
+            raise RuntimeError("Pipeline state content changed; refusing ABA worker update")
         if state.get("revision") != expected_revision + 1:
             raise RuntimeError("Pipeline state revision must advance by exactly one")
         validate_pipeline_state(state)

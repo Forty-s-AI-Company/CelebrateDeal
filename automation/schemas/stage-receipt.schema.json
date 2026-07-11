@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["runId", "stageId", "roleId", "provider", "status", "attempt", "pipelineDigest", "sourceRevision", "sourceFingerprint", "artifacts", "findings", "attestation"],
+  "required": ["runId", "stageId", "roleId", "provider", "status", "attempt", "attemptNonce", "pipelineDigest", "sourceRevision", "sourceFingerprint", "artifacts", "findings", "commitSha", "approvedTree", "validationLogHash", "stagedSecretScan", "qaEvidence", "attestation"],
   "properties": {
     "runId": {"type": "string"},
     "stageId": {"type": "string"},
@@ -10,11 +10,17 @@
     "provider": {"enum": ["codex", "antigravity"]},
     "status": {"enum": ["completed", "failed", "blocked", "conditional"]},
     "attempt": {"type": "integer", "minimum": 1},
+    "attemptNonce": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
     "pipelineDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "sourceRevision": {"type": "string", "minLength": 1},
     "sourceFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "attestation": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "artifacts": {"type": "array", "items": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "additionalProperties": false}},
     "findings": {"type": "array", "items": {"type": "object"}}
+    ,"commitSha": {"type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$"}
+    ,"approvedTree": {"type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$"}
+    ,"validationLogHash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+    ,"stagedSecretScan": {"type": ["object", "null"]}
+    ,"qaEvidence": {"type": "array", "items": {"type": "object"}}
   }
 }

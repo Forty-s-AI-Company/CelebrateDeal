@@ -19,6 +19,11 @@
     "taskId": {"type": ["string", "null"]},
     "taskType": {"type": ["string", "null"]},
     "taskDomain": {"type": ["string", "null"]},
+    "taskSnapshot": {"type": ["object", "null"]},
+    "taskDigest": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "executionBranch": {"type": ["string", "null"]},
+    "executionWorktree": {"type": ["string", "null"]},
+    "outputRevision": {"type": ["string", "null"]},
     "stages": {"type": "array"}
   },
   "additionalProperties": false

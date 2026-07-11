@@ -107,6 +107,19 @@ class DynamicRoleRoutingTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_role_dag(config(), {"id": "BOUNDARY-1", "type": "frontend", "untrusted": True})
 
+    def test_policy_promoted_qa_can_create_dag_without_accepting_external_controls(self) -> None:
+        task = {
+            "id": "QA-1", "type": "repair", "sourceEvidenceUntrusted": True,
+            "policyPromoted": True, "policyId": "automatic-qa-repair-v1",
+            "policyPromotion": {
+                "promptFromEvidence": False, "scopeFromEvidence": False,
+                "providerFromEvidence": False, "validationFromEvidence": False,
+                "commitFromEvidence": False,
+            },
+        }
+        dag = build_role_dag(config(), task)
+        self.assertTrue(dag.stages)
+
     def test_required_specialist_omission_fails_closed(self) -> None:
         value = config()
         value["role_chains"]["frontend"].remove("visual-regression-reviewer")
