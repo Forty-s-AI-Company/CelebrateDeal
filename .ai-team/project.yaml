@@ -16,7 +16,7 @@ commands:
   build: npm run build
 
 safety:
-  allow_git_push: false
+  allow_git_push: true
   allow_deploy: false
   allow_database_migration: false
   allow_database_seed: false
