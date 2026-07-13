@@ -33,7 +33,7 @@ jobs:
       CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
       PAYMENT_PROVIDER: demo
       RESEND_API_KEY: ci-resend-key
-      EMAIL_FROM: CelebrateDeal CI <no-reply@example.com>
+      EMAIL_FROM: CelebrateDeal CI <no-reply@ci.celebratedeal.invalid>
       SENTRY_DSN: https://ci@sentry.invalid/1
       NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
       NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
