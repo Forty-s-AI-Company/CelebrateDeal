@@ -100,13 +100,22 @@ export async function POST(request: Request) {
     });
   }
 
-  if (isNativeFormPost && parsed.data.redirectTo) {
+  if (isNativeFormPost && parsed.data.redirectTo && isSameOriginRedirect(parsed.data.redirectTo, request.url)) {
     const redirectUrl = new URL(parsed.data.redirectTo, request.url);
     redirectUrl.searchParams.set("submitted", "1");
     return NextResponse.redirect(redirectUrl, { status: 303 });
   }
 
   return NextResponse.json({ ok: true });
+}
+
+function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
+  try {
+    return redirectTo.startsWith("/")
+      && new URL(redirectTo, requestUrl).origin === new URL(requestUrl).origin;
+  } catch {
+    return false;
+  }
 }
 
 async function nativeFormPayload(request: Request) {
