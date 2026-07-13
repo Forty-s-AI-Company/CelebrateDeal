@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSameOriginRequest } from "@/lib/api-security";
+import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "affiliate-clicks", 60, 60_000);
   if (limited) return limited;
 
-  const parsed = AffiliateClickPayload.safeParse(await request.json());
+  const parsed = AffiliateClickPayload.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

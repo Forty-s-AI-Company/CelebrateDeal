@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { requireSameOriginRequest } from "@/lib/api-security";
+import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "checkout", 20, 60_000);
   if (limited) return limited;
 
-  const parsed = CheckoutRequest.safeParse(await request.json());
+  const parsed = CheckoutRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid checkout request" }, { status: 400 });
   }

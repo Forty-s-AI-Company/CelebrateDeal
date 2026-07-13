@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { createLiveInputMapping, LiveInputRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     return unauthorizedJson();
   }
 
-  const parsed = LiveInputRequest.safeParse(await request.json().catch(() => ({})));
+  const parsed = LiveInputRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid live input request" }, { status: 400 });
   }

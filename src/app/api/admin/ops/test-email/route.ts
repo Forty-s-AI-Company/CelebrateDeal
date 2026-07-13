@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { sendTransactionalEmail } from "@/lib/email";
 
 const TestEmailRequest = z.object({
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return unauthorizedJson();
   }
 
-  const parsed = TestEmailRequest.safeParse(await request.json());
+  const parsed = TestEmailRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid test email request" }, { status: 400 });
   }
