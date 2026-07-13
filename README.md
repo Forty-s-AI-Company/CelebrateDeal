@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CelebrateDeal
 
-## Getting Started
+CelebrateDeal 是以 Cloudflare 為優先整合方向的直播導購 SaaS，專案以既有的 Next.js 應用程式與 Prisma 資料層支援本機開發、測試與正式環境作業。
 
-First, run the development server:
+## 技術棧
+
+- Next.js 16.2.10、React 19、TypeScript
+- Prisma 與 PostgreSQL
+
+## 本機開發（WSL）
+
+請在 WSL 的 Linux 檔案系統中使用此工作目錄，並以本機 PostgreSQL 進行開發；舊 SQLite 資料僅供歷史 demo 參考。資料庫連線與環境設定請依 [Production Database Runbook](docs/production-database-runbook.md) 建立本機設定，切勿將正式環境的連線或祕密寫入日常開發環境。
 
 ```bash
+npm ci
+npm run db:generate
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+開發伺服器預設使用 port `31023`。啟動後可在 `http://localhost:31023` 開發。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 必要驗證
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+提交前依序執行下列四項驗證：
 
-## Learn More
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 作業文件
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- 正式環境與上線：[Production Infrastructure Plan](docs/production-infrastructure-plan.md)、[Production Go-live Checklist](docs/production-go-live-checklist.md)
+- Cloudflare：[Cloudflare Stream Dashboard Checklist](docs/cloudflare-stream-dashboard-checklist.md)
+- 付款：[PayUni Sandbox Checkout Runbook](docs/payuni-sandbox-checkout-runbook.md)
+- 安全性：[Admin MFA Hardening Plan](docs/admin-mfa-hardening-plan.md)、[Production Rate Limit Runbook](docs/production-rate-limit-runbook.md)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 安全界線
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+一般本機驗證不包含 migration、seed、部署、E2E 測試、真實付款操作或使用真實祕密。這些操作僅能依 `docs/` 中相應 runbook，在明確授權且隔離的環境進行。
