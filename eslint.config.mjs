@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // Test coverage is generated output, not source code to lint.
+    "coverage/**",
     "next-env.d.ts",
   ]),
 ]);
