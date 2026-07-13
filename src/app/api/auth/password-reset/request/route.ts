@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSameOriginRequest } from "@/lib/api-security";
+import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "password-reset-request", 5, 60_000);
   if (limited) return limited;
 
-  const parsed = PasswordResetRequest.safeParse(await request.json().catch(() => ({})));
+  const parsed = PasswordResetRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid password reset request" }, { status: 400 });
   }

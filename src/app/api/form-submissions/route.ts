@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { requireSameOriginRequest } from "@/lib/api-security";
+import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
   if (limited) return limited;
 
-  const parsed = SubmissionPayload.safeParse(isNativeFormPost ? await nativeFormPayload(request) : await request.json());
+  const parsed = SubmissionPayload.safeParse(isNativeFormPost ? await nativeFormPayload(request) : await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

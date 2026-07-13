@@ -78,3 +78,11 @@ export function requireSameOriginRequest(request: Request, options: { requireCli
 
   return null;
 }
+
+/**
+ * 將不合法或空白 JSON body 正規化為空物件，交由各 route 的 Zod schema
+ * 回傳一致的 400，而不是讓 request.json() 變成未處理的 500。
+ */
+export async function readJsonBody(request: Request): Promise<unknown> {
+  return request.json().catch(() => ({}));
+}
