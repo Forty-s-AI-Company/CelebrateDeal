@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRound } from "lucide-react";
 import { LeadForm } from "@/components/lead-form";
 import { formatCurrency } from "@/lib/format";
+import { getOrCreateVisitorId } from "@/lib/visitor-id";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -70,15 +71,6 @@ type CheckoutResponse = {
   formPayload?: Record<string, string>;
 };
 
-function getVisitorId() {
-  const key = "celebrate_visitor_id";
-  const existing = window.localStorage.getItem(key);
-  if (existing) return existing;
-  const id = crypto.randomUUID();
-  window.localStorage.setItem(key, id);
-  return id;
-}
-
 function secondsLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainSeconds = seconds % 60;
@@ -118,7 +110,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
   const chatRef = useRef<HTMLDivElement>(null);
-  const visitorId = useMemo(() => (typeof window === "undefined" ? "server" : getVisitorId()), []);
+  const visitorId = useMemo(
+    () => (typeof window === "undefined" ? "server" : getOrCreateVisitorId(() => crypto.randomUUID(), () => window.localStorage)),
+    [],
+  );
   const referralCode = useMemo(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("ref");
