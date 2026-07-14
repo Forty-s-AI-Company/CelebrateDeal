@@ -22,6 +22,7 @@ describe("trackClientAnalytics", () => {
         "X-CelebrateDeal-Client": "web",
       },
       body: JSON.stringify(event),
+      keepalive: true,
     });
   });
 
