@@ -105,7 +105,7 @@ describe("CSRF tokens", () => {
     const now = new Date("2026-07-14T12:00:00.000Z");
     vi.setSystemTime(now);
     const currentValue = await getCsrfToken();
-    const [issuedAt, nonce, fingerprint] = currentValue.split(".");
+    const [, nonce, fingerprint] = currentValue.split(".");
 
     const ttlBoundaryValue = signedCsrfValue(now.getTime() - (2 * 60 * 60 * 1000), nonce, fingerprint);
     const futureBoundaryValue = signedCsrfValue(now.getTime() + 60_000, nonce, fingerprint);
