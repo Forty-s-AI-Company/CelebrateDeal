@@ -4,6 +4,7 @@ import { requireVendor } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { formatLiveCountdown } from "@/lib/live-countdown";
 
 function getDateDaysAgo(days: number) {
   return new Date(Date.now() - 1000 * 60 * 60 * 24 * days);
@@ -152,6 +153,9 @@ export default async function DashboardPage() {
               <div key={live.id} className="rounded-md border border-border p-3">
                 <p className="font-semibold text-slate-950">{live.title}</p>
                 <p className="mt-1 text-sm text-slate-500">{formatDateTime(live.scheduledAt)}</p>
+                <p className="mt-2 text-sm font-medium text-primary">
+                  即將開播倒數：{formatLiveCountdown(live.scheduledAt, now) ?? "排程時間無效"}
+                </p>
               </div>
             ))}
           </div>
