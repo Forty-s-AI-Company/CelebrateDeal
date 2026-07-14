@@ -26,6 +26,7 @@ export async function trackClientAnalytics(
       method: "POST",
       headers: analyticsHeaders,
       body: JSON.stringify(event),
+      keepalive: true,
     });
 
     return response.ok;
