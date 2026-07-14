@@ -5,6 +5,7 @@ import type { Affiliate, InteractionScript, MessageTemplate, Product, Registrati
 import { Ban, Bell, Calendar, Check, ClipboardList, Gauge, Package, PlaySquare, ScrollText, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { createLivePreview } from "@/lib/live-preview";
 import { SubmitButton } from "@/components/ui";
 
 const steps = [
@@ -46,6 +47,15 @@ export function LiveStepperForm({
   csrfToken: string;
 }) {
   const [activeStep, setActiveStep] = useState(0);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewAccentCopy, setPreviewAccentCopy] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const preview = createLivePreview({
+    title: previewTitle,
+    accentCopy: previewAccentCopy,
+    products,
+    selectedProductIds,
+  });
 
   return (
     <form action={upsertLiveAction} className="grid gap-5">
@@ -69,7 +79,7 @@ export function LiveStepperForm({
       <StepPanel active={activeStep === 0}>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           直播標題
-          <input name="title" required className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
+          <input name="title" required onChange={(event) => setPreviewTitle(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           Slug
@@ -112,7 +122,7 @@ export function LiveStepperForm({
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           促銷短句
-          <input name="accentCopy" className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
+          <input name="accentCopy" onChange={(event) => setPreviewAccentCopy(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
         </label>
       </StepPanel>
 
@@ -123,7 +133,17 @@ export function LiveStepperForm({
               <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
               <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
             </span>
-            <input name="productIds" type="checkbox" value={product.id} className="h-5 w-5 accent-blue-600" />
+            <input
+              name="productIds"
+              type="checkbox"
+              value={product.id}
+              onChange={(event) => setSelectedProductIds((currentIds) => (
+                event.target.checked
+                  ? [...currentIds, product.id]
+                  : currentIds.filter((productId) => productId !== product.id)
+              ))}
+              className="h-5 w-5 accent-blue-600"
+            />
           </label>
         ))}
       </StepPanel>
@@ -223,16 +243,23 @@ export function LiveStepperForm({
             <div className="overflow-hidden rounded-[22px] bg-slate-900 text-white">
               <div className="relative aspect-[9/16] bg-[radial-gradient(circle_at_30%_20%,#475569,transparent_28%),linear-gradient(160deg,#0f172a,#111827_45%,#020617)]">
                 <div className="absolute left-3 right-3 top-3 flex items-center justify-between">
-                  <div className="rounded-full bg-black/35 px-3 py-1.5 text-xs font-bold backdrop-blur">品牌直播間</div>
+                  <div className="max-w-[70%] truncate rounded-full bg-black/35 px-3 py-1.5 text-xs font-bold backdrop-blur">{preview.title}</div>
                   <div className="rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-black">LIVE</div>
                 </div>
                 <div className="absolute bottom-28 left-3 right-3 rounded-2xl bg-white p-3 text-slate-950 shadow-2xl">
                   <div className="flex gap-3">
                     <div className="h-16 w-16 rounded-xl bg-orange-100" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black text-orange-600">商品浮出</p>
-                      <p className="truncate font-bold">主打組合優惠</p>
-                      <button className="mt-2 h-8 w-full rounded-lg bg-orange-500 text-xs font-black text-white">立即搶購</button>
+                      <p className="text-xs font-black text-orange-600">{preview.accentCopy}</p>
+                      {preview.productNames.length > 0 ? (
+                        <div className="mt-1 space-y-1 text-sm font-bold">
+                          {preview.productNames.map((productName, index) => <p key={`${productName}-${index}`} className="truncate">{productName}</p>)}
+                          {preview.remainingProductCount > 0 ? <p className="text-xs font-medium text-slate-500">及其他 {preview.remainingProductCount} 件商品</p> : null}
+                        </div>
+                      ) : (
+                        <p className="mt-1 truncate font-bold text-slate-500">{preview.emptyProductLabel}</p>
+                      )}
+                      <button type="button" className="mt-2 h-8 w-full rounded-lg bg-orange-500 text-xs font-black text-white">立即搶購</button>
                     </div>
                   </div>
                 </div>
