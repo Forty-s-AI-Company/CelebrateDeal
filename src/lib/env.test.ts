@@ -1,0 +1,151 @@
+import { describe, expect, it } from "vitest";
+import { getEnvCheckReport, type EnvCheck } from "@/lib/env";
+
+const envKey = (...parts: string[]) => parts.join("_");
+
+function configuredEnv(): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: "production",
+    [envKey("DATABASE", "URL")]: "postgresql://test:test@database.test:5432/app",
+    [envKey("DIRECT", "URL")]: "postgresql://test:test@database.test:5432/app",
+    [envKey("NEXT", "PUBLIC", "APP", "URL")]: "https://app.test",
+    [envKey("JOB", "SECRET")]: "test-job-value-12345",
+    [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
+    [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",
+    [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
+    [envKey("PAYMENT", "PROVIDER")]: "demo",
+    [envKey("RESEND", "API", "KEY")]: "test-resend-value",
+    [envKey("EMAIL", "FROM")]: "noreply@app.test",
+    [envKey("SENTRY", "DSN")]: "https://public@sentry.test/1",
+    [envKey("NEXT", "PUBLIC", "POSTHOG", "KEY")]: "test-posthog-value",
+    [envKey("NEXT", "PUBLIC", "POSTHOG", "HOST")]: "https://posthog.test",
+    [envKey("NEXT", "PUBLIC", "SENTRY", "DSN")]: "https://public@sentry.test/2",
+    [envKey("SENTRY", "ORG")]: "test-org",
+    [envKey("SENTRY", "PROJECT")]: "test-project",
+    [envKey("SENTRY", "AUTH", "TOKEN")]: "test-sentry-value",
+    [envKey("RATE", "LIMIT", "PROVIDER")]: "cloudflare_waf",
+  };
+}
+
+function check(report: ReturnType<typeof getEnvCheckReport>, key: string, status: EnvCheck["status"]) {
+  return report.checks.find((item) => item.key === key && item.status === status);
+}
+
+describe("getEnvCheckReport", () => {
+  it("passes a complete production configuration", () => {
+    const report = getEnvCheckReport(configuredEnv());
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.every((item) => item.status === "pass")).toBe(true);
+  });
+
+  it("fails when a required value is missing", () => {
+    const env = configuredEnv();
+    delete env[envKey("DATABASE", "URL")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("DATABASE", "URL"), "fail")?.message).toBe("缺少或仍是 placeholder");
+  });
+
+  it("fails for a SQLite file URL in production", () => {
+    const env = configuredEnv();
+    env[envKey("DATABASE", "URL")] = "file:./test.db";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("DATABASE", "URL"), "fail")?.message).toBe("正式環境不可使用 SQLite file: URL");
+  });
+
+  it("fails for a localhost public app URL in production", () => {
+    const env = configuredEnv();
+    env[envKey("NEXT", "PUBLIC", "APP", "URL")] = "http://localhost:3000";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("NEXT", "PUBLIC", "APP", "URL"), "fail")?.message).toBe(
+      "production 不可使用 localhost app URL",
+    );
+  });
+
+  it.each([
+    [envKey("PAYUNI", "HASH", "KEY")],
+    [envKey("PAYUNI", "HASH", "IV")],
+    [envKey("PAYUNI", "MERCHANT", "ID")],
+    [envKey("PAYUNI", "WEBHOOK", "SECRET")],
+  ])("requires %s when PayUni is selected", (missingKey) => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = "payuni";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
+    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("PAYUNI", "WEBHOOK", "SECRET")] = "test-payuni-webhook-value";
+    delete env[missingKey];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, missingKey, "fail")?.message).toBe(`PAYMENT_PROVIDER=payuni 時必須設定 ${missingKey}`);
+  });
+
+  it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = provider;
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("ECPAY", "WEBHOOK", "SECRET"), "fail")?.message).toBe(
+      `${provider} provider 必須設定 ECPAY_WEBHOOK_SECRET`,
+    );
+  });
+
+  it.each([
+    [envKey("UPSTASH", "REDIS", "REST", "URL")],
+    [envKey("UPSTASH", "REDIS", "REST", "TOKEN")],
+  ])("requires %s when Upstash Redis is selected", (missingKey) => {
+    const env = configuredEnv();
+    env[envKey("RATE", "LIMIT", "PROVIDER")] = "upstash_redis";
+    env[envKey("UPSTASH", "REDIS", "REST", "URL")] = "https://upstash.test";
+    env[envKey("UPSTASH", "REDIS", "REST", "TOKEN")] = "test-upstash-value";
+    delete env[missingKey];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, missingKey, "fail")?.message).toBe(`RATE_LIMIT_PROVIDER=upstash_redis 時必須設定 ${missingKey}`);
+  });
+
+  it("only warns when recommended monitoring values are missing", () => {
+    const env = configuredEnv();
+    const monitoringKeys = [
+      envKey("NEXT", "PUBLIC", "SENTRY", "DSN"),
+      envKey("SENTRY", "ORG"),
+      envKey("SENTRY", "PROJECT"),
+      envKey("SENTRY", "AUTH", "TOKEN"),
+    ];
+    for (const key of monitoringKeys) delete env[key];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(true);
+    for (const key of monitoringKeys) {
+      expect(check(report, key, "warning")?.message).toBe("建議設定；未設定不阻擋部署，但會降低正式監控或 webhook 驗證完整度");
+    }
+  });
+
+  it("warns that memory rate limiting is not durable in production", () => {
+    const env = configuredEnv();
+    env[envKey("RATE", "LIMIT", "PROVIDER")] = "memory";
+
+    const report = getEnvCheckReport(env);
+    const warning = check(report, envKey("RATE", "LIMIT", "PROVIDER"), "warning");
+
+    expect(report.ok).toBe(true);
+    expect(warning?.message).toContain("in-memory 無法跨部署節點持久控流");
+    expect(warning?.message).not.toContain("durable");
+  });
+});
