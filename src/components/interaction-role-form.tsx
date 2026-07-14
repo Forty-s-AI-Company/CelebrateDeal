@@ -6,6 +6,7 @@ import type { InteractionRole } from "@prisma/client";
 import { Bot, CheckCircle2, Sparkles } from "lucide-react";
 import { upsertInteractionRoleAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { getInteractionRoleDefaultLabel, getInteractionRoleLabelOnTypeChange } from "@/lib/interaction-role-label";
 import { SubmitButton } from "@/components/ui";
 
 const avatarSeeds = [
@@ -34,6 +35,12 @@ function avatarUrl(seed: string) {
 export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRole; csrfToken: string }) {
   const [selectedAvatar, setSelectedAvatar] = useState(role?.avatarUrl ?? avatarUrl(avatarSeeds[0]));
   const [roleType, setRoleType] = useState(role?.roleType ?? "official");
+  const [label, setLabel] = useState(role?.label ?? getInteractionRoleDefaultLabel(role?.roleType ?? "official"));
+
+  function handleRoleTypeChange(nextRoleType: string) {
+    setLabel((currentLabel) => getInteractionRoleLabelOnTypeChange(currentLabel, roleType, nextRoleType));
+    setRoleType(nextRoleType);
+  }
 
   return (
     <form action={upsertInteractionRoleAction} className="grid gap-6">
@@ -94,7 +101,7 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   角色類型
-                  <select name="roleType" value={roleType} onChange={(event) => setRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
+                  <select name="roleType" value={roleType} onChange={(event) => handleRoleTypeChange(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
                     <option value="official">官方角色</option>
                     <option value="ai_host">AI 主持人</option>
                     <option value="system_assistant">系統助手</option>
@@ -103,7 +110,7 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   顯示標籤
-                  <input name="label" defaultValue={role?.label ?? (roleType === "ai_host" ? "AI 主持人" : roleType === "system_assistant" ? "系統助手" : roleType === "support" ? "客服助手" : "官方角色")} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                  <input name="label" value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
 
