@@ -1,11 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
-import { BadgeCheck, Link2Off, Plus, Trash2, VideoIcon } from "lucide-react";
+import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, Plus, Trash2, VideoIcon } from "lucide-react";
 import { upsertInteractionScriptAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { reorderInteractionEvents } from "@/lib/interaction-timeline";
 
 type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
@@ -90,6 +91,7 @@ export function InteractionScriptForm({
 }) {
   const initialEvents = useMemo<TimelineEvent[]>(() => (script?.events.length ? script.events : timelineTemplates[1].events), [script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
+  const [draggedEventIndex, setDraggedEventIndex] = useState<number | null>(null);
   const primaryLive = boundLives[0];
 
   function applyTemplate(template: TimelineTemplate) {
@@ -115,6 +117,23 @@ export function InteractionScriptForm({
 
   function removeEvent(index: number) {
     setEvents((current) => current.filter((_, eventIndex) => eventIndex !== index));
+  }
+
+  function moveEvent(fromIndex: number, toIndex: number) {
+    setEvents((current) => reorderInteractionEvents(current, fromIndex, toIndex));
+  }
+
+  function handleDragStart(event: DragEvent<HTMLDivElement>, index: number) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+    setDraggedEventIndex(index);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>, targetIndex: number) {
+    event.preventDefault();
+    const sourceIndex = draggedEventIndex ?? Number.parseInt(event.dataTransfer.getData("text/plain"), 10);
+    if (Number.isInteger(sourceIndex)) moveEvent(sourceIndex, targetIndex);
+    setDraggedEventIndex(null);
   }
 
   return (
@@ -190,7 +209,6 @@ export function InteractionScriptForm({
               <div className="grid gap-2">
                 {events
                   .map((event, index) => ({ event, index }))
-                  .sort((a, b) => a.event.triggerSec - b.event.triggerSec)
                   .map(({ event, index }) => (
                     <div key={`${event.title}-${index}`} className="grid grid-cols-[84px_1fr] gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 text-sm">
                       <span className="rounded-md bg-blue-600 px-2 py-1 text-center font-mono text-xs font-bold text-white">{secondsToClock(event.triggerSec)}</span>
@@ -215,7 +233,7 @@ export function InteractionScriptForm({
           </div>
 
           <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
-            <div className="grid grid-cols-[112px_64px_1fr_44px] gap-2 border-b border-border bg-white px-4 py-3 text-xs font-bold uppercase text-slate-400">
+            <div className="grid grid-cols-[112px_64px_1fr_auto] gap-2 border-b border-border bg-white px-4 py-3 text-xs font-bold uppercase text-slate-400">
               <span>時間</span>
               <span>角色</span>
               <span>留言內容</span>
@@ -226,7 +244,15 @@ export function InteractionScriptForm({
                 const selectedRole = roles.find((role) => role.id === event.roleId) ?? roles[0];
                 const selectedAvatar = selectedRole?.avatarUrl;
                 return (
-                  <div key={`${event.eventType}-${index}`} className="grid grid-cols-[112px_64px_1fr_44px] gap-2 px-4 py-2 hover:bg-blue-50/40">
+                  <div
+                    key={`${event.eventType}-${index}`}
+                    draggable
+                    onDragStart={(dragEvent) => handleDragStart(dragEvent, index)}
+                    onDragOver={(dragEvent) => dragEvent.preventDefault()}
+                    onDrop={(dragEvent) => handleDrop(dragEvent, index)}
+                    onDragEnd={() => setDraggedEventIndex(null)}
+                    className={`grid grid-cols-[112px_64px_1fr_auto] gap-2 px-4 py-2 hover:bg-blue-50/40 ${draggedEventIndex === index ? "opacity-50" : ""}`}
+                  >
                     <input
                       name="triggerSec"
                       value={secondsToClock(event.triggerSec)}
@@ -255,9 +281,34 @@ export function InteractionScriptForm({
                         placeholder="輸入留言內容"
                       />
                     </div>
-                    <button type="button" onClick={() => removeEvent(index)} className="grid h-10 w-10 place-items-center rounded-md border border-red-100 text-red-500 hover:bg-red-50">
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <span className="grid h-10 w-5 cursor-grab place-items-center text-slate-400 active:cursor-grabbing" aria-hidden="true">
+                        <GripVertical size={16} />
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => moveEvent(index, index - 1)}
+                        disabled={index === 0}
+                        aria-label={`將第 ${index + 1} 則留言上移`}
+                        className="grid h-10 w-8 place-items-center rounded-md border border-border text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronUp size={16} />
+                        <span className="sr-only">上移</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveEvent(index, index + 1)}
+                        disabled={index === events.length - 1}
+                        aria-label={`將第 ${index + 1} 則留言下移`}
+                        className="grid h-10 w-8 place-items-center rounded-md border border-border text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronDown size={16} />
+                        <span className="sr-only">下移</span>
+                      </button>
+                      <button type="button" onClick={() => removeEvent(index)} aria-label={`刪除第 ${index + 1} 則留言`} className="grid h-10 w-10 place-items-center rounded-md border border-red-100 text-red-500 hover:bg-red-50">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
