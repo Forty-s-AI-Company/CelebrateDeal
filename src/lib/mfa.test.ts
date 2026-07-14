@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   decryptMfaSecret,
   encryptMfaSecret,
@@ -9,6 +9,16 @@ import {
   totpCodeForTimestamp,
   verifyTotpCode,
 } from "@/lib/mfa";
+
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "test-secret");
+  vi.stubEnv("JOB_SECRET", "test-job-secret");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
 describe("mfa helpers", () => {
   it("encrypts and decrypts totp secrets", () => {
