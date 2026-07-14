@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRound } from "lucide-react";
 import { LeadForm } from "@/components/lead-form";
+import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 
@@ -129,10 +130,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     : live.products;
 
   useEffect(() => {
-    void fetch("/api/analytics", {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "page_view", payload: { slug: live.slug } }),
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      visitorId,
+      eventType: "page_view",
+      payload: { slug: live.slug },
     });
   }, [live.id, live.slug, live.vendorId, visitorId]);
 
@@ -161,18 +164,22 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     const nextReported = new Set(reportedProgress);
     nextReported.add(checkpoint);
     setReportedProgress(nextReported);
-    void fetch("/api/analytics", {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "play_progress", payload: { seconds: checkpoint, ref: referralCode } }),
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      visitorId,
+      eventType: "play_progress",
+      payload: { seconds: checkpoint, ref: referralCode },
     });
   }
 
   async function trackProduct(productId: string, checkoutUrl: string | null) {
-    await fetch("/api/analytics", {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "product_click", payload: { productId, ref: referralCode } }),
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      visitorId,
+      eventType: "product_click",
+      payload: { productId, ref: referralCode },
     });
 
     const checkoutResponse = await fetch("/api/payments/checkout", {
@@ -192,10 +199,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
 
   async function trackCta() {
     if (!latestCtaEvent) return;
-    await fetch("/api/analytics", {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "cta_click", payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode } }),
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      visitorId,
+      eventType: "cta_click",
+      payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode },
     });
     if (latestCtaEvent.ctaUrl) {
       window.open(latestCtaEvent.ctaUrl, "_blank", "noopener,noreferrer");
@@ -219,10 +228,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                 trackProgress(seconds);
               }}
               onPlay={() => {
-                void fetch("/api/analytics", {
-                  method: "POST",
-                  headers: clientHeaders,
-                  body: JSON.stringify({ liveId: live.id, vendorId: live.vendorId, visitorId, eventType: "video_play", payload: { slug: live.slug, ref: referralCode } }),
+                void trackClientAnalytics({
+                  liveId: live.id,
+                  vendorId: live.vendorId,
+                  visitorId,
+                  eventType: "video_play",
+                  payload: { slug: live.slug, ref: referralCode },
                 });
               }}
             />
