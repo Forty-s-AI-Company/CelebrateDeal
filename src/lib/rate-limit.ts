@@ -123,7 +123,11 @@ async function upstashDecision(request: Request, key: string, limit: number, win
     throw new Error(json.error ?? `Upstash Redis returned HTTP ${response.status}`);
   }
 
-  const [countRaw, ttlRaw] = Array.isArray(json.result) ? json.result : [0, windowMs];
+  if (!Array.isArray(json.result) || json.result.length !== 2) {
+    throw new Error("Upstash Redis returned an unexpected rate limit payload.");
+  }
+
+  const [countRaw, ttlRaw] = json.result;
   const count = Number(countRaw);
   const ttlMs = Number(ttlRaw);
   if (!Number.isFinite(count) || !Number.isFinite(ttlMs)) {
