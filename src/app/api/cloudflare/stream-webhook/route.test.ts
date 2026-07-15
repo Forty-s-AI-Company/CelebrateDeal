@@ -43,6 +43,7 @@ async function createProcessingVideo(uid: string) {
 describe("Cloudflare Stream webhook", () => {
   it("updates video ready status and playback mapping with shared secret fallback", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    vi.stubEnv("VERCEL_ENV", "preview");
     const { video } = await createProcessingVideo("cf_uid_test");
 
     const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
@@ -71,6 +72,7 @@ describe("Cloudflare Stream webhook", () => {
 
   it("accepts official Webhook-Signature", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    vi.stubEnv("VERCEL_ENV", "production");
     const { video } = await createProcessingVideo("cf_uid_signed");
     const body = JSON.stringify({
       uid: "cf_uid_signed",
@@ -98,6 +100,8 @@ describe("Cloudflare Stream webhook", () => {
 
   it("rejects invalid official signatures without falling back", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    vi.stubEnv("VERCEL_ENV", "production");
+    const { video } = await createProcessingVideo("cf_uid_invalid");
     const body = JSON.stringify({ uid: "cf_uid_invalid", readyToStream: true });
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = createHmac("sha256", "wrong-secret").update(`${timestamp}.${body}`).digest("hex");
@@ -112,9 +116,32 @@ describe("Cloudflare Stream webhook", () => {
       body,
     }));
     const payload = await response.json() as { reason: string };
+    const updated = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
 
     expect(response.status).toBe(401);
     expect(payload.reason).toBe("invalid_signature");
+    expect(updated.status).toBe("processing");
+  });
+
+  it("rejects shared secret fallback in production", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    vi.stubEnv("VERCEL_ENV", "production");
+    const { video } = await createProcessingVideo("cf_uid_production_fallback");
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-cloudflare-stream-webhook-secret": "stream-secret",
+      },
+      body: JSON.stringify({ uid: "cf_uid_production_fallback", readyToStream: true }),
+    }));
+
+    const payload = await response.json() as { reason: string };
+    const updated = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    expect(response.status).toBe(401);
+    expect(payload.reason).toBe("missing_webhook_signature");
+    expect(updated.status).toBe("processing");
   });
 
   it("accepts signed processing payloads", async () => {

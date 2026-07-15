@@ -109,6 +109,12 @@ export function verifyCloudflareStreamWebhookRequest({
     });
   }
 
+  const isProduction = process.env.VERCEL_ENV === "production"
+    || (!process.env.VERCEL_ENV && process.env.NODE_ENV === "production");
+  if (isProduction) {
+    return { ok: false, mode: "missing", reason: "missing_webhook_signature" };
+  }
+
   const fallbackSecret = request.headers.get(sharedSecretHeader);
   if (!secret?.trim() || !fallbackSecret) {
     return { ok: false, mode: "missing", reason: "missing_webhook_signature" };
