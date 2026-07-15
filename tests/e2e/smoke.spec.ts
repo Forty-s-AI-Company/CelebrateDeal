@@ -227,6 +227,92 @@ test("CSP reports are accepted by the report-only endpoint", async ({ request })
   expect(response.status()).toBe(204);
 });
 
+test("public JSON POST endpoints require the trusted client header before side effects", async ({ request }) => {
+  const publicJsonPosts = [
+    {
+      path: "/api/form-submissions",
+      data: {
+        formId: seed.formId,
+        liveId: seed.liveId,
+        payload: { name: "Header guard", email: `header-guard-${stamp}@example.com` },
+      },
+    },
+    {
+      path: "/api/analytics",
+      data: { vendorId: seed.vendorId, liveId: seed.liveId, visitorId: "header-guard", eventType: "page_view" },
+    },
+    {
+      path: "/api/affiliate-clicks",
+      data: {
+        vendorId: seed.vendorId,
+        liveId: seed.liveId,
+        referralCode: "HEADER-GUARD",
+        visitorId: "header-guard",
+        landingPath: "/live/header-guard",
+      },
+    },
+    {
+      path: "/api/payments/checkout",
+      data: { vendorId: seed.vendorId, productId: seed.productId },
+    },
+  ];
+
+  for (const endpoint of publicJsonPosts) {
+    const response = await request.post(endpoint.path, {
+      headers: { "content-type": "application/json" },
+      data: endpoint.data,
+    });
+
+    expect(response.status(), `${endpoint.path} without trusted client header`).toBe(403);
+    expect(await response.json()).toEqual({ error: "Missing trusted client header" });
+  }
+});
+
+test("public JSON POST endpoints reject cross-origin requests before side effects", async ({ request }) => {
+  const publicJsonPosts = [
+    {
+      path: "/api/form-submissions",
+      data: {
+        formId: seed.formId,
+        liveId: seed.liveId,
+        payload: { name: "Origin guard", email: `origin-guard-${stamp}@example.com` },
+      },
+    },
+    {
+      path: "/api/analytics",
+      data: { vendorId: seed.vendorId, liveId: seed.liveId, visitorId: "origin-guard", eventType: "page_view" },
+    },
+    {
+      path: "/api/affiliate-clicks",
+      data: {
+        vendorId: seed.vendorId,
+        liveId: seed.liveId,
+        referralCode: "ORIGIN-GUARD",
+        visitorId: "origin-guard",
+        landingPath: "/live/origin-guard",
+      },
+    },
+    {
+      path: "/api/payments/checkout",
+      data: { vendorId: seed.vendorId, productId: seed.productId },
+    },
+  ];
+
+  for (const endpoint of publicJsonPosts) {
+    const response = await request.post(endpoint.path, {
+      headers: {
+        "content-type": "application/json",
+        "X-CelebrateDeal-Client": "web",
+        Origin: "https://cross-origin-smoke.invalid",
+      },
+      data: endpoint.data,
+    });
+
+    expect(response.status(), `${endpoint.path} with cross-origin Origin`).toBe(403);
+    expect(await response.json()).toEqual({ error: "Invalid request origin" });
+  }
+});
+
 test("protected vendor and admin pages redirect unauthenticated users", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/login/);
