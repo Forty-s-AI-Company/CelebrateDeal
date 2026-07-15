@@ -40,6 +40,16 @@ type PasswordResetTestUser = {
   vendorId: string;
 };
 
+type LoginRateLimitTestUser = {
+  id: string;
+  email: string;
+  normalizedEmail: string;
+  vendorId: string;
+  sessionCountBaseline: number;
+  correctCredential: string;
+  incorrectCredential: string;
+};
+
 type PublicRateLimitEndpoint = {
   name: string;
   path: string;
@@ -210,6 +220,69 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
 });
 
 passwordResetTest.use({ trace: "off", screenshot: "off", video: "off" });
+
+const loginRateLimitTest = test.extend<{ loginRateLimitUser: LoginRateLimitTestUser }>({
+  loginRateLimitUser: async ({}, use, testInfo) => {
+    const suffix = testInfo.testId.replace(/[^a-zA-Z0-9]/g, "").slice(-24);
+    const normalizedEmail = `e2e-login-rate-limit-${suffix}@celebratedeal.local`;
+    const correctCredential = ["Rate", "Limit", "Correct", "Credential", "123!"].join("");
+    const incorrectCredential = ["Rate", "Limit", "Incorrect", "Credential", "123!"].join("");
+    const vendor = await db.vendor.create({
+      data: {
+        name: `E2E Login Rate Limit Vendor ${suffix}`,
+        slug: `e2e-login-rate-limit-vendor-${suffix}`,
+        email: `e2e-login-rate-limit-vendor-${suffix}@celebratedeal.local`,
+        passwordHash: hashPassword(correctCredential),
+        primaryColor: "#2563eb",
+        ctaColor: "#f97316",
+        tracking: { create: {} },
+      },
+    });
+    const user = await db.user.create({
+      data: {
+        email: normalizedEmail,
+        name: "E2E Login Rate Limit Owner",
+        passwordHash: hashPassword(correctCredential),
+        status: "active",
+        memberships: {
+          create: { vendorId: vendor.id, role: "owner", status: "active" },
+        },
+      },
+    });
+    const sessionCountBaseline = await db.userSession.count({ where: { userId: user.id } });
+
+    try {
+      // Playwright fixture API; this is not React's use hook.
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      await use({
+        id: user.id,
+        email: user.email,
+        normalizedEmail,
+        vendorId: vendor.id,
+        sessionCountBaseline,
+        correctCredential,
+        incorrectCredential,
+      });
+    } finally {
+      await db.auditLog.deleteMany({
+        where: {
+          OR: [
+            { actorId: user.id },
+            { targetId: normalizedEmail },
+            { vendorId: vendor.id },
+            { after: { path: ["email"], equals: normalizedEmail } },
+          ],
+        },
+      });
+      await db.userSession.deleteMany({ where: { userId: user.id } });
+      await db.vendorMember.deleteMany({ where: { vendorId: vendor.id, userId: user.id } });
+      await db.user.deleteMany({ where: { id: user.id, email: normalizedEmail } });
+      await db.vendor.deleteMany({ where: { id: vendor.id } });
+    }
+  },
+});
+
+loginRateLimitTest.use({ trace: "off", screenshot: "off", video: "off" });
 
 function confirmUrlWithInvalidResetReference() {
   const search = new URLSearchParams();
@@ -399,6 +472,61 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+});
+
+loginRateLimitTest("login failures are audited and the sixth UI attempt is rate limited before authentication", async ({ page, loginRateLimitUser }) => {
+  const {
+    id: userId,
+    email,
+    normalizedEmail,
+    sessionCountBaseline,
+    correctCredential,
+    incorrectCredential,
+  } = loginRateLimitUser;
+  const loginFailedWhere = {
+    action: "login_failed",
+    targetType: "Auth",
+    targetId: normalizedEmail,
+  };
+  const loginRateLimitedWhere = {
+    action: "login_rate_limited",
+    targetType: "Auth",
+    targetId: normalizedEmail,
+  };
+  const loginSuccessWhere = {
+    action: "login_success",
+    targetType: "User",
+    targetId: userId,
+    actorId: userId,
+  };
+
+  expect(await db.auditLog.count({ where: loginSuccessWhere })).toBe(0);
+
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("密碼").fill(incorrectCredential);
+    await page.getByRole("button", { name: "登入" }).click();
+    await expect(page).toHaveURL(/\/login\?error=1$/);
+    await expect(page.getByText("帳號或密碼不正確。")).toBeVisible();
+    expect(await db.auditLog.count({ where: loginFailedWhere })).toBe(attempt);
+  }
+
+  expect(await db.auditLog.count({ where: loginFailedWhere })).toBe(5);
+  expect(await db.auditLog.count({ where: loginRateLimitedWhere })).toBe(0);
+  expect(await db.auditLog.count({ where: loginSuccessWhere })).toBe(0);
+
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("密碼").fill(correctCredential);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/login\?error=rate_limited$/);
+  await expect(page.getByText("登入失敗次數過多，請 15 分鐘後再試，或請平台管理員協助重設。")).toBeVisible();
+
+  expect(await db.auditLog.count({ where: loginFailedWhere })).toBe(5);
+  expect(await db.auditLog.count({ where: loginRateLimitedWhere })).toBe(1);
+  expect(await db.auditLog.count({ where: loginSuccessWhere })).toBe(0);
+  expect(await db.userSession.count({ where: { userId } })).toBe(sessionCountBaseline);
 });
 
 passwordResetTest("password reset request shows the anti-enumeration response and creates one active reset record", async ({ page, passwordResetUser }) => {
