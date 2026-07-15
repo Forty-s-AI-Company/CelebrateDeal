@@ -1,6 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
 
 const db = new PrismaClient();
 const password = "Password12345!";
@@ -17,6 +18,100 @@ const seed = {
   formId: "",
   liveId: "",
 };
+
+type MfaTestUser = {
+  id: string;
+  email: string;
+};
+
+const mfaTest = test.extend<{ mfaUser: MfaTestUser }>({
+  mfaUser: async ({}, use, testInfo) => {
+    const email = `e2e-mfa-${stamp}-${testInfo.testId.replace(/[^a-zA-Z0-9]/g, "")}@celebratedeal.local`;
+    const user = await db.user.create({
+      data: {
+        email,
+        name: "E2E MFA Platform Admin",
+        passwordHash: hashPassword(password),
+        platformRole: "platform_admin",
+        status: "active",
+      },
+    });
+
+    try {
+      // Playwright fixture API; this is not React's use hook.
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      await use({ id: user.id, email: user.email });
+    } finally {
+      // AuditLog deliberately has no user foreign key, so remove only this fixture's entries.
+      await db.auditLog.deleteMany({
+        where: {
+          OR: [{ actorId: user.id }, { targetId: user.id }],
+        },
+      });
+      await db.user.deleteMany({ where: { id: user.id } });
+    }
+  },
+});
+
+// MFA setup intentionally reveals one-time credentials; never retain them in Playwright traces.
+mfaTest.use({ trace: "off" });
+
+async function loginMfaAdmin(page: Page, user: MfaTestUser, expectedUrl: RegExp) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("密碼").fill(password);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(expectedUrl);
+}
+
+function invalidTotpCode(totpSeed: string) {
+  for (let candidate = 0; candidate < 1_000_000; candidate += 1) {
+    const code = String(candidate).padStart(6, "0");
+    if (!verifyTotpCode(totpSeed, code)) return code;
+  }
+  throw new Error("Unable to select an invalid TOTP code.");
+}
+
+async function enrollMfa(page: Page, user: MfaTestUser) {
+  await loginMfaAdmin(page, user, /\/mfa\/setup$/);
+  await page.getByRole("button", { name: "開始建立 TOTP" }).click();
+  await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_started/);
+
+  const totpSeed = (await page.locator("p.font-mono").textContent())?.trim();
+  if (!totpSeed) throw new Error("MFA setup did not provide a TOTP secret.");
+
+  await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed));
+  await page.getByRole("button", { name: "啟用 MFA" }).click();
+  await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_enabled/);
+  expect(await db.userMfaFactor.count({ where: { userId: user.id } })).toBe(1);
+  expect(await db.auditLog.count({ where: { actorId: user.id, action: "mfa_enabled" } })).toBe(1);
+
+  return totpSeed;
+}
+
+async function displayedRecoveryCode(page: Page) {
+  const codes = await page.locator("div.font-mono").allTextContents();
+  expect(codes.length > 0).toBe(true);
+  const code = codes[0]?.trim();
+  if (!code) throw new Error("MFA setup did not provide a recovery code.");
+  return code;
+}
+
+async function verifyMfa(page: Page, code: string) {
+  await page.getByLabel("驗證碼").fill(code);
+  await page.getByRole("button", { name: "確認並進入後台" }).click();
+}
+
+async function expectMfaAuditActions(userId: string, actions: string[]) {
+  const logs = await db.auditLog.findMany({
+    where: { actorId: userId, action: { in: actions } },
+    select: { action: true },
+  });
+  const recorded = new Set(logs.map((log) => log.action));
+  for (const action of actions) {
+    expect(recorded.has(action)).toBe(true);
+  }
+}
 
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
@@ -133,6 +228,78 @@ test("admin area requires MFA for signed-in finance roles", async ({ page }) => 
   await page.goto("/admin/billing/dashboard");
   await expect(page).toHaveURL(/\/mfa\/setup/);
   await expect(page.getByRole("heading", { name: "設定管理員 MFA" })).toBeVisible();
+});
+
+mfaTest("platform admin can enable TOTP, rejects an incorrect code, and enters admin after verification", async ({ page, mfaUser }) => {
+  const totpSeed = await enrollMfa(page, mfaUser);
+
+  await page.context().clearCookies();
+  await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
+  await verifyMfa(page, invalidTotpCode(totpSeed));
+  await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+
+  await verifyMfa(page, totpCodeForTimestamp(totpSeed));
+  await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await expectMfaAuditActions(mfaUser.id, ["mfa_verify_failed", "mfa_verify_totp"]);
+});
+
+mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, mfaUser }) => {
+  await enrollMfa(page, mfaUser);
+  const recoveryCode = await displayedRecoveryCode(page);
+  await page.getByRole("button", { name: "我已保存 recovery codes" }).click();
+  await expect(page).toHaveURL(/\/mfa\/verify/);
+
+  await page.context().clearCookies();
+  await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
+  await verifyMfa(page, recoveryCode);
+  await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+
+  const usedCode = await db.userRecoveryCode.findFirst({
+    where: { userId: mfaUser.id, usedAt: { not: null } },
+    select: { id: true },
+  });
+  expect(Boolean(usedCode)).toBe(true);
+
+  await page.context().clearCookies();
+  await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
+  await verifyMfa(page, recoveryCode);
+  await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+  await expectMfaAuditActions(mfaUser.id, ["mfa_verify_recovery_code", "mfa_verify_failed"]);
+});
+
+mfaTest("regenerating recovery codes invalidates old codes and accepts newly issued codes", async ({ page, mfaUser }) => {
+  await enrollMfa(page, mfaUser);
+  const oldRecoveryCode = await displayedRecoveryCode(page);
+  await page.getByRole("button", { name: "我已保存 recovery codes" }).click();
+  await expect(page).toHaveURL(/\/mfa\/verify/);
+
+  await page.goto("/mfa/setup");
+  await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
+  await expect(page).toHaveURL(/\/mfa\/setup\?updated=recovery_regenerated/);
+  const newRecoveryCode = await displayedRecoveryCode(page);
+  expect(oldRecoveryCode === newRecoveryCode).toBe(false);
+
+  const recoveryCodeHashes = await db.userRecoveryCode.findMany({
+    where: { userId: mfaUser.id },
+    select: { codeHash: true },
+  });
+  expect(recoveryCodeHashes.some(({ codeHash }) => verifyRecoveryCode(oldRecoveryCode, codeHash))).toBe(false);
+  expect(recoveryCodeHashes.some(({ codeHash }) => verifyRecoveryCode(newRecoveryCode, codeHash))).toBe(true);
+
+  await page.context().clearCookies();
+  await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
+  await verifyMfa(page, oldRecoveryCode);
+  await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+
+  await page.context().clearCookies();
+  await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
+  await verifyMfa(page, newRecoveryCode);
+  await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await expectMfaAuditActions(mfaUser.id, [
+    "mfa_recovery_codes_regenerated",
+    "mfa_verify_failed",
+    "mfa_verify_recovery_code",
+  ]);
 });
 
 test("public live page renders mobile-first commerce surface", async ({ page }) => {
