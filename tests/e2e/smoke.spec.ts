@@ -60,6 +60,30 @@ function uniqueRateLimitTestIp(routeId: number) {
   ].join(":");
 }
 
+const cspReportPayload = {
+  "csp-report": {
+    "blocked-uri": "https://example.test/script.js",
+    "violated-directive": "script-src",
+  },
+};
+
+async function expectCspReportRateLimit(request: APIRequestContext, routeId: number) {
+  const headers = {
+    "content-type": "application/csp-report",
+    "X-Forwarded-For": uniqueRateLimitTestIp(routeId),
+  };
+
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const response = await request.post("/api/security/csp-report", { headers, data: cspReportPayload });
+    expect(response.status(), `CSP report request ${attempt + 1} before its limit`).toBe(204);
+  }
+
+  const limited = await request.post("/api/security/csp-report", { headers, data: cspReportPayload });
+  expect(limited.status(), "CSP report request after its limit").toBe(429);
+  expect(await limited.json()).toEqual({ error: "Too many requests" });
+  expect(limited.headers()["retry-after"], "CSP report Retry-After header").toMatch(/^[1-9]\d*$/);
+}
+
 function countPublicPostSideEffects() {
   return Promise.all([
     db.formSubmission.count(),
@@ -522,12 +546,7 @@ passwordResetTest("password reset confirmation validates safely and replaces cre
 test("CSP reports are accepted by the report-only endpoint", async ({ request }) => {
   const response = await request.post("/api/security/csp-report", {
     headers: { "content-type": "application/csp-report" },
-    data: {
-      "csp-report": {
-        "blocked-uri": "https://example.test/script.js",
-        "violated-directive": "script-src",
-      },
-    },
+    data: cspReportPayload,
   });
 
   expect(response.status()).toBe(204);
@@ -661,6 +680,11 @@ test.describe("memory-provider public POST rate limits", () => {
       limit: 20,
       invalidPayloadError: "Invalid checkout request",
     }, 4);
+  });
+
+  test("CSP reports return 429 after 120 accepted reports", async ({ request }) => {
+    test.setTimeout(90_000);
+    await expectCspReportRateLimit(request, 5);
   });
 });
 
