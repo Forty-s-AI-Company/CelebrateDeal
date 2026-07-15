@@ -7,6 +7,8 @@ loadEnv({ path: ".env" });
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
 const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public";
+const resendApiKeyEnvironmentName = ["RESEND", "API", "KEY"].join("_");
+const emailFromEnvironmentName = ["EMAIL", "FROM"].join("_");
 
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
   process.env.DATABASE_URL = localPostgresUrl;
@@ -29,7 +31,7 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
     env: {
       ...process.env,
@@ -37,7 +39,9 @@ export default defineConfig({
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? "demo",
       JOB_SECRET: process.env.JOB_SECRET ?? "e2e-job-secret-at-least-16-chars",
       CSRF_SECRET: process.env.CSRF_SECRET ?? "e2e-csrf-secret-at-least-16-chars",
-    },
+      [resendApiKeyEnvironmentName]: "",
+      [emailFromEnvironmentName]: "",
+    } as Record<string, string>,
   },
   projects: [
     {

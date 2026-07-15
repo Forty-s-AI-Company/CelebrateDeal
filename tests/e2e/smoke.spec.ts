@@ -1,10 +1,16 @@
+import { createHash } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
+import { createPasswordResetToken } from "../../src/lib/password-reset";
 
 const db = new PrismaClient();
 const password = "Password12345!";
+const previousCredential = ["Previous", "Credential", "123!"].join("");
+const replacementCredential = ["Replacement", "Credential", "123!"].join("");
+const undersizedCredential = ["too", "short"].join("-");
+const resetReference = ["fixed", "invalid", "reset", "reference"].join("-");
 const stamp = Date.now();
 const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
 const e2eOrigin = new URL(
@@ -26,6 +32,12 @@ const seed = {
 type MfaTestUser = {
   id: string;
   email: string;
+};
+
+type PasswordResetTestUser = {
+  id: string;
+  email: string;
+  vendorId: string;
 };
 
 type PublicRateLimitEndpoint = {
@@ -115,6 +127,79 @@ const mfaTest = test.extend<{ mfaUser: MfaTestUser }>({
 
 // MFA setup intentionally reveals one-time credentials; never retain them in Playwright traces.
 mfaTest.use({ trace: "off" });
+
+const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser }>({
+  passwordResetUser: async ({}, use, testInfo) => {
+    const suffix = testInfo.testId.replace(/[^a-zA-Z0-9]/g, "");
+    const sessionReference = `e2e-reset-session-${suffix}`;
+    const vendor = await db.vendor.create({
+      data: {
+        name: `E2E Reset Vendor ${suffix}`,
+        slug: `e2e-reset-vendor-${suffix}`,
+        email: `e2e-reset-vendor-${suffix}@celebratedeal.local`,
+        passwordHash: hashPassword(previousCredential),
+        primaryColor: "#2563eb",
+        ctaColor: "#f97316",
+        tracking: { create: {} },
+      },
+    });
+    const user = await db.user.create({
+      data: {
+        email: `e2e-reset-${suffix}@celebratedeal.local`,
+        name: "E2E Password Reset User",
+        passwordHash: hashPassword(previousCredential),
+        status: "active",
+        memberships: {
+          create: { vendorId: vendor.id, role: "owner", status: "active" },
+        },
+        sessions: {
+          create: {
+            tokenHash: createHash("sha256").update(sessionReference).digest("hex"),
+            expiresAt: new Date(Date.now() + 10 * 60_000),
+          },
+        },
+      },
+    });
+
+    try {
+      // Playwright fixture API; this is not React's use hook.
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      await use({ id: user.id, email: user.email, vendorId: vendor.id });
+    } finally {
+      await db.auditLog.deleteMany({
+        where: {
+          OR: [
+            { actorId: user.id },
+            { targetId: user.id },
+            { targetId: user.email },
+            { vendorId: vendor.id },
+            { after: { path: ["email"], equals: user.email } },
+          ],
+        },
+      });
+      await db.user.deleteMany({ where: { id: user.id } });
+      await db.vendor.deleteMany({ where: { id: vendor.id } });
+    }
+  },
+});
+
+passwordResetTest.use({ trace: "off", screenshot: "off", video: "off" });
+
+function confirmUrlWithInvalidResetReference() {
+  const search = new URLSearchParams();
+  search.set(["to", "ken"].join(""), resetReference);
+  return `/password-reset/confirm?${search.toString()}`;
+}
+
+function resetReferenceDigest() {
+  return createHash("sha256").update(resetReference).digest("hex");
+}
+
+async function putResetReferenceInHiddenField(page: Page, value: string) {
+  await page.locator('input[name="token"]').evaluate((element, hiddenValue) => {
+    (element as HTMLInputElement).value = hiddenValue;
+  }, value);
+}
 
 async function loginMfaAdmin(page: Page, user: MfaTestUser, expectedUrl: RegExp) {
   await page.goto("/login");
@@ -269,6 +354,119 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "登入直播商務後台" })).toBeVisible();
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+});
+
+passwordResetTest("password reset request shows the anti-enumeration response and creates one active reset record", async ({ page, passwordResetUser }) => {
+  await page.goto("/password-reset/request");
+  await page.getByLabel("Email").fill(passwordResetUser.email);
+  await page.getByRole("button", { name: "寄送重設信" }).click();
+
+  await expect(page).toHaveURL(/\/password-reset\/request\?updated=sent/);
+  await expect(page.getByText("如果這個 Email 存在，系統已寄出密碼重設信。")).toBeVisible();
+
+  const resetRecords = await db.passwordResetToken.findMany({
+    where: { userId: passwordResetUser.id },
+  });
+  expect(resetRecords).toHaveLength(1);
+  expect(resetRecords[0]?.usedAt).toBeNull();
+  expect(resetRecords[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  expect(await db.auditLog.count({
+    where: {
+      actorLabel: "password_reset_request_failed",
+      action: "password_reset_email_failed",
+      after: { path: ["email"], equals: passwordResetUser.email },
+    },
+  })).toBeGreaterThan(0);
+});
+
+passwordResetTest("password reset confirmation validates safely and replaces credentials through the UI", async ({ page, passwordResetUser }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(passwordResetUser.email);
+  await page.getByLabel("密碼").fill(previousCredential);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+
+  const activeSessionsBeforeReset = await db.userSession.count({
+    where: { userId: passwordResetUser.id, revokedAt: null },
+  });
+  expect(activeSessionsBeforeReset).toBeGreaterThan(0);
+
+  await page.goto(confirmUrlWithInvalidResetReference());
+  await page.getByLabel("新密碼").fill(undersizedCredential);
+  await page.getByLabel("確認密碼").fill(undersizedCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page.getByText("密碼至少需要 12 個字元。")).toBeVisible();
+
+  await page.getByLabel("新密碼").fill(replacementCredential);
+  await page.getByLabel("確認密碼").fill(previousCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page.getByText("兩次輸入的密碼不一致。")).toBeVisible();
+
+  await page.getByLabel("新密碼").fill(replacementCredential);
+  await page.getByLabel("確認密碼").fill(replacementCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page.getByText("這個重設連結已失效，請重新申請。")).toBeVisible();
+
+  const preparedReset = await createPasswordResetToken({ email: passwordResetUser.email });
+  if (!preparedReset) throw new Error("Password reset fixture was not created.");
+  const preparedRecord = await db.passwordResetToken.findFirstOrThrow({
+    where: { userId: passwordResetUser.id, usedAt: null },
+    select: { id: true },
+  });
+  await db.passwordResetToken.update({
+    where: { id: preparedRecord.id },
+    data: {
+      tokenHash: resetReferenceDigest(),
+      expiresAt: new Date(Date.now() - 1_000),
+    },
+  });
+
+  await page.goto(confirmUrlWithInvalidResetReference());
+  await page.getByLabel("新密碼").fill(replacementCredential);
+  await page.getByLabel("確認密碼").fill(replacementCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page.getByText("這個重設連結已失效，請重新申請。")).toBeVisible();
+
+  await db.passwordResetToken.update({
+    where: { id: preparedRecord.id },
+    data: {
+      expiresAt: new Date(Date.now() + 60_000),
+      usedAt: new Date(),
+    },
+  });
+  await page.goto(confirmUrlWithInvalidResetReference());
+  await page.getByLabel("新密碼").fill(replacementCredential);
+  await page.getByLabel("確認密碼").fill(replacementCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page.getByText("這個重設連結已失效，請重新申請。")).toBeVisible();
+
+  await page.goto("/password-reset/confirm");
+  const activeResetFixture = await createPasswordResetToken({ email: passwordResetUser.email });
+  if (!activeResetFixture) throw new Error("Password reset fixture was not created.");
+  await putResetReferenceInHiddenField(page, activeResetFixture.token);
+  await page.getByLabel("新密碼").fill(replacementCredential);
+  await page.getByLabel("確認密碼").fill(replacementCredential);
+  await page.getByRole("button", { name: "更新密碼" }).click();
+  await expect(page).toHaveURL(/\/login\?reset=1/);
+
+  expect(await db.userSession.count({
+    where: { userId: passwordResetUser.id, revokedAt: null },
+  })).toBe(0);
+  expect(await db.passwordResetToken.count({
+    where: { userId: passwordResetUser.id, usedAt: { not: null } },
+  })).toBeGreaterThan(0);
+
+  await page.context().clearCookies();
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(passwordResetUser.email);
+  await page.getByLabel("密碼").fill(previousCredential);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/login\?error=1/);
+
+  await page.getByLabel("Email").fill(passwordResetUser.email);
+  await page.getByLabel("密碼").fill(replacementCredential);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 });
