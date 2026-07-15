@@ -304,9 +304,9 @@
   - `npm run admin:bootstrap` 可重複執行，不重複建立同 email user
   - bootstrap 不會建立 demo vendor / demo live，不會清空 production data
 - 風險：
-  - 尚未有 MFA、完整密碼重設與 vendor member email 邀請 UI；可收費 MVP 前需要補上。
+  - MFA 與完整密碼重設已在 repo 實作，並有 unit 與 Playwright evidence；vendor member email 邀請 UI 仍是尚未完成的缺口，可收費 MVP 前需要補上。
   - 本輪 rate limit 是基於 audit log 的 MVP 實作，正式高流量環境建議改用 Redis / Upstash / Vercel KV 這類集中式計數。
-  - 密碼重設目前是流程規劃與 UI 說明，尚未實作 reset token / email。
+  - 密碼重設已具 request／confirm UI、30 分鐘 token、Resend email 呼叫與成功後撤銷 active sessions，並有既有 unit 與 UI E2E evidence；尚未驗證真實外部信件送達，亦未完成 production 驗收。
   - 第一個 platform admin password 不應放在 repo 或一般聊天紀錄，需用本機 env 或 Vercel / Supabase 安全流程保存。
 - 預估優先級：P0
 
