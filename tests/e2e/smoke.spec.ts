@@ -202,12 +202,29 @@ test.afterAll(async () => {
 });
 
 test("login page renders and accepts seeded owner", async ({ page }) => {
-  await page.goto("/login");
+  const response = await page.goto("/login");
+  expect(response?.headers()["content-security-policy-report-only"]).toContain(
+    "report-uri /api/security/csp-report",
+  );
   await expect(page.getByRole("heading", { name: "登入直播商務後台" })).toBeVisible();
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+});
+
+test("CSP reports are accepted by the report-only endpoint", async ({ request }) => {
+  const response = await request.post("/api/security/csp-report", {
+    headers: { "content-type": "application/csp-report" },
+    data: {
+      "csp-report": {
+        "blocked-uri": "https://example.test/script.js",
+        "violated-directive": "script-src",
+      },
+    },
+  });
+
+  expect(response.status()).toBe(204);
 });
 
 test("protected vendor and admin pages redirect unauthenticated users", async ({ page }) => {
