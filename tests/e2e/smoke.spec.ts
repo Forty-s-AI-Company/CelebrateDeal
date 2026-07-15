@@ -372,6 +372,23 @@ test.afterAll(async () => {
   await db.$disconnect();
 });
 
+test("health endpoint confirms live database availability", async ({ request }) => {
+  const response = await request.get("/api/health");
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("application/json");
+
+  const body = await response.json() as Record<string, unknown>;
+  expect(body.ok).toBe(true);
+  expect(body.database).toBe("ok");
+  expect(body).not.toHaveProperty("error");
+
+  const latencyMs = body.latencyMs;
+  expect(typeof latencyMs).toBe("number");
+  expect(Number.isFinite(latencyMs)).toBe(true);
+  expect(latencyMs).toBeGreaterThanOrEqual(0);
+});
+
 test("login page renders and accepts seeded owner", async ({ page }) => {
   const response = await page.goto("/login");
   expect(response?.headers()["content-security-policy-report-only"]).toContain(
