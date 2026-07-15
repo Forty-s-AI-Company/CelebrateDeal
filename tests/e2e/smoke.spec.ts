@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -6,6 +6,10 @@ import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../
 const db = new PrismaClient();
 const password = "Password12345!";
 const stamp = Date.now();
+const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
+const e2eOrigin = new URL(
+  process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? "31023"}`,
+).origin;
 const seed = {
   email: `e2e-${stamp}@celebratedeal.local`,
   vendorSlug: `e2e-vendor-${stamp}`,
@@ -23,6 +27,62 @@ type MfaTestUser = {
   id: string;
   email: string;
 };
+
+type PublicRateLimitEndpoint = {
+  name: string;
+  path: string;
+  limit: number;
+  invalidPayloadError: string;
+};
+
+function uniqueRateLimitTestIp(routeId: number) {
+  return [
+    "2001",
+    "0db8",
+    rateLimitRunId.slice(0, 4),
+    rateLimitRunId.slice(4, 8),
+    rateLimitRunId.slice(8, 12),
+    routeId.toString(16).padStart(4, "0"),
+    "0000",
+    "0001",
+  ].join(":");
+}
+
+function countPublicPostSideEffects() {
+  return Promise.all([
+    db.formSubmission.count(),
+    db.analyticsEvent.count(),
+    db.affiliateClick.count(),
+    db.paymentTransaction.count(),
+  ]);
+}
+
+async function expectPublicPostRateLimit(
+  request: APIRequestContext,
+  endpoint: PublicRateLimitEndpoint,
+  routeId: number,
+) {
+  const recordCountsBefore = await countPublicPostSideEffects();
+  const headers = {
+    "content-type": "application/json",
+    "X-CelebrateDeal-Client": "web",
+    Origin: e2eOrigin,
+    "X-Forwarded-For": uniqueRateLimitTestIp(routeId),
+  };
+
+  for (let attempt = 0; attempt < endpoint.limit; attempt += 1) {
+    const response = await request.post(endpoint.path, { headers, data: {} });
+    expect(response.status(), `${endpoint.name} request ${attempt + 1} before its limit`).toBe(400);
+    expect(await response.json()).toEqual({ error: endpoint.invalidPayloadError });
+  }
+
+  const limited = await request.post(endpoint.path, { headers, data: {} });
+  expect(limited.status(), `${endpoint.name} request after its limit`).toBe(429);
+  expect(await limited.json()).toEqual({ error: "Too many requests" });
+  const retryAfter = limited.headers()["retry-after"];
+  expect(retryAfter, `${endpoint.name} Retry-After header`).toMatch(/^[1-9]\d*$/);
+  expect(await countPublicPostSideEffects(), `${endpoint.name} must reject invalid payloads before side effects`).toEqual(recordCountsBefore);
+}
 
 const mfaTest = test.extend<{ mfaUser: MfaTestUser }>({
   mfaUser: async ({}, use, testInfo) => {
@@ -311,6 +371,51 @@ test("public JSON POST endpoints reject cross-origin requests before side effect
     expect(response.status(), `${endpoint.path} with cross-origin Origin`).toBe(403);
     expect(await response.json()).toEqual({ error: "Invalid request origin" });
   }
+});
+
+test.describe("memory-provider public POST rate limits", () => {
+  test.skip(
+    ["cloudflare_waf", "upstash_redis"].includes(process.env.RATE_LIMIT_PROVIDER ?? "memory"),
+    "These assertions exercise the deterministic in-process memory provider.",
+  );
+
+  test("form submissions return 429 after 10 invalid trusted requests without creating submissions", async ({ request }) => {
+    await expectPublicPostRateLimit(request, {
+      name: "POST /api/form-submissions",
+      path: "/api/form-submissions",
+      limit: 10,
+      invalidPayloadError: "Invalid payload",
+    }, 1);
+  });
+
+  test("analytics returns 429 after 120 invalid trusted requests without creating events", async ({ request }) => {
+    test.setTimeout(90_000);
+    await expectPublicPostRateLimit(request, {
+      name: "POST /api/analytics",
+      path: "/api/analytics",
+      limit: 120,
+      invalidPayloadError: "Invalid payload",
+    }, 2);
+  });
+
+  test("affiliate clicks return 429 after 60 invalid trusted requests without creating clicks", async ({ request }) => {
+    test.setTimeout(60_000);
+    await expectPublicPostRateLimit(request, {
+      name: "POST /api/affiliate-clicks",
+      path: "/api/affiliate-clicks",
+      limit: 60,
+      invalidPayloadError: "Invalid payload",
+    }, 3);
+  });
+
+  test("checkout returns 429 after 20 invalid trusted requests without creating transactions", async ({ request }) => {
+    await expectPublicPostRateLimit(request, {
+      name: "POST /api/payments/checkout",
+      path: "/api/payments/checkout",
+      limit: 20,
+      invalidPayloadError: "Invalid checkout request",
+    }, 4);
+  });
 });
 
 test("protected vendor and admin pages redirect unauthenticated users", async ({ page }) => {
