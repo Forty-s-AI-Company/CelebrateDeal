@@ -352,14 +352,28 @@ test("checkout ignores client amount and uses product price", async ({ request }
   expect(transaction.grossAmountCents).toBe(12345);
 });
 
-test("protected API rejects wrong bearer token", async ({ request }) => {
-  const response = await request.post("/api/cloudflare/direct-upload", {
-    headers: { Authorization: "Bearer wrong-token" },
-    data: {
-      vendorId: seed.vendorId,
-      title: "Should not be created",
-      maxDurationSeconds: 60,
-    },
-  });
-  expect(response.status()).toBe(401);
+test("JOB_SECRET protected APIs reject missing and invalid authorization", async ({ request }) => {
+  const invalidBearerHeader = ["Bearer", "e2e-invalid-credential"].join(" ");
+  const protectedEndpoints = [
+    { method: "GET", path: "/api/admin/preflight" },
+    { method: "POST", path: "/api/admin/ops/test-email" },
+    { method: "POST", path: "/api/admin/ops/test-analytics" },
+    { method: "POST", path: "/api/admin/ops/test-monitoring" },
+    { method: "POST", path: "/api/jobs/webhook-retry" },
+    { method: "POST", path: "/api/admin/ops/cloudflare/direct-upload" },
+    { method: "POST", path: "/api/admin/ops/cloudflare/live-input" },
+    { method: "POST", path: "/api/cloudflare/direct-upload" },
+    { method: "POST", path: "/api/cloudflare/live-inputs" },
+  ] as const;
+
+  for (const endpoint of protectedEndpoints) {
+    const missingAuthorization = await request.fetch(endpoint.path, { method: endpoint.method });
+    expect(missingAuthorization.status(), `${endpoint.method} ${endpoint.path} without Authorization`).toBe(401);
+
+    const invalidAuthorization = await request.fetch(endpoint.path, {
+      method: endpoint.method,
+      headers: { Authorization: invalidBearerHeader },
+    });
+    expect(invalidAuthorization.status(), `${endpoint.method} ${endpoint.path} with invalid Authorization`).toBe(401);
+  }
 });
