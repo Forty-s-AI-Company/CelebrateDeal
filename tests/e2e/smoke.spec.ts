@@ -166,6 +166,8 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
       // eslint-disable-next-line react-hooks/rules-of-hooks
       await use({ id: user.id, email: user.email, vendorId: vendor.id });
     } finally {
+      await db.passwordResetToken.deleteMany({ where: { userId: user.id } });
+      await db.userSession.deleteMany({ where: { userId: user.id } });
       await db.auditLog.deleteMany({
         where: {
           OR: [
@@ -379,6 +381,52 @@ passwordResetTest("password reset request shows the anti-enumeration response an
       after: { path: ["email"], equals: passwordResetUser.email },
     },
   })).toBeGreaterThan(0);
+});
+
+passwordResetTest("security password reset smoke targets only the signed-in user and remains locally isolated", async ({ page, passwordResetUser }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(passwordResetUser.email);
+  await page.getByLabel("密碼").fill(previousCredential);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.goto("/settings/security");
+  const smokeForm = page.locator("form").filter({
+    has: page.getByRole("button", { name: "寄送目前帳號的 reset 測試信" }),
+  });
+  await expect(smokeForm).toHaveCount(1);
+  await expect(smokeForm.locator('input:not([type="hidden"])')).toHaveCount(0);
+
+  await smokeForm.getByRole("button", { name: "寄送目前帳號的 reset 測試信" }).click();
+  await expect(page).toHaveURL(/\/settings\/security\?error=password_reset_smoke$/);
+  await expect(page.getByText("密碼重設測試信寄送失敗，請檢查 Resend 設定。")).toBeVisible();
+
+  const resetRecords = await db.passwordResetToken.findMany({
+    where: { userId: passwordResetUser.id },
+    select: { userId: true, usedAt: true, expiresAt: true },
+  });
+  expect(resetRecords).toHaveLength(1);
+  expect(resetRecords[0]).toMatchObject({ userId: passwordResetUser.id, usedAt: null });
+  expect(resetRecords[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+  const failedAudits = await db.auditLog.findMany({
+    where: {
+      action: "password_reset_smoke_email_failed",
+      actorId: passwordResetUser.id,
+      targetId: passwordResetUser.id,
+      after: { path: ["email"], equals: passwordResetUser.email },
+    },
+    select: { actorId: true, targetId: true, after: true },
+  });
+  expect(failedAudits).toHaveLength(1);
+  expect(failedAudits[0]).toMatchObject({
+    actorId: passwordResetUser.id,
+    targetId: passwordResetUser.id,
+    after: { email: passwordResetUser.email },
+  });
+  expect(await db.auditLog.count({
+    where: { action: "password_reset_smoke_email_sent", actorId: passwordResetUser.id },
+  })).toBe(0);
 });
 
 passwordResetTest("password reset confirmation validates safely and replaces credentials through the UI", async ({ page, passwordResetUser }) => {
