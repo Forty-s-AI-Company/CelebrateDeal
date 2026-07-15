@@ -14,6 +14,8 @@ commands:
   typecheck: npm run typecheck
   test: npm run test
   build: npm run build
+  additional_validation:
+    - npm run e2e:smoke
 
 safety:
   allow_git_push: true
