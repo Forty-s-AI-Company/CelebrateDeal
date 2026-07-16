@@ -6,6 +6,7 @@ import { reconcileWebhookEvent } from "@/lib/reconciliation";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 
 const createdVendorIds: string[] = [];
+const createdBillingPlanIds: string[] = [];
 const createdWebhookEventIds: string[] = [];
 
 function webhookPayloadJson(payload: unknown): Prisma.InputJsonValue {
@@ -22,6 +23,7 @@ async function createFixture(suffix: string) {
       transactionFeeRateBps: 100,
     },
   });
+  createdBillingPlanIds.push(plan.id);
   const vendor = await db.vendor.create({
     data: {
       name: `Webhook Vendor ${suffix}`,
@@ -53,7 +55,7 @@ afterEach(async () => {
   const db = getDb();
   await db.webhookEvent.deleteMany({ where: { id: { in: createdWebhookEventIds.splice(0) } } });
   await db.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
-  await db.billingPlan.deleteMany({ where: { code: { startsWith: "test-plan-" } } });
+  await db.billingPlan.deleteMany({ where: { id: { in: createdBillingPlanIds.splice(0) } } });
 });
 
 describe("payment webhook processing", () => {
