@@ -1,17 +1,41 @@
 export type TeamFunnelDynamicField =
   | "partner.name"
+  | "partner.displayName"
+  | "partner.avatar"
+  | "partner.phone"
+  | "partner.email"
+  | "partner.lineUrl"
+  | "partner.whatsappUrl"
+  | "partner.bio"
   | "partner.productUrl"
-  | "webinar.title";
+  | "partner.joinUrl"
+  | "partner.referralCode"
+  | "webinar.title"
+  | "webinar.startAt"
+  | "webinar.hostName"
+  | "webinar.registrationUrl";
 
 export type TeamFunnelDynamicFieldSource = "partner" | "webinar";
 
 export type TeamFunnelDynamicFieldContext = {
   partner?: {
     name?: string | null;
+    displayName?: string | null;
+    avatar?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    lineUrl?: string | null;
+    whatsappUrl?: string | null;
+    bio?: string | null;
     productUrl?: string | null;
+    joinUrl?: string | null;
+    referralCode?: string | null;
   };
   webinar?: {
     title?: string | null;
+    startAt?: string | null;
+    hostName?: string | null;
+    registrationUrl?: string | null;
   };
 };
 
@@ -56,10 +80,34 @@ export function resolveTeamFunnelDynamicField(
   switch (field) {
     case "partner.name":
       return resolveKnownField(field, "partner", context.partner?.name);
+    case "partner.displayName":
+      return resolveKnownField(field, "partner", context.partner?.displayName);
+    case "partner.avatar":
+      return resolveKnownField(field, "partner", context.partner?.avatar);
+    case "partner.phone":
+      return resolveKnownField(field, "partner", context.partner?.phone);
+    case "partner.email":
+      return resolveKnownField(field, "partner", context.partner?.email);
+    case "partner.lineUrl":
+      return resolveKnownField(field, "partner", context.partner?.lineUrl);
+    case "partner.whatsappUrl":
+      return resolveKnownField(field, "partner", context.partner?.whatsappUrl);
+    case "partner.bio":
+      return resolveKnownField(field, "partner", context.partner?.bio);
     case "partner.productUrl":
       return resolveKnownField(field, "partner", context.partner?.productUrl);
+    case "partner.joinUrl":
+      return resolveKnownField(field, "partner", context.partner?.joinUrl);
+    case "partner.referralCode":
+      return resolveKnownField(field, "partner", context.partner?.referralCode);
     case "webinar.title":
       return resolveKnownField(field, "webinar", context.webinar?.title);
+    case "webinar.startAt":
+      return resolveKnownField(field, "webinar", context.webinar?.startAt);
+    case "webinar.hostName":
+      return resolveKnownField(field, "webinar", context.webinar?.hostName);
+    case "webinar.registrationUrl":
+      return resolveKnownField(field, "webinar", context.webinar?.registrationUrl);
     default:
       return {
         status: "unsupported",
