@@ -1,5 +1,6 @@
 import { formatDateTime } from "@/lib/format";
 import type { TeamFunnelPublicPageView } from "@/lib/team-funnel-public-page";
+import { LeadForm } from "@/components/lead-form";
 
 const slotLabels: Record<string, string> = {
   main_product: "推薦商品",
@@ -27,12 +28,23 @@ export function TeamFunnelPublicPage({ view }: { view: TeamFunnelPublicPageView 
             <time dateTime={page.webinar.startsAt}>{formatDateTime(page.webinar.startsAt)}</time>
           </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <a className="inline-flex min-h-11 items-center justify-center rounded-lg bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2" href={page.webinar.registrationHref}>
-              立即報名
-            </a>
             <a className="inline-flex min-h-11 items-center justify-center rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" href={page.webinar.playbackHref}>
               前往直播與回放
             </a>
+          </div>
+        </section>
+
+        <section className="mt-7 rounded-xl border border-orange-200 bg-orange-50 p-4" aria-labelledby="registration-heading">
+          <h2 id="registration-heading" className="text-xl font-bold text-slate-950">立即報名</h2>
+          <p className="mt-1 text-sm text-slate-700">報名資料會由 {page.partner.name} 協助服務，並綁定本場研討會。</p>
+          <div className="mt-4">
+            <LeadForm
+              formId={page.webinar.registration.formId}
+              liveId={page.webinar.id}
+              fields={page.webinar.registration.fields}
+              submitLabel={page.webinar.registration.submitLabel}
+              successMessage={page.webinar.registration.successMessage}
+            />
           </div>
         </section>
 

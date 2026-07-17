@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
 import { createPasswordResetToken } from "../../src/lib/password-reset";
+import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 
 const db = new PrismaClient();
 const password = "Password12345!";
@@ -982,4 +983,208 @@ test("JOB_SECRET protected APIs reject missing and invalid authorization", async
     });
     expect(invalidAuthorization.status(), `${endpoint.method} ${endpoint.path} with invalid Authorization`).toBe(401);
   }
+});
+
+test("team-funnel browser acceptance covers leader publishing, partner modes, attribution, scope, and responsive QA", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const fixture = await createTeamFunnelFixture(db, `pw-${Date.now().toString(36)}`);
+  const consoleFailures: string[] = [];
+  let leaderContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let partnerContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let outsiderContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+
+  const track = (page: Page, name: string) => {
+    page.on("pageerror", (error) => consoleFailures.push(`${name}: pageerror ${error.message}`));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleFailures.push(`${name}: console ${message.text()}`);
+    });
+    return page;
+  };
+  const login = async (context: NonNullable<typeof leaderContext>, email: string) => {
+    const page = track(await context.newPage(), email);
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("密碼").fill(fixture.password);
+    await page.getByRole("button", { name: "登入" }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    return page;
+  };
+  const noHorizontalOverflow = async (page: Page) => {
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  };
+  const publishNextVersion = async (page: Page, templateId: string) => {
+    await page.goto(`/team-templates/${templateId}/edit`);
+    await expect(page.getByRole("heading", { name: new RegExp(`編輯 ${TEAM_FUNNEL_TEST_ONLY.templateName}`) })).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "發布新版本" }).click();
+    await expect(page.getByRole("status")).toContainText("已發布");
+  };
+  const claim = async (page: Page, sharePath: string, mode: "快速套用" | "複製後編輯" | "空白頁綁定研討會", slug: string) => {
+    await page.goto(sharePath);
+    await expect(page.getByRole("heading", { name: "取得團隊模板" })).toBeVisible();
+    await page.getByText(mode, { exact: true }).click();
+    await page.getByLabel("你的公開網址（slug）").fill(slug);
+    await page.getByRole("checkbox", { name: /我已確認建立自己的夥伴頁/ }).check();
+    await page.getByRole("button", { name: "確認並建立夥伴頁" }).click();
+    await expect(page).toHaveURL(/\/partner-pages\/[^/]+\/edit$/);
+  };
+
+  try {
+    leaderContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    partnerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    outsiderContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const leaderPage = await login(leaderContext, fixture.leader.email);
+    const partnerPage = await login(partnerContext, fixture.partner.email);
+
+    // A creates the original page through the actual browser form, then publishes v2.
+    await leaderPage.goto("/team-templates/new");
+    await expect(leaderPage.getByRole("heading", { name: "建立團隊原始頁" })).toBeVisible();
+    await leaderPage.getByLabel("模板名稱").fill(fixture.scenario.templateName);
+    await leaderPage.getByLabel("原始頁網址（slug）").fill(fixture.scenario.sourceSlug);
+    await leaderPage.getByLabel("綁定 webinar").selectOption(fixture.seminar.id);
+    await leaderPage.getByLabel("主標題").first().fill("TEST ONLY A 模板主標題");
+    await leaderPage.getByLabel("副標題").fill("TEST ONLY 可由 B 編輯的副標題");
+    await leaderPage.getByLabel("內容說明").fill("TEST ONLY 鎖定的內容說明");
+    await leaderPage.getByLabel("CTA 按鈕文字").fill("TEST ONLY 立即參加");
+    await leaderPage.locator('input[name="lockedFields"][value="BODY"]').check();
+    await leaderPage.locator('select[name="product_main_product"]').selectOption(fixture.product.id);
+    await leaderPage.getByRole("button", { name: "建立原始頁" }).click();
+    await expect(leaderPage.getByRole("status")).toContainText("原始頁與第一個模板版本已建立");
+
+    const template = await db.teamFunnelTemplate.findFirstOrThrow({
+      where: { vendorId: fixture.leader.vendorId, name: fixture.scenario.templateName },
+      include: { versions: { orderBy: { version: "asc" } } },
+    });
+    expect(template.versions).toHaveLength(1);
+    await publishNextVersion(leaderPage, template.id);
+    expect(await db.teamFunnelTemplateVersion.count({ where: { templateId: template.id } })).toBe(2);
+    const sourcePage = await db.partnerFunnelPage.findFirstOrThrow({
+      where: { teamId: fixture.team.id, promoterMembershipId: fixture.leader.membershipId, templateVersion: { templateId: template.id } },
+    });
+    expect(sourcePage.liveId).toBe(fixture.seminar.id);
+
+    await leaderPage.goto("/team-templates");
+    await leaderPage.getByRole("button", { name: "建立分享連結" }).click();
+    const sharePath = await leaderPage.getByRole("status").locator("code").innerText();
+    expect(sharePath).toMatch(/^\/team-template\?share=tf1\./);
+
+    // B mode 1: quick apply, editable copy, product override, immutable locked body, and readable error state.
+    const quickSlug = `${fixture.scenario.sourceSlug}-b-quick`;
+    await claim(partnerPage, sharePath, "快速套用", quickSlug);
+    await expect(partnerPage.getByText(`來源 A：${TEAM_FUNNEL_TEST_ONLY.leader.name}`)).toBeVisible();
+    await expect(partnerPage.getByLabel("內容說明")).toBeDisabled();
+    await expect(partnerPage.getByLabel("主標題")).toBeEnabled();
+    await partnerPage.getByLabel("主標題").fill("TEST ONLY B 的公開主標題");
+    await partnerPage.locator('input[name="url_main_product"]').fill(TEAM_FUNNEL_TEST_ONLY.partnerProductUrl);
+    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
+    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
+    const quickPage = await db.partnerFunnelPage.findUniqueOrThrow({
+      where: { slug: quickSlug },
+      include: { productOverrides: true },
+    });
+    expect(quickPage.headline).toBe("TEST ONLY B 的公開主標題");
+    expect(quickPage.liveId).toBe(fixture.seminar.id);
+    expect(quickPage.contentOwnerMembershipId).toBe(fixture.leader.membershipId);
+    expect(quickPage.promoterMembershipId).toBe(fixture.partner.membershipId);
+    expect(quickPage.productOverrides.some((override) => override.overrideUrl === TEAM_FUNNEL_TEST_ONLY.partnerProductUrl)).toBe(true);
+
+    await partnerPage.getByLabel("主標題").fill("");
+    // Exercise the server-side readable error, which remains necessary even
+    // though production browsers normally block this required field first.
+    await partnerPage.locator('input[name="headline"]').evaluate((input) => input.removeAttribute("required"));
+    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
+    await expect(partnerPage.getByRole("alert")).toContainText("主標題與 CTA 按鈕文字不可留白");
+    await partnerPage.getByLabel("主標題").fill("TEST ONLY B 的公開主標題");
+    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
+    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
+    await partnerPage.getByRole("button", { name: "發布公開頁" }).click();
+    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已發布");
+
+    const publicPage = track(await partnerContext.newPage(), "public-team-funnel");
+    await publicPage.goto(`/p/${quickSlug}`);
+    await expect(publicPage.getByRole("heading", { name: "TEST ONLY B 的公開主標題" })).toBeVisible();
+    await expect(publicPage.getByText(`由 ${TEAM_FUNNEL_TEST_ONLY.partner.name} 為您服務`)).toBeVisible();
+    await expect(publicPage.getByRole("heading", { name: TEAM_FUNNEL_TEST_ONLY.seminarTitle })).toBeVisible();
+    await expect(publicPage.getByRole("heading", { name: "立即報名" })).toBeVisible();
+    await expect(publicPage.getByRole("link", { name: "TEST ONLY 立即參加" })).toHaveAttribute("href", "#registration-heading");
+    await expect(publicPage.getByRole("link", { name: "推薦商品" })).toHaveAttribute("href", TEAM_FUNNEL_TEST_ONLY.partnerProductUrl);
+    await noHorizontalOverflow(publicPage);
+    await publicPage.setViewportSize({ width: 390, height: 844 });
+    await publicPage.reload();
+    await expect(publicPage.getByRole("heading", { name: "TEST ONLY B 的公開主標題" })).toBeVisible();
+    await expect(publicPage.getByRole("heading", { name: "立即報名" })).toBeVisible();
+    await noHorizontalOverflow(publicPage);
+
+    // Fill and submit the real public form. Its browser Referer is the B page,
+    // so attribution is resolved from server-owned page data rather than input.
+    const registrationEmail = `lead-${Date.now()}@team-funnel.test`;
+    await publicPage.getByLabel("姓名").fill("TEST ONLY 報名訪客");
+    await publicPage.getByLabel("Email").fill(registrationEmail);
+    await publicPage.getByRole("button", { name: "TEST ONLY 送出報名" }).click();
+    await expect(publicPage.getByText("TEST ONLY 已收到報名")).toBeVisible();
+    const submission = await db.formSubmission.findFirstOrThrow({
+      where: { formId: fixture.form.id, liveId: fixture.seminar.id, email: registrationEmail },
+    });
+    const attributedLead = await db.teamLeadAttribution.findFirstOrThrow({
+      where: { formSubmissionId: submission.id, pageId: quickPage.id },
+      orderBy: { attributedAt: "desc" },
+    });
+    expect(attributedLead).toMatchObject({
+      promoterMembershipId: fixture.partner.membershipId,
+      leaderMembershipId: fixture.leader.membershipId,
+      contentOwnerMembershipId: fixture.leader.membershipId,
+      seminarOwnerMembershipId: fixture.leader.membershipId,
+    });
+
+    // The same controlled share advances with A's immutable version; B claims the remaining two modes.
+    await publishNextVersion(leaderPage, template.id);
+    const copySlug = `${fixture.scenario.sourceSlug}-b-copy`;
+    await claim(partnerPage, sharePath, "複製後編輯", copySlug);
+    const copyPage = await db.partnerFunnelPage.findUniqueOrThrow({ where: { slug: copySlug } });
+    expect(copyPage.liveId).toBe(fixture.seminar.id);
+    expect(copyPage.templateVersionId).not.toBe(quickPage.templateVersionId);
+
+    await publishNextVersion(leaderPage, template.id);
+    const blankSlug = `${fixture.scenario.sourceSlug}-b-blank`;
+    await claim(partnerPage, sharePath, "空白頁綁定研討會", blankSlug);
+    const blankPage = await db.partnerFunnelPage.findUniqueOrThrow({ where: { slug: blankSlug } });
+    expect(blankPage).toMatchObject({
+      liveId: fixture.seminar.id,
+      contentOwnerMembershipId: fixture.leader.membershipId,
+      promoterMembershipId: fixture.partner.membershipId,
+      headline: "",
+      ctaLabel: "",
+    });
+
+    // A can see pages using A's template; B's report is constrained to B's own pages.
+    await leaderPage.goto(`/team-performance?teamId=${fixture.team.id}`);
+    await expect(leaderPage.getByRole("heading", { name: "展業成效" })).toBeVisible();
+    await expect(leaderPage.getByText(`/${quickSlug}`)).toBeVisible();
+    await partnerPage.goto(`/team-performance?teamId=${fixture.team.id}`);
+    await expect(partnerPage.getByText(`/${quickSlug}`)).toBeVisible();
+    await expect(partnerPage.getByText(`/${fixture.scenario.sourceSlug}`)).toHaveCount(0);
+    await partnerPage.setViewportSize({ width: 390, height: 844 });
+    await partnerPage.goto(`/partner-pages/${quickPage.id}/edit`);
+    await expect(partnerPage.getByRole("heading", { name: "編輯夥伴頁" })).toBeVisible();
+    await expect(partnerPage.getByLabel("主標題")).toBeVisible();
+    await expect(partnerPage.getByRole("button", { name: "儲存可編輯內容" })).toBeVisible();
+    await noHorizontalOverflow(partnerPage);
+
+    // A tenant other than the source tenant is rejected before a claim can be made.
+    const outsiderPage = await login(outsiderContext, fixture.outsider.email);
+    await outsiderPage.goto(sharePath);
+    await expect(outsiderPage.getByRole("status")).toContainText("此分享不屬於你的團隊");
+
+    // The TEST ONLY fixture provides a separate already-expired sharing scenario.
+    expect(fixture.expiredScenario.templateId).not.toBe(template.id);
+    await partnerPage.goto(fixture.expiredSharePath);
+    await expect(partnerPage.getByRole("status")).toContainText("此分享連結已過期");
+  } finally {
+    await leaderContext?.close();
+    await partnerContext?.close();
+    await outsiderContext?.close();
+    await fixture.cleanup();
+  }
+
+  expect(consoleFailures, consoleFailures.join("\n")).toEqual([]);
 });

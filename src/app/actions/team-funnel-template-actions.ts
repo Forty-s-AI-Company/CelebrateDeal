@@ -185,7 +185,9 @@ export async function manageTeamFunnelTemplateAction(
       return {
         status: "success",
         message: "分享連結已建立。此連結只會在這次操作後顯示，請立即複製保存。",
-        shareUrl: `/team-templates?share=${encodeURIComponent(shareCode)}`,
+        // `/team-template` is the authenticated claim route. Keeping this
+        // route here prevents a generated URL from landing back on the list.
+        shareUrl: `/team-template?share=${encodeURIComponent(shareCode)}`,
         sharePageId: share.pageId,
       };
     }
