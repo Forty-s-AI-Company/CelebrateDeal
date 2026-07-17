@@ -3,6 +3,18 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  ATTRIBUTION_COOKIE,
+  VISITOR_COOKIE,
+  attributionCookieOptions,
+  encodeAttributionCookie,
+  recordClickAttribution,
+  referralCodeFromRequest,
+  resolveReferral,
+  resolveTeamFunnelAttribution,
+  sourcePageSlugFromRequest,
+  visitorIdFromRequest,
+} from "@/lib/team-funnel-attribution";
 
 const AffiliateClickPayload = z.object({
   vendorId: z.string().min(1),
@@ -39,24 +51,40 @@ export async function POST(request: Request) {
     }
   }
 
-  const affiliate = await getDb().affiliate.findFirst({
-    where: {
-      vendorId: parsed.data.vendorId,
-      code: parsed.data.referralCode.toUpperCase(),
-      isActive: true,
-    },
+  const visitorId = visitorIdFromRequest(request);
+  const referral = await resolveReferral({
+    vendorId: parsed.data.vendorId,
+    queryCode: referralCodeFromRequest(request),
+    legacyCode: parsed.data.referralCode,
+    cookie: null,
   });
 
-  await getDb().affiliateClick.create({
+  // Keep the legacy click record even when a supplied code is unknown, but never
+  // turn that unverified value into team ownership or a sticky attribution cookie.
+  const click = await getDb().affiliateClick.create({
     data: {
       vendorId: parsed.data.vendorId,
-      affiliateId: affiliate?.id ?? null,
+      affiliateId: referral?.affiliateId ?? null,
       liveId: parsed.data.liveId ?? null,
-      referralCode: parsed.data.referralCode.toUpperCase(),
-      visitorId: parsed.data.visitorId,
+      referralCode: referral?.code ?? parsed.data.referralCode.trim().toUpperCase(),
+      visitorId,
       landingPath: parsed.data.landingPath,
     },
   });
 
-  return NextResponse.json({ ok: true });
+  const attribution = await resolveTeamFunnelAttribution({
+    vendorId: parsed.data.vendorId,
+    liveId: parsed.data.liveId ?? null,
+    sourcePageSlug: sourcePageSlugFromRequest(request),
+    referral,
+  });
+  await recordClickAttribution(click.id, attribution);
+
+  const response = NextResponse.json({ ok: true });
+  const cookieOptions = attributionCookieOptions(request);
+  response.cookies.set(VISITOR_COOKIE, visitorId, cookieOptions);
+  if (referral) {
+    response.cookies.set(ATTRIBUTION_COOKIE, encodeAttributionCookie({ clickId: click.id, visitorId, issuedAt: Date.now() }), cookieOptions);
+  }
+  return response;
 }
