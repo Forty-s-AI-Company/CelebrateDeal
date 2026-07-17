@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   AUTH_COOKIE,
   LEGACY_VENDOR_COOKIE,
@@ -60,6 +60,13 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
   if (!value) return fallback;
   const parsed = Number.parseFloat(value.replaceAll(",", ""));
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : fallback;
+}
+
+class RefundValidationError extends Error {}
+
+function isRefundTransactionConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2025" || error.code === "P2034");
 }
 
 function secondsValue(value: string) {
@@ -1500,41 +1507,35 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   const reason = optionalText(formData, "reason");
   const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
   const db = getDb();
-  const transaction = await db.paymentTransaction.findUnique({ where: { id } });
-  if (
-    !transaction ||
-    refundAmountCents <= 0 ||
-    gatewayFeeRefundCents < 0 ||
-    platformFeeRefundCents < 0
-  ) {
+  if (refundAmountCents <= 0 || gatewayFeeRefundCents < 0 || platformFeeRefundCents < 0) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
-  if (refundAmountCents > remainingRefundAmountCents) {
-    redirect("/admin/billing/dashboard?error=refund");
-  }
+  const { transaction, updated } = await db.$transaction(async (tx) => {
+    const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
+    if (!transaction) throw new RefundValidationError();
 
-  const processedFeeRefunds = await db.refundRecord.aggregate({
-    where: { paymentTransactionId: transaction.id, status: "processed" },
-    _sum: {
-      gatewayFeeRefundCents: true,
-      platformFeeRefundCents: true,
-    },
-  });
-  const refundedGatewayFeeCents = processedFeeRefunds._sum.gatewayFeeRefundCents ?? 0;
-  const refundedPlatformFeeCents = processedFeeRefunds._sum.platformFeeRefundCents ?? 0;
-  if (
-    refundedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents ||
-    refundedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
-  ) {
-    redirect("/admin/billing/dashboard?error=refund");
-  }
+    const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
+    if (refundAmountCents > remainingRefundAmountCents) throw new RefundValidationError();
 
-  const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
-  const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
+    const processedFeeRefunds = await tx.refundRecord.aggregate({
+      where: { paymentTransactionId: transaction.id, status: "processed" },
+      _sum: {
+        gatewayFeeRefundCents: true,
+        platformFeeRefundCents: true,
+      },
+    });
+    const refundedGatewayFeeCents = processedFeeRefunds._sum.gatewayFeeRefundCents ?? 0;
+    const refundedPlatformFeeCents = processedFeeRefunds._sum.platformFeeRefundCents ?? 0;
+    if (
+      refundedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents ||
+      refundedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
+    ) {
+      throw new RefundValidationError();
+    }
 
-  const updated = await db.$transaction(async (tx) => {
+    const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
+    const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
     await tx.refundRecord.create({
       data: {
         vendorId: transaction.vendorId,
@@ -1546,7 +1547,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
         reason,
       },
     });
-    return tx.paymentTransaction.update({
+    const updated = await tx.paymentTransaction.update({
       where: { id },
       data: {
         status,
@@ -1555,6 +1556,13 @@ export async function refundPaymentTransactionAction(formData: FormData) {
         refundedAt: new Date(),
       },
     });
+
+    return { transaction, updated };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error) => {
+    if (error instanceof RefundValidationError || isRefundTransactionConflict(error)) {
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+    throw error;
   });
 
   await writeAuditLog({
