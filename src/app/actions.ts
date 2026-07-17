@@ -1501,12 +1501,33 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
   const db = getDb();
   const transaction = await db.paymentTransaction.findUnique({ where: { id } });
-  if (!transaction || refundAmountCents <= 0) {
+  if (
+    !transaction ||
+    refundAmountCents <= 0 ||
+    gatewayFeeRefundCents < 0 ||
+    platformFeeRefundCents < 0
+  ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
   const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
   if (refundAmountCents > remainingRefundAmountCents) {
+    redirect("/admin/billing/dashboard?error=refund");
+  }
+
+  const processedFeeRefunds = await db.refundRecord.aggregate({
+    where: { paymentTransactionId: transaction.id, status: "processed" },
+    _sum: {
+      gatewayFeeRefundCents: true,
+      platformFeeRefundCents: true,
+    },
+  });
+  const refundedGatewayFeeCents = processedFeeRefunds._sum.gatewayFeeRefundCents ?? 0;
+  const refundedPlatformFeeCents = processedFeeRefunds._sum.platformFeeRefundCents ?? 0;
+  if (
+    refundedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents ||
+    refundedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
+  ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
