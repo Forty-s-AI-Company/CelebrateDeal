@@ -1143,11 +1143,15 @@ export async function upsertAffiliateAction(formData: FormData) {
 export async function generateSettlementAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
-  const db = getDb();
   const vendorId = text(formData, "vendorId");
   const monthKey = text(formData, "monthKey");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) {
+    redirect("/admin/billing/settlements?error=missing");
+  }
+
+  const db = getDb();
   const vendor = await db.vendor.findUnique({ where: { id: vendorId } });
-  if (!vendor || !monthKey) {
+  if (!vendor) {
     redirect("/admin/billing/settlements?error=missing");
   }
 
