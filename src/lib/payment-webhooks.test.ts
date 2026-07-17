@@ -59,6 +59,23 @@ afterEach(async () => {
 });
 
 describe("payment webhook processing", () => {
+  it("rejects a payload without vendorId or vendorSlug before creating a transaction", async () => {
+    const suffix = `${Date.now()}-unscoped`;
+    const db = getDb();
+    const payload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-unscoped-${suffix}`,
+      eventType: "paid",
+      orderNumber: `ORDER-UNSCOPED-${suffix}`,
+      grossAmountCents: 100000,
+    });
+
+    await expect(processPaymentWebhook(payload)).rejects.toThrow("付款 webhook 缺少商家識別");
+
+    const transactions = await db.paymentTransaction.findMany({ where: { orderNumber: payload.orderNumber } });
+    expect(transactions).toHaveLength(0);
+  });
+
   it("does not create duplicate transactions for the same order", async () => {
     const suffix = `${Date.now()}a`;
     const { db, vendor } = await createFixture(suffix);
@@ -79,6 +96,24 @@ describe("payment webhook processing", () => {
 
     const transactions = await db.paymentTransaction.findMany({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
     expect(transactions).toHaveLength(1);
+  });
+
+  it("processes a webhook identified by vendorId", async () => {
+    const suffix = `${Date.now()}-vendor-id`;
+    const { db, vendor } = await createFixture(suffix);
+    const payload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-vendor-id-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber: `ORDER-VENDOR-ID-${suffix}`,
+      grossAmountCents: 100000,
+    });
+
+    await processPaymentWebhook(payload);
+
+    const transaction = await db.paymentTransaction.findFirst({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
+    expect(transaction).not.toBeNull();
   });
 
   it("does not create duplicate refund records for the same refund event", async () => {

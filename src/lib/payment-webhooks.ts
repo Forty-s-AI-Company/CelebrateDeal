@@ -40,7 +40,7 @@ async function findVendor(payload: PaymentWebhookPayloadInput) {
   if (payload.vendorSlug) {
     return getDb().vendor.findUnique({ where: { slug: payload.vendorSlug } });
   }
-  return getDb().vendor.findFirst({ orderBy: { createdAt: "asc" } });
+  throw new Error("付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。");
 }
 
 async function upsertAffiliateCommission(payload: PaymentWebhookPayloadInput, vendorId: string, transactionId: string, occurredAt: Date) {
