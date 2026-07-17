@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   refundRecordCreate: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   revalidatePath: vi.fn(),
+  transaction: vi.fn(),
   writeAuditLog: vi.fn(),
 }));
 
@@ -27,10 +28,7 @@ vi.mock("@/lib/db", () => ({
       update: mocks.paymentTransactionUpdate,
     },
     refundRecord: { aggregate: mocks.refundRecordAggregate },
-    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      paymentTransaction: { update: mocks.paymentTransactionUpdate },
-      refundRecord: { create: mocks.refundRecordCreate },
-    }),
+    $transaction: mocks.transaction,
   }),
 }));
 
@@ -64,6 +62,16 @@ beforeEach(() => {
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
   });
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
+  mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+    paymentTransaction: {
+      findUnique: mocks.findUnique,
+      update: mocks.paymentTransactionUpdate,
+    },
+    refundRecord: {
+      aggregate: mocks.refundRecordAggregate,
+      create: mocks.refundRecordCreate,
+    },
+  }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
   });
@@ -103,6 +111,9 @@ describe("refundPaymentTransactionAction", () => {
         status: "refunded",
         refundedAmountCents: transaction.grossAmountCents,
       }),
+    });
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
     });
   });
 
@@ -155,5 +166,55 @@ describe("refundPaymentTransactionAction", () => {
     });
     expect(mocks.paymentTransactionUpdate).toHaveBeenCalled();
     expect(mocks.writeAuditLog).toHaveBeenCalled();
+  });
+
+  it("rolls back all writes and returns the refund error when PostgreSQL rejects a stale serializable transaction", async () => {
+    const attemptedRefundRecords: unknown[] = [];
+    const attemptedPaymentTransactions: unknown[] = [];
+    const committedRefundRecords: unknown[] = [];
+    const committedPaymentTransactions: unknown[] = [];
+
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const stagedRefundRecords: unknown[] = [];
+      const stagedPaymentTransactions: unknown[] = [];
+      await callback({
+        paymentTransaction: {
+          findUnique: mocks.findUnique,
+          update: async (args: unknown) => {
+            attemptedPaymentTransactions.push(args);
+            stagedPaymentTransactions.push(args);
+            return { ...transaction, refundedAmountCents: 10_000, status: "refunded" };
+          },
+        },
+        refundRecord: {
+          aggregate: mocks.refundRecordAggregate,
+          create: async (args: unknown) => {
+            attemptedRefundRecords.push(args);
+            stagedRefundRecords.push(args);
+          },
+        },
+      });
+
+      // PostgreSQL detects that the transaction read stale data at commit time.
+      const shouldAbortAtCommit = () => true;
+      if (shouldAbortAtCommit()) {
+        throw Object.assign(new Error("serialization failure"), { code: "P2034" });
+      }
+
+      // A successful transaction would commit staged writes here.
+      committedRefundRecords.push(...stagedRefundRecords);
+      committedPaymentTransactions.push(...stagedPaymentTransactions);
+    });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+
+    expect(attemptedRefundRecords).toHaveLength(1);
+    expect(attemptedPaymentTransactions).toHaveLength(1);
+    expect(committedRefundRecords).toEqual([]);
+    expect(committedPaymentTransactions).toEqual([]);
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 });
