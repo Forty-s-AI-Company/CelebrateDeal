@@ -11,11 +11,12 @@ describe("TeamFunnelPublicPage", () => {
         headline: "活動標題",
         subheadline: null,
         body: [{ type: "paragraph", text: "<script>alert(1)</script>" }],
-        cta: { label: "報名", href: "/form/register-b?ref=B" },
+        cta: { label: "報名", href: "#registration-heading" },
         partner: { name: "B 夥伴", email: "b@example.test", referralCode: "B" },
         webinar: {
-          title: "A 的講座", startsAt: "2026-07-17T10:00:00.000Z",
-          playbackHref: "/live/a", registrationHref: "/form/register-b?ref=B",
+          id: "live-a", title: "A 的講座", startsAt: "2026-07-17T10:00:00.000Z",
+          playbackHref: "/live/a", registrationHref: "#registration-heading",
+          registration: { formId: "form-a", fields: [{ key: "name", label: "姓名", type: "text", required: true }], submitLabel: "送出報名", successMessage: "已收到資料" },
         },
         productSlots: [{ slotKey: "main_product", offerLabel: "B 的方案", url: "https://shop.example.test/b" }],
       },
@@ -23,7 +24,7 @@ describe("TeamFunnelPublicPage", () => {
 
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).toContain('href="mailto:b@example.test"');
-    expect(html).toContain('href="/form/register-b?ref=B"');
+    expect(html).toContain('href="#registration-heading"');
     expect(html).not.toContain("dangerouslySetInnerHTML");
   });
 
@@ -41,11 +42,12 @@ describe("TeamFunnelPublicPage", () => {
         headline: "活動標題",
         subheadline: null,
         body: [],
-        cta: { label: "報名", href: "/form/register-b?ref=B" },
+        cta: { label: "報名", href: "#registration-heading" },
         partner: { name: "B 夥伴", email: null, referralCode: "B" },
         webinar: {
-          title: "A 的講座", startsAt: "2026-07-17T10:00:00.000Z",
-          playbackHref: "/live/a", registrationHref: "/form/register-b?ref=B",
+          id: "live-a", title: "A 的講座", startsAt: "2026-07-17T10:00:00.000Z",
+          playbackHref: "/live/a", registrationHref: "#registration-heading",
+          registration: { formId: "form-a", fields: [{ key: "name", label: "姓名", type: "text", required: true }], submitLabel: "送出報名", successMessage: "已收到資料" },
         },
         productSlots: [{ slotKey: "main_product", offerLabel: "B 的方案", url: "https://shop.example.test/b" }],
       },

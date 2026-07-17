@@ -132,7 +132,7 @@ describe("team funnel page service", () => {
       data: expect.objectContaining({
         version: 1,
         contentOwnerMembershipId: actor.id,
-        fieldLocks: { create: [{ vendorId: actor.vendorId, field: "CTA_URL", lockedByMemberId: actor.vendorMemberId }] },
+        fieldLocks: { create: [{ field: "CTA_URL", lockedByMemberId: actor.vendorMemberId }] },
       }),
     }));
   });

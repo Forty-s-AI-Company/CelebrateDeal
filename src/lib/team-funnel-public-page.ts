@@ -29,7 +29,19 @@ export type TeamFunnelPublicPageView = {
     body: TeamFunnelContentBlock[];
     cta: { label: string; href: string };
     partner: { name: string; email: string | null; referralCode: string | null };
-    webinar: { title: string; startsAt: string; playbackHref: string; registrationHref: string };
+    webinar: {
+      id: string;
+      title: string;
+      startsAt: string;
+      playbackHref: string;
+      registrationHref: string;
+      registration: {
+        formId: string;
+        fields: Array<{ key: string; label: string; type: string; required: boolean }>;
+        submitLabel: string;
+        successMessage: string;
+      };
+    };
     productSlots: Array<Pick<ResolvedTeamFunnelProductSlot, "slotKey" | "offerLabel" | "url">>;
   };
 };
@@ -65,7 +77,7 @@ export type PublicTeamFunnelPageRecord = {
     title: string;
     scheduledAt: Date;
     seminarOwnerMembershipId: string | null;
-    form: { slug: string; isActive: boolean } | null;
+    form: { id: string; slug: string; isActive: boolean; fields: unknown; submitLabel: string; successMessage: string } | null;
   } | null;
   templateVersion: {
     contentOwnerMembershipId: string;
@@ -96,7 +108,7 @@ export async function getPublicTeamFunnelPage(slug: string): Promise<TeamFunnelP
           affiliate: { select: { code: true, isActive: true } },
         },
       },
-      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, seminarOwnerMembershipId: true, form: { select: { slug: true, isActive: true } } } },
+      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, seminarOwnerMembershipId: true, form: { select: { id: true, slug: true, isActive: true, fields: true, submitLabel: true, successMessage: true } } } },
       templateVersion: {
         select: { contentOwnerMembershipId: true, productSlots: { include: { product: { select: { id: true, checkoutUrl: true } } } } },
       },
@@ -130,7 +142,9 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
   }
 
   const referralCode = page.promoter.affiliate?.isActive ? page.promoter.affiliate.code : null;
-  const registrationHref = withReferral(`/form/${page.live.form.slug}`, referralCode);
+  // Registration stays on this B-branded page so the browser Referer remains
+  // the server-owned page slug used to resolve A/B attribution on submit.
+  const registrationHref = "#registration-heading";
   const profile = resolveTeamFunnelPartnerProfile({
     pageId: page.id,
     vendorId: page.vendorId,
@@ -190,10 +204,17 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
         referralCode,
       },
       webinar: {
+        id: page.live.id,
         title: page.live.title,
         startsAt: page.live.scheduledAt.toISOString(),
         playbackHref: `/live/${page.live.slug}`,
         registrationHref,
+        registration: {
+          formId: page.live.form.id,
+          fields: normalizeFormFields(page.live.form.fields),
+          submitLabel: page.live.form.submitLabel,
+          successMessage: page.live.form.successMessage,
+        },
       },
       productSlots: slots.filter((slot) => slot.url).map((slot) => ({
         slotKey: slot.slotKey,
@@ -241,8 +262,21 @@ function isActiveMembership(member: PublicMembership) {
   return member.status === "ACTIVE" && member.leftAt === null && member.vendorMember.status === "active" && member.vendorMember.deactivatedAt === null;
 }
 
-function withReferral(path: string, referralCode: string | null) {
-  return referralCode ? `${path}?ref=${encodeURIComponent(referralCode)}` : path;
+function normalizeFormFields(fields: unknown) {
+  if (!Array.isArray(fields)) return [];
+  return fields.flatMap((field) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) return [];
+    const value = field as Record<string, unknown>;
+    const key = typeof value.key === "string" ? value.key : "";
+    const label = typeof value.label === "string" ? value.label : "";
+    if (!key || !label) return [];
+    return [{
+      key,
+      label,
+      type: typeof value.type === "string" ? value.type : "text",
+      required: Boolean(value.required),
+    }];
+  });
 }
 
 function parseSafePublicHref(value: string | null | undefined) {

@@ -303,7 +303,9 @@ function versionData({
     createdByMemberId: actor.vendorMemberId,
     ...content,
     fieldLocks: {
-      create: lockedFields.map((field) => ({ vendorId: actor.vendorId, field, lockedByMemberId: actor.vendorMemberId })),
+      // The parent version supplies this relation's vendor through its
+      // composite key; nested create input must not repeat `vendorId`.
+      create: lockedFields.map((field) => ({ field, lockedByMemberId: actor.vendorMemberId })),
     },
   };
 }

@@ -29,7 +29,14 @@ function page(overrides: Partial<PublicTeamFunnelPageRecord> = {}): PublicTeamFu
       title: "A 的講座",
       scheduledAt: new Date("2026-07-17T10:00:00.000Z"),
       seminarOwnerMembershipId: "member-a",
-      form: { slug: "register-a", isActive: true },
+      form: {
+        id: "form-a",
+        slug: "register-a",
+        isActive: true,
+        fields: [{ key: "name", label: "姓名", type: "text", required: true }],
+        submitLabel: "送出報名",
+        successMessage: "已收到資料",
+      },
     },
     templateVersion: {
       contentOwnerMembershipId: "member-a",
@@ -67,10 +74,10 @@ describe("public team funnel page resolver", () => {
         partner: { name: "B 夥伴", email: "b@example.test", referralCode: "B-CODE" },
         webinar: {
           title: "A 的講座",
-          registrationHref: "/form/register-a?ref=B-CODE",
+          registrationHref: "#registration-heading",
           playbackHref: "/live/webinar-a",
         },
-        cta: { href: "/form/register-a?ref=B-CODE" },
+        cta: { href: "#registration-heading" },
       },
     });
     expect(result.page?.productSlots).toContainEqual({ slotKey: "main_product", offerLabel: "主打方案", url: "https://shop.example.test/b" });
@@ -101,6 +108,6 @@ describe("public team funnel page resolver", () => {
   it("rejects browser-ambiguous relative CTA URLs", () => {
     const result = prepareTeamFunnelPublicPage(page({ ctaUrl: "/\\\\attacker.example.test/collect" }));
 
-    expect(result.page?.cta.href).toBe("/form/register-a?ref=B-CODE");
+    expect(result.page?.cta.href).toBe("#registration-heading");
   });
 });
