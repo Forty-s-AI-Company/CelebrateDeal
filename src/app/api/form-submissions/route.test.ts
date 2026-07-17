@@ -82,8 +82,20 @@ describe("team lead attribution", () => {
     const response = await POST(jsonRequest({ formId: "form-1", payload: { name: "Lead", email: "lead@example.test" } }));
 
     await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true });
+    expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=submission-existing");
     expect(db.formSubmission.create).not.toHaveBeenCalled();
     expect(db.teamLeadAttribution.upsert).not.toHaveBeenCalled();
+  });
+
+  it("stores the created registration ID in a short-lived HttpOnly cookie", async () => {
+    const response = await POST(jsonRequest({ formId: "form-1", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    const cookies = response.headers.getSetCookie().join("\n");
+    expect(cookies).toContain("celebratedeal_form_submission=submission-1");
+    expect(cookies).toContain("HttpOnly");
+    expect(cookies).toContain("Secure");
+    expect(cookies).toContain("SameSite=lax");
+    expect(cookies).toContain("Max-Age=1800");
   });
 
   it("does not attribute a forged cross-tenant page", async () => {

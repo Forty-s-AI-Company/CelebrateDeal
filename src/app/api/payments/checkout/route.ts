@@ -12,6 +12,8 @@ const CheckoutRequest = z.object({
   referralCode: z.string().optional(),
 });
 
+const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+
 function orderNumber() {
   const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -48,6 +50,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
   }
 
+  const cookieSubmissionId = formSubmissionIdFromRequest(request);
+  const formSubmission = cookieSubmissionId
+    ? await db.formSubmission.findFirst({
+        where: { id: cookieSubmissionId, form: { vendorId: parsed.data.vendorId } },
+        select: { id: true },
+      })
+    : null;
+  const formSubmissionId = formSubmission?.id;
+  const transactionMetadata = {
+    productId: parsed.data.productId,
+    productName: product.name,
+    referralCode: parsed.data.referralCode,
+    ...(formSubmissionId ? { formSubmissionId } : {}),
+  };
+
   const order = orderNumber();
   const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   const transaction = await db.paymentTransaction.create({
@@ -60,11 +77,7 @@ export async function POST(request: Request) {
       netAmountCents: product.priceCents,
       currency: product.currency,
       status: "pending",
-      metadata: {
-        productId: parsed.data.productId,
-        productName: product.name,
-        referralCode: parsed.data.referralCode,
-      },
+      metadata: transactionMetadata,
     },
   });
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
@@ -88,9 +101,7 @@ export async function POST(request: Request) {
     where: { id: transaction.id },
     data: {
       metadata: {
-        productId: parsed.data.productId,
-        productName: product.name,
-        referralCode: parsed.data.referralCode,
+        ...transactionMetadata,
         checkoutSession: {
           provider: checkoutSession.provider,
           mode: checkoutSession.mode,
@@ -115,4 +126,12 @@ export async function POST(request: Request) {
     nextAction: checkoutSession.nextAction,
     externalRequired: checkoutSession.externalRequired ?? false,
   });
+}
+
+function formSubmissionIdFromRequest(request: Request) {
+  const cookie = request.headers.get("cookie");
+  if (!cookie) return null;
+
+  const value = cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_COOKIE}=`))?.slice(FORM_SUBMISSION_COOKIE.length + 1);
+  return value && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : null;
 }

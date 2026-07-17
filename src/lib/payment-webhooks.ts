@@ -33,8 +33,12 @@ function monthKeyFromDate(date: Date) {
   return date.toISOString().slice(0, 7);
 }
 
-function formSubmissionIdFromMetadata(payload: PaymentWebhookPayloadInput) {
-  const formSubmissionId = payload.metadata?.formSubmissionId;
+function metadataObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function formSubmissionIdFromMetadata(metadata: unknown) {
+  const formSubmissionId = metadataObject(metadata).formSubmissionId;
   return typeof formSubmissionId === "string" && formSubmissionId.length > 0 ? formSubmissionId : null;
 }
 
@@ -176,6 +180,16 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
   const gatewayFeeCents = payload.gatewayFeeCents || existingTransaction?.gatewayFeeCents || 0;
   const platformFeeCents = payload.platformFeeCents || existingTransaction?.platformFeeCents || 0;
   const netAmountCents = payload.netAmountCents ?? existingTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
+  const existingMetadata = metadataObject(existingTransaction?.metadata);
+  const payloadMetadata = metadataObject(payload.metadata);
+  const formSubmissionId = payload.eventType === "paid"
+    ? formSubmissionIdFromMetadata(payloadMetadata) ?? formSubmissionIdFromMetadata(existingMetadata)
+    : formSubmissionIdFromMetadata(existingMetadata);
+  const transactionMetadata = {
+    ...existingMetadata,
+    ...payloadMetadata,
+    ...(formSubmissionId ? { formSubmissionId } : {}),
+  } as Prisma.InputJsonObject;
 
   const transaction = await db.$transaction(async (tx) => {
     const savedTransaction = existingTransaction
@@ -192,7 +206,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             currency: payload.currency,
             status: payload.eventType === "paid" ? "paid" : payload.eventType,
             occurredAt,
-            metadata: (payload.metadata ?? {}) as Prisma.InputJsonObject,
+            metadata: transactionMetadata,
           },
         })
       : await tx.paymentTransaction.create({
@@ -209,7 +223,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             currency: payload.currency,
             status: payload.eventType === "paid" ? "paid" : payload.eventType,
             occurredAt,
-            metadata: (payload.metadata ?? {}) as Prisma.InputJsonObject,
+            metadata: transactionMetadata,
           },
         });
 
@@ -239,8 +253,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
       }
     }
 
-    const formSubmissionId = payload.eventType === "paid" ? formSubmissionIdFromMetadata(payload) : null;
-    if (formSubmissionId) {
+    if (payload.eventType === "paid" && formSubmissionId) {
       const leadAttribution = await tx.teamLeadAttribution.findFirst({
         where: { vendorId: vendor.id, formSubmissionId },
       });
