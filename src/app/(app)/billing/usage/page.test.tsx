@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   usageRecordFindMany: vi.fn(),
   subscriptionFindFirst: vi.fn(),
   transactionFindMany: vi.fn(),
+  refundRecordAggregate: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendor: mocks.requireVendor }));
@@ -16,6 +17,7 @@ vi.mock("@/lib/db", () => ({
     usageRecord: { findMany: mocks.usageRecordFindMany },
     vendorSubscription: { findFirst: mocks.subscriptionFindFirst },
     paymentTransaction: { findMany: mocks.transactionFindMany },
+    refundRecord: { aggregate: mocks.refundRecordAggregate },
   }),
 }));
 
@@ -31,6 +33,14 @@ const transactions = [
   { id: "pending", vendorId: "vendor-current", status: "pending", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 200000, refundedAmountCents: 0, platformFeeCents: 10000 },
   { id: "previous-month", vendorId: "vendor-current", status: "refunded", occurredAt: new Date("2026-06-30T23:59:59.999Z"), grossAmountCents: 300000, refundedAmountCents: 0, platformFeeCents: 15000 },
   { id: "next-month", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-08-01T00:00:00.000Z"), grossAmountCents: 400000, refundedAmountCents: 0, platformFeeCents: 20000 },
+];
+
+const refunds = [
+  { id: "partial-refund", vendorId: "vendor-current", monthKey: "2026-07", status: "processed", platformFeeRefundCents: 120 },
+  { id: "full-refund", vendorId: "vendor-current", monthKey: "2026-07", status: "processed", platformFeeRefundCents: 100 },
+  { id: "other-vendor-refund", vendorId: "vendor-other", monthKey: "2026-07", status: "processed", platformFeeRefundCents: 5000 },
+  { id: "previous-month-refund", vendorId: "vendor-current", monthKey: "2026-06", status: "processed", platformFeeRefundCents: 5000 },
+  { id: "pending-refund", vendorId: "vendor-current", monthKey: "2026-07", status: "pending", platformFeeRefundCents: 5000 },
 ];
 
 const previousMonthRecord = {
@@ -75,6 +85,17 @@ beforeEach(() => {
       transaction.occurredAt < where.occurredAt.lt,
     ),
   );
+  mocks.refundRecordAggregate.mockImplementation(async ({ where }) => ({
+    _sum: {
+      platformFeeRefundCents: refunds
+        .filter((refund) =>
+          refund.vendorId === where.vendorId &&
+          refund.monthKey === where.monthKey &&
+          refund.status === where.status,
+        )
+        .reduce((sum, refund) => sum + refund.platformFeeRefundCents, 0),
+    },
+  }));
 });
 
 afterEach(() => {
@@ -96,6 +117,15 @@ describe("/billing/usage route", () => {
         },
       },
       orderBy: { occurredAt: "desc" },
+    });
+  });
+
+  it("queries processed platform fee returns for only the current vendor and month", async () => {
+    await BillingUsagePage();
+
+    expect(mocks.refundRecordAggregate).toHaveBeenCalledWith({
+      where: { vendorId: currentVendor.id, monthKey: "2026-07", status: "processed" },
+      _sum: { platformFeeRefundCents: true },
     });
   });
 
@@ -122,15 +152,26 @@ describe("/billing/usage route", () => {
     expect(html).toContain("上月紀錄");
   });
 
-  it("renders net revenue after partial, full, and excessive refunds from only matching transactions", async () => {
+  it("deducts partial and full processed refund platform fees without including other vendors or months", async () => {
+    const html = renderToStaticMarkup(await BillingUsagePage());
+
+    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$8<\/p>/);
+  });
+
+  it("renders net revenue and never lets excessive processed refund platform fees make the estimate negative", async () => {
+    mocks.refundRecordAggregate.mockResolvedValueOnce({
+      _sum: { platformFeeRefundCents: 1120 },
+    });
+
     const html = renderToStaticMarkup(await BillingUsagePage());
 
     expect(html).toContain("本月成交額");
     expect(html).toContain("預估交易服務費");
     expect(html).toMatch(/本月成交額<\/p><p[^>]*>\$140<\/p>/);
-    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$10<\/p>/);
+    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$0<\/p>/);
     expect(html).not.toContain("$154");
     expect(html).not.toContain("$10,140");
     expect(html).not.toContain("$510");
+    expect(html).not.toContain("-$");
   });
 });
