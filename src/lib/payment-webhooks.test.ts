@@ -8,6 +8,7 @@ import { processDueWebhookRetries } from "@/lib/webhook-retry";
 const createdVendorIds: string[] = [];
 const createdBillingPlanIds: string[] = [];
 const createdWebhookEventIds: string[] = [];
+const createdUserIds: string[] = [];
 
 function webhookPayloadJson(payload: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify({ normalized: payload })) as Prisma.InputJsonValue;
@@ -51,11 +52,103 @@ async function createFixture(suffix: string) {
   return { db, vendor, affiliate };
 }
 
+async function createTeamLeadAttributionFixture(vendorId: string, suffix: string) {
+  const db = getDb();
+  const user = await db.user.create({
+    data: {
+      name: `Webhook Attribution User ${suffix}`,
+      email: `webhook-attribution-${suffix}@example.com`,
+      passwordHash: "test",
+    },
+  });
+  createdUserIds.push(user.id);
+
+  const [vendorMember, team] = await Promise.all([
+    db.vendorMember.create({ data: { vendorId, userId: user.id } }),
+    db.salesTeam.create({ data: { vendorId, name: `Webhook Attribution Team ${suffix}`, slug: `webhook-attribution-team-${suffix}` } }),
+  ]);
+  const membership = await db.teamMembership.create({
+    data: { vendorId, teamId: team.id, vendorMemberId: vendorMember.id },
+  });
+  const template = await db.teamFunnelTemplate.create({
+    data: { vendorId, teamId: team.id, name: `Webhook Attribution Template ${suffix}` },
+  });
+  const templateVersion = await db.teamFunnelTemplateVersion.create({
+    data: {
+      vendorId,
+      teamId: team.id,
+      templateId: template.id,
+      version: 1,
+      contentOwnerMembershipId: membership.id,
+      createdByMemberId: vendorMember.id,
+      headline: "Headline",
+      ctaLabel: "Register",
+    },
+  });
+  const page = await db.partnerFunnelPage.create({
+    data: {
+      vendorId,
+      teamId: team.id,
+      templateVersionId: templateVersion.id,
+      promoterMembershipId: membership.id,
+      contentOwnerMembershipId: membership.id,
+      slug: `webhook-attribution-page-${suffix}`,
+      headline: "Headline",
+      ctaLabel: "Register",
+    },
+  });
+  const form = await db.registrationForm.create({
+    data: {
+      vendorId,
+      name: `Webhook Attribution Form ${suffix}`,
+      slug: `webhook-attribution-form-${suffix}`,
+      headline: "Register",
+      fields: [],
+    },
+  });
+  const formSubmission = await db.formSubmission.create({
+    data: {
+      formId: form.id,
+      name: "Webhook Attribution Lead",
+      email: `webhook-attribution-lead-${suffix}@example.com`,
+    },
+  });
+  const leadAttribution = await db.teamLeadAttribution.create({
+    data: {
+      vendorId,
+      teamId: team.id,
+      formSubmissionId: formSubmission.id,
+      pageId: page.id,
+      leaderMembershipId: membership.id,
+      promoterMembershipId: membership.id,
+      contentOwnerMembershipId: membership.id,
+      seminarOwnerMembershipId: membership.id,
+      source: "REFERRAL",
+      referralCode: `TEAM${suffix}`.toUpperCase(),
+    },
+  });
+
+  return { formSubmission, leadAttribution };
+}
+
 afterEach(async () => {
   const db = getDb();
+  const vendorIds = createdVendorIds.splice(0);
+  const billingPlanIds = createdBillingPlanIds.splice(0);
+  const userIds = createdUserIds.splice(0);
   await db.webhookEvent.deleteMany({ where: { id: { in: createdWebhookEventIds.splice(0) } } });
-  await db.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
-  await db.billingPlan.deleteMany({ where: { id: { in: createdBillingPlanIds.splice(0) } } });
+  await db.teamConversionAttribution.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.teamLeadAttribution.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.partnerFunnelPage.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.teamFunnelTemplateVersion.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.teamFunnelTemplate.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.teamMembership.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.salesTeam.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.registrationForm.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.vendorMember.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.vendor.deleteMany({ where: { id: { in: vendorIds } } });
+  await db.billingPlan.deleteMany({ where: { id: { in: billingPlanIds } } });
+  await db.user.deleteMany({ where: { id: { in: userIds } } });
 });
 
 describe("payment webhook processing", () => {
@@ -96,6 +189,68 @@ describe("payment webhook processing", () => {
 
     const transactions = await db.paymentTransaction.findMany({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
     expect(transactions).toHaveLength(1);
+  });
+
+  it("snapshots a same-vendor lead attribution for paid webhooks and deduplicates retries", async () => {
+    const suffix = `${Date.now()}-team-conversion`;
+    const { db, vendor } = await createFixture(suffix);
+    const { formSubmission, leadAttribution } = await createTeamLeadAttributionFixture(vendor.id, suffix);
+    const payload = {
+      provider: "demo",
+      eventId: `evt-team-conversion-${suffix}`,
+      eventType: "paid" as const,
+      vendorId: vendor.id,
+      orderNumber: `ORDER-TEAM-CONVERSION-${suffix}`,
+      grossAmountCents: 100000,
+      metadata: { formSubmissionId: formSubmission.id },
+    };
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse(payload));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-team-conversion-retry-${suffix}` }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
+    const attributions = await db.teamConversionAttribution.findMany({ where: { vendorId: vendor.id, paymentTransactionId: transaction.id } });
+    expect(attributions).toHaveLength(1);
+    expect(attributions[0]).toMatchObject({
+      vendorId: vendor.id,
+      paymentTransactionId: transaction.id,
+      teamId: leadAttribution.teamId,
+      leadAttributionId: leadAttribution.id,
+      pageId: leadAttribution.pageId,
+      leaderMembershipId: leadAttribution.leaderMembershipId,
+      promoterMembershipId: leadAttribution.promoterMembershipId,
+      contentOwnerMembershipId: leadAttribution.contentOwnerMembershipId,
+      seminarOwnerMembershipId: leadAttribution.seminarOwnerMembershipId,
+      source: leadAttribution.source,
+      referralCode: leadAttribution.referralCode,
+    });
+  });
+
+  it("does not attribute cross-vendor or non-payment webhooks", async () => {
+    const suffix = `${Date.now()}-team-rejected`;
+    const { db, vendor: leadVendor } = await createFixture(`${suffix}-lead`);
+    const { vendor: paymentVendor } = await createFixture(`${suffix}-payment`);
+    const { formSubmission } = await createTeamLeadAttributionFixture(leadVendor.id, suffix);
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-cross-vendor-${suffix}`,
+      eventType: "paid",
+      vendorId: paymentVendor.id,
+      orderNumber: `ORDER-CROSS-VENDOR-${suffix}`,
+      grossAmountCents: 100000,
+      metadata: { formSubmissionId: formSubmission.id },
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-refund-no-attribution-${suffix}`,
+      eventType: "refunded",
+      vendorId: leadVendor.id,
+      orderNumber: `ORDER-REFUND-NO-ATTRIBUTION-${suffix}`,
+      metadata: { formSubmissionId: formSubmission.id },
+    }));
+
+    expect(await db.teamConversionAttribution.count({ where: { vendorId: { in: [leadVendor.id, paymentVendor.id] } } })).toBe(0);
   });
 
   it("processes a webhook identified by vendorId", async () => {
