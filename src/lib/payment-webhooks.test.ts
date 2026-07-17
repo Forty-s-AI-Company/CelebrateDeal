@@ -116,6 +116,55 @@ describe("payment webhook processing", () => {
     expect(transaction).not.toBeNull();
   });
 
+  it("rejects inconsistent vendor identifiers before updating a transaction", async () => {
+    const suffix = `${Date.now()}-vendor-mismatch`;
+    const { db, vendor: vendorById } = await createFixture(`${suffix}-id`);
+    const { vendor: vendorBySlug } = await createFixture(`${suffix}-slug`);
+    const orderNumber = `ORDER-VENDOR-MISMATCH-${suffix}`;
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-vendor-mismatch-initial-${suffix}`,
+      eventType: "paid",
+      vendorId: vendorById.id,
+      orderNumber,
+      grossAmountCents: 100000,
+    }));
+    const payload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-vendor-mismatch-${suffix}`,
+      eventType: "paid",
+      vendorId: vendorById.id,
+      vendorSlug: vendorBySlug.slug,
+      orderNumber,
+      grossAmountCents: 200000,
+    });
+
+    await expect(processPaymentWebhook(payload)).rejects.toThrow("付款 webhook 商家識別不一致");
+
+    const transactions = await db.paymentTransaction.findMany({ where: { orderNumber: payload.orderNumber } });
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.grossAmountCents).toBe(100000);
+  });
+
+  it("rejects dual vendor identifiers when either identifier cannot be resolved", async () => {
+    const suffix = `${Date.now()}-vendor-missing`;
+    const { db, vendor } = await createFixture(suffix);
+    const payload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-vendor-missing-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      vendorSlug: `missing-vendor-${suffix}`,
+      orderNumber: `ORDER-VENDOR-MISSING-${suffix}`,
+      grossAmountCents: 100000,
+    });
+
+    await expect(processPaymentWebhook(payload)).rejects.toThrow("付款 webhook 商家識別無效");
+
+    const transactions = await db.paymentTransaction.findMany({ where: { orderNumber: payload.orderNumber } });
+    expect(transactions).toHaveLength(0);
+  });
+
   it("does not create duplicate refund records for the same refund event", async () => {
     const suffix = `${Date.now()}b`;
     const { db, vendor } = await createFixture(suffix);
