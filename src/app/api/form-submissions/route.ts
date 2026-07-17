@@ -4,6 +4,14 @@ import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  attributionCookieFromRequest,
+  recordLeadAttribution,
+  referralCodeFromRequest,
+  resolveReferral,
+  resolveTeamFunnelAttribution,
+  sourcePageSlugFromRequest,
+} from "@/lib/team-funnel-attribution";
 
 const SubmissionPayload = z.object({
   formId: z.string().min(1),
@@ -42,7 +50,7 @@ export async function POST(request: Request) {
 
   if (parsed.data.liveId) {
     const live = await getDb().live.findFirst({
-      where: { id: parsed.data.liveId, vendorId: form.vendorId },
+      where: { id: parsed.data.liveId, vendorId: form.vendorId, formId: form.id },
       select: { id: true },
     });
     if (!live) {
@@ -65,7 +73,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Submission blocked" }, { status: 403 });
   }
 
-  await getDb().formSubmission.create({
+  const duplicate = await getDb().formSubmission.findFirst({
+    where: { formId: form.id, liveId: parsed.data.liveId ?? null, email },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true);
+  }
+
+  const referral = await resolveReferral({
+    vendorId: form.vendorId,
+    queryCode: referralCodeFromRequest(request),
+    legacyCode: parsed.data.referralCode,
+    cookie: attributionCookieFromRequest(request),
+  });
+  const attribution = await resolveTeamFunnelAttribution({
+    vendorId: form.vendorId,
+    liveId: parsed.data.liveId ?? null,
+    sourcePageSlug: sourcePageSlugFromRequest(request),
+    referral,
+  });
+
+  const submission = await getDb().formSubmission.create({
     data: {
       formId: parsed.data.formId,
       liveId: parsed.data.liveId ?? null,
@@ -76,6 +105,7 @@ export async function POST(request: Request) {
       answers: parsed.data.payload as Prisma.InputJsonValue,
     },
   });
+  await recordLeadAttribution(submission.id, attribution);
 
   if (parsed.data.liveId) {
     await getDb().analyticsEvent.create({
@@ -84,29 +114,32 @@ export async function POST(request: Request) {
         liveId: parsed.data.liveId,
         visitorId: email,
         eventType: "lead_submit",
-        payload: { formId: parsed.data.formId, ref: parsed.data.referralCode ?? null },
+        payload: { formId: parsed.data.formId, ref: referral?.code ?? null },
       },
     });
   }
 
-  if (parsed.data.referralCode) {
+  if (referral) {
     await getDb().affiliateClick.updateMany({
       where: {
         vendorId: form.vendorId,
-        referralCode: parsed.data.referralCode.toUpperCase(),
+        referralCode: referral.code,
         convertedAt: null,
       },
       data: { convertedAt: new Date() },
     });
   }
 
-  if (isNativeFormPost && parsed.data.redirectTo && isSameOriginRedirect(parsed.data.redirectTo, request.url)) {
-    const redirectUrl = new URL(parsed.data.redirectTo, request.url);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, false);
+}
+
+function submissionResponse(request: Request, redirectTo: string | undefined, isNativeFormPost: boolean, duplicate: boolean) {
+  if (isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)) {
+    const redirectUrl = new URL(redirectTo, request.url);
     redirectUrl.searchParams.set("submitted", "1");
     return NextResponse.redirect(redirectUrl, { status: 303 });
   }
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(duplicate ? { duplicate: true } : {}) });
 }
 
 function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
