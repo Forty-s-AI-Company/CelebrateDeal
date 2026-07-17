@@ -34,11 +34,30 @@ function monthKeyFromDate(date: Date) {
 }
 
 async function findVendor(payload: PaymentWebhookPayloadInput) {
+  const db = getDb();
+
+  if (payload.vendorId && payload.vendorSlug) {
+    const [vendorById, vendorBySlug] = await Promise.all([
+      db.vendor.findUnique({ where: { id: payload.vendorId } }),
+      db.vendor.findUnique({ where: { slug: payload.vendorSlug } }),
+    ]);
+
+    if (!vendorById || !vendorBySlug) {
+      throw new Error("付款 webhook 商家識別無效：vendorId 或 vendorSlug 找不到對應商家。");
+    }
+
+    if (vendorById.id !== vendorBySlug.id) {
+      throw new Error("付款 webhook 商家識別不一致：vendorId 與 vendorSlug 必須對應同一商家。");
+    }
+
+    return vendorById;
+  }
+
   if (payload.vendorId) {
-    return getDb().vendor.findUnique({ where: { id: payload.vendorId } });
+    return db.vendor.findUnique({ where: { id: payload.vendorId } });
   }
   if (payload.vendorSlug) {
-    return getDb().vendor.findUnique({ where: { slug: payload.vendorSlug } });
+    return db.vendor.findUnique({ where: { slug: payload.vendorSlug } });
   }
   throw new Error("付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。");
 }
