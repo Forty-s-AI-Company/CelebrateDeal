@@ -195,20 +195,34 @@ describe("payment webhook processing", () => {
     const suffix = `${Date.now()}-team-conversion`;
     const { db, vendor } = await createFixture(suffix);
     const { formSubmission, leadAttribution } = await createTeamLeadAttributionFixture(vendor.id, suffix);
+    const orderNumber = `ORDER-TEAM-CONVERSION-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { formSubmissionId: formSubmission.id },
+      },
+    });
     const payload = {
       provider: "demo",
       eventId: `evt-team-conversion-${suffix}`,
       eventType: "paid" as const,
       vendorId: vendor.id,
-      orderNumber: `ORDER-TEAM-CONVERSION-${suffix}`,
+      orderNumber,
       grossAmountCents: 100000,
-      metadata: { formSubmissionId: formSubmission.id },
     };
 
     await processPaymentWebhook(PaymentWebhookPayload.parse(payload));
     await processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-team-conversion-retry-${suffix}` }));
 
     const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
+    expect(transaction.metadata).toMatchObject({ formSubmissionId: formSubmission.id });
     const attributions = await db.teamConversionAttribution.findMany({ where: { vendorId: vendor.id, paymentTransactionId: transaction.id } });
     expect(attributions).toHaveLength(1);
     expect(attributions[0]).toMatchObject({

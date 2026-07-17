@@ -13,6 +13,9 @@ import {
   sourcePageSlugFromRequest,
 } from "@/lib/team-funnel-attribution";
 
+const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
+
 const SubmissionPayload = z.object({
   formId: z.string().min(1),
   liveId: z.string().nullable().optional(),
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
     select: { id: true },
   });
   if (duplicate) {
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true);
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, duplicate.id);
   }
 
   const referral = await resolveReferral({
@@ -130,16 +133,34 @@ export async function POST(request: Request) {
     });
   }
 
-  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, false);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, false, submission.id);
 }
 
-function submissionResponse(request: Request, redirectTo: string | undefined, isNativeFormPost: boolean, duplicate: boolean) {
-  if (isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)) {
-    const redirectUrl = new URL(redirectTo, request.url);
-    redirectUrl.searchParams.set("submitted", "1");
-    return NextResponse.redirect(redirectUrl, { status: 303 });
-  }
-  return NextResponse.json({ ok: true, ...(duplicate ? { duplicate: true } : {}) });
+function submissionResponse(
+  request: Request,
+  redirectTo: string | undefined,
+  isNativeFormPost: boolean,
+  duplicate: boolean,
+  formSubmissionId: string,
+) {
+  const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
+    ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
+    : NextResponse.json({ ok: true, ...(duplicate ? { duplicate: true } : {}) });
+
+  response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: new URL(request.url).protocol === "https:",
+    path: "/",
+    maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
+  });
+  return response;
+}
+
+function withSubmittedSearchParam(redirectTo: string, requestUrl: string) {
+  const redirectUrl = new URL(redirectTo, requestUrl);
+  redirectUrl.searchParams.set("submitted", "1");
+  return redirectUrl;
 }
 
 function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
