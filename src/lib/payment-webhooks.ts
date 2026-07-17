@@ -33,6 +33,11 @@ function monthKeyFromDate(date: Date) {
   return date.toISOString().slice(0, 7);
 }
 
+function formSubmissionIdFromMetadata(payload: PaymentWebhookPayloadInput) {
+  const formSubmissionId = payload.metadata?.formSubmissionId;
+  return typeof formSubmissionId === "string" && formSubmissionId.length > 0 ? formSubmissionId : null;
+}
+
 async function findVendor(payload: PaymentWebhookPayloadInput) {
   const db = getDb();
 
@@ -230,6 +235,42 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             refundReason: payload.refundReason,
             refundedAt: occurredAt,
           },
+        });
+      }
+    }
+
+    const formSubmissionId = payload.eventType === "paid" ? formSubmissionIdFromMetadata(payload) : null;
+    if (formSubmissionId) {
+      const leadAttribution = await tx.teamLeadAttribution.findFirst({
+        where: { vendorId: vendor.id, formSubmissionId },
+      });
+
+      if (leadAttribution) {
+        const attributionSnapshot = {
+          teamId: leadAttribution.teamId,
+          leadAttributionId: leadAttribution.id,
+          pageId: leadAttribution.pageId,
+          leaderMembershipId: leadAttribution.leaderMembershipId,
+          promoterMembershipId: leadAttribution.promoterMembershipId,
+          contentOwnerMembershipId: leadAttribution.contentOwnerMembershipId,
+          seminarOwnerMembershipId: leadAttribution.seminarOwnerMembershipId,
+          source: leadAttribution.source,
+          referralCode: leadAttribution.referralCode,
+        };
+
+        await tx.teamConversionAttribution.upsert({
+          where: {
+            vendorId_paymentTransactionId: {
+              vendorId: vendor.id,
+              paymentTransactionId: savedTransaction.id,
+            },
+          },
+          create: {
+            vendorId: vendor.id,
+            paymentTransactionId: savedTransaction.id,
+            ...attributionSnapshot,
+          },
+          update: attributionSnapshot,
         });
       }
     }
