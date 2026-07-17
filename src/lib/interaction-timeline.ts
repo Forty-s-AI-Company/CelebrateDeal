@@ -1,9 +1,19 @@
+type TimedInteractionEvent = {
+  triggerSec: number;
+};
+
 /**
  * Returns a new event sequence with one item moved to a different position.
- * Event objects are intentionally not cloned so every event property remains
- * unchanged while only the sequence is updated.
+ *
+ * The timeline's existing trigger times are treated as ordered slots. After an
+ * event moves, every event receives the slot for its new position so the
+ * editor sequence remains the same as the sequence used for playback.
  */
-export function reorderInteractionEvents<T>(events: readonly T[], fromIndex: number, toIndex: number): T[] {
+export function reorderInteractionEvents<T extends TimedInteractionEvent>(
+  events: readonly T[],
+  fromIndex: number,
+  toIndex: number,
+): T[] {
   if (
     fromIndex < 0 ||
     fromIndex >= events.length ||
@@ -17,5 +27,7 @@ export function reorderInteractionEvents<T>(events: readonly T[], fromIndex: num
   const reordered = [...events];
   const [event] = reordered.splice(fromIndex, 1);
   reordered.splice(toIndex, 0, event);
-  return reordered;
+
+  const triggerSecSlots = events.map((item) => item.triggerSec).sort((first, second) => first - second);
+  return reordered.map((item, index) => ({ ...item, triggerSec: triggerSecSlots[index] }));
 }
