@@ -1042,10 +1042,10 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await leaderPage.getByLabel("模板名稱").fill(fixture.scenario.templateName);
     await leaderPage.getByLabel("原始頁網址（slug）").fill(fixture.scenario.sourceSlug);
     await leaderPage.getByLabel("綁定 webinar").selectOption(fixture.seminar.id);
-    await leaderPage.getByLabel("主標題").first().fill("TEST ONLY A 模板主標題");
-    await leaderPage.getByLabel("副標題").fill("TEST ONLY 可由 B 編輯的副標題");
-    await leaderPage.getByLabel("內容說明").fill("TEST ONLY 鎖定的內容說明");
-    await leaderPage.getByLabel("CTA 按鈕文字").fill("TEST ONLY 立即參加");
+    await leaderPage.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY A 模板主標題");
+    await leaderPage.getByRole("textbox", { name: "副標題" }).fill("TEST ONLY 可由 B 編輯的副標題");
+    await leaderPage.getByRole("textbox", { name: "內容說明" }).fill("TEST ONLY 鎖定的內容說明");
+    await leaderPage.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY 立即參加");
     await leaderPage.locator('input[name="lockedFields"][value="BODY"]').check();
     await leaderPage.locator('select[name="product_main_product"]').selectOption(fixture.product.id);
     await leaderPage.getByRole("button", { name: "建立原始頁" }).click();
@@ -1093,14 +1093,20 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     // though production browsers normally block this required field first.
     await partnerPage.locator('input[name="headline"]').evaluate((input) => input.removeAttribute("required"));
     await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
-    await expect(partnerPage.getByRole("alert")).toContainText("主標題與 CTA 按鈕文字不可留白");
+    await expect(partnerPage.getByRole("alert").filter({ hasText: "主標題與 CTA 按鈕文字不可留白" })).toBeVisible();
     await partnerPage.getByLabel("主標題").fill("TEST ONLY B 的公開主標題");
     await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
     await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
     await partnerPage.getByRole("button", { name: "發布公開頁" }).click();
-    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已發布");
+    await expect(partnerPage.getByRole("status").filter({ hasText: "夥伴頁已發布" })).toBeVisible();
 
     const publicPage = track(await partnerContext.newPage(), "public-team-funnel");
+    let formSubmissionReferer: string | undefined;
+    publicPage.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/form-submissions") {
+        formSubmissionReferer = request.headers().referer;
+      }
+    });
     await publicPage.goto(`/p/${quickSlug}`);
     await expect(publicPage.getByRole("heading", { name: "TEST ONLY B 的公開主標題" })).toBeVisible();
     await expect(publicPage.getByText(`由 ${TEAM_FUNNEL_TEST_ONLY.partner.name} 為您服務`)).toBeVisible();
@@ -1122,6 +1128,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await publicPage.getByLabel("Email").fill(registrationEmail);
     await publicPage.getByRole("button", { name: "TEST ONLY 送出報名" }).click();
     await expect(publicPage.getByText("TEST ONLY 已收到報名")).toBeVisible();
+    expect(formSubmissionReferer).toMatch(new RegExp(`/p/${quickSlug}$`));
     const submission = await db.formSubmission.findFirstOrThrow({
       where: { formId: fixture.form.id, liveId: fixture.seminar.id, email: registrationEmail },
     });
@@ -1162,7 +1169,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await expect(leaderPage.getByText(`/${quickSlug}`)).toBeVisible();
     await partnerPage.goto(`/team-performance?teamId=${fixture.team.id}`);
     await expect(partnerPage.getByText(`/${quickSlug}`)).toBeVisible();
-    await expect(partnerPage.getByText(`/${fixture.scenario.sourceSlug}`)).toHaveCount(0);
+    await expect(partnerPage.getByText(`/${fixture.scenario.sourceSlug}`, { exact: true })).toHaveCount(0);
     await partnerPage.setViewportSize({ width: 390, height: 844 });
     await partnerPage.goto(`/partner-pages/${quickPage.id}/edit`);
     await expect(partnerPage.getByRole("heading", { name: "編輯夥伴頁" })).toBeVisible();

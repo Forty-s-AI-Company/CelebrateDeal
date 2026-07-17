@@ -160,7 +160,11 @@ export async function createTeamFunnelFixture(db: PrismaClient, runKey: string) 
       ctaLabel: "TEST ONLY CTA",
     },
   });
-  const expiredShareCode = `tf1.${Buffer.from(JSON.stringify({ v: 1, audience: { type: "DIRECT_DOWNLINE" } })).toString("base64url")}.${"x".repeat(43)}`;
+  // The database enforces global token-hash uniqueness. Derive the otherwise
+  // inert entropy segment from this fixture run so retries and concurrent
+  // runs cannot collide with a leftover TEST ONLY expired-share record.
+  const expiredShareEntropy = createHash("sha256").update(`${key}:expired-share`, "utf8").digest("base64url");
+  const expiredShareCode = `tf1.${Buffer.from(JSON.stringify({ v: 1, audience: { type: "DIRECT_DOWNLINE" } })).toString("base64url")}.${expiredShareEntropy}`;
   await db.partnerFunnelPageShareSetting.create({
     data: {
       pageId: expiredSourcePage.id,
@@ -206,8 +210,20 @@ export async function createTeamFunnelFixture(db: PrismaClient, runKey: string) 
     /** The browser creates the original page/template versions and live share. */
     scenario: { templateName: TEAM_FUNNEL_TEST_ONLY.templateName, sourceSlug: `${TEAM_FUNNEL_TEST_ONLY.sourceSlug}-${suffix}` },
     async cleanup() {
-      // TEST ONLY: deleting the two tenant roots cascades solely to these fixture records.
-      await db.vendor.deleteMany({ where: { id: { in: [leaderVendor.id, outsiderVendor.id] } } });
+      // TEST ONLY: clear restrictive team references before removing the tenant
+      // roots. These records are all scoped to this fixture's unique vendors.
+      await db.$transaction([
+        db.teamConversionAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.teamClickAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.teamLeadAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.partnerFunnelPage.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.teamFunnelTemplate.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.live.deleteMany({ where: { vendorId: leaderVendor.id } }),
+        db.teamMembershipRelationship.deleteMany({ where: { teamId: team.id } }),
+        db.teamMembership.deleteMany({ where: { teamId: team.id } }),
+        db.salesTeam.deleteMany({ where: { id: team.id } }),
+        db.vendor.deleteMany({ where: { id: { in: [leaderVendor.id, outsiderVendor.id] } } }),
+      ]);
       await db.user.deleteMany({ where: { id: { in: [leader.id, partner.id, outsider.id] } } });
     },
   };

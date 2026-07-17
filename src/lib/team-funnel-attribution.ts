@@ -56,12 +56,27 @@ export function sourcePageSlugFromRequest(request: Request) {
   if (!referer) return null;
   try {
     const sourceUrl = new URL(referer);
-    if (sourceUrl.origin !== new URL(request.url).origin) return null;
+    if (!trustedRequestOrigins(request).has(sourceUrl.origin)) return null;
     const path = sourceUrl.pathname.split("/").filter(Boolean).at(-1);
     return path && /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(path) ? path.toLowerCase() : null;
   } catch {
     return null;
   }
+}
+
+function trustedRequestOrigins(request: Request) {
+  const origins = new Set([new URL(request.url).origin]);
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (configuredUrl) {
+    try {
+      origins.add(new URL(configuredUrl).origin);
+    } catch {
+      // A malformed deployment setting must not make a foreign Referer trusted.
+    }
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (forwardedHost) origins.add(`${request.headers.get("x-forwarded-proto") ?? "https"}://${forwardedHost}`);
+  return origins;
 }
 
 export function visitorIdFromRequest(request: Request) {
