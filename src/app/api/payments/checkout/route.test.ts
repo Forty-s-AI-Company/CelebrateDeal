@@ -67,6 +67,7 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1" }) }),
     }));
+    expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=lax");
   });
 
   it("ignores a cross-vendor or invalid submission cookie without blocking checkout", async () => {
@@ -78,6 +79,7 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 
   it("checks out normally when the attribution cookie is missing", async () => {
@@ -88,6 +90,7 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 
   it("ignores a malformed attribution cookie without blocking checkout", async () => {
@@ -98,5 +101,6 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 });

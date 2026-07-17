@@ -112,7 +112,7 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     ok: true,
     provider: checkoutSession.provider,
     orderNumber: order,
@@ -126,6 +126,18 @@ export async function POST(request: Request) {
     nextAction: checkoutSession.nextAction,
     externalRequired: checkoutSession.externalRequired ?? false,
   });
+
+  if (formSubmissionId) {
+    response.cookies.set(FORM_SUBMISSION_COOKIE, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: new URL(request.url).protocol === "https:",
+      path: "/",
+      maxAge: 0,
+    });
+  }
+
+  return response;
 }
 
 function formSubmissionIdFromRequest(request: Request) {
