@@ -39,10 +39,13 @@ export default async function BillingInvoicesPage() {
         </Card>
         <Card>
           <p className="text-sm font-medium text-slate-500">對帳匯出</p>
-          <button className="mt-3 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <a
+            href="/billing/invoices/export"
+            className="mt-3 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
             <Download size={16} />
             匯出 CSV
-          </button>
+          </a>
         </Card>
       </div>
 
