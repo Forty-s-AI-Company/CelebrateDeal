@@ -1,5 +1,6 @@
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
+import { monthRange } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -21,11 +22,19 @@ function UsageBar({ label, used, limit, unit }: { label: string; used: number; l
 
 export default async function BillingUsagePage() {
   const vendor = await requireVendor();
+  const { start, end } = monthRange(new Date().toISOString().slice(0, 7));
   const [limit, records, subscription, transactions] = await Promise.all([
     getDb().vendorUsageLimit.findUnique({ where: { vendorId: vendor.id }, include: { billingPlan: true } }),
     getDb().usageRecord.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 20 }),
     getDb().vendorSubscription.findFirst({ where: { vendorId: vendor.id, status: "active" }, include: { plan: true } }),
-    getDb().paymentTransaction.findMany({ where: { vendorId: vendor.id }, orderBy: { occurredAt: "desc" }, take: 5 }),
+    getDb().paymentTransaction.findMany({
+      where: {
+        vendorId: vendor.id,
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+        occurredAt: { gte: start, lt: end },
+      },
+      orderBy: { occurredAt: "desc" },
+    }),
   ]);
 
   const currentRecord = records[0];
