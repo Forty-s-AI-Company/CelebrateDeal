@@ -43,6 +43,7 @@ bash scripts/validate-local.sh
 
 ## 作業文件
 
+- 團隊展業 Epic 稽核與交接：[Team Funnel Replication Audit](docs/team-funnel-replication.md)
 - 正式環境與上線：[Production Infrastructure Plan](docs/production-infrastructure-plan.md)、[Production Go-live Checklist](docs/production-go-live-checklist.md)
 - Cloudflare：[Cloudflare Stream Dashboard Checklist](docs/cloudflare-stream-dashboard-checklist.md)
 - 付款：[PayUni Sandbox Checkout Runbook](docs/payuni-sandbox-checkout-runbook.md)
