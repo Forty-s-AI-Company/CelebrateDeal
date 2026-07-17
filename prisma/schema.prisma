@@ -27,33 +27,40 @@ model Vendor {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  members              VendorMember[]
-  tracking             TrackingSetting?
-  videos               Video[]
-  products             Product[]
-  forms                RegistrationForm[]
-  lives                Live[]
-  templates            MessageTemplate[]
-  analytics            AnalyticsEvent[]
-  interactionScripts   InteractionScript[]
-  interactionRoles     InteractionRole[]
-  blacklists           Blacklist[]
-  affiliates           Affiliate[]
-  affiliateClicks      AffiliateClick[]
-  affiliateCommissions AffiliateCommission[]
-  affiliatePayouts     AffiliatePayout[]
-  usageRecords         UsageRecord[]
-  usageLimit           VendorUsageLimit?
-  subscriptions        VendorSubscription[]
-  invoices             Invoice[]
-  settlements          Settlement[]
-  payoutItems          PayoutItem[]
-  paymentAccounts      PaymentAccount[]
-  paymentTransactions  PaymentTransaction[]
-  refundRecords        RefundRecord[]
-  auditLogs            AuditLog[]
-  webhookEvents        WebhookEvent[]
-  sessions             UserSession[]
+  members                    VendorMember[]
+  tracking                   TrackingSetting?
+  videos                     Video[]
+  products                   Product[]
+  forms                      RegistrationForm[]
+  lives                      Live[]
+  templates                  MessageTemplate[]
+  analytics                  AnalyticsEvent[]
+  interactionScripts         InteractionScript[]
+  interactionRoles           InteractionRole[]
+  blacklists                 Blacklist[]
+  affiliates                 Affiliate[]
+  affiliateClicks            AffiliateClick[]
+  affiliateCommissions       AffiliateCommission[]
+  affiliatePayouts           AffiliatePayout[]
+  usageRecords               UsageRecord[]
+  usageLimit                 VendorUsageLimit?
+  subscriptions              VendorSubscription[]
+  invoices                   Invoice[]
+  settlements                Settlement[]
+  payoutItems                PayoutItem[]
+  paymentAccounts            PaymentAccount[]
+  paymentTransactions        PaymentTransaction[]
+  refundRecords              RefundRecord[]
+  auditLogs                  AuditLog[]
+  webhookEvents              WebhookEvent[]
+  sessions                   UserSession[]
+  salesTeams                 SalesTeam[]
+  teamTemplates              TeamFunnelTemplate[]
+  teamTemplateVersions       TeamFunnelTemplateVersion[]
+  partnerFunnelPages         PartnerFunnelPage[]
+  teamClickAttributions      TeamClickAttribution[]
+  teamLeadAttributions       TeamLeadAttribution[]
+  teamConversionAttributions TeamConversionAttribution[]
 }
 
 model User {
@@ -75,17 +82,17 @@ model User {
 }
 
 model UserSession {
-  id        String    @id @default(cuid())
-  userId    String
-  vendorId  String?
-  tokenHash String    @unique
-  ipAddress String?
-  userAgent String?
+  id            String    @id @default(cuid())
+  userId        String
+  vendorId      String?
+  tokenHash     String    @unique
+  ipAddress     String?
+  userAgent     String?
   mfaVerifiedAt DateTime?
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
@@ -96,15 +103,15 @@ model UserSession {
 }
 
 model UserMfaFactor {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  factorType      String   @default("totp")
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  factorType      String    @default("totp")
   label           String?
   secretEncrypted String
-  enabledAt       DateTime @default(now())
+  enabledAt       DateTime  @default(now())
   lastUsedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -154,7 +161,12 @@ model VendorMember {
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  teamMemberships             TeamMembership[]
+  createdTeamTemplateVersions TeamFunnelTemplateVersion[]   @relation("TeamTemplateVersionCreatedBy")
+  templateFieldLocks          TeamFunnelTemplateFieldLock[]
+
   @@unique([vendorId, userId])
+  @@unique([vendorId, id])
   @@index([vendorId, status])
 }
 
@@ -213,8 +225,12 @@ model Product {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  liveProducts LiveProduct[]
+  vendor                  Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  liveProducts            LiveProduct[]
+  templateProductSlots    TeamFunnelTemplateProductSlot[]
+  partnerProductOverrides PartnerProductSlotOverride[]
+
+  @@unique([vendorId, id])
 }
 
 model RegistrationForm {
@@ -247,40 +263,48 @@ model FormSubmission {
   source    String   @default("form")
   createdAt DateTime @default(now())
 
-  form RegistrationForm @relation(fields: [formId], references: [id], onDelete: Cascade)
-  live Live?            @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  form            RegistrationForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  live            Live?                @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  teamAttribution TeamLeadAttribution?
 }
 
 model Live {
-  id                     String   @id @default(cuid())
-  vendorId               String
-  videoId                String?
-  formId                 String?
-  messageTemplateId      String?
-  interactionScriptId    String?
-  title                  String
-  slug                   String   @unique
-  description            String?
-  scheduledAt            DateTime
-  status                 String   @default("draft")
-  heroImageUrl           String?
-  accentCopy             String?
-  replayEnabled          Boolean  @default(true)
-  streamMode             String   @default("vod")
-  cloudflareLiveInputUid String?
-  quotaPolicy            Json?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  vendorId                 String
+  videoId                  String?
+  formId                   String?
+  messageTemplateId        String?
+  interactionScriptId      String?
+  teamId                   String?
+  seminarOwnerMembershipId String?
+  title                    String
+  slug                     String   @unique
+  description              String?
+  scheduledAt              DateTime
+  status                   String   @default("draft")
+  heroImageUrl             String?
+  accentCopy               String?
+  replayEnabled            Boolean  @default(true)
+  streamMode               String   @default("vod")
+  cloudflareLiveInputUid   String?
+  quotaPolicy              Json?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
-  vendor            Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  video             Video?             @relation(fields: [videoId], references: [id], onDelete: SetNull)
-  form              RegistrationForm?  @relation(fields: [formId], references: [id], onDelete: SetNull)
-  messageTemplate   MessageTemplate?   @relation(fields: [messageTemplateId], references: [id], onDelete: SetNull)
-  interactionScript InteractionScript? @relation(fields: [interactionScriptId], references: [id], onDelete: SetNull)
-  products          LiveProduct[]
-  submissions       FormSubmission[]
-  analytics         AnalyticsEvent[]
-  affiliateClicks   AffiliateClick[]
+  vendor             Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  video              Video?              @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  form               RegistrationForm?   @relation(fields: [formId], references: [id], onDelete: SetNull)
+  messageTemplate    MessageTemplate?    @relation(fields: [messageTemplateId], references: [id], onDelete: SetNull)
+  interactionScript  InteractionScript?  @relation(fields: [interactionScriptId], references: [id], onDelete: SetNull)
+  team               SalesTeam?          @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Restrict)
+  seminarOwner       TeamMembership?     @relation("LiveSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  products           LiveProduct[]
+  submissions        FormSubmission[]
+  analytics          AnalyticsEvent[]
+  affiliateClicks    AffiliateClick[]
+  partnerFunnelPages PartnerFunnelPage[]
+
+  @@unique([vendorId, id])
 }
 
 model LiveProduct {
@@ -408,10 +432,13 @@ model Affiliate {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  vendor      Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  clicks      AffiliateClick[]
-  commissions AffiliateCommission[]
-  payouts     AffiliatePayout[]
+  vendor          Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  clicks          AffiliateClick[]
+  commissions     AffiliateCommission[]
+  payouts         AffiliatePayout[]
+  teamMemberships TeamMembership[]
+
+  @@unique([vendorId, id])
 }
 
 model AffiliateClick {
@@ -425,10 +452,12 @@ model AffiliateClick {
   convertedAt  DateTime?
   createdAt    DateTime  @default(now())
 
-  vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
-  live      Live?      @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  vendor          Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate       Affiliate?            @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+  live            Live?                 @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  teamAttribution TeamClickAttribution?
 
+  @@unique([vendorId, id])
   @@index([referralCode, createdAt])
   @@index([liveId, createdAt])
 }
@@ -666,9 +695,11 @@ model PaymentTransaction {
   metadata            Json?
   createdAt           DateTime  @default(now())
 
-  vendor  Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  refunds RefundRecord[]
+  vendor          Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  refunds         RefundRecord[]
+  teamAttribution TeamConversionAttribution?
 
+  @@unique([vendorId, id])
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])
@@ -785,4 +816,357 @@ model AffiliatePayout {
 
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+}
+
+enum TeamMembershipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TeamFunnelTemplateStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum TeamFunnelField {
+  HEADLINE
+  SUBHEADLINE
+  BODY
+  CTA_LABEL
+  CTA_URL
+  PRODUCT_SLOTS
+}
+
+enum TeamPageAccessMode {
+  PUBLIC
+  TOKEN_REQUIRED
+  DISABLED
+}
+
+enum TeamAttributionSource {
+  REFERRAL
+  EXISTING_OWNER
+  MANUAL_OVERRIDE
+  DIRECT
+}
+
+model SalesTeam {
+  id        String   @id @default(cuid())
+  vendorId  String
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor                 Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  memberships            TeamMembership[]
+  templates              TeamFunnelTemplate[]
+  templateVersions       TeamFunnelTemplateVersion[]
+  webinars               Live[]
+  partnerFunnelPages     PartnerFunnelPage[]
+  clickAttributions      TeamClickAttribution[]
+  leadAttributions       TeamLeadAttribution[]
+  conversionAttributions TeamConversionAttribution[]
+  relationships          TeamMembershipRelationship[]
+
+  @@unique([vendorId, slug])
+  @@unique([vendorId, id])
+}
+
+model TeamMembership {
+  id             String               @id @default(cuid())
+  vendorId       String
+  teamId         String
+  vendorMemberId String
+  affiliateId    String?
+  status         TeamMembershipStatus @default(ACTIVE)
+  joinedAt       DateTime             @default(now())
+  leftAt         DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  team                                 SalesTeam                    @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  vendorMember                         VendorMember                 @relation(fields: [vendorId, vendorMemberId], references: [vendorId, id], onDelete: Restrict)
+  affiliate                            Affiliate?                   @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  downlineRelationships                TeamMembershipRelationship[] @relation("TeamRelationshipUpline")
+  uplineRelationships                  TeamMembershipRelationship[] @relation("TeamRelationshipDownline")
+  contentOwnedTemplateVersions         TeamFunnelTemplateVersion[]  @relation("TeamTemplateVersionContentOwner")
+  ownedWebinars                        Live[]                       @relation("LiveSeminarOwner")
+  promotedPages                        PartnerFunnelPage[]          @relation("PartnerPagePromoter")
+  contentOwnedPages                    PartnerFunnelPage[]          @relation("PartnerPageContentOwner")
+  clickAttributionsAsLeader            TeamClickAttribution[]       @relation("ClickAttributionLeader")
+  clickAttributionsAsPromoter          TeamClickAttribution[]       @relation("ClickAttributionPromoter")
+  clickAttributionsAsContentOwner      TeamClickAttribution[]       @relation("ClickAttributionContentOwner")
+  clickAttributionsAsSeminarOwner      TeamClickAttribution[]       @relation("ClickAttributionSeminarOwner")
+  leadAttributionsAsLeader             TeamLeadAttribution[]        @relation("LeadAttributionLeader")
+  leadAttributionsAsPromoter           TeamLeadAttribution[]        @relation("LeadAttributionPromoter")
+  leadAttributionsAsContentOwner       TeamLeadAttribution[]        @relation("LeadAttributionContentOwner")
+  leadAttributionsAsSeminarOwner       TeamLeadAttribution[]        @relation("LeadAttributionSeminarOwner")
+  conversionAttributionsAsLeader       TeamConversionAttribution[]  @relation("ConversionAttributionLeader")
+  conversionAttributionsAsPromoter     TeamConversionAttribution[]  @relation("ConversionAttributionPromoter")
+  conversionAttributionsAsContentOwner TeamConversionAttribution[]  @relation("ConversionAttributionContentOwner")
+  conversionAttributionsAsSeminarOwner TeamConversionAttribution[]  @relation("ConversionAttributionSeminarOwner")
+
+  @@unique([teamId, vendorMemberId])
+  @@unique([vendorId, affiliateId])
+  @@unique([teamId, id])
+  @@index([vendorId, vendorMemberId, status])
+  @@index([teamId, status])
+}
+
+model TeamMembershipRelationship {
+  id                   String    @id @default(cuid())
+  teamId               String
+  uplineMembershipId   String
+  downlineMembershipId String
+  effectiveAt          DateTime  @default(now())
+  endedAt              DateTime?
+  createdAt            DateTime  @default(now())
+
+  team     SalesTeam      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  upline   TeamMembership @relation("TeamRelationshipUpline", fields: [teamId, uplineMembershipId], references: [teamId, id], onDelete: Restrict)
+  downline TeamMembership @relation("TeamRelationshipDownline", fields: [teamId, downlineMembershipId], references: [teamId, id], onDelete: Restrict)
+
+  @@unique([downlineMembershipId, effectiveAt])
+  @@index([teamId, uplineMembershipId, endedAt])
+  @@index([teamId, downlineMembershipId, endedAt])
+}
+
+model TeamFunnelTemplate {
+  id        String                   @id @default(cuid())
+  vendorId  String
+  teamId    String
+  name      String
+  status    TeamFunnelTemplateStatus @default(DRAFT)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  vendor   Vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team     SalesTeam                   @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  versions TeamFunnelTemplateVersion[]
+
+  @@unique([teamId, name])
+  @@unique([teamId, id])
+  @@index([vendorId, status])
+}
+
+model TeamFunnelTemplateVersion {
+  id                       String   @id @default(cuid())
+  vendorId                 String
+  teamId                   String
+  templateId               String
+  version                  Int
+  contentOwnerMembershipId String
+  createdByMemberId        String
+  headline                 String
+  subheadline              String?
+  body                     String?
+  ctaLabel                 String
+  ctaUrl                   String?
+  createdAt                DateTime @default(now())
+
+  vendor             Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team               SalesTeam                       @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  template           TeamFunnelTemplate              @relation(fields: [teamId, templateId], references: [teamId, id], onDelete: Cascade)
+  contentOwner       TeamMembership                  @relation("TeamTemplateVersionContentOwner", fields: [teamId, contentOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  createdBy          VendorMember                    @relation("TeamTemplateVersionCreatedBy", fields: [vendorId, createdByMemberId], references: [vendorId, id], onDelete: Restrict)
+  fieldLocks         TeamFunnelTemplateFieldLock[]
+  productSlots       TeamFunnelTemplateProductSlot[]
+  partnerFunnelPages PartnerFunnelPage[]
+
+  @@unique([templateId, version])
+  @@unique([teamId, id])
+  @@unique([vendorId, id])
+  @@index([teamId, createdAt])
+}
+
+model TeamFunnelTemplateFieldLock {
+  id                String          @id @default(cuid())
+  vendorId          String
+  templateVersionId String
+  field             TeamFunnelField
+  lockedAt          DateTime        @default(now())
+  lockedByMemberId  String
+
+  templateVersion TeamFunnelTemplateVersion @relation(fields: [vendorId, templateVersionId], references: [vendorId, id], onDelete: Cascade)
+  lockedBy        VendorMember              @relation(fields: [vendorId, lockedByMemberId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([templateVersionId, field])
+}
+
+model TeamFunnelTemplateProductSlot {
+  id                String   @id @default(cuid())
+  vendorId          String
+  templateVersionId String
+  productId         String
+  slotKey           String
+  displayOrder      Int      @default(0)
+  offerLabel        String?
+  createdAt         DateTime @default(now())
+
+  templateVersion  TeamFunnelTemplateVersion    @relation(fields: [vendorId, templateVersionId], references: [vendorId, id], onDelete: Cascade)
+  product          Product                      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  partnerOverrides PartnerProductSlotOverride[]
+
+  @@unique([templateVersionId, slotKey])
+  @@unique([templateVersionId, displayOrder])
+  @@unique([vendorId, id])
+  @@index([vendorId, productId])
+}
+
+model PartnerFunnelPage {
+  id                       String   @id @default(cuid())
+  vendorId                 String
+  teamId                   String
+  templateVersionId        String
+  promoterMembershipId     String
+  contentOwnerMembershipId String
+  liveId                   String?
+  slug                     String   @unique
+  headline                 String
+  subheadline              String?
+  body                     String?
+  ctaLabel                 String
+  ctaUrl                   String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  vendor                 Vendor                         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team                   SalesTeam                      @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  templateVersion        TeamFunnelTemplateVersion      @relation(fields: [teamId, templateVersionId], references: [teamId, id], onDelete: Restrict)
+  promoter               TeamMembership                 @relation("PartnerPagePromoter", fields: [teamId, promoterMembershipId], references: [teamId, id], onDelete: Restrict)
+  contentOwner           TeamMembership                 @relation("PartnerPageContentOwner", fields: [teamId, contentOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  live                   Live?                          @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
+  sharing                PartnerFunnelPageShareSetting?
+  productOverrides       PartnerProductSlotOverride[]
+  clickAttributions      TeamClickAttribution[]
+  leadAttributions       TeamLeadAttribution[]
+  conversionAttributions TeamConversionAttribution[]
+
+  @@unique([templateVersionId, promoterMembershipId])
+  @@unique([vendorId, id])
+  @@index([teamId, promoterMembershipId])
+}
+
+model PartnerFunnelPageShareSetting {
+  id         String             @id @default(cuid())
+  pageId     String             @unique
+  accessMode TeamPageAccessMode @default(TOKEN_REQUIRED)
+  tokenHash  String?            @unique
+  expiresAt  DateTime?
+  maxUses    Int?
+  useCount   Int                @default(0)
+  isEnabled  Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  page PartnerFunnelPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([accessMode, isEnabled, expiresAt])
+}
+
+model PartnerProductSlotOverride {
+  id            String   @id @default(cuid())
+  vendorId      String
+  pageId        String
+  productSlotId String
+  productId     String?
+  overrideUrl   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  page        PartnerFunnelPage             @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  productSlot TeamFunnelTemplateProductSlot @relation(fields: [vendorId, productSlotId], references: [vendorId, id], onDelete: Cascade)
+  product     Product?                      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([pageId, productSlotId])
+  @@index([productId])
+}
+
+model TeamClickAttribution {
+  id                       String                @id @default(cuid())
+  vendorId                 String
+  teamId                   String
+  affiliateClickId         String
+  pageId                   String?
+  leaderMembershipId       String
+  promoterMembershipId     String
+  contentOwnerMembershipId String
+  seminarOwnerMembershipId String?
+  source                   TeamAttributionSource
+  referralCode             String?
+  attributedAt             DateTime              @default(now())
+
+  vendor         Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team           SalesTeam          @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  affiliateClick AffiliateClick     @relation(fields: [vendorId, affiliateClickId], references: [vendorId, id], onDelete: Cascade)
+  page           PartnerFunnelPage? @relation(fields: [pageId], references: [id], onDelete: Restrict)
+  leader         TeamMembership     @relation("ClickAttributionLeader", fields: [teamId, leaderMembershipId], references: [teamId, id], onDelete: Restrict)
+  promoter       TeamMembership     @relation("ClickAttributionPromoter", fields: [teamId, promoterMembershipId], references: [teamId, id], onDelete: Restrict)
+  contentOwner   TeamMembership     @relation("ClickAttributionContentOwner", fields: [teamId, contentOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  seminarOwner   TeamMembership?    @relation("ClickAttributionSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+
+  @@unique([vendorId, affiliateClickId])
+  @@index([teamId, promoterMembershipId, attributedAt])
+  @@index([teamId, leaderMembershipId, attributedAt])
+}
+
+model TeamLeadAttribution {
+  id                       String                @id @default(cuid())
+  vendorId                 String
+  teamId                   String
+  formSubmissionId         String                @unique
+  pageId                   String?
+  leaderMembershipId       String
+  promoterMembershipId     String
+  contentOwnerMembershipId String
+  seminarOwnerMembershipId String?
+  source                   TeamAttributionSource
+  referralCode             String?
+  attributedAt             DateTime              @default(now())
+
+  vendor         Vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team           SalesTeam                   @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission FormSubmission              @relation(fields: [formSubmissionId], references: [id], onDelete: Cascade)
+  page           PartnerFunnelPage?          @relation(fields: [pageId], references: [id], onDelete: Restrict)
+  leader         TeamMembership              @relation("LeadAttributionLeader", fields: [teamId, leaderMembershipId], references: [teamId, id], onDelete: Restrict)
+  promoter       TeamMembership              @relation("LeadAttributionPromoter", fields: [teamId, promoterMembershipId], references: [teamId, id], onDelete: Restrict)
+  contentOwner   TeamMembership              @relation("LeadAttributionContentOwner", fields: [teamId, contentOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  seminarOwner   TeamMembership?             @relation("LeadAttributionSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  conversions    TeamConversionAttribution[]
+
+  @@index([teamId, promoterMembershipId, attributedAt])
+  @@index([teamId, leaderMembershipId, attributedAt])
+}
+
+model TeamConversionAttribution {
+  id                       String                @id @default(cuid())
+  vendorId                 String
+  teamId                   String
+  paymentTransactionId     String
+  leadAttributionId        String?
+  pageId                   String?
+  leaderMembershipId       String
+  promoterMembershipId     String
+  contentOwnerMembershipId String
+  seminarOwnerMembershipId String?
+  source                   TeamAttributionSource
+  referralCode             String?
+  attributedAt             DateTime              @default(now())
+
+  vendor             Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  team               SalesTeam            @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)
+  leadAttribution    TeamLeadAttribution? @relation(fields: [leadAttributionId], references: [id], onDelete: Restrict)
+  page               PartnerFunnelPage?   @relation(fields: [pageId], references: [id], onDelete: Restrict)
+  leader             TeamMembership       @relation("ConversionAttributionLeader", fields: [teamId, leaderMembershipId], references: [teamId, id], onDelete: Restrict)
+  promoter           TeamMembership       @relation("ConversionAttributionPromoter", fields: [teamId, promoterMembershipId], references: [teamId, id], onDelete: Restrict)
+  contentOwner       TeamMembership       @relation("ConversionAttributionContentOwner", fields: [teamId, contentOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  seminarOwner       TeamMembership?      @relation("ConversionAttributionSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+
+  @@unique([vendorId, paymentTransactionId])
+  @@index([teamId, promoterMembershipId, attributedAt])
+  @@index([teamId, leaderMembershipId, attributedAt])
+  @@index([leadAttributionId])
 }
