@@ -369,6 +369,50 @@ describe("payment webhook processing", () => {
     expect(transaction.refundedAmountCents).toBe(20000);
   });
 
+  it.each(["refunded", "partially_refunded"] as const)("preserves the payment occurrence date while accumulating cross-month %s events", async (eventType) => {
+    const suffix = `${Date.now()}-cross-month-refund`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    const paidAt = "2026-01-31T15:30:00.000Z";
+    const firstRefundAt = "2026-02-02T08:00:00.000Z";
+    const secondRefundAt = "2026-02-15T09:45:00.000Z";
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      occurredAt: paidAt,
+    }));
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-refund-first-${suffix}`,
+      eventType,
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+      occurredAt: firstRefundAt,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-refund-second-${suffix}`,
+      eventType,
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 30000,
+      occurredAt: secondRefundAt,
+    }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    expect(transaction.status).toBe(eventType);
+    expect(transaction.occurredAt.toISOString()).toBe(paidAt);
+    expect(transaction.refundedAt?.toISOString()).toBe(secondRefundAt);
+    expect(transaction.refundedAmountCents).toBe(50000);
+  });
+
   it("creates affiliate commission when referralCode is present", async () => {
     const suffix = `${Date.now()}c`;
     const { db, vendor, affiliate } = await createFixture(suffix);
