@@ -32,6 +32,8 @@ export type TeamFunnelPerformanceRow = {
   views: TeamFunnelPerformanceMetric;
   clicks: number;
   submissions: number;
+  conversions: number;
+  netConversionAmountCents: number;
   viewToClickRate: number | null;
   viewToSubmissionRate: number | null;
   analyticsState: "available" | "missing" | "delayed";
@@ -106,7 +108,7 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
   const pageIds = visiblePages.map((page) => page.id);
   const liveIds = [...new Set(visiblePages.map((page) => page.liveId).filter((id): id is string => Boolean(id)))];
 
-  const [clicks, leads, analytics] = pageIds.length === 0 ? [[], [], []] : await Promise.all([
+  const [clicks, leads, conversions, analytics] = pageIds.length === 0 ? [[], [], [], []] : await Promise.all([
     db.teamClickAttribution.findMany({
       where: {
         vendorId: actor.vendorId, teamId: actor.teamId, pageId: { in: pageIds },
@@ -123,6 +125,17 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
       select: { pageId: true },
       take: MAX_EVENTS_PER_SOURCE + 1,
     }),
+    db.teamConversionAttribution.findMany({
+      where: {
+        vendorId: actor.vendorId, teamId: actor.teamId, pageId: { in: pageIds },
+        paymentTransaction: { occurredAt: { gte: range.start, lt: range.endExclusive } },
+      },
+      select: {
+        pageId: true,
+        paymentTransaction: { select: { grossAmountCents: true, refundedAmountCents: true } },
+      },
+      take: MAX_EVENTS_PER_SOURCE + 1,
+    }),
     liveIds.length === 0 ? Promise.resolve([]) : db.analyticsEvent.findMany({
       where: {
         vendorId: actor.vendorId, liveId: { in: liveIds }, eventType: { in: PAGE_VIEW_EVENT_TYPES },
@@ -133,9 +146,10 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
     }),
   ]);
 
-  const eventTruncated = clicks.length > MAX_EVENTS_PER_SOURCE || leads.length > MAX_EVENTS_PER_SOURCE || analytics.length > MAX_EVENTS_PER_SOURCE;
+  const eventTruncated = clicks.length > MAX_EVENTS_PER_SOURCE || leads.length > MAX_EVENTS_PER_SOURCE || conversions.length > MAX_EVENTS_PER_SOURCE || analytics.length > MAX_EVENTS_PER_SOURCE;
   const clickCounts = countByPage(clicks.slice(0, MAX_EVENTS_PER_SOURCE));
   const leadCounts = countByPage(leads.slice(0, MAX_EVENTS_PER_SOURCE));
+  const conversionMetrics = aggregateConversionsByPage(conversions.slice(0, MAX_EVENTS_PER_SOURCE));
   const viewCounts = countPageScopedViews(analytics.slice(0, MAX_EVENTS_PER_SOURCE), new Set(pageIds));
   const delayedData = range.endExclusive.getTime() > now.getTime() - ANALYTICS_DELAY_MS;
 
@@ -143,6 +157,7 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
     const views = viewCounts.has(page.id) ? viewCounts.get(page.id)! : null;
     const clicksForPage = clickCounts.get(page.id) ?? 0;
     const submissions = leadCounts.get(page.id) ?? 0;
+    const conversionsForPage = conversionMetrics.get(page.id) ?? { count: 0, netAmountCents: 0 };
     const analyticsState: TeamFunnelPerformanceRow["analyticsState"] = views === null ? "missing" : delayedData ? "delayed" : "available";
     return {
       pageId: page.id,
@@ -155,6 +170,8 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
       views,
       clicks: clicksForPage,
       submissions,
+      conversions: conversionsForPage.count,
+      netConversionAmountCents: conversionsForPage.netAmountCents,
       viewToClickRate: percentage(clicksForPage, views),
       viewToSubmissionRate: percentage(submissions, views),
       analyticsState,
@@ -204,6 +221,20 @@ function countPageScopedViews(records: readonly { payload: unknown }[], pageIds:
     if (pageId && pageIds.has(pageId)) counts.set(pageId, (counts.get(pageId) ?? 0) + 1);
   }
   return counts;
+}
+
+function aggregateConversionsByPage(records: readonly {
+  pageId: string | null;
+  paymentTransaction: { grossAmountCents: number; refundedAmountCents: number };
+}[]) {
+  return records.reduce((metrics, record) => {
+    if (!record.pageId) return metrics;
+    const current = metrics.get(record.pageId) ?? { count: 0, netAmountCents: 0 };
+    current.count += 1;
+    current.netAmountCents += Math.max(0, record.paymentTransaction.grossAmountCents - record.paymentTransaction.refundedAmountCents);
+    metrics.set(record.pageId, current);
+    return metrics;
+  }, new Map<string, { count: number; netAmountCents: number }>());
 }
 
 function readPageId(payload: unknown) {

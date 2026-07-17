@@ -1,4 +1,5 @@
 import { Card, PageHeader } from "@/components/ui";
+import { formatCurrency } from "@/lib/format";
 import type { TeamFunnelPerformanceReport } from "@/lib/team-funnel-performance";
 
 type TeamOption = { id: string; name: string };
@@ -52,8 +53,8 @@ export function TeamPerformanceDashboard({
           <p className="text-sm text-slate-500">{formatRange(report.range.start, report.range.endExclusive, report.range.timezone)} · {scopeLabel(report.scope)}</p>
         </div>
         {report.rows.length === 0 ? <p role="status" className="py-8 text-center text-sm text-slate-500">此篩選範圍內沒有你可查看的夥伴頁。</p> : (
-          <table className="min-w-[900px] w-full text-left text-sm">
-            <thead className="border-y border-border bg-slate-50 text-slate-600"><tr><th className="px-3 py-3 font-semibold">模板／版本</th><th className="px-3 py-3 font-semibold">夥伴／頁面</th><th className="px-3 py-3 font-semibold">瀏覽</th><th className="px-3 py-3 font-semibold">點擊</th><th className="px-3 py-3 font-semibold">報名</th><th className="px-3 py-3 font-semibold">點擊率</th><th className="px-3 py-3 font-semibold">報名轉換率</th></tr></thead>
+          <table className="min-w-[1100px] w-full text-left text-sm">
+            <thead className="border-y border-border bg-slate-50 text-slate-600"><tr><th className="px-3 py-3 font-semibold">模板／版本</th><th className="px-3 py-3 font-semibold">夥伴／頁面</th><th className="px-3 py-3 font-semibold">瀏覽</th><th className="px-3 py-3 font-semibold">點擊</th><th className="px-3 py-3 font-semibold">報名</th><th className="px-3 py-3 font-semibold">成交</th><th className="px-3 py-3 font-semibold">淨成交額</th><th className="px-3 py-3 font-semibold">點擊率</th><th className="px-3 py-3 font-semibold">報名轉換率</th></tr></thead>
             <tbody className="divide-y divide-border">
               {report.rows.map((row) => <tr key={row.pageId}>
                 <td className="px-3 py-3 text-slate-700">{row.templateName}<span className="ml-1 text-slate-500">v{row.templateVersion}</span></td>
@@ -61,6 +62,8 @@ export function TeamPerformanceDashboard({
                 <td className="px-3 py-3">{metric(row.views, row.analyticsState)}</td>
                 <td className="px-3 py-3">{row.clicks}</td>
                 <td className="px-3 py-3">{row.submissions}</td>
+                <td className="px-3 py-3">{row.conversions}</td>
+                <td className="px-3 py-3">{formatCurrency(row.netConversionAmountCents)}</td>
                 <td className="px-3 py-3">{rate(row.viewToClickRate)}</td>
                 <td className="px-3 py-3">{rate(row.viewToSubmissionRate)}</td>
               </tr>)}
