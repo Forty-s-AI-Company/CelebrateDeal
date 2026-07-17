@@ -1511,10 +1511,15 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   const platformFeeRefundCents = moneyToCents(formData, "platformFeeRefund");
   const reason = optionalText(formData, "reason");
   const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
-  const db = getDb();
-  if (refundAmountCents <= 0 || gatewayFeeRefundCents < 0 || platformFeeRefundCents < 0) {
+  if (
+    refundAmountCents <= 0 ||
+    gatewayFeeRefundCents < 0 ||
+    platformFeeRefundCents < 0 ||
+    !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)
+  ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
+  const db = getDb();
 
   const { transaction, updated } = await (async () => {
     for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
