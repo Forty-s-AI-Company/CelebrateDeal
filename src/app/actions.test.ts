@@ -2,14 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
+  calculateSettlement: vi.fn(),
   findUnique: vi.fn(),
+  invoiceUpsert: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
   refundRecordCreate: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   revalidatePath: vi.fn(),
+  settlementFindUnique: vi.fn(),
+  settlementUpsert: vi.fn(),
   transaction: vi.fn(),
+  vendorFindUnique: vi.fn(),
   writeAuditLog: vi.fn(),
 }));
 
@@ -20,6 +25,10 @@ vi.mock("@/lib/audit", () => ({
   writeAuditLog: mocks.writeAuditLog,
 }));
 vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
+vi.mock("@/lib/billing", () => ({
+  calculateSettlement: mocks.calculateSettlement,
+  invoiceNumber: (vendorSlug: string, monthKey: string) => `${vendorSlug}-${monthKey}`,
+}));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -28,11 +37,13 @@ vi.mock("@/lib/db", () => ({
       update: mocks.paymentTransactionUpdate,
     },
     refundRecord: { aggregate: mocks.refundRecordAggregate },
+    settlement: { findUnique: mocks.settlementFindUnique },
     $transaction: mocks.transaction,
+    vendor: { findUnique: mocks.vendorFindUnique },
   }),
 }));
 
-import { refundPaymentTransactionAction } from "./actions";
+import { generateSettlementAction, refundPaymentTransactionAction } from "./actions";
 
 const transaction = {
   id: "payment-1",
@@ -58,6 +69,13 @@ function refundFormData(
   return formData;
 }
 
+function settlementFormData(monthKey: string) {
+  const formData = new FormData();
+  formData.set("vendorId", "vendor-1");
+  formData.set("monthKey", monthKey);
+  return formData;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
@@ -65,6 +83,18 @@ beforeEach(() => {
   mocks.findUnique.mockResolvedValue(transaction);
   mocks.refundRecordAggregate.mockResolvedValue({
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
+  });
+  mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1", slug: "vendor" });
+  mocks.settlementFindUnique.mockResolvedValue(null);
+  mocks.calculateSettlement.mockResolvedValue({
+    monthlyFeeCents: 1_000,
+    overflowFeeCents: 200,
+    paymentServiceFeeCents: 300,
+    transactionServiceFeeCents: 400,
+    affiliateManagementFeeCents: 500,
+    paymentGatewayFeeCents: 600,
+    grossRevenueCents: 10_000,
+    payoutableAmountCents: 8_000,
   });
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
@@ -79,6 +109,48 @@ beforeEach(() => {
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
+  });
+});
+
+describe("generateSettlementAction", () => {
+  it("rejects an invalid settlement month before database access or side effects", async () => {
+    await expect(generateSettlementAction(settlementFormData("2026-13"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=missing",
+    );
+
+    expect(mocks.vendorFindUnique).not.toHaveBeenCalled();
+    expect(mocks.settlementFindUnique).not.toHaveBeenCalled();
+    expect(mocks.calculateSettlement).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.settlementUpsert).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("generates a settlement and invoice for a valid settlement month", async () => {
+    const settlement = { id: "settlement-1" };
+    mocks.settlementUpsert.mockResolvedValue(settlement);
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlement: { upsert: mocks.settlementUpsert },
+      invoice: { upsert: mocks.invoiceUpsert },
+    }));
+
+    await expect(generateSettlementAction(settlementFormData("2026-12"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+
+    expect(mocks.calculateSettlement).toHaveBeenCalledWith("vendor-1", "2026-12");
+    expect(mocks.settlementUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId_monthKey: { vendorId: "vendor-1", monthKey: "2026-12" } },
+      create: expect.objectContaining({ monthKey: "2026-12" }),
+    }));
+    expect(mocks.invoiceUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ monthKey: "2026-12" }),
+    }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "generate_settlement",
+      targetId: settlement.id,
+    }));
   });
 });
 
