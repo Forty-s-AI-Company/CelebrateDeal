@@ -1505,7 +1505,12 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  const refundedAmountCents = Math.min(transaction.grossAmountCents, transaction.refundedAmountCents + refundAmountCents);
+  const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
+  if (refundAmountCents > remainingRefundAmountCents) {
+    redirect("/admin/billing/dashboard?error=refund");
+  }
+
+  const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
   const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
 
   const updated = await db.$transaction(async (tx) => {
