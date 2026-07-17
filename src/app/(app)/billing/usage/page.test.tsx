@@ -23,12 +23,14 @@ import BillingUsagePage from "./page";
 
 const currentVendor = { id: "vendor-current" };
 const transactions = [
-  { id: "paid-at-start", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-07-01T00:00:00.000Z"), grossAmountCents: 10000, platformFeeCents: 500 },
-  { id: "refund-before-end", vendorId: "vendor-current", status: "partially_refunded", occurredAt: new Date("2026-07-31T23:59:59.999Z"), grossAmountCents: 5400, platformFeeCents: 300 },
-  { id: "other-vendor", vendorId: "vendor-other", status: "paid", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 100000, platformFeeCents: 5000 },
-  { id: "pending", vendorId: "vendor-current", status: "pending", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 200000, platformFeeCents: 10000 },
-  { id: "previous-month", vendorId: "vendor-current", status: "refunded", occurredAt: new Date("2026-06-30T23:59:59.999Z"), grossAmountCents: 300000, platformFeeCents: 15000 },
-  { id: "next-month", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-08-01T00:00:00.000Z"), grossAmountCents: 400000, platformFeeCents: 20000 },
+  { id: "paid-at-start", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-07-01T00:00:00.000Z"), grossAmountCents: 10000, refundedAmountCents: 0, platformFeeCents: 500 },
+  { id: "partially-refunded-before-end", vendorId: "vendor-current", status: "partially_refunded", occurredAt: new Date("2026-07-31T23:59:59.999Z"), grossAmountCents: 5400, refundedAmountCents: 1400, platformFeeCents: 300 },
+  { id: "fully-refunded", vendorId: "vendor-current", status: "refunded", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 3000, refundedAmountCents: 3000, platformFeeCents: 100 },
+  { id: "over-refunded", vendorId: "vendor-current", status: "refunded", occurredAt: new Date("2026-07-16T00:00:00.000Z"), grossAmountCents: 2000, refundedAmountCents: 9999, platformFeeCents: 100 },
+  { id: "other-vendor", vendorId: "vendor-other", status: "paid", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 100000, refundedAmountCents: 0, platformFeeCents: 5000 },
+  { id: "pending", vendorId: "vendor-current", status: "pending", occurredAt: new Date("2026-07-15T00:00:00.000Z"), grossAmountCents: 200000, refundedAmountCents: 0, platformFeeCents: 10000 },
+  { id: "previous-month", vendorId: "vendor-current", status: "refunded", occurredAt: new Date("2026-06-30T23:59:59.999Z"), grossAmountCents: 300000, refundedAmountCents: 0, platformFeeCents: 15000 },
+  { id: "next-month", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-08-01T00:00:00.000Z"), grossAmountCents: 400000, refundedAmountCents: 0, platformFeeCents: 20000 },
 ];
 
 const previousMonthRecord = {
@@ -120,14 +122,15 @@ describe("/billing/usage route", () => {
     expect(html).toContain("上月紀錄");
   });
 
-  it("renders revenue and estimated fees from only matching transactions", async () => {
+  it("renders net revenue after partial, full, and excessive refunds from only matching transactions", async () => {
     const html = renderToStaticMarkup(await BillingUsagePage());
 
     expect(html).toContain("本月成交額");
     expect(html).toContain("預估交易服務費");
-    expect(html).toContain("$154");
-    expect(html).toContain("$8");
-    expect(html).not.toContain("$10,154");
-    expect(html).not.toContain("$508");
+    expect(html).toMatch(/本月成交額<\/p><p[^>]*>\$140<\/p>/);
+    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$10<\/p>/);
+    expect(html).not.toContain("$154");
+    expect(html).not.toContain("$10,140");
+    expect(html).not.toContain("$510");
   });
 });
