@@ -24,7 +24,7 @@ export default async function BillingUsagePage() {
   const vendor = await requireVendor();
   const monthKey = new Date().toISOString().slice(0, 7);
   const { start, end } = monthRange(monthKey);
-  const [limit, records, currentMonthRecords, subscription, transactions] = await Promise.all([
+  const [limit, records, currentMonthRecords, subscription, transactions, refundPlatformFeeTotal] = await Promise.all([
     getDb().vendorUsageLimit.findUnique({ where: { vendorId: vendor.id }, include: { billingPlan: true } }),
     getDb().usageRecord.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 20 }),
     getDb().usageRecord.findMany({ where: { vendorId: vendor.id, monthKey }, orderBy: { createdAt: "desc" }, take: 1 }),
@@ -37,6 +37,10 @@ export default async function BillingUsagePage() {
       },
       orderBy: { occurredAt: "desc" },
     }),
+    getDb().refundRecord.aggregate({
+      where: { vendorId: vendor.id, monthKey, status: "processed" },
+      _sum: { platformFeeRefundCents: true },
+    }),
   ]);
 
   const currentRecord = currentMonthRecords[0];
@@ -44,7 +48,11 @@ export default async function BillingUsagePage() {
     (sum, transaction) => sum + Math.max(0, transaction.grossAmountCents - transaction.refundedAmountCents),
     0,
   );
-  const estimatedPlatformFees = transactions.reduce((sum, transaction) => sum + transaction.platformFeeCents, 0);
+  const estimatedPlatformFees = Math.max(
+    0,
+    transactions.reduce((sum, transaction) => sum + transaction.platformFeeCents, 0) -
+      (refundPlatformFeeTotal._sum.platformFeeRefundCents ?? 0),
+  );
 
   return (
     <>
