@@ -104,9 +104,12 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const paymentGatewayFeeCents = paymentMode === "platform"
     ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
     : 0;
-  const transactionFeeRateBps = subscription.customFeeRateBps ?? plan.transactionFeeRateBps;
+  const recordedPlatformFeeCents = transactions.reduce(
+    (sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents,
+    0,
+  );
   const transactionServiceFeeCents = paymentMode === "platform"
-    ? Math.max(0, Math.round((grossRevenueCents * transactionFeeRateBps) / 10000) - platformFeeRefundCents)
+    ? Math.max(0, recordedPlatformFeeCents - platformFeeRefundCents)
     : 0;
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
