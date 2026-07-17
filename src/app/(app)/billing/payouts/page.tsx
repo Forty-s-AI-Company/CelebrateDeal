@@ -1,5 +1,6 @@
 import { Download, Landmark } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -11,11 +12,14 @@ function statusTone(status: string) {
 }
 
 export default async function BillingPayoutsPage() {
+  const vendor = await requireVendor();
   const batches = await getDb().payoutBatch.findMany({
+    where: { items: { some: { vendorId: vendor.id } } },
     orderBy: { batchDate: "desc" },
     include: {
       items: {
-        include: { vendor: true, settlement: true },
+        where: { vendorId: vendor.id },
+        include: { vendor: true },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -58,7 +62,7 @@ export default async function BillingPayoutsPage() {
                     <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    批次日 {formatDateTime(batch.batchDate)} · {batch.totalCount} 筆 · {formatCurrency(batch.totalAmountCents)}
+                    批次日 {formatDateTime(batch.batchDate)} · {batch.items.length} 筆 · {formatCurrency(batch.items.reduce((total, item) => total + item.payoutAmountCents, 0))}
                   </p>
                 </div>
                 <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
