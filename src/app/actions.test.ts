@@ -43,13 +43,18 @@ const transaction = {
   platformFeeCents: 400,
 };
 
-function refundFormData(refundAmount: string, gatewayFeeRefund = "0", platformFeeRefund = "0") {
+function refundFormData(
+  refundAmount: string,
+  gatewayFeeRefund = "0",
+  platformFeeRefund = "0",
+  monthKey = "2026-07",
+) {
   const formData = new FormData();
   formData.set("id", transaction.id);
   formData.set("refundAmount", refundAmount);
   formData.set("gatewayFeeRefund", gatewayFeeRefund);
   formData.set("platformFeeRefund", platformFeeRefund);
-  formData.set("monthKey", "2026-07");
+  formData.set("monthKey", monthKey);
   return formData;
 }
 
@@ -78,6 +83,27 @@ beforeEach(() => {
 });
 
 describe("refundPaymentTransactionAction", () => {
+  it("rejects an invalid settlement month without creating a refund, updating the transaction, or writing an audit log", async () => {
+    await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", "2026-13"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("writes a valid settlement month to the RefundRecord", async () => {
+    await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", "2026-12"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ monthKey: "2026-12" }),
+    });
+  });
+
   it("rejects a refund that exceeds the remaining refundable amount without writing records or updating the transaction", async () => {
     await expect(refundPaymentTransactionAction(refundFormData("40.01"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",
