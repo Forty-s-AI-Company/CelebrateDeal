@@ -40,7 +40,10 @@ export default async function BillingUsagePage() {
   ]);
 
   const currentRecord = currentMonthRecords[0];
-  const grossRevenue = transactions.reduce((sum, transaction) => sum + transaction.grossAmountCents, 0);
+  const grossRevenue = transactions.reduce(
+    (sum, transaction) => sum + Math.max(0, transaction.grossAmountCents - transaction.refundedAmountCents),
+    0,
+  );
   const estimatedPlatformFees = transactions.reduce((sum, transaction) => sum + transaction.platformFeeCents, 0);
 
   return (
