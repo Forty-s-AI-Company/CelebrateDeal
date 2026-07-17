@@ -78,7 +78,7 @@ describe("/billing/payouts route", () => {
     });
   });
 
-  it("does not render another vendor's payout data from a shared batch", async () => {
+  it("does not render a bank export control or another vendor's payout data from a shared batch", async () => {
     const html = renderToStaticMarkup(await BillingPayoutsPage());
 
     expect(html).toContain("目前商家");
@@ -86,6 +86,7 @@ describe("/billing/payouts route", () => {
     expect(html).toContain("1234567890");
     expect(html).toContain("$100");
     expect(html).toContain("1 筆");
+    expect(html).not.toContain("匯出銀行檔");
     expect(html).not.toContain("其他商家");
     expect(html).not.toContain("999");
     expect(html).not.toContain("0987654321");
