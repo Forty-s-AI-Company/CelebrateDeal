@@ -1,6 +1,6 @@
 # 團隊展業漏斗複製：架構與權限基線
 
-> 狀態：規劃基線（2026-07-17）。本文件依目前已追蹤的程式、文件、Prisma schema、測試與 CI 整理；它不是功能完成宣告，也不改變現有行為。除非另有標示，A/B 是本 Epic 要落實的目標權限模型，而不是現行系統已提供的角色。
+> 狀態：資料模型基線已建立（2026-07-17）。本文件依目前已追蹤的程式、文件、Prisma schema、測試與 CI 整理；本次完成的是可審查的團隊領域 schema 與 forward-only migration，並未宣告 API、授權或工作台功能完成。除非另有標示，A/B 是本 Epic 要落實的目標權限模型，而不是現行系統已提供的角色。
 
 ## 範圍與判讀原則
 
@@ -27,12 +27,12 @@
 
 | 漏斗環節 | 現況與證據 | 可重用範圍與限制 |
 | --- | --- | --- |
-| 公開直播與內容 | `Live` 綁定商品、表單、訊息模板與互動腳本；公開頁在 `src/app/live/[slug]/page.tsx`，後台頁在 `src/app/(app)/lives/`。 | B 的分享入口可沿用公開直播與既有 `ref` 參數，但現有 `Live` 沒有 team/member owner。 |
-| 名單收集 | `POST /api/form-submissions` 建立 `FormSubmission`，會驗證 form/live 的 vendor 關係、檢查 blacklist；有 live 時另寫 `lead_submit` 分析事件。見 `src/app/api/form-submissions/route.ts`。 | 可承接「B 帶入名單」的來源事件；目前沒有保存 B、team 或歸屬決策。 |
+| 公開直播與內容 | `Live` 綁定商品、表單、訊息模板與互動腳本；領域模型新增可選 `teamId` 與 `seminarOwnerMembershipId`。公開頁在 `src/app/live/[slug]/page.tsx`，後台頁在 `src/app/(app)/lives/`。 | B 的分享入口可沿用公開直播與既有 `ref` 參數；既有路由尚未寫入團隊／研討會擁有者。 |
+| 名單收集 | `POST /api/form-submissions` 建立 `FormSubmission`，會驗證 form/live 的 vendor 關係、檢查 blacklist；有 live 時另寫 `lead_submit` 分析事件。見 `src/app/api/form-submissions/route.ts`。 | `TeamLeadAttribution` 可保存一次性的 team/A/B/content/seminar snapshot；既有 API 尚未建立該 snapshot。 |
 | 行為分析 | `POST /api/analytics` 寫入 `AnalyticsEvent`，以 vendor/live 驗證關聯；`src/lib/analytics-funnel.ts` 已計算觀看、商品點擊、CTA 與名單漏斗。 | 可作為團隊／個人儀表板的原始事件來源；目前事件 payload 非固定的團隊歸屬 schema。 |
-| 聯盟推廣碼 | `Affiliate` 屬於 vendor，擁有唯一 `code`、來源、啟用狀態與佣金比；`AffiliateClick` 保存 referral code、visitor、landing path、live 及 convertedAt。見 `prisma/schema.prisma`、`src/app/(app)/affiliates/`。 | 可作為 B 對外分享碼與點擊記錄的基礎；Affiliate 不是 User/VendorMember，沒有登入、A 屬主或階層。 |
-| 點擊與表單歸因 | `POST /api/affiliate-clicks` 以有效 vendor/live/code 寫入 click；表單 API 若收到 referral code，會將同 vendor、同 code、未轉換的 click 全部標記 converted。見 `src/app/api/affiliate-clicks/route.ts`、`src/app/api/form-submissions/route.ts`。 | 已有 referral → lead 的訊號，**不是**單一 lead 的決定性歸因，也沒有 A/B 歸屬快照。 |
-| 成交與佣金 | payment webhook 處理 referral code 時會建立 `AffiliateCommission`；佣金、payout 與結算模型已存在。見 `src/lib/payment-webhooks.ts`、`prisma/schema.prisma`、`src/lib/payment-webhooks.test.ts`。 | 可重用為「已付款成交」的下游事件；目前佣金只指向 Affiliate，沒有分給 A/B 的規則或凍結的歸屬快照。 |
+| 聯盟推廣碼 | `Affiliate` 屬於 vendor，擁有唯一 `code`、來源、啟用狀態與佣金比；`TeamMembership` 可選擇一個同 vendor 的 Affiliate，且同一 Affiliate 在租戶中只能對應一個團隊 membership。 | Affiliate 仍不是登入帳號；其與可登入 `VendorMember` 的綁定由 `TeamMembership` 表示。 |
+| 點擊與表單歸因 | `POST /api/affiliate-clicks` 以有效 vendor/live/code 寫入 click；表單 API 若收到 referral code，會將同 vendor、同 code、未轉換的 click 全部標記 converted。見 `src/app/api/affiliate-clicks/route.ts`、`src/app/api/form-submissions/route.ts`。 | `TeamClickAttribution`／`TeamLeadAttribution` 以來源事件一對一保存 A/B/content/seminar snapshot；既有路由尚未寫入。 |
+| 成交與佣金 | payment webhook 處理 referral code 時會建立 `AffiliateCommission`；佣金、payout 與結算模型已存在。見 `src/lib/payment-webhooks.ts`、`prisma/schema.prisma`、`src/lib/payment-webhooks.test.ts`。 | `TeamConversionAttribution` 以 `PaymentTransaction` 一對一保存成交 snapshot；它不改變既有佣金、payout 或結算語意，webhook 尚未寫入。 |
 | 成效呈現 | 聯盟列表顯示點擊、轉換率與佣金；直播分析頁顯示 affiliate clicks。見 `src/app/(app)/affiliates/page.tsx`、`src/app/(app)/affiliates/[id]/page.tsx`、`src/app/(app)/lives/[id]/analytics/page.tsx`。 | 可作為團隊儀表板的視覺與查詢雛形；尚無 A 看全隊、B 看自身的資料列級過濾。 |
 
 ## 現況所有權與歸屬
@@ -42,16 +42,21 @@
 1. `Vendor` 擁有商務資料；目前所有後台頁透過 `requireVendor()` 取得選定租戶，再以 `vendorId` 查詢。例如 `src/app/(app)/affiliates/page.tsx` 與 `src/app/(app)/lives/[id]/analytics/page.tsx`。
 2. `User` 是登入主體，`VendorMember` 是該租戶內的工作權限主體；停用 membership 後不再能被 `getCurrentAuth()` 選為有效租戶。
 3. `Affiliate` 是 vendor 的推廣合作對象，不是登入帳號，也不具現有的成員角色或資料可見範圍。
-4. `FormSubmission` 只歸屬 form（及可選 live）；`AnalyticsEvent` 只歸屬 vendor/live；`AffiliateCommission` 只歸屬 vendor/affiliate。這些模型都沒有 A、B、team 或 owner membership 欄位。
+4. `FormSubmission` 仍只直接歸屬 form（及可選 live）、`AnalyticsEvent` 仍只歸屬 vendor/live、`AffiliateCommission` 仍只歸屬 vendor/affiliate；團隊歸屬以其各自的一對一 attribution snapshot 表表示，並不改寫付款或佣金模型。
 
-### 未完成：團隊歸屬契約
+### 已完成：團隊歸屬資料模型與 ownership invariants
 
-以下是 Epic 所需、但目前程式碼沒有的歸屬規則，應在實作前成為可測試的產品契約：
+本次新增模型皆在 `prisma/schema.prisma`，並由 `prisma/migrations/202607170001_team_funnel_domain/migration.sql` 前向建立：
 
-- 一個 B 必須在單一 `Vendor` 中有明確的 A 歸屬及有效期間；同一時間是否可有多個 A，必須由產品決策明定。
-- 名單、click、成交、佣金必須記錄「歸屬決策當下」的 A/B/team 快照與來源事件，不能只依目前成員關係回推，避免轉組後改寫歷史成效。
-- 一筆資料的可見性由其 snapshot 與 actor 的有效 membership 決定；跨 `Vendor` 一律不可讀寫或查詢聚合。
-- 被停用的 B 不應再取得新名單或發出新分享連結；歷史資料是否仍計入 A 的報表、是否可改派，必須有明確 policy 與 audit event。
+- `SalesTeam` 是 tenant-scoped 團隊（`[vendorId, slug]` 唯一）；`TeamMembership` 將同 vendor 的 `VendorMember`、可選 `Affiliate` 與啟用生命週期連結。`TeamMembershipRelationship` 保存 A→B 有效期間：同一 B 同一時間只能有一個未結束的上線（partial unique index），且 SQL 禁止自己成為自己的上線。
+- `TeamFunnelTemplate` 與不可變的 `TeamFunnelTemplateVersion` 以版本號唯一；版本記錄 `contentOwnerMembershipId` 與建立者。文字欄位是明確欄位而非 JSON，`TeamFunnelTemplateFieldLock` 以 `[templateVersionId, field]` 鎖定欄位，且鎖定者與版本必須屬於同一 vendor。
+- `TeamFunnelTemplateProductSlot` 將版本、商品與穩定 `slotKey`／排序正規化連結。`PartnerFunnelPage` 是夥伴的獨立文字副本，記錄推廣者與內容擁有者；`PartnerProductSlotOverride` 必須指向同 vendor 的頁面、商品槽與（若有）商品，並至少提供替換商品或覆寫連結。
+- `PartnerFunnelPageShareSetting` 是每頁一筆的安全分享設定；token 只存 hash，`TOKEN_REQUIRED` 必須有 token hash，並以到期、啟用與使用次數限制控制存取。
+- `Live` 可選擇同 vendor 的團隊與同 team 的研討會擁有者。`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` 分別以 click、lead、payment transaction 一對一保存來源、推廣者、上線、內容擁有者、研討會擁有者及時間快照；轉組不會回寫這些列。
+
+所有新增 tenant-scoped 關聯使用複合唯一鍵與外鍵，避免單靠全域 id 連到其他 vendor。`FormSubmission` 是舊模型，沒有 `vendorId` scalar；建立 `TeamLeadAttribution` 時，寫入端仍必須以 submission 的 form/live 驗證它與 attribution 的 vendor 相同。這是新增 API 時不可省略的 ownership guard。
+
+刪除語意明確區分：刪除團隊或 vendor 時，其直接擁有的團隊資料 cascade；模板版本刪除時其 lock／商品槽 cascade；頁面刪除時其分享與覆寫 cascade。擁有者 membership、頁面與產品的交叉引用使用 `Restrict`，避免刪除主體悄悄改寫現有歸屬；`Live` 的研討會擁有者同樣使用 `Restrict`，不會因複合外鍵的 `SetNull` 連帶清空 `teamId`。既有 click、submission 與 payment source event 的刪除仍會 cascade 其 attribution，故未來若需不可刪除的歷史保留，必須在來源事件刪除 policy 層處理。
 
 ## A/B 權限基線
 
@@ -121,7 +126,7 @@
 | 3：漏斗與工作台 | 提供 A 全隊／B 個人資料視圖、名單處理與必要的遮罩，並保留既有直播、聯盟與分析頁能力。 | 各角色只看被授權資料，數字可回溯至事件與 snapshot。 |
 | 4：營運控制 | 對例外歸因、停用、權限覆寫、佣金與同步失敗提供稽核、告警與受控處理。 | 關鍵操作都有 actor/reason/before-after；高風險財務繼續符合 MFA policy。 |
 
-本次只建立文件基線；上述任何程式、資料層或外部系統工作均**未完成**。
+本次已完成上述資料層模型與 migration artifact；授權 guard、事件寫入、讀模型、工作台與外部同步仍**未完成**。
 
 ## 測試策略
 
@@ -147,9 +152,8 @@
 
 ## 未完成項目總覽
 
-- 團隊實體、A→B 隸屬、有效期間與歸屬 snapshot。
 - A/B 角色的伺服端資料列級授權與 UI 對應。
-- lead、click、成交、退款的唯一事件識別、統一歸因 policy 與可重放同步。
+- 將 lead、click、成交、退款事件寫入既有 attribution snapshot、統一歸因 policy 與可重放同步。
 - A 全隊／B 個人漏斗、名單工作台、資料遮罩及轉派流程。
 - A/B 佣金分配、覆寫、結算關係與完整稽核／可觀測性。
 - 上述團隊行為的自動化測試與 CI 驗收。
@@ -165,5 +169,5 @@
 
 ## Policy Blockers
 
-- 本工作流程禁止 migration、seed、部署、資料刪除、真實付款與祕密操作；本次沒有執行這些動作。
+- 本工作流程禁止套用 migration、seed、部署、資料刪除、真實付款與祕密操作；本次僅新增未執行的 forward-only migration artifact。
 - `npm run test` 包含 `src/lib/payment-webhooks.test.ts` 的 fixture 清除，因此在本次「資料刪除禁止」約束下不執行。
