@@ -31,13 +31,39 @@ const transactions = [
   { id: "next-month", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-08-01T00:00:00.000Z"), grossAmountCents: 400000, platformFeeCents: 20000 },
 ];
 
+const previousMonthRecord = {
+  id: "usage-june-latest",
+  vendorId: currentVendor.id,
+  monthKey: "2026-06",
+  recordType: "event",
+  quantity: 99,
+  unit: "場",
+  creditsDelta: 0,
+  totalEvents: 99,
+  description: "上月紀錄",
+  createdAt: new Date("2026-07-18T11:00:00.000Z"),
+};
+
+const currentMonthRecord = {
+  ...previousMonthRecord,
+  id: "usage-july-current",
+  monthKey: "2026-07",
+  quantity: 5,
+  totalEvents: 5,
+  description: "本月紀錄",
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-07-18T12:00:00.000Z"));
   vi.clearAllMocks();
   mocks.requireVendor.mockResolvedValue(currentVendor);
   mocks.findUnique.mockResolvedValue(null);
-  mocks.usageRecordFindMany.mockResolvedValue([]);
+  mocks.usageRecordFindMany.mockImplementation(async ({ where }) => {
+    if (where.monthKey === "2026-07") return [currentMonthRecord];
+    return [previousMonthRecord, currentMonthRecord];
+  });
   mocks.subscriptionFindFirst.mockResolvedValue(null);
   mocks.transactionFindMany.mockImplementation(async ({ where }) =>
     transactions.filter((transaction) =>
@@ -69,6 +95,29 @@ describe("/billing/usage route", () => {
       },
       orderBy: { occurredAt: "desc" },
     });
+  });
+
+  it("queries this vendor's current-month usage record while keeping the history query unchanged", async () => {
+    await BillingUsagePage();
+
+    expect(mocks.usageRecordFindMany).toHaveBeenNthCalledWith(1, {
+      where: { vendorId: currentVendor.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    expect(mocks.usageRecordFindMany).toHaveBeenNthCalledWith(2, {
+      where: { vendorId: currentVendor.id, monthKey: "2026-07" },
+      orderBy: { createdAt: "desc" },
+      take: 1,
+    });
+  });
+
+  it("does not display the latest previous-month usage record as this month's event count", async () => {
+    const html = renderToStaticMarkup(await BillingUsagePage());
+
+    expect(html).toMatch(/本月活動場次<\/p><p[^>]*>5<\/p>/);
+    expect(html).not.toMatch(/本月活動場次<\/p><p[^>]*>99<\/p>/);
+    expect(html).toContain("上月紀錄");
   });
 
   it("renders revenue and estimated fees from only matching transactions", async () => {

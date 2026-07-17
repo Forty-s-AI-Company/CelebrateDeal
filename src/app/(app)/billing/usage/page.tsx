@@ -22,10 +22,12 @@ function UsageBar({ label, used, limit, unit }: { label: string; used: number; l
 
 export default async function BillingUsagePage() {
   const vendor = await requireVendor();
-  const { start, end } = monthRange(new Date().toISOString().slice(0, 7));
-  const [limit, records, subscription, transactions] = await Promise.all([
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const { start, end } = monthRange(monthKey);
+  const [limit, records, currentMonthRecords, subscription, transactions] = await Promise.all([
     getDb().vendorUsageLimit.findUnique({ where: { vendorId: vendor.id }, include: { billingPlan: true } }),
     getDb().usageRecord.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" }, take: 20 }),
+    getDb().usageRecord.findMany({ where: { vendorId: vendor.id, monthKey }, orderBy: { createdAt: "desc" }, take: 1 }),
     getDb().vendorSubscription.findFirst({ where: { vendorId: vendor.id, status: "active" }, include: { plan: true } }),
     getDb().paymentTransaction.findMany({
       where: {
@@ -37,7 +39,7 @@ export default async function BillingUsagePage() {
     }),
   ]);
 
-  const currentRecord = records[0];
+  const currentRecord = currentMonthRecords[0];
   const grossRevenue = transactions.reduce((sum, transaction) => sum + transaction.grossAmountCents, 0);
   const estimatedPlatformFees = transactions.reduce((sum, transaction) => sum + transaction.platformFeeCents, 0);
 
