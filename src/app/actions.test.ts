@@ -210,11 +210,67 @@ describe("refundPaymentTransactionAction", () => {
       "redirect:/admin/billing/dashboard?error=refund",
     );
 
-    expect(attemptedRefundRecords).toHaveLength(1);
-    expect(attemptedPaymentTransactions).toHaveLength(1);
+    expect(attemptedRefundRecords).toHaveLength(3);
+    expect(attemptedPaymentTransactions).toHaveLength(3);
     expect(committedRefundRecords).toEqual([]);
     expect(committedPaymentTransactions).toEqual([]);
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("retries a P2034 serialization conflict and writes an audit log only after the successful commit", async () => {
+    const attemptedRefundRecords: unknown[] = [];
+    const attemptedPaymentTransactions: unknown[] = [];
+    const committedRefundRecords: unknown[] = [];
+    const committedPaymentTransactions: unknown[] = [];
+    const events: string[] = [];
+    let transactionAttempts = 0;
+
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      transactionAttempts += 1;
+      const stagedRefundRecords: unknown[] = [];
+      const stagedPaymentTransactions: unknown[] = [];
+      const result = await callback({
+        paymentTransaction: {
+          findUnique: mocks.findUnique,
+          update: async (args: unknown) => {
+            attemptedPaymentTransactions.push(args);
+            stagedPaymentTransactions.push(args);
+            return { ...transaction, refundedAmountCents: 10_000, status: "refunded" };
+          },
+        },
+        refundRecord: {
+          aggregate: mocks.refundRecordAggregate,
+          create: async (args: unknown) => {
+            attemptedRefundRecords.push(args);
+            stagedRefundRecords.push(args);
+          },
+        },
+      });
+
+      if (transactionAttempts === 1) {
+        throw Object.assign(new Error("serialization failure"), { code: "P2034" });
+      }
+
+      committedRefundRecords.push(...stagedRefundRecords);
+      committedPaymentTransactions.push(...stagedPaymentTransactions);
+      events.push("committed");
+      return result;
+    });
+    mocks.writeAuditLog.mockImplementation(async () => {
+      events.push("audit");
+    });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+    expect(attemptedRefundRecords).toHaveLength(2);
+    expect(attemptedPaymentTransactions).toHaveLength(2);
+    expect(committedRefundRecords).toHaveLength(1);
+    expect(committedPaymentTransactions).toHaveLength(1);
+    expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(["committed", "audit"]);
   });
 });

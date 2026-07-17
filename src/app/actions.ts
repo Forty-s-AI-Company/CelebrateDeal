@@ -69,6 +69,10 @@ function isRefundTransactionConflict(error: unknown) {
     (error.code === "P2025" || error.code === "P2034");
 }
 
+function isRefundSerializationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
+}
+
 function secondsValue(value: string) {
   const trimmed = value.trim();
   if (!trimmed.includes(":")) {
@@ -86,6 +90,7 @@ function secondsValue(value: string) {
 
 const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAILURE_LIMIT = 5;
+const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
 const MEMBER_ROLES = new Set(["owner", "admin", "accountant"]);
 
 function normalizedEmail(value: string) {
@@ -1511,59 +1516,71 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  const { transaction, updated } = await db.$transaction(async (tx) => {
-    const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
-    if (!transaction) throw new RefundValidationError();
+  const { transaction, updated } = await (async () => {
+    for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await db.$transaction(async (tx) => {
+          const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
+          if (!transaction) throw new RefundValidationError();
 
-    const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
-    if (refundAmountCents > remainingRefundAmountCents) throw new RefundValidationError();
+          const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
+          if (refundAmountCents > remainingRefundAmountCents) throw new RefundValidationError();
 
-    const processedFeeRefunds = await tx.refundRecord.aggregate({
-      where: { paymentTransactionId: transaction.id, status: "processed" },
-      _sum: {
-        gatewayFeeRefundCents: true,
-        platformFeeRefundCents: true,
-      },
-    });
-    const refundedGatewayFeeCents = processedFeeRefunds._sum.gatewayFeeRefundCents ?? 0;
-    const refundedPlatformFeeCents = processedFeeRefunds._sum.platformFeeRefundCents ?? 0;
-    if (
-      refundedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents ||
-      refundedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
-    ) {
-      throw new RefundValidationError();
+          const processedFeeRefunds = await tx.refundRecord.aggregate({
+            where: { paymentTransactionId: transaction.id, status: "processed" },
+            _sum: {
+              gatewayFeeRefundCents: true,
+              platformFeeRefundCents: true,
+            },
+          });
+          const refundedGatewayFeeCents = processedFeeRefunds._sum.gatewayFeeRefundCents ?? 0;
+          const refundedPlatformFeeCents = processedFeeRefunds._sum.platformFeeRefundCents ?? 0;
+          if (
+            refundedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents ||
+            refundedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
+          ) {
+            throw new RefundValidationError();
+          }
+
+          const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
+          const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
+          await tx.refundRecord.create({
+            data: {
+              vendorId: transaction.vendorId,
+              paymentTransactionId: transaction.id,
+              monthKey,
+              refundAmountCents,
+              gatewayFeeRefundCents,
+              platformFeeRefundCents,
+              reason,
+            },
+          });
+          const updated = await tx.paymentTransaction.update({
+            where: { id },
+            data: {
+              status,
+              refundedAmountCents,
+              refundReason: reason,
+              refundedAt: new Date(),
+            },
+          });
+
+          return { transaction, updated };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error) {
+        if (isRefundSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
+          continue;
+        }
+
+        if (error instanceof RefundValidationError || isRefundTransactionConflict(error)) {
+          redirect("/admin/billing/dashboard?error=refund");
+        }
+        throw error;
+      }
     }
 
-    const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
-    const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
-    await tx.refundRecord.create({
-      data: {
-        vendorId: transaction.vendorId,
-        paymentTransactionId: transaction.id,
-        monthKey,
-        refundAmountCents,
-        gatewayFeeRefundCents,
-        platformFeeRefundCents,
-        reason,
-      },
-    });
-    const updated = await tx.paymentTransaction.update({
-      where: { id },
-      data: {
-        status,
-        refundedAmountCents,
-        refundReason: reason,
-        refundedAt: new Date(),
-      },
-    });
-
-    return { transaction, updated };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error) => {
-    if (error instanceof RefundValidationError || isRefundTransactionConflict(error)) {
-      redirect("/admin/billing/dashboard?error=refund");
-    }
-    throw error;
-  });
+    throw new Error("Refund transaction retry loop exited unexpectedly");
+  })();
 
   await writeAuditLog({
     vendorId: transaction.vendorId,
