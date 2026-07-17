@@ -3,7 +3,10 @@ import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
 export default async function BillingPlansPage() {
-  const plans = await getDb().billingPlan.findMany({ orderBy: { monthlyPriceCents: "asc" } });
+  const plans = await getDb().billingPlan.findMany({
+    where: { isActive: true },
+    orderBy: { monthlyPriceCents: "asc" },
+  });
 
   return (
     <>
