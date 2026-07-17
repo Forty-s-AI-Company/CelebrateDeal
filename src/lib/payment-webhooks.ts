@@ -190,6 +190,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     ...payloadMetadata,
     ...(formSubmissionId ? { formSubmissionId } : {}),
   } as Prisma.InputJsonObject;
+  const preservesOccurredAt = Boolean(existingTransaction) && ["refunded", "partially_refunded"].includes(payload.eventType);
 
   const transaction = await db.$transaction(async (tx) => {
     const savedTransaction = existingTransaction
@@ -205,7 +206,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             netAmountCents,
             currency: payload.currency,
             status: payload.eventType === "paid" ? "paid" : payload.eventType,
-            occurredAt,
+            ...(preservesOccurredAt ? {} : { occurredAt }),
             metadata: transactionMetadata,
           },
         })
