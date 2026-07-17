@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, CreditCard, Gauge, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, WalletCards } from "lucide-react";
+import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, CreditCard, Gauge, Handshake, Lock, Palette, PlaySquare, Radio, ReceiptText, ScrollText, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { logoutAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 
@@ -22,6 +22,7 @@ const navGroups = [
       { href: "/interaction-roles", label: "互動角色", icon: Bot },
       { href: "/blacklists", label: "黑名單", icon: Ban },
       { href: "/affiliates", label: "聯盟夥伴", icon: Handshake },
+      { href: "/team-templates", label: "團隊展業", icon: UsersRound },
     ],
   },
   {
