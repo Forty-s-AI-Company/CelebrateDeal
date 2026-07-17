@@ -23,6 +23,7 @@ const navGroups = [
       { href: "/blacklists", label: "黑名單", icon: Ban },
       { href: "/affiliates", label: "聯盟夥伴", icon: Handshake },
       { href: "/team-templates", label: "團隊展業", icon: UsersRound },
+      { href: "/team-performance", label: "展業成效", icon: BarChart3 },
     ],
   },
   {
