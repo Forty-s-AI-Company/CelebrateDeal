@@ -12,6 +12,7 @@ const db = {
   teamClickAttribution: { findMany: vi.fn() },
   teamLeadAttribution: { findMany: vi.fn() },
   teamConversionAttribution: { findMany: vi.fn() },
+  refundRecord: { findMany: vi.fn() },
   analyticsEvent: { findMany: vi.fn() },
 };
 
@@ -40,6 +41,7 @@ beforeEach(() => {
   db.teamClickAttribution.findMany.mockResolvedValue([]);
   db.teamLeadAttribution.findMany.mockResolvedValue([]);
   db.teamConversionAttribution.findMany.mockResolvedValue([]);
+  db.refundRecord.findMany.mockResolvedValue([]);
   db.analyticsEvent.findMany.mockResolvedValue([]);
 });
 
@@ -85,6 +87,7 @@ describe("team funnel performance", () => {
     expect(db.teamClickAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
     expect(db.teamLeadAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
     expect(db.teamConversionAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
+    expect(db.refundRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
     expect(db.analyticsEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
   });
 
@@ -93,7 +96,7 @@ describe("team funnel performance", () => {
 
     const report = await getTeamFunnelPerformanceReport({ teamId: "team-1", timezone: "Asia/Taipei", startDate: "2026-07-01", endDate: "2026-07-01" });
 
-    expect(report.rows[0]).toMatchObject({ views: null, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "missing" });
+    expect(report.rows[0]).toMatchObject({ views: null, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, refundCount: 0, refundAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "missing" });
   });
 
   it("aggregates only page-scoped analytics plus attributable clicks and submissions", async () => {
@@ -122,6 +125,36 @@ describe("team funnel performance", () => {
       },
       select: { pageId: true, paymentTransaction: { select: { grossAmountCents: true, refundedAmountCents: true } } },
     }));
+  });
+
+  it("includes cross-period refunds by processed date for only current vendor, team, and visible attributed pages", async () => {
+    db.refundRecord.findMany.mockResolvedValue([
+      { refundAmountCents: 4_800, paymentTransaction: { teamAttribution: { pageId: "page-a" } } },
+      { refundAmountCents: 1_200, paymentTransaction: { teamAttribution: { pageId: "page-a" } } },
+      { refundAmountCents: 9_999, paymentTransaction: { teamAttribution: { pageId: "foreign-page" } } },
+    ]);
+
+    const report = await getTeamFunnelPerformanceReport({ teamId: "team-1", timezone: "Asia/Taipei", startDate: "2026-07-01", endDate: "2026-07-01" });
+
+    expect(report.rows[0]).toMatchObject({ refundCount: 2, refundAmountCents: 6_000 });
+    expect(db.refundRecord.findMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        processedAt: { gte: new Date("2026-06-30T16:00:00.000Z"), lt: new Date("2026-07-01T16:00:00.000Z") },
+        paymentTransaction: {
+          teamAttribution: {
+            vendorId: "vendor-1",
+            teamId: "team-1",
+            pageId: { in: ["page-a"] },
+          },
+        },
+      },
+      select: {
+        refundAmountCents: true,
+        paymentTransaction: { select: { teamAttribution: { select: { pageId: true } } } },
+      },
+      take: 5_001,
+    });
   });
 
   it("uses half-open timezone-aware date boundaries for Asia/Taipei", () => {
