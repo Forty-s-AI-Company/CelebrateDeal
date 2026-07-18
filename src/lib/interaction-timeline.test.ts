@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { reorderInteractionEvents } from "./interaction-timeline";
+import { parseInteractionTriggerSeconds, reorderInteractionEvents } from "./interaction-timeline";
+
+describe("parseInteractionTriggerSeconds", () => {
+  it.each([
+    ["0", 0],
+    ["59", 59],
+    ["3600", 3600],
+    ["00:00", 0],
+    ["00:59", 59],
+    ["59:59", 3599],
+    ["00:00:00", 0],
+    ["23:59:59", 86399],
+    ["99:00:00", 356400],
+  ])("parses the valid timestamp %s", (value, expected) => {
+    expect(parseInteractionTriggerSeconds(value)).toBe(expected);
+  });
+
+  it.each([
+    "",
+    " 10",
+    "10 ",
+    "-1",
+    "+1",
+    "1.5",
+    "one",
+    "1second",
+    "60:00",
+    "00:60",
+    "00:60:00",
+    "00:00:60",
+    "1:02",
+    "1:02:03",
+    "00:00:00:00",
+    "999999999999999999999999999999",
+  ])("rejects the invalid timestamp %s", (value) => {
+    expect(parseInteractionTriggerSeconds(value)).toBeNull();
+  });
+});
 
 describe("reorderInteractionEvents", () => {
   const events = [

@@ -41,6 +41,7 @@ import { hashPassword } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
+import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -73,21 +74,6 @@ function isRefundTransactionConflict(error: unknown) {
 
 function isRefundSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
-}
-
-function secondsValue(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed.includes(":")) {
-    const parsed = Number.parseInt(trimmed, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  const parts = trimmed.split(":").map((part) => Number.parseInt(part, 10) || 0);
-  if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }
-
-  return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
 }
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -1172,17 +1158,25 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   const db = getDb();
   const roleIds = formData.getAll("roleId").map(String);
   const eventTypes = formData.getAll("eventType").map(String);
-  const triggerSecs = formData.getAll("triggerSec").map((value) => secondsValue(String(value)));
+  const parsedTriggerSecs = formData.getAll("triggerSec").map((value) => parseInteractionTriggerSeconds(String(value)));
   const titles = formData.getAll("eventTitle").map(String);
   const messages = formData.getAll("message").map(String);
   const productIds = formData.getAll("productId").map(String);
   const ctaLabels = formData.getAll("ctaLabel").map(String);
   const ctaUrls = formData.getAll("ctaUrl").map(String);
 
+  if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
+    throw new Error(INTERACTION_TIME_FORMAT_ERROR);
+  }
+  const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
+    if (triggerSec === null) throw new Error(INTERACTION_TIME_FORMAT_ERROR);
+    return triggerSec;
+  });
+
   const events = eventTypes
     .map((eventType, index) => ({
       eventType,
-      triggerSec: triggerSecs[index] ?? 0,
+      triggerSec: triggerSecs[index],
       title: titles[index]?.trim() || `${eventType} ${index + 1}`,
       message: messages[index]?.trim() || null,
       productId: productIds[index]?.trim() || null,

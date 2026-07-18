@@ -1,12 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, type DragEvent } from "react";
+import { useMemo, useState, type DragEvent, type FormEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, Plus, Trash2, VideoIcon } from "lucide-react";
 import { upsertInteractionScriptAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
-import { reorderInteractionEvents } from "@/lib/interaction-timeline";
+import {
+  INTERACTION_TIME_FORMAT_ERROR,
+  parseInteractionTriggerSeconds,
+  reorderInteractionEvents,
+} from "@/lib/interaction-timeline";
 
 type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
@@ -66,13 +70,6 @@ function secondsToClock(seconds: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
-function clockToSeconds(value: string) {
-  const parts = value.split(":").map((part) => Number.parseInt(part, 10) || 0);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return parts[0] ?? 0;
-}
-
 function messageText(event: TimelineEvent) {
   return event.message ?? event.ctaLabel ?? event.title ?? "";
 }
@@ -91,11 +88,15 @@ export function InteractionScriptForm({
 }) {
   const initialEvents = useMemo<TimelineEvent[]>(() => (script?.events.length ? script.events : timelineTemplates[1].events), [script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
+  const [timeInputs, setTimeInputs] = useState(() => initialEvents.map((event) => secondsToClock(event.triggerSec)));
+  const [timeErrors, setTimeErrors] = useState<Record<number, string>>({});
   const [draggedEventIndex, setDraggedEventIndex] = useState<number | null>(null);
   const primaryLive = boundLives[0];
 
   function applyTemplate(template: TimelineTemplate) {
     setEvents(template.events);
+    setTimeInputs(template.events.map((event) => secondsToClock(event.triggerSec)));
+    setTimeErrors({});
   }
 
   function updateEvent(index: number, patch: Partial<TimelineEvent>) {
@@ -113,14 +114,50 @@ export function InteractionScriptForm({
       },
       ...current,
     ]);
+    setTimeInputs((current) => [secondsToClock(0), ...current]);
+    setTimeErrors((current) => Object.fromEntries(Object.entries(current).map(([index, message]) => [Number(index) + 1, message])));
   }
 
   function removeEvent(index: number) {
     setEvents((current) => current.filter((_, eventIndex) => eventIndex !== index));
+    setTimeInputs((current) => current.filter((_, inputIndex) => inputIndex !== index));
+    setTimeErrors((current) => Object.fromEntries(Object.entries(current)
+      .filter(([errorIndex]) => Number(errorIndex) !== index)
+      .map(([errorIndex, message]) => [Number(errorIndex) > index ? Number(errorIndex) - 1 : Number(errorIndex), message])));
   }
 
   function moveEvent(fromIndex: number, toIndex: number) {
-    setEvents((current) => reorderInteractionEvents(current, fromIndex, toIndex));
+    setEvents((current) => {
+      const reordered = reorderInteractionEvents(current, fromIndex, toIndex);
+      setTimeInputs(reordered.map((event) => secondsToClock(event.triggerSec)));
+      setTimeErrors({});
+      return reordered;
+    });
+  }
+
+  function updateTimeInput(index: number, value: string) {
+    setTimeInputs((current) => current.map((timeInput, inputIndex) => (inputIndex === index ? value : timeInput)));
+    const triggerSec = parseInteractionTriggerSeconds(value);
+    if (triggerSec === null) {
+      setTimeErrors((current) => ({ ...current, [index]: INTERACTION_TIME_FORMAT_ERROR }));
+      return;
+    }
+
+    setTimeErrors((current) => {
+      const remainingErrors = { ...current };
+      delete remainingErrors[index];
+      return remainingErrors;
+    });
+    updateEvent(index, { triggerSec });
+  }
+
+  function validateTimeInputs(event: FormEvent<HTMLFormElement>) {
+    const errors = Object.fromEntries(timeInputs
+      .map((timeInput, index) => [index, parseInteractionTriggerSeconds(timeInput)] as const)
+      .filter(([, triggerSec]) => triggerSec === null)
+      .map(([index]) => [index, INTERACTION_TIME_FORMAT_ERROR]));
+    setTimeErrors(errors);
+    if (Object.keys(errors).length > 0) event.preventDefault();
   }
 
   function handleDragStart(event: DragEvent<HTMLDivElement>, index: number) {
@@ -137,7 +174,7 @@ export function InteractionScriptForm({
   }
 
   return (
-    <form action={upsertInteractionScriptAction} className="grid gap-5">
+    <form action={upsertInteractionScriptAction} onSubmit={validateTimeInputs} className="grid gap-5">
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
       {script ? <input type="hidden" name="id" value={script.id} /> : null}
       <input type="hidden" name="status" value={script?.status ?? "published"} />
@@ -253,12 +290,17 @@ export function InteractionScriptForm({
                     onDragEnd={() => setDraggedEventIndex(null)}
                     className={`grid grid-cols-[112px_64px_1fr_auto] gap-2 px-4 py-2 hover:bg-blue-50/40 ${draggedEventIndex === index ? "opacity-50" : ""}`}
                   >
-                    <input
-                      name="triggerSec"
-                      value={secondsToClock(event.triggerSec)}
-                      onChange={(inputEvent) => updateEvent(index, { triggerSec: clockToSeconds(inputEvent.target.value) })}
-                      className="h-10 rounded-md border border-border px-2 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
-                    />
+                    <div className="grid gap-1">
+                      <input
+                        name="triggerSec"
+                        value={timeInputs[index] ?? secondsToClock(event.triggerSec)}
+                        onChange={(inputEvent) => updateTimeInput(index, inputEvent.target.value)}
+                        aria-describedby={timeErrors[index] ? `triggerSec-error-${index}` : undefined}
+                        aria-invalid={Boolean(timeErrors[index])}
+                        className="h-10 rounded-md border border-border px-2 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+                      />
+                      {timeErrors[index] ? <p id={`triggerSec-error-${index}`} className="text-xs leading-4 text-red-600">{timeErrors[index]}</p> : null}
+                    </div>
                     <div className="relative grid h-10 w-10 place-items-center rounded-full bg-slate-100">
                       {selectedAvatar ? <Image src={selectedAvatar} alt="" width={40} height={40} unoptimized className="h-10 w-10 rounded-full object-cover" /> : null}
                       <select name="roleId" value={event.roleId ?? selectedRole?.id ?? ""} onChange={(selectEvent) => updateEvent(index, { roleId: selectEvent.target.value || null })} className="absolute inset-0 cursor-pointer opacity-0">
