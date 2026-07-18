@@ -315,6 +315,92 @@ describe("payment webhook processing", () => {
     expect(transactions[0]?.grossAmountCents).toBe(100000);
   });
 
+  it.each([
+    { label: "amount", grossAmountCents: 99000, currency: "TWD" },
+    { label: "currency", grossAmountCents: 100000, currency: "USD" },
+  ])("rejects a checkout transaction webhook with a mismatched $label", async ({ grossAmountCents, currency }) => {
+    const suffix = `${Date.now()}-checkout-mismatch-${currency}`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-CHECKOUT-MISMATCH-${suffix}`;
+    const checkoutTransaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "checkout",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+      },
+    });
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-checkout-mismatch-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents,
+      currency,
+    }))).rejects.toThrow("付款 webhook 訂單金額或幣別與既存交易不一致");
+
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: checkoutTransaction.id } })).toMatchObject({
+      grossAmountCents: 100000,
+      currency: "TWD",
+      status: "pending",
+    });
+  });
+
+  it("uses checkout referral metadata, ignores forged callback codes, and accepts matching retries", async () => {
+    const suffix = `${Date.now()}-checkout-referral-authority`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const forgedAffiliate = await db.affiliate.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Forged Partner ${suffix}`,
+        code: `FORGED${suffix}`.toUpperCase(),
+        commissionRateBps: 2000,
+      },
+    });
+    const orderNumber = `ORDER-CHECKOUT-REFERRAL-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "checkout",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { referralCode: affiliate.code },
+      },
+    });
+    const payload = {
+      provider: "demo",
+      eventId: `evt-checkout-referral-${suffix}`,
+      eventType: "paid" as const,
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+      currency: "TWD",
+      referralCode: forgedAffiliate.code,
+      metadata: { referralCode: forgedAffiliate.code },
+    };
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse(payload));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-checkout-referral-retry-${suffix}` }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    const commissions = await db.affiliateCommission.findMany({ where: { vendorId: vendor.id, orderNumber } });
+    expect(transaction.metadata).toMatchObject({ referralCode: affiliate.code });
+    expect(commissions).toEqual([
+      expect.objectContaining({ affiliateId: affiliate.id, referralCode: affiliate.code, commissionAmountCents: 8000 }),
+    ]);
+    expect(commissions.find((commission) => commission.affiliateId === forgedAffiliate.id)).toBeUndefined();
+  });
+
   it("rejects dual vendor identifiers when either identifier cannot be resolved", async () => {
     const suffix = `${Date.now()}-vendor-missing`;
     const { db, vendor } = await createFixture(suffix);
