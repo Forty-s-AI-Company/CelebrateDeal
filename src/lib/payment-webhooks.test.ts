@@ -420,6 +420,78 @@ describe("payment webhook processing", () => {
     expect(commissionTotal).toBe(4000);
   });
 
+  it("zeros affiliate commissions and prior refund adjustments when a full refund follows a partial refund", async () => {
+    const suffix = `${Date.now()}-affiliate-full-refund`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-partial-refund-${suffix}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+    }));
+
+    const fullRefund = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-full-refund-${suffix}`,
+      eventType: "refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 80000,
+    });
+    await processPaymentWebhook(fullRefund);
+
+    const commissionsAfterFullRefund = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, orderNumber },
+      orderBy: { createdAt: "asc" },
+    });
+    const transactionAfterFullRefund = await db.paymentTransaction.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber },
+    });
+    const adjustmentsAfterFullRefund = commissionsAfterFullRefund.filter((commission) => commission.sourceType === "refund_adjustment");
+    const commissionStateAfterFullRefund = commissionsAfterFullRefund.map((commission) => ({
+      id: commission.id,
+      status: commission.status,
+      commissionAmountCents: commission.commissionAmountCents,
+    }));
+
+    expect(commissionsAfterFullRefund.reduce((total, commission) => total + commission.commissionAmountCents, 0)).toBe(0);
+    expect(adjustmentsAfterFullRefund).toHaveLength(1);
+    expect(adjustmentsAfterFullRefund[0]).toMatchObject({ status: "void", commissionAmountCents: 0 });
+    expect(commissionsAfterFullRefund.find((commission) => commission.sourceType !== "refund_adjustment")).toMatchObject({
+      status: "void",
+      commissionAmountCents: 0,
+    });
+    expect(transactionAfterFullRefund.refundedAmountCents).toBe(100000);
+
+    await processPaymentWebhook(fullRefund);
+
+    const commissionsAfterRetry = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, orderNumber },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(commissionsAfterRetry.map((commission) => ({
+      id: commission.id,
+      status: commission.status,
+      commissionAmountCents: commission.commissionAmountCents,
+    }))).toEqual(commissionStateAfterFullRefund);
+    expect(await db.refundRecord.count({
+      where: { paymentTransactionId: transactionAfterFullRefund.id, providerEventId: fullRefund.eventId },
+    })).toBe(1);
+  });
+
   it.each(["refunded", "partially_refunded"] as const)("preserves the payment occurrence date while accumulating cross-month %s events", async (eventType) => {
     const suffix = `${Date.now()}-cross-month-refund`;
     const { db, vendor } = await createFixture(suffix);

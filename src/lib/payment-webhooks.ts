@@ -132,13 +132,44 @@ async function applyRefundToCommission(
     where: {
       vendorId,
       orderNumber: payload.orderNumber,
+      sourceType: { not: "refund_adjustment" },
       status: { in: ["pending", "approved", "locked"] },
     },
   });
 
+  if (payload.eventType === "refunded") {
+    const settledAt = new Date();
+    const voidedCommission = commission
+      ? await db.affiliateCommission.update({
+          where: { id: commission.id },
+          data: {
+            status: "void",
+            commissionAmountCents: 0,
+            settledAt,
+            sourceType: `${commission.sourceType}: webhook_refund`,
+          },
+        })
+      : null;
+
+    await db.affiliateCommission.updateMany({
+      where: {
+        vendorId,
+        orderNumber: payload.orderNumber,
+        sourceType: "refund_adjustment",
+      },
+      data: {
+        status: "void",
+        commissionAmountCents: 0,
+        settledAt,
+      },
+    });
+
+    return voidedCommission;
+  }
+
   if (!commission) return null;
 
-  if (payload.eventType === "refunded" || payload.refundAmountCents >= commission.orderAmountCents) {
+  if (payload.refundAmountCents >= commission.orderAmountCents) {
     return db.affiliateCommission.update({
       where: { id: commission.id },
       data: {
