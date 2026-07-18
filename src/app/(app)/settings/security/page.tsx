@@ -8,6 +8,7 @@ import {
   regenerateRecoveryCodesAction,
   revokeAllSessionsAction,
   revokeOtherSessionsAction,
+  resendVendorMemberInvitationAction,
   sendPasswordResetSmokeAction,
   startMfaEnrollmentAction,
   updatePasswordAction,
@@ -25,6 +26,8 @@ const errorMessages: Record<string, string> = {
   member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
   member_invitation_rate_limited: "邀請寄送次數過多，請稍候再試；商家成員尚未變更。",
   member_invitation_unavailable: "邀請頻率檢查暫時無法使用；商家成員尚未變更，請稍候再試。",
+  member_invitation_resend_invalid: "找不到可重寄邀請的 active 商家成員。",
+  member_invitation_resend_failed: "設定密碼邀請信寄送失敗，請稍後再試。",
   platform_user: "平台管理員帳號不能加入商家成員清單。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
@@ -38,6 +41,7 @@ const errorMessages: Record<string, string> = {
 const updatedMessages: Record<string, string> = {
   "1": "密碼已更新。",
   member: "商家成員已更新，並已寄出設定密碼邀請信。",
+  member_invitation_resent: "已重新寄出設定密碼邀請信。",
   member_deactivated: "商家成員已停用，相關 session 已撤銷。",
   sessions_revoked: "其他裝置 session 已撤銷。",
   mfa_started: "請用驗證器 App 掃描或手動輸入密鑰，然後輸入 6 位數驗證碼完成啟用。",
@@ -264,11 +268,18 @@ export default async function SecuritySettingsPage({
                     </td>
                     <td className="px-4 py-3 text-right">
                       {isOwner && member.status === "active" && member.userId !== auth.user.id ? (
-                        <form action={deactivateVendorMemberAction}>
-                          <CsrfField />
-                          <input type="hidden" name="id" value={member.id} />
-                          <button className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">停用</button>
-                        </form>
+                        <div className="flex justify-end gap-2">
+                          <form action={resendVendorMemberInvitationAction}>
+                            <CsrfField />
+                            <input type="hidden" name="id" value={member.id} />
+                            <button className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">重寄設定密碼邀請</button>
+                          </form>
+                          <form action={deactivateVendorMemberAction}>
+                            <CsrfField />
+                            <input type="hidden" name="id" value={member.id} />
+                            <button className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">停用</button>
+                          </form>
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-400">-</span>
                       )}
