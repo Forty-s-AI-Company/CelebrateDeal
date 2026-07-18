@@ -2,19 +2,24 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
-import { getPaymentProvider } from "@/lib/payment-providers";
+import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
   const requestUrl = new URL(request.url);
   const providerId = requestUrl.searchParams.get("provider")
     ?? request.headers.get("x-payment-provider")
-    ?? request.headers.get("x-webhook-provider")
-    ?? "demo";
-  const adapter = getPaymentProvider(providerId);
+    ?? request.headers.get("x-webhook-provider");
+  let adapter: PaymentProviderAdapter;
+  try {
+    adapter = getPaymentProvider(providerId);
+  } catch {
+    return NextResponse.json({ error: "Unsupported payment provider" }, { status: 400 });
+  }
+
+  const rawBody = await request.text();
   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
   const verified = await adapter.verifySignature(request, rawBody);
 
