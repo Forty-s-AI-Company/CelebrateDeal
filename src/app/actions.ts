@@ -748,6 +748,70 @@ export async function createVendorMemberAction(formData: FormData) {
   redirect("/settings/security?updated=member");
 }
 
+export async function resendVendorMemberInvitationAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  const id = text(formData, "id");
+  const db = getDb();
+  const member = await db.vendorMember.findFirst({
+    where: {
+      id,
+      vendorId: auth.vendor.id,
+      status: "active",
+    },
+    include: { user: true },
+  });
+
+  if (member?.status !== "active" || member.userId === auth.user.id || member.user.platformRole !== "none") {
+    redirect("/settings/security?error=member_invitation_resend_invalid");
+  }
+
+  const headerStore = await headers();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(appUrl, { headers: rateLimitHeaders }),
+    "vendor-member-invitation",
+    5,
+    60_000,
+  );
+  if (rateLimited) {
+    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
+  }
+
+  let invitationSent = false;
+  try {
+    invitationSent = Boolean(await sendPasswordResetLink({
+      email: member.user.email,
+      appUrl,
+      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: headerStore.get("user-agent"),
+    }));
+  } catch {}
+
+  await writeAuditLog({
+    vendorId: auth.vendor.id,
+    actorId: auth.user.id,
+    actorLabel: auth.member.role,
+    action: invitationSent ? "vendor_member_invitation_resent" : "vendor_member_invitation_resend_email_failed",
+    targetType: "VendorMember",
+    targetId: member.id,
+    after: auditSnapshot({
+      email: member.user.email,
+      role: member.role,
+      status: member.status,
+    }),
+  });
+
+  redirect(invitationSent
+    ? "/settings/security?updated=member_invitation_resent"
+    : "/settings/security?error=member_invitation_resend_failed");
+}
+
 export async function deactivateVendorMemberAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
