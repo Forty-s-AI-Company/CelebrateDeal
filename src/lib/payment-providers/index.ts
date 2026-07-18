@@ -11,7 +11,11 @@ const providers: Record<string, PaymentProviderAdapter> = {
 };
 
 export function getPaymentProvider(providerId: string | null) {
-  return providers[providerId ?? "demo"] ?? demoPaymentProvider;
+  const provider = providerId && providerId.trim() ? providers[providerId] : undefined;
+  if (!provider) {
+    throw new Error("Unsupported payment provider");
+  }
+  return provider;
 }
 
 export type { PaymentProviderAdapter };
