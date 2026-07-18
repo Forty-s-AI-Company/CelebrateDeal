@@ -71,7 +71,13 @@ async function findVendor(payload: PaymentWebhookPayloadInput) {
   throw new Error("付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。");
 }
 
-async function upsertAffiliateCommission(payload: PaymentWebhookPayloadInput, vendorId: string, transactionId: string, occurredAt: Date) {
+async function upsertAffiliateCommission(
+  payload: PaymentWebhookPayloadInput,
+  vendorId: string,
+  transactionId: string,
+  occurredAt: Date,
+  hasRefundedOrder: boolean,
+) {
   if (!payload.referralCode || payload.eventType !== "paid") return null;
 
   const db = getDb();
@@ -92,6 +98,10 @@ async function upsertAffiliateCommission(payload: PaymentWebhookPayloadInput, ve
   });
 
   if (existing) {
+    if (hasRefundedOrder || existing.status === "void") {
+      return existing;
+    }
+
     return db.affiliateCommission.update({
       where: { id: existing.id },
       data: {
@@ -99,10 +109,12 @@ async function upsertAffiliateCommission(payload: PaymentWebhookPayloadInput, ve
         orderAmountCents: payload.grossAmountCents,
         commissionRateBps,
         commissionAmountCents,
-        status: existing.status === "void" ? "pending" : existing.status,
+        status: existing.status,
       },
     });
   }
+
+  if (hasRefundedOrder) return null;
 
   return db.affiliateCommission.create({
     data: {
@@ -211,6 +223,11 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     where: { vendorId: vendor.id, orderNumber: payload.orderNumber },
     include: { refunds: true },
   });
+  const hasRefundedOrder = Boolean(existingTransaction && (
+    existingTransaction.refundedAmountCents > 0
+    || existingTransaction.refunds.length > 0
+    || ["refunded", "partially_refunded"].includes(existingTransaction.status)
+  ));
   const grossAmountCents = payload.grossAmountCents || existingTransaction?.grossAmountCents || 0;
   const gatewayFeeCents = payload.gatewayFeeCents || existingTransaction?.gatewayFeeCents || 0;
   const platformFeeCents = payload.platformFeeCents || existingTransaction?.platformFeeCents || 0;
@@ -226,6 +243,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     ...(formSubmissionId ? { formSubmissionId } : {}),
   } as Prisma.InputJsonObject;
   const preservesOccurredAt = Boolean(existingTransaction) && ["refunded", "partially_refunded"].includes(payload.eventType);
+  const preservesRefundState = payload.eventType === "paid" && hasRefundedOrder;
 
   const { transaction, refundCommission } = await db.$transaction(async (tx) => {
     const savedTransaction = existingTransaction
@@ -240,7 +258,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             platformFeeCents,
             netAmountCents,
             currency: payload.currency,
-            status: payload.eventType === "paid" ? "paid" : payload.eventType,
+            status: preservesRefundState ? existingTransaction.status : payload.eventType === "paid" ? "paid" : payload.eventType,
             ...(preservesOccurredAt ? {} : { occurredAt }),
             metadata: transactionMetadata,
           },
@@ -341,7 +359,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     return { transaction: savedTransaction, refundCommission };
   });
 
-  const commission = await upsertAffiliateCommission(payload, vendor.id, transaction.id, occurredAt);
+  const commission = await upsertAffiliateCommission(payload, vendor.id, transaction.id, occurredAt, hasRefundedOrder);
 
   await writeAuditLog({
     vendorId: vendor.id,

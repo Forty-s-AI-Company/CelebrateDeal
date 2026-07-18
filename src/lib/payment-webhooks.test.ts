@@ -492,6 +492,49 @@ describe("payment webhook processing", () => {
     })).toBe(1);
   });
 
+  it("does not restore commission or transaction state when a paid webhook arrives after a full refund", async () => {
+    const suffix = `${Date.now()}-delayed-paid-after-refund`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-initial-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-full-refund-${suffix}`,
+      eventType: "refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 100000,
+    }));
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-delayed-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    const commission = await db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
+    });
+
+    expect(commission).toMatchObject({ status: "void", commissionAmountCents: 0 });
+    expect(transaction).toMatchObject({ status: "refunded", refundedAmountCents: 100000 });
+    expect(await db.refundRecord.count({ where: { paymentTransactionId: transaction.id } })).toBe(1);
+  });
+
   it.each(["refunded", "partially_refunded"] as const)("preserves the payment occurrence date while accumulating cross-month %s events", async (eventType) => {
     const suffix = `${Date.now()}-cross-month-refund`;
     const { db, vendor } = await createFixture(suffix);
