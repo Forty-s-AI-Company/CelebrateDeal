@@ -187,9 +187,11 @@ describe("createVendorMemberAction", () => {
         status: "active",
       }),
     }));
+    // 與 Server Action 使用相同的環境網址，避免 CI 與本機設定不同時產生假失敗。
+    const expectedAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
     expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith({
       email: newUser.email,
-      appUrl: "http://localhost:31023",
+      appUrl: expectedAppUrl,
       ipAddress: "203.0.113.10",
       userAgent: "CelebrateDeal test",
     });
