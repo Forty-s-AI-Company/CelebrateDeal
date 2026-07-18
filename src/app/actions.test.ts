@@ -4,32 +4,45 @@ const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   calculateSettlement: vi.fn(),
   findUnique: vi.fn(),
+  headers: vi.fn(),
   invoiceUpsert: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
   refundRecordCreate: vi.fn(),
   requireFinanceAdmin: vi.fn(),
+  requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
+  sendPasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
   settlementUpsert: vi.fn(),
   transaction: vi.fn(),
+  userCreate: vi.fn(),
+  userFindUnique: vi.fn(),
+  userUpdate: vi.fn(),
   vendorFindUnique: vi.fn(),
+  vendorMemberFindUnique: vi.fn(),
+  vendorMemberUpsert: vi.fn(),
   writeAuditLog: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
 }));
-vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
+vi.mock("@/lib/auth", () => ({
+  requireFinanceAdmin: mocks.requireFinanceAdmin,
+  requireVendorOwner: mocks.requireVendorOwner,
+}));
 vi.mock("@/lib/billing", () => ({
   calculateSettlement: mocks.calculateSettlement,
   invoiceNumber: (vendorSlug: string, monthKey: string) => `${vendorSlug}-${monthKey}`,
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
+vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink: mocks.sendPasswordResetLink }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     paymentTransaction: {
@@ -39,11 +52,13 @@ vi.mock("@/lib/db", () => ({
     refundRecord: { aggregate: mocks.refundRecordAggregate },
     settlement: { findUnique: mocks.settlementFindUnique },
     $transaction: mocks.transaction,
+    user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     vendor: { findUnique: mocks.vendorFindUnique },
+    vendorMember: { findUnique: mocks.vendorMemberFindUnique, upsert: mocks.vendorMemberUpsert },
   }),
 }));
 
-import { generateSettlementAction, refundPaymentTransactionAction } from "./actions";
+import { createVendorMemberAction, generateSettlementAction, refundPaymentTransactionAction } from "./actions";
 
 const transaction = {
   id: "payment-1",
@@ -76,10 +91,35 @@ function settlementFormData(monthKey: string) {
   return formData;
 }
 
+function vendorMemberFormData({
+  name = "王小明",
+  email = "member@example.com",
+  role = "accountant",
+}: {
+  name?: string;
+  email?: string;
+  role?: string;
+} = {}) {
+  const formData = new FormData();
+  formData.set("name", name);
+  formData.set("email", email);
+  formData.set("role", role);
+  return formData;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
+  mocks.requireVendorOwner.mockResolvedValue({
+    user: { id: "owner-1" },
+    member: { role: "owner" },
+    vendor: { id: "vendor-1" },
+  });
+  mocks.headers.mockResolvedValue({
+    get: (name: string) => (name === "x-forwarded-for" ? "203.0.113.10, 198.51.100.1" : "CelebrateDeal test"),
+  });
+  mocks.sendPasswordResetLink.mockResolvedValue({ token: "one-time-reset-token", resetUrl: "https://app.test/password-reset/confirm?token=one-time-reset-token" });
   mocks.findUnique.mockResolvedValue(transaction);
   mocks.refundRecordAggregate.mockResolvedValue({
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
@@ -109,6 +149,119 @@ beforeEach(() => {
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
+  });
+});
+
+describe("createVendorMemberAction", () => {
+  it("creates a member and sends a one-time password setup invitation without auditing the token or password", async () => {
+    const newUser = { id: "user-2", email: "member@example.com", name: "王小明", status: "active", platformRole: "none" };
+    const savedMember = { id: "member-2", userId: newUser.id, role: "accountant", status: "active", user: newUser };
+    mocks.userFindUnique.mockResolvedValue(null);
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      user: { create: mocks.userCreate, update: mocks.userUpdate },
+      vendorMember: { upsert: mocks.vendorMemberUpsert },
+    }));
+    mocks.userCreate.mockResolvedValue(newUser);
+    mocks.userUpdate.mockResolvedValue(newUser);
+    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
+
+    const formData = vendorMemberFormData();
+    const suppliedInitialPassword = "initial-password-must-not-be-sent";
+    formData.set("password", suppliedInitialPassword);
+    await expect(createVendorMemberAction(formData)).rejects.toThrow("redirect:/settings/security?updated=member");
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
+    expect(mocks.userCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        email: newUser.email,
+        name: newUser.name,
+        passwordHash: expect.any(String),
+      }),
+    });
+    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        vendorId: "vendor-1",
+        userId: newUser.id,
+        role: "accountant",
+        status: "active",
+      }),
+    }));
+    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith({
+      email: newUser.email,
+      appUrl: "http://localhost:31023",
+      ipAddress: "203.0.113.10",
+      userAgent: "CelebrateDeal test",
+    });
+
+    const generatedPasswordHash = mocks.userCreate.mock.calls[0]?.[0].data.passwordHash;
+    const auditEntries = JSON.stringify(mocks.writeAuditLog.mock.calls);
+    expect(auditEntries).not.toContain("one-time-reset-token");
+    expect(auditEntries).not.toContain(generatedPasswordHash);
+    expect(auditEntries).not.toContain("passwordHash");
+    expect(auditEntries).not.toContain(suppliedInitialPassword);
+    expect(JSON.stringify(mocks.sendPasswordResetLink.mock.calls)).not.toContain(suppliedInitialPassword);
+  });
+
+  it("re-enables an inactive membership and sends a new invitation", async () => {
+    const existingUser = { id: "user-2", email: "member@example.com", name: "原本姓名", status: "inactive", platformRole: "none" };
+    const inactiveMember = {
+      id: "member-2",
+      userId: existingUser.id,
+      role: "accountant",
+      status: "inactive",
+      user: { ...existingUser, passwordHash: "existing-password-hash" },
+    };
+    const savedMember = { ...inactiveMember, role: "admin", status: "active", deactivatedAt: null };
+    mocks.userFindUnique.mockResolvedValue(existingUser);
+    mocks.vendorMemberFindUnique.mockResolvedValue(inactiveMember);
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      user: { create: mocks.userCreate, update: mocks.userUpdate },
+      vendorMember: { upsert: mocks.vendorMemberUpsert },
+    }));
+    mocks.userUpdate.mockResolvedValue(existingUser);
+    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
+
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow("redirect:/settings/security?updated=member");
+
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ role: "admin", status: "active", deactivatedAt: null }),
+    }));
+    expect(mocks.userUpdate).toHaveBeenCalledWith({
+      where: { id: existingUser.id },
+      data: { name: existingUser.name, status: "active" },
+    });
+    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith(expect.objectContaining({ email: existingUser.email }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "reactivate_vendor_member" }));
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("existing-password-hash");
+  });
+
+  it("keeps the membership update but reports an invitation delivery failure without auditing secrets", async () => {
+    const newUser = { id: "user-2", email: "member@example.com", name: "王小明", status: "active", platformRole: "none" };
+    const savedMember = { id: "member-2", userId: newUser.id, role: "accountant", status: "active", user: newUser };
+    mocks.userFindUnique.mockResolvedValue(null);
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      user: { create: mocks.userCreate, update: mocks.userUpdate },
+      vendorMember: { upsert: mocks.vendorMemberUpsert },
+    }));
+    mocks.userCreate.mockResolvedValue(newUser);
+    mocks.userUpdate.mockResolvedValue(newUser);
+    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
+    mocks.sendPasswordResetLink.mockRejectedValueOnce(new Error("email delivery failed"));
+
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=member_invitation",
+    );
+
+    expect(mocks.writeAuditLog).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: "vendor_member_invitation_email_failed",
+      after: { email: newUser.email, role: "accountant", status: "active" },
+    }));
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
+    const auditEntries = JSON.stringify(mocks.writeAuditLog.mock.calls);
+    expect(auditEntries).not.toContain("one-time-reset-token");
+    expect(auditEntries).not.toContain("passwordHash");
   });
 });
 

@@ -22,7 +22,7 @@ const errorMessages: Record<string, string> = {
   short: "密碼至少需要 12 個字元。",
   owner_required: "只有商家 owner 可以管理成員。",
   member_invalid: "請確認成員姓名、Email 與角色都已填寫。",
-  member_password: "新增成員時，初始密碼至少需要 12 個字元。",
+  member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
   platform_user: "平台管理員帳號不能加入商家成員清單。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
@@ -35,7 +35,7 @@ const errorMessages: Record<string, string> = {
 
 const updatedMessages: Record<string, string> = {
   "1": "密碼已更新。",
-  member: "商家成員已更新。",
+  member: "商家成員已更新，並已寄出設定密碼邀請信。",
   member_deactivated: "商家成員已停用，相關 session 已撤銷。",
   sessions_revoked: "其他裝置 session 已撤銷。",
   mfa_started: "請用驗證器 App 掃描或手動輸入密鑰，然後輸入 6 位數驗證碼完成啟用。",
@@ -215,7 +215,7 @@ export default async function SecuritySettingsPage({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
-              <p className="mt-1 text-sm text-slate-500">Owner 可新增或停用成員；平台管理員帳號不會出現在商家端管理名單。</p>
+              <p className="mt-1 text-sm text-slate-500">Owner 可用 Email 邀請或重新啟用成員；平台管理員帳號不會出現在商家端管理名單。</p>
             </div>
             <Badge tone={isOwner ? "green" : "gray"}>{isOwner ? "owner" : auth.member?.role ?? "member"}</Badge>
           </div>
@@ -230,9 +230,9 @@ export default async function SecuritySettingsPage({
                 <option value="admin">Admin</option>
                 <option value="accountant">Accountant</option>
               </SelectField>
-              <Field label="初始密碼" name="password" type="password" placeholder="新帳號需至少 12 字元" />
               <div className="md:col-span-2">
-                <SubmitButton>新增 / 啟用成員</SubmitButton>
+                <p className="mb-3 text-sm text-blue-800">系統會寄送一次性的設定密碼連結，不會顯示或傳送初始密碼。</p>
+                <SubmitButton>寄送邀請 / 重新啟用成員</SubmitButton>
               </div>
             </form>
           ) : (
