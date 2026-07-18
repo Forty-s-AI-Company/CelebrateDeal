@@ -42,6 +42,11 @@ function formSubmissionIdFromMetadata(metadata: unknown) {
   return typeof formSubmissionId === "string" && formSubmissionId.length > 0 ? formSubmissionId : null;
 }
 
+function referralCodeFromMetadata(metadata: unknown) {
+  const referralCode = metadataObject(metadata).referralCode;
+  return typeof referralCode === "string" && referralCode.trim().length > 0 ? referralCode.trim() : null;
+}
+
 async function findVendor(payload: PaymentWebhookPayloadInput) {
   const db = getDb();
 
@@ -77,14 +82,16 @@ async function upsertAffiliateCommission(
   transactionId: string,
   occurredAt: Date,
   hasRefundedOrder: boolean,
+  referralCode: string | null | undefined,
 ) {
-  if (!payload.referralCode || payload.eventType !== "paid") return null;
+  if (!referralCode || payload.eventType !== "paid") return null;
 
   const db = getDb();
+  const normalizedReferralCode = referralCode.toUpperCase();
   const affiliate = await db.affiliate.findFirst({
     where: {
       vendorId,
-      code: payload.referralCode.toUpperCase(),
+      code: normalizedReferralCode,
       isActive: true,
     },
   });
@@ -94,7 +101,7 @@ async function upsertAffiliateCommission(
   const commissionRateBps = payload.commissionRateBps ?? affiliate.commissionRateBps;
   const commissionAmountCents = Math.round((payload.grossAmountCents * commissionRateBps) / 10000);
   const existing = await db.affiliateCommission.findFirst({
-    where: { vendorId, orderNumber: payload.orderNumber, referralCode: payload.referralCode.toUpperCase() },
+    where: { vendorId, orderNumber: payload.orderNumber, referralCode: normalizedReferralCode },
   });
 
   if (existing) {
@@ -123,7 +130,7 @@ async function upsertAffiliateCommission(
       monthKey: monthKeyFromDate(occurredAt),
       sourceType: "webhook",
       sourceId: transactionId,
-      referralCode: payload.referralCode.toUpperCase(),
+      referralCode: normalizedReferralCode,
       orderNumber: payload.orderNumber,
       orderAmountCents: payload.grossAmountCents,
       commissionRateBps,
@@ -223,6 +230,13 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     where: { vendorId: vendor.id, orderNumber: payload.orderNumber },
     include: { refunds: true },
   });
+  if (existingTransaction && payload.eventType === "paid" && (
+    payload.grossAmountCents !== existingTransaction.grossAmountCents
+    || payload.currency !== existingTransaction.currency
+  )) {
+    throw new Error("付款 webhook 訂單金額或幣別與既存交易不一致。");
+  }
+
   const hasRefundedOrder = Boolean(existingTransaction && (
     existingTransaction.refundedAmountCents > 0
     || existingTransaction.refunds.length > 0
@@ -233,13 +247,16 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
   const platformFeeCents = payload.platformFeeCents || existingTransaction?.platformFeeCents || 0;
   const netAmountCents = payload.netAmountCents ?? existingTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
   const existingMetadata = metadataObject(existingTransaction?.metadata);
-  const payloadMetadata = metadataObject(payload.metadata);
+  const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
+  const payloadMetadata = { ...metadataObject(payload.metadata) };
+  delete payloadMetadata.referralCode;
   const formSubmissionId = payload.eventType === "paid"
     ? formSubmissionIdFromMetadata(payloadMetadata) ?? formSubmissionIdFromMetadata(existingMetadata)
     : formSubmissionIdFromMetadata(existingMetadata);
   const transactionMetadata = {
     ...existingMetadata,
     ...payloadMetadata,
+    ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
     ...(formSubmissionId ? { formSubmissionId } : {}),
   } as Prisma.InputJsonObject;
   const preservesOccurredAt = Boolean(existingTransaction) && ["refunded", "partially_refunded"].includes(payload.eventType);
@@ -359,7 +376,14 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     return { transaction: savedTransaction, refundCommission };
   });
 
-  const commission = await upsertAffiliateCommission(payload, vendor.id, transaction.id, occurredAt, hasRefundedOrder);
+  const commission = await upsertAffiliateCommission(
+    payload,
+    vendor.id,
+    transaction.id,
+    occurredAt,
+    hasRefundedOrder,
+    existingTransaction ? checkoutReferralCode : payload.referralCode,
+  );
 
   await writeAuditLog({
     vendorId: vendor.id,
