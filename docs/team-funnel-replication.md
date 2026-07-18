@@ -9,7 +9,7 @@
 
 本 Epic 的核心路徑已具備可驗收實作：A 建立並發佈不可變模板版本；B 經受控分享取得副本、依鎖定規則編輯與發布；公開頁安全呈現 B 的頁面與 A 的研討會；click 與報名 lead 會保存 A/B／內容／研討會歸屬快照；A 與 B 取得各自受限的成效報表。HEAD 的瀏覽器驗收涵蓋這條路徑、三種複製模式、跨租戶拒絕、過期分享與桌機／手機版面檢查。
 
-付款成交／退款的團隊歸因寫入、A/B 佣金分配與結算，以及團隊成員／上下線關係的管理 UI，尚未落實；詳見「Remaining gaps」。
+付款成交已由 webhook 建立團隊成交歸因，退款也已反映在團隊成效讀模型。A/B 之間的佣金分配與結算，以及團隊成員／上下線關係的管理 UI，仍未落實；詳見「Remaining gaps」。
 
 ## 已完成能力與證據
 
@@ -24,8 +24,8 @@
 | 商品槽 | 僅允許 `main_product`、`bundle_product`、`join_member`、`consultation` 四槽；優先使用 B 的安全 URL 覆寫，再回退模板商品連結，缺值明示。跨 tenant、非核准槽、未鎖定授權或含帳密／非 HTTP(S) URL 都被拒絕。 | `src/lib/team-funnel-product-slots.ts`、`src/lib/team-funnel-product-slots.test.ts` |
 | 分享安全 | 分享碼含高熵隨機部分，資料庫僅存 SHA-256 hash；支援指定成員或直接下線、到期、停用與使用次數限制。領取時再次驗證 tenant、team、受眾、有效擁有者與序列化交易，失敗回傳不洩露來源的狀態。 | `src/lib/team-funnel-sharing.ts`、`src/lib/team-funnel-sharing.test.ts` |
 | 公開頁 | `/p/[slug]` 只由伺服端已儲存的頁面及關聯解析；只在公開／有效分享、有效 A/B、正確 A 所屬 webinar 與有效表單、可用主商品槽都存在時渲染。 | `src/app/p/[slug]/page.tsx`、`src/components/team-funnel-public-page.tsx`、`src/lib/team-funnel-public-page.test.ts` |
-| 歸因 | 公開 affiliate click 與表單提交從同源 Referer 的 B 頁及伺服端關聯解析歸屬，不信任 client 傳入 owner；query referral、有效 cookie、舊 referral 有固定優先序。click／lead 以 upsert 保存 A、B、內容擁有者、研討會擁有者、來源與 referral snapshot。 | `src/app/api/affiliate-clicks/route.ts`、`src/app/api/form-submissions/route.ts`、`src/lib/team-funnel-attribution.ts` 及 tests |
-| A/B 報表 | `/team-performance` 以頁面範圍彙整可驗證 `pageId` 的瀏覽、團隊 click 與 lead；A 看自己擁有模板版本的頁面，B 只看自己推廣頁面。報表有台北時區半開區間、93 天／筆數上限、延遲／缺失／截斷明示，不推估資料。 | `src/lib/team-funnel-performance.ts`、`src/components/team-performance-dashboard.tsx`、相對應 tests |
+| 歸因 | 公開 affiliate click 與表單提交從同源 Referer 的 B 頁及伺服端關聯解析歸屬，不信任 client 傳入 owner；query referral、有效 cookie、舊 referral 有固定優先序。click／lead 以 upsert 保存 A、B、內容擁有者、研討會擁有者、來源與 referral snapshot。結帳會把同 vendor 的 `formSubmissionId` 保存至既有訂單 metadata；paid webhook 再由該 lead snapshot 建立每筆付款一筆的團隊成交 snapshot。 | `src/app/api/affiliate-clicks/route.ts`、`src/app/api/form-submissions/route.ts`、`src/app/api/payments/checkout/route.ts`、`src/lib/team-funnel-attribution.ts`、`src/lib/payment-webhooks.ts` 及 tests |
+| A/B 報表 | `/team-performance` 以頁面範圍彙整可驗證 `pageId` 的瀏覽、團隊 click、lead、已歸因成交、淨成交額與退款；A 看自己擁有模板版本的頁面，B 只看自己推廣頁面。報表有台北時區半開區間、93 天／筆數上限、延遲／缺失／截斷明示，不推估資料。 | `src/lib/team-funnel-performance.ts`、`src/components/team-performance-dashboard.tsx`、相對應 tests |
 | 瀏覽器與視覺驗收 | 實際瀏覽器建立 A 原始頁、發佈版本、B 三種取得模式、鎖欄位、商品覆寫、公開頁、真實表單提交與 lead snapshot；另驗證 B 報表不顯示 A 原始頁、跨 tenant 領取拒絕、過期分享，以及 1440px／390px 無水平溢位與無 console error。 | `tests/e2e/smoke.spec.ts`（HEAD `eba39d8`） |
 
 ## Ownership matrix
@@ -60,21 +60,26 @@
 B 公開頁 /p/[slug]
   -> affiliate click：同源頁面 + referral/cookie 解析 -> TeamClickAttribution
   -> 公開表單：同源 Referer + 已儲存頁面解析 -> TeamLeadAttribution
-  -> 報表：pageId 範圍的 analytics view + click + lead
+      -> 同 vendor 結帳：驗證表單 cookie -> PaymentTransaction.metadata.formSubmissionId
+          -> paid webhook：讀取 lead snapshot -> TeamConversionAttribution
+          -> refunded / partially_refunded webhook -> RefundRecord + PaymentTransaction.refundedAmountCents
+  -> 報表：pageId 範圍的 analytics view + click + lead + conversion + refund
 ```
 
 - attribution snapshot 會保存當時的 team、leader、promoter、content owner、seminar owner、page、來源與 referral code；後續關係異動不會回寫既有 click／lead 資料。
 - 若 query referral 是未知碼，流程不會悄悄回退舊 cookie；cookie 必須同時符合時限、server click 與 visitor id。
 - 報表不是全站流量報表：沒有可信 `pageId` 的瀏覽顯示為「未回傳」，分母為零時不計轉換率，最近 15 分鐘資料標為可能延遲。
-- `TeamConversionAttribution` 資料表已存在，但目前沒有 payment webhook 寫入流程；因此本 Epic 已完成的是 click／lead 歸因，不是成交／退款歸因閉環。
+- 結帳只在 cookie 中的表單提交屬於本次 checkout vendor 時，才把 `formSubmissionId` 寫進新建訂單的 `metadata`；成功建立 checkout 後會清除此 cookie。paid webhook 會保留既有訂單 metadata 的 `formSubmissionId`（callback 未提供時採用它），並只在同一 vendor 找到對應 `TeamLeadAttribution` 時建立成交歸因，不會跨 tenant 取用 lead。
+- 成交歸因以 `vendorId + paymentTransactionId` 唯一鍵 upsert：同一筆付款的 webhook 重送會更新同一份 snapshot，不會新增第二筆 `TeamConversionAttribution`。付款 webhook 亦會拒絕既有訂單的金額或幣別不一致的 paid callback；文件不將 callback 自行帶入的資料視為可覆寫既有訂單金額的來源。
+- 成效的「成交」與「淨成交額」依付款交易的 `occurredAt` 落在查詢期間彙整；淨成交額為 `max(0, grossAmountCents - refundedAmountCents)`，所以退款會扣減原成交期間的淨額，但不把成交筆數改為負數。「退款筆數／退款金額」則依 `RefundRecord.processedAt` 落在查詢期間彙整，故可顯示較早成交的跨期退款；UI 明示兩種期間口徑不可再相減。
 
 ## 測試覆蓋與本次稽核狀態
 
 | 層級 | 已追蹤證據 |
 | --- | --- |
-| 單元／服務 | access scope、動態欄位、模板 renderer、頁面／版本、商品槽、分享、公開頁、click／lead attribution、performance aggregation 皆有對應 Vitest。 |
+| 單元／服務 | access scope、動態欄位、模板 renderer、頁面／版本、商品槽、分享、公開頁、click／lead／paid conversion attribution、退款與 performance aggregation 皆有對應 Vitest。 |
 | 元件 | A 模板表單／列表、B 取得模板、B 編輯頁、公開頁與成效儀表板皆有元件測試。 |
-| 路由整合 | affiliate click 與 form submission route tests 驗證伺服端歸因連結；team-funnel API routes 使用穩定的拒絕／衝突回應。 |
+| 路由整合 | affiliate click、form submission 與 checkout route tests 驗證伺服端歸因連結及同 vendor `formSubmissionId` metadata；`payment-webhooks.test.ts` 驗證 paid snapshot、重送去重與跨 vendor／非付款事件不建立成交歸因。 |
 | E2E／視覺 | `tests/e2e/smoke.spec.ts` 的團隊展業情境驗證實際瀏覽器工作流、資料庫結果、隔離、到期狀態、手機／桌機版面與 console error。 |
 
 本次為文件稽核；不重新執行 `npm run test` 或 E2E，因它們的測試 fixture 會建立並清除資料，而本工作流程禁止資料刪除。允許的非刪除驗證結果會記錄於本次交接報告。
@@ -89,16 +94,22 @@ B 公開頁 /p/[slug]
 - B 的公開 slug、未鎖定頁面文案與可用的個人商品覆寫 URL；使用者名稱／email 來自既有帳號資料，其他動態個人欄位需先有受支援資料來源才會解析。
 - 營運決策：分享的到期日／使用次數／指定受眾，以及付款成交、退款、佣金比例、結算與人工更正所需的可稽核規則。
 
+## 已關閉缺口
+
+| 原 ID | 已合併的實作 | 證據與邊界 |
+| --- | --- | --- |
+| TF-GAP-01 | paid webhook 已由既有訂單 metadata 的 `formSubmissionId` 對應同 vendor lead，建立可重送且去重的 `TeamConversionAttribution`。 | `src/lib/payment-webhooks.ts`；`src/lib/payment-webhooks.test.ts` 驗證 snapshot、不同 event ID 的重送仍只有一筆，以及跨 vendor／非付款事件不歸因。 |
+| TF-GAP-02 | 成效頁已顯示成交、淨成交額、退款筆數與退款金額。 | `src/lib/team-funnel-performance.ts`、`src/components/team-performance-dashboard.tsx`、`src/lib/team-funnel-performance.test.ts` 驗證退款扣減與跨期退款期間口徑。這不是 A/B 佣金、payout 或結算讀模型。 |
+
 ## Remaining gaps（可追蹤）
 
 | ID | 缺口 | 影響／完成條件 |
 | --- | --- | --- |
-| TF-GAP-01 | `PaymentTransaction` webhook 尚未建立 `TeamConversionAttribution`，退款也未有團隊歸因事件。 | 完成 click → lead → paid/refund 的可重送 snapshot 寫入與去重測試後，才可宣稱成交閉環。 |
-| TF-GAP-02 | 成效頁未顯示成交、退款、佣金、payout 或結算；現有數字只有頁面瀏覽、click 與報名。 | 完成轉換歸因後，加入受同一 scope 約束的財務讀模型、MFA／audit policy 與驗收。 |
-| TF-GAP-03 | 尚無團隊、成員與 A→B relationship 的建立／邀請／轉組管理 UI 或受控 service。 | 需定義授權者、有效期間、轉組歷史與 audit，再提供管理流程與 E2E。 |
-| TF-GAP-04 | 報表僅限 A 的模板頁與 B 自己的頁，不是遞迴下線或任意全隊名單工作台。 | 若產品要求完整團隊／多層檢視、名單處理、匯出或資料遮罩，需明定 scope 並實作資料列 guard 與測試。 |
-| TF-GAP-05 | 允許的動態欄位中，公開 view 目前只供應既有帳號／affiliate／商品／webinar 可得值；沒有通用的 B 個人檔案編輯與儲存來源。 | 需先決定資料最小化、驗證、公開同意與資料來源，才可啟用電話、頭像、LINE、WhatsApp、bio 等欄位。 |
-| TF-GAP-06 | 本次只稽核已合併的自動化證據，未在此流程重跑會清除 fixture 的測試或 E2E。 | 在允許隔離測試資料建立與清除的環境，重新取得 CI／E2E run artifact 後可更新驗收紀錄。 |
+| TF-GAP-03 | 尚無團隊 A/B 的佣金分配規則、分配紀錄、payout 或結算讀模型／流程。 | 既有聯盟佣金與退款調整不等同於 A/B 團隊佣金分配；需定義比例、可稽核調整、退款回沖、鎖帳／付款授權與驗收。 |
+| TF-GAP-04 | 尚無團隊、成員與 A→B relationship 的建立／邀請／轉組管理 UI 或受控 service。 | 需定義授權者、有效期間、轉組歷史與 audit，再提供管理流程與 E2E。 |
+| TF-GAP-05 | 報表僅限 A 的模板頁與 B 自己的頁，不是遞迴下線或任意全隊名單工作台。 | 若產品要求完整團隊／多層檢視、名單處理、匯出或資料遮罩，需明定 scope 並實作資料列 guard 與測試。 |
+| TF-GAP-06 | 允許的動態欄位中，公開 view 目前只供應既有帳號／affiliate／商品／webinar 可得值；沒有通用的 B 個人檔案編輯與儲存來源。 | 需先決定資料最小化、驗證、公開同意與資料來源，才可啟用電話、頭像、LINE、WhatsApp、bio 等欄位。 |
+| TF-GAP-07 | 本次只稽核已合併的自動化證據，未在此流程重跑會清除 fixture 的測試或 E2E。 | 在允許隔離測試資料建立與清除的環境，重新取得 CI／E2E run artifact 後可更新驗收紀錄。 |
 
 ## 證據索引
 
@@ -106,7 +117,7 @@ B 公開頁 /p/[slug]
 - 模板、版本與頁面：`src/lib/team-funnel-pages.ts`、`src/app/(app)/team-templates/`。
 - B 頁與複製：`src/lib/team-funnel-sharing.ts`、`src/app/team-template/page.tsx`、`src/app/(app)/partner-pages/`。
 - 商品／公開渲染：`src/lib/team-funnel-product-slots.ts`、`src/lib/team-funnel-public-page.ts`、`src/app/p/[slug]/page.tsx`。
-- 歸因／報表：`src/lib/team-funnel-attribution.ts`、`src/lib/team-funnel-performance.ts`。
+- 歸因／付款／報表：`src/lib/team-funnel-attribution.ts`、`src/app/api/payments/checkout/route.ts`、`src/lib/payment-webhooks.ts`、`src/lib/team-funnel-performance.ts`。
 - 瀏覽器驗收：`tests/e2e/smoke.spec.ts`、`tests/fixtures/team-funnel.ts`。
 
 ## Policy Blockers
