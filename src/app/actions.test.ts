@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   headers: vi.fn(),
   invoiceUpsert: vi.fn(),
+  interactionEventCreate: vi.fn(),
+  interactionEventDeleteMany: vi.fn(),
+  interactionScriptCreate: vi.fn(),
+  interactionScriptUpdate: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
@@ -91,6 +95,8 @@ vi.mock("@/lib/db", () => ({
     },
     refundRecord: { aggregate: mocks.refundRecordAggregate },
     settlement: { findUnique: mocks.settlementFindUnique },
+    interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
+    interactionScript: { create: mocks.interactionScriptCreate, update: mocks.interactionScriptUpdate },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     userMfaFactor: { update: mocks.userMfaFactorUpdate },
@@ -119,6 +125,7 @@ import {
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
+  upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
@@ -194,6 +201,17 @@ function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
   const formData = new FormData();
   formData.set("code", code);
   formData.set("next", next);
+  return formData;
+}
+
+function interactionScriptFormData(triggerSec: string) {
+  const formData = new FormData();
+  formData.set("name", "測試留言組");
+  formData.set("status", "draft");
+  formData.set("eventType", "chat_message");
+  formData.set("triggerSec", triggerSec);
+  formData.set("eventTitle", "測試留言");
+  formData.set("message", "測試留言內容");
   return formData;
 }
 
@@ -804,6 +822,25 @@ describe("/settings/security member invitation controls", () => {
 
     expect(resendActions).toHaveLength(1);
   });
+});
+
+describe("upsertInteractionScriptAction", () => {
+  it.each(["-1", "60:00", "00:60", "00:00:60", "not-a-time", "00:00:00:00"])(
+    "rejects the invalid interaction timestamp %s before saving the script",
+    async (triggerSec) => {
+      mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+      await expect(upsertInteractionScriptAction(interactionScriptFormData(triggerSec))).rejects.toThrow(
+        "時間必須為非負整數秒數、MM:SS 或 HH:MM:SS，且分鐘與秒數不可超過 59。",
+      );
+
+      expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+      expect(mocks.interactionScriptUpdate).not.toHaveBeenCalled();
+      expect(mocks.interactionEventCreate).not.toHaveBeenCalled();
+      expect(mocks.interactionEventDeleteMany).not.toHaveBeenCalled();
+      expect(mocks.transaction).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("generateSettlementAction", () => {
