@@ -121,10 +121,14 @@ async function upsertAffiliateCommission(payload: PaymentWebhookPayloadInput, ve
   });
 }
 
-async function applyRefundToCommission(payload: PaymentWebhookPayloadInput, vendorId: string) {
+async function applyRefundToCommission(
+  db: Pick<Prisma.TransactionClient, "affiliateCommission">,
+  payload: PaymentWebhookPayloadInput,
+  vendorId: string,
+) {
   if (!["refunded", "partially_refunded"].includes(payload.eventType)) return null;
 
-  const commission = await getDb().affiliateCommission.findFirst({
+  const commission = await db.affiliateCommission.findFirst({
     where: {
       vendorId,
       orderNumber: payload.orderNumber,
@@ -135,7 +139,7 @@ async function applyRefundToCommission(payload: PaymentWebhookPayloadInput, vend
   if (!commission) return null;
 
   if (payload.eventType === "refunded" || payload.refundAmountCents >= commission.orderAmountCents) {
-    return getDb().affiliateCommission.update({
+    return db.affiliateCommission.update({
       where: { id: commission.id },
       data: {
         status: "void",
@@ -147,13 +151,13 @@ async function applyRefundToCommission(payload: PaymentWebhookPayloadInput, vend
   }
 
   const negativeAmount = -Math.round((payload.refundAmountCents * commission.commissionRateBps) / 10000);
-  return getDb().affiliateCommission.create({
+  return db.affiliateCommission.create({
     data: {
       vendorId,
       affiliateId: commission.affiliateId,
       monthKey: monthKeyFromDate(new Date(payload.occurredAt ?? new Date().toISOString())),
       sourceType: "refund_adjustment",
-      sourceId: commission.id,
+      sourceId: payload.eventId,
       referralCode: commission.referralCode,
       orderNumber: payload.orderNumber,
       orderAmountCents: -payload.refundAmountCents,
@@ -192,7 +196,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
   } as Prisma.InputJsonObject;
   const preservesOccurredAt = Boolean(existingTransaction) && ["refunded", "partially_refunded"].includes(payload.eventType);
 
-  const transaction = await db.$transaction(async (tx) => {
+  const { transaction, refundCommission } = await db.$transaction(async (tx) => {
     const savedTransaction = existingTransaction
       ? await tx.paymentTransaction.update({
           where: { id: existingTransaction.id },
@@ -228,6 +232,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
           },
         });
 
+    let refundCommission = null;
     if (["refunded", "partially_refunded"].includes(payload.eventType) && payload.refundAmountCents > 0) {
       const alreadyRefunded = existingTransaction?.refunds.some((refund) => refund.providerEventId === payload.eventId) ?? false;
       if (!alreadyRefunded) {
@@ -251,6 +256,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             refundedAt: occurredAt,
           },
         });
+        refundCommission = await applyRefundToCommission(tx, payload, vendor.id);
       }
     }
 
@@ -301,11 +307,10 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
       });
     }
 
-    return savedTransaction;
+    return { transaction: savedTransaction, refundCommission };
   });
 
   const commission = await upsertAffiliateCommission(payload, vendor.id, transaction.id, occurredAt);
-  const refundCommission = await applyRefundToCommission(payload, vendor.id);
 
   await writeAuditLog({
     vendorId: vendor.id,
