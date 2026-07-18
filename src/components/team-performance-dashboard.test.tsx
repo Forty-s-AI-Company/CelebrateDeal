@@ -11,8 +11,8 @@ describe("TeamPerformanceDashboard", () => {
         scope: "leader_template", range: { start: new Date("2026-06-30T16:00:00Z"), endExclusive: new Date("2026-07-17T16:00:00Z"), timezone: "Asia/Taipei" }, generatedAt: new Date(), delayedData: true, truncated: false,
         templates: [{ id: "template-1", name: "夏季模板" }], partners: [{ id: "member-b", name: "B 夥伴" }],
         rows: [
-          { pageId: "page-1", pageSlug: "b-page", templateId: "template-1", templateName: "夏季模板", templateVersion: 2, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: null, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "missing" },
-          { pageId: "page-2", pageSlug: "zero-page", templateId: "template-1", templateName: "夏季模板", templateVersion: 1, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: 0, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "available" },
+          { pageId: "page-1", pageSlug: "b-page", templateId: "template-1", templateName: "夏季模板", templateVersion: 2, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: null, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, refundCount: 0, refundAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "missing" },
+          { pageId: "page-2", pageSlug: "zero-page", templateId: "template-1", templateName: "夏季模板", templateVersion: 1, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: 0, clicks: 0, submissions: 0, conversions: 0, netConversionAmountCents: 0, refundCount: 0, refundAmountCents: 0, viewToClickRate: null, viewToSubmissionRate: null, analyticsState: "available" },
         ],
       }}
     />);
@@ -25,6 +25,8 @@ describe("TeamPerformanceDashboard", () => {
     expect(html).toContain("最近 15 分鐘");
     expect(html).toContain("成交");
     expect(html).toContain("淨成交額");
+    expect(html).toContain("退款筆數");
+    expect(html).toContain("退款金額");
     expect(html).toContain("$0");
     expect(html).toContain("轉換率在瀏覽為 0 或未回傳時不計算");
   });
@@ -36,7 +38,7 @@ describe("TeamPerformanceDashboard", () => {
       report={{
         scope: "partner_self", range: { start: new Date("2026-06-30T16:00:00Z"), endExclusive: new Date("2026-07-17T16:00:00Z"), timezone: "Asia/Taipei" }, generatedAt: new Date(), delayedData: false, truncated: false,
         templates: [], partners: [],
-        rows: [{ pageId: "page-1", pageSlug: "mine", templateId: "template-1", templateName: "夏季模板", templateVersion: 2, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: 20, clicks: 4, submissions: 2, conversions: 1, netConversionAmountCents: 168_000, viewToClickRate: 20, viewToSubmissionRate: 10, analyticsState: "available" }],
+        rows: [{ pageId: "page-1", pageSlug: "mine", templateId: "template-1", templateName: "夏季模板", templateVersion: 2, partnerMembershipId: "member-b", partnerName: "B 夥伴", views: 20, clicks: 4, submissions: 2, conversions: 1, netConversionAmountCents: 168_000, refundCount: 2, refundAmountCents: 6_000, viewToClickRate: 20, viewToSubmissionRate: 10, analyticsState: "available" }],
       }}
     />);
 
@@ -44,6 +46,8 @@ describe("TeamPerformanceDashboard", () => {
     expect(html).toContain("20%");
     expect(html).toContain("10%");
     expect(html).toContain("$1,680");
+    expect(html).toContain(">2<");
+    expect(html).toContain("$60");
     expect(html).toContain("僅我的頁面");
   });
 });
