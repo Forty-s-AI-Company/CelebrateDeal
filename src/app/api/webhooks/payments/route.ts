@@ -8,14 +8,25 @@ import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
 export async function POST(request: Request) {
-  const requestUrl = new URL(request.url);
-  const providerId = requestUrl.searchParams.get("provider")
-    ?? request.headers.get("x-payment-provider")
-    ?? request.headers.get("x-webhook-provider");
   let adapter: PaymentProviderAdapter;
   try {
-    adapter = getPaymentProvider(providerId);
+    adapter = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   } catch {
+    return NextResponse.json({ error: "Invalid payment provider configuration" }, { status: 500 });
+  }
+
+  if (process.env.NODE_ENV === "production" && adapter.id === "demo") {
+    return NextResponse.json({ error: "Demo payment webhooks are not allowed in production" }, { status: 403 });
+  }
+
+  const requestUrl = new URL(request.url);
+  const providerIds = [
+    requestUrl.searchParams.get("provider"),
+    request.headers.get("x-payment-provider"),
+    request.headers.get("x-webhook-provider"),
+  ].filter((providerId): providerId is string => providerId !== null);
+
+  if (providerIds.length === 0 || providerIds.some((providerId) => providerId !== adapter.id)) {
     return NextResponse.json({ error: "Unsupported payment provider" }, { status: 400 });
   }
 
@@ -28,7 +39,7 @@ export async function POST(request: Request) {
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_signature_failed",
       targetType: "WebhookEvent",
-      before: auditSnapshot({ providerId, bodyBytes: rawBody.length }),
+      before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
     });
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -42,7 +53,7 @@ export async function POST(request: Request) {
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_invalid",
       targetType: "WebhookEvent",
-      before: auditSnapshot({ providerId, bodyBytes: rawBody.length }),
+      before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
       after: auditSnapshot({ error: message }),
     });
     return NextResponse.json({ error: message }, { status: 400 });
