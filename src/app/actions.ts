@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -553,26 +554,36 @@ export async function createVendorMemberAction(formData: FormData) {
   const email = normalizedEmail(text(formData, "email"));
   const name = text(formData, "name");
   const role = text(formData, "role", "accountant");
-  const password = text(formData, "password");
 
   if (!email || !name || !MEMBER_ROLES.has(role)) {
     redirect("/settings/security?error=member_invalid");
   }
 
   const db = getDb();
-  const existingUser = await db.user.findUnique({ where: { email } });
+  const existingUser = await db.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      platformRole: true,
+      status: true,
+    },
+  });
   if (existingUser?.platformRole && existingUser.platformRole !== "none") {
     redirect("/settings/security?error=platform_user");
-  }
-
-  if (!existingUser && password.length < 12) {
-    redirect("/settings/security?error=member_password");
   }
 
   const existingMember = existingUser
     ? await db.vendorMember.findUnique({
         where: { vendorId_userId: { vendorId: auth.vendor.id, userId: existingUser.id } },
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              email: true,
+            },
+          },
+        },
       })
     : null;
 
@@ -585,7 +596,8 @@ export async function createVendorMemberAction(formData: FormData) {
       data: {
         email,
         name,
-        passwordHash: hashPassword(password),
+        // New members set their real password through the one-time reset link below.
+        passwordHash: hashPassword(randomBytes(32).toString("base64url")),
         status: "active",
       },
     });
@@ -611,7 +623,13 @@ export async function createVendorMemberAction(formData: FormData) {
         status: "active",
         deactivatedAt: null,
       },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
     });
   });
 
@@ -619,10 +637,19 @@ export async function createVendorMemberAction(formData: FormData) {
     vendorId: auth.vendor.id,
     actorId: auth.user.id,
     actorLabel: auth.member.role,
-    action: existingMember ? "reactivate_vendor_member" : "create_vendor_member",
+    action: existingMember?.status === "inactive"
+      ? "reactivate_vendor_member"
+      : existingMember
+        ? "invite_vendor_member"
+        : "create_vendor_member",
     targetType: "VendorMember",
     targetId: savedMember.id,
-    before: auditSnapshot(existingMember),
+    before: auditSnapshot(existingMember ? {
+      id: existingMember.id,
+      email: existingMember.user.email,
+      role: existingMember.role,
+      status: existingMember.status,
+    } : null),
     after: auditSnapshot({
       id: savedMember.id,
       email: savedMember.user.email,
@@ -630,6 +657,37 @@ export async function createVendorMemberAction(formData: FormData) {
       status: savedMember.status,
     }),
   });
+
+  let invitationSent = false;
+  try {
+    const headerStore = await headers();
+    invitationSent = Boolean(await sendPasswordResetLink({
+      email: savedMember.user.email,
+      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023",
+      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: headerStore.get("user-agent"),
+    }));
+  } catch {}
+
+  if (!invitationSent) {
+    await writeAuditLog({
+      vendorId: auth.vendor.id,
+      actorId: auth.user.id,
+      actorLabel: auth.member.role,
+      action: "vendor_member_invitation_email_failed",
+      targetType: "VendorMember",
+      targetId: savedMember.id,
+      after: auditSnapshot({
+        email: savedMember.user.email,
+        role: savedMember.role,
+        status: savedMember.status,
+      }),
+    });
+    // The membership transaction has already committed, so refresh the list even
+    // when the invitation provider is unavailable.
+    revalidatePath("/settings/security");
+    redirect("/settings/security?error=member_invitation");
+  }
 
   revalidatePath("/settings/security");
   redirect("/settings/security?updated=member");
