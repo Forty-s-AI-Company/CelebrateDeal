@@ -78,10 +78,10 @@ function secondsLabel(seconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
-function submitCheckout(checkout: CheckoutResponse) {
-  if (checkout.formAction && checkout.formPayload) {
+export function submitCheckout(checkout: CheckoutResponse) {
+  if (checkout.formAction && checkout.formMethod && checkout.formPayload) {
     const form = document.createElement("form");
-    form.method = checkout.formMethod ?? "POST";
+    form.method = checkout.formMethod;
     form.action = checkout.formAction;
     form.style.display = "none";
 
