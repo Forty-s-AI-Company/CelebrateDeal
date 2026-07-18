@@ -78,9 +78,8 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
             })}
           </section>
 
-          <section className="grid gap-4 rounded-lg border border-border p-4" aria-labelledby="profile-title"><h2 id="profile-title" className="font-semibold text-slate-950">個人公開資料</h2><p className="text-xs text-slate-500">公開頁會顯示你的名稱與 Email；缺少任一欄位時會影響訪客聯絡。</p>
-            <div className="grid gap-4 md:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium text-slate-700">公開名稱<input name="partnerName" required defaultValue={page.partner.name} className="h-10 rounded-md border border-border px-3 text-sm" /></label><label className="grid gap-1.5 text-sm font-medium text-slate-700">公開 Email<input name="partnerEmail" required type="email" defaultValue={page.partner.email} className="h-10 rounded-md border border-border px-3 text-sm" /></label></div>
-            {!page.partner.name || !page.partner.email ? <p role="alert" className="rounded-md bg-orange-50 p-3 text-sm text-orange-800">請補齊必要夥伴欄位：{!page.partner.name ? "公開名稱" : ""}{!page.partner.name && !page.partner.email ? "、" : ""}{!page.partner.email ? "公開 Email" : ""}。</p> : null}
+          <section className="grid gap-4 rounded-lg border border-border p-4" aria-labelledby="profile-title"><h2 id="profile-title" className="font-semibold text-slate-950">帳號聯絡資料</h2><p className="text-xs text-slate-500">公開頁會使用登入帳號的名稱與 Email；此處僅供閱讀，不會隨儲存表單送出。</p>
+            <dl className="grid gap-4 md:grid-cols-2"><div className="grid gap-1.5"><dt className="text-sm font-medium text-slate-700">帳號名稱</dt><dd className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{page.partner.name || "尚未設定"}</dd></div><div className="grid gap-1.5"><dt className="text-sm font-medium text-slate-700">帳號 Email</dt><dd className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-slate-700">{page.partner.email || "尚未設定"}</dd></div></dl>
           </section>
 
           <section className="grid gap-4" aria-labelledby="slot-title"><h2 id="slot-title" className="font-semibold text-slate-950">四個商品槽</h2>
