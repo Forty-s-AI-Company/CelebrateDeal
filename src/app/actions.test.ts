@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   requireFinanceAdmin: vi.fn(),
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
+  checkRateLimit: vi.fn(),
   sendPasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
   settlementUpsert: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock("@/lib/billing", () => ({
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink: mocks.sendPasswordResetLink }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     paymentTransaction: {
@@ -58,7 +60,12 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 
-import { createVendorMemberAction, generateSettlementAction, refundPaymentTransactionAction } from "./actions";
+import {
+  createVendorMemberAction,
+  generateSettlementAction,
+  refundPaymentTransactionAction,
+  requestPasswordResetAction,
+} from "./actions";
 
 const transaction = {
   id: "payment-1",
@@ -107,9 +114,16 @@ function vendorMemberFormData({
   return formData;
 }
 
+function passwordResetFormData(email = "member@example.com") {
+  const formData = new FormData();
+  formData.set("email", email);
+  return formData;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+  mocks.checkRateLimit.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireVendorOwner.mockResolvedValue({
     user: { id: "owner-1" },
@@ -149,6 +163,52 @@ beforeEach(() => {
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
+  });
+});
+
+describe("requestPasswordResetAction", () => {
+  it("allows a request after CSRF validation and preserves the non-production reset preview", async () => {
+    const formData = passwordResetFormData();
+
+    await expect(requestPasswordResetAction(formData)).rejects.toThrow(
+      "redirect:/password-reset/request?updated=sent&preview=https%3A%2F%2Fapp.test%2Fpassword-reset%2Fconfirm%3Ftoken%3Done-time-reset-token",
+    );
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "password-reset-request",
+      5,
+      60_000,
+    );
+    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
+    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
+    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith({
+      email: "member@example.com",
+      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023",
+      ipAddress: "203.0.113.10",
+      userAgent: "CelebrateDeal test",
+    });
+  });
+
+  it("does not create a token or send email when the IP is rate limited", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 429 }));
+
+    await expect(requestPasswordResetAction(passwordResetFormData())).rejects.toThrow(
+      "redirect:/password-reset/request?error=rate_limited",
+    );
+
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without sending email when the rate-limit service is unavailable", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(requestPasswordResetAction(passwordResetFormData())).rejects.toThrow(
+      "redirect:/password-reset/request?error=temporarily_unavailable",
+    );
+
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 });
 

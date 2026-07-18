@@ -3,6 +3,8 @@ import { CsrfField } from "@/components/csrf-field";
 
 const errorMessages: Record<string, string> = {
   invalid: "請輸入有效的 Email。",
+  rate_limited: "申請次數過多，請稍候再試。",
+  temporarily_unavailable: "目前無法處理申請，請稍候再試。",
 };
 
 export default async function PasswordResetRequestPage({

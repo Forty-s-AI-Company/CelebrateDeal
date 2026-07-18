@@ -39,6 +39,7 @@ import {
 } from "@/lib/mfa";
 import { hashPassword } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -263,13 +264,28 @@ export async function updatePasswordAction(formData: FormData) {
 
 export async function requestPasswordResetAction(formData: FormData) {
   await assertServerActionSecurity(formData);
+  const headerStore = await headers();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(appUrl, { headers: rateLimitHeaders }),
+    "password-reset-request",
+    5,
+    60_000,
+  );
+  if (rateLimited) {
+    redirect(`/password-reset/request?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+  }
+
   const email = normalizedEmail(text(formData, "email"));
   if (!email) {
     redirect("/password-reset/request?error=invalid");
   }
 
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
   let previewUrl: string | null = null;
   try {
     const result = await sendPasswordResetLink({
