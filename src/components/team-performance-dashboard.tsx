@@ -52,6 +52,7 @@ export function TeamPerformanceDashboard({
           <h2 className="text-lg font-semibold text-slate-950">頁面與夥伴成效</h2>
           <p className="text-sm text-slate-500">{formatRange(report.range.start, report.range.endExclusive, report.range.timezone)} · {scopeLabel(report.scope)}</p>
         </div>
+        <p className="mb-4 text-xs leading-5 text-slate-500">淨成交額依交易發生日期彙整並已扣除該交易退款；退款筆數與退款金額依退款處理日期彙整，可能對應較早期間的交易，兩者不可再相減。</p>
         {report.rows.length === 0 ? <p role="status" className="py-8 text-center text-sm text-slate-500">此篩選範圍內沒有你可查看的夥伴頁。</p> : (
           <table className="min-w-[1300px] w-full text-left text-sm">
             <thead className="border-y border-border bg-slate-50 text-slate-600"><tr><th className="px-3 py-3 font-semibold">模板／版本</th><th className="px-3 py-3 font-semibold">夥伴／頁面</th><th className="px-3 py-3 font-semibold">瀏覽</th><th className="px-3 py-3 font-semibold">點擊</th><th className="px-3 py-3 font-semibold">報名</th><th className="px-3 py-3 font-semibold">成交</th><th className="px-3 py-3 font-semibold">淨成交額</th><th className="px-3 py-3 font-semibold">退款筆數</th><th className="px-3 py-3 font-semibold">退款金額</th><th className="px-3 py-3 font-semibold">點擊率</th><th className="px-3 py-3 font-semibold">報名轉換率</th></tr></thead>

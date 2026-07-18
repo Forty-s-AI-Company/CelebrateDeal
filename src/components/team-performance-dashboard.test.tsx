@@ -27,6 +27,7 @@ describe("TeamPerformanceDashboard", () => {
     expect(html).toContain("淨成交額");
     expect(html).toContain("退款筆數");
     expect(html).toContain("退款金額");
+    expect(html).toContain("淨成交額依交易發生日期彙整並已扣除該交易退款；退款筆數與退款金額依退款處理日期彙整，可能對應較早期間的交易，兩者不可再相減。");
     expect(html).toContain("$0");
     expect(html).toContain("轉換率在瀏覽為 0 或未回傳時不計算");
   });
