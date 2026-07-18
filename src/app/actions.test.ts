@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   headers: vi.fn(),
   invoiceUpsert: vi.fn(),
+  markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
   refundRecordCreate: vi.fn(),
   requireFinanceAdmin: vi.fn(),
+  requireAuth: vi.fn(),
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
@@ -20,7 +22,13 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
+  userMfaFactorUpdate: vi.fn(),
+  userRecoveryCodeFindMany: vi.fn(),
+  userRecoveryCodeUpdate: vi.fn(),
   userUpdate: vi.fn(),
+  verifyRecoveryCode: vi.fn(),
+  verifyTotpCode: vi.fn(),
+  decryptMfaSecret: vi.fn(),
   vendorFindUnique: vi.fn(),
   vendorMemberFindUnique: vi.fn(),
   vendorMemberUpsert: vi.fn(),
@@ -35,6 +43,8 @@ vi.mock("@/lib/audit", () => ({
   writeAuditLog: mocks.writeAuditLog,
 }));
 vi.mock("@/lib/auth", () => ({
+  markCurrentSessionMfaVerified: mocks.markCurrentSessionMfaVerified,
+  requireAuth: mocks.requireAuth,
   requireFinanceAdmin: mocks.requireFinanceAdmin,
   requireVendorOwner: mocks.requireVendorOwner,
 }));
@@ -45,6 +55,11 @@ vi.mock("@/lib/billing", () => ({
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink: mocks.sendPasswordResetLink }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/mfa", () => ({
+  decryptMfaSecret: mocks.decryptMfaSecret,
+  verifyRecoveryCode: mocks.verifyRecoveryCode,
+  verifyTotpCode: mocks.verifyTotpCode,
+}));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     paymentTransaction: {
@@ -55,6 +70,11 @@ vi.mock("@/lib/db", () => ({
     settlement: { findUnique: mocks.settlementFindUnique },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
+    userMfaFactor: { update: mocks.userMfaFactorUpdate },
+    userRecoveryCode: {
+      findMany: mocks.userRecoveryCodeFindMany,
+      update: mocks.userRecoveryCodeUpdate,
+    },
     vendor: { findUnique: mocks.vendorFindUnique },
     vendorMember: { findUnique: mocks.vendorMemberFindUnique, upsert: mocks.vendorMemberUpsert },
   }),
@@ -65,6 +85,7 @@ import {
   generateSettlementAction,
   refundPaymentTransactionAction,
   requestPasswordResetAction,
+  verifyMfaAction,
 } from "./actions";
 
 const transaction = {
@@ -120,11 +141,27 @@ function passwordResetFormData(email = "member@example.com") {
   return formData;
 }
 
+function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
+  const formData = new FormData();
+  formData.set("code", code);
+  formData.set("next", next);
+  return formData;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
+  mocks.requireAuth.mockResolvedValue({
+    user: {
+      id: "admin-1",
+      platformRole: "platform_admin",
+      mfaFactor: { secretEncrypted: "encrypted-totp-secret" },
+    },
+    vendor: { id: "vendor-1" },
+    member: { role: "platform_admin" },
+  });
   mocks.requireVendorOwner.mockResolvedValue({
     user: { id: "owner-1" },
     member: { role: "owner" },
@@ -134,6 +171,13 @@ beforeEach(() => {
     get: (name: string) => (name === "x-forwarded-for" ? "203.0.113.10, 198.51.100.1" : "CelebrateDeal test"),
   });
   mocks.sendPasswordResetLink.mockResolvedValue({ token: "one-time-reset-token", resetUrl: "https://app.test/password-reset/confirm?token=one-time-reset-token" });
+  mocks.decryptMfaSecret.mockReturnValue("totp-secret");
+  mocks.verifyTotpCode.mockReturnValue(true);
+  mocks.verifyRecoveryCode.mockReturnValue(false);
+  mocks.userRecoveryCodeFindMany.mockResolvedValue([]);
+  mocks.userMfaFactorUpdate.mockResolvedValue({ id: "factor-1" });
+  mocks.userRecoveryCodeUpdate.mockResolvedValue({ id: "recovery-1" });
+  mocks.markCurrentSessionMfaVerified.mockResolvedValue(undefined);
   mocks.findUnique.mockResolvedValue(transaction);
   mocks.refundRecordAggregate.mockResolvedValue({
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
@@ -209,6 +253,63 @@ describe("requestPasswordResetAction", () => {
     );
 
     expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+});
+
+describe("verifyMfaAction", () => {
+  it("limits a verified user's MFA attempts by both user ID and forwarded source IP before validating the code", async () => {
+    const formData = mfaVerifyFormData();
+
+    await expect(verifyMfaAction(formData)).rejects.toThrow("redirect:/admin/billing/dashboard");
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.requireAuth).toHaveBeenCalledOnce();
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "mfa-verification:admin-1",
+      5,
+      60_000,
+    );
+    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
+    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
+    expect(mocks.verifyTotpCode).toHaveBeenCalledWith("totp-secret", "123456");
+    expect(mocks.userMfaFactorUpdate).toHaveBeenCalledWith({
+      where: { userId: "admin-1" },
+      data: { lastUsedAt: expect.any(Date) },
+    });
+    expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("does not validate or update MFA state when the attempt limit is exceeded", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 429 }));
+
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow(
+      "redirect:/mfa/verify?error=rate_limited&next=%2Fadmin%2Fbilling%2Fdashboard",
+    );
+
+    expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeFindMany).not.toHaveBeenCalled();
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+    expect(mocks.verifyRecoveryCode).not.toHaveBeenCalled();
+    expect(mocks.userMfaFactorUpdate).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeUpdate).not.toHaveBeenCalled();
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without validating or updating MFA state when rate limiting is unavailable", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow(
+      "redirect:/mfa/verify?error=temporarily_unavailable&next=%2Fadmin%2Fbilling%2Fdashboard",
+    );
+
+    expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeFindMany).not.toHaveBeenCalled();
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+    expect(mocks.verifyRecoveryCode).not.toHaveBeenCalled();
+    expect(mocks.userMfaFactorUpdate).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeUpdate).not.toHaveBeenCalled();
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
   });
 });
 
