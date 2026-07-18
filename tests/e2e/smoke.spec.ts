@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -70,6 +70,37 @@ function uniqueRateLimitTestIp(routeId: number) {
     "0001",
   ].join(":");
 }
+
+function uniqueLoginTestIp(testId: string, retry: number, lane = 0) {
+  const digest = createHash("sha256")
+    .update(`${rateLimitRunId}:${testId}:${retry}:${lane}`)
+    .digest("hex");
+
+  return [
+    "2001",
+    "0db8",
+    digest.slice(0, 4),
+    digest.slice(4, 8),
+    digest.slice(8, 12),
+    digest.slice(12, 16),
+    digest.slice(16, 20),
+    digest.slice(20, 24),
+  ].join(":");
+}
+
+// Each browser test gets an isolated source bucket so one login scenario cannot
+// consume another scenario's in-memory rate-limit allowance. Retries get a new
+// address as well, preventing a failed first attempt from poisoning its retry.
+const test = base.extend({
+  page: async ({ page }, use, testInfo) => {
+    await page.context().setExtraHTTPHeaders({
+      "X-Forwarded-For": uniqueLoginTestIp(testInfo.testId, testInfo.retry),
+    });
+    // Playwright fixture API; this is not React's use hook.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    await use(page);
+  },
+});
 
 const cspReportPayload = {
   "csp-report": {
@@ -475,7 +506,7 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await expect(page).toHaveURL(/\/dashboard/);
 });
 
-loginRateLimitTest("login failures are audited and the sixth UI attempt is rate limited before authentication", async ({ page, loginRateLimitUser }) => {
+loginRateLimitTest("login failures are audited and the sixth UI attempt is rejected before authentication", async ({ page, loginRateLimitUser }) => {
   const {
     id: userId,
     email,
@@ -525,7 +556,7 @@ loginRateLimitTest("login failures are audited and the sixth UI attempt is rate 
   await expect(page.getByText("登入失敗次數過多，請 15 分鐘後再試，或請平台管理員協助重設。")).toBeVisible();
 
   expect(await db.auditLog.count({ where: loginFailedWhere })).toBe(5);
-  expect(await db.auditLog.count({ where: loginRateLimitedWhere })).toBe(1);
+  expect(await db.auditLog.count({ where: loginRateLimitedWhere })).toBe(0);
   expect(await db.auditLog.count({ where: loginSuccessWhere })).toBe(0);
   expect(await db.userSession.count({ where: { userId } })).toBe(sessionCountBaseline);
 });
@@ -985,7 +1016,7 @@ test("JOB_SECRET protected APIs reject missing and invalid authorization", async
   }
 });
 
-test("team-funnel browser acceptance covers leader publishing, partner modes, attribution, scope, and responsive QA", async ({ browser }) => {
+test("team-funnel browser acceptance covers leader publishing, partner modes, attribution, scope, and responsive QA", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const fixture = await createTeamFunnelFixture(db, `pw-${Date.now().toString(36)}`);
   const consoleFailures: string[] = [];
@@ -1030,9 +1061,18 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
   };
 
   try {
-    leaderContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    partnerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    outsiderContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    leaderContext = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      extraHTTPHeaders: { "X-Forwarded-For": uniqueLoginTestIp(testInfo.testId, testInfo.retry, 1) },
+    });
+    partnerContext = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      extraHTTPHeaders: { "X-Forwarded-For": uniqueLoginTestIp(testInfo.testId, testInfo.retry, 2) },
+    });
+    outsiderContext = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      extraHTTPHeaders: { "X-Forwarded-For": uniqueLoginTestIp(testInfo.testId, testInfo.retry, 3) },
+    });
     const leaderPage = await login(leaderContext, fixture.leader.email);
     const partnerPage = await login(partnerContext, fixture.partner.email);
 
