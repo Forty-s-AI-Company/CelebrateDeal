@@ -437,6 +437,23 @@ export async function verifyMfaAction(formData: FormData) {
     redirect("/mfa/setup");
   }
 
+  const headerStore = await headers();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(appUrl, { headers: rateLimitHeaders }),
+    `mfa-verification:${auth.user.id}`,
+    5,
+    60_000,
+  );
+  if (rateLimited) {
+    redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
+  }
+
   const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
   const recoveryCodes = await getDb().userRecoveryCode.findMany({
     where: {

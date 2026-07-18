@@ -4,6 +4,8 @@ import { requireAuth } from "@/lib/auth";
 
 const errorMessages: Record<string, string> = {
   invalid: "驗證碼不正確，請重新輸入。",
+  rate_limited: "驗證嘗試次數過多，請稍後再試。",
+  temporarily_unavailable: "驗證服務暫時無法使用，請稍後再試。",
 };
 
 function safeInternalPath(value: string | undefined) {

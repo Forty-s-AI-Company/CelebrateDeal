@@ -28,6 +28,7 @@
 - `/api/security/csp-report`
 - `/api/auth/password-reset/request`
 - `/api/auth/password-reset/confirm`
+- `/mfa/verify`（管理員 MFA 驗證入口）
 
 ## 2. Upstash Redis 啟用
 
@@ -90,6 +91,7 @@ done
    - `/api/analytics`
    - `/api/affiliate-clicks`
    - `/api/auth/password-reset/*`
+   - `/mfa/verify`
 3. 設定 production env：
 
 ```txt
