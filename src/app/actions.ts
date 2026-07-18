@@ -90,8 +90,9 @@ function secondsValue(value: string) {
   return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
 }
 
-const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_SOURCE_LIMIT = 20;
+const LOGIN_SOURCE_EMAIL_LIMIT = 5;
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
 const MEMBER_ROLES = new Set(["owner", "admin", "accountant"]);
 
@@ -103,31 +104,37 @@ function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") 
   return value.startsWith("/") && !value.startsWith("//") ? value : fallback;
 }
 
-async function countRecentLoginFailures(email: string) {
-  return getDb().auditLog.count({
-    where: {
-      action: "login_failed",
-      targetType: "Auth",
-      targetId: email,
-      createdAt: { gte: new Date(Date.now() - LOGIN_FAILURE_WINDOW_MS) },
-    },
-  });
-}
-
 export async function loginAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const email = normalizedEmail(text(formData, "email"));
   const password = text(formData, "password");
+  const headerStore = await headers();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimitRequest = new Request(appUrl, { headers: rateLimitHeaders });
 
-  if (await countRecentLoginFailures(email) >= LOGIN_FAILURE_LIMIT) {
-    await writeAuditLog({
-      actorLabel: "anonymous",
-      action: "login_rate_limited",
-      targetType: "Auth",
-      targetId: email,
-      after: { email },
-    });
-    redirect("/login?error=rate_limited");
+  const sourceRateLimited = await checkRateLimit(
+    rateLimitRequest,
+    "login-source",
+    LOGIN_SOURCE_LIMIT,
+    LOGIN_RATE_LIMIT_WINDOW_MS,
+  );
+  if (sourceRateLimited) {
+    redirect(`/login?error=${sourceRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+  }
+
+  const sourceEmailRateLimited = await checkRateLimit(
+    rateLimitRequest,
+    `login-source-email:${email}`,
+    LOGIN_SOURCE_EMAIL_LIMIT,
+    LOGIN_RATE_LIMIT_WINDOW_MS,
+  );
+  if (sourceEmailRateLimited) {
+    redirect(`/login?error=${sourceEmailRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
   }
 
   const auth = await authenticateUser(email, password);
@@ -154,7 +161,6 @@ export async function loginAction(formData: FormData) {
     redirect("/login?error=no_vendor");
   }
 
-  const headerStore = await headers();
   const { token, expiresAt } = await createUserSession({
     userId: auth.user.id,
     vendorId: auth.vendor?.id ?? null,
