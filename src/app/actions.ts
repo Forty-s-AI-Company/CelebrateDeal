@@ -575,6 +575,23 @@ export async function createVendorMemberAction(formData: FormData) {
     redirect("/settings/security?error=member_invalid");
   }
 
+  const headerStore = await headers();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(appUrl, { headers: rateLimitHeaders }),
+    "vendor-member-invitation",
+    5,
+    60_000,
+  );
+  if (rateLimited) {
+    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
+  }
+
   const db = getDb();
   const existingUser = await db.user.findUnique({
     where: { email },
@@ -676,10 +693,9 @@ export async function createVendorMemberAction(formData: FormData) {
 
   let invitationSent = false;
   try {
-    const headerStore = await headers();
     invitationSent = Boolean(await sendPasswordResetLink({
       email: savedMember.user.email,
-      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023",
+      appUrl,
       ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       userAgent: headerStore.get("user-agent"),
     }));

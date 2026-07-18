@@ -232,6 +232,14 @@ describe("createVendorMemberAction", () => {
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
     expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "vendor-member-invitation",
+      5,
+      60_000,
+    );
+    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
+    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
     expect(mocks.userCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         email: newUser.email,
@@ -263,6 +271,36 @@ describe("createVendorMemberAction", () => {
     expect(auditEntries).not.toContain("passwordHash");
     expect(auditEntries).not.toContain(suppliedInitialPassword);
     expect(JSON.stringify(mocks.sendPasswordResetLink.mock.calls)).not.toContain(suppliedInitialPassword);
+  });
+
+  it("does not change members or create password reset tokens when the invitation rate limit is exceeded", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 429 }));
+
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=member_invitation_rate_limited",
+    );
+
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without changing members or creating password reset tokens when rate limiting is unavailable", async () => {
+    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=member_invitation_unavailable",
+    );
+
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("re-enables an inactive membership and sends a new invitation", async () => {

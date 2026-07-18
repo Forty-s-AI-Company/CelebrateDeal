@@ -23,6 +23,8 @@ const errorMessages: Record<string, string> = {
   owner_required: "只有商家 owner 可以管理成員。",
   member_invalid: "請確認成員姓名、Email 與角色都已填寫。",
   member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
+  member_invitation_rate_limited: "邀請寄送次數過多，請稍候再試；商家成員尚未變更。",
+  member_invitation_unavailable: "邀請頻率檢查暫時無法使用；商家成員尚未變更，請稍候再試。",
   platform_user: "平台管理員帳號不能加入商家成員清單。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
