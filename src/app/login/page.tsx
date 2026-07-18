@@ -4,6 +4,7 @@ import { CsrfField } from "@/components/csrf-field";
 const errorMessages: Record<string, string> = {
   "1": "帳號或密碼不正確。",
   rate_limited: "登入失敗次數過多，請 15 分鐘後再試，或請平台管理員協助重設。",
+  temporarily_unavailable: "登入保護服務暫時無法使用，請稍後再試。",
   no_vendor: "此帳號目前沒有可用的商家權限。",
   mfa_required: "這個管理權限帳號需要先完成多因子驗證設定。",
 };

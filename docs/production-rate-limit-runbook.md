@@ -1,10 +1,10 @@
 # Production Rate Limit Runbook
 
-最後更新：2026-07-09
+最後更新：2026-07-18
 
 ## 目的
 
-將 CelebrateDeal production 的防刷從本機 `memory` provider 收斂到 durable provider，確保多節點 / serverless 部署下 checkout、form submission、analytics、affiliate clicks 都有一致控流。
+將 CelebrateDeal production 的防刷從本機 `memory` provider 收斂到 durable provider，確保多節點 / serverless 部署下 login、checkout、form submission、analytics、affiliate clicks 都有一致控流。
 
 官方參考：
 
@@ -21,6 +21,7 @@
 
 受保護路由：
 
+- `/login`（每來源總量 20 次／15 分鐘；每來源＋正規化 Email 5 次／15 分鐘）
 - `/api/payments/checkout`
 - `/api/form-submissions`
 - `/api/analytics`
@@ -92,6 +93,7 @@ done
    - `/api/affiliate-clicks`
    - `/api/auth/password-reset/*`
    - `/mfa/verify`
+   - `/login`
 3. 設定 production env：
 
 ```txt
@@ -102,6 +104,8 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 
 注意：此模式由 Cloudflare edge 擋流，app 內 `checkRateLimit()` 會直接放行，因此必須在 dashboard 完成 rule 驗收。
 
+`/login` 的 rule 必須以可信 proxy 注入的 `cf-connecting-ip`（優先）或 `x-forwarded-for` 首個位址作為來源識別，並同時涵蓋來源總量與來源＋正規化 Email；不可只依 Email 計數。登入限流回應為 429 時顯示「登入失敗次數過多」提示；限流服務不可用時，app 必須 fail closed 並顯示登入保護服務暫時無法使用的提示。
+
 ## 5. Staging / Production Env Checklist
 
 Staging：
@@ -110,6 +114,7 @@ Staging：
 - [ ] 若使用 Upstash，`UPSTASH_REDIS_REST_URL` 已設定。External required
 - [ ] 若使用 Upstash，`UPSTASH_REDIS_REST_TOKEN` 已設定。External required
 - [ ] `/api/admin/preflight` rateLimit 顯示 durable provider
+- [ ] `/login` 已確認來源總量與來源＋正規化 Email 兩層均會回 429，且 provider 不可用時回到登入保護服務提示
 - [ ] checkout / form / analytics / affiliate-clicks smoke 已確認 429
 
 Production：

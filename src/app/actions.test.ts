@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
+  authenticateUser: vi.fn(),
   calculateSettlement: vi.fn(),
+  cookies: vi.fn(),
+  createUserSession: vi.fn(),
   findUnique: vi.fn(),
   headers: vi.fn(),
   invoiceUpsert: vi.fn(),
@@ -36,17 +39,22 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
-vi.mock("next/headers", () => ({ headers: mocks.headers }));
+vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
 }));
 vi.mock("@/lib/auth", () => ({
+  AUTH_COOKIE: "celebrate_session",
+  LEGACY_VENDOR_COOKIE: "celebrate_vendor_id",
+  authenticateUser: mocks.authenticateUser,
+  createUserSession: mocks.createUserSession,
   markCurrentSessionMfaVerified: mocks.markCurrentSessionMfaVerified,
   requireAuth: mocks.requireAuth,
   requireFinanceAdmin: mocks.requireFinanceAdmin,
   requireVendorOwner: mocks.requireVendorOwner,
+  sessionCookieOptions: vi.fn(),
 }));
 vi.mock("@/lib/billing", () => ({
   calculateSettlement: mocks.calculateSettlement,
@@ -83,6 +91,7 @@ vi.mock("@/lib/db", () => ({
 import {
   createVendorMemberAction,
   generateSettlementAction,
+  loginAction,
   refundPaymentTransactionAction,
   requestPasswordResetAction,
   verifyMfaAction,
@@ -141,6 +150,13 @@ function passwordResetFormData(email = "member@example.com") {
   return formData;
 }
 
+function loginFormData(email = " Member@Example.com ", password = "test-fixture-incorrect-password") {
+  const formData = new FormData();
+  formData.set("email", email);
+  formData.set("password", password);
+  return formData;
+}
+
 function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
   const formData = new FormData();
   formData.set("code", code);
@@ -151,6 +167,9 @@ function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+  mocks.authenticateUser.mockResolvedValue(null);
+  mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+  mocks.createUserSession.mockResolvedValue({ token: "test-fixture-session-token", expiresAt: new Date("2026-07-18T00:00:00.000Z") });
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireAuth.mockResolvedValue({
@@ -168,7 +187,10 @@ beforeEach(() => {
     vendor: { id: "vendor-1" },
   });
   mocks.headers.mockResolvedValue({
-    get: (name: string) => (name === "x-forwarded-for" ? "203.0.113.10, 198.51.100.1" : "CelebrateDeal test"),
+    get: (name: string) => ({
+      "user-agent": "CelebrateDeal test",
+      "x-forwarded-for": "203.0.113.10, 198.51.100.1",
+    })[name] ?? null,
   });
   mocks.sendPasswordResetLink.mockResolvedValue({ token: "one-time-reset-token", resetUrl: "https://app.test/password-reset/confirm?token=one-time-reset-token" });
   mocks.decryptMfaSecret.mockReturnValue("totp-secret");
@@ -207,6 +229,98 @@ beforeEach(() => {
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
+  });
+});
+
+describe("loginAction", () => {
+  it("blocks a source-wide limit before credential verification, session creation, or login-failure auditing", async () => {
+    mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+    const formData = loginFormData();
+
+    await expect(loginAction(formData)).rejects.toThrow("redirect:/login?error=rate_limited");
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "login-source",
+      20,
+      15 * 60 * 1000,
+    );
+    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
+    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("forwards the trusted Cloudflare source to the limiter ahead of x-forwarded-for", async () => {
+    mocks.headers.mockResolvedValueOnce({
+      get: (name: string) => ({
+        "cf-connecting-ip": "198.51.100.24",
+        "x-forwarded-for": "203.0.113.10, 198.51.100.1",
+        "user-agent": "CelebrateDeal test",
+      })[name] ?? null,
+    });
+    mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(loginAction(loginFormData())).rejects.toThrow("redirect:/login?error=rate_limited");
+
+    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
+    expect(rateLimitRequest.headers.get("cf-connecting-ip")).toBe("198.51.100.24");
+    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+  });
+
+  it("blocks a source and normalized-email limit before credential verification, session creation, or login-failure auditing", async () => {
+    mocks.checkRateLimit
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(new Response(null, { status: 429 }));
+    const formData = loginFormData();
+
+    await expect(loginAction(formData)).rejects.toThrow("redirect:/login?error=rate_limited");
+
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Request),
+      "login-source",
+      20,
+      15 * 60 * 1000,
+    );
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Request),
+      "login-source-email:member@example.com",
+      5,
+      15 * 60 * 1000,
+    );
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the rate-limit service is unavailable without authenticating, creating a session, or auditing a failed login", async () => {
+    mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 503 }));
+
+    await expect(loginAction(loginFormData())).rejects.toThrow(
+      "redirect:/login?error=temporarily_unavailable",
+    );
+
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the source-and-email limiter is unavailable without authenticating, creating a session, or auditing", async () => {
+    mocks.checkRateLimit
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+
+    await expect(loginAction(loginFormData())).rejects.toThrow(
+      "redirect:/login?error=temporarily_unavailable",
+    );
+
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 
