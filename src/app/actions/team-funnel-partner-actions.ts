@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { assertTeamFunnelAccess, requireTeamFunnelActor, TeamFunnelAccessDeniedError, type TeamFunnelField, type TeamFunnelMembership } from "@/lib/team-funnel-access";
@@ -145,16 +144,9 @@ export async function savePartnerPageAction(
       try { new URL(data.ctaUrl); } catch { return { status: "error", message: "CTA 連結必須是有效的完整網址。" }; }
     }
 
-    const name = value(formData, "partnerName");
-    const email = value(formData, "partnerEmail");
-    if (!name || !email) return { status: "error", message: "請補齊公開名稱與公開 Email，讓訪客知道如何聯絡你。" };
-    if (!/^\S+@\S+\.\S+$/.test(email)) return { status: "error", message: "公開 Email 格式不正確。" };
-
     if (Object.keys(data).length) {
       await getDb().partnerFunnelPage.updateMany({ where: { id: page.id, vendorId: actor.vendorId, teamId: actor.teamId, promoterMembershipId: actor.id }, data });
     }
-    const auth = await requireAuth();
-    await getDb().user.update({ where: { id: auth.user.id }, data: { name, email } });
 
     if (!locked.has("PRODUCT_SLOTS")) {
       assertPageField(actor, page, facts, "PRODUCT_SLOTS");

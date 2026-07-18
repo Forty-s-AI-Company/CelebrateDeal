@@ -16,12 +16,18 @@ const mocks = vi.hoisted(() => ({
   refundRecordCreate: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
+  requireVendor: vi.fn(),
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
   sendPasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
   settlementUpsert: vi.fn(),
+  partnerFunnelPageFindFirst: vi.fn(),
+  partnerFunnelPageUpdateMany: vi.fn(),
+  teamMembershipFindFirst: vi.fn(),
+  teamMembershipFindMany: vi.fn(),
+  teamMembershipRelationshipFindMany: vi.fn(),
   transaction: vi.fn(),
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
@@ -56,6 +62,7 @@ vi.mock("@/lib/auth", () => ({
   markCurrentSessionMfaVerified: mocks.markCurrentSessionMfaVerified,
   requireAuth: mocks.requireAuth,
   requireFinanceAdmin: mocks.requireFinanceAdmin,
+  requireVendor: mocks.requireVendor,
   requireVendorOwner: mocks.requireVendorOwner,
   sessionCookieOptions: vi.fn(),
 }));
@@ -98,6 +105,9 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.vendorMemberFindUnique,
       upsert: mocks.vendorMemberUpsert,
     },
+    teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
+    teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
+    partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
     userSession: { findMany: mocks.userSessionFindMany },
   }),
 }));
@@ -111,6 +121,7 @@ import {
   requestPasswordResetAction,
   verifyMfaAction,
 } from "./actions";
+import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import SecuritySettingsPage from "./(app)/settings/security/page";
 
 const transaction = {
@@ -357,6 +368,53 @@ describe("loginAction", () => {
     expect(mocks.authenticateUser).not.toHaveBeenCalled();
     expect(mocks.createUserSession).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("savePartnerPageAction", () => {
+  it("ignores forged partner contact fields and never updates the user account", async () => {
+    const membership = {
+      id: "membership-1",
+      vendorId: "vendor-1",
+      teamId: "team-1",
+      vendorMemberId: "vendor-member-1",
+      status: "ACTIVE",
+      leftAt: null,
+      vendorMember: { userId: "user-1", status: "active", deactivatedAt: null },
+    };
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-1" },
+      member: { id: "vendor-member-1", status: "active", deactivatedAt: null },
+    });
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.teamMembershipFindFirst.mockResolvedValue(membership);
+    mocks.teamMembershipFindMany.mockResolvedValue([membership]);
+    mocks.teamMembershipRelationshipFindMany.mockResolvedValue([]);
+    mocks.partnerFunnelPageFindFirst.mockResolvedValue({
+      id: "page-1",
+      vendorId: "vendor-1",
+      teamId: "team-1",
+      promoterMembershipId: "membership-1",
+      contentOwnerMembershipId: "membership-1",
+      slug: "partner-page",
+      templateVersion: { fieldLocks: [], productSlots: [] },
+    });
+    mocks.partnerFunnelPageUpdateMany.mockResolvedValue({ count: 1 });
+    const formData = new FormData();
+    formData.set("_csrf", "test-fixture-csrf-token");
+    formData.set("teamId", "team-1");
+    formData.set("pageId", "page-1");
+    formData.set("headline", "更新後的主標題");
+    formData.set("ctaLabel", "立即報名");
+    formData.set("partnerName", "偽造名稱");
+    formData.set("partnerEmail", "forged@example.com");
+
+    await expect(savePartnerPageAction({ status: "idle", message: "" }, formData)).resolves.toEqual({ status: "success", message: "夥伴頁已儲存。" });
+
+    expect(mocks.partnerFunnelPageUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { headline: "更新後的主標題", subheadline: null, body: null, ctaLabel: "立即報名", ctaUrl: null },
+    }));
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
   });
 });
 
