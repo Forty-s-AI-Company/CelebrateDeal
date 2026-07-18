@@ -369,6 +369,57 @@ describe("payment webhook processing", () => {
     expect(transaction.refundedAmountCents).toBe(20000);
   });
 
+  it("deduplicates resent partial-refund commission adjustments while accumulating distinct refunds", async () => {
+    const suffix = `${Date.now()}-affiliate-refund-retry`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+
+    const firstPartialRefund = {
+      provider: "demo",
+      eventId: `evt-refund-first-${suffix}`,
+      eventType: "partially_refunded" as const,
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+    };
+    await processPaymentWebhook(PaymentWebhookPayload.parse(firstPartialRefund));
+    await processPaymentWebhook(PaymentWebhookPayload.parse(firstPartialRefund));
+    expect(await db.affiliateCommission.count({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "refund_adjustment" },
+    })).toBe(1);
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      ...firstPartialRefund,
+      eventId: `evt-refund-second-${suffix}`,
+      refundAmountCents: 30000,
+    }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    const adjustments = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "refund_adjustment" },
+    });
+    const commissionTotal = (await db.affiliateCommission.findMany({ where: { vendorId: vendor.id, orderNumber } }))
+      .reduce((total, commission) => total + commission.commissionAmountCents, 0);
+
+    expect(adjustments).toHaveLength(2);
+    expect(adjustments.map((adjustment) => adjustment.sourceId).sort()).toEqual([
+      firstPartialRefund.eventId,
+      `evt-refund-second-${suffix}`,
+    ]);
+    expect(adjustments.map((adjustment) => adjustment.commissionAmountCents).sort((a, b) => a - b)).toEqual([-2400, -1600]);
+    expect(transaction.refundedAmountCents).toBe(50000);
+    expect(commissionTotal).toBe(4000);
+  });
+
   it.each(["refunded", "partially_refunded"] as const)("preserves the payment occurrence date while accumulating cross-month %s events", async (eventType) => {
     const suffix = `${Date.now()}-cross-month-refund`;
     const { db, vendor } = await createFixture(suffix);
