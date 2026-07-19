@@ -1,4 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
 
 const SCHEMA = "celebratedeal-payuni-sandbox-qa/v1";
@@ -9,6 +11,10 @@ const DEFAULT_APP_URL = `https://${APP_HOST}`;
 const DEFAULT_LIVE_PATH = "/live/summer-glow-live";
 const CALLBACK_TIMEOUT_ERROR_MAX_LENGTH = 280;
 const PROVIDER_STATUS_MAX_LENGTH = 48;
+const CALLBACK_QUERY_ATTEMPTS = 3;
+const CALLBACK_QUERY_INTERVAL_MS = 1_000;
+const CALLBACK_QUERY_TIMEOUT_MS = 5_000;
+const PAYUNI_TRADE_STATUSES = new Set(["0", "1"]);
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -62,6 +68,74 @@ function safeProviderStatusText(text) {
   return truncate(status, PROVIDER_STATUS_MAX_LENGTH) || "none";
 }
 
+function safeDiagnosticToken(value) {
+  const token = String(value ?? "").trim();
+  return /^[A-Za-z0-9_-]{1,32}$/.test(token) ? token : "unavailable";
+}
+
+function safeTradeStatus(value) {
+  const status = String(value ?? "").trim();
+  return PAYUNI_TRADE_STATUSES.has(status) ? status : "unavailable";
+}
+
+function callbackQuerySummary({ attempt, row, error, page, stage }) {
+  return {
+    attempt,
+    querySucceeded: !error,
+    tradeStatus: error ? "unavailable" : safeTradeStatus(row?.TradeStatus),
+    tradeNoPresent: !error && String(row?.TradeNo ?? "").trim().length > 0,
+    currentHttpsHostPath: safeHttpsHostPath(page.url()),
+    flowStage: safeDiagnosticToken(stage),
+    ...(error ? { errorCategory: "query-failed" } : {}),
+  };
+}
+
+async function queryWithTimeout(query, orderNumber, timeoutMs) {
+  const controller = new AbortController();
+  let timeoutId;
+  try {
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error("PayUni trade query timed out."));
+      }, timeoutMs);
+    });
+    return await Promise.race([
+      Promise.resolve().then(() => query(orderNumber, { signal: controller.signal })),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function reconcileCallbackTimeout({
+  orderNumber,
+  page,
+  stage,
+  query = queryTransaction,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  queryTimeoutMs = CALLBACK_QUERY_TIMEOUT_MS,
+}) {
+  const attempts = [];
+  let paidTransaction = null;
+  for (let attempt = 1; attempt <= CALLBACK_QUERY_ATTEMPTS; attempt += 1) {
+    try {
+      const row = await queryWithTimeout(query, orderNumber, queryTimeoutMs);
+      attempts.push(callbackQuerySummary({ attempt, row, page, stage }));
+      if (String(row?.TradeStatus) === "1" && String(row?.TradeNo ?? "").trim()) {
+        paidTransaction = row;
+        break;
+      }
+    } catch {
+      // Do not expose PayUni response or request details in the QA receipt.
+      attempts.push(callbackQuerySummary({ attempt, error: true, page, stage }));
+    }
+    if (attempt < CALLBACK_QUERY_ATTEMPTS) await sleep(CALLBACK_QUERY_INTERVAL_MS);
+  }
+  return { attempts, paidTransaction };
+}
+
 async function visiblePayUniStatus(page) {
   try {
     if (new URL(page.url()).hostname !== PAYUNI_HOST) return "none";
@@ -72,7 +146,15 @@ async function visiblePayUniStatus(page) {
   }
 }
 
-function callbackTimeoutDiagnostic({ stage, page, confirmationDialogAppeared, confirmationDialogClicked, checkoutStatus, providerStatus }) {
+function callbackTimeoutDiagnostic({
+  stage,
+  page,
+  confirmationDialogAppeared,
+  confirmationDialogClicked,
+  checkoutStatus,
+  providerStatus,
+  callbackQueryAttempts,
+}) {
   const currentUrl = safeHttpsHostPath(page.url());
   const confirmationDialog = confirmationDialogAppeared
     ? (confirmationDialogClicked ? "appeared-clicked" : "appeared-not-clicked")
@@ -95,16 +177,19 @@ function callbackTimeoutDiagnostic({ stage, page, confirmationDialogAppeared, co
         confirmationDialogClicked,
         checkoutHttpStatus,
         visiblePayUniStatus: providerStatus,
+        callbackTradeQueries: callbackQueryAttempts,
       },
     },
   };
 }
 
 class CallbackTimeoutError extends Error {
-  constructor(diagnostic, cause) {
+  constructor(diagnostic, cause, { checkout, paidTransaction } = {}) {
     super(diagnostic.error, { cause });
     this.name = "CallbackTimeoutError";
     this.diagnostic = diagnostic;
+    this.checkout = checkout;
+    this.paidTransaction = paidTransaction;
   }
 }
 
@@ -159,7 +244,7 @@ function parseOuterPayload(text) {
   }
 }
 
-async function payUniRequest(path, version, payload) {
+async function payUniRequest(path, version, payload, { signal } = {}) {
   assert(path === "/api/trade/query" || path === "/api/trade/close", "未核准的 PayUni API 路徑。");
   const url = assertExactHttpsHost(`${PAYUNI_API_ORIGIN}${path}`, PAYUNI_HOST, "PayUni API");
   const merId = env("PAYUNI_MERCHANT_ID");
@@ -179,7 +264,7 @@ async function payUniRequest(path, version, payload) {
     },
     body,
     redirect: "error",
-    signal: AbortSignal.timeout(30_000),
+    signal: signal ?? AbortSignal.timeout(30_000),
   });
   assert(response.ok, `PayUni API 回應 HTTP ${response.status}。`);
   const outer = parseOuterPayload(await response.text());
@@ -232,11 +317,11 @@ function responseShape(response, row) {
   });
 }
 
-async function queryTransaction(orderNumber) {
+async function queryTransaction(orderNumber, { signal } = {}) {
   const response = await payUniRequest("/api/trade/query", "2.0", {
     MerTradeNo: orderNumber,
     Timestamp: Math.floor(Date.now() / 1000),
-  });
+  }, { signal });
   assert(response.Status === "SUCCESS", `PayUni 交易查詢失敗：${response.Status ?? "UNKNOWN"}`);
   const row = resultRow(response);
   assert(
@@ -359,6 +444,11 @@ async function runCheckout(appUrl) {
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
       const providerStatus = await visiblePayUniStatus(page);
+      const reconciliation = await reconcileCallbackTimeout({
+        orderNumber: checkout.orderNumber,
+        page,
+        stage: flowStage,
+      });
       throw new CallbackTimeoutError(
         callbackTimeoutDiagnostic({
           stage: flowStage,
@@ -367,8 +457,10 @@ async function runCheckout(appUrl) {
           confirmationDialogClicked,
           checkoutStatus,
           providerStatus,
+          callbackQueryAttempts: reconciliation.attempts,
         }),
         error,
+        { checkout, paidTransaction: reconciliation.paidTransaction },
       );
     }
     flowStage = "verifying-payment-callback";
@@ -437,21 +529,53 @@ async function main() {
   };
 }
 
-try {
-  console.log(JSON.stringify(await main()));
-} catch (error) {
-  const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
-  console.log(JSON.stringify({
-    schema: SCHEMA,
-    success: false,
-    environment: "sandbox",
-    completedAt: new Date().toISOString(),
-    error: callbackTimeout?.error ?? (error instanceof Error ? error.message : "未知錯誤"),
-    ...(callbackTimeout ? { checks: callbackTimeout.checks } : {}),
-    productionValidation: {
-      status: "human-approval-required",
-      automatedChargeAllowed: false,
-    },
-  }));
-  process.exitCode = 1;
+async function cleanUpTimedOutPayment(error) {
+  const checkout = error.checkout;
+  const paid = error.paidTransaction;
+  if (!checkout || !paid) return;
+
+  try {
+    const amount = Math.round(Number(checkout.amountCents) / 100);
+    assert(Number.isInteger(amount) && amount > 0, "Sandbox 退款金額無效。");
+    assert(String(paid.TradeStatus) === "1", "PayUni 後台查詢尚未顯示已付款。");
+    assert(String(paid.TradeNo ?? "").length > 0, "PayUni 後台查詢缺少交易序號。");
+    assert(Number(paid.TradeAmt) === amount, "PayUni 後台金額與 CelebrateDeal 結帳金額不一致。");
+
+    await refundTransaction(String(paid.TradeNo), amount);
+    const refunded = await waitForRefund(checkout.orderNumber);
+    const refundStatus = String(refunded?.RefundStatus ?? "");
+    assert(["1", "2", "8"].includes(refundStatus), "PayUni 後台尚未記錄 Sandbox 退款。");
+    error.diagnostic.checks.sandboxRefundAccepted = "passed";
+    error.diagnostic.checks.refundVisibleInProviderQuery = "passed";
+  } catch {
+    // The callback timeout is the primary QA failure. Keep cleanup details
+    // constrained so provider failures cannot disclose transaction data.
+    error.diagnostic.checks.sandboxRefundAccepted = "failed";
+  }
 }
+
+async function execute() {
+  try {
+    console.log(JSON.stringify(await main()));
+  } catch (error) {
+    if (error instanceof CallbackTimeoutError) await cleanUpTimedOutPayment(error);
+    const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
+    console.log(JSON.stringify({
+      schema: SCHEMA,
+      success: false,
+      environment: "sandbox",
+      completedAt: new Date().toISOString(),
+      error: callbackTimeout?.error ?? (error instanceof Error ? error.message : "未知錯誤"),
+      ...(callbackTimeout ? { checks: callbackTimeout.checks } : {}),
+      productionValidation: {
+        status: "human-approval-required",
+        automatedChargeAllowed: false,
+      },
+    }));
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await execute();
+
+export { callbackTimeoutDiagnostic, callbackQuerySummary, safeDiagnosticToken, safeTradeStatus };
