@@ -555,6 +555,8 @@ test("merchant can drag the last template message to the first timeline slot", a
   await page.goto("/interaction-scripts/new");
   await expect(page.getByRole("heading", { name: "新增互動腳本" })).toBeVisible();
 
+  const scriptName = `E2E 拖曳排序持久化 ${e2eRunId}`;
+  await page.getByLabel("留言組名稱").fill(scriptName);
   await page.getByRole("button", { name: "新品快閃" }).click();
 
   const messageRows = page.getByTestId("interaction-message-row");
@@ -580,6 +582,23 @@ test("merchant can drag the last template message to the first timeline slot", a
   const timelineOutline = page.getByTestId("interaction-timeline-outline");
   await expect(timelineOutline.getByTestId("interaction-timeline-outline-message")).toHaveText(expectedMessages);
   await expect(timelineOutline.getByTestId("interaction-timeline-outline-time")).toHaveText(expectedTimes);
+
+  await page.getByRole("button", { name: "更新留言組" }).click();
+  await expect(page).toHaveURL(/\/interaction-scripts$/);
+
+  const savedScript = page.getByRole("heading", { name: scriptName, exact: true }).locator("../../../..");
+  await expect(savedScript).toBeVisible();
+  await savedScript.getByTitle("編輯").click();
+  await expect(page).toHaveURL(/\/interaction-scripts\/[^/]+\/edit$/);
+
+  const persistedMessageRows = page.getByTestId("interaction-message-row");
+  await expect(persistedMessageRows).toHaveCount(4);
+  expect(await persistedMessageRows.getByTestId("interaction-message-content").evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLTextAreaElement).value)
+  ))).toEqual(expectedMessages);
+  expect(await persistedMessageRows.getByTestId("interaction-message-time").evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLInputElement).value)
+  ))).toEqual(expectedTimes);
 });
 
 loginRateLimitTest("login failures are audited and the sixth UI attempt is rejected before authentication", async ({ page, loginRateLimitUser }) => {
