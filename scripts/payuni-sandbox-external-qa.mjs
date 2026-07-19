@@ -10,11 +10,41 @@ const PAYUNI_API_ORIGIN = `https://${PAYUNI_HOST}`;
 const DEFAULT_APP_URL = `https://${APP_HOST}`;
 const DEFAULT_LIVE_PATH = "/live/summer-glow-live";
 const CALLBACK_TIMEOUT_ERROR_MAX_LENGTH = 280;
-const PROVIDER_STATUS_MAX_LENGTH = 48;
 const CALLBACK_QUERY_ATTEMPTS = 3;
 const CALLBACK_QUERY_INTERVAL_MS = 1_000;
 const CALLBACK_QUERY_TIMEOUT_MS = 5_000;
 const PAYUNI_TRADE_STATUSES = new Set(["0", "1"]);
+// These values are deliberately small allowlists.  PayUni's Message and the
+// rest of a response can contain merchant or payment data, so they must never
+// become part of the external-QA receipt.
+const PROVIDER_RESPONSE_STATUSES = new Set(["FAIL", "FAILED", "ERROR", "PENDING", "PROCESSING", "REJECTED"]);
+const PROVIDER_RESULT_FIELDS = new Set([
+  "MerTradeNo",
+  "TradeNo",
+  "TradeStatus",
+  "PaymentType",
+  "RespondCode",
+  "Auth",
+  "RefundStatus",
+  "CloseType",
+  "TradeAmt",
+  "RefundAmt",
+  "ErrorCode",
+  "Code",
+  "Status",
+]);
+const PROVIDER_RESULT_FIELD_MAX_COUNT = 8;
+const FLOW_STAGES = new Set([
+  "opening-live-page",
+  "submitting-checkout",
+  "waiting-payuni-checkout",
+  "filling-payment-form",
+  "submitting-payment",
+  "waiting-confirmation-dialog",
+  "confirming-payment",
+  "waiting-payment-callback",
+  "verifying-payment-callback",
+]);
 const CALLBACK_QUERY_FAILURES = new Map([
   ["query-timeout", "bounded-timeout"],
   ["request-configuration", "configuration"],
@@ -26,7 +56,7 @@ const CALLBACK_QUERY_FAILURES = new Map([
   ["order-validation", "order-mismatch"],
   ["unknown", "unknown"],
 ]);
-const PROVIDER_QUERY_STATUSES = new Set(["rejected"]);
+const STRUCTURAL_VISIBILITY = new Set(["visible", "not-visible", "unavailable"]);
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -63,26 +93,9 @@ function safeHttpsHostPath(rawUrl) {
   }
 }
 
-function safeProviderStatusText(text) {
-  const relevantLines = String(text ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => /錯誤|失敗|無效|驗證|請輸入|必填|error|invalid|fail|verification|required/i.test(line));
-  const status = relevantLines
-    .join(" | ")
-    // Never retain a card number, CVV, or similarly formatted numeric value.
-    .replace(/(?:[0-9０-９][ -]?){3,}/g, "[redacted-number]")
-    .replace(/\S+@\S+/g, "[redacted-email]")
-    .replace(
-      /(?:\b(?:cvv|cvc|card(?:\s*(?:number|no))?|password|credential|token|secret|api[-_ ]?key)\b|信用卡號|安全碼|密碼|憑證)\s*[:：=]\s*\S+/gi,
-      "[redacted-sensitive]",
-    );
-  return truncate(status, PROVIDER_STATUS_MAX_LENGTH) || "none";
-}
-
 function safeDiagnosticToken(value) {
   const token = String(value ?? "").trim();
-  return /^[A-Za-z0-9_-]{1,32}$/.test(token) ? token : "unavailable";
+  return FLOW_STAGES.has(token) ? token : "unavailable";
 }
 
 function safeTradeStatus(value) {
@@ -95,7 +108,64 @@ function safeHttpStatus(value) {
 }
 
 function safeProviderQueryStatus(value) {
-  return PROVIDER_QUERY_STATUSES.has(value) ? value : "unavailable";
+  return PROVIDER_RESPONSE_STATUSES.has(value) ? value : "unavailable";
+}
+
+function safeProviderErrorCode(value) {
+  const code = String(value ?? "").trim();
+  // Error codes are useful to distinguish a missing order from a payment
+  // rejection.  Restrict them to conventional short provider-code forms;
+  // arbitrary tokens, messages, and identifiers are not diagnostics.
+  return /^(?:\d{1,8}|[A-Z]{1,8}-\d{1,8}|MPG\d{5,8})$/.test(code) ? code : "unavailable";
+}
+
+function providerResultValue(result) {
+  if (typeof result !== "string") return result;
+  try {
+    return JSON.parse(result);
+  } catch {
+    const parsed = Object.fromEntries(new URLSearchParams(result));
+    return Object.keys(parsed).length > 0 ? parsed : null;
+  }
+}
+
+function safeProviderResultType(result) {
+  if (result === undefined || result === null) return "absent";
+  if (Array.isArray(result)) return "array";
+  if (typeof result === "string") return "string";
+  if (typeof result === "object") return "object";
+  return "other";
+}
+
+function safeProviderResultFields(result) {
+  const parsed = providerResultValue(result);
+  const candidate = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
+  return [...PROVIDER_RESULT_FIELDS]
+    .filter((field) => Object.hasOwn(candidate, field))
+    .slice(0, PROVIDER_RESULT_FIELD_MAX_COUNT);
+}
+
+function providerResultDiagnostic(response) {
+  const result = response?.Result;
+  const parsedResult = providerResultValue(result);
+  const resultRow = Array.isArray(parsedResult) ? parsedResult[0] : parsedResult;
+  const errorCode = [
+    response?.ErrorCode,
+    response?.Code,
+    response?.StatusCode,
+    resultRow?.ErrorCode,
+    resultRow?.Code,
+    resultRow?.StatusCode,
+  ]
+    .map(safeProviderErrorCode)
+    .find((code) => code !== "unavailable") ?? "unavailable";
+  return {
+    providerStatus: safeProviderQueryStatus(response?.Status),
+    providerErrorCode: errorCode,
+    providerResultType: safeProviderResultType(result),
+    providerResultFields: safeProviderResultFields(result),
+  };
 }
 
 function boundedQueryTimeout(value) {
@@ -112,6 +182,13 @@ export class PayUniQueryFailure extends Error {
     this.errorCategory = errorCategory;
     this.httpStatus = safeHttpStatus(details.httpStatus);
     this.providerStatus = safeProviderQueryStatus(details.providerStatus);
+    this.providerErrorCode = safeProviderErrorCode(details.providerErrorCode);
+    this.providerResultType = ["absent", "array", "string", "object", "other"].includes(details.providerResultType)
+      ? details.providerResultType
+      : "unavailable";
+    this.providerResultFields = Array.isArray(details.providerResultFields)
+      ? details.providerResultFields.filter((field) => PROVIDER_RESULT_FIELDS.has(field)).slice(0, PROVIDER_RESULT_FIELD_MAX_COUNT)
+      : [];
   }
 }
 
@@ -128,11 +205,21 @@ function callbackQueryFailure(error) {
   // provider data to the diagnostic after the failure was created.
   const httpStatus = safeHttpStatus(error.httpStatus);
   const providerStatus = safeProviderQueryStatus(error.providerStatus);
+  const providerErrorCode = safeProviderErrorCode(error.providerErrorCode);
+  const providerResultType = ["absent", "array", "string", "object", "other"].includes(error.providerResultType)
+    ? error.providerResultType
+    : "unavailable";
+  const providerResultFields = Array.isArray(error.providerResultFields)
+    ? error.providerResultFields.filter((field) => PROVIDER_RESULT_FIELDS.has(field)).slice(0, PROVIDER_RESULT_FIELD_MAX_COUNT)
+    : [];
   return {
     failureStage: error.failureStage,
     errorCategory: error.errorCategory,
     ...(httpStatus !== null ? { httpStatus } : {}),
     ...(providerStatus !== "unavailable" ? { providerStatus } : {}),
+    ...(providerErrorCode !== "unavailable" ? { providerErrorCode } : {}),
+    ...(providerResultType !== "unavailable" ? { providerResultType } : {}),
+    ...(providerResultFields.length > 0 ? { providerResultFields } : {}),
   };
 }
 
@@ -195,14 +282,54 @@ export async function reconcileCallbackTimeout({
   return { attempts, paidTransaction };
 }
 
-async function visiblePayUniStatus(page) {
+async function visibleLocatorState(locator) {
   try {
-    if (new URL(page.url()).hostname !== PAYUNI_HOST) return "none";
-    return safeProviderStatusText(await page.locator("body").innerText({ timeout: 1_000 }));
+    return (await locator.isVisible({ timeout: 1_000 })) ? "visible" : "not-visible";
   } catch {
-    // A diagnostic must not replace the callback timeout that triggered it.
     return "unavailable";
   }
+}
+
+async function paymentPageStructure(page) {
+  try {
+    if (new URL(page.url()).hostname !== PAYUNI_HOST) {
+      return {
+        paymentForm: "unavailable",
+        paymentSubmitButton: "unavailable",
+        confirmationDialog: "unavailable",
+        validationError: "unavailable",
+      };
+    }
+    const structure = {
+      paymentForm: await visibleLocatorState(page.locator('input[name="radioOptionpayGroupCredit"], input[placeholder="16 碼或 19 碼"]').first()),
+      paymentSubmitButton: await visibleLocatorState(page.getByRole("button", { name: "確認送出", exact: true })),
+      confirmationDialog: await visibleLocatorState(page.getByRole("button", { name: "確定", exact: true })),
+      validationError: await visibleLocatorState(page.locator('[role="alert"], .error, .invalid, .validation-error, .field-error').first()),
+    };
+    // Keep the receipt schema scalar-only and reject any accidental locator
+    // implementation value that is not one of the fixed visibility states.
+    return Object.fromEntries(Object.entries(structure).map(([key, value]) => [
+      key,
+      STRUCTURAL_VISIBILITY.has(value) ? value : "unavailable",
+    ]));
+  } catch {
+    return {
+      paymentForm: "unavailable",
+      paymentSubmitButton: "unavailable",
+      confirmationDialog: "unavailable",
+      validationError: "unavailable",
+    };
+  }
+}
+
+function safePaymentPageStructure(value) {
+  const structure = value && typeof value === "object" ? value : {};
+  return Object.fromEntries([
+    "paymentForm",
+    "paymentSubmitButton",
+    "confirmationDialog",
+    "validationError",
+  ].map((key) => [key, STRUCTURAL_VISIBILITY.has(structure[key]) ? structure[key] : "unavailable"]));
 }
 
 function callbackTimeoutDiagnostic({
@@ -211,16 +338,18 @@ function callbackTimeoutDiagnostic({
   confirmationDialogAppeared,
   confirmationDialogClicked,
   checkoutStatus,
-  providerStatus,
+  paymentPage,
   callbackQueryAttempts,
 }) {
+  const safeStage = safeDiagnosticToken(stage);
   const currentUrl = safeHttpsHostPath(page.url());
   const confirmationDialog = confirmationDialogAppeared
     ? (confirmationDialogClicked ? "appeared-clicked" : "appeared-not-clicked")
     : "not-appeared";
-  const checkoutHttpStatus = typeof checkoutStatus === "number" ? checkoutStatus : null;
+  const checkoutHttpStatus = safeHttpStatus(checkoutStatus);
+  const safePaymentPage = safePaymentPageStructure(paymentPage);
   const error = truncate(
-    `PayUni callback timeout; stage=${stage}; url=${currentUrl}; confirm=${confirmationDialog}; checkoutHttp=${checkoutHttpStatus ?? "unknown"}; providerStatus=${providerStatus}`,
+    `PayUni callback timeout; stage=${safeStage}; url=${currentUrl}; confirm=${confirmationDialog}; checkoutHttp=${checkoutHttpStatus ?? "unknown"}`,
     CALLBACK_TIMEOUT_ERROR_MAX_LENGTH,
   );
   return {
@@ -229,13 +358,13 @@ function callbackTimeoutDiagnostic({
       browserCheckout: "incomplete",
       paymentCallbackMatched: "timeout",
       providerChecks: {
-        stage,
+        stage: safeStage,
         currentHttpsHostPath: currentUrl,
         confirmationDialog,
         confirmationDialogAppeared,
         confirmationDialogClicked,
         checkoutHttpStatus,
-        visiblePayUniStatus: providerStatus,
+        paymentPage: safePaymentPage,
         callbackTradeQueries: callbackQueryAttempts,
       },
     },
@@ -409,7 +538,7 @@ async function queryTransaction(orderNumber, { signal } = {}) {
     throw new PayUniQueryFailure("response-envelope");
   }
   if (response.Status !== "SUCCESS") {
-    throw new PayUniQueryFailure("provider-result", { providerStatus: "rejected" });
+    throw new PayUniQueryFailure("provider-result", providerResultDiagnostic(response));
   }
   const row = resultRow(response);
   if (!row || typeof row !== "object" || !("MerTradeNo" in row)) {
@@ -531,7 +660,7 @@ async function runCheckout(appUrl) {
       });
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
-      const providerStatus = await visiblePayUniStatus(page);
+      const paymentPage = await paymentPageStructure(page);
       const reconciliation = await reconcileCallbackTimeout({
         orderNumber: checkout.orderNumber,
         page,
@@ -544,7 +673,7 @@ async function runCheckout(appUrl) {
           confirmationDialogAppeared,
           confirmationDialogClicked,
           checkoutStatus,
-          providerStatus,
+          paymentPage,
           callbackQueryAttempts: reconciliation.attempts,
         }),
         error,
@@ -670,6 +799,8 @@ export {
   callbackTimeoutDiagnostic,
   callbackQuerySummary,
   payUniRequest,
+  paymentPageStructure,
+  providerResultDiagnostic,
   safeDiagnosticToken,
   safeTradeStatus,
 };

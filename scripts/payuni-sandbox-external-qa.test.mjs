@@ -3,7 +3,10 @@ import { test } from "vitest";
 
 import {
   PayUniQueryFailure,
+  callbackTimeoutDiagnostic,
   payUniRequest,
+  paymentPageStructure,
+  providerResultDiagnostic,
   reconcileCallbackTimeout,
 } from "./payuni-sandbox-external-qa.mjs";
 
@@ -119,7 +122,7 @@ test("callback timeout reconciliation serializes only allowlisted query failure 
     ["http-response", "http", { httpStatus: 503 }],
     ["response-envelope", "response-envelope"],
     ["signature-decryption", "signature-decryption"],
-    ["provider-result", "provider-rejection", { providerStatus: "rejected" }],
+    ["provider-result", "provider-rejection", { providerStatus: "FAIL", providerErrorCode: "MPG01001", providerResultType: "object", providerResultFields: ["Code"] }],
     ["order-validation", "order-mismatch"],
   ];
 
@@ -170,7 +173,7 @@ test("callback timeout reconciliation revalidates mutable failure scalar fields"
   const secret = "CredentialToken7A9B";
   const failure = new PayUniQueryFailure("http-response", {
     httpStatus: 503,
-    providerStatus: "rejected",
+    providerStatus: "FAIL",
   });
   failure.httpStatus = secret;
   failure.providerStatus = secret;
@@ -191,6 +194,138 @@ test("callback timeout reconciliation revalidates mutable failure scalar fields"
     assert.equal(attempt.providerStatus, undefined);
   }
   assert.equal(output.includes(secret), false);
+});
+
+test("provider rejection retains only allowlisted response diagnostics", () => {
+  const diagnostic = providerResultDiagnostic({
+    Status: "FAIL",
+    Message: "card 4111 1111 1111 1111 was declined",
+    Result: {
+      MerTradeNo: "order-sensitive",
+      TradeNo: "trade-sensitive",
+      ErrorCode: "MPG01001",
+      Message: "credential=CredentialToken7A9B",
+      Unexpected: "keep-out",
+    },
+  });
+
+  assert.deepEqual(diagnostic, {
+    providerStatus: "FAIL",
+    providerErrorCode: "MPG01001",
+    providerResultType: "object",
+    providerResultFields: ["MerTradeNo", "TradeNo", "ErrorCode"],
+  });
+  assert.equal(JSON.stringify(diagnostic).includes("CredentialToken"), false);
+  assert.equal(JSON.stringify(diagnostic).includes("4111"), false);
+});
+
+test("provider rejection suppresses unknown or malicious response values", async () => {
+  const secret = "CredentialToken7A9B";
+  const diagnostic = providerResultDiagnostic({
+    Status: secret,
+    ErrorCode: secret,
+    Result: `Message=${encodeURIComponent(secret)}&CardNumber=4111111111111111`,
+  });
+  const result = await reconcileCallbackTimeout({
+    orderNumber: "order-10",
+    page: pageAt("https://sandbox-api.payuni.com.tw/api/upp?token=hidden"),
+    stage: "waiting-payment-callback",
+    query: async () => { throw new PayUniQueryFailure("provider-result", diagnostic); },
+    sleep: async () => {},
+  });
+
+  const output = JSON.stringify(result);
+  for (const attempt of result.attempts) {
+    assert.equal(attempt.failureStage, "provider-result");
+    assert.equal(attempt.providerStatus, undefined);
+    assert.equal(attempt.providerErrorCode, undefined);
+    assert.equal(attempt.providerResultType, "string");
+    assert.deepEqual(attempt.providerResultFields, undefined);
+  }
+  assert.equal(output.includes(secret), false);
+  assert.equal(output.includes("411111"), false);
+  assert.equal(output.includes("token=hidden"), false);
+});
+
+test("provider result field diagnostics are allowlisted and bounded", () => {
+  const diagnostic = providerResultDiagnostic({
+    Status: "FAILED",
+    Code: "E-12",
+    Result: [{
+      MerTradeNo: "order-sensitive",
+      TradeNo: "trade-sensitive",
+      TradeStatus: "0",
+      PaymentType: "CREDIT",
+      RespondCode: "00",
+      Auth: "auth-sensitive",
+      RefundStatus: "0",
+      CloseType: "2",
+      TradeAmt: "500",
+      RefundAmt: "0",
+      ErrorCode: "MPG01001",
+      Code: "E-12",
+      Status: "FAIL",
+    }],
+  });
+
+  assert.equal(diagnostic.providerResultType, "array");
+  assert.deepEqual(diagnostic.providerResultFields, [
+    "MerTradeNo", "TradeNo", "TradeStatus", "PaymentType",
+    "RespondCode", "Auth", "RefundStatus", "CloseType",
+  ]);
+  assert.equal(diagnostic.providerResultFields.length, 8);
+  assert.equal(diagnostic.providerErrorCode, "E-12");
+});
+
+test("payment page structure records visibility without text or input values", async () => {
+  const secret = "CredentialToken7A9B";
+  const visible = { isVisible: async () => true };
+  const hidden = { isVisible: async () => false };
+  const unavailable = { isVisible: async () => { throw new Error(secret); } };
+  const page = {
+    url: () => `https://sandbox-api.payuni.com.tw/api/upp?token=${secret}`,
+    locator: (selector) => ({
+      first: () => (selector.includes("validation-error") ? unavailable : visible),
+    }),
+    getByRole: (_role, options) => (options.name === "確認送出" ? hidden : visible),
+  };
+
+  const structure = await paymentPageStructure(page);
+  assert.deepEqual(structure, {
+    paymentForm: "visible",
+    paymentSubmitButton: "not-visible",
+    confirmationDialog: "visible",
+    validationError: "unavailable",
+  });
+  assert.equal(JSON.stringify(structure).includes(secret), false);
+});
+
+test("callback timeout receipt redacts URL and rejects non-structural page values", () => {
+  const secret = "CredentialToken7A9B";
+  const diagnostic = callbackTimeoutDiagnostic({
+    stage: secret,
+    page: pageAt(`https://sandbox-api.payuni.com.tw/api/upp?token=${secret}`),
+    confirmationDialogAppeared: true,
+    confirmationDialogClicked: true,
+    checkoutStatus: 200,
+    paymentPage: {
+      paymentForm: secret,
+      paymentSubmitButton: "visible",
+      confirmationDialog: "not-visible",
+      validationError: "visible",
+    },
+    callbackQueryAttempts: [],
+  });
+
+  assert.deepEqual(diagnostic.checks.providerChecks.paymentPage, {
+    paymentForm: "unavailable",
+    paymentSubmitButton: "visible",
+    confirmationDialog: "not-visible",
+    validationError: "visible",
+  });
+  assert.equal(diagnostic.checks.providerChecks.stage, "unavailable");
+  assert.equal(JSON.stringify(diagnostic).includes(secret), false);
+  assert.equal(JSON.stringify(diagnostic).includes("token="), false);
 });
 
 test("PayUni request classifies malformed non-string outer fields as a response envelope", async () => {
