@@ -169,6 +169,39 @@ describe("payment webhook processing", () => {
     expect(transactions).toHaveLength(0);
   });
 
+  it("recovers the vendor from an existing provider order when PayUni omits vendor identifiers", async () => {
+    const suffix = `${Date.now()}-payuni-order-scope`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-PAYUNI-SCOPE-${suffix}`;
+    const checkoutTransaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "payuni",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "payuni",
+      eventId: `evt-payuni-order-scope-${suffix}`,
+      eventType: "paid",
+      orderNumber,
+      grossAmountCents: 100000,
+      currency: "TWD",
+    }));
+
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: checkoutTransaction.id } })).toMatchObject({
+      vendorId: vendor.id,
+      providerName: "payuni",
+      status: "paid",
+    });
+  });
+
   it("does not create duplicate transactions for the same order", async () => {
     const suffix = `${Date.now()}a`;
     const { db, vendor } = await createFixture(suffix);
