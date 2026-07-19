@@ -7,6 +7,8 @@ const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_API_ORIGIN = `https://${PAYUNI_HOST}`;
 const DEFAULT_APP_URL = `https://${APP_HOST}`;
 const DEFAULT_LIVE_PATH = "/live/summer-glow-live";
+const CALLBACK_TIMEOUT_ERROR_MAX_LENGTH = 280;
+const PROVIDER_STATUS_MAX_LENGTH = 48;
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -24,6 +26,86 @@ function assertExactHttpsHost(rawUrl, expectedHost, label) {
 
 function reference(value) {
   return createHash("sha256").update(String(value)).digest("hex").slice(0, 12);
+}
+
+function truncate(value, maximumLength) {
+  const text = String(value ?? "").trim();
+  return text.length <= maximumLength ? text : `${text.slice(0, maximumLength - 1)}…`;
+}
+
+function safeHttpsHostPath(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return "unavailable";
+    // Deliberately omit query and fragment: callback parameters can contain
+    // provider data that does not belong in a QA receipt.
+    return truncate(`${url.hostname}${url.pathname}`, 80);
+  } catch {
+    return "unavailable";
+  }
+}
+
+function safeProviderStatusText(text) {
+  const relevantLines = String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => /錯誤|失敗|無效|驗證|請輸入|必填|error|invalid|fail|verification|required/i.test(line));
+  const status = relevantLines
+    .join(" | ")
+    // Never retain a card number, CVV, or similarly formatted numeric value.
+    .replace(/(?:[0-9０-９][ -]?){3,}/g, "[redacted-number]")
+    .replace(/\S+@\S+/g, "[redacted-email]")
+    .replace(
+      /(?:\b(?:cvv|cvc|card(?:\s*(?:number|no))?|password|credential|token|secret|api[-_ ]?key)\b|信用卡號|安全碼|密碼|憑證)\s*[:：=]\s*\S+/gi,
+      "[redacted-sensitive]",
+    );
+  return truncate(status, PROVIDER_STATUS_MAX_LENGTH) || "none";
+}
+
+async function visiblePayUniStatus(page) {
+  try {
+    if (new URL(page.url()).hostname !== PAYUNI_HOST) return "none";
+    return safeProviderStatusText(await page.locator("body").innerText({ timeout: 1_000 }));
+  } catch {
+    // A diagnostic must not replace the callback timeout that triggered it.
+    return "unavailable";
+  }
+}
+
+function callbackTimeoutDiagnostic({ stage, page, confirmationDialogAppeared, confirmationDialogClicked, checkoutStatus, providerStatus }) {
+  const currentUrl = safeHttpsHostPath(page.url());
+  const confirmationDialog = confirmationDialogAppeared
+    ? (confirmationDialogClicked ? "appeared-clicked" : "appeared-not-clicked")
+    : "not-appeared";
+  const checkoutHttpStatus = typeof checkoutStatus === "number" ? checkoutStatus : null;
+  const error = truncate(
+    `PayUni callback timeout; stage=${stage}; url=${currentUrl}; confirm=${confirmationDialog}; checkoutHttp=${checkoutHttpStatus ?? "unknown"}; providerStatus=${providerStatus}`,
+    CALLBACK_TIMEOUT_ERROR_MAX_LENGTH,
+  );
+  return {
+    error,
+    checks: {
+      browserCheckout: "incomplete",
+      paymentCallbackMatched: "timeout",
+      providerChecks: {
+        stage,
+        currentHttpsHostPath: currentUrl,
+        confirmationDialog,
+        confirmationDialogAppeared,
+        confirmationDialogClicked,
+        checkoutHttpStatus,
+        visiblePayUniStatus: providerStatus,
+      },
+    },
+  };
+}
+
+class CallbackTimeoutError extends Error {
+  constructor(diagnostic, cause) {
+    super(diagnostic.error, { cause });
+    this.name = "CallbackTimeoutError";
+    this.diagnostic = diagnostic;
+  }
 }
 
 function safeEqual(left, right) {
@@ -202,15 +284,19 @@ async function runCheckout(appUrl) {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ locale: "zh-TW" });
+  let flowStage = "opening-live-page";
+  let checkoutStatus = null;
+  let confirmationDialogAppeared = false;
+  let confirmationDialogClicked = false;
   try {
     const livePath = env("PAYUNI_TEST_LIVE_PATH", DEFAULT_LIVE_PATH);
     assert(livePath.startsWith("/"), "PAYUNI_TEST_LIVE_PATH 必須是站內絕對路徑。");
+    flowStage = "opening-live-page";
     await page.goto(new URL(livePath, appUrl).toString(), {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
     });
     let checkout = null;
-    let checkoutStatus = null;
     await page.route(`${appUrl}/api/payments/checkout`, async (route) => {
       const response = await route.fetch();
       const body = await response.text();
@@ -223,9 +309,11 @@ async function runCheckout(appUrl) {
         await route.fulfill({ response, body });
       }
     });
+    flowStage = "submitting-checkout";
     await page.getByRole("button", { name: "立即搶購" }).click();
     // PayUni 的 Sandbox 頁面可能持續載入第三方資源；網址與 DOM 已完成切換時
     // 就可以繼續填表，不應再等待整頁 load 而把成功導頁誤判成逾時。
+    flowStage = "waiting-payuni-checkout";
     await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_HOST, {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
@@ -239,27 +327,51 @@ async function runCheckout(appUrl) {
     assert(typeof checkout.orderNumber === "string" && checkout.orderNumber.length > 0, "結帳回應缺少訂單編號。");
     assert(typeof checkout.transactionId === "string" && checkout.transactionId.length > 0, "結帳回應缺少交易識別。");
 
+    flowStage = "filling-payment-form";
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
     await page.getByPlaceholder("16 碼或 19 碼").fill(cardNumber);
     await page.getByPlaceholder("MM/YY").fill(expiry);
     await page.getByPlaceholder("***").fill(cvv);
     await page.getByPlaceholder("example@example.com").fill("qa-sandbox@example.com");
+    flowStage = "submitting-payment";
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
     const confirmButton = page.getByRole("button", { name: "確定", exact: true });
-    let confirmationDialogAppeared = false;
     try {
+      flowStage = "waiting-confirmation-dialog";
       await confirmButton.waitFor({ state: "visible", timeout: 5_000 });
       confirmationDialogAppeared = true;
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
     }
-    if (confirmationDialogAppeared) await confirmButton.click();
+    if (confirmationDialogAppeared) {
+      flowStage = "confirming-payment";
+      await confirmButton.click();
+      confirmationDialogClicked = true;
+    }
 
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, {
-      waitUntil: "domcontentloaded",
-      timeout: 60_000,
-    });
+    flowStage = "waiting-payment-callback";
+    try {
+      await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, {
+        waitUntil: "domcontentloaded",
+        timeout: 60_000,
+      });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+      const providerStatus = await visiblePayUniStatus(page);
+      throw new CallbackTimeoutError(
+        callbackTimeoutDiagnostic({
+          stage: flowStage,
+          page,
+          confirmationDialogAppeared,
+          confirmationDialogClicked,
+          checkoutStatus,
+          providerStatus,
+        }),
+        error,
+      );
+    }
+    flowStage = "verifying-payment-callback";
     const callback = JSON.parse((await page.locator("body").innerText()).trim());
     assert(callback?.ok === true, "CelebrateDeal 未接受 PayUni 付款通知。");
     assert(callback.transactionId === checkout.transactionId, "付款通知與結帳交易識別不一致。");
@@ -328,12 +440,14 @@ async function main() {
 try {
   console.log(JSON.stringify(await main()));
 } catch (error) {
+  const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
   console.log(JSON.stringify({
     schema: SCHEMA,
     success: false,
     environment: "sandbox",
     completedAt: new Date().toISOString(),
-    error: error instanceof Error ? error.message : "未知錯誤",
+    error: callbackTimeout?.error ?? (error instanceof Error ? error.message : "未知錯誤"),
+    ...(callbackTimeout ? { checks: callbackTimeout.checks } : {}),
     productionValidation: {
       status: "human-approval-required",
       automatedChargeAllowed: false,
