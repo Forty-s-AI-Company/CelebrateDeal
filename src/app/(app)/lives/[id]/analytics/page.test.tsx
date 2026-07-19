@@ -23,7 +23,12 @@ import LiveAnalyticsPage from "./page";
 const live = {
   id: "live-current",
   title: "夏季直播",
-  affiliateClicks: [],
+  affiliateClicks: [{
+    id: "affiliate-click-1",
+    referralCode: "summer-partner",
+    convertedAt: null,
+    createdAt: new Date("2026-07-30T12:00:00.000Z"),
+  }],
 };
 
 const recentEvents = Array.from({ length: 30 }, (_, index) => ({
@@ -80,5 +85,24 @@ describe("/lives/[id]/analytics route", () => {
     });
     expect(html).toContain("visitor-1");
     expect(html).toContain("visitor-30");
+    expect(html).toContain("summer-partner");
+  });
+
+  it("shows an empty state when there are no recent events", async () => {
+    mocks.analyticsFindMany.mockResolvedValue([]);
+
+    const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
+
+    expect(html).toContain("目前沒有最近事件。");
+    expect(html).not.toContain("visitor-1");
+  });
+
+  it("shows an empty state when there are no affiliate sources", async () => {
+    mocks.liveFindFirst.mockResolvedValue({ ...live, affiliateClicks: [] });
+
+    const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
+
+    expect(html).toContain("目前沒有聯盟來源資料。");
+    expect(html).not.toContain("summer-partner");
   });
 });
