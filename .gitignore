@@ -56,6 +56,9 @@ cookies.txt
 # vercel
 .vercel
 
+# Supabase CLI local link/cache
+/supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
