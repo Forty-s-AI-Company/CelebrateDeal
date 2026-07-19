@@ -76,6 +76,44 @@ async function findVendor(payload: PaymentWebhookPayloadInput) {
   throw new Error("付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。");
 }
 
+async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
+  const db = getDb();
+
+  // PayUni 的真實 UPP 回呼不保證帶回自訂 VendorId，因此只在已驗簽且
+  // 缺少商家識別時，使用結帳時建立的 provider + orderNumber 交易反查。
+  if (!payload.vendorId && !payload.vendorSlug) {
+    const matchingTransactions = await db.paymentTransaction.findMany({
+      where: {
+        providerName: payload.provider,
+        orderNumber: payload.orderNumber,
+      },
+      include: { vendor: true, refunds: true },
+      take: 2,
+    });
+
+    if (matchingTransactions.length === 0) {
+      throw new Error("付款 webhook 缺少商家識別，且找不到對應的既存結帳交易。");
+    }
+    if (matchingTransactions.length > 1) {
+      throw new Error("付款 webhook 訂單識別不唯一，拒絕自動歸屬商家。");
+    }
+
+    const [transaction] = matchingTransactions;
+    return { vendor: transaction.vendor, existingTransaction: transaction };
+  }
+
+  const vendor = await findVendor(payload);
+  if (!vendor) {
+    throw new Error("找不到 webhook 對應商家。");
+  }
+
+  const existingTransaction = await db.paymentTransaction.findFirst({
+    where: { vendorId: vendor.id, orderNumber: payload.orderNumber },
+    include: { refunds: true },
+  });
+  return { vendor, existingTransaction };
+}
+
 async function upsertAffiliateCommission(
   payload: PaymentWebhookPayloadInput,
   vendorId: string,
@@ -220,16 +258,9 @@ async function applyRefundToCommission(
 
 export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
   const db = getDb();
-  const vendor = await findVendor(payload);
-  if (!vendor) {
-    throw new Error("找不到 webhook 對應商家。");
-  }
+  const { vendor, existingTransaction } = await resolveWebhookScope(payload);
 
   const occurredAt = new Date(payload.occurredAt ?? new Date().toISOString());
-  const existingTransaction = await db.paymentTransaction.findFirst({
-    where: { vendorId: vendor.id, orderNumber: payload.orderNumber },
-    include: { refunds: true },
-  });
   if (existingTransaction && payload.eventType === "paid" && (
     payload.grossAmountCents !== existingTransaction.grossAmountCents
     || payload.currency !== existingTransaction.currency
