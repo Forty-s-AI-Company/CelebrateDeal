@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   invoiceUpsert: vi.fn(),
   interactionEventCreate: vi.fn(),
   interactionEventDeleteMany: vi.fn(),
+  interactionRoleCreateMany: vi.fn(),
+  interactionRoleFindMany: vi.fn(),
   interactionScriptCreate: vi.fn(),
   interactionScriptUpdate: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
@@ -96,6 +98,7 @@ vi.mock("@/lib/db", () => ({
     refundRecord: { aggregate: mocks.refundRecordAggregate },
     settlement: { findUnique: mocks.settlementFindUnique },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
+    interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
     interactionScript: { create: mocks.interactionScriptCreate, update: mocks.interactionScriptUpdate },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
@@ -121,6 +124,7 @@ vi.mock("@/lib/db", () => ({
 import {
   createVendorMemberAction,
   generateSettlementAction,
+  importSystemRolesAction,
   loginAction,
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
@@ -282,6 +286,8 @@ beforeEach(() => {
     payoutableAmountCents: 8_000,
   });
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
+  mocks.interactionRoleFindMany.mockResolvedValue([]);
+  mocks.interactionRoleCreateMany.mockResolvedValue({ count: 0 });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
       findUnique: mocks.findUnique,
@@ -821,6 +827,72 @@ describe("/settings/security member invitation controls", () => {
     const resendActions = formActions(page).filter((action) => action === resendVendorMemberInvitationAction);
 
     expect(resendActions).toHaveLength(1);
+  });
+});
+
+describe("importSystemRolesAction", () => {
+  it("validates CSRF and the vendor, then imports only system roles that do not already exist", async () => {
+    const formData = new FormData();
+    const existingNames = ["開場 AI 主持人", "客服 Q&A 助手"];
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-9" });
+    mocks.interactionRoleFindMany.mockResolvedValue(existingNames.map((name) => ({ name })));
+
+    await expect(importSystemRolesAction(formData)).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-9",
+        name: { in: expect.arrayContaining(existingNames) },
+      },
+      select: { name: true },
+    });
+    expect(mocks.interactionRoleCreateMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ name: "官方商品顧問", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "優惠提醒助手", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "保養知識顧問", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "成交節奏助手", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "直播小編", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "提醒通知助手", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "售後關懷助手", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "限時活動主持", vendorId: "vendor-9", isActive: true }),
+      ]),
+    });
+    const [[{ data: createdRoles }]] = mocks.interactionRoleCreateMany.mock.calls;
+    expect(createdRoles).toHaveLength(8);
+    expect(createdRoles).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "開場 AI 主持人" }),
+      expect.objectContaining({ name: "客服 Q&A 助手" }),
+    ]));
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-roles");
+    expect(mocks.redirect).toHaveBeenCalledWith("/interaction-roles");
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.redirect.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not create duplicate roles when the entire system library already exists", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleFindMany.mockResolvedValue([
+      "開場 AI 主持人",
+      "官方商品顧問",
+      "優惠提醒助手",
+      "客服 Q&A 助手",
+      "保養知識顧問",
+      "成交節奏助手",
+      "直播小編",
+      "提醒通知助手",
+      "售後關懷助手",
+      "限時活動主持",
+    ].map((name) => ({ name })));
+
+    await expect(importSystemRolesAction(new FormData())).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.interactionRoleCreateMany).toHaveBeenCalledWith({ data: [] });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-roles");
+    expect(mocks.redirect).toHaveBeenCalledWith("/interaction-roles");
   });
 });
 
