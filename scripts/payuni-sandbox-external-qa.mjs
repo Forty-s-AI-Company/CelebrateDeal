@@ -224,7 +224,12 @@ async function runCheckout(appUrl) {
       }
     });
     await page.getByRole("button", { name: "立即搶購" }).click();
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_HOST, { timeout: 45_000 });
+    // PayUni 的 Sandbox 頁面可能持續載入第三方資源；網址與 DOM 已完成切換時
+    // 就可以繼續填表，不應再等待整頁 load 而把成功導頁誤判成逾時。
+    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_HOST, {
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    });
     assert(
       typeof checkoutStatus === "number" && checkoutStatus >= 200 && checkoutStatus < 300,
       `CelebrateDeal checkout 回應 HTTP ${checkoutStatus ?? "UNKNOWN"}。`,
@@ -244,7 +249,10 @@ async function runCheckout(appUrl) {
     const confirmButton = page.getByRole("button", { name: "確定", exact: true });
     if (await confirmButton.isVisible({ timeout: 5_000 }).catch(() => false)) await confirmButton.click();
 
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, { timeout: 60_000 });
+    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
     const callback = JSON.parse((await page.locator("body").innerText()).trim());
     assert(callback?.ok === true, "CelebrateDeal 未接受 PayUni 付款通知。");
     assert(callback.transactionId === checkout.transactionId, "付款通知與結帳交易識別不一致。");
