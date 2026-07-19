@@ -1219,6 +1219,36 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   redirect("/interaction-scripts");
 }
 
+export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendor();
+  const scriptId = text(formData, "id");
+  const liveId = text(formData, "liveId");
+
+  if (!scriptId || !liveId) {
+    throw new Error("直播不存在或未綁定此互動腳本。");
+  }
+
+  const updateResult = await getDb().live.updateMany({
+    where: {
+      id: liveId,
+      vendorId: vendor.id,
+      interactionScriptId: scriptId,
+      interactionScript: { is: { id: scriptId, vendorId: vendor.id } },
+    },
+    data: { interactionScriptId: null },
+  });
+
+  if (updateResult.count !== 1) {
+    throw new Error("直播不存在或未綁定此互動腳本。");
+  }
+
+  revalidatePath("/interaction-scripts");
+  revalidatePath(`/interaction-scripts/${scriptId}/edit`);
+  revalidatePath("/lives");
+  revalidatePath(`/lives/${liveId}/edit`);
+}
+
 export async function duplicateInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendor();
