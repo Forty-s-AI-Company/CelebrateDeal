@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
-import { chromium } from "playwright";
+import { chromium, errors } from "playwright";
 
 const SCHEMA = "celebratedeal-payuni-sandbox-qa/v1";
 const APP_HOST = "celebratedeal.carry-digital-nomad.in.net";
@@ -247,7 +247,14 @@ async function runCheckout(appUrl) {
     await page.getByPlaceholder("example@example.com").fill("qa-sandbox@example.com");
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
     const confirmButton = page.getByRole("button", { name: "確定", exact: true });
-    if (await confirmButton.isVisible({ timeout: 5_000 }).catch(() => false)) await confirmButton.click();
+    let confirmationDialogAppeared = false;
+    try {
+      await confirmButton.waitFor({ state: "visible", timeout: 5_000 });
+      confirmationDialogAppeared = true;
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    }
+    if (confirmationDialogAppeared) await confirmButton.click();
 
     await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, {
       waitUntil: "domcontentloaded",
