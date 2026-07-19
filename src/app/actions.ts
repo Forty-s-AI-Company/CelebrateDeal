@@ -793,9 +793,12 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
     }),
   });
 
-  redirect(invitationSent
-    ? "/settings/security?updated=member_invitation_resent"
-    : "/settings/security?error=member_invitation_resend_failed");
+  if (invitationSent) {
+    revalidatePath("/settings/security");
+    redirect("/settings/security?updated=member_invitation_resent");
+  }
+
+  redirect("/settings/security?error=member_invitation_resend_failed");
 }
 
 export async function deactivateVendorMemberAction(formData: FormData) {

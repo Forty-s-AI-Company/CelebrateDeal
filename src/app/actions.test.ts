@@ -764,6 +764,11 @@ describe("resendVendorMemberInvitationAction", () => {
       targetId: activeMember.id,
       after: { email: activeMember.user.email, role: activeMember.role, status: activeMember.status },
     }));
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
+    expect(mocks.redirect).toHaveBeenCalledWith("/settings/security?updated=member_invitation_resent");
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.redirect.mock.invocationCallOrder[0],
+    );
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.userUpdate).not.toHaveBeenCalled();
   });
