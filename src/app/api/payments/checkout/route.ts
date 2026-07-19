@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
+import type { CheckoutSessionResult } from "@/lib/payment-providers/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const CheckoutRequest = z.object({
@@ -81,21 +82,30 @@ export async function POST(request: Request) {
     },
   });
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-  const checkoutSession = provider.createCheckoutSession
-    ? await provider.createCheckoutSession({
-        transaction,
-        product,
-        vendor: product.vendor,
-        referralCode: parsed.data.referralCode,
-        appUrl,
-      })
-    : {
-        provider: provider.id,
-        mode: "manual" as const,
-        checkoutUrl: null,
-        nextAction: "provider_checkout_adapter_pending",
-        externalRequired: true,
-      };
+  let checkoutSession: CheckoutSessionResult;
+  try {
+    checkoutSession = provider.createCheckoutSession
+      ? await provider.createCheckoutSession({
+          transaction,
+          product,
+          vendor: product.vendor,
+          referralCode: parsed.data.referralCode,
+          appUrl,
+        })
+      : {
+          provider: provider.id,
+          mode: "manual" as const,
+          checkoutUrl: null,
+          nextAction: "provider_checkout_adapter_pending",
+          externalRequired: true,
+        };
+  } catch (error) {
+    await db.paymentTransaction.update({
+      where: { id: transaction.id },
+      data: { status: "failed" },
+    });
+    throw error;
+  }
 
   await db.paymentTransaction.update({
     where: { id: transaction.id },
