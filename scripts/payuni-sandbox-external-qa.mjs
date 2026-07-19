@@ -155,7 +155,12 @@ async function waitForRefund(orderNumber) {
 }
 
 async function runCheckout(appUrl) {
-  const cardNumber = env("PAYUNI_TEST_CARD_NUMBER", env("PAYUNI_SANDBOX_ONETIME_CARD_NO")).replace(/\D/g, "");
+  // An explicitly defined but blank PAYUNI_TEST_CARD_NUMBER should still use
+  // the existing Sandbox one-time card value from local, gitignored config.
+  const cardNumber = (env("PAYUNI_TEST_CARD_NUMBER") || env("PAYUNI_SANDBOX_ONETIME_CARD_NO")).replace(
+    /\D/g,
+    "",
+  );
   const expiry = env("PAYUNI_TEST_EXPIRY").replace(/\D/g, "");
   const cvv = env("PAYUNI_TEST_CVV").replace(/\D/g, "");
   assert(/^\d{16,19}$/.test(cardNumber), "缺少有效的 Sandbox 測試卡號。");
