@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { isValidElement, type ReactNode } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import type { Product } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -89,19 +89,24 @@ const products: Product[] = [
   },
 ];
 
-type ElementNode = { props: Record<string, unknown> };
+type ElementProps = Record<string, unknown> & { children?: ReactNode };
+type ElementNode = ReactElement<ElementProps>;
+
+function isElementNode(node: ReactNode): node is ElementNode {
+  return isValidElement<ElementProps>(node);
+}
 
 function findElements(node: ReactNode): ElementNode[] {
   if (Array.isArray(node)) return node.flatMap(findElements);
-  if (!isValidElement(node)) return [];
+  if (!isElementNode(node)) return [];
 
-  return [node as unknown as ElementNode, ...findElements(node.props.children)];
+  return [node, ...findElements(node.props.children)];
 }
 
 function textContent(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textContent).join("");
-  if (!isValidElement(node)) return "";
+  if (!isElementNode(node)) return "";
   return textContent(node.props.children);
 }
 
