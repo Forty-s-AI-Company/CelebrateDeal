@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
 import type { Product } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -153,7 +154,7 @@ function showPublishPreview(tree: unknown) {
     candidate.props.active === true && textContent(candidate.props.children).includes("確認建立 Cloudflare-first 直播間")
   ));
   expect(publishPanel).toBeDefined();
-  return renderToStaticMarkup(publishPanel!);
+  return renderToStaticMarkup(publishPanel as unknown as ReactElement);
 }
 
 describe("LiveStepperForm", () => {
