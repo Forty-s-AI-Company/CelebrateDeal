@@ -8,25 +8,39 @@ import { formatDateTime } from "@/lib/format";
 export default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendor();
   const { id } = await params;
-  const live = await getDb().live.findFirst({
+  const db = getDb();
+  const live = await db.live.findFirst({
     where: { id, vendorId: vendor.id },
     include: {
-      analytics: { orderBy: { createdAt: "desc" }, take: 30 },
-      submissions: true,
       affiliateClicks: true,
     },
   });
   if (!live) notFound();
 
-  const pageViews = live.analytics.filter((event) => event.eventType === "page_view").length;
-  const productClicks = live.analytics.filter((event) => event.eventType === "product_click").length;
-  const ctaClicks = live.analytics.filter((event) => event.eventType === "cta_click").length;
-  const progressEvents = live.analytics.filter((event) => event.eventType === "play_progress").length;
+  const trackedEventTypes = ["page_view", "product_click", "cta_click", "play_progress"];
+  const [eventCounts, submissionCount, recentEvents] = await Promise.all([
+    db.analyticsEvent.groupBy({
+      by: ["eventType"],
+      where: { vendorId: vendor.id, liveId: live.id, eventType: { in: trackedEventTypes } },
+      _count: { _all: true },
+    }),
+    db.formSubmission.count({ where: { liveId: live.id } }),
+    db.analyticsEvent.findMany({
+      where: { vendorId: vendor.id, liveId: live.id },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    }),
+  ]);
+  const eventCountByType = new Map(eventCounts.map((eventCount) => [eventCount.eventType, eventCount._count._all]));
+  const pageViews = eventCountByType.get("page_view") ?? 0;
+  const productClicks = eventCountByType.get("product_click") ?? 0;
+  const ctaClicks = eventCountByType.get("cta_click") ?? 0;
+  const progressEvents = eventCountByType.get("play_progress") ?? 0;
   const funnel = calculateAnalyticsFunnel({
     views: pageViews,
     productClicks,
     ctaClicks,
-    submissions: live.submissions.length,
+    submissions: submissionCount,
   });
 
   return (
@@ -34,7 +48,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
       <PageHeader title={`${live.title} 分析`} description="MVP 先收事件流、核心 KPI 與轉換漏斗，後續可加 cohorts。" />
       <div className="grid gap-4 md:grid-cols-5">
         <Card><p className="text-sm text-slate-500">觀看</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
-        <Card><p className="text-sm text-slate-500">名單</p><p className="mt-2 text-3xl font-semibold">{live.submissions.length}</p></Card>
+        <Card><p className="text-sm text-slate-500">名單</p><p className="mt-2 text-3xl font-semibold">{submissionCount}</p></Card>
         <Card><p className="text-sm text-slate-500">商品點擊</p><p className="mt-2 text-3xl font-semibold">{productClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">CTA 點擊</p><p className="mt-2 text-3xl font-semibold">{ctaClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">播放進度</p><p className="mt-2 text-3xl font-semibold">{progressEvents}</p></Card>
@@ -69,7 +83,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">最近事件</h2>
           <div className="grid gap-2">
-            {live.analytics.map((event) => (
+            {recentEvents.map((event) => (
               <div key={event.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
                 <span className="flex items-center gap-2"><Badge tone="blue">{event.eventType}</Badge>{event.visitorId}</span>
                 <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
