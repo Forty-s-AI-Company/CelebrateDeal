@@ -243,13 +243,13 @@ export function InteractionScriptForm({
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <h3 className="mb-3 text-sm font-semibold text-slate-950">時間點大綱</h3>
-              <div className="grid gap-2">
+              <div data-testid="interaction-timeline-outline" className="grid gap-2">
                 {events
                   .map((event, index) => ({ event, index }))
                   .map(({ event, index }) => (
-                    <div key={`${event.title}-${index}`} className="grid grid-cols-[84px_1fr] gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 text-sm">
-                      <span className="rounded-md bg-blue-600 px-2 py-1 text-center font-mono text-xs font-bold text-white">{secondsToClock(event.triggerSec)}</span>
-                      <span className="line-clamp-1 font-medium text-slate-700">{messageText(event) || event.title}</span>
+                    <div key={`${event.title}-${index}`} data-testid="interaction-timeline-outline-item" className="grid grid-cols-[84px_1fr] gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 text-sm">
+                      <span data-testid="interaction-timeline-outline-time" className="rounded-md bg-blue-600 px-2 py-1 text-center font-mono text-xs font-bold text-white">{secondsToClock(event.triggerSec)}</span>
+                      <span data-testid="interaction-timeline-outline-message" className="line-clamp-1 font-medium text-slate-700">{messageText(event) || event.title}</span>
                     </div>
                   ))}
               </div>
@@ -276,13 +276,14 @@ export function InteractionScriptForm({
               <span>留言內容</span>
               <span />
             </div>
-            <div className="divide-y divide-slate-100">
+            <div data-testid="interaction-message-list" className="divide-y divide-slate-100">
               {events.map((event, index) => {
                 const selectedRole = roles.find((role) => role.id === event.roleId) ?? roles[0];
                 const selectedAvatar = selectedRole?.avatarUrl;
                 return (
                   <div
                     key={`${event.eventType}-${index}`}
+                    data-testid="interaction-message-row"
                     draggable
                     onDragStart={(dragEvent) => handleDragStart(dragEvent, index)}
                     onDragOver={(dragEvent) => dragEvent.preventDefault()}
@@ -292,6 +293,7 @@ export function InteractionScriptForm({
                   >
                     <div className="grid gap-1">
                       <input
+                        data-testid="interaction-message-time"
                         name="triggerSec"
                         value={timeInputs[index] ?? secondsToClock(event.triggerSec)}
                         onChange={(inputEvent) => updateTimeInput(index, inputEvent.target.value)}
@@ -315,6 +317,7 @@ export function InteractionScriptForm({
                       <input type="hidden" name="ctaLabel" value={event.ctaLabel ?? ""} />
                       <input type="hidden" name="ctaUrl" value={event.ctaUrl ?? ""} />
                       <textarea
+                        data-testid="interaction-message-content"
                         name="message"
                         value={messageText(event)}
                         onChange={(inputEvent) => updateEvent(index, { message: inputEvent.target.value, title: inputEvent.target.value.slice(0, 24) || "留言" })}
