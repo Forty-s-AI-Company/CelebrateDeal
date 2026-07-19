@@ -17,6 +17,14 @@ commands:
   additional_validation:
     - npm run e2e:smoke
 
+external_qa:
+  enabled: true
+  environment: staging
+  command: npm run qa:payuni:sandbox
+  run_once_per_revision: true
+  reviewer_role: delivery-qa
+  production_requires_human_approval: true
+
 safety:
   allow_git_push: true
   allow_deploy: false

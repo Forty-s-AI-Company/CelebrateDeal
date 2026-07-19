@@ -14,6 +14,7 @@
     "preflight": "tsx scripts/preflight.ts",
     "external:smoke": "tsx scripts/external-smoke.ts",
     "payuni:fixture": "tsx scripts/payuni-webhook-fixtures.ts",
+    "qa:payuni:sandbox": "node --env-file=.env.local scripts/payuni-sandbox-external-qa.mjs",
     "cloudflare:fixtures": "tsx scripts/cloudflare-webhook-fixtures.ts",
     "admin:bootstrap": "tsx scripts/bootstrap-platform-admin.ts",
     "db:generate": "prisma generate",
