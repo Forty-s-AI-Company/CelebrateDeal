@@ -805,13 +805,14 @@ export async function deactivateVendorMemberAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
   const id = text(formData, "id");
+  const confirmation = normalizedEmail(text(formData, "confirmation"));
   const db = getDb();
   const member = await db.vendorMember.findFirst({
     where: { id, vendorId: auth.vendor.id },
     include: { user: true },
   });
 
-  if (!member || member.user.platformRole !== "none") {
+  if (!member || member.status !== "active" || member.user.platformRole !== "none") {
     redirect("/settings/security?error=member_not_found");
   }
 
@@ -831,6 +832,10 @@ export async function deactivateVendorMemberAction(formData: FormData) {
     if (activeOwnerCount === 0) {
       redirect("/settings/security?error=last_owner");
     }
+  }
+
+  if (confirmation !== normalizedEmail(member.user.email)) {
+    redirect("/settings/security?error=member_confirmation");
   }
 
   const updated = await db.$transaction(async (tx) => {

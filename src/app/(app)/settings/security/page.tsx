@@ -14,6 +14,7 @@ import {
   updatePasswordAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
 import { Badge, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
@@ -33,6 +34,7 @@ const errorMessages: Record<string, string> = {
   self_deactivate: "不能停用自己的帳號。",
   last_owner: "至少要保留一位 active owner。",
   member_not_found: "找不到可停用的成員。",
+  member_confirmation: "請輸入要停用成員的 Email 以確認操作。",
   mfa_required: "管理後台前需要先完成 MFA 設定。",
   mfa_code: "TOTP 驗證碼不正確。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",
@@ -274,11 +276,12 @@ export default async function SecuritySettingsPage({
                             <input type="hidden" name="id" value={member.id} />
                             <button className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">重寄設定密碼邀請</button>
                           </form>
-                          <form action={deactivateVendorMemberAction}>
-                            <CsrfField />
-                            <input type="hidden" name="id" value={member.id} />
-                            <button className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">停用</button>
-                          </form>
+                          <VendorMemberDeactivationConfirmation
+                            action={deactivateVendorMemberAction}
+                            currentUserId={auth.user.id}
+                            isOwner={isOwner}
+                            member={member}
+                          />
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">-</span>

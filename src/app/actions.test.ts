@@ -194,9 +194,10 @@ function resendVendorMemberInvitationFormData(id = "member-2") {
   return formData;
 }
 
-function deactivateVendorMemberFormData(id = "member-2") {
+function deactivateVendorMemberFormData(id = "member-2", confirmation = "member@example.com") {
   const formData = new FormData();
   formData.set("id", id);
+  formData.set("confirmation", confirmation);
   return formData;
 }
 
@@ -883,6 +884,20 @@ describe("deactivateVendorMemberAction", () => {
     expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
     expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unconfirmed deactivation without changing the member, sessions, or audit log", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce(activeMember);
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData(activeMember.id, ""))).rejects.toThrow(
+      "redirect:/settings/security?error=member_confirmation",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("does not write data when the owner attempts to deactivate themself", async () => {
