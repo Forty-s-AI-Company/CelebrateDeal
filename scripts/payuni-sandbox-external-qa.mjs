@@ -15,6 +15,18 @@ const CALLBACK_QUERY_ATTEMPTS = 3;
 const CALLBACK_QUERY_INTERVAL_MS = 1_000;
 const CALLBACK_QUERY_TIMEOUT_MS = 5_000;
 const PAYUNI_TRADE_STATUSES = new Set(["0", "1"]);
+const CALLBACK_QUERY_FAILURES = new Map([
+  ["query-timeout", "bounded-timeout"],
+  ["request-configuration", "configuration"],
+  ["network-request", "network"],
+  ["http-response", "http"],
+  ["response-envelope", "response-envelope"],
+  ["signature-decryption", "signature-decryption"],
+  ["provider-result", "provider-rejection"],
+  ["order-validation", "order-mismatch"],
+  ["unknown", "unknown"],
+]);
+const PROVIDER_QUERY_STATUSES = new Set(["rejected"]);
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -78,6 +90,52 @@ function safeTradeStatus(value) {
   return PAYUNI_TRADE_STATUSES.has(status) ? status : "unavailable";
 }
 
+function safeHttpStatus(value) {
+  return Number.isInteger(value) ? value : null;
+}
+
+function safeProviderQueryStatus(value) {
+  return PROVIDER_QUERY_STATUSES.has(value) ? value : "unavailable";
+}
+
+function boundedQueryTimeout(value) {
+  if (!Number.isFinite(value) || value < 1) return CALLBACK_QUERY_TIMEOUT_MS;
+  return Math.min(Math.floor(value), CALLBACK_QUERY_TIMEOUT_MS);
+}
+
+export class PayUniQueryFailure extends Error {
+  constructor(failureStage, details = {}) {
+    const errorCategory = CALLBACK_QUERY_FAILURES.get(failureStage) ?? "unknown";
+    super("PayUni trade query failed.", { cause: details.cause });
+    this.name = "PayUniQueryFailure";
+    this.failureStage = CALLBACK_QUERY_FAILURES.has(failureStage) ? failureStage : "unknown";
+    this.errorCategory = errorCategory;
+    this.httpStatus = safeHttpStatus(details.httpStatus);
+    this.providerStatus = safeProviderQueryStatus(details.providerStatus);
+  }
+}
+
+function callbackQueryFailure(error) {
+  if (!(error instanceof PayUniQueryFailure)) {
+    return { failureStage: "unknown", errorCategory: "unknown" };
+  }
+  const expectedCategory = CALLBACK_QUERY_FAILURES.get(error.failureStage);
+  if (!expectedCategory || error.errorCategory !== expectedCategory) {
+    return { failureStage: "unknown", errorCategory: "unknown" };
+  }
+  // Error instances can be modified after construction. Re-apply the scalar
+  // allowlists at the receipt boundary so a query implementation cannot add
+  // provider data to the diagnostic after the failure was created.
+  const httpStatus = safeHttpStatus(error.httpStatus);
+  const providerStatus = safeProviderQueryStatus(error.providerStatus);
+  return {
+    failureStage: error.failureStage,
+    errorCategory: error.errorCategory,
+    ...(httpStatus !== null ? { httpStatus } : {}),
+    ...(providerStatus !== "unavailable" ? { providerStatus } : {}),
+  };
+}
+
 function callbackQuerySummary({ attempt, row, error, page, stage }) {
   return {
     attempt,
@@ -86,7 +144,7 @@ function callbackQuerySummary({ attempt, row, error, page, stage }) {
     tradeNoPresent: !error && String(row?.TradeNo ?? "").trim().length > 0,
     currentHttpsHostPath: safeHttpsHostPath(page.url()),
     flowStage: safeDiagnosticToken(stage),
-    ...(error ? { errorCategory: "query-failed" } : {}),
+    ...(error ? callbackQueryFailure(error) : {}),
   };
 }
 
@@ -97,7 +155,7 @@ async function queryWithTimeout(query, orderNumber, timeoutMs) {
     const timeout = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
         controller.abort();
-        reject(new Error("PayUni trade query timed out."));
+        reject(new PayUniQueryFailure("query-timeout"));
       }, timeoutMs);
     });
     return await Promise.race([
@@ -119,17 +177,18 @@ export async function reconcileCallbackTimeout({
 }) {
   const attempts = [];
   let paidTransaction = null;
+  const boundedQueryTimeoutMs = boundedQueryTimeout(queryTimeoutMs);
   for (let attempt = 1; attempt <= CALLBACK_QUERY_ATTEMPTS; attempt += 1) {
     try {
-      const row = await queryWithTimeout(query, orderNumber, queryTimeoutMs);
+      const row = await queryWithTimeout(query, orderNumber, boundedQueryTimeoutMs);
       attempts.push(callbackQuerySummary({ attempt, row, page, stage }));
       if (String(row?.TradeStatus) === "1" && String(row?.TradeNo ?? "").trim()) {
         paidTransaction = row;
         break;
       }
-    } catch {
+    } catch (error) {
       // Do not expose PayUni response or request details in the QA receipt.
-      attempts.push(callbackQuerySummary({ attempt, error: true, page, stage }));
+      attempts.push(callbackQuerySummary({ attempt, error, page, stage }));
     }
     if (attempt < CALLBACK_QUERY_ATTEMPTS) await sleep(CALLBACK_QUERY_INTERVAL_MS);
   }
@@ -202,8 +261,9 @@ function safeEqual(left, right) {
 function keyMaterial() {
   const key = env("PAYUNI_HASH_KEY");
   const iv = env("PAYUNI_HASH_IV");
-  assert(Buffer.byteLength(key) === 32, "PAYUNI_HASH_KEY 必須是 32 bytes。");
-  assert(Buffer.byteLength(iv) === 16, "PAYUNI_HASH_IV 必須是 16 bytes。");
+  if (Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) {
+    throw new PayUniQueryFailure("request-configuration");
+  }
   return { key, iv };
 }
 
@@ -220,15 +280,25 @@ function encryptInfo(payload) {
 
 function decryptInfo(value) {
   const { key, iv } = keyMaterial();
-  const [encrypted, tag] = Buffer.from(value, "hex").toString("utf8").split(":::");
-  assert(encrypted && tag, "PayUni 回應缺少有效的 EncryptInfo。");
-  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
-  decipher.setAuthTag(Buffer.from(tag, "base64"));
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(encrypted, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
-  return Object.fromEntries(new URLSearchParams(plaintext));
+  let encrypted;
+  let tag;
+  try {
+    [encrypted, tag] = Buffer.from(value, "hex").toString("utf8").split(":::");
+  } catch (error) {
+    throw new PayUniQueryFailure("response-envelope", { cause: error });
+  }
+  if (!encrypted || !tag) throw new PayUniQueryFailure("response-envelope");
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+    decipher.setAuthTag(Buffer.from(tag, "base64"));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(encrypted, "base64")),
+      decipher.final(),
+    ]).toString("utf8");
+    return Object.fromEntries(new URLSearchParams(plaintext));
+  } catch (error) {
+    throw new PayUniQueryFailure("signature-decryption", { cause: error });
+  }
 }
 
 function hashInfo(value) {
@@ -238,7 +308,8 @@ function hashInfo(value) {
 
 function parseOuterPayload(text) {
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return Object.fromEntries(new URLSearchParams(text));
   }
@@ -248,7 +319,7 @@ async function payUniRequest(path, version, payload, { signal } = {}) {
   assert(path === "/api/trade/query" || path === "/api/trade/close", "未核准的 PayUni API 路徑。");
   const url = assertExactHttpsHost(`${PAYUNI_API_ORIGIN}${path}`, PAYUNI_HOST, "PayUni API");
   const merId = env("PAYUNI_MERCHANT_ID");
-  assert(merId, "缺少 PAYUNI_MERCHANT_ID。");
+  if (!merId) throw new PayUniQueryFailure("request-configuration");
   const encrypted = encryptInfo({ MerID: merId, ...payload });
   const body = new URLSearchParams({
     MerID: merId,
@@ -256,22 +327,42 @@ async function payUniRequest(path, version, payload, { signal } = {}) {
     EncryptInfo: encrypted,
     HashInfo: hashInfo(encrypted),
   });
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      "user-agent": "CelebrateDeal-AI-Team-Sandbox-QA/1.0",
-    },
-    body,
-    redirect: "error",
-    signal: signal ?? AbortSignal.timeout(30_000),
-  });
-  assert(response.ok, `PayUni API 回應 HTTP ${response.status}。`);
-  const outer = parseOuterPayload(await response.text());
-  const responseEncrypted = String(outer.EncryptInfo ?? "");
-  const responseHash = String(outer.HashInfo ?? "").trim();
-  assert(responseEncrypted && responseHash, "PayUni API 回應缺少加密資料或簽章。");
-  assert(safeEqual(hashInfo(responseEncrypted), responseHash), "PayUni API 回應簽章驗證失敗。");
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "CelebrateDeal-AI-Team-Sandbox-QA/1.0",
+      },
+      body,
+      redirect: "error",
+      signal: signal ?? AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    throw new PayUniQueryFailure("network-request", { cause: error });
+  }
+  if (!response.ok) throw new PayUniQueryFailure("http-response", { httpStatus: response.status });
+  let text;
+  try {
+    text = await response.text();
+  } catch (error) {
+    throw new PayUniQueryFailure("network-request", { cause: error });
+  }
+  const outer = parseOuterPayload(text);
+  if (
+    typeof outer.EncryptInfo !== "string"
+    || !outer.EncryptInfo.trim()
+    || typeof outer.HashInfo !== "string"
+    || !outer.HashInfo.trim()
+  ) {
+    throw new PayUniQueryFailure("response-envelope");
+  }
+  const responseEncrypted = outer.EncryptInfo;
+  const responseHash = outer.HashInfo.trim();
+  if (!safeEqual(hashInfo(responseEncrypted), responseHash)) {
+    throw new PayUniQueryFailure("signature-decryption");
+  }
   return decryptInfo(responseEncrypted);
 }
 
@@ -309,25 +400,22 @@ function resultRow(queryResponse) {
   return queryResponse;
 }
 
-function responseShape(response, row) {
-  return JSON.stringify({
-    topLevelKeys: Object.keys(response).sort(),
-    resultType: Array.isArray(response.Result) ? "array" : typeof response.Result,
-    rowKeys: row && typeof row === "object" ? Object.keys(row).sort() : [],
-  });
-}
-
 async function queryTransaction(orderNumber, { signal } = {}) {
   const response = await payUniRequest("/api/trade/query", "2.0", {
     MerTradeNo: orderNumber,
     Timestamp: Math.floor(Date.now() / 1000),
   }, { signal });
-  assert(response.Status === "SUCCESS", `PayUni 交易查詢失敗：${response.Status ?? "UNKNOWN"}`);
+  if (!response || typeof response !== "object" || !("Status" in response)) {
+    throw new PayUniQueryFailure("response-envelope");
+  }
+  if (response.Status !== "SUCCESS") {
+    throw new PayUniQueryFailure("provider-result", { providerStatus: "rejected" });
+  }
   const row = resultRow(response);
-  assert(
-    row && String(row.MerTradeNo) === orderNumber,
-    `PayUni 查詢結果與本次訂單不一致；結構=${responseShape(response, row)}。`,
-  );
+  if (!row || typeof row !== "object" || !("MerTradeNo" in row)) {
+    throw new PayUniQueryFailure("response-envelope");
+  }
+  if (String(row.MerTradeNo) !== orderNumber) throw new PayUniQueryFailure("order-validation");
   return row;
 }
 
@@ -578,4 +666,10 @@ async function execute() {
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await execute();
 
-export { callbackTimeoutDiagnostic, callbackQuerySummary, safeDiagnosticToken, safeTradeStatus };
+export {
+  callbackTimeoutDiagnostic,
+  callbackQuerySummary,
+  payUniRequest,
+  safeDiagnosticToken,
+  safeTradeStatus,
+};
