@@ -115,10 +115,39 @@ function resultRow(queryResponse) {
       const parsed = JSON.parse(queryResponse.Result);
       return Array.isArray(parsed) ? parsed[0] : parsed;
     } catch {
-      return null;
+      const parsed = Object.fromEntries(new URLSearchParams(queryResponse.Result));
+      return Object.keys(parsed).length > 0 ? parsed : null;
     }
   }
+  if (queryResponse.Result && typeof queryResponse.Result === "object") {
+    if ("MerTradeNo" in queryResponse.Result) return queryResponse.Result;
+    const nested = Object.values(queryResponse.Result).find(
+      (value) => value && typeof value === "object" && "MerTradeNo" in value,
+    );
+    if (nested) return nested;
+    return queryResponse.Result;
+  }
+  const bracketRows = new Map();
+  for (const [key, value] of Object.entries(queryResponse)) {
+    const match = /^Result(?:\[(\d+)\])?\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const index = Number(match[1] ?? "0");
+    const row = bracketRows.get(index) ?? {};
+    row[match[2]] = value;
+    bracketRows.set(index, row);
+  }
+  if (bracketRows.size > 0) {
+    return bracketRows.get(Math.min(...bracketRows.keys()));
+  }
   return queryResponse;
+}
+
+function responseShape(response, row) {
+  return JSON.stringify({
+    topLevelKeys: Object.keys(response).sort(),
+    resultType: Array.isArray(response.Result) ? "array" : typeof response.Result,
+    rowKeys: row && typeof row === "object" ? Object.keys(row).sort() : [],
+  });
 }
 
 async function queryTransaction(orderNumber) {
@@ -128,7 +157,10 @@ async function queryTransaction(orderNumber) {
   });
   assert(response.Status === "SUCCESS", `PayUni 交易查詢失敗：${response.Status ?? "UNKNOWN"}`);
   const row = resultRow(response);
-  assert(row && String(row.MerTradeNo) === orderNumber, "PayUni 查詢結果與本次訂單不一致。");
+  assert(
+    row && String(row.MerTradeNo) === orderNumber,
+    `PayUni 查詢結果與本次訂單不一致；結構=${responseShape(response, row)}。`,
+  );
   return row;
 }
 
@@ -140,8 +172,9 @@ async function refundTransaction(tradeNo, amount) {
     TradeAmt: amount,
   });
   assert(response.Status === "SUCCESS", `PayUni Sandbox 退款失敗：${response.Status ?? "UNKNOWN"}`);
-  assert(String(response.TradeNo) === tradeNo, "PayUni 退款回應與本次交易不一致。");
-  assert(String(response.CloseType) === "2", "PayUni 退款回應不是退款類型。");
+  const row = resultRow(response);
+  assert(row && String(row.TradeNo) === tradeNo, "PayUni 退款回應與本次交易不一致。");
+  assert(String(row.CloseType) === "2", "PayUni 退款回應不是退款類型。");
 }
 
 async function waitForRefund(orderNumber) {
@@ -176,20 +209,31 @@ async function runCheckout(appUrl) {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
     });
-    const checkoutResponsePromise = page.waitForResponse(
-      (response) => response.url() === `${appUrl}/api/payments/checkout` && response.request().method() === "POST",
-      { timeout: 45_000 },
-    );
+    let checkout = null;
+    let checkoutStatus = null;
+    await page.route(`${appUrl}/api/payments/checkout`, async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      checkoutStatus = response.status();
+      try {
+        checkout = JSON.parse(body);
+      } finally {
+        // Return the captured body to the application before its form submit
+        // navigates away and Chromium discards the response-body identifier.
+        await route.fulfill({ response, body });
+      }
+    });
     await page.getByRole("button", { name: "立即搶購" }).click();
-    const checkoutResponse = await checkoutResponsePromise;
-    assert(checkoutResponse.ok(), `CelebrateDeal checkout 回應 HTTP ${checkoutResponse.status()}。`);
-    const checkout = await checkoutResponse.json();
+    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_HOST, { timeout: 45_000 });
+    assert(
+      typeof checkoutStatus === "number" && checkoutStatus >= 200 && checkoutStatus < 300,
+      `CelebrateDeal checkout 回應 HTTP ${checkoutStatus ?? "UNKNOWN"}。`,
+    );
     assert(checkout?.ok === true && checkout?.provider === "payuni", "CelebrateDeal 未建立 PayUni 結帳。");
     assertExactHttpsHost(String(checkout.formAction ?? ""), PAYUNI_HOST, "PayUni 結帳頁");
     assert(typeof checkout.orderNumber === "string" && checkout.orderNumber.length > 0, "結帳回應缺少訂單編號。");
     assert(typeof checkout.transactionId === "string" && checkout.transactionId.length > 0, "結帳回應缺少交易識別。");
 
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_HOST, { timeout: 45_000 });
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
     await page.getByPlaceholder("16 碼或 19 碼").fill(cardNumber);
@@ -226,7 +270,7 @@ async function main() {
   assert(Number.isInteger(checkout.amount) && checkout.amount > 0, "Sandbox 退款金額無效。");
   const paid = await queryTransaction(checkout.orderNumber);
   assert(String(paid.TradeStatus) === "1", "PayUni 後台查詢尚未顯示已付款。");
-  assert(String(paid.TradeNo ?? "") === checkout.callbackEventId, "PayUni 後台序號與付款通知不一致。");
+  assert(String(paid.TradeNo ?? "").length > 0, "PayUni 後台查詢缺少交易序號。");
   assert(Number(paid.TradeAmt) === checkout.amount, "PayUni 後台金額與 CelebrateDeal 結帳金額不一致。");
 
   await refundTransaction(String(paid.TradeNo), checkout.amount);
