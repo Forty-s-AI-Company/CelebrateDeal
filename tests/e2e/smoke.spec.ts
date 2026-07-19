@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -357,6 +357,33 @@ async function loginMfaAdmin(page: Page, user: MfaTestUser, expectedUrl: RegExp)
   await expect(page).toHaveURL(expectedUrl);
 }
 
+async function loginSeededOwner(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(seed.email);
+  await page.getByLabel("密碼").fill(password);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+}
+
+async function html5DragAndDrop(source: Locator, target: Locator) {
+  const targetIndex = await target.evaluate((element) => (
+    Array.from(document.querySelectorAll('[data-testid="interaction-message-row"]')).indexOf(element)
+  ));
+  if (targetIndex < 0) throw new Error("HTML5 drag target is not a message row.");
+
+  await source.evaluate((sourceElement, index) => {
+    const targetElement = document.querySelectorAll('[data-testid="interaction-message-row"]')[index];
+    if (!targetElement) throw new Error(`HTML5 drag target not found at index ${index}`);
+
+    const dataTransfer = new DataTransfer();
+    sourceElement.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer }));
+    targetElement.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer }));
+    targetElement.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+    targetElement.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    sourceElement.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer }));
+  }, targetIndex);
+}
+
 function invalidTotpCode(totpSeed: string) {
   for (let candidate = 0; candidate < 1_000_000; candidate += 1) {
     const code = String(candidate).padStart(6, "0");
@@ -521,6 +548,38 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+});
+
+test("merchant can drag the last template message to the first timeline slot", async ({ page }) => {
+  await loginSeededOwner(page);
+  await page.goto("/interaction-scripts/new");
+  await expect(page.getByRole("heading", { name: "新增互動腳本" })).toBeVisible();
+
+  await page.getByRole("button", { name: "新品快閃" }).click();
+
+  const messageRows = page.getByTestId("interaction-message-row");
+  await expect(messageRows).toHaveCount(4);
+  await html5DragAndDrop(messageRows.nth(3), messageRows.nth(0));
+
+  const expectedMessages = [
+    "直播限定優惠已開放，等等會整理完整連結。",
+    "歡迎來到官方直播間，今天會快速整理新品亮點。",
+    "主打組合已經浮出，想比較規格可以先點商品卡。",
+    "第一次接觸可以先從體驗組開始，門檻比較輕。",
+  ];
+  const expectedTimes = ["00:00:05", "00:00:45", "00:01:30", "00:03:00"];
+
+  await expect(messageRows.nth(0).getByTestId("interaction-message-content")).toHaveValue(expectedMessages[0]);
+  expect(await messageRows.getByTestId("interaction-message-content").evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLTextAreaElement).value)
+  ))).toEqual(expectedMessages);
+  expect(await messageRows.getByTestId("interaction-message-time").evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLInputElement).value)
+  ))).toEqual(expectedTimes);
+
+  const timelineOutline = page.getByTestId("interaction-timeline-outline");
+  await expect(timelineOutline.getByTestId("interaction-timeline-outline-message")).toHaveText(expectedMessages);
+  await expect(timelineOutline.getByTestId("interaction-timeline-outline-time")).toHaveText(expectedTimes);
 });
 
 loginRateLimitTest("login failures are audited and the sixth UI attempt is rejected before authentication", async ({ page, loginRateLimitUser }) => {
