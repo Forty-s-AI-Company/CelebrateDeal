@@ -48,8 +48,11 @@ const mocks = vi.hoisted(() => ({
   vendorMemberFindFirst: vi.fn(),
   vendorMemberFindMany: vi.fn(),
   vendorMemberFindUnique: vi.fn(),
+  vendorMemberCount: vi.fn(),
+  vendorMemberUpdate: vi.fn(),
   vendorMemberUpsert: vi.fn(),
   userSessionFindMany: vi.fn(),
+  userSessionUpdateMany: vi.fn(),
   writeAuditLog: vi.fn(),
 }));
 
@@ -109,20 +112,23 @@ vi.mock("@/lib/db", () => ({
     },
     vendor: { findUnique: mocks.vendorFindUnique },
     vendorMember: {
+      count: mocks.vendorMemberCount,
       findFirst: mocks.vendorMemberFindFirst,
       findMany: mocks.vendorMemberFindMany,
       findUnique: mocks.vendorMemberFindUnique,
+      update: mocks.vendorMemberUpdate,
       upsert: mocks.vendorMemberUpsert,
     },
     teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
-    userSession: { findMany: mocks.userSessionFindMany },
+    userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
   }),
 }));
 
 import {
   createVendorMemberAction,
+  deactivateVendorMemberAction,
   generateSettlementAction,
   importSystemRolesAction,
   loginAction,
@@ -183,6 +189,12 @@ function vendorMemberFormData({
 }
 
 function resendVendorMemberInvitationFormData(id = "member-2") {
+  const formData = new FormData();
+  formData.set("id", id);
+  return formData;
+}
+
+function deactivateVendorMemberFormData(id = "member-2") {
   const formData = new FormData();
   formData.set("id", id);
   return formData;
@@ -801,6 +813,116 @@ describe("resendVendorMemberInvitationAction", () => {
     }));
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.userUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("deactivateVendorMemberAction", () => {
+  const activeMember = {
+    id: "member-2",
+    vendorId: "vendor-1",
+    userId: "user-2",
+    role: "accountant",
+    status: "active",
+    user: { id: "user-2", email: "member@example.com", platformRole: "none" },
+  };
+
+  it("deactivates another active member, revokes the vendor sessions, audits, revalidates, and redirects", async () => {
+    const deactivatedMember = { ...activeMember, status: "inactive", deactivatedAt: new Date("2026-07-20T00:00:00.000Z") };
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce(activeMember);
+    mocks.vendorMemberUpdate.mockResolvedValueOnce(deactivatedMember);
+    mocks.userSessionUpdateMany.mockResolvedValueOnce({ count: 2 });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      vendorMember: { update: mocks.vendorMemberUpdate },
+      userSession: { updateMany: mocks.userSessionUpdateMany },
+    }));
+    const formData = deactivateVendorMemberFormData();
+
+    await expect(deactivateVendorMemberAction(formData)).rejects.toThrow(
+      "redirect:/settings/security?updated=member_deactivated",
+    );
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
+    expect(mocks.vendorMemberFindFirst).toHaveBeenCalledWith({
+      where: { id: activeMember.id, vendorId: "vendor-1" },
+      include: { user: true },
+    });
+    expect(mocks.vendorMemberUpdate).toHaveBeenCalledWith({
+      where: { id: activeMember.id },
+      data: { status: "inactive", deactivatedAt: expect.any(Date) },
+    });
+    expect(mocks.userSessionUpdateMany).toHaveBeenCalledWith({
+      where: { userId: activeMember.userId, vendorId: "vendor-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      actorId: "owner-1",
+      actorLabel: "owner",
+      action: "deactivate_vendor_member",
+      targetType: "VendorMember",
+      targetId: activeMember.id,
+      before: activeMember,
+      after: deactivatedMember,
+    });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
+    expect(mocks.redirect).toHaveBeenCalledWith("/settings/security?updated=member_deactivated");
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.redirect.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not write data when the member is not found", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce(null);
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=member_not_found",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("does not write data when the owner attempts to deactivate themself", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce({
+      ...activeMember,
+      id: "member-owner",
+      userId: "owner-1",
+      user: { id: "owner-1", email: "owner@example.com", platformRole: "none" },
+    });
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData("member-owner"))).rejects.toThrow(
+      "redirect:/settings/security?error=self_deactivate",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("does not write data when deactivating the last active owner", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce({ ...activeMember, role: "owner" });
+    mocks.vendorMemberCount.mockResolvedValueOnce(0);
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=last_owner",
+    );
+
+    expect(mocks.vendorMemberCount).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        role: "owner",
+        status: "active",
+        id: { not: activeMember.id },
+      },
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 
