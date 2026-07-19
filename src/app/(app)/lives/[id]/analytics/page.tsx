@@ -83,23 +83,31 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">最近事件</h2>
           <div className="grid gap-2">
-            {recentEvents.map((event) => (
-              <div key={event.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-                <span className="flex items-center gap-2"><Badge tone="blue">{event.eventType}</Badge>{event.visitorId}</span>
-                <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
-              </div>
-            ))}
+            {recentEvents.length === 0 ? (
+              <p role="status" className="text-sm text-slate-500">目前沒有最近事件。</p>
+            ) : (
+              recentEvents.map((event) => (
+                <div key={event.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+                  <span className="flex items-center gap-2"><Badge tone="blue">{event.eventType}</Badge>{event.visitorId}</span>
+                  <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
+                </div>
+              ))
+            )}
           </div>
         </Card>
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">聯盟來源</h2>
           <div className="grid gap-2">
-            {live.affiliateClicks.map((click) => (
-              <div key={click.id} className="rounded-md border border-border p-3 text-sm">
-                <p className="font-semibold text-slate-950">{click.referralCode ?? "unknown"}</p>
-                <p className="text-slate-500">{click.convertedAt ? "已轉換" : "尚未轉換"} · {formatDateTime(click.createdAt)}</p>
-              </div>
-            ))}
+            {live.affiliateClicks.length === 0 ? (
+              <p role="status" className="text-sm text-slate-500">目前沒有聯盟來源資料。</p>
+            ) : (
+              live.affiliateClicks.map((click) => (
+                <div key={click.id} className="rounded-md border border-border p-3 text-sm">
+                  <p className="font-semibold text-slate-950">{click.referralCode ?? "unknown"}</p>
+                  <p className="text-slate-500">{click.convertedAt ? "已轉換" : "尚未轉換"} · {formatDateTime(click.createdAt)}</p>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
