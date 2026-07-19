@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   interactionRoleFindMany: vi.fn(),
   interactionScriptCreate: vi.fn(),
   interactionScriptUpdate: vi.fn(),
+  liveUpdateMany: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
@@ -103,6 +104,7 @@ vi.mock("@/lib/db", () => ({
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
     interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
     interactionScript: { create: mocks.interactionScriptCreate, update: mocks.interactionScriptUpdate },
+    live: { updateMany: mocks.liveUpdateMany },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     userMfaFactor: { update: mocks.userMfaFactorUpdate },
@@ -135,6 +137,7 @@ import {
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
+  unbindInteractionScriptFromLiveAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
@@ -229,6 +232,13 @@ function interactionScriptFormData(triggerSec: string) {
   formData.set("triggerSec", triggerSec);
   formData.set("eventTitle", "測試留言");
   formData.set("message", "測試留言內容");
+  return formData;
+}
+
+function unbindInteractionScriptFormData(liveId = "live-1", scriptId = "script-1") {
+  const formData = new FormData();
+  formData.set("id", scriptId);
+  formData.set("liveId", liveId);
   return formData;
 }
 
@@ -1055,6 +1065,57 @@ describe("upsertInteractionScriptAction", () => {
       expect(mocks.transaction).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("unbindInteractionScriptFromLiveAction", () => {
+  it("unbinds a currently associated live owned by the current vendor and revalidates affected pages", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
+
+    await unbindInteractionScriptFromLiveAction(unbindInteractionScriptFormData());
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(expect.any(FormData));
+    expect(mocks.liveUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "live-1",
+        vendorId: "vendor-1",
+        interactionScriptId: "script-1",
+        interactionScript: { is: { id: "script-1", vendorId: "vendor-1" } },
+      },
+      data: { interactionScriptId: null },
+    });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-scripts");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-scripts/script-1/edit");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/lives");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/lives/live-1/edit");
+  });
+
+  it("rejects a live that is not owned by the current vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.liveUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(unbindInteractionScriptFromLiveAction(unbindInteractionScriptFormData("live-from-vendor-2"))).rejects.toThrow(
+      "直播不存在或未綁定此互動腳本。",
+    );
+
+    expect(mocks.liveUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "live-from-vendor-2", vendorId: "vendor-1" }),
+    }));
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rejects a live that is not bound to the requested interaction script", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.liveUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(unbindInteractionScriptFromLiveAction(unbindInteractionScriptFormData("live-1", "different-script"))).rejects.toThrow(
+      "直播不存在或未綁定此互動腳本。",
+    );
+
+    expect(mocks.liveUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ interactionScriptId: "different-script" }),
+    }));
+  });
 });
 
 describe("generateSettlementAction", () => {

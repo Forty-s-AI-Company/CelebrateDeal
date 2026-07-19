@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, Plus, Trash2, VideoIcon } from "lucide-react";
-import { upsertInteractionScriptAction } from "@/app/actions";
+import { unbindInteractionScriptFromLiveAction, upsertInteractionScriptAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import {
   INTERACTION_TIME_FORMAT_ERROR,
@@ -152,12 +152,19 @@ export function InteractionScriptForm({
   }
 
   function validateTimeInputs(event: FormEvent<HTMLFormElement>) {
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.dataset.intent === "unbind-live") return;
+
     const errors = Object.fromEntries(timeInputs
       .map((timeInput, index) => [index, parseInteractionTriggerSeconds(timeInput)] as const)
       .filter(([, triggerSec]) => triggerSec === null)
       .map(([index]) => [index, INTERACTION_TIME_FORMAT_ERROR]));
     setTimeErrors(errors);
     if (Object.keys(errors).length > 0) event.preventDefault();
+  }
+
+  function confirmUnbind(event: MouseEvent<HTMLButtonElement>, live: BoundLive) {
+    if (!window.confirm(`確定要解除「${live.title}」與此留言組的綁定嗎？`)) event.preventDefault();
   }
 
   function handleDragStart(event: DragEvent<HTMLDivElement>, index: number) {
@@ -219,10 +226,7 @@ export function InteractionScriptForm({
                 <p className="text-sm font-semibold text-slate-950">綁定影片</p>
                 <p className="text-xs text-slate-500">左側固定，不跟右側留言一起滾動。</p>
               </div>
-              <button type="button" className="inline-flex h-9 items-center gap-1 rounded-md border border-border bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                <Link2Off size={14} />
-                解除綁定影片
-              </button>
+              {boundLives.length > 0 ? <span className="text-xs font-medium text-slate-500">已綁定 {boundLives.length} 場直播</span> : null}
             </div>
 
             <div className="relative aspect-video bg-slate-900">
@@ -242,6 +246,29 @@ export function InteractionScriptForm({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {boundLives.length > 0 ? (
+                <div className="mb-5 grid gap-2">
+                  <h3 className="text-sm font-semibold text-slate-950">目前綁定的直播</h3>
+                  {boundLives.map((live) => (
+                    <div key={live.id} data-testid="bound-live" className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+                      <p className="min-w-0 truncate text-sm font-medium text-slate-700">{live.title}</p>
+                      <button
+                        type="submit"
+                        name="liveId"
+                        value={live.id}
+                        data-intent="unbind-live"
+                        formAction={unbindInteractionScriptFromLiveAction}
+                        formNoValidate
+                        onClick={(event) => confirmUnbind(event, live)}
+                        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-red-100 bg-white px-2.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        <Link2Off size={14} />
+                        解除綁定影片
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <h3 className="mb-3 text-sm font-semibold text-slate-950">時間點大綱</h3>
               <div data-testid="interaction-timeline-outline" className="grid gap-2">
                 {events
