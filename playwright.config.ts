@@ -37,8 +37,9 @@ export default defineConfig({
       ...process.env,
       NEXT_PUBLIC_APP_URL: baseURL,
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? "demo",
-      JOB_SECRET: process.env.JOB_SECRET ?? "e2e-job-secret-at-least-16-chars",
-      CSRF_SECRET: process.env.CSRF_SECRET ?? "e2e-csrf-secret-at-least-16-chars",
+      // 空字串也視為未設定；E2E 僅使用明確標註的測試密鑰。
+      JOB_SECRET: process.env.JOB_SECRET || "e2e-job-secret-at-least-16-chars",
+      CSRF_SECRET: process.env.CSRF_SECRET || "e2e-csrf-secret-at-least-16-chars",
       [resendApiKeyEnvironmentName]: "",
       [emailFromEnvironmentName]: "",
     } as Record<string, string>,

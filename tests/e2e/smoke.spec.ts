@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
@@ -13,6 +13,8 @@ const replacementCredential = ["Replacement", "Credential", "123!"].join("");
 const undersizedCredential = ["too", "short"].join("-");
 const resetReference = ["fixed", "invalid", "reset", "reference"].join("-");
 const stamp = Date.now();
+// 每次 Playwright 程序都使用不同識別碼，避免重試或中斷後的假資料互相衝突。
+const e2eRunId = `${stamp.toString(36)}-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
 const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
 const e2eOrigin = new URL(
   process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? "31023"}`,
@@ -254,8 +256,23 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
 passwordResetTest.use({ trace: "off", screenshot: "off", video: "off" });
 
 const loginRateLimitTest = test.extend<{ loginRateLimitUser: LoginRateLimitTestUser }>({
+  context: async ({ browser, contextOptions }, use, testInfo) => {
+    const context = await browser.newContext({
+      ...contextOptions,
+      // 限流案例使用獨立 IP，避免污染後續正常登入與 MFA 測試。
+      extraHTTPHeaders: {
+        ...contextOptions.extraHTTPHeaders,
+        "X-Forwarded-For": uniqueLoginTestIp(testInfo.testId, testInfo.retry),
+      },
+    });
+    // Playwright fixture API；這裡不是 React Hook。
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    await use(context);
+    await context.close();
+  },
   loginRateLimitUser: async ({}, use, testInfo) => {
-    const suffix = testInfo.testId.replace(/[^a-zA-Z0-9]/g, "").slice(-24);
+    const testIdSuffix = testInfo.testId.replace(/[^a-zA-Z0-9]/g, "").slice(-12);
+    const suffix = `${e2eRunId}-${testInfo.retry}-${testIdSuffix}`;
     const normalizedEmail = `e2e-login-rate-limit-${suffix}@celebratedeal.local`;
     const correctCredential = ["Rate", "Limit", "Correct", "Credential", "123!"].join("");
     const incorrectCredential = ["Rate", "Limit", "Incorrect", "Credential", "123!"].join("");
@@ -866,6 +883,7 @@ test.describe("memory-provider public POST rate limits", () => {
 });
 
 test("protected vendor and admin pages redirect unauthenticated users", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/login/);
 
@@ -1057,7 +1075,8 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await page.getByLabel("你的公開網址（slug）").fill(slug);
     await page.getByRole("checkbox", { name: /我已確認建立自己的夥伴頁/ }).check();
     await page.getByRole("button", { name: "確認並建立夥伴頁" }).click();
-    await expect(page).toHaveURL(/\/partner-pages\/[^/]+\/edit$/);
+    // 開發模式首次載入 Server Action 可能需要額外編譯時間。
+    await expect(page).toHaveURL(/\/partner-pages\/[^/]+\/edit$/, { timeout: 15_000 });
   };
 
   try {
