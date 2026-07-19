@@ -88,6 +88,15 @@ describe("POST /api/auth/password-reset/request", () => {
     await expect(unknownAccountResponse.json()).resolves.toEqual({ ok: true });
   });
 
+  it("returns generic success when the reset email service rejects", async () => {
+    sendPasswordResetLink.mockRejectedValue(new Error("test-fixture-email-provider-failure"));
+
+    const response = await POST(passwordResetRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
   it("forwards the email, first forwarded IP, user agent, and configured app URL to the reset service", async () => {
     const response = await POST(passwordResetRequest(
       { email: "member@example.test" },

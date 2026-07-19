@@ -21,12 +21,17 @@ export async function POST(request: Request) {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-  const reset = await sendPasswordResetLink({
-    email: parsed.data.email,
-    appUrl,
-    ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-    userAgent: request.headers.get("user-agent"),
-  });
+  let reset: Awaited<ReturnType<typeof sendPasswordResetLink>> = null;
+  try {
+    reset = await sendPasswordResetLink({
+      email: parsed.data.email,
+      appUrl,
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: request.headers.get("user-agent"),
+    });
+  } catch {
+    // Preserve the generic success response when the email provider is unavailable.
+  }
 
   const response: Record<string, unknown> = { ok: true };
   if (reset && process.env.NODE_ENV !== "production") {
