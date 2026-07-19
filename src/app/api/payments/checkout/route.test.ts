@@ -104,3 +104,19 @@ describe("checkout form submission attribution", () => {
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 });
+
+describe("checkout provider failures", () => {
+  it("marks the transaction failed and does not persist provider error details", async () => {
+    const providerError = new Error("provider checkout failed: fake-provider-secret-token");
+    createCheckoutSession.mockRejectedValue(providerError);
+
+    await expect(POST(checkoutRequest())).rejects.toThrow(providerError);
+
+    expect(db.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: "transaction-1" },
+      data: { status: "failed" },
+    });
+    expect(JSON.stringify(db.paymentTransaction.update.mock.calls)).not.toContain("fake-provider-secret-token");
+    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
+  });
+});
