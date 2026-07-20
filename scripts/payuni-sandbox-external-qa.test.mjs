@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "vitest";
 
 import {
@@ -12,6 +13,27 @@ import {
 
 function pageAt(url) {
   return { url: () => url };
+}
+
+const DIAGNOSTIC_HASH_KEY = "12345678901234567890123456789012";
+
+function withHashKey(key, callback) {
+  const previous = process.env.PAYUNI_HASH_KEY;
+  if (key === undefined) delete process.env.PAYUNI_HASH_KEY;
+  else process.env.PAYUNI_HASH_KEY = key;
+  const restore = () => {
+    if (previous === undefined) delete process.env.PAYUNI_HASH_KEY;
+    else process.env.PAYUNI_HASH_KEY = previous;
+  };
+  try {
+    const result = callback();
+    if (result && typeof result.then === "function") return result.finally(restore);
+    restore();
+    return result;
+  } catch (error) {
+    restore();
+    throw error;
+  }
 }
 
 test("callback timeout reconciliation records three unsuccessful provider checks", async () => {
@@ -197,7 +219,7 @@ test("callback timeout reconciliation revalidates mutable failure scalar fields"
 });
 
 test("provider rejection retains only allowlisted response diagnostics", () => {
-  const diagnostic = providerResultDiagnostic({
+  const diagnostic = withHashKey(undefined, () => providerResultDiagnostic({
     Status: "FAIL",
     Message: "card 4111 1111 1111 1111 was declined",
     Result: {
@@ -207,11 +229,26 @@ test("provider rejection retains only allowlisted response diagnostics", () => {
       Message: "credential=CredentialToken7A9B",
       Unexpected: "keep-out",
     },
-  });
+  }));
 
   assert.deepEqual(diagnostic, {
     providerStatus: "FAIL",
-    providerErrorCode: "MPG01001",
+    providerStatusPresent: true,
+    providerStatusJsonType: "string",
+    providerStatusLengthBucket: "1-8",
+    providerErrorCodePresent: true,
+    providerErrorCodeJsonType: "string",
+    providerErrorCodeLengthBucket: "1-8",
+    providerMessagePresent: true,
+    providerMessageJsonType: "string",
+    providerMessageLengthBucket: "33-128",
+    providerSignals: {
+      tradeNotFound: false,
+      authentication: false,
+      invalidRequest: false,
+      processing: false,
+      providerRejection: true,
+    },
     providerResultType: "object",
     providerResultFields: ["MerTradeNo", "TradeNo", "ErrorCode"],
   });
@@ -274,7 +311,132 @@ test("provider result field diagnostics are allowlisted and bounded", () => {
     "RespondCode", "Auth", "RefundStatus", "CloseType",
   ]);
   assert.equal(diagnostic.providerResultFields.length, 8);
-  assert.equal(diagnostic.providerErrorCode, "E-12");
+  assert.deepEqual({
+    present: diagnostic.providerErrorCodePresent,
+    type: diagnostic.providerErrorCodeJsonType,
+    length: diagnostic.providerErrorCodeLengthBucket,
+  }, { present: true, type: "string", length: "1-8" });
+});
+
+test("unknown PayUni status and error code use keyed, field-separated references", () => {
+  const timeout = withHashKey(DIAGNOSTIC_HASH_KEY, () => providerResultDiagnostic({
+    Status: "TIMEOUT",
+    ErrorCode: "SECRET_TOKEN_ABCD",
+    Message: "MYSECRETVALUE_DECLINED",
+  }));
+  const bankTimeout = withHashKey(DIAGNOSTIC_HASH_KEY, () => providerResultDiagnostic({
+    Status: "BANK_TIMEOUT",
+    ErrorCode: "SECRET_TOKEN_ABCD",
+    Message: "MYSECRETVALUE_DECLINED",
+  }));
+
+  assert.equal(timeout.providerStatus, "unavailable");
+  assert.match(timeout.providerStatusReference, /^hmac-sha256:[a-f0-9]{16}$/);
+  assert.match(timeout.providerErrorCodeReference, /^hmac-sha256:[a-f0-9]{16}$/);
+  assert.match(timeout.providerMessageReference, /^hmac-sha256:[a-f0-9]{16}$/);
+  assert.notEqual(timeout.providerStatusReference, bankTimeout.providerStatusReference);
+  assert.notEqual(timeout.providerErrorCodeReference, timeout.providerMessageReference);
+  assert.equal(JSON.stringify(timeout).includes("TIMEOUT"), false);
+  assert.equal(JSON.stringify(timeout).includes("SECRET_TOKEN_ABCD"), false);
+  assert.equal(JSON.stringify(timeout).includes("MYSECRETVALUE_DECLINED"), false);
+});
+
+test("provider diagnostic references are retry-stable, key-dependent, and never fall back to SHA", async () => {
+  const response = {
+    Status: "BANK_TIMEOUT",
+    ErrorCode: "SECRET_TOKEN_ABCD",
+    Message: "CREDENTIALTOKEN_DECLINED",
+  };
+  const references = withHashKey(DIAGNOSTIC_HASH_KEY, () => [
+    providerResultDiagnostic(response).providerStatusReference,
+    providerResultDiagnostic(response).providerStatusReference,
+  ]);
+  const changedKeyReference = withHashKey("abcdefghijklmnopqrstuvwxyz123456", () => (
+    providerResultDiagnostic(response).providerStatusReference
+  ));
+  const noKeyDiagnostic = withHashKey(undefined, () => providerResultDiagnostic(response));
+  const plainSha = createHash("sha256").update(response.Status).digest("hex").slice(0, 16);
+
+  assert.equal(references[0], references[1]);
+  assert.notEqual(references[0], changedKeyReference);
+  assert.equal(noKeyDiagnostic.providerStatusReference, undefined);
+  assert.equal(JSON.stringify(noKeyDiagnostic).includes(plainSha), false);
+
+  const result = await withHashKey(DIAGNOSTIC_HASH_KEY, async () => reconcileCallbackTimeout({
+    orderNumber: "order-raw-sensitive",
+    page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
+    stage: "waiting-payment-callback",
+    query: async () => { throw new PayUniQueryFailure("provider-result", providerResultDiagnostic(response)); },
+    sleep: async () => {},
+  }));
+  assert.deepEqual(result.attempts.map((attempt) => attempt.providerStatusReference), [references[0], references[0], references[0]]);
+});
+
+test("provider signals are independent and raw provider values cannot enter callback receipts", async () => {
+  const pan = "4111111111111111";
+  const order = "ORDER-SECRET-123";
+  const trade = "TRADE-SECRET-456";
+  const transaction = "TRANSACTION-SECRET-789";
+  const message = `merchant trade not found; authentication failed; invalid request; processing; ${pan}; ${order}; ${trade}; ${transaction}; SECRET_TOKEN_ABCD; MYSECRETVALUE_DECLINED; CREDENTIALTOKEN_DECLINED`;
+  const diagnostic = withHashKey(DIAGNOSTIC_HASH_KEY, () => providerResultDiagnostic({
+    Status: "MERCHANT_DECLINED",
+    ErrorCode: "SECRET_TOKEN_ABCD",
+    Message: message,
+    Result: { MerTradeNo: order, TradeNo: trade, TransactionId: transaction, CardNumber: pan },
+  }));
+
+  assert.deepEqual(diagnostic.providerSignals, {
+    tradeNotFound: true,
+    authentication: true,
+    invalidRequest: true,
+    processing: true,
+    providerRejection: true,
+  });
+  assert.equal(providerResultDiagnostic({ Status: "MERCHANT_DECLINED" }).providerSignals.authentication, false);
+
+  const result = await withHashKey(DIAGNOSTIC_HASH_KEY, async () => reconcileCallbackTimeout({
+    orderNumber: order,
+    page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
+    stage: "waiting-payment-callback",
+    query: async () => { throw new PayUniQueryFailure("provider-result", diagnostic); },
+    sleep: async () => {},
+  }));
+  const output = JSON.stringify(result);
+  for (const secret of [pan, order, trade, transaction, "SECRET_TOKEN_ABCD", "MYSECRETVALUE_DECLINED", "CREDENTIALTOKEN_DECLINED", message]) {
+    assert.equal(output.includes(secret), false);
+  }
+});
+
+test("callback receipt boundary rejects mutated provider diagnostic fields", async () => {
+  const failure = withHashKey(DIAGNOSTIC_HASH_KEY, () => new PayUniQueryFailure(
+    "provider-result",
+    providerResultDiagnostic({ Status: "TIMEOUT", Message: "processing" }),
+  ));
+  failure.providerStatusJsonType = "raw-secret";
+  failure.providerStatusReference = "SECRET_TOKEN_ABCD";
+  failure.providerSignals = { processing: "not-a-boolean", providerRejection: true };
+  const result = await reconcileCallbackTimeout({
+    orderNumber: "order-11",
+    page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
+    stage: "waiting-payment-callback",
+    query: async () => { throw failure; },
+    sleep: async () => {},
+  });
+
+  for (const attempt of result.attempts) {
+    assert.equal(attempt.providerStatusPresent, false);
+    assert.equal(attempt.providerStatusJsonType, "absent");
+    assert.equal(attempt.providerStatusLengthBucket, "absent");
+    assert.equal(attempt.providerStatusReference, undefined);
+    assert.deepEqual(attempt.providerSignals, {
+      tradeNotFound: false,
+      authentication: false,
+      invalidRequest: false,
+      processing: false,
+      providerRejection: true,
+    });
+  }
+  assert.equal(JSON.stringify(result).includes("SECRET_TOKEN_ABCD"), false);
 });
 
 test("payment page structure records visibility without text or input values", async () => {

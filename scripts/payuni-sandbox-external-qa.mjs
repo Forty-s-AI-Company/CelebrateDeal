@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
@@ -18,6 +18,10 @@ const PAYUNI_TRADE_STATUSES = new Set(["0", "1"]);
 // rest of a response can contain merchant or payment data, so they must never
 // become part of the external-QA receipt.
 const PROVIDER_RESPONSE_STATUSES = new Set(["FAIL", "FAILED", "ERROR", "PENDING", "PROCESSING", "REJECTED"]);
+const PROVIDER_DIAGNOSTIC_JSON_TYPES = new Set(["absent", "null", "string", "number", "boolean", "array", "object"]);
+const PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS = new Set(["absent", "0", "1-8", "9-32", "33-128", "129-512", "513+"]);
+const PROVIDER_DIAGNOSTIC_REFERENCE = /^hmac-sha256:[a-f0-9]{16}$/;
+const PROVIDER_SIGNAL_NAMES = ["tradeNotFound", "authentication", "invalidRequest", "processing", "providerRejection"];
 const PROVIDER_RESULT_FIELDS = new Set([
   "MerTradeNo",
   "TradeNo",
@@ -108,15 +112,84 @@ function safeHttpStatus(value) {
 }
 
 function safeProviderQueryStatus(value) {
-  return PROVIDER_RESPONSE_STATUSES.has(value) ? value : "unavailable";
+  return typeof value === "string" && PROVIDER_RESPONSE_STATUSES.has(value) ? value : "unavailable";
 }
 
-function safeProviderErrorCode(value) {
-  const code = String(value ?? "").trim();
-  // Error codes are useful to distinguish a missing order from a payment
-  // rejection.  Restrict them to conventional short provider-code forms;
-  // arbitrary tokens, messages, and identifiers are not diagnostics.
-  return /^(?:\d{1,8}|[A-Z]{1,8}-\d{1,8}|MPG\d{5,8})$/.test(code) ? code : "unavailable";
+function diagnosticHashKey() {
+  const key = env("PAYUNI_HASH_KEY");
+  return Buffer.byteLength(key) === 32 ? key : null;
+}
+
+function diagnosticJsonType(value) {
+  if (value === undefined) return "absent";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return typeof value;
+  return "object";
+}
+
+function diagnosticValueText(value) {
+  if (typeof value === "string") return value;
+  try {
+    const text = JSON.stringify(value);
+    return typeof text === "string" ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function diagnosticLengthBucket(value) {
+  const text = diagnosticValueText(value);
+  if (text === null) return "513+";
+  const length = text.length;
+  if (length === 0) return "0";
+  if (length <= 8) return "1-8";
+  if (length <= 32) return "9-32";
+  if (length <= 128) return "33-128";
+  return length <= 512 ? "129-512" : "513+";
+}
+
+function diagnosticReference(value, purpose) {
+  const key = diagnosticHashKey();
+  const text = diagnosticValueText(value);
+  if (!key || text === null) return undefined;
+  // The field-specific separator prevents one field's reference from being
+  // compared as if it were another field's value.
+  return `hmac-sha256:${createHmac("sha256", key)
+    .update(`celebratedeal-payuni-sandbox-qa/v1/${purpose}\u0000${text}`)
+    .digest("hex")
+    .slice(0, 16)}`;
+}
+
+function providerValueDiagnostic(value, purpose) {
+  const jsonType = diagnosticJsonType(value);
+  const reference = jsonType === "absent" ? undefined : diagnosticReference(value, purpose);
+  return {
+    valuePresent: jsonType !== "absent",
+    jsonType,
+    lengthBucket: jsonType === "absent" ? "absent" : diagnosticLengthBucket(value),
+    ...(reference ? { reference } : {}),
+  };
+}
+
+function diagnosticSignals(status, message) {
+  const values = [status, message]
+    .filter((value) => typeof value === "string")
+    .map((value) => value.toUpperCase());
+  const matches = (pattern) => values.some((value) => pattern.test(value));
+  return {
+    tradeNotFound: matches(/(?:^|[^A-Z0-9])(?:TRADE|ORDER|TRANSACTION)[ _-]*NOT[ _-]*FOUND(?:$|[^A-Z0-9])|(?:^|[^A-Z0-9])(?:TRADE|ORDER|TRANSACTION)[ _-]*MISSING(?:$|[^A-Z0-9])/),
+    // A bare "merchant" is deliberately not authentication evidence.
+    authentication: matches(/(?:^|[^A-Z0-9])(?:AUTH(?:ENTICATION|ORIZATION)?|CREDENTIALS?|TOKEN)(?:$|[^A-Z0-9])/),
+    invalidRequest: matches(/(?:^|[^A-Z0-9])(?:INVALID|BAD|MALFORMED)[ _-]*REQUEST(?:$|[^A-Z0-9])|(?:^|[^A-Z0-9])(?:INVALID|MISSING)[ _-]*(?:PARAM(?:ETER)?|FIELD)(?:$|[^A-Z0-9])/),
+    processing: matches(/(?:^|[^A-Z0-9])(?:PENDING|PROCESSING|TIMEOUT)(?:$|[^A-Z0-9])/),
+    providerRejection: matches(/(?:^|[^A-Z0-9])(?:FAIL(?:ED)?|ERROR|REJECT(?:ED|ION)?|DECLIN(?:ED|E))(?:$|[^A-Z0-9])/),
+  };
+}
+
+function safeProviderSignals(value) {
+  const signals = value && typeof value === "object" ? value : {};
+  return Object.fromEntries(PROVIDER_SIGNAL_NAMES.map((name) => [name, signals[name] === true]));
 }
 
 function providerResultValue(result) {
@@ -157,14 +230,50 @@ function providerResultDiagnostic(response) {
     resultRow?.ErrorCode,
     resultRow?.Code,
     resultRow?.StatusCode,
-  ]
-    .map(safeProviderErrorCode)
-    .find((code) => code !== "unavailable") ?? "unavailable";
+  ].find((code) => code !== undefined);
+  const message = response?.Message ?? resultRow?.Message;
+  const statusDiagnostic = providerValueDiagnostic(response?.Status, "provider-status");
+  const errorCodeDiagnostic = providerValueDiagnostic(errorCode, "provider-error-code");
+  const messageDiagnostic = providerValueDiagnostic(message, "provider-message");
   return {
     providerStatus: safeProviderQueryStatus(response?.Status),
-    providerErrorCode: errorCode,
+    providerStatusPresent: statusDiagnostic.valuePresent,
+    providerStatusJsonType: statusDiagnostic.jsonType,
+    providerStatusLengthBucket: statusDiagnostic.lengthBucket,
+    ...(statusDiagnostic.reference ? { providerStatusReference: statusDiagnostic.reference } : {}),
+    providerErrorCodePresent: errorCodeDiagnostic.valuePresent,
+    providerErrorCodeJsonType: errorCodeDiagnostic.jsonType,
+    providerErrorCodeLengthBucket: errorCodeDiagnostic.lengthBucket,
+    ...(errorCodeDiagnostic.reference ? { providerErrorCodeReference: errorCodeDiagnostic.reference } : {}),
+    providerMessagePresent: messageDiagnostic.valuePresent,
+    providerMessageJsonType: messageDiagnostic.jsonType,
+    providerMessageLengthBucket: messageDiagnostic.lengthBucket,
+    ...(messageDiagnostic.reference ? { providerMessageReference: messageDiagnostic.reference } : {}),
+    providerSignals: diagnosticSignals(response?.Status, message),
     providerResultType: safeProviderResultType(result),
     providerResultFields: safeProviderResultFields(result),
+  };
+}
+
+function safeProviderFieldDiagnostic(details, prefix) {
+  const present = details?.[`${prefix}Present`] === true;
+  const jsonType = details?.[`${prefix}JsonType`];
+  const lengthBucket = details?.[`${prefix}LengthBucket`];
+  const reference = details?.[`${prefix}Reference`];
+  if (!present || !PROVIDER_DIAGNOSTIC_JSON_TYPES.has(jsonType) || jsonType === "absent" || !PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS.has(lengthBucket) || lengthBucket === "absent") {
+    return {
+      [`${prefix}Present`]: false,
+      [`${prefix}JsonType`]: "absent",
+      [`${prefix}LengthBucket`]: "absent",
+    };
+  }
+  return {
+    [`${prefix}Present`]: true,
+    [`${prefix}JsonType`]: jsonType,
+    [`${prefix}LengthBucket`]: lengthBucket,
+    ...(typeof reference === "string" && PROVIDER_DIAGNOSTIC_REFERENCE.test(reference)
+      ? { [`${prefix}Reference`]: reference }
+      : {}),
   };
 }
 
@@ -182,7 +291,10 @@ export class PayUniQueryFailure extends Error {
     this.errorCategory = errorCategory;
     this.httpStatus = safeHttpStatus(details.httpStatus);
     this.providerStatus = safeProviderQueryStatus(details.providerStatus);
-    this.providerErrorCode = safeProviderErrorCode(details.providerErrorCode);
+    Object.assign(this, safeProviderFieldDiagnostic(details, "providerStatus"));
+    Object.assign(this, safeProviderFieldDiagnostic(details, "providerErrorCode"));
+    Object.assign(this, safeProviderFieldDiagnostic(details, "providerMessage"));
+    this.providerSignals = safeProviderSignals(details.providerSignals);
     this.providerResultType = ["absent", "array", "string", "object", "other"].includes(details.providerResultType)
       ? details.providerResultType
       : "unavailable";
@@ -205,7 +317,10 @@ function callbackQueryFailure(error) {
   // provider data to the diagnostic after the failure was created.
   const httpStatus = safeHttpStatus(error.httpStatus);
   const providerStatus = safeProviderQueryStatus(error.providerStatus);
-  const providerErrorCode = safeProviderErrorCode(error.providerErrorCode);
+  const providerStatusDiagnostic = safeProviderFieldDiagnostic(error, "providerStatus");
+  const providerErrorCodeDiagnostic = safeProviderFieldDiagnostic(error, "providerErrorCode");
+  const providerMessageDiagnostic = safeProviderFieldDiagnostic(error, "providerMessage");
+  const providerSignals = safeProviderSignals(error.providerSignals);
   const providerResultType = ["absent", "array", "string", "object", "other"].includes(error.providerResultType)
     ? error.providerResultType
     : "unavailable";
@@ -217,7 +332,10 @@ function callbackQueryFailure(error) {
     errorCategory: error.errorCategory,
     ...(httpStatus !== null ? { httpStatus } : {}),
     ...(providerStatus !== "unavailable" ? { providerStatus } : {}),
-    ...(providerErrorCode !== "unavailable" ? { providerErrorCode } : {}),
+    ...providerStatusDiagnostic,
+    ...providerErrorCodeDiagnostic,
+    ...providerMessageDiagnostic,
+    providerSignals,
     ...(providerResultType !== "unavailable" ? { providerResultType } : {}),
     ...(providerResultFields.length > 0 ? { providerResultFields } : {}),
   };
