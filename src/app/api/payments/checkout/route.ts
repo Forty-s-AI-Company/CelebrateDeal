@@ -111,20 +111,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
 
-  await db.paymentTransaction.update({
-    where: { id: transaction.id },
-    data: {
-      metadata: {
-        ...transactionMetadata,
-        checkoutSession: {
-          provider: checkoutSession.provider,
-          mode: checkoutSession.mode,
-          nextAction: checkoutSession.nextAction,
-          externalRequired: checkoutSession.externalRequired ?? false,
-        },
-      } as Prisma.InputJsonObject,
-    },
-  });
+  try {
+    await db.paymentTransaction.update({
+      where: { id: transaction.id },
+      data: {
+        metadata: {
+          ...transactionMetadata,
+          checkoutSession: {
+            provider: checkoutSession.provider,
+            mode: checkoutSession.mode,
+            nextAction: checkoutSession.nextAction,
+            externalRequired: checkoutSession.externalRequired ?? false,
+          },
+        } as Prisma.InputJsonObject,
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+  }
 
   const response = NextResponse.json({
     ok: true,
