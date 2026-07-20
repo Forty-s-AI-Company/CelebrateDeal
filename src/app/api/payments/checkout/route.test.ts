@@ -106,6 +106,24 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
+  it("returns a generic 502 and does not create a provider checkout when transaction creation fails", async () => {
+    const databaseError = new Error(
+      "database create failed for order CD-20330101010101-ABC123 via payuni: fake-database-secret-token",
+    );
+    db.paymentTransaction.create.mockRejectedValue(databaseError);
+
+    const response = await POST(checkoutRequest());
+    const serializedResponse = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(serializedResponse).toBe('{"error":"Unable to start checkout"}');
+    expect(serializedResponse).not.toContain("CD-20330101010101-ABC123");
+    expect(serializedResponse).not.toContain("payuni");
+    expect(serializedResponse).not.toContain("fake-database-secret-token");
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.update).not.toHaveBeenCalled();
+  });
+
   it("returns a generic 502 after marking the transaction failed without leaking provider details", async () => {
     const providerError = new Error("provider checkout failed: fake-provider-secret-token");
     createCheckoutSession.mockRejectedValue(providerError);
