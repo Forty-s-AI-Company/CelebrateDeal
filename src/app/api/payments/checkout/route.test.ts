@@ -106,17 +106,24 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
-  it("marks the transaction failed and does not persist provider error details", async () => {
+  it("returns a generic 502 after marking the transaction failed without leaking provider details", async () => {
     const providerError = new Error("provider checkout failed: fake-provider-secret-token");
     createCheckoutSession.mockRejectedValue(providerError);
 
-    await expect(POST(checkoutRequest())).rejects.toThrow(providerError);
+    const response = await POST(checkoutRequest());
+    const serializedResponse = await response.text();
 
+    expect(response.status).toBe(502);
+    expect(serializedResponse).toBe('{"error":"Unable to start checkout"}');
+    expect(serializedResponse).not.toContain("fake-provider-secret-token");
     expect(db.paymentTransaction.update).toHaveBeenCalledWith({
       where: { id: "transaction-1" },
       data: { status: "failed" },
     });
-    expect(JSON.stringify(db.paymentTransaction.update.mock.calls)).not.toContain("fake-provider-secret-token");
     expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify({
+      create: db.paymentTransaction.create.mock.calls,
+      update: db.paymentTransaction.update.mock.calls,
+    })).not.toContain("fake-provider-secret-token");
   });
 });

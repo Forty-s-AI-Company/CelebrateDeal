@@ -99,12 +99,12 @@ export async function POST(request: Request) {
           nextAction: "provider_checkout_adapter_pending",
           externalRequired: true,
         };
-  } catch (error) {
+  } catch {
     await db.paymentTransaction.update({
       where: { id: transaction.id },
       data: { status: "failed" },
     });
-    throw error;
+    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
 
   await db.paymentTransaction.update({
