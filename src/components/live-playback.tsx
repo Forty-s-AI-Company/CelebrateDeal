@@ -106,6 +106,30 @@ export function submitCheckout(checkout: CheckoutResponse) {
   return false;
 }
 
+export async function requestCheckout({
+  vendorId,
+  productId,
+  referralCode,
+}: {
+  vendorId: string;
+  productId: string;
+  referralCode: string | null;
+}) {
+  try {
+    const checkoutResponse = await fetch("/api/payments/checkout", {
+      method: "POST",
+      headers: clientHeaders,
+      body: JSON.stringify({ vendorId, productId, referralCode: referralCode ?? undefined }),
+    });
+
+    if (!checkoutResponse.ok) return false;
+
+    return submitCheckout(await checkoutResponse.json() as CheckoutResponse);
+  } catch {
+    return false;
+  }
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
@@ -173,7 +197,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     });
   }
 
-  async function trackProduct(productId: string, checkoutUrl: string | null) {
+  async function trackProduct(productId: string) {
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
@@ -182,19 +206,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       payload: { productId, ref: referralCode },
     });
 
-    const checkoutResponse = await fetch("/api/payments/checkout", {
-      method: "POST",
-      headers: clientHeaders,
-      body: JSON.stringify({ vendorId: live.vendorId, productId, referralCode: referralCode ?? undefined }),
-    });
-
-    if (checkoutResponse.ok && submitCheckout(await checkoutResponse.json() as CheckoutResponse)) {
-      return;
-    }
-
-    if (checkoutUrl) {
-      window.location.href = checkoutUrl;
-    }
+    await requestCheckout({ vendorId: live.vendorId, productId, referralCode });
   }
 
   async function trackCta() {
@@ -281,7 +293,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   </div>
                   <h2 className="line-clamp-1 font-bold">{spotlightProduct.name}</h2>
                   <p className="mt-1 text-sm font-black text-orange-600">{formatCurrency(spotlightProduct.priceCents, spotlightProduct.currency)}</p>
-                  <button onClick={() => trackProduct(spotlightProduct.id, spotlightProduct.checkoutUrl)} className="mt-2 h-9 w-full rounded-lg bg-orange-500 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-600">
+                  <button onClick={() => trackProduct(spotlightProduct.id)} className="mt-2 h-9 w-full rounded-lg bg-orange-500 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-600">
                     立即搶購
                   </button>
                 </div>
@@ -346,7 +358,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{product.description}</p>
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <p className="font-black text-orange-600">{formatCurrency(product.priceCents, product.currency)}</p>
-                          <button onClick={() => trackProduct(product.id, product.checkoutUrl)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-orange-500 px-3 text-xs font-black text-white">
+                          <button onClick={() => trackProduct(product.id)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-orange-500 px-3 text-xs font-black text-white">
                             <ShoppingBag size={14} />
                             買
                           </button>

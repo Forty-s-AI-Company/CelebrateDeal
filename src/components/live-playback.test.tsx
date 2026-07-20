@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitCheckout } from "./live-playback";
+import { requestCheckout, submitCheckout } from "./live-playback";
 
 describe("LivePlayback checkout", () => {
   afterEach(() => {
@@ -48,5 +48,39 @@ describe("LivePlayback checkout", () => {
     expect(appendToBody).toHaveBeenCalledWith(form);
     expect(form.submit).toHaveBeenCalledOnce();
     expect(window.location.href).toBe("https://shop.example.test/product-checkout");
+  });
+
+  it("does not navigate to the external product checkout URL when the checkout API fails", async () => {
+    const productCheckoutUrl = "https://shop.example.test/external-product-checkout";
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+
+    await expect(requestCheckout({
+      vendorId: "vendor-123",
+      productId: "product-123",
+      referralCode: null,
+    })).resolves.toBe(false);
+
+    expect(fetch).toHaveBeenCalledWith("/api/payments/checkout", expect.objectContaining({ method: "POST" }));
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+    expect(window.location.href).not.toBe(productCheckoutUrl);
+  });
+
+  it("does not navigate when a successful checkout API response has no provider action", async () => {
+    const productCheckoutUrl = "https://shop.example.test/external-product-checkout";
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    }));
+
+    await expect(requestCheckout({
+      vendorId: "vendor-123",
+      productId: "product-123",
+      referralCode: null,
+    })).resolves.toBe(false);
+
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+    expect(window.location.href).not.toBe(productCheckoutUrl);
   });
 });
