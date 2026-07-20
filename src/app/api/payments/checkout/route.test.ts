@@ -146,4 +146,33 @@ describe("checkout provider failures", () => {
     });
     expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
   });
+
+  it("returns a generic 502 without a checkout payload when checkout-session metadata persistence fails", async () => {
+    const databaseError = new Error("database update failed: fake-database-secret-token");
+    db.paymentTransaction.update.mockRejectedValueOnce(databaseError);
+    createCheckoutSession.mockResolvedValue({
+      provider: "demo",
+      mode: "redirect",
+      checkoutUrl: "https://provider.example.test/checkout/fake-provider-session-token",
+      nextAction: "continue_with_provider",
+      externalRequired: true,
+    });
+
+    const response = await POST(checkoutRequest());
+    const serializedResponse = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(serializedResponse).toBe('{"error":"Unable to start checkout"}');
+    expect(serializedResponse).not.toContain("fake-database-secret-token");
+    expect(serializedResponse).not.toContain("fake-provider-session-token");
+    expect(JSON.parse(serializedResponse)).not.toMatchObject({
+      ok: true,
+      provider: expect.anything(),
+      orderNumber: expect.anything(),
+      transactionId: expect.anything(),
+      checkoutUrl: expect.anything(),
+      nextAction: expect.anything(),
+    });
+    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
+  });
 });
