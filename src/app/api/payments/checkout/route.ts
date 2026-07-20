@@ -68,19 +68,24 @@ export async function POST(request: Request) {
 
   const order = orderNumber();
   const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
-  const transaction = await db.paymentTransaction.create({
-    data: {
-      vendorId: parsed.data.vendorId,
-      providerName: provider.id,
-      orderNumber: order,
-      paymentMode: "platform",
-      grossAmountCents: product.priceCents,
-      netAmountCents: product.priceCents,
-      currency: product.currency,
-      status: "pending",
-      metadata: transactionMetadata,
-    },
-  });
+  let transaction;
+  try {
+    transaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: parsed.data.vendorId,
+        providerName: provider.id,
+        orderNumber: order,
+        paymentMode: "platform",
+        grossAmountCents: product.priceCents,
+        netAmountCents: product.priceCents,
+        currency: product.currency,
+        status: "pending",
+        metadata: transactionMetadata,
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+  }
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
   let checkoutSession: CheckoutSessionResult;
   try {
