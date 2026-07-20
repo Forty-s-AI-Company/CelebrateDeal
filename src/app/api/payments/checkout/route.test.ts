@@ -126,4 +126,24 @@ describe("checkout provider failures", () => {
       update: db.paymentTransaction.update.mock.calls,
     })).not.toContain("fake-provider-secret-token");
   });
+
+  it("returns the same generic 502 when marking the transaction failed also fails", async () => {
+    const providerError = new Error("provider checkout failed: fake-provider-secret-token");
+    const databaseError = new Error("database update failed: fake-database-secret-token");
+    createCheckoutSession.mockRejectedValue(providerError);
+    db.paymentTransaction.update.mockRejectedValue(databaseError);
+
+    const response = await POST(checkoutRequest());
+    const serializedResponse = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(serializedResponse).toBe('{"error":"Unable to start checkout"}');
+    expect(serializedResponse).not.toContain("fake-provider-secret-token");
+    expect(serializedResponse).not.toContain("fake-database-secret-token");
+    expect(db.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: "transaction-1" },
+      data: { status: "failed" },
+    });
+    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
+  });
 });
