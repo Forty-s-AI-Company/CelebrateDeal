@@ -24,6 +24,17 @@ external_qa:
   run_once_per_revision: true
   reviewer_role: delivery-qa
   production_requires_human_approval: true
+  trigger_paths:
+    - src/app/api/payments/
+    - src/app/api/webhooks/payments/
+    - src/lib/payment-providers/
+    - src/lib/payment-webhooks
+    - src/lib/payment-webhook-diagnostics
+    - src/lib/billing.ts
+    - src/app/actions.ts
+    - scripts/payuni-
+    - prisma/schema.prisma
+    - prisma/migrations/
 
 safety:
   allow_git_push: true
