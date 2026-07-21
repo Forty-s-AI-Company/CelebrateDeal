@@ -74,6 +74,58 @@ describe("PayUni provider", () => {
     expect(JSON.stringify(session?.formPayload)).not.toContain(hashIv);
   });
 
+  it("adds the Vercel preview protection bypass only to Preview PayUni callbacks", async () => {
+    stubPayUniEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-bypass-token");
+    const transaction = {
+      id: "tx_preview",
+      orderNumber: "CD-TEST-006",
+      grossAmountCents: 199000,
+    } as PaymentTransaction;
+
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://preview.example.test",
+    });
+
+    const payload = decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "");
+    const returnUrl = new URL(payload.ReturnURL);
+    const notifyUrl = new URL(payload.NotifyURL);
+
+    expect(returnUrl.origin).toBe("https://preview.example.test");
+    expect(returnUrl.pathname).toBe("/api/webhooks/payments");
+    expect(returnUrl.searchParams.get("provider")).toBe("payuni");
+    expect(returnUrl.searchParams.get("source")).toBe("return");
+    expect(returnUrl.searchParams.get("x-vercel-protection-bypass")).toBe("preview-bypass-token");
+    expect(notifyUrl.searchParams.get("source")).toBe("notify");
+    expect(notifyUrl.searchParams.get("x-vercel-protection-bypass")).toBe("preview-bypass-token");
+  });
+
+  it("does not add the Vercel preview protection bypass outside Preview", async () => {
+    stubPayUniEnv();
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "production-bypass-token");
+    const transaction = {
+      id: "tx_production",
+      orderNumber: "CD-TEST-007",
+      grossAmountCents: 199000,
+    } as PaymentTransaction;
+
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://app.example.test",
+    });
+
+    const payload = decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "");
+    expect(new URL(payload.ReturnURL).searchParams.has("x-vercel-protection-bypass")).toBe(false);
+    expect(new URL(payload.NotifyURL).searchParams.has("x-vercel-protection-bypass")).toBe(false);
+  });
+
   it.each([
     ["order number too long", { orderNumber: "CD-12345678901234567890123", grossAmountCents: 199000 }, undefined],
     ["order number characters", { orderNumber: "CD INVALID", grossAmountCents: 199000 }, undefined],

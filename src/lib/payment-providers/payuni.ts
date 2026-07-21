@@ -132,6 +132,21 @@ function hashInfo(encryptStr: string) {
   return createHash("sha256").update(`${key}${encryptStr}${iv}`).digest("hex").toUpperCase();
 }
 
+function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
+  const url = new URL("/api/webhooks/payments", appUrl);
+  url.searchParams.set("provider", "payuni");
+  url.searchParams.set("source", source);
+
+  const bypassSecret = process.env.VERCEL_ENV === "preview"
+    ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()
+    : "";
+  if (bypassSecret) {
+    url.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  }
+
+  return url.toString();
+}
+
 function verifyPayUniSignature(rawBody: string) {
   try {
     const outerPayload = parseRawPayload(rawBody);
@@ -184,8 +199,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
       Timestamp: Math.floor(Date.now() / 1000),
       ProdDesc: product.name.slice(0, 80),
-      ReturnURL: `${appUrl}/api/webhooks/payments?provider=payuni&source=return`,
-      NotifyURL: `${appUrl}/api/webhooks/payments?provider=payuni&source=notify`,
+      ReturnURL: payUniCallbackUrl(appUrl, "return"),
+      NotifyURL: payUniCallbackUrl(appUrl, "notify"),
     });
     const baseUrl = payUniApiBaseUrl();
 
