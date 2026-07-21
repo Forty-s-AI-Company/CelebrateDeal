@@ -96,7 +96,7 @@ function isDatabaseTransactionConflict(error: unknown) {
     (error.code === "P2025" || error.code === "P2034");
 }
 
-function isRefundSerializationConflict(error: unknown) {
+function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
@@ -925,42 +925,61 @@ export async function deactivateVendorMemberAction(formData: FormData) {
     redirect("/settings/security?error=self_deactivate");
   }
 
-  if (member.role === "owner") {
-    const activeOwnerCount = await db.vendorMember.count({
-      where: {
-        vendorId: auth.vendor.id,
-        role: "owner",
-        status: "active",
-        id: { not: member.id },
-      },
-    });
-    if (activeOwnerCount === 0) {
-      redirect("/settings/security?error=last_owner");
-    }
-  }
-
   if (confirmation !== normalizedEmail(member.user.email)) {
     redirect("/settings/security?error=member_confirmation");
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const saved = await tx.vendorMember.update({
-      where: { id: member.id },
-      data: {
-        status: "inactive",
-        deactivatedAt: new Date(),
-      },
-    });
-    await tx.userSession.updateMany({
-      where: {
-        userId: member.userId,
-        vendorId: auth.vendor.id,
-        revokedAt: null,
-      },
-      data: { revokedAt: new Date() },
-    });
-    return saved;
-  });
+  const updated = await (async () => {
+    try {
+      return await db.$transaction(async (tx) => {
+        // 這個檢查必須和停用處於同一個 Serializable 交易，避免兩位 owner
+        // 同時停用彼此，形成沒有任何有效 owner 的租戶。
+        if (member.role === "owner") {
+          const activeOwnerCount = await tx.vendorMember.count({
+            where: {
+              vendorId: auth.vendor.id,
+              role: "owner",
+              status: "active",
+              id: { not: member.id },
+            },
+          });
+          if (activeOwnerCount === 0) {
+            redirect("/settings/security?error=last_owner");
+          }
+        }
+
+        const saved = await tx.vendorMember.update({
+          where: {
+            id: member.id,
+            vendorId: auth.vendor.id,
+            status: "active",
+            role: member.role,
+          },
+          data: {
+            status: "inactive",
+            deactivatedAt: new Date(),
+          },
+        });
+        await tx.userSession.updateMany({
+          where: {
+            userId: member.userId,
+            vendorId: auth.vendor.id,
+            revokedAt: null,
+          },
+          data: { revokedAt: new Date() },
+        });
+        return saved;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (member.role === "owner" && isSerializationConflict(error)) {
+        redirect("/settings/security?error=last_owner");
+      }
+      if (isDatabaseTransactionConflict(error)) {
+        redirect("/settings/security?error=member_not_found");
+      }
+      throw error;
+    }
+  })();
 
   await writeAuditLog({
     vendorId: auth.vendor.id,
@@ -1974,7 +1993,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
           return { transaction, updated };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error) {
-        if (isRefundSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
+        if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
           continue;
         }
 

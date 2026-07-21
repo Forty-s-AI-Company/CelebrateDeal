@@ -1338,7 +1338,12 @@ describe("deactivateVendorMemberAction", () => {
       include: { user: true },
     });
     expect(mocks.vendorMemberUpdate).toHaveBeenCalledWith({
-      where: { id: activeMember.id },
+      where: {
+        id: activeMember.id,
+        vendorId: "vendor-1",
+        status: "active",
+        role: activeMember.role,
+      },
       data: { status: "inactive", deactivatedAt: expect.any(Date) },
     });
     expect(mocks.userSessionUpdateMany).toHaveBeenCalledWith({
@@ -1360,6 +1365,9 @@ describe("deactivateVendorMemberAction", () => {
     expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],
     );
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 
   it("does not write data when the member is not found", async () => {
@@ -1410,6 +1418,13 @@ describe("deactivateVendorMemberAction", () => {
   it("does not write data when deactivating the last active owner", async () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce({ ...activeMember, role: "owner" });
     mocks.vendorMemberCount.mockResolvedValueOnce(0);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      vendorMember: {
+        count: mocks.vendorMemberCount,
+        update: mocks.vendorMemberUpdate,
+      },
+      userSession: { updateMany: mocks.userSessionUpdateMany },
+    }));
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
       "redirect:/settings/security?error=last_owner",
@@ -1423,7 +1438,22 @@ describe("deactivateVendorMemberAction", () => {
         id: { not: activeMember.id },
       },
     });
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when concurrent owner changes cause a serializable transaction conflict", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce({ ...activeMember, role: "owner" });
+    mocks.transaction.mockRejectedValueOnce(Object.assign(new Error("serialization conflict"), { code: "P2034" }));
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=last_owner",
+    );
+
     expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
     expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
