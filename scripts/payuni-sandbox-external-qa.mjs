@@ -27,33 +27,86 @@ const PROVIDER_DIAGNOSTIC_REFERENCE = /^hmac-sha256:[a-f0-9]{16}$/;
 const PROVIDER_DISPOSITIONS = new Set([
   "terminal-authentication",
   "terminal-invalid-request",
-  "terminal-rejection",
   "retryable-not-found",
   "retryable-processing",
+  "retryable-provider",
   "unknown",
 ]);
-// This is intentionally an exact, closed PayUni response table.  Do not add
-// fuzzy matching or Message-based fallbacks: Message is untrusted diagnostic
-// data, not a retry decision input.
+const PROVIDER_MESSAGE_CATEGORIES = new Set([
+  "merchant-configuration",
+  "request-cryptography",
+  "request-validation",
+  "transaction-not-found",
+  "provider-temporary",
+  "unavailable",
+]);
+// Exact codes from PayUni's official trade-query v2 and common API error
+// tables. Message is untrusted diagnostic data and never selects retry
+// behaviour or enters the receipt as plaintext.
+const PAYUNI_DOCUMENTED_STATUS_DISPOSITIONS = Object.freeze({
+  QUERY01001: "terminal-invalid-request",
+  QUERY01002: "terminal-authentication",
+  QUERY01003: "terminal-invalid-request",
+  QUERY01004: "terminal-invalid-request",
+  QUERY01005: "terminal-authentication",
+  QUERY01006: "retryable-provider",
+  QUERY02001: "terminal-invalid-request",
+  QUERY02002: "terminal-invalid-request",
+  QUERY02003: "terminal-invalid-request",
+  QUERY02004: "terminal-invalid-request",
+  QUERY02005: "terminal-invalid-request",
+  QUERY02006: "terminal-invalid-request",
+  QUERY02007: "terminal-invalid-request",
+  QUERY02008: "terminal-invalid-request",
+  QUERY02009: "terminal-invalid-request",
+  QUERY02010: "terminal-invalid-request",
+  QUERY02011: "terminal-invalid-request",
+  QUERY02012: "terminal-invalid-request",
+  QUERY02013: "terminal-invalid-request",
+  QUERY03001: "retryable-not-found",
+  QUERY04001: "retryable-provider",
+  QUERY04002: "retryable-provider",
+  API00008: "retryable-provider",
+  API00009: "retryable-processing",
+  DEF01005: "terminal-authentication",
+  DEF01006: "terminal-authentication",
+  DEF01007: "terminal-authentication",
+});
+const PAYUNI_DOCUMENTED_MESSAGE_CATEGORIES = Object.freeze({
+  QUERY01001: "merchant-configuration",
+  QUERY01002: "request-cryptography",
+  QUERY01003: "request-cryptography",
+  QUERY01004: "request-validation",
+  QUERY01005: "merchant-configuration",
+  QUERY01006: "provider-temporary",
+  QUERY02001: "merchant-configuration",
+  QUERY02002: "request-validation",
+  QUERY02003: "request-validation",
+  QUERY02004: "request-validation",
+  QUERY02005: "request-validation",
+  QUERY02006: "request-validation",
+  QUERY02007: "request-validation",
+  QUERY02008: "request-validation",
+  QUERY02009: "request-validation",
+  QUERY02010: "request-validation",
+  QUERY02011: "request-validation",
+  QUERY02012: "request-validation",
+  QUERY02013: "request-validation",
+  QUERY03001: "transaction-not-found",
+  QUERY04001: "provider-temporary",
+  QUERY04002: "provider-temporary",
+  API00008: "provider-temporary",
+  API00009: "provider-temporary",
+  DEF01005: "merchant-configuration",
+  DEF01006: "merchant-configuration",
+  DEF01007: "request-cryptography",
+});
 const PAYUNI_PROVIDER_DISPOSITION_TABLES = Object.freeze({
-  status: Object.freeze({
-    AUTHENTICATION_FAILED: "terminal-authentication",
-    INVALID_REQUEST: "terminal-invalid-request",
-    REJECTED: "terminal-rejection",
-    TRADE_NOT_FOUND: "retryable-not-found",
-    PROCESSING: "retryable-processing",
-  }),
-  errorCode: Object.freeze({
-    MPG01001: "terminal-authentication",
-    MPG01002: "terminal-authentication",
-    MPG01003: "terminal-invalid-request",
-    MPG01004: "terminal-invalid-request",
-    MPG01005: "terminal-invalid-request",
-    MPG02001: "terminal-rejection",
-    MPG02002: "terminal-rejection",
-    MPG03001: "retryable-not-found",
-    MPG03002: "retryable-processing",
-  }),
+  status: PAYUNI_DOCUMENTED_STATUS_DISPOSITIONS,
+  // PayUni documents these values in Status. If a compatible envelope also
+  // supplies one as ErrorCode, it may be disclosed only through this same
+  // closed official set.
+  errorCode: PAYUNI_DOCUMENTED_STATUS_DISPOSITIONS,
 });
 const PROVIDER_DIAGNOSTIC_DISPOSITIONS = new WeakMap();
 const PAYUNI_FAILURE_DISPOSITIONS = new WeakMap();
@@ -204,20 +257,36 @@ function diagnosticReference(value, purpose) {
     .slice(0, 16)}`;
 }
 
+function documentedProviderCode(value) {
+  return typeof value === "string" && Object.hasOwn(PAYUNI_DOCUMENTED_STATUS_DISPOSITIONS, value)
+    ? value
+    : "unavailable";
+}
+
+function providerMessageCategory(status, errorCode) {
+  const code = documentedProviderCode(errorCode) !== "unavailable"
+    ? errorCode
+    : status;
+  const category = typeof code === "string" ? PAYUNI_DOCUMENTED_MESSAGE_CATEGORIES[code] : undefined;
+  return PROVIDER_MESSAGE_CATEGORIES.has(category) ? category : "unavailable";
+}
+
 function providerValueDiagnostic(value, purpose) {
   const jsonType = diagnosticJsonType(value);
   const reference = jsonType === "absent" ? undefined : diagnosticReference(value, purpose);
   return {
     valuePresent: jsonType !== "absent",
+    code: documentedProviderCode(value),
     jsonType,
     lengthBucket: jsonType === "absent" ? "absent" : diagnosticLengthBucket(value),
     ...(reference ? { reference } : {}),
   };
 }
 
-function providerMessageDiagnostic(value) {
+function providerMessageDiagnostic(value, category) {
   const diagnostic = providerValueDiagnostic(value, "provider-message");
   return {
+    category: PROVIDER_MESSAGE_CATEGORIES.has(category) ? category : "unavailable",
     jsonType: diagnostic.jsonType,
     lengthBucket: diagnostic.lengthBucket,
     ...(diagnostic.reference ? { reference: diagnostic.reference } : {}),
@@ -263,7 +332,7 @@ function providerResultDiagnostic(response) {
     providerStatus: providerValueDiagnostic(response?.Status, "provider-status"),
     providerErrorCode: providerValueDiagnostic(errorCode, "provider-error-code"),
     // Message is recorded solely as bounded shape metadata and a keyed HMAC.
-    providerMessage: providerMessageDiagnostic(message),
+    providerMessage: providerMessageDiagnostic(message, providerMessageCategory(response?.Status, errorCode)),
   };
   // Only this table-backed factory can attach a non-unknown disposition to a
   // provider-result failure. The marker is not serializable and is ignored by
@@ -274,18 +343,21 @@ function providerResultDiagnostic(response) {
 
 function safeProviderValueDiagnostic(value) {
   const present = value?.valuePresent === true;
+  const code = documentedProviderCode(value?.code);
   const jsonType = value?.jsonType;
   const lengthBucket = value?.lengthBucket;
   const reference = value?.reference;
   if (!present || !PROVIDER_DIAGNOSTIC_JSON_TYPES.has(jsonType) || jsonType === "absent" || !PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS.has(lengthBucket) || lengthBucket === "absent") {
     return {
       valuePresent: false,
+      code: "unavailable",
       jsonType: "absent",
       lengthBucket: "absent",
     };
   }
   return {
     valuePresent: true,
+    code,
     jsonType,
     lengthBucket,
     ...(typeof reference === "string" && PROVIDER_DIAGNOSTIC_REFERENCE.test(reference) ? { reference } : {}),
@@ -293,16 +365,18 @@ function safeProviderValueDiagnostic(value) {
 }
 
 function safeProviderMessageDiagnostic(value) {
+  const category = PROVIDER_MESSAGE_CATEGORIES.has(value?.category) ? value.category : "unavailable";
   const jsonType = value?.jsonType;
   const lengthBucket = value?.lengthBucket;
   const reference = value?.reference;
   if (!PROVIDER_DIAGNOSTIC_JSON_TYPES.has(jsonType) || !PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS.has(lengthBucket)) {
-    return { jsonType: "absent", lengthBucket: "absent" };
+    return { category: "unavailable", jsonType: "absent", lengthBucket: "absent" };
   }
   if ((jsonType === "absent") !== (lengthBucket === "absent")) {
-    return { jsonType: "absent", lengthBucket: "absent" };
+    return { category: "unavailable", jsonType: "absent", lengthBucket: "absent" };
   }
   return {
+    category,
     jsonType,
     lengthBucket,
     ...(typeof reference === "string" && PROVIDER_DIAGNOSTIC_REFERENCE.test(reference) ? { reference } : {}),

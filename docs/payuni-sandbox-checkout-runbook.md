@@ -121,6 +121,7 @@ npm run test -- src/lib/payment-providers/payuni.test.ts
 - `HashKey` / `HashIV` 不可出現在 repo、log、audit log、admin raw payload。
 - `EncryptInfo` / `HashInfo` 在 admin UI 只顯示長度與驗簽結果。
 - production webhook body 若需要排錯，只能在受控環境短期擷取並立即刪除。
+- Sandbox QA 只會顯示官方文件中封閉列舉的交易查詢狀態碼；未知值維持 `unavailable`，`Message` 只顯示安全分類。`QUERY03001` 表示 PayUni 查無該筆交易，不能誤判成 callback 網路中斷。
 
 ## External Required
 

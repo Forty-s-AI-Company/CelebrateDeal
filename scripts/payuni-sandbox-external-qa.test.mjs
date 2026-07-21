@@ -29,23 +29,23 @@ function withHashKey(key, callback) {
 
 function diagnosticForDisposition(disposition) {
   const cases = {
-    "terminal-authentication": { Status: "FAIL", ErrorCode: "MPG01001" },
-    "terminal-invalid-request": { Status: "FAIL", ErrorCode: "MPG01003" },
-    "terminal-rejection": { Status: "FAIL", ErrorCode: "MPG02001" },
-    "retryable-not-found": { Status: "FAIL", ErrorCode: "MPG03001" },
-    "retryable-processing": { Status: "FAIL", ErrorCode: "MPG03002" },
-    unknown: { Status: "FAIL", ErrorCode: "UNRECOGNISED-CODE" },
+    "terminal-authentication": { Status: "QUERY01002" },
+    "terminal-invalid-request": { Status: "QUERY02002" },
+    "retryable-not-found": { Status: "QUERY03001" },
+    "retryable-processing": { Status: "API00009" },
+    "retryable-provider": { Status: "QUERY01006" },
+    unknown: { Status: "UNRECOGNISED-CODE" },
   };
   return providerResultDiagnostic({ ...cases[disposition], Message: "neutral" });
 }
 
 test("provider disposition is derived only from fixed documented status cases", () => {
   const cases = [
-    ["AUTHENTICATION_FAILED", "terminal-authentication"],
-    ["INVALID_REQUEST", "terminal-invalid-request"],
-    ["REJECTED", "terminal-rejection"],
-    ["TRADE_NOT_FOUND", "retryable-not-found"],
-    ["PROCESSING", "retryable-processing"],
+    ["QUERY01002", "terminal-authentication"],
+    ["QUERY02002", "terminal-invalid-request"],
+    ["QUERY03001", "retryable-not-found"],
+    ["API00009", "retryable-processing"],
+    ["QUERY01006", "retryable-provider"],
     ["UNRECOGNISED-STATUS", "unknown"],
   ];
   for (const [status, disposition] of cases) {
@@ -56,15 +56,11 @@ test("provider disposition is derived only from fixed documented status cases", 
 
 test("provider disposition is derived only from fixed documented ErrorCode cases", () => {
   const cases = [
-    ["MPG01001", "terminal-authentication"],
-    ["MPG01002", "terminal-authentication"],
-    ["MPG01003", "terminal-invalid-request"],
-    ["MPG01004", "terminal-invalid-request"],
-    ["MPG01005", "terminal-invalid-request"],
-    ["MPG02001", "terminal-rejection"],
-    ["MPG02002", "terminal-rejection"],
-    ["MPG03001", "retryable-not-found"],
-    ["MPG03002", "retryable-processing"],
+    ["QUERY01002", "terminal-authentication"],
+    ["QUERY02002", "terminal-invalid-request"],
+    ["QUERY03001", "retryable-not-found"],
+    ["API00009", "retryable-processing"],
+    ["QUERY01006", "retryable-provider"],
   ];
   for (const [errorCode, disposition] of cases) {
     const diagnostic = providerResultDiagnostic({ Status: "FAIL", ErrorCode: errorCode, Message: "neutral" });
@@ -75,13 +71,13 @@ test("provider disposition is derived only from fixed documented ErrorCode cases
 test("only envelope Status and ErrorCode affect disposition, with ErrorCode taking precedence", () => {
   const aliases = ["Code", "StatusCode", "RespondCode"];
   for (const field of aliases) {
-    assert.equal(providerResultDiagnostic({ Status: "FAIL", [field]: "MPG02001", Message: "" }).providerDisposition, "unknown", field);
-    assert.equal(providerResultDiagnostic({ Status: "FAIL", Result: { [field]: "MPG02001" }, Message: "" }).providerDisposition, "unknown", `Result.${field}`);
-    assert.equal(providerResultDiagnostic({ Status: "PROCESSING", [field]: "MPG02001", Message: "" }).providerDisposition, "retryable-processing", `${field} conflict`);
+    assert.equal(providerResultDiagnostic({ Status: "FAIL", [field]: "QUERY01002", Message: "" }).providerDisposition, "unknown", field);
+    assert.equal(providerResultDiagnostic({ Status: "FAIL", Result: { [field]: "QUERY01002" }, Message: "" }).providerDisposition, "unknown", `Result.${field}`);
+    assert.equal(providerResultDiagnostic({ Status: "API00009", [field]: "QUERY01002", Message: "" }).providerDisposition, "retryable-processing", `${field} conflict`);
   }
   assert.equal(
-    providerResultDiagnostic({ Status: "PROCESSING", ErrorCode: "MPG02001", Message: "" }).providerDisposition,
-    "terminal-rejection",
+    providerResultDiagnostic({ Status: "API00009", ErrorCode: "QUERY01002", Message: "" }).providerDisposition,
+    "terminal-authentication",
   );
   assert.equal(providerResultDiagnostic({ Status: "FAIL", ErrorCode: "NOT-DOCUMENTED", Message: "" }).providerDisposition, "unknown");
 });
@@ -94,19 +90,33 @@ test("neutral, blank, and misleading provider messages never select a dispositio
       Message: message,
     }));
     assert.equal(diagnostic.providerDisposition, "unknown");
+    assert.equal(diagnostic.providerStatus.code, "unavailable");
+    assert.equal(diagnostic.providerMessage.category, "unavailable");
     assert.equal(diagnostic.providerMessage.jsonType, "string");
     assert.match(diagnostic.providerMessage.reference, /^hmac-sha256:[a-f0-9]{16}$/);
     if (message) assert.equal(JSON.stringify(diagnostic).includes(message), false);
   }
 });
 
+test("documented query failures expose only the exact allowlisted code and safe message category", () => {
+  const diagnostic = withHashKey(DIAGNOSTIC_HASH_KEY, () => providerResultDiagnostic({
+    Status: "QUERY03001",
+    Message: "查無符合訂單資料",
+  }));
+  assert.equal(diagnostic.providerDisposition, "retryable-not-found");
+  assert.equal(diagnostic.providerStatus.code, "QUERY03001");
+  assert.equal(diagnostic.providerErrorCode.code, "unavailable");
+  assert.equal(diagnostic.providerMessage.category, "transaction-not-found");
+  assert.equal(JSON.stringify(diagnostic).includes("查無符合訂單資料"), false);
+});
+
 test("terminal dispositions stop early while retryable and unknown dispositions consume the fixed budget", async () => {
   const cases = [
     ["terminal-authentication", 1, []],
     ["terminal-invalid-request", 1, []],
-    ["terminal-rejection", 1, []],
     ["retryable-not-found", 3, [1_000, 1_000]],
     ["retryable-processing", 3, [1_000, 1_000]],
+    ["retryable-provider", 3, [1_000, 1_000]],
     ["unknown", 3, [1_000, 1_000]],
   ];
 
@@ -133,7 +143,7 @@ test("an unbranded disposition cannot create an early terminal stop", async () =
     page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
     stage: "waiting-payment-callback",
     query: async () => {
-      throw new PayUniQueryFailure("provider-result", { providerDisposition: "terminal-rejection" });
+      throw new PayUniQueryFailure("provider-result", { providerDisposition: "terminal-invalid-request" });
     },
     sleep: async () => {},
   });
@@ -142,7 +152,7 @@ test("an unbranded disposition cannot create an early terminal stop", async () =
 });
 
 test("only provider-result failures can retain a table-backed disposition", async () => {
-  const providerDiagnostic = diagnosticForDisposition("terminal-rejection");
+  const providerDiagnostic = diagnosticForDisposition("terminal-invalid-request");
   const result = await reconcileCallbackTimeout({
     orderNumber: "order-private",
     page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
@@ -161,7 +171,7 @@ test("callback diagnostics discard a forged disposition but retain an internally
     orderNumber: "order-private",
     page: pageAt("https://sandbox-api.payuni.com.tw/api/upp"),
     stage: "waiting-payment-callback",
-    query: async () => { throw new PayUniQueryFailure("provider-result", diagnosticForDisposition("terminal-rejection")); },
+    query: async () => { throw new PayUniQueryFailure("provider-result", diagnosticForDisposition("terminal-invalid-request")); },
     sleep: async () => {},
   });
   const diagnostic = callbackTimeoutDiagnostic({
@@ -173,7 +183,7 @@ test("callback diagnostics discard a forged disposition but retain an internally
     paymentPage: {},
     callbackQueryAttempts: reconciliation.attempts,
   });
-  assert.equal(diagnostic.checks.providerChecks.callbackTradeQueries[0].providerDisposition, "terminal-rejection");
+  assert.equal(diagnostic.checks.providerChecks.callbackTradeQueries[0].providerDisposition, "terminal-invalid-request");
 
   const forged = callbackTimeoutDiagnostic({
     stage: "waiting-payment-callback",
@@ -182,7 +192,7 @@ test("callback diagnostics discard a forged disposition but retain an internally
     confirmationDialogClicked: false,
     checkoutStatus: 200,
     paymentPage: {},
-    callbackQueryAttempts: [{ querySucceeded: false, providerDisposition: "terminal-rejection" }],
+    callbackQueryAttempts: [{ querySucceeded: false, providerDisposition: "terminal-invalid-request" }],
   });
   assert.equal(forged.checks.providerChecks.callbackTradeQueries[0].providerDisposition, "unknown");
 });
@@ -422,7 +432,7 @@ test("the exact UPP location is fixed while query and fragment are never seriali
 
 test("the receipt boundary removes mutated raw provider fields", async () => {
   const secret = "4111111111111111 CredentialToken7A9B order-private trade-private";
-  const failure = new PayUniQueryFailure("provider-result", diagnosticForDisposition("terminal-rejection"));
+  const failure = new PayUniQueryFailure("provider-result", diagnosticForDisposition("terminal-invalid-request"));
   failure.providerDisposition = secret;
   failure.providerStatus = secret;
   failure.providerErrorCode = { valuePresent: true, jsonType: "raw", lengthBucket: secret, reference: secret };
@@ -437,10 +447,10 @@ test("the receipt boundary removes mutated raw provider fields", async () => {
   });
   assert.equal(result.attempts.length, 1);
   for (const attempt of result.attempts) {
-    assert.equal(attempt.providerDisposition, "terminal-rejection");
-    assert.deepEqual(attempt.providerStatus, { valuePresent: false, jsonType: "absent", lengthBucket: "absent" });
-    assert.deepEqual(attempt.providerErrorCode, { valuePresent: false, jsonType: "absent", lengthBucket: "absent" });
-    assert.deepEqual(attempt.providerMessage, { jsonType: "string", lengthBucket: "33-128" });
+    assert.equal(attempt.providerDisposition, "terminal-invalid-request");
+    assert.deepEqual(attempt.providerStatus, { valuePresent: false, code: "unavailable", jsonType: "absent", lengthBucket: "absent" });
+    assert.deepEqual(attempt.providerErrorCode, { valuePresent: false, code: "unavailable", jsonType: "absent", lengthBucket: "absent" });
+    assert.deepEqual(attempt.providerMessage, { category: "unavailable", jsonType: "string", lengthBucket: "33-128" });
   }
   assert.equal(JSON.stringify(result).includes(secret), false);
 });
@@ -482,9 +492,9 @@ test("callback timeout diagnostics rebuild attempts instead of retaining caller 
     flowStage: "unavailable",
     failureStage: "provider-result",
     errorCategory: "provider-rejection",
-    providerStatus: { valuePresent: false, jsonType: "absent", lengthBucket: "absent" },
-    providerErrorCode: { valuePresent: false, jsonType: "absent", lengthBucket: "absent" },
-    providerMessage: { jsonType: "absent", lengthBucket: "absent" },
+    providerStatus: { valuePresent: false, code: "unavailable", jsonType: "absent", lengthBucket: "absent" },
+    providerErrorCode: { valuePresent: false, code: "unavailable", jsonType: "absent", lengthBucket: "absent" },
+    providerMessage: { category: "unavailable", jsonType: "absent", lengthBucket: "absent" },
   });
   assert.equal(JSON.stringify(diagnostic).includes(secret), false);
 });
