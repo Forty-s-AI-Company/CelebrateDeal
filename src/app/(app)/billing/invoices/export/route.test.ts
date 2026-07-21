@@ -96,10 +96,12 @@ describe("/billing/invoices/export route", () => {
 });
 
 describe("/billing/invoices page", () => {
-  it("links the export control to the protected CSV route", async () => {
+  it("links the export control and invoice detail while localizing status", async () => {
     const html = renderToStaticMarkup(await BillingInvoicesPage());
 
     expect(html).toContain('href="/billing/invoices/export"');
     expect(html).toContain("匯出 CSV");
+    expect(html).toContain('href="/billing/invoices/invoice-current"');
+    expect(html).toContain("待付款");
   });
 });

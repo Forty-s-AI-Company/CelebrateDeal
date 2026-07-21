@@ -1,15 +1,10 @@
 import { Download, ReceiptText } from "lucide-react";
+import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-
-function statusTone(status: string) {
-  if (status === "paid") return "green" as const;
-  if (status === "issued") return "blue" as const;
-  if (status === "overdue") return "orange" as const;
-  return "gray" as const;
-}
+import { invoiceStatusLabel, invoiceStatusTone } from "@/lib/invoice-presentation";
 
 export default async function BillingInvoicesPage() {
   const vendor = await requireVendor();
@@ -39,13 +34,14 @@ export default async function BillingInvoicesPage() {
         </Card>
         <Card>
           <p className="text-sm font-medium text-slate-500">對帳匯出</p>
-          <a
+          <Link
             href="/billing/invoices/export"
+            prefetch={false}
             className="mt-3 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             <Download size={16} />
             匯出 CSV
-          </a>
+          </Link>
         </Card>
       </div>
 
@@ -77,14 +73,18 @@ export default async function BillingInvoicesPage() {
               <tbody className="divide-y divide-border">
                 {invoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-4 font-mono text-slate-700">{invoice.invoiceNumber}</td>
+                    <td className="px-5 py-4 font-mono">
+                      <Link href={`/billing/invoices/${invoice.id}`} className="font-semibold text-primary hover:underline">
+                        {invoice.invoiceNumber}
+                      </Link>
+                    </td>
                     <td className="px-5 py-4 font-semibold text-slate-950">{invoice.monthKey}</td>
                     <td className="px-5 py-4">{formatCurrency(invoice.monthlyFeeCents)}</td>
                     <td className="px-5 py-4">{formatCurrency(invoice.overflowFeeCents)}</td>
                     <td className="px-5 py-4">{formatCurrency(invoice.paymentServiceFeeCents + invoice.transactionServiceFeeCents)}</td>
                     <td className="px-5 py-4">{formatCurrency(invoice.affiliateManagementFeeCents)}</td>
                     <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(invoice.totalCents)}</td>
-                    <td className="px-5 py-4"><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></td>
+                    <td className="px-5 py-4"><Badge tone={invoiceStatusTone(invoice.status)}>{invoiceStatusLabel(invoice.status)}</Badge></td>
                     <td className="px-5 py-4 text-slate-500">{invoice.dueAt ? formatDateTime(invoice.dueAt) : "未設定"}</td>
                   </tr>
                 ))}
