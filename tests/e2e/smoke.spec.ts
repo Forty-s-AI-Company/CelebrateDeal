@@ -1098,6 +1098,10 @@ test("checkout ignores client amount and uses product price", async ({ request }
 });
 
 test("JOB_SECRET protected APIs reject missing and invalid authorization", async ({ request }) => {
+  // This assertion intentionally cold-loads nine separate Next.js route
+  // modules in the development server. Keep the allowance local and bounded
+  // so route compilation does not consume the suite-wide 30-second default.
+  test.setTimeout(120_000);
   const invalidBearerHeader = ["Bearer", "e2e-invalid-credential"].join(" ");
   const protectedEndpoints = [
     { method: "GET", path: "/api/admin/preflight" },
