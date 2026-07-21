@@ -1137,18 +1137,50 @@ export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  const productIds = formData.getAll("productIds").filter((value): value is string => typeof value === "string");
+  const rawProductIds = formData.getAll("productIds").filter((value): value is string => typeof value === "string");
+  const productIds = [...new Set(rawProductIds.map((productId) => productId.trim()).filter(Boolean))];
+  const videoId = optionalText(formData, "videoId");
+  const formId = optionalText(formData, "formId");
+  const messageTemplateId = optionalText(formData, "messageTemplateId");
+  const interactionScriptId = optionalText(formData, "interactionScriptId");
+  const invalidReferencePath = id
+    ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
+    : "/lives/new?error=invalid_reference";
+  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, ...productIds].filter(
+    (value): value is string => value !== null,
+  );
+  if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
+    redirect(invalidReferencePath);
+  }
   const scheduledAtValue = text(formData, "scheduledAt");
+  const db = getDb();
+  const [products, video, registrationForm, messageTemplate, interactionScript] = await Promise.all([
+    productIds.length > 0
+      ? db.product.findMany({ where: { vendorId: vendor.id, id: { in: productIds } }, select: { id: true } })
+      : Promise.resolve([]),
+    videoId ? db.video.findFirst({ where: { id: videoId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
+    formId ? db.registrationForm.findFirst({ where: { id: formId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
+    messageTemplateId ? db.messageTemplate.findFirst({ where: { id: messageTemplateId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
+    interactionScriptId ? db.interactionScript.findFirst({ where: { id: interactionScriptId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
+  ]);
+  const hasInvalidReference = products.length !== productIds.length
+    || (videoId !== null && !video)
+    || (formId !== null && !registrationForm)
+    || (messageTemplateId !== null && !messageTemplate)
+    || (interactionScriptId !== null && !interactionScript);
+  if (hasInvalidReference) {
+    redirect(invalidReferencePath);
+  }
   const data = {
     title: text(formData, "title"),
     slug: toSlug(text(formData, "slug")),
     description: optionalText(formData, "description"),
     scheduledAt: scheduledAtValue ? new Date(scheduledAtValue) : new Date(),
     status: text(formData, "status", "scheduled"),
-    videoId: optionalText(formData, "videoId"),
-    formId: optionalText(formData, "formId"),
-    messageTemplateId: optionalText(formData, "messageTemplateId"),
-    interactionScriptId: optionalText(formData, "interactionScriptId"),
+    videoId,
+    formId,
+    messageTemplateId,
+    interactionScriptId,
     heroImageUrl: optionalExternalUrl(formData, "heroImageUrl", "直播主視覺網址"),
     accentCopy: optionalText(formData, "accentCopy"),
     replayEnabled: formData.get("replayEnabled") !== "off",
@@ -1160,7 +1192,6 @@ export async function upsertLiveAction(formData: FormData) {
     } as Prisma.InputJsonValue,
   };
 
-  const db = getDb();
   if (id) {
     await db.$transaction([
       db.live.update({ where: { id, vendorId: vendor.id }, data }),

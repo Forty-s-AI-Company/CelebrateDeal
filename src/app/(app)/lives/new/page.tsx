@@ -4,8 +4,9 @@ import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
-export default async function NewLivePage() {
+export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const vendor = await requireVendorManager();
+  const { error } = await searchParams;
   const [videos, products, forms, templates, scripts, affiliates, csrfToken] = await Promise.all([
     getDb().video.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
     getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { createdAt: "desc" } }),
@@ -19,7 +20,7 @@ export default async function NewLivePage() {
   return (
     <>
       <PageHeader title="建立直播間" description="用四步驟串起直播基本資料、影片、表單與商品。先能跑起完整漏斗，再慢慢加自動化。" />
-      <LiveStepperForm videos={videos} products={products} forms={forms} templates={templates} scripts={scripts} affiliates={affiliates} csrfToken={csrfToken} />
+      <LiveStepperForm videos={videos} products={products} forms={forms} templates={templates} scripts={scripts} affiliates={affiliates} csrfToken={csrfToken} error={error} />
     </>
   );
 }

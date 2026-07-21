@@ -37,6 +37,7 @@ export function LiveStepperForm({
   scripts,
   affiliates,
   csrfToken,
+  error,
 }: {
   videos: Video[];
   products: Product[];
@@ -45,6 +46,7 @@ export function LiveStepperForm({
   scripts: InteractionScript[];
   affiliates: Affiliate[];
   csrfToken: string;
+  error?: string;
 }) {
   const [activeStep, setActiveStep] = useState(0);
   const [previewTitle, setPreviewTitle] = useState("");
@@ -60,6 +62,11 @@ export function LiveStepperForm({
   return (
     <form action={upsertLiveAction} className="grid gap-5">
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      {error === "invalid_reference" ? (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          直播關聯資料無效，請重新選擇目前商店的影片、表單、模板、腳本與商品。
+        </p>
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button

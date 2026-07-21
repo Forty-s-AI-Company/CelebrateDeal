@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => ({
   interactionScriptCreate: vi.fn(),
   interactionScriptUpdate: vi.fn(),
   liveUpdateMany: vi.fn(),
+  liveCreate: vi.fn(),
+  productFindMany: vi.fn(),
+  videoFindFirst: vi.fn(),
+  registrationFormFindFirst: vi.fn(),
+  messageTemplateFindFirst: vi.fn(),
+  interactionScriptFindFirst: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   redirect: vi.fn(),
@@ -115,8 +121,15 @@ vi.mock("@/lib/db", () => ({
     settlement: { findUnique: mocks.settlementFindUnique },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
     interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
-    interactionScript: { create: mocks.interactionScriptCreate, update: mocks.interactionScriptUpdate },
-    live: { updateMany: mocks.liveUpdateMany },
+    interactionScript: {
+      create: mocks.interactionScriptCreate,
+      findFirst: mocks.interactionScriptFindFirst,
+      update: mocks.interactionScriptUpdate,
+    },
+    live: { create: mocks.liveCreate, updateMany: mocks.liveUpdateMany },
+    product: { findMany: mocks.productFindMany },
+    video: { findFirst: mocks.videoFindFirst },
+    messageTemplate: { findFirst: mocks.messageTemplateFindFirst },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     userMfaFactor: { update: mocks.userMfaFactorUpdate },
@@ -139,7 +152,11 @@ vi.mock("@/lib/db", () => ({
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
     blacklist: { create: mocks.blacklistCreate },
-    registrationForm: { create: mocks.registrationFormCreate, update: mocks.registrationFormUpdate },
+    registrationForm: {
+      create: mocks.registrationFormCreate,
+      findFirst: mocks.registrationFormFindFirst,
+      update: mocks.registrationFormUpdate,
+    },
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
   }),
 }));
@@ -159,6 +176,7 @@ import {
   unbindInteractionScriptFromLiveAction,
   upsertBlacklistAction,
   upsertFormAction,
+  upsertLiveAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
@@ -254,6 +272,18 @@ function registrationFormData(fields: string) {
   formData.set("slug", "test-form");
   formData.set("headline", "測試標題");
   formData.set("fields", fields);
+  return formData;
+}
+
+function liveFormData() {
+  const formData = new FormData();
+  formData.set("title", "租戶限定直播");
+  formData.set("slug", "tenant-live");
+  formData.set("videoId", "video-1");
+  formData.set("formId", "form-1");
+  formData.set("messageTemplateId", "template-1");
+  formData.set("interactionScriptId", "script-1");
+  formData.append("productIds", "product-1");
   return formData;
 }
 
@@ -673,6 +703,71 @@ describe("upsertBlacklistAction", () => {
       "redirect:/blacklists?error=invalid_identifier",
     );
     expect(mocks.blacklistCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("upsertLiveAction", () => {
+  function allowCurrentVendorLiveReferences() {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
+    mocks.registrationFormFindFirst.mockResolvedValue({ id: "form-1" });
+    mocks.messageTemplateFindFirst.mockResolvedValue({ id: "template-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue({ id: "script-1" });
+    mocks.liveCreate.mockResolvedValue({ id: "live-1" });
+  }
+
+  it("creates a live only after every relation is verified against the current vendor", async () => {
+    allowCurrentVendorLiveReferences();
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.productFindMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", id: { in: ["product-1"] } },
+      select: { id: true },
+    });
+    for (const lookup of [
+      mocks.videoFindFirst,
+      mocks.registrationFormFindFirst,
+      mocks.messageTemplateFindFirst,
+      mocks.interactionScriptFindFirst,
+    ]) {
+      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ vendorId: "vendor-1" }),
+      }));
+    }
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        videoId: "video-1",
+        formId: "form-1",
+        messageTemplateId: "template-1",
+        interactionScriptId: "script-1",
+        products: { create: [{ productId: "product-1", sortOrder: 1, isPinned: true }] },
+      }),
+    });
+  });
+
+  it("rejects a product from another vendor before creating a live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.productFindMany.mockResolvedValue([]);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference",
+    );
+
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a to-one relation from another vendor before creating a live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference",
+    );
+
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 });
 

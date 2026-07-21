@@ -5,9 +5,16 @@ import { Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
-export default async function EditLivePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditLivePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const vendor = await requireVendorManager();
   const { id } = await params;
+  const { error } = await searchParams;
   const db = getDb();
   const [live, videos, products, forms, templates, scripts] = await Promise.all([
     db.live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: true } }),
@@ -24,6 +31,11 @@ export default async function EditLivePage({ params }: { params: Promise<{ id: s
     <>
       <PageHeader title="編輯直播間" description="調整直播頁素材、狀態與商品綁定。" />
       <Card>
+        {error === "invalid_reference" ? (
+          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            直播關聯資料無效，請重新選擇目前商店的影片、表單、模板、腳本與商品。
+          </p>
+        ) : null}
         <form action={upsertLiveAction} className="grid gap-4">
           <CsrfField />
           <input type="hidden" name="id" value={live.id} />
