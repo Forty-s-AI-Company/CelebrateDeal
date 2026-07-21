@@ -16,6 +16,9 @@ const stamp = Date.now();
 const e2eRunId = `${stamp.toString(36)}-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
 const resetReference = ["e2e", "invalid", "reset", e2eRunId].join("-");
 const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
+// PayUni UPP accepts integer TWD only. Keep the fixture provider-valid while
+// still proving that checkout ignores a forged client-side amount.
+const e2eProductPriceCents = 12_300;
 const e2eOrigin = new URL(
   process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? "31023"}`,
 ).origin;
@@ -477,7 +480,7 @@ test.beforeAll(async () => {
       name: "E2E 導購商品",
       slug: seed.productSlug,
       description: "Smoke test product",
-      priceCents: 12345,
+      priceCents: e2eProductPriceCents,
       currency: "TWD",
       inventory: 10,
       isActive: true,
@@ -1091,10 +1094,10 @@ test("checkout ignores client amount and uses product price", async ({ request }
   });
   expect(response.status()).toBe(200);
   const body = await response.json() as { transactionId: string; amountCents: number };
-  expect(body.amountCents).toBe(12345);
+  expect(body.amountCents).toBe(e2eProductPriceCents);
 
   const transaction = await db.paymentTransaction.findUniqueOrThrow({ where: { id: body.transactionId } });
-  expect(transaction.grossAmountCents).toBe(12345);
+  expect(transaction.grossAmountCents).toBe(e2eProductPriceCents);
 });
 
 test("JOB_SECRET protected APIs reject missing and invalid authorization", async ({ request }) => {
