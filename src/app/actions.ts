@@ -46,6 +46,7 @@ import { toSlug } from "@/lib/format";
 import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -1404,11 +1405,18 @@ export async function deleteInteractionScriptAction(formData: FormData) {
 export async function upsertBlacklistAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
+  const identifierType = BlacklistIdentifierType.safeParse(text(formData, "identifierType", "email"));
+  const identifier = identifierType.success
+    ? normalizeBlacklistIdentifier(identifierType.data, text(formData, "identifier"))
+    : null;
+  if (!identifierType.success || !identifier) {
+    redirect("/blacklists?error=invalid_identifier");
+  }
   await getDb().blacklist.create({
     data: {
       vendorId: vendor.id,
-      identifier: text(formData, "identifier"),
-      identifierType: text(formData, "identifierType", "email"),
+      identifier,
+      identifierType: identifierType.data,
       reason: text(formData, "reason"),
       notes: optionalText(formData, "notes"),
     },

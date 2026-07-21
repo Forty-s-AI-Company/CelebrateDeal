@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   settlementUpsert: vi.fn(),
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
+  blacklistCreate: vi.fn(),
   registrationFormCreate: vi.fn(),
   registrationFormUpdate: vi.fn(),
   teamMembershipFindFirst: vi.fn(),
@@ -137,6 +138,7 @@ vi.mock("@/lib/db", () => ({
     teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
+    blacklist: { create: mocks.blacklistCreate },
     registrationForm: { create: mocks.registrationFormCreate, update: mocks.registrationFormUpdate },
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
   }),
@@ -155,6 +157,7 @@ import {
   sendPasswordResetSmokeAction,
   updatePasswordAction,
   unbindInteractionScriptFromLiveAction,
+  upsertBlacklistAction,
   upsertFormAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
@@ -635,6 +638,41 @@ describe("upsertFormAction", () => {
     expect(mocks.requireVendor).toHaveBeenCalledOnce();
     expect(mocks.registrationFormCreate).not.toHaveBeenCalled();
     expect(mocks.registrationFormUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("upsertBlacklistAction", () => {
+  function blacklistFormData(identifierType: string, identifier: string) {
+    const formData = new FormData();
+    formData.set("identifierType", identifierType);
+    formData.set("identifier", identifier);
+    formData.set("reason", "風險名單");
+    return formData;
+  }
+
+  it("normalizes an email before storing it in the current vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+    await upsertBlacklistAction(blacklistFormData("email", " Blocked@Example.Test "));
+
+    expect(mocks.blacklistCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        identifierType: "email",
+        identifier: "blocked@example.test",
+      }),
+    });
+  });
+
+  it.each([
+    ["unknown identifier type", "token", "value"],
+    ["malformed email", "email", "not-an-email"],
+    ["malformed phone", "phone", "phone-number"],
+  ])("rejects %s without persistence", async (_name, identifierType, identifier) => {
+    await expect(upsertBlacklistAction(blacklistFormData(identifierType, identifier))).rejects.toThrow(
+      "redirect:/blacklists?error=invalid_identifier",
+    );
+    expect(mocks.blacklistCreate).not.toHaveBeenCalled();
   });
 });
 

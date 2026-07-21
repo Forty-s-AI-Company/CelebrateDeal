@@ -18,6 +18,7 @@ import {
   REGISTRATION_FORM_FIELD_KEY,
   REGISTRATION_FORM_RESERVED_FIELDS,
 } from "@/lib/registration-form-fields";
+import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -64,13 +65,14 @@ export async function POST(request: Request) {
   }
 
   const name = parsed.data.payload.name?.trim() ?? "";
-  const email = parsed.data.payload.email?.trim().toLowerCase() ?? "";
-  const phone = parsed.data.payload.phone?.trim() || null;
+  const email = normalizeBlacklistIdentifier("email", parsed.data.payload.email ?? "") ?? "";
+  const submittedPhone = parsed.data.payload.phone?.trim() || null;
+  const phone = submittedPhone ? normalizeBlacklistIdentifier("phone", submittedPhone) : null;
 
   if (!z.string().min(1).max(160).safeParse(name).success || !z.string().email().max(320).safeParse(email).success) {
     return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
   }
-  if (phone && phone.length > 40) {
+  if (submittedPhone && !phone) {
     return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
   }
 
