@@ -144,6 +144,14 @@ export async function POST(request: Request) {
       },
     });
   } catch {
+    try {
+      await db.paymentTransaction.update({
+        where: { id: transaction.id },
+        data: { status: "failed" },
+      });
+    } catch {
+      // Keep the metadata persistence failure response generic when the recovery write also fails.
+    }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
 
