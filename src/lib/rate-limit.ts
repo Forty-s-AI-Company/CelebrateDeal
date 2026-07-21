@@ -8,6 +8,7 @@ type Bucket = {
 };
 
 const buckets = new Map<string, Bucket>();
+const UPSTASH_REQUEST_TIMEOUT_MS = 3_000;
 const UPSTASH_RATE_LIMIT_SCRIPT = `
 local current = redis.call("INCR", KEYS[1])
 if current == 1 then
@@ -117,6 +118,7 @@ async function upstashDecision(request: Request, key: string, limit: number, win
     },
     body: JSON.stringify(["EVAL", UPSTASH_RATE_LIMIT_SCRIPT, 1, bucketKey, String(limit), String(windowMs)]),
     cache: "no-store",
+    signal: AbortSignal.timeout(UPSTASH_REQUEST_TIMEOUT_MS),
   });
   const json = await response.json() as { result?: unknown; error?: string };
   if (!response.ok || json.error) {

@@ -25,6 +25,7 @@ afterEach(() => {
   resetInMemoryRateLimitForTests();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("rate limit providers", () => {
@@ -40,6 +41,8 @@ describe("rate limit providers", () => {
 
   it("uses Upstash Redis REST script when configured", async () => {
     configureUpstash();
+    const timeoutSignal = new AbortController().signal;
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ result: [2, 45_000] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -50,7 +53,9 @@ describe("rate limit providers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(init?.method).toBe("POST");
+    expect(init?.signal).toBe(timeoutSignal);
     expect(JSON.parse(String(init?.body))[0]).toBe("EVAL");
+    expect(timeoutSpy).toHaveBeenCalledWith(3_000);
   });
 
   it.each([
