@@ -97,6 +97,10 @@ function checkoutButtons(tree: unknown) {
   ));
 }
 
+function checkoutErrors(tree: unknown) {
+  return findElements(tree, (element) => element.props["aria-live"] === "polite");
+}
+
 describe("LivePlayback checkout", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -186,6 +190,59 @@ describe("LivePlayback checkout", () => {
 
     expect(window.location.href).toBe("https://app.example.test/live/demo");
     expect(window.location.href).not.toBe(productCheckoutUrl);
+  });
+
+  it("shows a generic Traditional Chinese error when checkout fails or has no provider redirect action", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({}) }));
+
+    await (checkoutButtons(renderLive())[0].props.onClick as () => Promise<void>)();
+    let errors = checkoutErrors(renderLive());
+    expect(errors).toHaveLength(1);
+    expect(textContent(errors[0].props.children)).toBe("目前無法完成結帳，請稍後再試。");
+    expect(textContent(errors[0].props.children)).not.toContain("PayUni");
+    expect(textContent(errors[0].props.children)).not.toContain("Error");
+
+    await (checkoutButtons(renderLive())[0].props.onClick as () => Promise<void>)();
+    errors = checkoutErrors(renderLive());
+    expect(errors).toHaveLength(1);
+    expect(textContent(errors[0].props.children)).toBe("目前無法完成結帳，請稍後再試。");
+  });
+
+  it("clears a previous checkout error as soon as the user retries", async () => {
+    let resolveCheckout: ((response: { ok: boolean }) => void) | undefined;
+    const pendingResponse = new Promise<{ ok: boolean }>((resolve) => {
+      resolveCheckout = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockReturnValueOnce(pendingResponse));
+
+    let tree = renderLive();
+    await (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
+    expect(checkoutErrors(renderLive())).toHaveLength(1);
+
+    tree = renderLive();
+    const retry = (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
+    expect(checkoutErrors(renderLive())).toHaveLength(0);
+
+    resolveCheckout?.({ ok: false });
+    await retry;
+  });
+
+  it("does not show a checkout error when the provider redirect starts successfully", async () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.example.test/redirect" }),
+    }));
+
+    const tree = renderLive();
+    await (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
+
+    expect(window.location.href).toBe("https://checkout.example.test/redirect");
+    expect(checkoutErrors(renderLive())).toHaveLength(0);
   });
 
   it("disables every checkout button while a checkout request is pending and prevents a second request", async () => {
