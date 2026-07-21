@@ -20,7 +20,6 @@ export const ProductionEnvSchema = z.object({
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
   PAYUNI_MERCHANT_ID: OptionalSecret,
-  PAYUNI_WEBHOOK_SECRET: OptionalSecret,
   PAYUNI_ENV: z.enum(["sandbox", "production"]).optional(),
   PAYUNI_API_BASE_URL: OptionalUrl,
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
@@ -91,7 +90,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   }
 
   if (env.PAYMENT_PROVIDER === "payuni") {
-    for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID", "PAYUNI_WEBHOOK_SECRET"]) {
+    for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID"]) {
       const value = env[key];
       checks.push({
         key,

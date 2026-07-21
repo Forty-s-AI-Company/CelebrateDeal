@@ -24,7 +24,7 @@
 | `PAYUNI_HASH_KEY` | sandbox key | production key | PayUni dashboard | sandbox paid webhook 可驗簽 |
 | `PAYUNI_HASH_IV` | sandbox IV | production IV | PayUni dashboard | sandbox paid webhook 可驗簽 |
 | `PAYUNI_MERCHANT_ID` | sandbox merchant | production merchant | PayUni dashboard | checkout metadata 正確 |
-| `PAYUNI_WEBHOOK_SECRET` | sandbox webhook secret | production webhook secret | Password manager | webhook signature pass |
+| PayUni callback 驗證 | 使用 Sandbox Hash Key / Hash IV | 使用 Production Hash Key / Hash IV | PayUni 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
 | `SENTRY_DSN` | staging DSN | production DSN | Sentry project | ops monitoring test issue appears |
@@ -34,6 +34,8 @@
 | `SENTRY_AUTH_TOKEN` | staging upload token | production upload token | Sentry auth token | build can upload source maps |
 | `NEXT_PUBLIC_POSTHOG_KEY` | staging project key | production project key | PostHog | `production_smoke_test` event appears |
 | `NEXT_PUBLIC_POSTHOG_HOST` | PostHog host | PostHog host | PostHog | capture API 200 |
+
+PayUni 不另外設定 `PAYUNI_NOTIFY_URL`、`PAYUNI_RETURN_URL` 或自訂 webhook secret。每筆 UPP checkout 會從 `NEXT_PUBLIC_APP_URL` 組合 `ReturnURL` 與 `NotifyURL`，回傳則只接受官方 `EncryptInfo`、`HashInfo`、Hash Key 與 Hash IV 驗證。
 
 ## 3. Vercel 設定方式
 

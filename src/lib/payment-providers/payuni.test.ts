@@ -44,7 +44,7 @@ describe("PayUni provider", () => {
       transaction,
       product,
       vendor,
-      appUrl: "https://app.example.test",
+      appUrl: "https://celebratedeal.carry-digital-nomad.in.net",
       referralCode: "DEMOREF",
     });
 
@@ -64,8 +64,8 @@ describe("PayUni provider", () => {
       TradeAmt: "1990",
       Timestamp: expect.stringMatching(/^\d+$/),
       ProdDesc: "Sandbox Product",
-      ReturnURL: "https://app.example.test/api/webhooks/payments?provider=payuni&source=return",
-      NotifyURL: "https://app.example.test/api/webhooks/payments?provider=payuni&source=notify",
+      ReturnURL: "https://celebratedeal.carry-digital-nomad.in.net/api/webhooks/payments?provider=payuni&source=return",
+      NotifyURL: "https://celebratedeal.carry-digital-nomad.in.net/api/webhooks/payments?provider=payuni&source=notify",
     });
     expect(session?.formPayload?.HashInfo).toBe(
       createHash("sha256").update(`${hashKey}${encrypted}${hashIv}`).digest("hex").toUpperCase(),
@@ -116,6 +116,57 @@ describe("PayUni provider", () => {
     expect(normalized.payload.orderNumber).toBe("CD-SANDBOX-PAID-001");
     expect(normalized.payload.referralCode).toBe("DEMOREF");
     expect(duplicate.payload.eventId).toBe(normalized.payload.eventId);
+  });
+
+  it.each([
+    ["missing HashInfo", (params: URLSearchParams) => params.delete("HashInfo")],
+    ["tampered HashInfo", (params: URLSearchParams) => params.set("HashInfo", "0".repeat(64))],
+    ["wrong merchant", (params: URLSearchParams) => params.set("MerID", "OTHER-MERCHANT")],
+    ["wrong version", (params: URLSearchParams) => params.set("Version", "1.0")],
+  ])("rejects an official callback with %s", async (_label, mutate) => {
+    stubPayUniEnv();
+    const body = buildPayUniSandboxWebhookFixture({
+      fixture: "paid",
+      merchantId: "TESTMER",
+      hashKey,
+      hashIv,
+    });
+    const params = new URLSearchParams(body);
+    mutate(params);
+
+    await expect(
+      payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), params.toString()),
+    ).resolves.toBe(false);
+  });
+
+  it("rejects the former custom signature-header fallback", async () => {
+    stubPayUniEnv();
+    const body = JSON.stringify({
+      MerID: "TESTMER",
+      Version: "2.0",
+      MerTradeNo: "CD-UNSIGNED-001",
+      Status: "SUCCESS",
+    });
+    const request = new Request("https://app.example.test", {
+      headers: { "x-payuni-signature": "legacy-custom-signature" },
+    });
+
+    await expect(payUniPaymentProvider.verifySignature(request, body)).resolves.toBe(false);
+  });
+
+  it("rejects a callback whose encrypted merchant does not match the configured shop", async () => {
+    stubPayUniEnv();
+    const body = buildPayUniSandboxWebhookFixture({
+      fixture: "paid",
+      merchantId: "TESTMER",
+      hashKey,
+      hashIv,
+      overrides: { MerID: "OTHER-MERCHANT" },
+    });
+
+    await expect(
+      payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body),
+    ).resolves.toBe(false);
   });
 
   it("normalizes PayUni sandbox refund fixtures", async () => {

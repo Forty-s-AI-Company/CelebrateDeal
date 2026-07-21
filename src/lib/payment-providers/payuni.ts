@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
@@ -52,19 +52,6 @@ function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
-}
-
-function stablePayloadString(rawBody: string) {
-  try {
-    const payload = JSON.parse(rawBody) as Record<string, unknown>;
-    return Object.keys(payload)
-      .filter((key) => !["CheckMacValue", "Signature", "sign", "signature"].includes(key))
-      .sort()
-      .map((key) => `${key}=${String(payload[key] ?? "")}`)
-      .join("&");
-  } catch {
-    return rawBody;
-  }
 }
 
 function parseRawPayload(rawBody: string) {
@@ -145,26 +132,36 @@ function hashInfo(encryptStr: string) {
   return createHash("sha256").update(`${key}${encryptStr}${iv}`).digest("hex").toUpperCase();
 }
 
-function verifyPayUniSignature(rawBody: string, signature: string | null) {
-  const hashKey = process.env.PAYUNI_HASH_KEY;
-  const hashIv = process.env.PAYUNI_HASH_IV;
-  const webhookSecret = process.env.PAYUNI_WEBHOOK_SECRET;
-  const rawPayload = parseRawPayload(rawBody);
-  const encryptPayload = rawPayload.EncryptInfo ? String(rawPayload.EncryptInfo) : null;
-  const hashPayload = rawPayload.HashInfo ? String(rawPayload.HashInfo) : null;
+function verifyPayUniSignature(rawBody: string) {
+  try {
+    const outerPayload = parseRawPayload(rawBody);
+    const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+    const outerMerchantId = optionalPayloadText(outerPayload.MerID);
+    const version = optionalPayloadText(outerPayload.Version);
+    const encryptPayload = optionalPayloadText(outerPayload.EncryptInfo);
+    const hashPayload = optionalPayloadText(outerPayload.HashInfo);
 
-  if (encryptPayload && hashPayload && hashKey && hashIv) {
-    return safeEqual(hashInfo(encryptPayload), hashPayload.trim());
+    if (
+      !merchantId
+      || outerMerchantId !== merchantId
+      || version !== PAYUNI_UPP_VERSION
+      || !encryptPayload
+      || !hashPayload
+      || !safeEqual(hashInfo(encryptPayload), hashPayload)
+    ) {
+      return false;
+    }
+
+    // HashInfo authenticates EncryptInfo. The merchant ID is checked both outside
+    // and inside the encrypted payload so callbacks cannot be attributed to a
+    // different shop even when an integration key is accidentally reused.
+    const decrypted = decryptInfo(encryptPayload);
+    return optionalPayloadText(decrypted.MerID) === merchantId;
+  } catch {
+    // Invalid key lengths, malformed encryption and decoding failures are all
+    // authentication failures. Do not leak provider details or turn them into 500s.
+    return false;
   }
-
-  if (!signature || (!webhookSecret && (!hashKey || !hashIv))) return false;
-
-  const normalized = stablePayloadString(rawBody);
-  const expected = webhookSecret
-    ? createHmac("sha256", webhookSecret).update(rawBody).digest("hex")
-    : createHash("sha256").update(`HashKey=${hashKey}&${normalized}&HashIV=${hashIv}`).digest("hex").toUpperCase();
-
-  return safeEqual(expected, signature.trim());
 }
 
 export const payUniPaymentProvider: PaymentProviderAdapter = {
@@ -208,13 +205,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       externalRequired: process.env.PAYUNI_ENV === "production",
     };
   },
-  async verifySignature(request, rawBody) {
-    return verifyPayUniSignature(
-      rawBody,
-      request.headers.get("x-payuni-signature")
-        ?? request.headers.get("x-payment-signature")
-        ?? request.headers.get("checkmacvalue"),
-    );
+  async verifySignature(_request, rawBody) {
+    return verifyPayUniSignature(rawBody);
   },
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);

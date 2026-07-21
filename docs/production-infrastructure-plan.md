@@ -309,7 +309,6 @@ PAYMENT_PROVIDER="payuni"
 PAYUNI_HASH_KEY="..."
 PAYUNI_HASH_IV="..."
 PAYUNI_MERCHANT_ID="..."
-PAYUNI_WEBHOOK_SECRET="..."
 PAYMENT_WEBHOOK_MAX_RETRIES="5"
 ```
 
@@ -317,7 +316,7 @@ PAYMENT_WEBHOOK_MAX_RETRIES="5"
 
 - PayUni provider adapter
 - 付款跳轉 / API 呼叫
-- Webhook 簽章驗證
+- NotifyURL / ReturnURL 回傳的 EncryptInfo、HashInfo 驗證
 - Retry queue 控制
 
 若新增 ECPay：
