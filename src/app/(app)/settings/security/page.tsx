@@ -33,6 +33,7 @@ const errorMessages: Record<string, string> = {
   member_invitation_resend_invalid: "找不到可重寄邀請的 active 商家成員。",
   member_invitation_resend_failed: "設定密碼邀請信寄送失敗，請稍後再試。",
   platform_user: "平台管理員帳號不能加入商家成員清單。",
+  inactive_user: "此帳號已由平台停用，商家管理員不能自行重新啟用。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
   last_owner: "至少要保留一位 active owner。",

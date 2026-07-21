@@ -716,6 +716,11 @@ export async function createVendorMemberAction(formData: FormData) {
   if (existingUser?.platformRole && existingUser.platformRole !== "none") {
     redirect("/settings/security?error=platform_user");
   }
+  if (existingUser && existingUser.status !== "active") {
+    // Tenant owners may restore membership in their own vendor, but only the
+    // platform may reactivate a globally suspended user account.
+    redirect("/settings/security?error=inactive_user");
+  }
 
   const existingMember = existingUser
     ? await db.vendorMember.findUnique({
@@ -749,7 +754,6 @@ export async function createVendorMemberAction(formData: FormData) {
       where: { id: user.id },
       data: {
         name: user.name || name,
-        status: "active",
       },
     });
 

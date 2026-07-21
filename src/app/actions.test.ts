@@ -1118,8 +1118,8 @@ describe("createVendorMemberAction", () => {
     expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
-  it("re-enables an inactive membership and sends a new invitation", async () => {
-    const existingUser = { id: "user-2", email: "member@example.com", name: "原本姓名", status: "inactive", platformRole: "none" };
+  it("re-enables an inactive membership for an active user and sends a new invitation", async () => {
+    const existingUser = { id: "user-2", email: "member@example.com", name: "原本姓名", status: "active", platformRole: "none" };
     const inactiveMember = {
       id: "member-2",
       userId: existingUser.id,
@@ -1145,11 +1145,31 @@ describe("createVendorMemberAction", () => {
     }));
     expect(mocks.userUpdate).toHaveBeenCalledWith({
       where: { id: existingUser.id },
-      data: { name: existingUser.name, status: "active" },
+      data: { name: existingUser.name },
     });
     expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith(expect.objectContaining({ email: existingUser.email }));
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "reactivate_vendor_member" }));
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("existing-password-hash");
+  });
+
+  it("does not let a tenant owner reactivate a globally inactive user", async () => {
+    mocks.userFindUnique.mockResolvedValue({
+      id: "user-suspended",
+      email: "member@example.com",
+      name: "停權帳號",
+      status: "inactive",
+      platformRole: "none",
+    });
+
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=inactive_user",
+    );
+
+    expect(mocks.vendorMemberFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("keeps the membership update but reports an invitation delivery failure without auditing secrets", async () => {
