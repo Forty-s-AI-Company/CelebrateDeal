@@ -248,6 +248,18 @@ describe("getEnvCheckReport", () => {
     );
   });
 
+  it("fails when CSRF_SECRET and JOB_SECRET contain the same value", () => {
+    const env = configuredEnv();
+    env[envKey("CSRF", "SECRET")] = env[envKey("JOB", "SECRET")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("CSRF", "SECRET"), "fail")?.message).toBe(
+      "CSRF_SECRET 不得與 JOB_SECRET 共用",
+    );
+  });
+
   it("applies production security gates to Vercel Preview builds", () => {
     const env = configuredEnv();
     env[envKey("NODE", "ENV")] = "development";

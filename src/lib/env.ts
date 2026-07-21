@@ -202,12 +202,19 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
 
   if (deploymentSecurityRequired) {
     const csrfConfigured = secretPresent(env.CSRF_SECRET);
+    const csrfSecretIsDistinct = csrfConfigured
+      && secretPresent(env.JOB_SECRET)
+      && env.CSRF_SECRET !== env.JOB_SECRET;
+    let csrfMessage = "已設定獨立 CSRF／MFA 加密密鑰";
+    if (!csrfConfigured) {
+      csrfMessage = "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用";
+    } else if (!csrfSecretIsDistinct) {
+      csrfMessage = "CSRF_SECRET 不得與 JOB_SECRET 共用";
+    }
     checks.push({
       key: "CSRF_SECRET",
-      status: csrfConfigured ? "pass" : "fail",
-      message: csrfConfigured
-        ? "已設定獨立 CSRF／MFA 加密密鑰"
-        : "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用",
+      status: csrfSecretIsDistinct ? "pass" : "fail",
+      message: csrfMessage,
     });
   }
 
