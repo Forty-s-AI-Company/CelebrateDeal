@@ -67,6 +67,40 @@ function expectNoAffiliateAttribution() {
   }));
 }
 
+describe("successful checkout response", () => {
+  it("prevents caching while preserving the checkout payload", async () => {
+    createCheckoutSession.mockResolvedValue({
+      provider: "demo",
+      mode: "form",
+      checkoutUrl: "https://provider.example.test/checkout/fake-provider-session-token",
+      formAction: "https://provider.example.test/submit",
+      formMethod: "POST",
+      formPayload: { MerchantOrderNo: "example-order", HashKey: "fake-form-payload-value" },
+      nextAction: "submit_provider_form",
+      externalRequired: true,
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    await expect(response.json()).resolves.toStrictEqual({
+      ok: true,
+      provider: "demo",
+      orderNumber: expect.stringMatching(/^CD-\d{14}-[A-Z0-9]{6}$/),
+      transactionId: "transaction-1",
+      amountCents: 1200,
+      currency: "TWD",
+      checkoutUrl: "https://provider.example.test/checkout/fake-provider-session-token",
+      formAction: "https://provider.example.test/submit",
+      formMethod: "POST",
+      formPayload: { MerchantOrderNo: "example-order", HashKey: "fake-form-payload-value" },
+      nextAction: "submit_provider_form",
+      externalRequired: true,
+    });
+  });
+});
+
 describe("checkout affiliate click attribution", () => {
   const visitorId = "visitor-123456789012345";
 
