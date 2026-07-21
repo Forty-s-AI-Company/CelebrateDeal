@@ -42,6 +42,7 @@ vi.mock("@/lib/payment-providers/ecpay-like", () => ({
 }));
 
 import { POST } from "@/app/api/webhooks/payments/route";
+import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
 
 function webhookRequest(providerQuery = "", headers?: HeadersInit) {
   return new Request(`https://app.example.test/api/webhooks/payments${providerQuery}`, {
@@ -62,6 +63,19 @@ afterEach(() => {
 });
 
 describe("payment webhook provider selection", () => {
+  it("rejects oversized payloads before diagnostics, signature verification, audit, or database work", async () => {
+    const response = await POST(webhookRequest("?provider=demo", {
+      "content-length": String(MAX_JSON_BODY_BYTES + 1),
+    }));
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook payload too large" });
+    expect(mocks.buildPaymentWebhookDiagnostics).not.toHaveBeenCalled();
+    expect(mocks.demoVerifySignature).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["unknown", "?provider=unknown-provider"],
     ["blank", "?provider="],

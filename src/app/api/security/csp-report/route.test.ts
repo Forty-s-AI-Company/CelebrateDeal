@@ -60,4 +60,25 @@ describe("POST /api/security/csp-report", () => {
     expect(consoleLog).not.toHaveBeenCalled();
     expect(consoleWarn).not.toHaveBeenCalled();
   });
+
+  it("rejects oversized reports after rate limiting without logging their content", async () => {
+    const request = new Request("https://app.example.test/api/security/csp-report", {
+      method: "POST",
+      headers: {
+        "content-type": "application/csp-report",
+        "content-length": String(16 * 1024 + 1),
+      },
+      body: "{}",
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "CSP report payload too large" });
+    expect(checkRateLimit).toHaveBeenCalledWith(request, "csp-report", 120, 60_000);
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleLog).not.toHaveBeenCalled();
+  });
 });

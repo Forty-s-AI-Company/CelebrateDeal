@@ -131,6 +131,18 @@ export async function readJsonBody(
   }
 }
 
+/**
+ * 讀取需要保留原始內容的 webhook／安全回報，並沿用相同的固定記憶體上限。
+ * `null` 代表內容超量或串流讀取失敗，呼叫端應直接拒絕，不能繼續驗證簽章。
+ */
+export async function readTextBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<string | null> {
+  const bytes = await readBoundedBody(request, maxBytes);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
 export async function readFormDataBody(
   request: Request,
   maxBytes = MAX_JSON_BODY_BYTES,

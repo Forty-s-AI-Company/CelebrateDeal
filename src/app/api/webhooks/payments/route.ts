@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
@@ -30,7 +31,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unsupported payment provider" }, { status: 400 });
   }
 
-  const rawBody = await request.text();
+  const rawBody = await readTextBody(request);
+  if (rawBody === null) {
+    return NextResponse.json({ error: "Webhook payload too large" }, { status: 413 });
+  }
+
   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
   const verified = await adapter.verifySignature(request, rawBody);
 

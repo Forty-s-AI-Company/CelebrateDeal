@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { POST } from "@/app/api/cloudflare/stream-webhook/route";
+import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
 import { buildCloudflareStreamWebhookFixture } from "@/lib/cloudflare-webhook-fixtures";
 
 const createdVendorIds: string[] = [];
@@ -41,6 +42,23 @@ async function createProcessingVideo(uid: string) {
 }
 
 describe("Cloudflare Stream webhook", () => {
+  it("rejects oversized payloads before signature verification or database access", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(MAX_JSON_BODY_BYTES + 1),
+        "Webhook-Signature": "time=1,sig1=not-a-signature",
+      },
+      body: "{}",
+    }));
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Cloudflare Stream webhook payload too large" });
+  });
+
   it("updates video ready status and playback mapping with shared secret fallback", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
     vi.stubEnv("VERCEL_ENV", "preview");

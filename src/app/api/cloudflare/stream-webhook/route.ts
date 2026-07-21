@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { readTextBody } from "@/lib/api-security";
 import { verifyCloudflareStreamWebhookRequest } from "@/lib/cloudflare-webhook-signature";
 import { getDb } from "@/lib/db";
 
@@ -19,7 +20,11 @@ const StreamWebhookPayload = z.object({
 });
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
+  const rawBody = await readTextBody(request);
+  if (rawBody === null) {
+    return NextResponse.json({ error: "Cloudflare Stream webhook payload too large" }, { status: 413 });
+  }
+
   const verification = verifyCloudflareStreamWebhookRequest({ request, body: rawBody });
   if (!verification.ok) {
     return NextResponse.json(

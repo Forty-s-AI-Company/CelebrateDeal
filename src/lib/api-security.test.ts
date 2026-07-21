@@ -5,6 +5,7 @@ import {
   MAX_JSON_BODY_BYTES,
   readFormDataBody,
   readJsonBody,
+  readTextBody,
   requireSameOriginRequest,
 } from "@/lib/api-security";
 
@@ -157,5 +158,26 @@ describe("readFormDataBody", () => {
     });
 
     await expect(readFormDataBody(request)).resolves.toBeNull();
+  });
+});
+
+describe("readTextBody", () => {
+  it("preserves a bounded webhook body for signature verification", async () => {
+    const body = '{"event":"ready"}';
+
+    await expect(readTextBody(new Request("https://request.example.test/api/webhook", {
+      method: "POST",
+      body,
+    }))).resolves.toBe(body);
+  });
+
+  it("rejects oversized webhook bodies without returning partial content", async () => {
+    const request = new Request("https://request.example.test/api/webhook", {
+      method: "POST",
+      headers: { "content-length": String(MAX_JSON_BODY_BYTES + 1) },
+      body: "signed-body",
+    });
+
+    await expect(readTextBody(request)).resolves.toBeNull();
   });
 });
