@@ -434,6 +434,90 @@ describe("payment webhook processing", () => {
     expect(commissions.find((commission) => commission.affiliateId === forgedAffiliate.id)).toBeUndefined();
   });
 
+  it("marks only the checkout's matching affiliate click on paid events and ignores retries, failures, refunds, and mismatches", async () => {
+    const suffix = `${Date.now()}-affiliate-click-conversion`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const click = await db.affiliateClick.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        referralCode: affiliate.code,
+        visitorId: `visitor-${suffix}`,
+        landingPath: "/test",
+      },
+    });
+    const orderNumber = `ORDER-AFFILIATE-CLICK-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "checkout",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { affiliateClickId: click.id, referralCode: affiliate.code },
+      },
+    });
+    const paidPayload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-affiliate-click-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: "FORGEDCODE",
+    });
+
+    await processPaymentWebhook(paidPayload);
+    const convertedAt = (await db.affiliateClick.findUniqueOrThrow({ where: { id: click.id } })).convertedAt;
+    expect(convertedAt).not.toBeNull();
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...paidPayload, eventId: `evt-affiliate-click-retry-${suffix}` }));
+    expect((await db.affiliateClick.findUniqueOrThrow({ where: { id: click.id } })).convertedAt).toEqual(convertedAt);
+
+    const rejectedClick = await db.affiliateClick.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        referralCode: affiliate.code,
+        visitorId: `visitor-rejected-${suffix}`,
+        landingPath: "/test",
+      },
+    });
+    const rejectedCases = [
+      { label: "failed", eventType: "failed" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: affiliate.code } },
+      { label: "refunded", eventType: "refunded" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: affiliate.code } },
+      { label: "mismatch", eventType: "paid" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: "MISMATCH" } },
+    ];
+    for (const rejected of rejectedCases) {
+      await db.paymentTransaction.create({
+        data: {
+          vendorId: vendor.id,
+          providerName: "checkout",
+          orderNumber: `ORDER-AFFILIATE-CLICK-${rejected.label}-${suffix}`,
+          paymentMode: "platform",
+          grossAmountCents: 100000,
+          netAmountCents: 100000,
+          currency: "TWD",
+          status: "pending",
+          metadata: rejected.metadata,
+        },
+      });
+      await processPaymentWebhook(PaymentWebhookPayload.parse({
+        provider: "demo",
+        eventId: `evt-affiliate-click-${rejected.label}-${suffix}`,
+        eventType: rejected.eventType,
+        vendorId: vendor.id,
+        orderNumber: `ORDER-AFFILIATE-CLICK-${rejected.label}-${suffix}`,
+        grossAmountCents: 100000,
+        refundAmountCents: rejected.eventType === "refunded" ? 100000 : 0,
+      }));
+    }
+    expect((await db.affiliateClick.findUniqueOrThrow({ where: { id: rejectedClick.id } })).convertedAt).toBeNull();
+  });
+
   it("rejects dual vendor identifiers when either identifier cannot be resolved", async () => {
     const suffix = `${Date.now()}-vendor-missing`;
     const { db, vendor } = await createFixture(suffix);

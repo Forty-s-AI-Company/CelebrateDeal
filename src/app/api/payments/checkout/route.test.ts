@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   product: { findFirst: vi.fn() },
+  affiliateClick: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
   paymentTransaction: { create: vi.fn(), update: vi.fn() },
 };
@@ -16,7 +17,7 @@ vi.mock("@/lib/payment-providers", () => ({
 
 import { POST } from "@/app/api/payments/checkout/route";
 
-function checkoutRequest(cookie?: string) {
+function checkoutRequest(cookie?: string, body: Record<string, unknown> = { vendorId: "vendor-1", productId: "product-1" }) {
   return new Request("https://app.example.test/api/payments/checkout", {
     method: "POST",
     headers: {
@@ -26,7 +27,7 @@ function checkoutRequest(cookie?: string) {
       "x-celebratedeal-client": "web",
       ...(cookie ? { cookie } : {}),
     },
-    body: JSON.stringify({ vendorId: "vendor-1", productId: "product-1" }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -41,6 +42,7 @@ beforeEach(() => {
     currency: "TWD",
     vendor: { id: "vendor-1" },
   });
+  db.affiliateClick.findFirst.mockResolvedValue(null);
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1" });
   db.paymentTransaction.create.mockResolvedValue({ id: "transaction-1" });
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
@@ -49,6 +51,76 @@ beforeEach(() => {
     mode: "manual",
     checkoutUrl: null,
     nextAction: "demo_checkout_transaction_created",
+  });
+});
+
+function attributionCookie(value: { clickId: string; visitorId: string; issuedAt: number }) {
+  return `celebratedeal_attribution=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
+}
+
+describe("checkout affiliate click attribution", () => {
+  const visitorId = "visitor-123456789012345";
+
+  it("stores a server-verified, current same-visitor affiliate click and its resolved referral code", async () => {
+    db.affiliateClick.findFirst.mockResolvedValue({
+      id: "click-1",
+      affiliateId: "affiliate-1",
+      referralCode: "VALIDCODE",
+      affiliate: { code: "VALIDCODE" },
+    });
+
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "click-1", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1", referralCode: "FORGEDCODE" },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "click-1", vendorId: "vendor-1", visitorId }),
+    }));
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({ affiliateClickId: "click-1", referralCode: "VALIDCODE" }),
+      }),
+    }));
+    expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({ referralCode: "VALIDCODE" }));
+  });
+
+  it("does not use an attribution cookie for a different visitor", async () => {
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "click-1", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=visitor-987654321098765`,
+      { vendorId: "vendor-1", productId: "product-1", referralCode: "FORGEDCODE" },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
+    }));
+  });
+
+  it("does not use an expired attribution cookie", async () => {
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "click-1", visitorId, issuedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })}; celebratedeal_visitor=${visitorId}`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
+    }));
+  });
+
+  it("does not use an unknown attribution click", async () => {
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "unknown-click", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=${visitorId}`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).toHaveBeenCalled();
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
+    }));
   });
 });
 
