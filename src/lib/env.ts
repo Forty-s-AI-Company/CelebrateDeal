@@ -45,6 +45,12 @@ function secretPresent(value: string | undefined) {
   return Boolean(value && value.trim() && !value.includes("...") && !value.includes("example"));
 }
 
+function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
+  return env.NODE_ENV === "production"
+    || env.VERCEL_ENV === "preview"
+    || env.VERCEL_ENV === "production";
+}
+
 const requiredKeys = [
   "DATABASE_URL",
   "DIRECT_URL",
@@ -118,7 +124,9 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
-  if (env.NEXT_PUBLIC_APP_URL?.includes("localhost") && env.NODE_ENV === "production") {
+  const deploymentSecurityRequired = requiresDeploymentSecurity(env);
+
+  if (env.NEXT_PUBLIC_APP_URL?.includes("localhost") && deploymentSecurityRequired) {
     checks.push({
       key: "NEXT_PUBLIC_APP_URL",
       status: "fail",
@@ -126,7 +134,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
-  if (env.NODE_ENV === "production") {
+  if (deploymentSecurityRequired) {
     const csrfConfigured = secretPresent(env.CSRF_SECRET);
     checks.push({
       key: "CSRF_SECRET",
@@ -138,7 +146,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   }
 
   const rateLimitProvider = env.RATE_LIMIT_PROVIDER ?? "memory";
-  if (rateLimitProvider === "memory" && env.NODE_ENV === "production") {
+  if (rateLimitProvider === "memory" && deploymentSecurityRequired) {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
       status: "fail",

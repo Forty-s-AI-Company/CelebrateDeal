@@ -63,6 +63,8 @@ npm run preflight
 npm run external:smoke
 ```
 
+`npm run build` 會先執行 preflight。Vercel Preview／Production 缺少 `CSRF_SECRET`、使用 `memory` rate limit，或公開網址仍是 localhost 時，build 會直接失敗；一般本機開發則維持可使用 localhost 與 memory provider。
+
 預設 `external:smoke` 不會建立 Cloudflare Live Input 或 payment transaction。若要測會產生狀態的流程：
 
 ```bash

@@ -27,7 +27,7 @@ jobs:
       NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
       JOB_SECRET: ci-job-secret-123456
       CSRF_SECRET: ci-csrf-secret-123456
-      RATE_LIMIT_PROVIDER: memory
+      RATE_LIMIT_PROVIDER: cloudflare_waf
       CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
       CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
       CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
@@ -77,4 +77,4 @@ jobs:
         run: npm run build
 
       - name: Preflight
-        run: npm run preflight
+        run: NODE_ENV=production npm run preflight

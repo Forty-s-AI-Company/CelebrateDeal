@@ -173,6 +173,20 @@ describe("getEnvCheckReport", () => {
     );
   });
 
+  it("applies production security gates to Vercel Preview builds", () => {
+    const env = configuredEnv();
+    env[envKey("NODE", "ENV")] = "development";
+    env[envKey("VERCEL", "ENV")] = "preview";
+    env[envKey("RATE", "LIMIT", "PROVIDER")] = "memory";
+    delete env[envKey("CSRF", "SECRET")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("CSRF", "SECRET"), "fail")).toBeDefined();
+    expect(check(report, envKey("RATE", "LIMIT", "PROVIDER"), "fail")).toBeDefined();
+  });
+
   it("keeps local development usable while warning about an implicit memory limiter", () => {
     const env: NodeJS.ProcessEnv = { ...configuredEnv(), NODE_ENV: "development" };
     delete env[envKey("RATE", "LIMIT", "PROVIDER")];
