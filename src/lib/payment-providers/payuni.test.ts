@@ -88,4 +88,31 @@ describe("PayUni provider", () => {
     expect(normalized.payload.refundAmountCents).toBe(199000);
     expect(normalized.payload.gatewayFeeRefundCents).toBe(3500);
   });
+
+  it.each(["processing", "pending", "unknown", ""])(
+    "rejects unsupported payment status %j instead of treating it as paid",
+    async (status) => {
+      stubPayUniEnv();
+      const body = JSON.stringify({
+        EventId: "payuni-unknown-status-001",
+        EventType: status,
+        MerTradeNo: "CD-UNKNOWN-001",
+        VendorId: "vendor_1",
+        TradeAmt: 1990,
+      });
+
+      await expect(payUniPaymentProvider.normalizePayload(body)).rejects.toThrow(
+        "Unsupported PayUni payment status.",
+      );
+    },
+  );
+
+  it.each([
+    [{ EventType: "paid", VendorId: "vendor_1", TradeAmt: 1990 }, "Missing PayUni order number."],
+    [{ EventType: "paid", VendorId: "vendor_1", TradeAmt: 1990, MerTradeNo: "" }, "Missing PayUni order number."],
+  ])("rejects a payload without stable transaction identity", async (payload, error) => {
+    stubPayUniEnv();
+
+    await expect(payUniPaymentProvider.normalizePayload(JSON.stringify(payload))).rejects.toThrow(error);
+  });
 });

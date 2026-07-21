@@ -8,11 +8,35 @@ function cents(value: unknown) {
 }
 
 function normalizeEventType(value: unknown) {
-  const raw = String(value ?? "").toLowerCase();
-  if (raw.includes("partial")) return "partially_refunded";
-  if (raw.includes("refund")) return "refunded";
-  if (raw.includes("fail") || raw.includes("cancel")) return "failed";
-  return "paid";
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (["partially_refunded", "partial_refund", "partially-refunded"].includes(raw)) {
+    return "partially_refunded";
+  }
+  if (["refunded", "refund"].includes(raw)) return "refunded";
+  if (["failed", "fail", "failure", "cancelled", "canceled", "cancel"].includes(raw)) {
+    return "failed";
+  }
+  if (["paid", "success", "succeeded", "completed"].includes(raw)) return "paid";
+
+  // 金流狀態必須 fail closed；若 PAYUNi 新增或改名狀態，寧可保留交易
+  // pending 並留下 webhook 失敗紀錄，也不能把未知狀態誤認為已付款。
+  throw new Error("Unsupported PayUni payment status.");
+}
+
+function requiredPayloadText(value: unknown, field: string) {
+  const normalized = typeof value === "string" || typeof value === "number"
+    ? String(value).trim()
+    : "";
+  if (!normalized) {
+    throw new Error(`Missing PayUni ${field}.`);
+  }
+  return normalized;
+}
+
+function optionalPayloadText(value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const normalized = String(value).trim();
+  return normalized || undefined;
 }
 
 function safeEqual(a: string, b: string) {
@@ -159,14 +183,16 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
     const orderNumber = rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber;
     const eventId = rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber;
+    const normalizedOrderNumber = requiredPayloadText(orderNumber, "order number");
+    const normalizedEventId = requiredPayloadText(eventId, "event ID");
     const normalized = {
       provider: "payuni",
-      eventId: String(eventId),
+      eventId: normalizedEventId,
       eventType: normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus),
-      vendorSlug: rawPayload.VendorSlug ? String(rawPayload.VendorSlug) : undefined,
-      vendorId: rawPayload.VendorId ? String(rawPayload.VendorId) : undefined,
-      orderNumber: String(orderNumber),
-      providerTradeNo: rawPayload.TradeNo ? String(rawPayload.TradeNo) : undefined,
+      vendorSlug: optionalPayloadText(rawPayload.VendorSlug),
+      vendorId: optionalPayloadText(rawPayload.VendorId),
+      orderNumber: normalizedOrderNumber,
+      providerTradeNo: optionalPayloadText(rawPayload.TradeNo),
       paymentMode: "platform",
       grossAmountCents: cents(rawPayload.Amount ?? rawPayload.TradeAmt),
       gatewayFeeCents: cents(rawPayload.GatewayFee),
