@@ -47,6 +47,7 @@ import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -90,7 +91,7 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
 
 class RefundValidationError extends Error {}
 
-function isRefundTransactionConflict(error: unknown) {
+function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2025" || error.code === "P2034");
 }
@@ -1799,11 +1800,15 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
-  const status = text(formData, "status", "pending");
+  const parsedStatus = PayoutItemTargetStatus.safeParse(text(formData, "status"));
   const failReason = optionalText(formData, "failReason");
+  if (!parsedStatus.success || (parsedStatus.data === "failed" && (!failReason || failReason.length > 500))) {
+    redirect("/admin/billing/payouts?error=invalid_status");
+  }
+  const status = parsedStatus.data;
   const item = await getDb().payoutItem.findUnique({ where: { id }, include: { payoutBatch: true } });
-  if (!item) {
-    redirect("/admin/billing/payouts");
+  if (!item || !canTransitionPayoutItem(item.status, status)) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
   }
 
   const data: Prisma.PayoutItemUpdateInput = {
@@ -1820,30 +1825,38 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
     data.retryCount = { increment: 1 };
   }
 
-  const updated = await getDb().$transaction(async (tx) => {
-    const savedItem = await tx.payoutItem.update({ where: { id }, data });
-    const items = await tx.payoutItem.findMany({ where: { payoutBatchId: item.payoutBatchId } });
-    const paidItems = items.filter((batchItem) => batchItem.status === "paid" || batchItem.id === id && status === "paid");
-    const failedItems = items.filter((batchItem) => batchItem.status === "failed" || batchItem.id === id && status === "failed");
-    const batchStatus = paidItems.length === items.length ? "completed" : failedItems.length > 0 ? "failed" : item.payoutBatch.status;
+  const updated = await (async () => {
+    try {
+      return await getDb().$transaction(async (tx) => {
+        const savedItem = await tx.payoutItem.update({ where: { id, status: item.status }, data });
+        const items = await tx.payoutItem.findMany({ where: { payoutBatchId: item.payoutBatchId } });
+        const itemStatuses = items.map((batchItem) => batchItem.id === id ? status : batchItem.status);
+        const batchStatus = derivePayoutBatchStatus(itemStatuses, item.payoutBatch.status);
 
-    await tx.payoutBatch.update({
-      where: { id: item.payoutBatchId },
-      data: {
-        status: batchStatus,
-        executedAt: batchStatus === "completed" ? new Date() : item.payoutBatch.executedAt,
-      },
-    });
+        await tx.payoutBatch.update({
+          where: { id: item.payoutBatchId },
+          data: {
+            status: batchStatus,
+            executedAt: batchStatus === "completed" ? new Date() : item.payoutBatch.executedAt,
+          },
+        });
 
-    if (item.settlementId && status === "paid") {
-      await tx.settlement.update({
-        where: { id: item.settlementId },
-        data: { status: "paid", paidAt: new Date() },
-      });
+        if (item.settlementId && status === "paid") {
+          await tx.settlement.update({
+            where: { id: item.settlementId },
+            data: { status: "paid", paidAt: new Date() },
+          });
+        }
+
+        return savedItem;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (isDatabaseTransactionConflict(error)) {
+        redirect("/admin/billing/payouts?error=invalid_transition");
+      }
+      throw error;
     }
-
-    return savedItem;
-  });
+  })();
 
   await writeAuditLog({
     vendorId: item.vendorId,
@@ -1961,7 +1974,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
           continue;
         }
 
-        if (error instanceof RefundValidationError || isRefundTransactionConflict(error)) {
+        if (error instanceof RefundValidationError || isDatabaseTransactionConflict(error)) {
           redirect("/admin/billing/dashboard?error=refund");
         }
         throw error;

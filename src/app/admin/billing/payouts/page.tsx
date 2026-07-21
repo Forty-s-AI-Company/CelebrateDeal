@@ -14,8 +14,13 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
-export default async function AdminBillingPayoutsPage() {
+export default async function AdminBillingPayoutsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   await requireFinanceAdmin();
+  const { error } = await searchParams;
   const batches = await getDb().payoutBatch.findMany({
     orderBy: { batchDate: "desc" },
     include: {
@@ -33,6 +38,11 @@ export default async function AdminBillingPayoutsPage() {
         description="覆核銀行批次轉帳檔、記錄出款成功或失敗，並保留重送狀態。"
         action={<Link href="/admin/billing/settlements" className="text-sm font-semibold text-primary hover:underline">回月結管理</Link>}
       />
+      {error ? (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          出款狀態更新未執行；請重新整理後依目前狀態操作，失敗項目必須填寫原因。
+        </p>
+      ) : null}
 
       {batches.length === 0 ? (
         <EmptyState title="尚無出款批次" description="請先在月結管理鎖定 settlement，再建立出款批次。" />
@@ -100,25 +110,31 @@ export default async function AdminBillingPayoutsPage() {
                         <td className="px-5 py-4 text-slate-500">{item.failReason ?? "-"}</td>
                         <td className="px-5 py-4">
                           <div className="grid gap-2">
-                            <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
-                              <CsrfField />
-                              <input type="hidden" name="id" value={item.id} />
-                              <input type="hidden" name="status" value="paid" />
-                              <button className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">標記 paid</button>
-                            </form>
-                            <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
-                              <CsrfField />
-                              <input type="hidden" name="id" value={item.id} />
-                              <input type="hidden" name="status" value="failed" />
-                              <input name="failReason" placeholder="失敗原因" className="h-9 w-40 rounded-md border border-border px-2 text-xs" />
-                              <button className="h-9 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700">標記 failed</button>
-                            </form>
-                            <form action={updatePayoutItemStatusAction}>
-                              <CsrfField />
-                              <input type="hidden" name="id" value={item.id} />
-                              <input type="hidden" name="status" value="retrying" />
-                              <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">標記 retry</button>
-                            </form>
+                            {item.status === "pending" || item.status === "retrying" ? (
+                              <>
+                                <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
+                                  <CsrfField />
+                                  <input type="hidden" name="id" value={item.id} />
+                                  <input type="hidden" name="status" value="paid" />
+                                  <button className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">標記 paid</button>
+                                </form>
+                                <form action={updatePayoutItemStatusAction} className="flex flex-wrap gap-2">
+                                  <CsrfField />
+                                  <input type="hidden" name="id" value={item.id} />
+                                  <input type="hidden" name="status" value="failed" />
+                                  <input name="failReason" required maxLength={500} placeholder="失敗原因" className="h-9 w-40 rounded-md border border-border px-2 text-xs" />
+                                  <button className="h-9 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700">標記 failed</button>
+                                </form>
+                              </>
+                            ) : null}
+                            {item.status === "failed" ? (
+                              <form action={updatePayoutItemStatusAction}>
+                                <CsrfField />
+                                <input type="hidden" name="id" value={item.id} />
+                                <input type="hidden" name="status" value="retrying" />
+                                <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">標記 retry</button>
+                              </form>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

@@ -26,6 +26,10 @@ const mocks = vi.hoisted(() => ({
   interactionScriptFindFirst: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
+  payoutItemFindUnique: vi.fn(),
+  payoutItemFindMany: vi.fn(),
+  payoutItemUpdate: vi.fn(),
+  payoutBatchUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
   refundRecordCreate: vi.fn(),
@@ -117,6 +121,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.findUnique,
       update: mocks.paymentTransactionUpdate,
     },
+    payoutItem: { findUnique: mocks.payoutItemFindUnique },
     refundRecord: { aggregate: mocks.refundRecordAggregate },
     settlement: { findUnique: mocks.settlementFindUnique },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
@@ -173,6 +178,7 @@ import {
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
+  updatePayoutItemStatusAction,
   unbindInteractionScriptFromLiveAction,
   upsertBlacklistAction,
   upsertFormAction,
@@ -284,6 +290,14 @@ function liveFormData() {
   formData.set("messageTemplateId", "template-1");
   formData.set("interactionScriptId", "script-1");
   formData.append("productIds", "product-1");
+  return formData;
+}
+
+function payoutStatusFormData(status: string, failReason?: string) {
+  const formData = new FormData();
+  formData.set("id", "payout-item-1");
+  formData.set("status", status);
+  if (failReason !== undefined) formData.set("failReason", failReason);
   return formData;
 }
 
@@ -1580,6 +1594,77 @@ describe("upsertInteractionScriptAction", () => {
       expect(mocks.transaction).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("updatePayoutItemStatusAction", () => {
+  const payoutItem = {
+    id: "payout-item-1",
+    vendorId: "vendor-1",
+    payoutBatchId: "batch-1",
+    settlementId: "settlement-1",
+    status: "failed",
+    payoutBatch: { id: "batch-1", status: "failed", executedAt: null },
+  };
+
+  it("rejects an unknown status before reading or writing payout data", async () => {
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("arbitrary"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_status",
+    );
+    expect(mocks.payoutItemFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("prevents a terminal paid item from moving backward", async () => {
+    mocks.payoutItemFindUnique.mockResolvedValue({ ...payoutItem, status: "paid" });
+
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("failed", "bank rejected"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("moves a failed item to retrying and updates its aggregate batch state", async () => {
+    mocks.payoutItemFindUnique.mockResolvedValue(payoutItem);
+    mocks.payoutItemUpdate.mockResolvedValue({ ...payoutItem, status: "retrying" });
+    mocks.payoutItemFindMany.mockResolvedValue([
+      { id: "payout-item-1", status: "failed" },
+      { id: "payout-item-2", status: "paid" },
+    ]);
+    mocks.payoutBatchUpdate.mockResolvedValue({ id: "batch-1", status: "retrying" });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutItem: { update: mocks.payoutItemUpdate, findMany: mocks.payoutItemFindMany },
+      payoutBatch: { update: mocks.payoutBatchUpdate },
+      settlement: { update: mocks.settlementUpsert },
+    }));
+
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("retrying"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    expect(mocks.payoutItemUpdate).toHaveBeenCalledWith({
+      where: { id: "payout-item-1", status: "failed" },
+      data: {
+        status: "retrying",
+        failReason: null,
+        retriedAt: expect.any(Date),
+        retryCount: { increment: 1 },
+      },
+    });
+    expect(mocks.payoutBatchUpdate).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { status: "retrying", executedAt: null },
+    });
+  });
+
+  it("fails closed when another operator changes the item concurrently", async () => {
+    mocks.payoutItemFindUnique.mockResolvedValue(payoutItem);
+    mocks.transaction.mockRejectedValue({ code: "P2025" });
+
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("retrying"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
 });
 
 describe("unbindInteractionScriptFromLiveAction", () => {
