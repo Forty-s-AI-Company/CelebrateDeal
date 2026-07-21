@@ -173,6 +173,26 @@ function resolvePayUniStagingAppUrl(source = process.env) {
   return url.origin;
 }
 
+function vercelProtectionBypassCookieUrl(appUrl, source = process.env) {
+  const bypassSecret = String(source.VERCEL_AUTOMATION_BYPASS_SECRET ?? "").trim();
+  if (!bypassSecret) return null;
+
+  const url = new URL("/", appUrl);
+  url.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  url.searchParams.set("x-vercel-set-bypass-cookie", "true");
+  return url.toString();
+}
+
+async function installVercelProtectionBypassCookie(page, appUrl) {
+  const bypassUrl = vercelProtectionBypassCookieUrl(appUrl);
+  if (!bypassUrl) return;
+
+  await page.goto(bypassUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: 45_000,
+  });
+}
+
 function reference(value) {
   return createHash("sha256").update(String(value)).digest("hex").slice(0, 12);
 }
@@ -909,6 +929,7 @@ async function runCheckout(appUrl) {
   try {
     const livePath = env("PAYUNI_TEST_LIVE_PATH", DEFAULT_LIVE_PATH);
     assert(livePath.startsWith("/"), "PAYUNI_TEST_LIVE_PATH 必須是站內絕對路徑。");
+    await installVercelProtectionBypassCookie(page, appUrl);
     flowStage = "opening-live-page";
     await page.goto(new URL(livePath, appUrl).toString(), {
       waitUntil: "domcontentloaded",
@@ -1121,4 +1142,5 @@ export {
   resolvePayUniStagingAppUrl,
   safeDiagnosticToken,
   safeTradeStatus,
+  vercelProtectionBypassCookieUrl,
 };

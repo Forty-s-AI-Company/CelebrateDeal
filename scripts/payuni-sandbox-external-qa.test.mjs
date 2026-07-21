@@ -9,6 +9,7 @@ import {
   providerResultDiagnostic,
   reconcileCallbackTimeout,
   resolvePayUniStagingAppUrl,
+  vercelProtectionBypassCookieUrl,
 } from "./payuni-sandbox-external-qa.mjs";
 
 const DIAGNOSTIC_HASH_KEY = "12345678901234567890123456789012";
@@ -36,6 +37,19 @@ test("Sandbox QA requires an explicit non-production Staging host allowlist", ()
     PAYUNI_TEST_APP_URL: "https://staging.example.test/live/ignored",
     PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
   }), "https://staging.example.test");
+});
+
+test("Vercel preview protection bypass cookie URL is explicit and opt-in", () => {
+  assert.equal(vercelProtectionBypassCookieUrl("https://preview.example.test", {}), null);
+
+  const url = new URL(vercelProtectionBypassCookieUrl("https://preview.example.test/live/path", {
+    VERCEL_AUTOMATION_BYPASS_SECRET: "preview-bypass-token",
+  }));
+
+  assert.equal(url.origin, "https://preview.example.test");
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("x-vercel-protection-bypass"), "preview-bypass-token");
+  assert.equal(url.searchParams.get("x-vercel-set-bypass-cookie"), "true");
 });
 
 function pageAt(url) {
