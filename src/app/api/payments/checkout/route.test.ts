@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   product: { findFirst: vi.fn() },
@@ -52,6 +52,10 @@ beforeEach(() => {
     checkoutUrl: null,
     nextAction: "demo_checkout_transaction_created",
   });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 function attributionCookie(value: { clickId: string; visitorId: string; issuedAt: number }) {
@@ -228,6 +232,21 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
+  it("fails the transaction without trusting the request Host when the production app URL is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "Unable to start checkout" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.update).toHaveBeenCalledWith({
+      where: { id: "transaction-1" },
+      data: { status: "failed" },
+    });
+  });
+
   it("returns a generic 502 and does not create a provider checkout when transaction creation fails", async () => {
     const databaseError = new Error(
       "database create failed for order CD-20330101010101-ABC123 via payuni: fake-database-secret-token",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -20,12 +21,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password reset request" }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
   let reset: Awaited<ReturnType<typeof sendPasswordResetLink>> = null;
   try {
     reset = await sendPasswordResetLink({
       email: parsed.data.email,
-      appUrl,
+      appUrl: getCanonicalAppUrl(),
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       userAgent: request.headers.get("user-agent"),
     });

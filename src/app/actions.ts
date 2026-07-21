@@ -18,6 +18,7 @@ import {
   revokeCurrentSession,
   sessionCookieOptions,
 } from "@/lib/auth";
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { calculateSettlement, invoiceNumber, payoutBatchNumber } from "@/lib/billing";
 import { assertServerActionSecurity } from "@/lib/csrf";
@@ -95,7 +96,7 @@ export async function loginAction(formData: FormData) {
   const email = normalizedEmail(text(formData, "email"));
   const password = text(formData, "password");
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const rateLimitHeaders = new Headers();
   for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
     const value = headerStore.get(headerName);
@@ -257,7 +258,7 @@ export async function updatePasswordAction(formData: FormData) {
 export async function requestPasswordResetAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const rateLimitHeaders = new Headers();
   for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
     const value = headerStore.get(headerName);
@@ -430,7 +431,7 @@ export async function verifyMfaAction(formData: FormData) {
   }
 
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const rateLimitHeaders = new Headers();
   for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
     const value = headerStore.get(headerName);
@@ -537,7 +538,7 @@ export async function sendPasswordResetSmokeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
   let sent = false;
 
@@ -585,7 +586,7 @@ export async function createVendorMemberAction(formData: FormData) {
   }
 
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const rateLimitHeaders = new Headers();
   for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
     const value = headerStore.get(headerName);
@@ -753,7 +754,7 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
   }
 
   const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
+  const appUrl = getCanonicalAppUrl();
   const rateLimitHeaders = new Headers();
   for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
     const value = headerStore.get(headerName);

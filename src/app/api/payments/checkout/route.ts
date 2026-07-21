@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import type { CheckoutSessionResult } from "@/lib/payment-providers/types";
@@ -98,9 +99,9 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
   let checkoutSession: CheckoutSessionResult;
   try {
+    const appUrl = getCanonicalAppUrl();
     checkoutSession = provider.createCheckoutSession
       ? await provider.createCheckoutSession({
           transaction,

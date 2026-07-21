@@ -123,4 +123,15 @@ describe("POST /api/auth/password-reset/request", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
+
+  it("does not use the request Host as a production reset-link fallback", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+
+    const response = await POST(passwordResetRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(sendPasswordResetLink).not.toHaveBeenCalled();
+  });
 });
