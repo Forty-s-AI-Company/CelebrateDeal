@@ -79,12 +79,14 @@ export function InteractionScriptForm({
   roles,
   boundLives = [],
   csrfToken,
+  error,
 }: {
   script?: ScriptWithEvents;
   roles: InteractionRole[];
   products: Product[];
   boundLives?: BoundLive[];
   csrfToken: string;
+  error?: string;
 }) {
   const initialEvents = useMemo<TimelineEvent[]>(() => (script?.events.length ? script.events : timelineTemplates[1].events), [script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
@@ -183,6 +185,11 @@ export function InteractionScriptForm({
   return (
     <form action={upsertInteractionScriptAction} onSubmit={validateTimeInputs} className="grid gap-5">
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      {error === "invalid_reference" ? (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          互動事件引用的角色或商品無效，請重新選擇目前商店的資料。
+        </p>
+      ) : null}
       {script ? <input type="hidden" name="id" value={script.id} /> : null}
       <input type="hidden" name="status" value={script?.status ?? "published"} />
       <input type="hidden" name="description" value={script?.description ?? "留言組快速編輯"} />

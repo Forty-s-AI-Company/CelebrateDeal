@@ -1494,6 +1494,62 @@ describe("importSystemRolesAction", () => {
 });
 
 describe("upsertInteractionScriptAction", () => {
+  it("stores role and product references only after current-vendor verification", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleFindMany.mockResolvedValue([{ id: "role-1" }]);
+    mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
+    const formData = interactionScriptFormData("10");
+    formData.set("roleId", "role-1");
+    formData.set("productId", "product-1");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow("redirect:/interaction-scripts");
+
+    expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", id: { in: ["role-1"] } },
+      select: { id: true },
+    });
+    expect(mocks.productFindMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", id: { in: ["product-1"] } },
+      select: { id: true },
+    });
+    expect(mocks.interactionScriptCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        events: { create: [expect.objectContaining({ roleId: "role-1", productId: "product-1" })] },
+      }),
+    });
+  });
+
+  it("rejects a role from another vendor before script persistence", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleFindMany.mockResolvedValue([]);
+    const formData = interactionScriptFormData("10");
+    formData.set("roleId", "foreign-role");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "redirect:/interaction-scripts/new?error=invalid_reference",
+    );
+
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unbounded event batch before database access", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = new FormData();
+    for (let index = 0; index < 201; index += 1) {
+      formData.append("eventType", "chat_message");
+      formData.append("triggerSec", String(index));
+    }
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "每個互動腳本最多可建立 200 個事件。",
+    );
+    expect(mocks.interactionRoleFindMany).not.toHaveBeenCalled();
+    expect(mocks.productFindMany).not.toHaveBeenCalled();
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+  });
+
   it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(
     "rejects the unsafe CTA URL %s before saving the script",
     async (ctaUrl) => {

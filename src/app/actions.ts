@@ -1308,6 +1308,9 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   const ctaLabels = formData.getAll("ctaLabel").map(String);
   const ctaUrls = formData.getAll("ctaUrl").map(String);
 
+  if (eventTypes.length > 200) {
+    throw new Error("每個互動腳本最多可建立 200 個事件。");
+  }
   if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
     throw new Error(INTERACTION_TIME_FORMAT_ERROR);
   }
@@ -1328,6 +1331,32 @@ export async function upsertInteractionScriptAction(formData: FormData) {
       roleId: roleIds[index]?.trim() || null,
     }))
     .filter((event) => event.eventType && event.title);
+
+  const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
+  const referencedProductIds = [...new Set(events.flatMap((event) => event.productId ? [event.productId] : []))];
+  const invalidReferencePath = id
+    ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_reference`
+    : "/interaction-scripts/new?error=invalid_reference";
+  if ([id, ...referencedRoleIds, ...referencedProductIds].some((value) => value && value.length > 128)) {
+    redirect(invalidReferencePath);
+  }
+  const [referencedRoles, referencedProducts] = await Promise.all([
+    referencedRoleIds.length > 0
+      ? db.interactionRole.findMany({
+          where: { vendorId: vendor.id, id: { in: referencedRoleIds } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    referencedProductIds.length > 0
+      ? db.product.findMany({
+          where: { vendorId: vendor.id, id: { in: referencedProductIds } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  if (referencedRoles.length !== referencedRoleIds.length || referencedProducts.length !== referencedProductIds.length) {
+    redirect(invalidReferencePath);
+  }
 
   const data = {
     name: text(formData, "name"),
