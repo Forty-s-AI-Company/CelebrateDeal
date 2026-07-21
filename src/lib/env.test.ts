@@ -73,6 +73,40 @@ describe("getEnvCheckReport", () => {
     );
   });
 
+  it("fails for a non-HTTPS deployment URL even when it is not localhost", () => {
+    const env = configuredEnv();
+    env[envKey("NEXT", "PUBLIC", "APP", "URL")] = "http://staging.app.test";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("NEXT", "PUBLIC", "APP", "URL"), "fail")?.message).toBe(
+      "Preview／Production 的公開網址必須使用 HTTPS",
+    );
+  });
+
+  it.each([
+    ["an invalid sender", "not-an-email"],
+    ["a header-injection attempt", "Sender <sender@app.test>\r\nBcc: attacker@app.test"],
+  ])("fails when EMAIL_FROM contains %s", (_label, sender) => {
+    const env = configuredEnv();
+    env[envKey("EMAIL", "FROM")] = sender;
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("EMAIL", "FROM"), "fail")?.message).toContain(
+      "EMAIL_FROM 必須是單一有效寄件地址",
+    );
+  });
+
+  it("accepts a display name with one valid sender address", () => {
+    const env = configuredEnv();
+    env[envKey("EMAIL", "FROM")] = "CelebrateDeal <noreply@app.test>";
+
+    expect(getEnvCheckReport(env).ok).toBe(true);
+  });
+
   it.each([
     [envKey("PAYUNI", "HASH", "KEY")],
     [envKey("PAYUNI", "HASH", "IV")],

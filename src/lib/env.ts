@@ -3,6 +3,13 @@ import { z } from "zod";
 const RequiredUrl = z.string().url();
 const OptionalUrl = z.string().url().optional().or(z.literal(""));
 const OptionalSecret = z.string().optional();
+const EmailFrom = z.string().min(3).refine((value) => {
+  if (/[\r\n]/.test(value)) return false;
+  const trimmed = value.trim();
+  const bracketed = /^[^<>]{1,100}<([^<>]+)>$/.exec(trimmed);
+  const address = bracketed?.[1]?.trim() ?? trimmed;
+  return z.string().email().safeParse(address).success;
+}, "EMAIL_FROM 必須是單一有效寄件地址，可使用「名稱 <email>」格式");
 
 export const ProductionEnvSchema = z.object({
   DATABASE_URL: z.string().startsWith("postgresql://"),
@@ -24,7 +31,7 @@ export const ProductionEnvSchema = z.object({
   PAYUNI_API_BASE_URL: OptionalUrl,
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
-  EMAIL_FROM: z.string().min(3),
+  EMAIL_FROM: EmailFrom,
   SMOKE_TEST_EMAIL: OptionalSecret,
   SENTRY_DSN: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: OptionalSecret,
@@ -132,6 +139,20 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       status: "fail",
       message: "production 不可使用 localhost app URL",
     });
+  }
+
+  if (deploymentSecurityRequired && env.NEXT_PUBLIC_APP_URL) {
+    let isHttps = false;
+    try {
+      isHttps = new URL(env.NEXT_PUBLIC_APP_URL).protocol === "https:";
+    } catch {}
+    if (!isHttps) {
+      checks.push({
+        key: "NEXT_PUBLIC_APP_URL",
+        status: "fail",
+        message: "Preview／Production 的公開網址必須使用 HTTPS",
+      });
+    }
   }
 
   if (deploymentSecurityRequired) {
