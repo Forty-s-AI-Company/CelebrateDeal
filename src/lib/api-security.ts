@@ -84,22 +84,18 @@ export function requireSameOriginRequest(request: Request, options: { requireCli
  * 以固定記憶體上限讀取 JSON。任何空白、畸形或超過上限的內容都正規化為
  * 空物件，再由各 route 的 Zod schema 回傳一致的 400。
  */
-export async function readJsonBody(
-  request: Request,
-  maxBytes = MAX_JSON_BODY_BYTES,
-): Promise<unknown> {
+async function readBoundedBody(request: Request, maxBytes: number) {
   const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     await request.body?.cancel().catch(() => undefined);
-    return {};
+    return null;
   }
 
-  if (!request.body) return {};
+  if (!request.body) return new Uint8Array();
 
   const reader = request.body.getReader();
-  const decoder = new TextDecoder();
+  const chunks: Uint8Array[] = [];
   let bytesRead = 0;
-  let body = "";
 
   try {
     while (true) {
@@ -108,16 +104,50 @@ export async function readJsonBody(
       bytesRead += value.byteLength;
       if (bytesRead > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        return {};
+        return null;
       }
-      body += decoder.decode(value, { stream: true });
+      chunks.push(value);
     }
-    body += decoder.decode();
-    return JSON.parse(body);
   } catch {
     await reader.cancel().catch(() => undefined);
-    return {};
+    return null;
   } finally {
     reader.releaseLock();
+  }
+
+  const body = new Uint8Array(bytesRead);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+export async function readJsonBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<unknown> {
+  const bytes = await readBoundedBody(request, maxBytes);
+  if (!bytes) return {};
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return {};
+  }
+}
+
+export async function readFormDataBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+) {
+  const bytes = await readBoundedBody(request, maxBytes);
+  if (!bytes) return null;
+  try {
+    return await new Response(bytes, {
+      headers: { "content-type": request.headers.get("content-type") ?? "" },
+    }).formData();
+  } catch {
+    return null;
   }
 }

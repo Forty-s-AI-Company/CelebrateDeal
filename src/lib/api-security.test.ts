@@ -3,6 +3,7 @@ import {
   CLIENT_REQUEST_HEADER,
   CLIENT_REQUEST_HEADER_VALUE,
   MAX_JSON_BODY_BYTES,
+  readFormDataBody,
   readJsonBody,
   requireSameOriginRequest,
 } from "@/lib/api-security";
@@ -131,5 +132,30 @@ describe("readJsonBody", () => {
 
     expect(malformed).toEqual({});
     expect(empty).toEqual({});
+  });
+});
+
+describe("readFormDataBody", () => {
+  it("parses a bounded native form request", async () => {
+    const request = new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ formId: "form-1", email: "lead@example.test" }),
+    });
+
+    const formData = await readFormDataBody(request);
+
+    expect(formData?.get("formId")).toBe("form-1");
+    expect(formData?.get("email")).toBe("lead@example.test");
+  });
+
+  it("rejects an oversized native form before parsing", async () => {
+    const request = new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ payload: "x".repeat(MAX_JSON_BODY_BYTES) }),
+    });
+
+    await expect(readFormDataBody(request)).resolves.toBeNull();
   });
 });

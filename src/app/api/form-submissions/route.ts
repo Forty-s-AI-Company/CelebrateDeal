@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -15,14 +16,38 @@ import {
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
+const FORM_FIELD_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const RESERVED_FORM_FIELDS = new Set(["formId", "liveId", "referralCode", "redirectTo"]);
+
+const SubmissionAnswers = z.record(
+  z.string().regex(FORM_FIELD_KEY),
+  z.string().max(2_000),
+).refine((answers) => Object.keys(answers).length <= 32);
 
 const SubmissionPayload = z.object({
-  formId: z.string().min(1),
-  liveId: z.string().nullable().optional(),
-  payload: z.record(z.string(), z.unknown()),
-  referralCode: z.string().nullable().optional(),
-  redirectTo: z.string().optional(),
+  formId: z.string().min(1).max(128),
+  liveId: z.string().min(1).max(128).nullable().optional(),
+  payload: SubmissionAnswers,
+  referralCode: z.string().min(1).max(80).nullable().optional(),
+  redirectTo: z.string().max(2_048).optional(),
 });
+
+const FormFieldSpecs = z.array(z.object({
+  key: z.string().regex(FORM_FIELD_KEY),
+  required: z.boolean().optional().default(false),
+}).passthrough()).max(32);
+
+function stableSubmissionId(formId: string, liveId: string | null, email: string) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([formId, liveId, email]))
+    .digest("hex")
+    .slice(0, 32);
+  return `formsub_${digest}`;
+}
+
+function isUniqueConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
 
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
@@ -33,22 +58,41 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
   if (limited) return limited;
 
-  const parsed = SubmissionPayload.safeParse(isNativeFormPost ? await nativeFormPayload(request) : await readJsonBody(request));
+  const nativeFormData = isNativeFormPost ? await readFormDataBody(request) : null;
+  const parsed = SubmissionPayload.safeParse(
+    isNativeFormPost ? nativeFormPayload(nativeFormData) : await readJsonBody(request),
+  );
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const name = String(parsed.data.payload.name ?? "").trim();
-  const email = String(parsed.data.payload.email ?? "").trim();
-  const phone = parsed.data.payload.phone ? String(parsed.data.payload.phone).trim() : null;
+  const name = parsed.data.payload.name?.trim() ?? "";
+  const email = parsed.data.payload.email?.trim().toLowerCase() ?? "";
+  const phone = parsed.data.payload.phone?.trim() || null;
 
-  if (!name || !email) {
+  if (!z.string().min(1).max(160).safeParse(name).success || !z.string().email().max(320).safeParse(email).success) {
     return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
+  }
+  if (phone && phone.length > 40) {
+    return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
   }
 
   const form = await getDb().registrationForm.findUnique({ where: { id: parsed.data.formId } });
   if (!form || !form.isActive) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  }
+
+  const fieldSpecs = FormFieldSpecs.safeParse(form.fields);
+  if (!fieldSpecs.success || fieldSpecs.data.some((field) => RESERVED_FORM_FIELDS.has(field.key))) {
+    return NextResponse.json({ error: "Form configuration unavailable" }, { status: 503 });
+  }
+  const allowedFields = new Set(fieldSpecs.data.map((field) => field.key));
+  const hasUnexpectedField = Object.keys(parsed.data.payload).some((key) => !allowedFields.has(key));
+  const missingRequiredField = fieldSpecs.data.some(
+    (field) => field.required && !parsed.data.payload[field.key]?.trim(),
+  );
+  if (hasUnexpectedField || missingRequiredField || !allowedFields.has("name") || !allowedFields.has("email")) {
+    return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
   }
 
   if (parsed.data.liveId) {
@@ -80,15 +124,13 @@ export async function POST(request: Request) {
     where: { formId: form.id, liveId: parsed.data.liveId ?? null, email },
     select: { id: true },
   });
-  if (duplicate) {
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, duplicate.id);
-  }
 
+  const attributionCookie = attributionCookieFromRequest(request);
   const referral = await resolveReferral({
     vendorId: form.vendorId,
     queryCode: referralCodeFromRequest(request),
     legacyCode: parsed.data.referralCode,
-    cookie: attributionCookieFromRequest(request),
+    cookie: attributionCookie,
   });
   const attribution = await resolveTeamFunnelAttribution({
     vendorId: form.vendorId,
@@ -96,18 +138,43 @@ export async function POST(request: Request) {
     sourcePageSlug: sourcePageSlugFromRequest(request),
     referral,
   });
+  if (duplicate) {
+    await recordLeadAttribution(duplicate.id, attribution);
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, duplicate.id);
+  }
 
-  const submission = await getDb().formSubmission.create({
-    data: {
-      formId: parsed.data.formId,
-      liveId: parsed.data.liveId ?? null,
-      name,
-      email,
-      phone,
-      source: parsed.data.liveId ? "live" : "form",
-      answers: parsed.data.payload as Prisma.InputJsonValue,
-    },
-  });
+  const submissionId = stableSubmissionId(parsed.data.formId, parsed.data.liveId ?? null, email);
+  const normalizedAnswers = {
+    ...parsed.data.payload,
+    name,
+    email,
+    ...(allowedFields.has("phone") ? { phone: phone ?? "" } : {}),
+  };
+  let submission: { id: string };
+  try {
+    submission = await getDb().formSubmission.create({
+      data: {
+        id: submissionId,
+        formId: parsed.data.formId,
+        liveId: parsed.data.liveId ?? null,
+        name,
+        email,
+        phone,
+        source: parsed.data.liveId ? "live" : "form",
+        answers: normalizedAnswers as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+  } catch (error) {
+    if (!isUniqueConflict(error)) throw error;
+    const concurrentSubmission = await getDb().formSubmission.findUnique({
+      where: { id: submissionId },
+      select: { id: true },
+    });
+    if (!concurrentSubmission) throw error;
+    await recordLeadAttribution(concurrentSubmission.id, attribution);
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, concurrentSubmission.id);
+  }
   await recordLeadAttribution(submission.id, attribution);
 
   if (parsed.data.liveId) {
@@ -115,7 +182,7 @@ export async function POST(request: Request) {
       data: {
         vendorId: form.vendorId,
         liveId: parsed.data.liveId,
-        visitorId: email,
+        visitorId: attributionCookie?.visitorId ?? submission.id,
         eventType: "lead_submit",
         payload: { formId: parsed.data.formId, ref: referral?.code ?? null },
       },
@@ -172,14 +239,14 @@ function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
   }
 }
 
-async function nativeFormPayload(request: Request) {
-  const formData = await request.formData();
-  const reserved = new Set(["formId", "liveId", "referralCode", "redirectTo"]);
+function nativeFormPayload(formData: FormData | null) {
+  if (!formData) return {};
   const payload: Record<string, unknown> = {};
 
   for (const [key, value] of formData.entries()) {
-    if (!reserved.has(key)) {
-      payload[key] = typeof value === "string" ? value : value.name;
+    if (!RESERVED_FORM_FIELDS.has(key)) {
+      if (typeof value !== "string") return {};
+      payload[key] = value;
     }
   }
 
