@@ -4,10 +4,9 @@ import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
 
 const SCHEMA = "celebratedeal-payuni-sandbox-qa/v1";
-const APP_HOST = "celebratedeal.carry-digital-nomad.in.net";
+const KNOWN_PRODUCTION_APP_HOST = "celebratedeal.carry-digital-nomad.in.net";
 const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_API_ORIGIN = `https://${PAYUNI_HOST}`;
-const DEFAULT_APP_URL = `https://${APP_HOST}`;
 const DEFAULT_LIVE_PATH = "/live/summer-glow-live";
 const CALLBACK_TIMEOUT_ERROR_MAX_LENGTH = 280;
 const CALLBACK_QUERY_ATTEMPTS = 3;
@@ -152,6 +151,26 @@ function assertExactHttpsHost(rawUrl, expectedHost, label) {
   const url = new URL(rawUrl);
   assert(url.protocol === "https:" && url.hostname === expectedHost, `${label} 必須使用核准的 HTTPS 網域。`);
   return url;
+}
+
+function resolvePayUniStagingAppUrl(source = process.env) {
+  const rawUrl = String(source.PAYUNI_TEST_APP_URL ?? "").trim();
+  const allowedHost = String(source.PAYUNI_STAGING_ALLOWED_HOST ?? "").trim().toLowerCase();
+  const productionHost = String(
+    source.PAYUNI_PRODUCTION_APP_HOST ?? KNOWN_PRODUCTION_APP_HOST,
+  ).trim().toLowerCase();
+
+  assert(rawUrl, "PAYUNI_TEST_APP_URL 必須明確指定 Staging HTTPS 網址。");
+  assert(allowedHost, "PAYUNI_STAGING_ALLOWED_HOST 必須明確指定核准的 Staging host。");
+
+  const url = new URL(rawUrl);
+  assert(
+    url.protocol === "https:" && !url.username && !url.password && !url.port,
+    "CelebrateDeal Staging 必須使用無憑證、無自訂連接埠的 HTTPS 網址。",
+  );
+  assert(url.hostname.toLowerCase() === allowedHost, "PAYUNI_TEST_APP_URL 不在核准的 Staging host 白名單。 ");
+  assert(url.hostname.toLowerCase() !== productionHost, "PayUni Sandbox QA 禁止使用 Production host。");
+  return url.origin;
 }
 
 function reference(value) {
@@ -882,6 +901,7 @@ async function runCheckout(appUrl) {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ locale: "zh-TW" });
+  const appHost = new URL(appUrl).hostname;
   let flowStage = "opening-live-page";
   let checkoutStatus = null;
   let confirmationDialogAppeared = false;
@@ -950,7 +970,7 @@ async function runCheckout(appUrl) {
 
     flowStage = "waiting-payment-callback";
     try {
-      await page.waitForURL((url) => url.protocol === "https:" && url.hostname === APP_HOST, {
+      await page.waitForURL((url) => url.protocol === "https:" && url.hostname === appHost, {
         waitUntil: "domcontentloaded",
         timeout: 60_000,
       });
@@ -993,7 +1013,7 @@ async function runCheckout(appUrl) {
 
 async function main() {
   const startedAt = new Date().toISOString();
-  const appUrl = assertExactHttpsHost(env("PAYUNI_TEST_APP_URL", DEFAULT_APP_URL), APP_HOST, "CelebrateDeal Staging").origin;
+  const appUrl = resolvePayUniStagingAppUrl();
   assert(env("PAYUNI_ENV") === "sandbox", "此命令只允許 PAYUNI_ENV=sandbox。");
   assert(env("PAYUNI_SANDBOX_QA_ENABLED") === "true", "需明確設定 PAYUNI_SANDBOX_QA_ENABLED=true。");
   assert(env("PAYUNI_SANDBOX_REFUND_ENABLED") === "true", "需明確設定 PAYUNI_SANDBOX_REFUND_ENABLED=true。");
@@ -1014,7 +1034,7 @@ async function main() {
     schema: SCHEMA,
     success: true,
     environment: "sandbox",
-    appHost: APP_HOST,
+    appHost: new URL(appUrl).hostname,
     providerHost: PAYUNI_HOST,
     projectRevision: env("AI_TEAM_PROJECT_REVISION") || null,
     startedAt,
@@ -1098,6 +1118,7 @@ export {
   payUniRequest,
   paymentPageStructure,
   providerResultDiagnostic,
+  resolvePayUniStagingAppUrl,
   safeDiagnosticToken,
   safeTradeStatus,
 };

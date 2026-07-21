@@ -8,9 +8,35 @@ import {
   paymentPageStructure,
   providerResultDiagnostic,
   reconcileCallbackTimeout,
+  resolvePayUniStagingAppUrl,
 } from "./payuni-sandbox-external-qa.mjs";
 
 const DIAGNOSTIC_HASH_KEY = "12345678901234567890123456789012";
+
+test("Sandbox QA requires an explicit non-production Staging host allowlist", () => {
+  assert.throws(
+    () => resolvePayUniStagingAppUrl({}),
+    /PAYUNI_TEST_APP_URL/,
+  );
+  assert.throws(
+    () => resolvePayUniStagingAppUrl({
+      PAYUNI_TEST_APP_URL: "https://celebratedeal.carry-digital-nomad.in.net",
+      PAYUNI_STAGING_ALLOWED_HOST: "celebratedeal.carry-digital-nomad.in.net",
+    }),
+    /禁止使用 Production host/,
+  );
+  assert.throws(
+    () => resolvePayUniStagingAppUrl({
+      PAYUNI_TEST_APP_URL: "https://preview.example.test",
+      PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+    }),
+    /不在核准的 Staging host 白名單/,
+  );
+  assert.equal(resolvePayUniStagingAppUrl({
+    PAYUNI_TEST_APP_URL: "https://staging.example.test/live/ignored",
+    PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+  }), "https://staging.example.test");
+});
 
 function pageAt(url) {
   return { url: () => url };
