@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CLIENT_REQUEST_HEADER,
   CLIENT_REQUEST_HEADER_VALUE,
+  MAX_JSON_BODY_BYTES,
+  readJsonBody,
   requireSameOriginRequest,
 } from "@/lib/api-security";
 
@@ -85,5 +87,49 @@ describe("requireSameOriginRequest", () => {
       "x-forwarded-host": "public.example.test",
       "x-forwarded-proto": "https",
     }), { requireClientHeader: true })).toBeNull();
+  });
+});
+
+describe("readJsonBody", () => {
+  it("parses valid JSON within the request-size limit", async () => {
+    const body = { event: "page_view", payload: { slug: "demo" } };
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }));
+
+    expect(parsed).toEqual(body);
+  });
+
+  it("rejects a declared oversized request before parsing it", async () => {
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-length": String(MAX_JSON_BODY_BYTES + 1) },
+      body: "{}",
+    }));
+
+    expect(parsed).toEqual({});
+  });
+
+  it("stops streaming an oversized request even when content-length is absent", async () => {
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: JSON.stringify({ payload: "x".repeat(MAX_JSON_BODY_BYTES) }),
+    }));
+
+    expect(parsed).toEqual({});
+  });
+
+  it("normalizes malformed or empty JSON to an empty object", async () => {
+    const malformed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: "{not-json}",
+    }));
+    const empty = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+    }));
+
+    expect(malformed).toEqual({});
+    expect(empty).toEqual({});
   });
 });

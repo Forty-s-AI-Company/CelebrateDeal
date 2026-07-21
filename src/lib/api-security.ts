@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 export const CLIENT_REQUEST_HEADER = "x-celebratedeal-client";
 export const CLIENT_REQUEST_HEADER_VALUE = "web";
+export const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 function safeEqual(left: string, right: string) {
   const leftBuffer = Buffer.from(left);
@@ -80,9 +81,43 @@ export function requireSameOriginRequest(request: Request, options: { requireCli
 }
 
 /**
- * 將不合法或空白 JSON body 正規化為空物件，交由各 route 的 Zod schema
- * 回傳一致的 400，而不是讓 request.json() 變成未處理的 500。
+ * 以固定記憶體上限讀取 JSON。任何空白、畸形或超過上限的內容都正規化為
+ * 空物件，再由各 route 的 Zod schema 回傳一致的 400。
  */
-export async function readJsonBody(request: Request): Promise<unknown> {
-  return request.json().catch(() => ({}));
+export async function readJsonBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<unknown> {
+  const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await request.body?.cancel().catch(() => undefined);
+    return {};
+  }
+
+  if (!request.body) return {};
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let body = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return {};
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    body += decoder.decode();
+    return JSON.parse(body);
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    return {};
+  } finally {
+    reader.releaseLock();
+  }
 }
