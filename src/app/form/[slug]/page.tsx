@@ -1,15 +1,11 @@
 import { notFound } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { getDb } from "@/lib/db";
+import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
 function normalizeFields(fields: unknown) {
-  if (!Array.isArray(fields)) return [];
-  return fields.map((field) => ({
-    key: String((field as { key?: string }).key ?? ""),
-    label: String((field as { label?: string }).label ?? ""),
-    type: String((field as { type?: string }).type ?? "text"),
-    required: Boolean((field as { required?: boolean }).required),
-  })).filter((field) => field.key && field.label);
+  const parsed = parseRegistrationFormFields(fields);
+  return parsed.success ? parsed.data : [];
 }
 
 export default async function PublicFormPage({

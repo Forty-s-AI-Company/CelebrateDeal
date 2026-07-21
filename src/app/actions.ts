@@ -45,6 +45,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
 import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -1078,11 +1079,15 @@ export async function upsertFormAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  let fields: Prisma.InputJsonValue = [];
+  let rawFields: unknown;
   try {
-    fields = JSON.parse(text(formData, "fields", "[]")) as Prisma.InputJsonValue;
+    rawFields = JSON.parse(text(formData, "fields", "[]"));
   } catch {
-    fields = [];
+    redirect(id ? `/forms/${encodeURIComponent(id)}/edit?error=invalid_fields` : "/forms/new?error=invalid_fields");
+  }
+  const fields = parseRegistrationFormFields(rawFields);
+  if (!fields.success) {
+    redirect(id ? `/forms/${encodeURIComponent(id)}/edit?error=invalid_fields` : "/forms/new?error=invalid_fields");
   }
 
   const data = {
@@ -1091,7 +1096,7 @@ export async function upsertFormAction(formData: FormData) {
     headline: text(formData, "headline"),
     description: optionalText(formData, "description"),
     submitLabel: text(formData, "submitLabel", "送出報名"),
-    fields,
+    fields: fields.data as Prisma.InputJsonValue,
     successMessage: text(formData, "successMessage", "已收到你的資料，開播前會再提醒你。"),
     isActive: formData.get("isActive") === "on",
   };

@@ -34,6 +34,8 @@ const mocks = vi.hoisted(() => ({
   settlementUpsert: vi.fn(),
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
+  registrationFormCreate: vi.fn(),
+  registrationFormUpdate: vi.fn(),
   teamMembershipFindFirst: vi.fn(),
   teamMembershipFindMany: vi.fn(),
   teamMembershipRelationshipFindMany: vi.fn(),
@@ -135,6 +137,7 @@ vi.mock("@/lib/db", () => ({
     teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
+    registrationForm: { create: mocks.registrationFormCreate, update: mocks.registrationFormUpdate },
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
   }),
 }));
@@ -152,6 +155,7 @@ import {
   sendPasswordResetSmokeAction,
   updatePasswordAction,
   unbindInteractionScriptFromLiveAction,
+  upsertFormAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
@@ -238,6 +242,15 @@ function updatePasswordFormData({
   formData.set("currentPassword", currentPassword);
   formData.set("password", password);
   formData.set("confirmPassword", confirmPassword);
+  return formData;
+}
+
+function registrationFormData(fields: string) {
+  const formData = new FormData();
+  formData.set("name", "測試表單");
+  formData.set("slug", "test-form");
+  formData.set("headline", "測試標題");
+  formData.set("fields", fields);
   return formData;
 }
 
@@ -577,6 +590,51 @@ describe("savePartnerPageAction", () => {
       data: { headline: "更新後的主標題", subheadline: null, body: null, ctaLabel: "立即報名", ctaUrl: null },
     }));
     expect(mocks.userUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("upsertFormAction", () => {
+  it("stores only a validated field definition and scopes edits to the current vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = registrationFormData(JSON.stringify([
+      { key: "name", label: " 姓名 ", type: "text", required: true },
+      { key: "email", label: "Email", type: "email", required: true },
+    ]));
+    formData.set("id", "form-1");
+
+    await expect(upsertFormAction(formData)).rejects.toThrow("redirect:/forms");
+
+    expect(mocks.registrationFormUpdate).toHaveBeenCalledWith({
+      where: { id: "form-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        fields: [
+          { key: "name", label: "姓名", type: "text", required: true },
+          { key: "email", label: "Email", type: "email", required: true },
+        ],
+      }),
+    });
+    expect(mocks.registrationFormCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["malformed JSON", "{not-json}"],
+    ["missing required email field", JSON.stringify([
+      { key: "name", label: "姓名", type: "text", required: true },
+    ])],
+    ["unsupported sensitive field type", JSON.stringify([
+      { key: "name", label: "姓名", type: "text", required: true },
+      { key: "email", label: "Email", type: "email", required: true },
+      { key: "password", label: "密碼", type: "password", required: false },
+    ])],
+  ])("rejects %s before any form persistence", async (_name, fields) => {
+    await expect(upsertFormAction(registrationFormData(fields))).rejects.toThrow(
+      "redirect:/forms/new?error=invalid_fields",
+    );
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledOnce();
+    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.registrationFormCreate).not.toHaveBeenCalled();
+    expect(mocks.registrationFormUpdate).not.toHaveBeenCalled();
   });
 });
 

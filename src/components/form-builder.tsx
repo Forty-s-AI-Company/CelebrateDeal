@@ -13,9 +13,14 @@ const defaultFields = JSON.stringify(
   2,
 );
 
-export function FormBuilder({ form }: { form?: RegistrationForm }) {
+export function FormBuilder({ form, error }: { form?: RegistrationForm; error?: string }) {
   return (
     <Card>
+      {error === "invalid_fields" ? (
+        <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          欄位 JSON 格式不正確；必須包含 required 的 name（text）與 email（email），key 不可重複或使用保留名稱。
+        </p>
+      ) : null}
       <form action={upsertFormAction} className="grid gap-4">
         <CsrfField />
         {form ? <input type="hidden" name="id" value={form.id} /> : null}

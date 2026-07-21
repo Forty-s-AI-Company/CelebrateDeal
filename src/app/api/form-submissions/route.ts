@@ -13,14 +13,16 @@ import {
   resolveTeamFunnelAttribution,
   sourcePageSlugFromRequest,
 } from "@/lib/team-funnel-attribution";
+import {
+  parseRegistrationFormFields,
+  REGISTRATION_FORM_FIELD_KEY,
+  REGISTRATION_FORM_RESERVED_FIELDS,
+} from "@/lib/registration-form-fields";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
-const FORM_FIELD_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
-const RESERVED_FORM_FIELDS = new Set(["formId", "liveId", "referralCode", "redirectTo"]);
-
 const SubmissionAnswers = z.record(
-  z.string().regex(FORM_FIELD_KEY),
+  z.string().regex(REGISTRATION_FORM_FIELD_KEY),
   z.string().max(2_000),
 ).refine((answers) => Object.keys(answers).length <= 32);
 
@@ -31,11 +33,6 @@ const SubmissionPayload = z.object({
   referralCode: z.string().min(1).max(80).nullable().optional(),
   redirectTo: z.string().max(2_048).optional(),
 });
-
-const FormFieldSpecs = z.array(z.object({
-  key: z.string().regex(FORM_FIELD_KEY),
-  required: z.boolean().optional().default(false),
-}).passthrough()).max(32);
 
 function stableSubmissionId(formId: string, liveId: string | null, email: string) {
   const digest = createHash("sha256")
@@ -82,8 +79,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
   }
 
-  const fieldSpecs = FormFieldSpecs.safeParse(form.fields);
-  if (!fieldSpecs.success || fieldSpecs.data.some((field) => RESERVED_FORM_FIELDS.has(field.key))) {
+  const fieldSpecs = parseRegistrationFormFields(form.fields);
+  if (!fieldSpecs.success) {
     return NextResponse.json({ error: "Form configuration unavailable" }, { status: 503 });
   }
   const allowedFields = new Set(fieldSpecs.data.map((field) => field.key));
@@ -244,7 +241,7 @@ function nativeFormPayload(formData: FormData | null) {
   const payload: Record<string, unknown> = {};
 
   for (const [key, value] of formData.entries()) {
-    if (!RESERVED_FORM_FIELDS.has(key)) {
+    if (!REGISTRATION_FORM_RESERVED_FIELDS.has(key)) {
       if (typeof value !== "string") return {};
       payload[key] = value;
     }
