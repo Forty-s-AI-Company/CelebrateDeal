@@ -11,10 +11,10 @@ const password = "Password12345!";
 const previousCredential = ["Previous", "Credential", "123!"].join("");
 const replacementCredential = ["Replacement", "Credential", "123!"].join("");
 const undersizedCredential = ["too", "short"].join("-");
-const resetReference = ["fixed", "invalid", "reset", "reference"].join("-");
 const stamp = Date.now();
 // 每次 Playwright 程序都使用不同識別碼，避免重試或中斷後的假資料互相衝突。
 const e2eRunId = `${stamp.toString(36)}-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
+const resetReference = ["e2e", "invalid", "reset", e2eRunId].join("-");
 const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
 const e2eOrigin = new URL(
   process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? "31023"}`,
@@ -198,7 +198,8 @@ mfaTest.use({ trace: "off" });
 
 const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser }>({
   passwordResetUser: async ({}, use, testInfo) => {
-    const suffix = testInfo.testId.replace(/[^a-zA-Z0-9]/g, "");
+    const testIdSuffix = createHash("sha256").update(testInfo.testId).digest("hex").slice(0, 12);
+    const suffix = `${e2eRunId}-${testInfo.retry}-${testIdSuffix}`;
     const sessionReference = `e2e-reset-session-${suffix}`;
     const vendor = await db.vendor.create({
       data: {
@@ -211,43 +212,53 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
         tracking: { create: {} },
       },
     });
-    const user = await db.user.create({
-      data: {
-        email: `e2e-reset-${suffix}@celebratedeal.local`,
-        name: "E2E Password Reset User",
-        passwordHash: hashPassword(previousCredential),
-        status: "active",
-        memberships: {
-          create: { vendorId: vendor.id, role: "owner", status: "active" },
-        },
-        sessions: {
-          create: {
-            tokenHash: createHash("sha256").update(sessionReference).digest("hex"),
-            expiresAt: new Date(Date.now() + 10 * 60_000),
-          },
-        },
-      },
-    });
+    let user: { id: string; email: string } | null = null;
 
     try {
+      user = await db.user.create({
+        data: {
+          email: `e2e-reset-${suffix}@celebratedeal.local`,
+          name: "E2E Password Reset User",
+          passwordHash: hashPassword(previousCredential),
+          status: "active",
+          memberships: {
+            create: { vendorId: vendor.id, role: "owner", status: "active" },
+          },
+          sessions: {
+            create: {
+              tokenHash: createHash("sha256").update(sessionReference).digest("hex"),
+              expiresAt: new Date(Date.now() + 10 * 60_000),
+            },
+          },
+        },
+      });
+
       // Playwright fixture API; this is not React's use hook.
       // eslint-disable-next-line react-hooks/rules-of-hooks
       await use({ id: user.id, email: user.email, vendorId: vendor.id });
     } finally {
-      await db.passwordResetToken.deleteMany({ where: { userId: user.id } });
-      await db.userSession.deleteMany({ where: { userId: user.id } });
+      if (user) {
+        await db.passwordResetToken.deleteMany({ where: { userId: user.id } });
+        await db.userSession.deleteMany({ where: { userId: user.id } });
+      }
       await db.auditLog.deleteMany({
         where: {
           OR: [
-            { actorId: user.id },
-            { targetId: user.id },
-            { targetId: user.email },
+            ...(user
+              ? [
+                  { actorId: user.id },
+                  { targetId: user.id },
+                  { targetId: user.email },
+                  { after: { path: ["email"], equals: user.email } },
+                ]
+              : []),
             { vendorId: vendor.id },
-            { after: { path: ["email"], equals: user.email } },
           ],
         },
       });
-      await db.user.deleteMany({ where: { id: user.id } });
+      if (user) {
+        await db.user.deleteMany({ where: { id: user.id } });
+      }
       await db.vendor.deleteMany({ where: { id: vendor.id } });
     }
   },
@@ -1113,7 +1124,9 @@ test("JOB_SECRET protected APIs reject missing and invalid authorization", async
 });
 
 test("team-funnel browser acceptance covers leader publishing, partner modes, attribution, scope, and responsive QA", async ({ browser }, testInfo) => {
-  test.setTimeout(120_000);
+  // 此驗收會依序覆蓋三種領取模式與三個獨立瀏覽器 context；開發伺服器在
+  // 完整 smoke suite 後仍可能進行路由編譯，因此保留有界但足夠的整體時間。
+  test.setTimeout(240_000);
   const fixture = await createTeamFunnelFixture(db, `pw-${Date.now().toString(36)}`);
   const consoleFailures: string[] = [];
   let leaderContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;

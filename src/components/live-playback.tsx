@@ -134,7 +134,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
+  const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
     () => (typeof window === "undefined" ? "server" : getOrCreateVisitorId(() => crypto.randomUUID(), () => window.localStorage)),
     [],
@@ -198,6 +200,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }
 
   async function trackProduct(productId: string) {
+    if (checkoutSubmissionRef.current) return;
+
+    checkoutSubmissionRef.current = true;
+    setIsSubmittingCheckout(true);
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
@@ -206,7 +212,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       payload: { productId, ref: referralCode },
     });
 
-    await requestCheckout({ vendorId: live.vendorId, productId, referralCode });
+    try {
+      await requestCheckout({ vendorId: live.vendorId, productId, referralCode });
+    } finally {
+      checkoutSubmissionRef.current = false;
+      setIsSubmittingCheckout(false);
+    }
   }
 
   async function trackCta() {
@@ -293,8 +304,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   </div>
                   <h2 className="line-clamp-1 font-bold">{spotlightProduct.name}</h2>
                   <p className="mt-1 text-sm font-black text-orange-600">{formatCurrency(spotlightProduct.priceCents, spotlightProduct.currency)}</p>
-                  <button onClick={() => trackProduct(spotlightProduct.id)} className="mt-2 h-9 w-full rounded-lg bg-orange-500 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-600">
-                    立即搶購
+                  <button
+                    onClick={() => trackProduct(spotlightProduct.id)}
+                    disabled={isSubmittingCheckout}
+                    className="mt-2 h-9 w-full rounded-lg bg-orange-500 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmittingCheckout ? "結帳送出中..." : "立即搶購"}
                   </button>
                 </div>
               </div>
@@ -358,9 +373,13 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{product.description}</p>
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <p className="font-black text-orange-600">{formatCurrency(product.priceCents, product.currency)}</p>
-                          <button onClick={() => trackProduct(product.id)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-orange-500 px-3 text-xs font-black text-white">
+                          <button
+                            onClick={() => trackProduct(product.id)}
+                            disabled={isSubmittingCheckout}
+                            className="inline-flex h-9 items-center gap-1 rounded-lg bg-orange-500 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          >
                             <ShoppingBag size={14} />
-                            買
+                            {isSubmittingCheckout ? "送出中" : "買"}
                           </button>
                         </div>
                       </div>
