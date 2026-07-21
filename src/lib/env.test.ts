@@ -22,6 +22,8 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("NEXT", "PUBLIC", "POSTHOG", "KEY")]: "test-posthog-value",
     [envKey("NEXT", "PUBLIC", "POSTHOG", "HOST")]: "https://posthog.test",
     [envKey("NEXT", "PUBLIC", "SENTRY", "DSN")]: "https://public@sentry.test/2",
+    [envKey("SENTRY", "ENVIRONMENT")]: "production",
+    [envKey("NEXT", "PUBLIC", "SENTRY", "ENVIRONMENT")]: "production",
     [envKey("SENTRY", "ORG")]: "test-org",
     [envKey("SENTRY", "PROJECT")]: "test-project",
     [envKey("SENTRY", "AUTH", "TOKEN")]: "test-sentry-value",
@@ -105,6 +107,16 @@ describe("getEnvCheckReport", () => {
     env[envKey("EMAIL", "FROM")] = "CelebrateDeal <noreply@app.test>";
 
     expect(getEnvCheckReport(env).ok).toBe(true);
+  });
+
+  it("fails closed for an unsafe Sentry environment tag", () => {
+    const env = configuredEnv();
+    env[envKey("SENTRY", "ENVIRONMENT")] = "staging\nsecret=value";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("SENTRY", "ENVIRONMENT"), "fail")).toBeTruthy();
   });
 
   it.each([

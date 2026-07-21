@@ -32,6 +32,8 @@
 | `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |
 | `SENTRY_DSN` | staging DSN | production DSN | Sentry project | ops monitoring test issue appears |
 | `NEXT_PUBLIC_SENTRY_DSN` | staging public DSN | production public DSN | Sentry project | client global error can report |
+| `SENTRY_ENVIRONMENT` | `staging` | `production` | 手動設定 | server event environment tag 正確 |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `staging` | `production` | 手動設定 | client event environment tag 正確 |
 | `SENTRY_ORG` | org slug | org slug | Sentry | source map upload enabled |
 | `SENTRY_PROJECT` | staging project slug | production project slug | Sentry | release/source maps visible |
 | `SENTRY_AUTH_TOKEN` | staging upload token | production upload token | Sentry auth token | build can upload source maps |

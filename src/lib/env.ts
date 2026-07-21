@@ -1,8 +1,13 @@
 import { z } from "zod";
+import { isValidSentryEnvironment } from "@/lib/sentry-environment";
 
 const RequiredUrl = z.string().url();
 const OptionalUrl = z.string().url().optional().or(z.literal(""));
 const OptionalSecret = z.string().optional();
+const OptionalSentryEnvironment = z.string().refine(
+  (value) => !value || isValidSentryEnvironment(value),
+  "Sentry environment 只能使用 1–64 個英數字、點、底線或連字號",
+).optional();
 const EmailFrom = z.string().min(3).refine((value) => {
   if (/[\r\n]/.test(value)) return false;
   const trimmed = value.trim();
@@ -35,6 +40,8 @@ export const ProductionEnvSchema = z.object({
   SMOKE_TEST_EMAIL: OptionalSecret,
   SENTRY_DSN: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: OptionalSecret,
+  SENTRY_ENVIRONMENT: OptionalSentryEnvironment,
+  NEXT_PUBLIC_SENTRY_ENVIRONMENT: OptionalSentryEnvironment,
   SENTRY_ORG: OptionalSecret,
   SENTRY_PROJECT: OptionalSecret,
   SENTRY_AUTH_TOKEN: OptionalSecret,
@@ -100,6 +107,18 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       key,
       status: secretPresent(value) ? "pass" : "warning",
       message: secretPresent(value) ? "已設定" : "建議設定；未設定不阻擋部署，但會降低正式監控或 webhook 驗證完整度",
+    });
+  }
+
+  for (const key of ["SENTRY_ENVIRONMENT", "NEXT_PUBLIC_SENTRY_ENVIRONMENT"] as const) {
+    const value = env[key];
+    const configured = secretPresent(value);
+    checks.push({
+      key,
+      status: configured ? (isValidSentryEnvironment(value) ? "pass" : "fail") : "warning",
+      message: configured
+        ? (isValidSentryEnvironment(value) ? "已設定安全的監控環境標籤" : "監控環境標籤格式不安全")
+        : "建議明確區分 staging 與 production 監控事件",
     });
   }
 
