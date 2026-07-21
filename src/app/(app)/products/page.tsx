@@ -1,11 +1,11 @@
 import { Plus } from "lucide-react";
 import { ButtonLink, EmptyState, PageHeader, Badge } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
 export default async function ProductsPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const products = await getDb().product.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } });
 
   return (

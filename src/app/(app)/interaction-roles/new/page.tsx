@@ -2,12 +2,12 @@ import { importSystemRolesAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function NewInteractionRolePage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const [roles, csrfToken] = await Promise.all([
     getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
     getCsrfToken(),

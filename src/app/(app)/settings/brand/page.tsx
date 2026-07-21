@@ -1,10 +1,10 @@
 import { saveBrandSettingsAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 
 export default async function BrandSettingsPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
 
   return (
     <>

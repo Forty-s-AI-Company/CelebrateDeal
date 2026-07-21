@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { FormBuilder } from "@/components/form-builder";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function EditFormPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const form = await getDb().registrationForm.findFirst({ where: { id, vendorId: vendor.id } });
   if (!form) notFound();

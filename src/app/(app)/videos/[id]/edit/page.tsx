@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { VideoForm } from "@/components/video-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function EditVideoPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const video = await getDb().video.findFirst({ where: { id, vendorId: vendor.id } });
   if (!video) notFound();

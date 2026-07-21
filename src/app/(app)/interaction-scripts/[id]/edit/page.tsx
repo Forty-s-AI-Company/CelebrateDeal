@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { InteractionScriptForm } from "@/components/interaction-script-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function EditInteractionScriptPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const db = getDb();
   const [script, roles, products, csrfToken] = await Promise.all([

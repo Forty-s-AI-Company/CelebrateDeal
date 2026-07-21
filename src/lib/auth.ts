@@ -11,6 +11,7 @@ export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
+const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
 const PLATFORM_ROLES = ["platform_admin"] as const;
 const ACTIVE_MEMBER_STATUS = "active";
 
@@ -174,13 +175,34 @@ export async function requireAuth() {
   return auth;
 }
 
-export async function requireVendor() {
+export async function requireVendorContext() {
   const auth = await requireAuth();
   if (!auth.vendor) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/login?error=no_vendor");
   }
 
-  return auth.vendor as VendorWithTracking;
+  return {
+    auth,
+    vendor: auth.vendor as VendorWithTracking,
+  };
+}
+
+export async function requireVendor() {
+  return (await requireVendorContext()).vendor;
+}
+
+export async function requireVendorManager() {
+  const { auth, vendor } = await requireVendorContext();
+  const role = auth.member?.role;
+  if (
+    !auth.member
+    || auth.member.status !== ACTIVE_MEMBER_STATUS
+    || !VENDOR_MANAGER_ROLES.includes(role as (typeof VENDOR_MANAGER_ROLES)[number])
+  ) {
+    redirect("/dashboard?error=insufficient_role");
+  }
+
+  return vendor;
 }
 
 export async function requireFinanceAdmin() {

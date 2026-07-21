@@ -2,11 +2,11 @@ import { notFound } from "next/navigation";
 import { upsertLiveAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function EditLivePage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const db = getDb();
   const [live, videos, products, forms, templates, scripts] = await Promise.all([

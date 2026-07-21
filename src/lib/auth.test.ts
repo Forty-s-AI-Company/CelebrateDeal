@@ -13,7 +13,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/mfa", () => ({ decryptMfaSecret: vi.fn() }));
 
-import { requireFinanceAdmin } from "@/lib/auth";
+import { requireFinanceAdmin, requireVendorManager } from "@/lib/auth";
 
 function sessionFor({
   platformRole,
@@ -96,5 +96,21 @@ describe("requireFinanceAdmin", () => {
     await expect(requireFinanceAdmin()).rejects.toThrow(
       "redirect:/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard",
     );
+  });
+});
+
+describe("requireVendorManager", () => {
+  it.each(["owner", "admin"])("allows an active vendor %s to manage operational data", async (memberRole) => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
+
+    await expect(requireVendorManager()).resolves.toMatchObject({ id: "vendor-1" });
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("rejects an accountant from operational write access", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
+
+    await expect(requireVendorManager()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
+    expect(mocks.redirect).toHaveBeenCalledWith("/dashboard?error=insufficient_role");
   });
 });

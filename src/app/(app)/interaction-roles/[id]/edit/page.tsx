@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function EditInteractionRolePage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const [roles, role, csrfToken] = await Promise.all([
     getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),

@@ -1,10 +1,10 @@
 import { Plus } from "lucide-react";
 import { ButtonLink, Card, EmptyState, PageHeader, Badge } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function VideosPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const videos = await getDb().video.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } });
 
   return (

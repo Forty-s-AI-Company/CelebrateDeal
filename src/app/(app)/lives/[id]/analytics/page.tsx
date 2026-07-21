@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
 export default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const db = getDb();
   const live = await db.live.findFirst({

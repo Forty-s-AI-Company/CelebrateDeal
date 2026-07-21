@@ -1,11 +1,11 @@
 import { BarChart3, Eye, Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
 export default async function LivesPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const lives = await getDb().live.findMany({
     where: { vendorId: vendor.id },
     orderBy: { scheduledAt: "desc" },

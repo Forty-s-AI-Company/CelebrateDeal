@@ -1,11 +1,11 @@
 import { InteractionScriptForm } from "@/components/interaction-script-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function NewInteractionScriptPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const [roles, products, csrfToken] = await Promise.all([
     getDb().interactionRole.findMany({ where: { vendorId: vendor.id, isActive: true } }),
     getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true } }),

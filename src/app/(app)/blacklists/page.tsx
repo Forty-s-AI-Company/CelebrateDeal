@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { unblockBlacklistAction, upsertBlacklistAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
@@ -11,7 +11,7 @@ export default async function BlacklistsPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { q = "" } = await searchParams;
   const entries = await getDb().blacklist.findMany({
     where: {

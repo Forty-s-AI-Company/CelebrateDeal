@@ -4,7 +4,7 @@ import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { deleteInteractionScriptAction, duplicateInteractionScriptAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 function pageHref(page: number, pageSize: number) {
@@ -16,7 +16,7 @@ export default async function InteractionScriptsPage({
 }: {
   searchParams: Promise<{ page?: string; pageSize?: string }>;
 }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const params = await searchParams;
   const pageSize = Number.parseInt(params.pageSize ?? "10", 10) || 10;
   const currentPage = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);

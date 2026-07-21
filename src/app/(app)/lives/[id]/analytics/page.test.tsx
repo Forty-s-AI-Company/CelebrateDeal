@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   formSubmissionCount: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendor: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     live: { findFirst: mocks.liveFindFirst },

@@ -1,10 +1,10 @@
 import { Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function FormsPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const forms = await getDb().registrationForm.findMany({
     where: { vendorId: vendor.id },
     orderBy: { createdAt: "desc" },

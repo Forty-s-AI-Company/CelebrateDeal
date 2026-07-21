@@ -1,11 +1,11 @@
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
 export default async function NewLivePage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const [videos, products, forms, templates, scripts, affiliates, csrfToken] = await Promise.all([
     getDb().video.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
     getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { createdAt: "desc" } }),

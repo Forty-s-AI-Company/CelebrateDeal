@@ -13,7 +13,7 @@ import {
   markCurrentSessionMfaVerified,
   requireAuth,
   requireFinanceAdmin,
-  requireVendor,
+  requireVendorManager,
   requireVendorOwner,
   revokeCurrentSession,
   sessionCookieOptions,
@@ -210,7 +210,7 @@ export async function logoutAction(formData: FormData) {
 
 export async function saveBrandSettingsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   await getDb().vendor.update({
     where: { id: vendor.id },
     data: {
@@ -228,7 +228,7 @@ export async function saveBrandSettingsAction(formData: FormData) {
 
 export async function saveTrackingSettingsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   await getDb().trackingSetting.upsert({
     where: { vendorId: vendor.id },
     create: {
@@ -1021,7 +1021,7 @@ export async function revokeAllSessionsAction(formData: FormData) {
 
 export async function upsertVideoAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const data = {
     title: text(formData, "title"),
@@ -1050,7 +1050,7 @@ export async function upsertVideoAction(formData: FormData) {
 
 export async function upsertProductAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const data = {
     name: text(formData, "name"),
@@ -1076,7 +1076,7 @@ export async function upsertProductAction(formData: FormData) {
 
 export async function upsertFormAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   let fields: Prisma.InputJsonValue = [];
   try {
@@ -1107,7 +1107,7 @@ export async function upsertFormAction(formData: FormData) {
 
 export async function upsertTemplateAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const data = {
     name: text(formData, "name"),
@@ -1129,7 +1129,7 @@ export async function upsertTemplateAction(formData: FormData) {
 
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const productIds = formData.getAll("productIds").filter((value): value is string => typeof value === "string");
   const scheduledAtValue = text(formData, "scheduledAt");
@@ -1187,7 +1187,7 @@ export async function upsertLiveAction(formData: FormData) {
 
 export async function upsertInteractionRoleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const data = {
     name: text(formData, "name"),
@@ -1209,7 +1209,7 @@ export async function upsertInteractionRoleAction(formData: FormData) {
 
 export async function deleteInteractionRoleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = text(formData, "id");
   await getDb().interactionRole.delete({
     where: { id, vendorId: vendor.id },
@@ -1236,7 +1236,7 @@ const systemRoleLibrary = [
 
 export async function importSystemRolesAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const db = getDb();
   const existing = await db.interactionRole.findMany({
     where: {
@@ -1259,7 +1259,7 @@ export async function importSystemRolesAction(formData: FormData) {
 
 export async function upsertInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const db = getDb();
   const roleIds = formData.getAll("roleId").map(String);
@@ -1319,7 +1319,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const scriptId = text(formData, "id");
   const liveId = text(formData, "liveId");
 
@@ -1349,7 +1349,7 @@ export async function unbindInteractionScriptFromLiveAction(formData: FormData) 
 
 export async function duplicateInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = text(formData, "id");
   const script = await getDb().interactionScript.findFirst({
     where: { id, vendorId: vendor.id },
@@ -1387,7 +1387,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
 
 export async function deleteInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = text(formData, "id");
   await getDb().interactionScript.delete({
     where: { id, vendorId: vendor.id },
@@ -1398,7 +1398,7 @@ export async function deleteInteractionScriptAction(formData: FormData) {
 
 export async function upsertBlacklistAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   await getDb().blacklist.create({
     data: {
       vendorId: vendor.id,
@@ -1413,7 +1413,7 @@ export async function upsertBlacklistAction(formData: FormData) {
 
 export async function unblockBlacklistAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = text(formData, "id");
   await getDb().blacklist.update({
     where: { id, vendorId: vendor.id },
@@ -1427,7 +1427,7 @@ export async function unblockBlacklistAction(formData: FormData) {
 
 export async function upsertAffiliateAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const data = {
     name: text(formData, "name"),
