@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
+import { classifyCloudflareOperationError, createDirectUploadMapping, DirectUploadRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
   if (!requireJobSecret(request)) {
@@ -26,14 +26,15 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Cloudflare direct upload failed";
+    const diagnostic = classifyCloudflareOperationError(error);
     return NextResponse.json(
       {
         ok: false,
         error: "Cloudflare direct upload failed",
-        detail: message,
+        diagnostic: diagnostic.code,
+        providerStatus: diagnostic.providerStatus,
       },
-      { status: 500 },
+      { status: diagnostic.status },
     );
   }
 }

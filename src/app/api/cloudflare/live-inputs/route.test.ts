@@ -109,4 +109,15 @@ describe("POST /api/cloudflare/live-inputs", () => {
     expect(JSON.stringify(body)).not.toContain("test-fixture-plaintext-stream-key");
     expect(mocks.createLiveInputMapping).toHaveBeenCalledWith({ vendorId: "vendor-1", name: "Test live input" });
   });
+
+  it("returns a closed diagnostic when mapping fails", async () => {
+    mocks.createLiveInputMapping.mockRejectedValue(new Error("plaintext-stream-key-in-error"));
+
+    const response = await POST(authorizedRequest({ vendorId: "vendor-1", name: "Test live input" }));
+    const body = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(body).toContain('"diagnostic":"internal_failure"');
+    expect(body).not.toContain("plaintext-stream-key-in-error");
+  });
 });
