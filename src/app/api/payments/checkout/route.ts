@@ -155,20 +155,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
 
-  const response = NextResponse.json({
-    ok: true,
-    provider: checkoutSession.provider,
-    orderNumber: order,
-    transactionId: transaction.id,
-    amountCents: product.priceCents,
-    currency: product.currency,
-    checkoutUrl: checkoutSession.checkoutUrl,
-    formAction: checkoutSession.formAction,
-    formMethod: checkoutSession.formMethod,
-    formPayload: checkoutSession.formPayload,
-    nextAction: checkoutSession.nextAction,
-    externalRequired: checkoutSession.externalRequired ?? false,
-  });
+  const response = NextResponse.json(
+    {
+      ok: true,
+      provider: checkoutSession.provider,
+      orderNumber: order,
+      transactionId: transaction.id,
+      amountCents: product.priceCents,
+      currency: product.currency,
+      checkoutUrl: checkoutSession.checkoutUrl,
+      formAction: checkoutSession.formAction,
+      formMethod: checkoutSession.formMethod,
+      formPayload: checkoutSession.formPayload,
+      nextAction: checkoutSession.nextAction,
+      externalRequired: checkoutSession.externalRequired ?? false,
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 
   if (formSubmissionId) {
     response.cookies.set(FORM_SUBMISSION_COOKIE, "", {
