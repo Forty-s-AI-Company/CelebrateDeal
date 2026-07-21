@@ -1,7 +1,8 @@
-import type { Prisma, WebhookEvent } from "@prisma/client";
+import { Prisma, type WebhookEvent } from "@prisma/client";
 import { z } from "zod";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 
 export const PaymentWebhookPayload = z.object({
   provider: z.string().min(1),
@@ -336,6 +337,17 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
           },
         });
 
+    // Product identity is trusted only from the server-created checkout
+    // transaction. Provider metadata must never choose another tenant's stock.
+    if (!(payload.eventType === "paid" && preservesRefundState)) {
+      await applyPaymentInventoryTransition(tx, {
+        transaction: savedTransaction,
+        eventType: payload.eventType,
+        trustedCheckoutMetadata: existingMetadata,
+        now: occurredAt,
+      });
+    }
+
     let refundCommission = null;
     if (["refunded", "partially_refunded"].includes(payload.eventType) && payload.refundAmountCents > 0) {
       const alreadyRefunded = existingTransaction?.refunds.some((refund) => refund.providerEventId === payload.eventId) ?? false;
@@ -432,7 +444,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     }
 
     return { transaction: savedTransaction, refundCommission };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   const commission = await upsertAffiliateCommission(
     payload,

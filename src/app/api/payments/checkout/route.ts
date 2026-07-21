@@ -4,6 +4,11 @@ import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import {
+  createReservedPaymentTransaction,
+  failPendingCheckoutAndReleaseInventory,
+  InventoryUnavailableError,
+} from "@/lib/inventory-reservations";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import type { CheckoutSessionResult } from "@/lib/payment-providers/types";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -83,8 +88,10 @@ export async function POST(request: Request) {
   const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   let transaction;
   try {
-    transaction = await db.paymentTransaction.create({
-      data: {
+    transaction = await createReservedPaymentTransaction({
+      vendorId: parsed.data.vendorId,
+      productId: product.id,
+      transactionData: {
         vendorId: parsed.data.vendorId,
         providerName: provider.id,
         orderNumber: order,
@@ -96,7 +103,10 @@ export async function POST(request: Request) {
         metadata: transactionMetadata,
       },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof InventoryUnavailableError) {
+      return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
+    }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
   let checkoutSession: CheckoutSessionResult;
@@ -119,9 +129,10 @@ export async function POST(request: Request) {
         };
   } catch {
     try {
-      await db.paymentTransaction.update({
-        where: { id: transaction.id },
-        data: { status: "failed" },
+      await failPendingCheckoutAndReleaseInventory({
+        vendorId: parsed.data.vendorId,
+        transactionId: transaction.id,
+        reason: "provider_checkout_failed",
       });
     } catch {
       // Keep the provider failure response generic when the recovery write also fails.
@@ -146,9 +157,10 @@ export async function POST(request: Request) {
     });
   } catch {
     try {
-      await db.paymentTransaction.update({
-        where: { id: transaction.id },
-        data: { status: "failed" },
+      await failPendingCheckoutAndReleaseInventory({
+        vendorId: parsed.data.vendorId,
+        transactionId: transaction.id,
+        reason: "checkout_metadata_failed",
       });
     } catch {
       // Keep the metadata persistence failure response generic when the recovery write also fails.

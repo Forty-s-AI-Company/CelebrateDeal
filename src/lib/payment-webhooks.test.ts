@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
+import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 import { reconcileWebhookEvent } from "@/lib/reconciliation";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
@@ -222,6 +223,74 @@ describe("payment webhook processing", () => {
 
     const transactions = await db.paymentTransaction.findMany({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
     expect(transactions).toHaveLength(1);
+  });
+
+  it("commits reserved inventory once and restocks only after a full refund", async () => {
+    const suffix = `${Date.now()}-inventory-lifecycle`;
+    const { db, vendor } = await createFixture(suffix);
+    const product = await db.product.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Webhook Inventory Product ${suffix}`,
+        slug: `webhook-inventory-product-${suffix}`,
+        priceCents: 100000,
+        inventory: 2,
+      },
+    });
+    const orderNumber = `ORDER-INVENTORY-${suffix}`;
+    const checkoutTransaction = await createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      transactionData: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { productId: product.id },
+      },
+    });
+    const paidPayload = {
+      provider: "demo",
+      eventType: "paid" as const,
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+      currency: "TWD",
+    };
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...paidPayload, eventId: `evt-paid-${suffix}` }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...paidPayload, eventId: `evt-paid-retry-${suffix}` }));
+
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1 });
+    expect(await db.inventoryReservation.findUniqueOrThrow({
+      where: { paymentTransactionId: checkoutTransaction.id },
+    })).toMatchObject({ status: "committed" });
+
+    const partialRefund = PaymentWebhookPayload.parse({
+      ...paidPayload,
+      eventId: `evt-partial-refund-${suffix}`,
+      eventType: "partially_refunded",
+      refundAmountCents: 10000,
+    });
+    await processPaymentWebhook(partialRefund);
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1 });
+
+    const fullRefund = PaymentWebhookPayload.parse({
+      ...paidPayload,
+      eventId: `evt-full-refund-${suffix}`,
+      eventType: "refunded",
+      refundAmountCents: 90000,
+    });
+    await processPaymentWebhook(fullRefund);
+    await processPaymentWebhook(fullRefund);
+
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2 });
+    expect(await db.inventoryReservation.findUniqueOrThrow({
+      where: { paymentTransactionId: checkoutTransaction.id },
+    })).toMatchObject({ status: "released", releaseReason: "full_refund" });
   });
 
   it("snapshots a same-vendor lead attribution for paid webhooks and deduplicates retries", async () => {

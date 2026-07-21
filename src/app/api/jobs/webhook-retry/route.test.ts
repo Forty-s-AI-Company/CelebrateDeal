@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   processDueWebhookRetries: vi.fn(),
+  releaseExpiredInventoryReservations: vi.fn(),
 }));
 
 vi.mock("@/lib/webhook-retry", () => ({
   processDueWebhookRetries: mocks.processDueWebhookRetries,
+}));
+vi.mock("@/lib/inventory-reservations", () => ({
+  releaseExpiredInventoryReservations: mocks.releaseExpiredInventoryReservations,
 }));
 
 import { POST } from "./route";
@@ -22,6 +26,7 @@ function request(authorization?: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("JOB_SECRET", jobSecret);
+  mocks.releaseExpiredInventoryReservations.mockResolvedValue({ examined: 0, released: 0, committed: 0 });
 });
 
 afterEach(() => {
@@ -38,6 +43,7 @@ describe("POST /api/jobs/webhook-retry", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
     expect(mocks.processDueWebhookRetries).not.toHaveBeenCalled();
+    expect(mocks.releaseExpiredInventoryReservations).not.toHaveBeenCalled();
   });
 
   it("processes due retries and returns their count and results with a correct job secret", async () => {
@@ -50,9 +56,11 @@ describe("POST /api/jobs/webhook-retry", () => {
     const response = await POST(request(`Bearer ${jobSecret}`));
 
     expect(mocks.processDueWebhookRetries).toHaveBeenCalledOnce();
+    expect(mocks.releaseExpiredInventoryReservations).toHaveBeenCalledOnce();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       ok: true,
+      inventory: { examined: 0, released: 0, committed: 0 },
       processed: 2,
       results,
     });

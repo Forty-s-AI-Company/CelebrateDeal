@@ -50,6 +50,7 @@ model Vendor {
   payoutItems                PayoutItem[]
   paymentAccounts            PaymentAccount[]
   paymentTransactions        PaymentTransaction[]
+  inventoryReservations      InventoryReservation[]
   refundRecords              RefundRecord[]
   auditLogs                  AuditLog[]
   webhookEvents              WebhookEvent[]
@@ -229,6 +230,7 @@ model Product {
   liveProducts            LiveProduct[]
   templateProductSlots    TeamFunnelTemplateProductSlot[]
   partnerProductOverrides PartnerProductSlotOverride[]
+  inventoryReservations   InventoryReservation[]
 
   @@unique([vendorId, id])
 }
@@ -695,14 +697,38 @@ model PaymentTransaction {
   metadata            Json?
   createdAt           DateTime  @default(now())
 
-  vendor          Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  refunds         RefundRecord[]
-  teamAttribution TeamConversionAttribution?
+  vendor               Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  refunds              RefundRecord[]
+  teamAttribution      TeamConversionAttribution?
+  inventoryReservation InventoryReservation?
 
   @@unique([vendorId, id])
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])
+}
+
+model InventoryReservation {
+  id                   String    @id @default(cuid())
+  vendorId             String
+  productId            String
+  paymentTransactionId String    @unique
+  quantity             Int       @default(1)
+  status               String    @default("reserved")
+  expiresAt            DateTime
+  committedAt          DateTime?
+  releasedAt           DateTime?
+  releaseReason        String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product            Product            @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, paymentTransactionId])
+  @@index([vendorId, status, expiresAt])
+  @@index([productId, status])
 }
 
 model WebhookEvent {

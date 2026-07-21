@@ -7,6 +7,15 @@ const db = {
   paymentTransaction: { create: vi.fn(), update: vi.fn() },
 };
 
+const inventoryMocks = vi.hoisted(() => {
+  class InventoryUnavailableError extends Error {}
+  return {
+    InventoryUnavailableError,
+    createReservedPaymentTransaction: vi.fn(),
+    failPendingCheckoutAndReleaseInventory: vi.fn(),
+  };
+});
+
 const createCheckoutSession = vi.fn();
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
@@ -14,6 +23,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 vi.mock("@/lib/payment-providers", () => ({
   getPaymentProvider: () => ({ id: "demo", createCheckoutSession }),
 }));
+vi.mock("@/lib/inventory-reservations", () => inventoryMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
 
@@ -46,6 +56,15 @@ beforeEach(() => {
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1" });
   db.paymentTransaction.create.mockResolvedValue({ id: "transaction-1" });
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
+  inventoryMocks.createReservedPaymentTransaction.mockImplementation(
+    ({ transactionData }: { transactionData: unknown }) => db.paymentTransaction.create({ data: transactionData }),
+  );
+  inventoryMocks.failPendingCheckoutAndReleaseInventory.mockImplementation(
+    ({ transactionId }: { transactionId: string }) => db.paymentTransaction.update({
+      where: { id: transactionId },
+      data: { status: "failed" },
+    }),
+  );
   createCheckoutSession.mockResolvedValue({
     provider: "demo",
     mode: "manual",
@@ -232,6 +251,18 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
+  it("returns sold out when inventory is consumed between product lookup and reservation", async () => {
+    inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(
+      new inventoryMocks.InventoryUnavailableError(),
+    );
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Product is sold out" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("fails the transaction without trusting the request Host when the production app URL is missing", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
