@@ -10,12 +10,14 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("DIRECT", "URL")]: "postgresql://test:test@database.test:5432/app",
     [envKey("NEXT", "PUBLIC", "APP", "URL")]: "https://app.test",
     [envKey("JOB", "SECRET")]: "test-job-value-12345",
+    [envKey("CSRF", "SECRET")]: "test-csrf-value-12345",
     [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
     [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",
     [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
     [envKey("PAYMENT", "PROVIDER")]: "demo",
     [envKey("RESEND", "API", "KEY")]: "test-resend-value",
     [envKey("EMAIL", "FROM")]: "noreply@app.test",
+    [envKey("SMOKE", "TEST", "EMAIL")]: "smoke@qa.test",
     [envKey("SENTRY", "DSN")]: "https://public@sentry.test/1",
     [envKey("NEXT", "PUBLIC", "POSTHOG", "KEY")]: "test-posthog-value",
     [envKey("NEXT", "PUBLIC", "POSTHOG", "HOST")]: "https://posthog.test",
@@ -148,15 +150,62 @@ describe("getEnvCheckReport", () => {
     }
   });
 
-  it("warns that memory rate limiting is not durable in production", () => {
+  it("fails when production uses non-durable memory rate limiting", () => {
     const env = configuredEnv();
     env[envKey("RATE", "LIMIT", "PROVIDER")] = "memory";
 
     const report = getEnvCheckReport(env);
-    const warning = check(report, envKey("RATE", "LIMIT", "PROVIDER"), "warning");
+    const failure = check(report, envKey("RATE", "LIMIT", "PROVIDER"), "fail");
+
+    expect(report.ok).toBe(false);
+    expect(failure?.message).toContain("in-memory 無法跨部署節點持久控流");
+  });
+
+  it("fails when production relies on JOB_SECRET instead of a dedicated CSRF secret", () => {
+    const env = configuredEnv();
+    delete env[envKey("CSRF", "SECRET")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("CSRF", "SECRET"), "fail")?.message).toContain(
+      "不得與 JOB_SECRET 共用",
+    );
+  });
+
+  it("keeps local development usable while warning about an implicit memory limiter", () => {
+    const env: NodeJS.ProcessEnv = { ...configuredEnv(), NODE_ENV: "development" };
+    delete env[envKey("RATE", "LIMIT", "PROVIDER")];
+
+    const report = getEnvCheckReport(env);
 
     expect(report.ok).toBe(true);
-    expect(warning?.message).toContain("in-memory 無法跨部署節點持久控流");
-    expect(warning?.message).not.toContain("durable");
+    expect(check(report, envKey("RATE", "LIMIT", "PROVIDER"), "warning")?.message).toContain(
+      "正式部署前必須明確設定",
+    );
+  });
+
+  it("warns that email smoke validation is unavailable without the restricted recipient", () => {
+    const env = configuredEnv();
+    delete env[envKey("SMOKE", "TEST", "EMAIL")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(true);
+    expect(check(report, envKey("SMOKE", "TEST", "EMAIL"), "warning")?.message).toContain(
+      "Email smoke test 將安全地拒絕寄送",
+    );
+  });
+
+  it("warns instead of blocking deployment when the optional smoke recipient has an invalid format", () => {
+    const env = configuredEnv();
+    env[envKey("SMOKE", "TEST", "EMAIL")] = "not-a-single-email";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(true);
+    expect(check(report, envKey("SMOKE", "TEST", "EMAIL"), "warning")?.message).toContain(
+      "格式不是單一有效 Email",
+    );
   });
 });

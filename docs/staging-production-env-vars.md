@@ -1,6 +1,6 @@
 # CelebrateDeal Staging / Production Env Vars 對照表
 
-最後更新：2026-07-09
+最後更新：2026-07-21
 
 ## 1. 使用原則
 
@@ -17,6 +17,8 @@
 | `DIRECT_URL` | Supabase staging direct URL | Supabase production direct URL | Supabase Project Settings | `npm run db:migrate:status` up to date |
 | `NEXT_PUBLIC_APP_URL` | `https://staging-app...` | `https://app...` | Vercel domain | Email links / webhook URLs 正確 |
 | `JOB_SECRET` | staging random secret | production random secret | Password manager | `/api/admin/preflight` Bearer token 可通過 |
+| `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用 |
+| `RATE_LIMIT_PROVIDER` | `cloudflare_waf` 或 `upstash_redis` | `cloudflare_waf` 或 `upstash_redis` | Cloudflare / Upstash | preflight 不得顯示 `memory`；Staging 實測 429 |
 | `CLOUDFLARE_ACCOUNT_ID` | same or staging account | production account | Cloudflare dashboard | direct upload API 可建立 upload URL |
 | `CLOUDFLARE_STREAM_TOKEN` | staging scoped token | production scoped token | Cloudflare API Tokens | 不在 client bundle 出現 |
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
@@ -27,6 +29,7 @@
 | PayUni callback 驗證 | 使用 Sandbox Hash Key / Hash IV | 使用 Production Hash Key / Hash IV | PayUni 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
+| `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |
 | `SENTRY_DSN` | staging DSN | production DSN | Sentry project | ops monitoring test issue appears |
 | `NEXT_PUBLIC_SENTRY_DSN` | staging public DSN | production public DSN | Sentry project | client global error can report |
 | `SENTRY_ORG` | org slug | org slug | Sentry | source map upload enabled |

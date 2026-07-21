@@ -25,6 +25,7 @@ export const ProductionEnvSchema = z.object({
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(3),
+  SMOKE_TEST_EMAIL: OptionalSecret,
   SENTRY_DSN: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: OptionalSecret,
   SENTRY_ORG: OptionalSecret,
@@ -125,19 +126,29 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
-  if (!env.RATE_LIMIT_PROVIDER) {
+  if (env.NODE_ENV === "production") {
+    const csrfConfigured = secretPresent(env.CSRF_SECRET);
     checks.push({
-      key: "RATE_LIMIT_PROVIDER",
-      status: "warning",
-      message: "未設定時預設 memory；production 建議明確設定 cloudflare_waf 或 upstash_redis",
+      key: "CSRF_SECRET",
+      status: csrfConfigured ? "pass" : "fail",
+      message: csrfConfigured
+        ? "已設定獨立 CSRF／MFA 加密密鑰"
+        : "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用",
     });
   }
 
-  if ((env.RATE_LIMIT_PROVIDER ?? "memory") === "memory" && env.NODE_ENV === "production") {
+  const rateLimitProvider = env.RATE_LIMIT_PROVIDER ?? "memory";
+  if (rateLimitProvider === "memory" && env.NODE_ENV === "production") {
+    checks.push({
+      key: "RATE_LIMIT_PROVIDER",
+      status: "fail",
+      message: "production 必須使用 Cloudflare WAF 或 Upstash Redis；in-memory 無法跨部署節點持久控流",
+    });
+  } else if (!env.RATE_LIMIT_PROVIDER) {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
       status: "warning",
-      message: "production 建議使用 Cloudflare WAF 或 Upstash Redis，in-memory 無法跨部署節點持久控流",
+      message: "未設定時預設 memory；正式部署前必須明確設定 cloudflare_waf 或 upstash_redis",
     });
   }
 
@@ -151,6 +162,18 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       });
     }
   }
+
+  const smokeTestEmailConfigured = secretPresent(env.SMOKE_TEST_EMAIL);
+  const smokeTestEmailValid = smokeTestEmailConfigured && z.string().email().safeParse(env.SMOKE_TEST_EMAIL?.trim()).success;
+  checks.push({
+    key: "SMOKE_TEST_EMAIL",
+    status: smokeTestEmailValid ? "pass" : "warning",
+    message: smokeTestEmailValid
+      ? "已設定受限的測試收件人"
+      : smokeTestEmailConfigured
+        ? "格式不是單一有效 Email；smoke test 將安全地拒絕寄送，請在 Staging 驗證前修正"
+        : "未設定；Email smoke test 將安全地拒絕寄送，需在 Staging 驗證前補齊",
+  });
 
   const schemaIssues = parsed.success
     ? []
