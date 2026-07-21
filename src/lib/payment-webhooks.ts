@@ -47,6 +47,11 @@ function referralCodeFromMetadata(metadata: unknown) {
   return typeof referralCode === "string" && referralCode.trim().length > 0 ? referralCode.trim() : null;
 }
 
+function affiliateClickIdFromMetadata(metadata: unknown) {
+  const affiliateClickId = metadataObject(metadata).affiliateClickId;
+  return typeof affiliateClickId === "string" && affiliateClickId.length > 0 ? affiliateClickId : null;
+}
+
 async function findVendor(payload: PaymentWebhookPayloadInput) {
   const db = getDb();
 
@@ -279,8 +284,10 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
   const netAmountCents = payload.netAmountCents ?? existingTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
   const existingMetadata = metadataObject(existingTransaction?.metadata);
   const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
+  const checkoutAffiliateClickId = affiliateClickIdFromMetadata(existingMetadata);
   const payloadMetadata = { ...metadataObject(payload.metadata) };
   delete payloadMetadata.referralCode;
+  delete payloadMetadata.affiliateClickId;
   const formSubmissionId = payload.eventType === "paid"
     ? formSubmissionIdFromMetadata(payloadMetadata) ?? formSubmissionIdFromMetadata(existingMetadata)
     : formSubmissionIdFromMetadata(existingMetadata);
@@ -390,6 +397,26 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
           update: attributionSnapshot,
         });
       }
+    }
+
+    // Conversion attribution can only be established by checkout metadata. The
+    // provider payload is intentionally not a source of click IDs or referral codes.
+    if (
+      payload.eventType === "paid"
+      && existingTransaction
+      && !hasRefundedOrder
+      && checkoutAffiliateClickId
+      && checkoutReferralCode
+    ) {
+      await tx.affiliateClick.updateMany({
+        where: {
+          id: checkoutAffiliateClickId,
+          vendorId: vendor.id,
+          referralCode: checkoutReferralCode,
+          convertedAt: null,
+        },
+        data: { convertedAt: occurredAt },
+      });
     }
 
     if (event) {

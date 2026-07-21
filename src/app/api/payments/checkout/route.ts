@@ -6,6 +6,12 @@ import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import type { CheckoutSessionResult } from "@/lib/payment-providers/types";
 import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  ATTRIBUTION_TTL_SECONDS,
+  attributionCookieFromRequest,
+  normalizeReferralCode,
+  visitorIdFromRequest,
+} from "@/lib/team-funnel-attribution";
 
 const CheckoutRequest = z.object({
   vendorId: z.string().min(1),
@@ -51,6 +57,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
   }
 
+  const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const cookieSubmissionId = formSubmissionIdFromRequest(request);
   const formSubmission = cookieSubmissionId
     ? await db.formSubmission.findFirst({
@@ -59,10 +66,12 @@ export async function POST(request: Request) {
       })
     : null;
   const formSubmissionId = formSubmission?.id;
+  const referralCode = affiliateAttribution?.referralCode ?? parsed.data.referralCode;
   const transactionMetadata = {
     productId: parsed.data.productId,
     productName: product.name,
-    referralCode: parsed.data.referralCode,
+    ...(referralCode ? { referralCode } : {}),
+    ...(affiliateAttribution ? { affiliateClickId: affiliateAttribution.affiliateClickId } : {}),
     ...(formSubmissionId ? { formSubmissionId } : {}),
   };
 
@@ -94,7 +103,7 @@ export async function POST(request: Request) {
           transaction,
           product,
           vendor: product.vendor,
-          referralCode: parsed.data.referralCode,
+          referralCode,
           appUrl,
         })
       : {
@@ -161,6 +170,31 @@ export async function POST(request: Request) {
   }
 
   return response;
+}
+
+async function affiliateAttributionFromRequest(request: Request, vendorId: string) {
+  const cookie = attributionCookieFromRequest(request);
+  if (!cookie || cookie.visitorId !== visitorIdFromRequest(request)) return null;
+
+  const click = await getDb().affiliateClick.findFirst({
+    where: {
+      id: cookie.clickId,
+      vendorId,
+      visitorId: cookie.visitorId,
+      createdAt: { gte: new Date(Date.now() - ATTRIBUTION_TTL_SECONDS * 1000) },
+      affiliate: { is: { vendorId, isActive: true } },
+    },
+    select: {
+      id: true,
+      referralCode: true,
+      affiliateId: true,
+      affiliate: { select: { code: true } },
+    },
+  });
+  const referralCode = normalizeReferralCode(click?.referralCode);
+
+  if (!click?.affiliateId || !referralCode || click.affiliate?.code !== referralCode) return null;
+  return { affiliateClickId: click.id, referralCode };
 }
 
 function formSubmissionIdFromRequest(request: Request) {
