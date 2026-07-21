@@ -66,7 +66,10 @@ export async function POST(request: Request) {
       })
     : null;
   const formSubmissionId = formSubmission?.id;
-  const referralCode = affiliateAttribution?.referralCode ?? parsed.data.referralCode;
+  // Checkout attribution must come from the server-validated click only. Request
+  // data can contain a forged referralCode and must never affect the transaction
+  // or payment-provider metadata.
+  const referralCode = affiliateAttribution?.referralCode;
   const transactionMetadata = {
     productId: parsed.data.productId,
     productName: product.name,

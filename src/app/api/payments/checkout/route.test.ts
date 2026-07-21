@@ -58,6 +58,15 @@ function attributionCookie(value: { clickId: string; visitorId: string; issuedAt
   return `celebratedeal_attribution=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
 }
 
+function expectNoAffiliateAttribution() {
+  const transaction = db.paymentTransaction.create.mock.calls[0]?.[0];
+  expect(transaction?.data.metadata).not.toHaveProperty("affiliateClickId");
+  expect(transaction?.data.metadata).not.toHaveProperty("referralCode");
+  expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+    referralCode: undefined,
+  }));
+}
+
 describe("checkout affiliate click attribution", () => {
   const visitorId = "visitor-123456789012345";
 
@@ -94,33 +103,40 @@ describe("checkout affiliate click attribution", () => {
 
     expect(response.status).toBe(200);
     expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
-    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
-    }));
+    expectNoAffiliateAttribution();
   });
 
   it("does not use an expired attribution cookie", async () => {
     const response = await POST(checkoutRequest(
       `${attributionCookie({ clickId: "click-1", visitorId, issuedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1", referralCode: "FORGEDCODE" },
     ));
 
     expect(response.status).toBe(200);
     expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
-    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
-    }));
+    expectNoAffiliateAttribution();
   });
 
   it("does not use an unknown attribution click", async () => {
     const response = await POST(checkoutRequest(
       `${attributionCookie({ clickId: "unknown-click", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1", referralCode: "FORGEDCODE" },
     ));
 
     expect(response.status).toBe(200);
     expect(db.affiliateClick.findFirst).toHaveBeenCalled();
-    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ metadata: expect.not.objectContaining({ affiliateClickId: expect.anything() }) }),
-    }));
+    expectNoAffiliateAttribution();
+  });
+
+  it("does not use a forged referral code when the attribution cookie is missing", async () => {
+    const response = await POST(checkoutRequest(
+      undefined,
+      { vendorId: "vendor-1", productId: "product-1", referralCode: "FORGEDCODE" },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
+    expectNoAffiliateAttribution();
   });
 });
 
