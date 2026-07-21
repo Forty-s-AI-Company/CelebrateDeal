@@ -9,10 +9,10 @@
 ## 結論
 
 - 目前沒有已知的本機程式碼 P0。
-- Lint、TypeScript、704 個單元／整合測試與 Production Build 通過。
+- Lint、TypeScript、711 個單元／整合測試與 Production Build 通過。
 - Playwright smoke 以乾淨 Git revision 連續兩次 25/25 通過。
 - 可以進入 Staging 部署驗證；但 Vercel Preview 環境隔離、受控 Email smoke、Sentry client 監控、Cloudflare key 輪替／真實 webhook、備份還原演練仍須在 Staging 完成。
-- 真正販售前仍有一個程式碼 P1：商品庫存目前只在 checkout 前檢查，付款成功後缺少具冪等性與併發保證的庫存異動帳。
+- PayUni 以外的已知本機程式碼 P0／P1 已修正；其餘項目需在 Staging 或 Production 人工驗收。
 - PayUni Sandbox `QUERY03001` 保持外部阻擋，本輪未重跑、未修改 Production 狀態。
 
 ## 本輪已修正
@@ -26,6 +26,7 @@
 | 商家 owner 併發停用 | Serializable 交易保證至少一位有效 owner | `66d2eb8` |
 | Vendor／Finance／Platform 權限邊界 | 平台後台、商家寫入與財務權限分離 | `117d7c9` |
 | 帳單與出款 CSV | 租戶隔離、公式注入防護、no-store 與下載 audit | `21b6064`、`19d4f34` |
+| 商品庫存與付款生命週期 | checkout reservation、付款 commit、失敗／逾時 release、全額退款冪等補庫存 | `7069d26` |
 | 密碼重設寄信失敗 | 未送達 token 立即撤銷並留下安全 audit | `e493ba3`、`bfee820` |
 | Email smoke | 只能寄單一受控收件人 | `bcfb493` |
 | Cloudflare 錯誤與 secret | 固定逾時、封閉診斷、Live stream key AES-256-GCM 加密落庫 | `eb0463f`、`1ba61cc` |
@@ -35,13 +36,14 @@
 
 ## 安全／一致性發現
 
-### RRA-001 — High — 尚未修正：庫存缺少 paid-once ledger
+### RRA-001 — High — 已修正：庫存缺少 paid-once ledger
 
-- 位置：`src/app/api/payments/checkout/route.ts:57`、`src/lib/payment-webhooks.ts:269`
+- 位置：`src/lib/inventory-reservations.ts`、`src/app/api/payments/checkout/route.ts`、`src/lib/payment-webhooks.ts`
 - 證據：checkout 只確認 `inventory > 0`；paid webhook 會更新交易與歸因，但沒有具唯一鍵或狀態 CAS 的庫存扣減紀錄。
 - 影響：同時結帳可能超賣；若直接在 callback decrement，重送事件又可能重複扣庫存。
-- 建議修正：建立 payment-transaction scoped inventory adjustment，使用唯一約束與 Serializable／CAS，明確定義 pending reservation、paid commit、failed/expired release 與退款是否補庫存。
-- 暫時緩解：Staging 可測流程但不要視為真實庫存保證；正式販售實體／限量商品前必須完成。
+- 修正：每筆 checkout 以 transaction-scoped reservation 先原子扣除一件庫存；付款成功只 commit 一次，建立結帳失敗、付款失敗與 30 分鐘逾時會釋放，全額退款只補回一次，部分退款不補庫存。
+- 併發保證：資料庫唯一鍵、租戶複合外鍵、條件更新與 Serializable transaction；provider metadata 不可指定 productId。
+- Staging 待驗證：套用 migration 後，確認排程會呼叫受 `JOB_SECRET` 保護的 retry job，讓逾時 reservation 得以釋放。
 
 ### RRA-002 — High — 已修正：未驗證 raw body 可無上限配置記憶體
 
@@ -73,8 +75,8 @@
 
 ### 現在可以自動修正
 
-- RRA-001：付款成功只扣一次的庫存調整／reservation ledger。
-- CSP 從 Report-Only 收斂到 enforce 前的 nonce／第三方來源整理；需先取得 Staging violation 樣本，避免猜測破壞登入或分析工具。
+- 目前沒有具明確證據、可在本機繼續修正的 P0／P1。
+- CSP 必須先取得 Staging violation 樣本，才能從 Report-Only 收斂到 enforce；未取得證據前不靠猜測修改 allowlist。
 
 ### Staging 部署後才能驗證
 
@@ -86,6 +88,8 @@
 - 旋轉／重建既有 Cloudflare Live Input，確認新 stream key 是加密 envelope；再做 signed webhook、逾時與錯誤狀態驗收。
 - 觀察 CSP report-only violation，整理後再決定 enforce 日期。
 - 以 Supabase staging／restore project 完成一次 backup restore drill。
+- 在 Supabase Staging 套用 `20260721133000_inventory_reservations`，驗證最後一件商品併發、30 分鐘逾時釋放及全額退款只補一次。
+- 確認排程定期呼叫 `/api/jobs/webhook-retry`；回應中的 inventory 統計僅含數量，不含交易或顧客識別資料。
 
 ### Production 必須人工驗收
 
@@ -108,7 +112,7 @@
 |---|---|
 | `npm run lint` | PASS |
 | `npm run typecheck` | PASS |
-| `npm run test` | PASS — 90 files / 704 tests |
+| `npm run test` | PASS — 91 files / 711 tests |
 | `npm run build` | PASS — 72 routes/pages generated |
 | `npm run e2e:smoke` 第一次 | PASS — 25/25 |
 | `npm run e2e:smoke` 第二次 | PASS — 25/25 |
@@ -119,21 +123,21 @@
 
 | 項目 | 分數 | 說明 |
 |---|---:|---|
-| Build／測試基礎 | 9.4 | 704 tests、build、E2E 連續兩輪通過 |
+| Build／測試基礎 | 9.5 | 711 tests、build、E2E 連續兩輪通過 |
 | 身分驗證／MFA | 9.0 | 流程完整；Production enrollment／recovery SOP 待人工演練 |
 | 權限／租戶隔離 | 9.2 | 平台、商家、財務邊界與主要 relation 均有回歸測試 |
-| 帳務／訂閱／帳單 | 8.5 | 方案、帳單、CSV、出款一致性已強化；庫存 ledger 尚缺 |
+| 帳務／訂閱／帳單 | 9.0 | 方案、帳單、CSV、出款與庫存 reservation 一致性已強化；待 Staging migration 驗收 |
 | PayUni 付款閉環 | 6.5 | 程式碼 fail-closed；Sandbox 仍被供應商外部狀態阻擋 |
 | Email | 8.2 | 失敗補償與受控 smoke 完成；Staging 寄送與 DNS 待驗收 |
 | Cloudflare Stream | 8.1 | 驗簽、逾時、租戶映射與 key 加密完成；真實 Staging 驗收待做 |
 | Web／API 資安 | 8.9 | body limits、CSRF、headers、rate limit gate 完成；CSP 尚 report-only |
 | 監控／營運 | 7.6 | Health、Sentry server、runbook 已有；client DSN、alerts、restore drill 待外部驗收 |
-| Staging 部署準備 | 8.0 | 本機 release gate 全綠；Preview env scope 仍需人工補齊 |
+| Staging 部署準備 | 8.3 | 本機 release gate 全綠；Preview env scope 與新 migration 仍需人工驗收 |
 
-整體程式碼成熟度：約 **8.7/10**。
+整體程式碼成熟度：約 **9.0/10**。
 
-包含外部服務與正式營運驗收的實際可販售成熟度：約 **7.8/10**。
+包含外部服務與正式營運驗收的實際可販售成熟度：約 **8.0/10**。
 
 ## 下一個最值得處理的任務
 
-實作「付款交易 scoped、可重送且具併發保證的庫存 reservation／adjustment ledger」。這是 PayUni 以外，對實際販售風險影響最大的剩餘 P1；完成後再部署 Staging 做 Email、Cloudflare、Sentry、CSP 與 backup restore 驗收。
+部署到 Staging 並依清單驗證 migration、reservation expiry job、Email、Cloudflare、Sentry、CSP violation 與 backup restore。這一步會改變外部環境，需由人工核准部署後才能繼續；PayUni `QUERY03001` 仍獨立保留為供應商阻擋。
