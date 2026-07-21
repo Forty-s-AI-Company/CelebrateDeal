@@ -24,7 +24,7 @@ CelebrateDeal server-side checkout 只會信任後端 Product price，不接受 
 PayUni `upp` form post 應包含：
 
 - `MerID`
-- `Version`
+- `Version`（固定 `2.0`）
 - `EncryptInfo`
 - `HashInfo`
 
@@ -43,8 +43,8 @@ PayUni `upp` form post 應包含：
 - `ProdDesc`
 - `ReturnURL`
 - `NotifyURL`
-- `VendorId`
-- `ReferralCode`
+
+`MerTradeNo` 必須為 25 字元內的英數字、`-` 或 `_`，且 10 分鐘內不可重複；信用卡金額必須是 1～199,999 元的整數。商家與推廣歸因以 CelebrateDeal 已建立的本地交易為權威，不放入 PayUni 未定義的自訂欄位。
 
 `ReturnURL` / `NotifyURL`：
 

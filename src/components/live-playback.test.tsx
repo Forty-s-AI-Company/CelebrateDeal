@@ -136,7 +136,7 @@ describe("LivePlayback checkout", () => {
       formMethod: "POST",
       formPayload: {
         MerID: "merchant-123",
-        Version: "1.0",
+        Version: "2.0",
         EncryptInfo: "encrypted-payload",
         HashInfo: "signed-payload",
       },
@@ -149,7 +149,7 @@ describe("LivePlayback checkout", () => {
     expect(form.style.display).toBe("none");
     expect(inputs).toEqual([
       { type: "hidden", name: "MerID", value: "merchant-123" },
-      { type: "hidden", name: "Version", value: "1.0" },
+      { type: "hidden", name: "Version", value: "2.0" },
       { type: "hidden", name: "EncryptInfo", value: "encrypted-payload" },
       { type: "hidden", name: "HashInfo", value: "signed-payload" },
     ]);

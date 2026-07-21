@@ -1,3 +1,4 @@
+import { createDecipheriv, createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
@@ -11,6 +12,17 @@ function stubPayUniEnv() {
   vi.stubEnv("PAYUNI_HASH_IV", hashIv);
   vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
+}
+
+function decryptCheckoutPayload(encryptInfo: string) {
+  const [encrypted, tag] = Buffer.from(encryptInfo, "hex").toString("utf8").split(":::");
+  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(hashKey), Buffer.from(hashIv));
+  decipher.setAuthTag(Buffer.from(tag, "base64"));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(encrypted, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+  return Object.fromEntries(new URLSearchParams(plaintext));
 }
 
 afterEach(() => {
@@ -37,15 +49,48 @@ describe("PayUni provider", () => {
     });
 
     expect(session?.mode).toBe("form_post");
-    expect(session?.formAction).toContain("/upp");
-    expect(session?.formPayload).toMatchObject({
+    expect(session?.formAction).toBe("https://sandbox-api.payuni.com.tw/api/upp");
+    expect(session?.formPayload).toEqual({
       MerID: "TESTMER",
-      Version: "1.0",
+      Version: "2.0",
+      EncryptInfo: expect.any(String),
+      HashInfo: expect.any(String),
     });
-    expect(session?.formPayload?.EncryptInfo).toEqual(expect.any(String));
-    expect(session?.formPayload?.HashInfo).toEqual(expect.any(String));
+    const encrypted = session?.formPayload?.EncryptInfo ?? "";
+    const payload = decryptCheckoutPayload(encrypted);
+    expect(payload).toEqual({
+      MerID: "TESTMER",
+      MerTradeNo: "CD-TEST-001",
+      TradeAmt: "1990",
+      Timestamp: expect.stringMatching(/^\d+$/),
+      ProdDesc: "Sandbox Product",
+      ReturnURL: "https://app.example.test/api/webhooks/payments?provider=payuni&source=return",
+      NotifyURL: "https://app.example.test/api/webhooks/payments?provider=payuni&source=notify",
+    });
+    expect(session?.formPayload?.HashInfo).toBe(
+      createHash("sha256").update(`${hashKey}${encrypted}${hashIv}`).digest("hex").toUpperCase(),
+    );
     expect(JSON.stringify(session?.formPayload)).not.toContain(hashKey);
     expect(JSON.stringify(session?.formPayload)).not.toContain(hashIv);
+  });
+
+  it.each([
+    ["order number too long", { orderNumber: "CD-12345678901234567890123", grossAmountCents: 199000 }, undefined],
+    ["order number characters", { orderNumber: "CD INVALID", grossAmountCents: 199000 }, undefined],
+    ["fractional TWD", { orderNumber: "CD-TEST-002", grossAmountCents: 199050 }, undefined],
+    ["credit amount below range", { orderNumber: "CD-TEST-003", grossAmountCents: 0 }, undefined],
+    ["credit amount above range", { orderNumber: "CD-TEST-004", grossAmountCents: 20_000_000 }, undefined],
+    ["environment endpoint mismatch", { orderNumber: "CD-TEST-005", grossAmountCents: 199000 }, "https://api.payuni.com.tw/api"],
+  ])("rejects invalid PayUni checkout contract: %s", async (_label, transactionInput, apiBaseUrl) => {
+    stubPayUniEnv();
+    if (apiBaseUrl) vi.stubEnv("PAYUNI_API_BASE_URL", apiBaseUrl);
+
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_invalid", ...transactionInput } as PaymentTransaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://app.example.test",
+    })).rejects.toThrow();
   });
 
   it("normalizes PayUni sandbox paid and duplicate fixtures", async () => {

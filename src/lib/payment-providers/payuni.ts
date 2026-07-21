@@ -2,6 +2,15 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqu
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
+const PAYUNI_UPP_VERSION = "2.0";
+const PAYUNI_API_BASE_URLS = {
+  sandbox: "https://sandbox-api.payuni.com.tw/api",
+  production: "https://api.payuni.com.tw/api",
+} as const;
+const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
+const PAYUNI_MIN_TRADE_AMOUNT = 1;
+const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
+
 function cents(value: unknown) {
   const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
   return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
@@ -69,10 +78,43 @@ function parseRawPayload(rawBody: string) {
 function payUniKeyMaterial() {
   const key = process.env.PAYUNI_HASH_KEY?.trim();
   const iv = process.env.PAYUNI_HASH_IV?.trim();
-  if (!key || !iv) {
-    throw new Error("PAYUNI_HASH_KEY and PAYUNI_HASH_IV are required.");
+  if (!key || !iv || Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) {
+    throw new Error("PAYUNI_HASH_KEY and PAYUNI_HASH_IV must use the required byte lengths.");
   }
   return { key, iv };
+}
+
+function payUniApiBaseUrl() {
+  const environment = process.env.PAYUNI_ENV?.trim();
+  if (environment !== "sandbox" && environment !== "production") {
+    throw new Error("PAYUNI_ENV must be sandbox or production.");
+  }
+
+  const expected = PAYUNI_API_BASE_URLS[environment];
+  const configured = process.env.PAYUNI_API_BASE_URL?.trim().replace(/\/+$/, "");
+  if (configured && configured !== expected) {
+    throw new Error("PAYUNI_API_BASE_URL does not match PAYUNI_ENV.");
+  }
+  return expected;
+}
+
+function payUniOrderNumber(transaction: { id: string; orderNumber: string | null }) {
+  const value = transaction.orderNumber ?? transaction.id;
+  if (!PAYUNI_ORDER_NUMBER.test(value)) {
+    throw new Error("PayUni order number is invalid.");
+  }
+  return value;
+}
+
+function payUniTradeAmount(grossAmountCents: number) {
+  if (!Number.isSafeInteger(grossAmountCents) || grossAmountCents % 100 !== 0) {
+    throw new Error("PayUni trade amount must use whole TWD units.");
+  }
+  const amount = grossAmountCents / 100;
+  if (amount < PAYUNI_MIN_TRADE_AMOUNT || amount > PAYUNI_MAX_CREDIT_TRADE_AMOUNT) {
+    throw new Error("PayUni trade amount is outside the supported credit-card range.");
+  }
+  return amount;
 }
 
 function encryptInfo(payload: Record<string, string | number>) {
@@ -127,7 +169,7 @@ function verifyPayUniSignature(rawBody: string, signature: string | null) {
 
 export const payUniPaymentProvider: PaymentProviderAdapter = {
   id: "payuni",
-  async createCheckoutSession({ transaction, product, vendor, referralCode, appUrl }) {
+  async createCheckoutSession({ transaction, product, appUrl }) {
     const merchantId = process.env.PAYUNI_MERCHANT_ID;
     if (!merchantId) {
       return {
@@ -141,18 +183,14 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
 
     const encrypted = encryptInfo({
       MerID: merchantId,
-      MerTradeNo: transaction.orderNumber ?? transaction.id,
-      TradeAmt: Math.max(1, Math.round(transaction.grossAmountCents / 100)),
+      MerTradeNo: payUniOrderNumber(transaction),
+      TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
       Timestamp: Math.floor(Date.now() / 1000),
       ProdDesc: product.name.slice(0, 80),
       ReturnURL: `${appUrl}/api/webhooks/payments?provider=payuni&source=return`,
       NotifyURL: `${appUrl}/api/webhooks/payments?provider=payuni&source=notify`,
-      VendorId: vendor.id,
-      ReferralCode: referralCode ?? "",
     });
-
-    const baseUrl = process.env.PAYUNI_API_BASE_URL
-      ?? (process.env.PAYUNI_ENV === "production" ? "https://api.payuni.com.tw/api" : "https://sandbox-api.payuni.com.tw/api");
+    const baseUrl = payUniApiBaseUrl();
 
     return {
       provider: "payuni",
@@ -162,7 +200,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       formMethod: "POST",
       formPayload: {
         MerID: merchantId,
-        Version: "1.0",
+        Version: PAYUNI_UPP_VERSION,
         EncryptInfo: encrypted,
         HashInfo: hashInfo(encrypted),
       },
