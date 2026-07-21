@@ -980,7 +980,7 @@ test("protected vendor and admin pages redirect unauthenticated users", async ({
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("admin area requires MFA for signed-in finance roles", async ({ page }) => {
+test("vendor finance roles cannot enter the cross-tenant platform admin area", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill(seed.email);
   await page.getByLabel("密碼").fill(password);
@@ -988,8 +988,8 @@ test("admin area requires MFA for signed-in finance roles", async ({ page }) => 
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto("/admin/billing/dashboard");
-  await expect(page).toHaveURL(/\/mfa\/setup/);
-  await expect(page.getByRole("heading", { name: "設定管理員 MFA" })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
 });
 
 mfaTest("platform admin can enable TOTP, rejects an incorrect code, and enters admin after verification", async ({ page, mfaUser }) => {
