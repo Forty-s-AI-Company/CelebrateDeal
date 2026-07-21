@@ -135,6 +135,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
@@ -204,6 +205,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
 
     checkoutSubmissionRef.current = true;
     setIsSubmittingCheckout(true);
+    setCheckoutError(null);
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
@@ -213,7 +215,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     });
 
     try {
-      await requestCheckout({ vendorId: live.vendorId, productId, referralCode });
+      const checkoutStarted = await requestCheckout({ vendorId: live.vendorId, productId, referralCode });
+      if (!checkoutStarted) {
+        setCheckoutError("目前無法完成結帳，請稍後再試。");
+      }
     } finally {
       checkoutSubmissionRef.current = false;
       setIsSubmittingCheckout(false);
@@ -355,6 +360,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             ))}
           </div>
         </nav>
+
+        {checkoutError ? (
+          <p aria-live="polite" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
+            {checkoutError}
+          </p>
+        ) : null}
 
         {panel !== "chat" ? (
           <aside className="absolute bottom-20 left-3 right-3 z-30 max-h-[58vh] overflow-auto rounded-2xl border border-white/15 bg-white p-4 text-slate-950 shadow-2xl">
