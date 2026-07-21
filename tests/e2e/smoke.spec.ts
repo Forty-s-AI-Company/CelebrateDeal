@@ -215,12 +215,14 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
         tracking: { create: {} },
       },
     });
+    const smokeTestEmail = process.env.E2E_SMOKE_TEST_EMAIL;
+    if (!smokeTestEmail) throw new Error("E2E_SMOKE_TEST_EMAIL is required for isolated email smoke QA.");
     let user: { id: string; email: string } | null = null;
 
     try {
       user = await db.user.create({
         data: {
-          email: `e2e-reset-${suffix}@celebratedeal.local`,
+          email: smokeTestEmail,
           name: "E2E Password Reset User",
           passwordHash: hashPassword(previousCredential),
           status: "active",
@@ -1033,12 +1035,13 @@ mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, 
 });
 
 mfaTest("regenerating recovery codes invalidates old codes and accepts newly issued codes", async ({ page, mfaUser }) => {
-  await enrollMfa(page, mfaUser);
+  const totpSeed = await enrollMfa(page, mfaUser);
   const oldRecoveryCode = await displayedRecoveryCode(page);
   await page.getByRole("button", { name: "我已保存 recovery codes" }).click();
   await expect(page).toHaveURL(/\/mfa\/verify/);
 
   await page.goto("/mfa/setup");
+  await page.getByLabel("目前 TOTP 驗證碼").fill(totpCodeForTimestamp(totpSeed));
   await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=recovery_regenerated/);
   const newRecoveryCode = await displayedRecoveryCode(page);
@@ -1174,7 +1177,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await page.getByRole("checkbox", { name: /我已確認建立自己的夥伴頁/ }).check();
     await page.getByRole("button", { name: "確認並建立夥伴頁" }).click();
     // 開發模式首次載入 Server Action 可能需要額外編譯時間。
-    await expect(page).toHaveURL(/\/partner-pages\/[^/]+\/edit$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/partner-pages\/[^/]+\/edit$/, { timeout: 30_000 });
   };
 
   try {
