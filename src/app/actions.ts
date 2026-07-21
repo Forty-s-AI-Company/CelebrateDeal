@@ -553,6 +553,36 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
     redirect(`${destination}?error=mfa_required`);
   }
 
+  const headerStore = await headers();
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(getCanonicalAppUrl(), { headers: rateLimitHeaders }),
+    `mfa-recovery-regeneration:${auth.user.id}`,
+    3,
+    15 * 60 * 1000,
+  );
+  if (rateLimited) {
+    redirect(`${destination}?error=${rateLimited.status === 429 ? "recovery_rate_limited" : "recovery_unavailable"}`);
+  }
+
+  const code = text(formData, "code");
+  const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
+  if (!verifyTotpCode(secret, code)) {
+    await writeAuditLog({
+      vendorId: auth.vendor?.id ?? null,
+      actorId: auth.user.id,
+      actorLabel: auth.member?.role ?? auth.user.platformRole,
+      action: "mfa_recovery_codes_regeneration_failed",
+      targetType: "UserRecoveryCode",
+      targetId: auth.user.id,
+    });
+    redirect(`${destination}?error=mfa_code`);
+  }
+
   const recoveryCodes = generateRecoveryCodes();
   await getDb().$transaction([
     getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
@@ -561,6 +591,10 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
         userId: auth.user.id,
         codeHash: hashRecoveryCode(codeValue),
       })),
+    }),
+    getDb().userMfaFactor.update({
+      where: { userId: auth.user.id },
+      data: { lastUsedAt: new Date() },
     }),
   ]);
 

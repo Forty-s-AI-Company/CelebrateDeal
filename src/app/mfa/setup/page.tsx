@@ -14,6 +14,8 @@ import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfa
 const errorMessages: Record<string, string> = {
   mfa_code: "TOTP 驗證碼不正確。",
   mfa_required: "請先啟用 MFA。",
+  recovery_rate_limited: "Recovery codes 重建嘗試次數過多，請 15 分鐘後再試。",
+  recovery_unavailable: "Recovery codes 驗證保護暫時無法使用，請稍後再試。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",
   password_reset_smoke_recipient: "目前帳號不是允許的測試收件人，未寄出測試信。",
   password_reset_smoke_rate_limited: "測試信寄送次數過多，請 15 分鐘後再試。",
@@ -112,8 +114,12 @@ export default async function MfaSetupPage({
                   啟用後會顯示一次 recovery codes。資料庫只保存 hash，不保存明碼。
                 </div>
                 {auth.user.mfaFactor ? (
-                  <form action={regenerateRecoveryCodesAction}>
+                  <form action={regenerateRecoveryCodesAction} className="grid gap-3">
                     <CsrfField />
+                    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+                      目前 TOTP 驗證碼
+                      <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
+                    </label>
                     <button className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50">
                       重新產生 recovery codes
                     </button>

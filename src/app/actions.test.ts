@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   createUserSession: vi.fn(),
   findUnique: vi.fn(),
+  generateRecoveryCodes: vi.fn(),
   headers: vi.fn(),
   invoiceUpsert: vi.fn(),
   isAllowedSmokeTestRecipient: vi.fn(),
@@ -40,6 +41,8 @@ const mocks = vi.hoisted(() => ({
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
   userMfaFactorUpdate: vi.fn(),
+  userRecoveryCodeCreateMany: vi.fn(),
+  userRecoveryCodeDeleteMany: vi.fn(),
   userRecoveryCodeFindMany: vi.fn(),
   userRecoveryCodeUpdate: vi.fn(),
   userUpdate: vi.fn(),
@@ -87,11 +90,14 @@ vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmok
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
+  generateRecoveryCodes: mocks.generateRecoveryCodes,
   generateTotpUri: vi.fn(),
+  hashRecoveryCode: (code: string) => `test-hash:${code}`,
   MFA_RECOVERY_COOKIE: "mfa_recovery_codes",
   MFA_SETUP_COOKIE: "mfa_setup",
   parsePendingMfaSetup: vi.fn(),
   parseRecoveryCodes: vi.fn(),
+  serializeRecoveryCodes: (codes: string[]) => JSON.stringify(codes),
   verifyRecoveryCode: mocks.verifyRecoveryCode,
   verifyTotpCode: mocks.verifyTotpCode,
 }));
@@ -111,6 +117,8 @@ vi.mock("@/lib/db", () => ({
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     userMfaFactor: { update: mocks.userMfaFactorUpdate },
     userRecoveryCode: {
+      createMany: mocks.userRecoveryCodeCreateMany,
+      deleteMany: mocks.userRecoveryCodeDeleteMany,
       findMany: mocks.userRecoveryCodeFindMany,
       update: mocks.userRecoveryCodeUpdate,
     },
@@ -139,6 +147,7 @@ import {
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
+  regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
   unbindInteractionScriptFromLiveAction,
@@ -245,6 +254,12 @@ function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
   return formData;
 }
 
+function recoveryRegenerationFormData(code = "123456") {
+  const formData = new FormData();
+  formData.set("code", code);
+  return formData;
+}
+
 function interactionScriptFormData(triggerSec: string, ctaUrl?: string) {
   const formData = new FormData();
   formData.set("name", "測試留言組");
@@ -305,9 +320,12 @@ beforeEach(() => {
   });
   mocks.sendPasswordResetLink.mockResolvedValue({ token: "one-time-reset-token", resetUrl: "https://app.test/password-reset/confirm?token=one-time-reset-token" });
   mocks.decryptMfaSecret.mockReturnValue("totp-secret");
+  mocks.generateRecoveryCodes.mockReturnValue(["recovery-code-1", "recovery-code-2"]);
   mocks.verifyTotpCode.mockReturnValue(true);
   mocks.verifyRecoveryCode.mockReturnValue(false);
   mocks.userRecoveryCodeFindMany.mockResolvedValue([]);
+  mocks.userRecoveryCodeCreateMany.mockResolvedValue({ count: 2 });
+  mocks.userRecoveryCodeDeleteMany.mockResolvedValue({ count: 0 });
   mocks.userMfaFactorUpdate.mockResolvedValue({ id: "factor-1" });
   mocks.userRecoveryCodeUpdate.mockResolvedValue({ id: "recovery-1" });
   mocks.markCurrentSessionMfaVerified.mockResolvedValue(undefined);
@@ -719,6 +737,87 @@ describe("verifyMfaAction", () => {
     expect(mocks.userMfaFactorUpdate).not.toHaveBeenCalled();
     expect(mocks.userRecoveryCodeUpdate).not.toHaveBeenCalled();
     expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+  });
+});
+
+describe("regenerateRecoveryCodesAction", () => {
+  function authenticatedMfaUser() {
+    mocks.requireAuth.mockResolvedValue({
+      user: {
+        id: "user-1",
+        email: "member@example.test",
+        platformRole: "user",
+        mfaFactor: { secretEncrypted: "encrypted-totp-secret" },
+      },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin: false,
+    });
+  }
+
+  it("fails closed before TOTP verification when regeneration is rate limited", async () => {
+    authenticatedMfaUser();
+    mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=recovery_rate_limited",
+    );
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "mfa-recovery-regeneration:user-1",
+      3,
+      15 * 60 * 1000,
+    );
+    expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incorrect current TOTP without replacing any recovery code", async () => {
+    authenticatedMfaUser();
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+
+    await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData("000000"))).rejects.toThrow(
+      "redirect:/settings/security?error=mfa_code",
+    );
+
+    expect(mocks.verifyTotpCode).toHaveBeenCalledWith("totp-secret", "000000");
+    expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeCreateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "mfa_recovery_codes_regeneration_failed",
+    }));
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("000000");
+  });
+
+  it("atomically replaces recovery codes only after a valid current TOTP", async () => {
+    authenticatedMfaUser();
+    const setCookie = vi.fn();
+    mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: setCookie });
+    mocks.transaction.mockResolvedValueOnce([]);
+
+    await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData())).rejects.toThrow(
+      "redirect:/settings/security?updated=recovery_regenerated",
+    );
+
+    expect(mocks.userRecoveryCodeDeleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    expect(mocks.userRecoveryCodeCreateMany).toHaveBeenCalledWith({
+      data: [
+        { userId: "user-1", codeHash: "test-hash:recovery-code-1" },
+        { userId: "user-1", codeHash: "test-hash:recovery-code-2" },
+      ],
+    });
+    expect(mocks.userMfaFactorUpdate).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      data: { lastUsedAt: expect.any(Date) },
+    });
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(setCookie).toHaveBeenCalledWith(
+      "mfa_recovery_codes",
+      JSON.stringify(["recovery-code-1", "recovery-code-2"]),
+      expect.objectContaining({ httpOnly: true, maxAge: 600 }),
+    );
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("recovery-code-1");
   });
 });
 
