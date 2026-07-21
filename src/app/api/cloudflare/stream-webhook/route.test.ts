@@ -42,6 +42,26 @@ async function createProcessingVideo(uid: string) {
 }
 
 describe("Cloudflare Stream webhook", () => {
+  it("fails closed before database access when the webhook secret is not configured", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", undefined);
+    const body = JSON.stringify({ uid: "cf_uid_disabled", readyToStream: true });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "unused-fixture-secret"),
+      },
+      body,
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ reason: "missing_webhook_signing_secret" });
+    await expect(getDb().video.findFirst({
+      where: { cloudflareStreamUid: "cf_uid_disabled" },
+    })).resolves.toBeNull();
+  });
+
   it("rejects oversized payloads before signature verification or database access", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
 

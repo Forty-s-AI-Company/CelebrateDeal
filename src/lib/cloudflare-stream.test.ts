@@ -16,6 +16,19 @@ afterEach(() => {
 });
 
 describe("Cloudflare Stream API", () => {
+  it("fails closed without configuration and never contacts Cloudflare", async () => {
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", undefined);
+    vi.stubEnv("CLOUDFLARE_STREAM_TOKEN", undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createDirectCreatorUpload()).rejects.toMatchObject({
+      code: "configuration",
+      providerStatus: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("uses a bounded request and validates direct-upload responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,

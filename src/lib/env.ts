@@ -25,9 +25,9 @@ export const ProductionEnvSchema = z.object({
   RATE_LIMIT_PROVIDER: z.enum(["memory", "cloudflare_waf", "upstash_redis"]).default("memory"),
   UPSTASH_REDIS_REST_URL: OptionalSecret,
   UPSTASH_REDIS_REST_TOKEN: OptionalSecret,
-  CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
-  CLOUDFLARE_STREAM_TOKEN: z.string().min(1),
-  CLOUDFLARE_STREAM_WEBHOOK_SECRET: z.string().min(1),
+  CLOUDFLARE_ACCOUNT_ID: OptionalSecret,
+  CLOUDFLARE_STREAM_TOKEN: OptionalSecret,
+  CLOUDFLARE_STREAM_WEBHOOK_SECRET: OptionalSecret,
   PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]).default("demo"),
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
@@ -70,9 +70,6 @@ const requiredKeys = [
   "DIRECT_URL",
   "NEXT_PUBLIC_APP_URL",
   "JOB_SECRET",
-  "CLOUDFLARE_ACCOUNT_ID",
-  "CLOUDFLARE_STREAM_TOKEN",
-  "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
   "PAYMENT_PROVIDER",
   "RESEND_API_KEY",
   "EMAIL_FROM",
@@ -107,6 +104,35 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       key,
       status: secretPresent(value) ? "pass" : "warning",
       message: secretPresent(value) ? "已設定" : "建議設定；未設定不阻擋部署，但會降低正式監控或 webhook 驗證完整度",
+    });
+  }
+
+  const cloudflareKeys = [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_STREAM_TOKEN",
+    "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
+  ] as const;
+  const configuredCloudflareKeys = cloudflareKeys.filter((key) => secretPresent(env[key]));
+  const cloudflareDisabled = configuredCloudflareKeys.length === 0;
+  const cloudflarePartiallyConfigured = configuredCloudflareKeys.length > 0
+    && configuredCloudflareKeys.length < cloudflareKeys.length;
+  for (const key of cloudflareKeys) {
+    const configured = secretPresent(env[key]);
+    let status: EnvCheck["status"] = "pass";
+    let message = "已設定";
+    if (cloudflareDisabled) {
+      status = "warning";
+      message = "未設定；Cloudflare Stream 功能將安全停用";
+    } else if (cloudflarePartiallyConfigured) {
+      status = configured ? "pass" : "fail";
+      message = configured
+        ? "已設定；Cloudflare Stream 三項設定必須同時存在"
+        : "Cloudflare Stream 已部分啟用，三項設定必須同時存在";
+    }
+    checks.push({
+      key,
+      status,
+      message,
     });
   }
 

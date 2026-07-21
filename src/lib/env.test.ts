@@ -53,6 +53,35 @@ describe("getEnvCheckReport", () => {
     expect(check(report, envKey("DATABASE", "URL"), "fail")?.message).toBe("缺少或仍是 placeholder");
   });
 
+  it("allows Cloudflare Stream to remain safely disabled when all credentials are absent", () => {
+    const env = configuredEnv();
+    const cloudflareKeys = [
+      envKey("CLOUDFLARE", "ACCOUNT", "ID"),
+      envKey("CLOUDFLARE", "STREAM", "TOKEN"),
+      envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET"),
+    ];
+    for (const key of cloudflareKeys) delete env[key];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(true);
+    for (const key of cloudflareKeys) {
+      expect(check(report, key, "warning")?.message).toContain("安全停用");
+    }
+  });
+
+  it("fails closed when Cloudflare Stream is only partially configured", () => {
+    const env = configuredEnv();
+    delete env[envKey("CLOUDFLARE", "STREAM", "TOKEN")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("CLOUDFLARE", "STREAM", "TOKEN"), "fail")?.message).toContain(
+      "三項設定必須同時存在",
+    );
+  });
+
   it("fails for a SQLite file URL in production", () => {
     const env = configuredEnv();
     env[envKey("DATABASE", "URL")] = "file:./test.db";
