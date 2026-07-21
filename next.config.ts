@@ -18,12 +18,9 @@ const cspReportOnly = [
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**",
-      },
-    ],
+    // 商家圖片直接由瀏覽器向來源站載入；專案所有 Image 目前也都明確
+    // 使用 unoptimized。不要保留可代理任意 HTTPS 主機的 Image Optimizer。
+    unoptimized: true,
   },
   async headers() {
     return [
@@ -34,6 +31,7 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
           { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
         ],
       },
