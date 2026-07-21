@@ -38,7 +38,7 @@ import {
   verifyRecoveryCode,
   verifyTotpCode,
 } from "@/lib/mfa";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
@@ -254,14 +254,35 @@ export async function saveTrackingSettingsAction(formData: FormData) {
 export async function updatePasswordAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
+  const currentPassword = text(formData, "currentPassword");
   const password = text(formData, "password");
+  const confirmPassword = text(formData, "confirmPassword");
+
+  if (!verifyPassword(currentPassword, auth.user.passwordHash)) {
+    redirect("/settings/security?error=current_password");
+  }
   if (password.length < 12) {
     redirect("/settings/security?error=short");
   }
-  await getDb().user.update({
-    where: { id: auth.user.id },
-    data: { passwordHash: hashPassword(password) },
-  });
+  if (password !== confirmPassword) {
+    redirect("/settings/security?error=password_mismatch");
+  }
+  if (verifyPassword(password, auth.user.passwordHash)) {
+    redirect("/settings/security?error=password_reuse");
+  }
+
+  const db = getDb();
+  const revokedAt = new Date();
+  await db.$transaction([
+    db.user.update({
+      where: { id: auth.user.id },
+      data: { passwordHash: hashPassword(password) },
+    }),
+    db.userSession.updateMany({
+      where: { userId: auth.user.id, revokedAt: null },
+      data: { revokedAt },
+    }),
+  ]);
   await writeAuditLog({
     vendorId: auth.vendor?.id ?? null,
     actorId: auth.user.id,
@@ -271,7 +292,10 @@ export async function updatePasswordAction(formData: FormData) {
     targetId: auth.user.id,
     after: { email: auth.user.email },
   });
-  redirect("/settings/security?updated=1");
+  const cookieStore = await cookies();
+  cookieStore.delete(AUTH_COOKIE);
+  cookieStore.delete(LEGACY_VENDOR_COOKIE);
+  redirect("/login?password_changed=1");
 }
 
 export async function requestPasswordResetAction(formData: FormData) {

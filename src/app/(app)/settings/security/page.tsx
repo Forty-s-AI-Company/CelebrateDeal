@@ -21,7 +21,10 @@ import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfa
 import { requireAuth } from "@/lib/auth";
 
 const errorMessages: Record<string, string> = {
+  current_password: "目前密碼不正確。",
   short: "密碼至少需要 12 個字元。",
+  password_mismatch: "新密碼與確認密碼不一致。",
+  password_reuse: "新密碼不能與目前密碼相同。",
   owner_required: "只有商家 owner 可以管理成員。",
   member_invalid: "請確認成員姓名、Email 與角色都已填寫。",
   member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
@@ -96,8 +99,11 @@ export default async function SecuritySettingsPage({
           <h2 className="mb-4 text-lg font-semibold text-slate-950">更新密碼</h2>
           <form action={updatePasswordAction} className="grid gap-4">
             <CsrfField />
-            <Field label="新密碼" name="password" type="password" required />
-            <SubmitButton>更新密碼</SubmitButton>
+            <Field label="目前密碼" name="currentPassword" type="password" autoComplete="current-password" required />
+            <Field label="新密碼" name="password" type="password" autoComplete="new-password" minLength={12} required />
+            <Field label="確認新密碼" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} required />
+            <p className="text-xs text-slate-500">更新後會撤銷所有裝置的登入狀態，請用新密碼重新登入。</p>
+            <SubmitButton>更新密碼並全部登出</SubmitButton>
           </form>
         </Card>
         <Card>

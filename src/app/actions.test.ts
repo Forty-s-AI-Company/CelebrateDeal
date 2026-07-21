@@ -137,12 +137,14 @@ import {
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
+  updatePasswordAction,
   unbindInteractionScriptFromLiveAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import SecuritySettingsPage from "./(app)/settings/security/page";
+import { hashPassword } from "@/lib/password";
 
 const transaction = {
   id: "payment-1",
@@ -207,6 +209,22 @@ function deactivateVendorMemberFormData(id = "member-2", confirmation = "member@
 function passwordResetFormData(email = "member@example.com") {
   const formData = new FormData();
   formData.set("email", email);
+  return formData;
+}
+
+function updatePasswordFormData({
+  currentPassword = "current-password-123",
+  password = "replacement-password-456",
+  confirmPassword = password,
+}: {
+  currentPassword?: string;
+  password?: string;
+  confirmPassword?: string;
+} = {}) {
+  const formData = new FormData();
+  formData.set("currentPassword", currentPassword);
+  formData.set("password", password);
+  formData.set("confirmPassword", confirmPassword);
   return formData;
 }
 
@@ -416,6 +434,79 @@ describe("loginAction", () => {
     expect(mocks.authenticateUser).not.toHaveBeenCalled();
     expect(mocks.createUserSession).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("updatePasswordAction", () => {
+  const currentPassword = "current-password-123";
+
+  function authenticatedUser() {
+    mocks.requireAuth.mockResolvedValue({
+      user: {
+        id: "user-1",
+        email: "member@example.com",
+        passwordHash: hashPassword(currentPassword, "current-password-test-salt"),
+        platformRole: "user",
+      },
+      session: { id: "session-1" },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+    });
+  }
+
+  it("rejects an incorrect current password without changing credentials or sessions", async () => {
+    authenticatedUser();
+    const formData = updatePasswordFormData({ currentPassword: "incorrect-password" });
+
+    await expect(updatePasswordAction(formData)).rejects.toThrow(
+      "redirect:/settings/security?error=current_password",
+    );
+
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mismatched confirmation before writing any credential data", async () => {
+    authenticatedUser();
+
+    await expect(updatePasswordAction(updatePasswordFormData({
+      password: "replacement-password-456",
+      confirmPassword: "different-password-789",
+    }))).rejects.toThrow("redirect:/settings/security?error=password_mismatch");
+
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("updates the password atomically, revokes every active session, and clears auth cookies", async () => {
+    authenticatedUser();
+    const deleteCookie = vi.fn();
+    mocks.cookies.mockResolvedValueOnce({ delete: deleteCookie, set: vi.fn() });
+    mocks.transaction.mockResolvedValueOnce([]);
+
+    await expect(updatePasswordAction(updatePasswordFormData())).rejects.toThrow(
+      "redirect:/login?password_changed=1",
+    );
+
+    expect(mocks.userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { passwordHash: expect.stringMatching(/^scrypt:/) },
+    });
+    expect(mocks.userSessionUpdateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: "user-1",
+      action: "update_password",
+      after: { email: "member@example.com" },
+    }));
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("replacement-password-456");
+    expect(deleteCookie).toHaveBeenCalledWith("celebrate_session");
+    expect(deleteCookie).toHaveBeenCalledWith("celebrate_vendor_id");
   });
 });
 
