@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { CheckCircle2, CopyPlus, FilePenLine, LockKeyhole, RectangleEllipsis } from "lucide-react";
 import { Card } from "@/components/ui";
 import type { PartnerPageActionState } from "@/app/actions/team-funnel-partner-actions";
@@ -37,8 +37,6 @@ export function TeamTemplateClaimError({ state }: { state: "expired" | "disabled
 export function TeamTemplateClaim({ template, csrfToken, action }: { template: TeamTemplateClaimData; csrfToken: string; action: ClaimAction }) {
   const [state, formAction, pending] = useActionState(action, initialState);
   const [mode, setMode] = useState<(typeof modes)[number]["value"]>("QUICK_APPLY");
-
-  useEffect(() => { if (state.redirectTo) window.location.assign(state.redirectTo); }, [state.redirectTo]);
 
   return (
     <Card>

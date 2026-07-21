@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { assertTeamFunnelAccess, requireTeamFunnelActor, TeamFunnelAccessDeniedError, type TeamFunnelField, type TeamFunnelMembership } from "@/lib/team-funnel-access";
@@ -10,7 +11,6 @@ import { claimTeamFunnelShare, TeamFunnelShareConflictError, TeamFunnelShareUnav
 export type PartnerPageActionState = {
   status: "idle" | "success" | "error";
   message: string;
-  redirectTo?: string;
 };
 
 type EditableField = "HEADLINE" | "SUBHEADLINE" | "BODY" | "CTA_LABEL" | "CTA_URL";
@@ -42,6 +42,7 @@ export async function claimTeamTemplateAction(
   _previousState: PartnerPageActionState,
   formData: FormData,
 ): Promise<PartnerPageActionState> {
+  let redirectTo: string;
   try {
     await assertServerActionSecurity(formData);
     const teamId = value(formData, "teamId");
@@ -54,16 +55,13 @@ export async function claimTeamTemplateAction(
     if (value(formData, "confirmed") !== "yes") return { status: "error", message: "請先確認建立自己的夥伴頁。" };
 
     const result = await claimTeamFunnelShare({ teamId, shareCode, mode, slug });
-    const redirectTo = `/partner-pages/${result.page.id}/edit`;
+    redirectTo = `/partner-pages/${result.page.id}/edit`;
     revalidatePath("/partner-pages");
-    return {
-      status: "success",
-      message: result.duplicate ? "你已取得這個版本，已帶你前往既有副本。" : "夥伴頁已建立，現在可補齊個人資料與商品槽。",
-      redirectTo,
-    };
   } catch (error) {
     return actionError(error);
   }
+
+  redirect(redirectTo);
 }
 
 async function accessFacts(actor: TeamFunnelMembership) {
