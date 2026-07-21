@@ -224,6 +224,57 @@ describe("Cloudflare Stream webhook", () => {
     expect(updated.cloudflareReadyToStream).toBe(false);
   });
 
+  it("rejects signed unknown states without changing the mapped video", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_unknown_state");
+    const body = JSON.stringify({
+      uid: "cf_uid_unknown_state",
+      readyToStream: false,
+      status: { state: "provider-added-state" },
+    });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+
+    const updated = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Unsupported Cloudflare Stream status" });
+    expect(updated.status).toBe("processing");
+    expect(updated.cloudflareReadyToStream).toBe(false);
+  });
+
+  it("fails closed when a provider UID maps to videos from multiple tenants", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const first = await createProcessingVideo("cf_uid_collision");
+    const second = await createProcessingVideo("cf_uid_collision");
+    const body = JSON.stringify({ uid: "cf_uid_collision", readyToStream: true });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+
+    const videos = await getDb().video.findMany({
+      where: { id: { in: [first.video.id, second.video.id] } },
+      orderBy: { id: "asc" },
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Ambiguous Cloudflare Stream mapping" });
+    expect(videos).toHaveLength(2);
+    expect(videos.every((video) => video.status === "processing")).toBe(true);
+    expect(videos.every((video) => video.cloudflareReadyToStream === false)).toBe(true);
+  });
+
   it("rejects replayed official signatures with expired timestamps", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
     const body = JSON.stringify({ uid: "cf_uid_replay", readyToStream: true });

@@ -19,6 +19,17 @@ const StreamWebhookPayload = z.object({
   }).optional(),
 });
 
+function normalizedVideoStatus(payload: z.infer<typeof StreamWebhookPayload>) {
+  if (payload.readyToStream === true) return "ready";
+
+  const providerState = payload.status?.state?.trim().toLowerCase();
+  if (["pendingupload", "queued", "downloading", "inprogress", "processing"].includes(providerState ?? "")) {
+    return "processing";
+  }
+  if (providerState === "error") return "error";
+  return null;
+}
+
 export async function POST(request: Request) {
   const rawBody = await readTextBody(request);
   if (rawBody === null) {
@@ -49,8 +60,13 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
-  const status = payload.readyToStream ? "ready" : payload.status?.state ?? "processing";
-  const video = await getDb().video.updateMany({
+  const status = normalizedVideoStatus(payload);
+  if (!status) {
+    return NextResponse.json({ error: "Unsupported Cloudflare Stream status" }, { status: 400 });
+  }
+
+  const db = getDb();
+  const matches = await db.video.findMany({
     where: {
       OR: [
         { cloudflareStreamUid: payload.uid },
@@ -58,6 +74,21 @@ export async function POST(request: Request) {
         { cloudflarePlaybackId: payload.uid },
       ],
     },
+    select: { id: true },
+    take: 2,
+  });
+
+  // A provider UID has no tenant context. Refuse to mutate when local mapping
+  // is ambiguous instead of updating more than one tenant's video record.
+  if (matches.length > 1) {
+    return NextResponse.json({ error: "Ambiguous Cloudflare Stream mapping" }, { status: 409 });
+  }
+  if (matches.length === 0) {
+    return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+  }
+
+  await db.video.update({
+    where: { id: matches[0].id },
     data: {
       status,
       cloudflareReadyToStream: payload.readyToStream ?? false,
@@ -68,5 +99,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, updated: video.count, verificationMode: verification.mode });
+  return NextResponse.json({ ok: true, updated: 1, verificationMode: verification.mode });
 }
