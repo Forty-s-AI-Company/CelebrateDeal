@@ -224,7 +224,7 @@ function mfaVerifyFormData(code = "123456", next = "/admin/billing/dashboard") {
   return formData;
 }
 
-function interactionScriptFormData(triggerSec: string) {
+function interactionScriptFormData(triggerSec: string, ctaUrl?: string) {
   const formData = new FormData();
   formData.set("name", "測試留言組");
   formData.set("status", "draft");
@@ -232,6 +232,7 @@ function interactionScriptFormData(triggerSec: string) {
   formData.set("triggerSec", triggerSec);
   formData.set("eventTitle", "測試留言");
   formData.set("message", "測試留言內容");
+  if (ctaUrl !== undefined) formData.set("ctaUrl", ctaUrl);
   return formData;
 }
 
@@ -1049,6 +1050,20 @@ describe("importSystemRolesAction", () => {
 });
 
 describe("upsertInteractionScriptAction", () => {
+  it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(
+    "rejects the unsafe CTA URL %s before saving the script",
+    async (ctaUrl) => {
+      mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+      await expect(upsertInteractionScriptAction(interactionScriptFormData("10", ctaUrl))).rejects.toThrow(
+        "第 1 個 CTA 網址必須是有效的 HTTP 或 HTTPS 完整網址。",
+      );
+
+      expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+      expect(mocks.transaction).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["-1", "60:00", "00:60", "00:00:60", "not-a-time", "00:00:00:00"])(
     "rejects the invalid interaction timestamp %s before saving the script",
     async (triggerSec) => {

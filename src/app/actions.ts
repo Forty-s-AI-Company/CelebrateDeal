@@ -43,6 +43,7 @@ import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
 import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -52,6 +53,24 @@ function text(formData: FormData, key: string, fallback = "") {
 function optionalText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
+}
+
+function safeExternalUrl(value: string | null, label: string) {
+  if (!value) return null;
+
+  const safeUrl = parseSafeExternalHttpUrl(value);
+  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
+  return safeUrl;
+}
+
+function optionalExternalUrl(formData: FormData, key: string, label: string) {
+  return safeExternalUrl(optionalText(formData, key), label);
+}
+
+function requiredExternalUrl(formData: FormData, key: string, label: string) {
+  const safeUrl = parseSafeExternalHttpUrl(text(formData, key));
+  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
+  return safeUrl;
 }
 
 function intValue(formData: FormData, key: string, fallback = 0) {
@@ -196,7 +215,7 @@ export async function saveBrandSettingsAction(formData: FormData) {
     data: {
       name: text(formData, "name"),
       slug: toSlug(text(formData, "slug")),
-      logoUrl: optionalText(formData, "logoUrl"),
+      logoUrl: optionalExternalUrl(formData, "logoUrl", "品牌 Logo 網址"),
       primaryColor: text(formData, "primaryColor", "#2563eb"),
       ctaColor: text(formData, "ctaColor", "#f97316"),
       timezone: text(formData, "timezone", "Asia/Taipei"),
@@ -930,8 +949,8 @@ export async function upsertVideoAction(formData: FormData) {
     title: text(formData, "title"),
     description: optionalText(formData, "description"),
     sourceType: text(formData, "sourceType", "url"),
-    videoUrl: text(formData, "videoUrl"),
-    thumbnailUrl: optionalText(formData, "thumbnailUrl"),
+    videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
+    thumbnailUrl: optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址"),
     durationSec: intValue(formData, "durationSec"),
     status: text(formData, "status", "ready"),
     cloudflareStreamUid: optionalText(formData, "cloudflareStreamUid"),
@@ -962,8 +981,8 @@ export async function upsertProductAction(formData: FormData) {
     priceCents: intValue(formData, "priceCents"),
     compareAtCents: optionalText(formData, "compareAtCents") ? intValue(formData, "compareAtCents") : null,
     currency: text(formData, "currency", "TWD"),
-    imageUrl: optionalText(formData, "imageUrl"),
-    checkoutUrl: optionalText(formData, "checkoutUrl"),
+    imageUrl: optionalExternalUrl(formData, "imageUrl", "商品圖片網址"),
+    checkoutUrl: optionalExternalUrl(formData, "checkoutUrl", "商品結帳網址"),
     inventory: intValue(formData, "inventory"),
     isActive: formData.get("isActive") === "on",
   };
@@ -1046,7 +1065,7 @@ export async function upsertLiveAction(formData: FormData) {
     formId: optionalText(formData, "formId"),
     messageTemplateId: optionalText(formData, "messageTemplateId"),
     interactionScriptId: optionalText(formData, "interactionScriptId"),
-    heroImageUrl: optionalText(formData, "heroImageUrl"),
+    heroImageUrl: optionalExternalUrl(formData, "heroImageUrl", "直播主視覺網址"),
     accentCopy: optionalText(formData, "accentCopy"),
     replayEnabled: formData.get("replayEnabled") !== "off",
     streamMode: text(formData, "streamMode", "vod"),
@@ -1094,7 +1113,7 @@ export async function upsertInteractionRoleAction(formData: FormData) {
   const id = optionalText(formData, "id");
   const data = {
     name: text(formData, "name"),
-    avatarUrl: optionalText(formData, "avatarUrl"),
+    avatarUrl: optionalExternalUrl(formData, "avatarUrl", "角色頭像網址"),
     label: text(formData, "label", "官方角色"),
     roleType: text(formData, "roleType", "official"),
     tone: optionalText(formData, "tone"),
@@ -1190,7 +1209,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
       message: messages[index]?.trim() || null,
       productId: productIds[index]?.trim() || null,
       ctaLabel: ctaLabels[index]?.trim() || null,
-      ctaUrl: ctaUrls[index]?.trim() || null,
+      ctaUrl: safeExternalUrl(ctaUrls[index]?.trim() || null, `第 ${index + 1} 個 CTA 網址`),
       roleId: roleIds[index]?.trim() || null,
     }))
     .filter((event) => event.eventType && event.title);

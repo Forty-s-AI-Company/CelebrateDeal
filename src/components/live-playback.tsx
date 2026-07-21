@@ -6,6 +6,7 @@ import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRou
 import { LeadForm } from "@/components/lead-form";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 
 const clientHeaders = {
@@ -80,9 +81,12 @@ function secondsLabel(seconds: number) {
 
 export function submitCheckout(checkout: CheckoutResponse) {
   if (checkout.formAction && checkout.formMethod && checkout.formPayload) {
+    const formAction = parseSafeExternalHttpUrl(checkout.formAction);
+    if (!formAction) return false;
+
     const form = document.createElement("form");
     form.method = checkout.formMethod;
-    form.action = checkout.formAction;
+    form.action = formAction;
     form.style.display = "none";
 
     for (const [name, value] of Object.entries(checkout.formPayload)) {
@@ -98,12 +102,20 @@ export function submitCheckout(checkout: CheckoutResponse) {
     return true;
   }
 
-  if (checkout.checkoutUrl) {
-    window.location.href = checkout.checkoutUrl;
+  const checkoutUrl = parseSafeExternalHttpUrl(checkout.checkoutUrl);
+  if (checkoutUrl) {
+    window.location.href = checkoutUrl;
     return true;
   }
 
   return false;
+}
+
+export function openExternalUrl(value: string | null | undefined) {
+  const externalUrl = parseSafeExternalHttpUrl(value);
+  if (!externalUrl) return false;
+  window.open(externalUrl, "_blank", "noopener,noreferrer");
+  return true;
 }
 
 export async function requestCheckout({
@@ -234,9 +246,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       eventType: "cta_click",
       payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode },
     });
-    if (latestCtaEvent.ctaUrl) {
-      window.open(latestCtaEvent.ctaUrl, "_blank", "noopener,noreferrer");
-    }
+    openExternalUrl(latestCtaEvent.ctaUrl);
   }
 
   return (

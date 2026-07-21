@@ -40,7 +40,7 @@ vi.mock("react", async (importOriginal) => {
 vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
-import { LivePlayback, requestCheckout, submitCheckout } from "./live-playback";
+import { LivePlayback, openExternalUrl, requestCheckout, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -156,6 +156,35 @@ describe("LivePlayback checkout", () => {
     expect(appendToBody).toHaveBeenCalledWith(form);
     expect(form.submit).toHaveBeenCalledOnce();
     expect(window.location.href).toBe("https://shop.example.test/product-checkout");
+  });
+
+  it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(
+    "does not submit an unsafe provider form action %s",
+    (formAction) => {
+      const createElement = vi.fn();
+      vi.stubGlobal("document", { createElement });
+
+      expect(submitCheckout({
+        formAction,
+        formMethod: "POST",
+        formPayload: { MerID: "merchant-123" },
+      })).toBe(false);
+      expect(createElement).not.toHaveBeenCalled();
+    },
+  );
+
+  it("blocks unsafe CTA navigation even when legacy data already contains it", () => {
+    const open = vi.fn();
+    vi.stubGlobal("window", { open });
+
+    expect(openExternalUrl("javascript:alert(document.cookie)")).toBe(false);
+    expect(open).not.toHaveBeenCalled();
+    expect(openExternalUrl("https://shop.example.test/offer")).toBe(true);
+    expect(open).toHaveBeenCalledWith(
+      "https://shop.example.test/offer",
+      "_blank",
+      "noopener,noreferrer",
+    );
   });
 
   it("does not navigate to the external product checkout URL when the checkout API fails", async () => {
