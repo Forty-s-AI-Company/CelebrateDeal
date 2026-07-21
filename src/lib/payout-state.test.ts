@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "./payout-state";
+import {
+  canMarkPayoutBatchExported,
+  canTransitionPayoutItem,
+  derivePayoutBatchStatus,
+  PayoutItemTargetStatus,
+} from "./payout-state";
 
 describe("payout state machine", () => {
   it("allows only the explicit operational transitions", () => {
@@ -17,5 +22,12 @@ describe("payout state machine", () => {
     expect(derivePayoutBatchStatus(["paid", "retrying"], "failed")).toBe("retrying");
     expect(derivePayoutBatchStatus(["paid", "failed"], "exported")).toBe("failed");
     expect(derivePayoutBatchStatus(["paid", "pending"], "exported")).toBe("exported");
+  });
+
+  it("allows a batch export only from the draft state", () => {
+    expect(canMarkPayoutBatchExported("draft")).toBe(true);
+    expect(canMarkPayoutBatchExported("exported")).toBe(false);
+    expect(canMarkPayoutBatchExported("failed")).toBe(false);
+    expect(canMarkPayoutBatchExported("completed")).toBe(false);
   });
 });

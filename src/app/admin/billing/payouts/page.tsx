@@ -62,14 +62,16 @@ export default async function AdminBillingPayoutsPage({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <form action={markPayoutBatchExportedAction}>
-                    <CsrfField />
-                    <input type="hidden" name="id" value={batch.id} />
-                    <button className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                      <Download size={16} />
-                      標記已匯出
-                    </button>
-                  </form>
+                  {batch.status === "draft" ? (
+                    <form action={markPayoutBatchExportedAction}>
+                      <CsrfField />
+                      <input type="hidden" name="id" value={batch.id} />
+                      <button className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        <Download size={16} />
+                        標記已匯出
+                      </button>
+                    </form>
+                  ) : null}
                   <Link href={`/admin/billing/payouts/${batch.id}/csv`} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
                     <Download size={16} />
                     下載 CSV

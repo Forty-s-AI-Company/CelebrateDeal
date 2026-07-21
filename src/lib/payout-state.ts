@@ -14,6 +14,10 @@ export function canTransitionPayoutItem(currentStatus: string, targetStatus: Pay
   return allowedTransitions[currentStatus]?.has(targetStatus) ?? false;
 }
 
+export function canMarkPayoutBatchExported(currentStatus: string) {
+  return currentStatus === "draft";
+}
+
 export function derivePayoutBatchStatus(
   itemStatuses: string[],
   fallbackStatus: string,

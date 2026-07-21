@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   payoutItemFindUnique: vi.fn(),
   payoutItemFindMany: vi.fn(),
   payoutItemUpdate: vi.fn(),
+  payoutBatchFindUnique: vi.fn(),
+  payoutBatchUpdateMany: vi.fn(),
   payoutBatchUpdate: vi.fn(),
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
@@ -122,6 +124,10 @@ vi.mock("@/lib/db", () => ({
       update: mocks.paymentTransactionUpdate,
     },
     payoutItem: { findUnique: mocks.payoutItemFindUnique },
+    payoutBatch: {
+      findUnique: mocks.payoutBatchFindUnique,
+      updateMany: mocks.payoutBatchUpdateMany,
+    },
     refundRecord: { aggregate: mocks.refundRecordAggregate },
     settlement: { findUnique: mocks.settlementFindUnique },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
@@ -172,6 +178,7 @@ import {
   generateSettlementAction,
   importSystemRolesAction,
   loginAction,
+  markPayoutBatchExportedAction,
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
@@ -298,6 +305,12 @@ function payoutStatusFormData(status: string, failReason?: string) {
   formData.set("id", "payout-item-1");
   formData.set("status", status);
   if (failReason !== undefined) formData.set("failReason", failReason);
+  return formData;
+}
+
+function payoutBatchFormData(id = "batch-1") {
+  const formData = new FormData();
+  formData.set("id", id);
   return formData;
 }
 
@@ -1714,6 +1727,50 @@ describe("updatePayoutItemStatusAction", () => {
       "redirect:/admin/billing/payouts?error=invalid_transition",
     );
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("markPayoutBatchExportedAction", () => {
+  it("refuses to move a completed batch back to exported", async () => {
+    mocks.payoutBatchFindUnique.mockResolvedValue({ id: "batch-1", status: "completed" });
+
+    await expect(markPayoutBatchExportedAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+
+    expect(mocks.payoutBatchUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("uses a conditional write so concurrent state changes fail closed", async () => {
+    mocks.payoutBatchFindUnique.mockResolvedValue({ id: "batch-1", status: "draft", exportedAt: null });
+    mocks.payoutBatchUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(markPayoutBatchExportedAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+
+    expect(mocks.payoutBatchUpdateMany).toHaveBeenCalledWith({
+      where: { id: "batch-1", status: "draft" },
+      data: { status: "exported", exportedAt: expect.any(Date) },
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("marks a draft batch exported and records the transition", async () => {
+    const before = { id: "batch-1", status: "draft", exportedAt: null };
+    mocks.payoutBatchFindUnique.mockResolvedValue(before);
+    mocks.payoutBatchUpdateMany.mockResolvedValue({ count: 1 });
+
+    await expect(markPayoutBatchExportedAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "export_payout_batch",
+      before,
+      after: expect.objectContaining({ status: "exported", exportedAt: expect.any(Date) }),
+    }));
   });
 });
 

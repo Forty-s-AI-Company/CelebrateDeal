@@ -47,7 +47,7 @@ import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
-import { canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
+import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -1902,13 +1902,22 @@ export async function markPayoutBatchExportedAction(formData: FormData) {
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
   const before = await getDb().payoutBatch.findUnique({ where: { id } });
-  const updated = await getDb().payoutBatch.update({
-    where: { id },
+  if (!before || !canMarkPayoutBatchExported(before.status)) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
+  }
+
+  const exportedAt = new Date();
+  const result = await getDb().payoutBatch.updateMany({
+    where: { id, status: "draft" },
     data: {
       status: "exported",
-      exportedAt: new Date(),
+      exportedAt,
     },
   });
+  if (result.count !== 1) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
+  }
+  const updated = { ...before, status: "exported", exportedAt };
   await writeAuditLog({
     actorId: member.id,
     actorLabel: member.role,
