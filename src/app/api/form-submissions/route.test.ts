@@ -121,6 +121,40 @@ describe("team lead attribution", () => {
     expect(JSON.stringify(db.analyticsEvent.create.mock.calls)).not.toContain("lead@example.test");
   });
 
+  it("uses the same normalized email and phone values for blacklist checks and persistence", async () => {
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      payload: {
+        name: "Lead",
+        email: " Blocked@Example.Test ",
+        phone: " +886 (912) 345-678 ",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        isActive: true,
+        OR: [
+          { identifierType: "email", identifier: "blocked@example.test" },
+          { identifierType: "phone", identifier: "+886912345678" },
+        ],
+      },
+    });
+    expect(db.formSubmission.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        email: "blocked@example.test",
+        phone: "+886912345678",
+        answers: expect.objectContaining({
+          email: "blocked@example.test",
+          phone: "+886912345678",
+        }),
+      }),
+      select: { id: true },
+    });
+  });
+
   it("rejects unconfigured answers and overlong contact data before persistence", async () => {
     for (const payload of [
       { name: "Lead", email: "lead@example.test", token: "sensitive-token" },

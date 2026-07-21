@@ -19,7 +19,11 @@ export function normalizeBlacklistIdentifier(type: BlacklistIdentifierTypeValue,
     return /^\+?[0-9]{8,20}$/.test(normalized) ? normalized : null;
   }
   if (type === "ip") {
-    return isIP(value) ? value.toLowerCase() : null;
+    const version = isIP(value);
+    if (version === 4) return value;
+    // URL parsing gives equivalent IPv6 spellings one canonical compressed form.
+    if (version === 6) return new URL(`http://[${value}]/`).hostname.slice(1, -1);
+    return null;
   }
   return visitorId.safeParse(value).success ? value : null;
 }
