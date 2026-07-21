@@ -69,15 +69,16 @@ describe("assertServerActionOrigin", () => {
     await expect(assertServerActionOrigin()).resolves.toBeUndefined();
   });
 
-  it("accepts an Origin matching X-Forwarded-Host", async () => {
+  it("does not let X-Forwarded-Host expand the origin allowlist", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
     setRequestContext({
-      "x-forwarded-host": "public.example.test",
+      host: "request.example.test",
+      "x-forwarded-host": "attacker.example.test",
       "x-forwarded-proto": "https",
-      origin: "https://public.example.test",
+      origin: "https://attacker.example.test",
     });
 
-    await expect(assertServerActionOrigin()).resolves.toBeUndefined();
+    await expect(assertServerActionOrigin()).rejects.toThrow("Invalid request origin.");
   });
 });
 

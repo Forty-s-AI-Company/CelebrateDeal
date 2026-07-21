@@ -46,9 +46,11 @@ async function allowedServerActionOrigins() {
   const configured = originFrom(process.env.NEXT_PUBLIC_APP_URL ?? null);
   if (configured) origins.add(configured);
 
-  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  // Do not let a forwarded header expand the application allowlist. Legitimate
+  // public origins are represented by NEXT_PUBLIC_APP_URL or the actual Host.
+  const host = headerStore.get("host");
   if (host) {
-    const proto = headerStore.get("x-forwarded-proto") ?? (host.includes("localhost") || host.startsWith("127.") ? "http" : "https");
+    const proto = host.includes("localhost") || host.startsWith("127.") ? "http" : "https";
     origins.add(`${proto}://${host}`);
   }
 

@@ -79,15 +79,15 @@ describe("requireSameOriginRequest", () => {
     expect(requireSameOriginRequest(trustedRequest({ [header]: value }), { requireClientHeader: true })).toBeNull();
   });
 
-  it.each([
-    { header: "origin", value: "https://public.example.test" },
-    { header: "referer", value: "https://public.example.test/form" },
-  ])("allows a $header matching the forwarded request origin", ({ header, value }) => {
-    expect(requireSameOriginRequest(trustedRequest({
-      [header]: value,
-      "x-forwarded-host": "public.example.test",
+  it("does not let forwarded host headers expand the origin allowlist", async () => {
+    const response = requireSameOriginRequest(trustedRequest({
+      origin: "https://attacker.example.test",
+      "x-forwarded-host": "attacker.example.test",
       "x-forwarded-proto": "https",
-    }), { requireClientHeader: true })).toBeNull();
+    }), { requireClientHeader: true });
+
+    expect(response?.status).toBe(403);
+    await expect(response?.json()).resolves.toEqual({ error: "Invalid request origin" });
   });
 });
 

@@ -58,12 +58,6 @@ function allowedRequestOrigins(request: Request) {
   const configured = originFrom(process.env.NEXT_PUBLIC_APP_URL ?? null);
   if (configured) origins.add(configured);
 
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost) {
-    const proto = request.headers.get("x-forwarded-proto") ?? "https";
-    origins.add(`${proto}://${forwardedHost}`);
-  }
-
   return origins;
 }
 
