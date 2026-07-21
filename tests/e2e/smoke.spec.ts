@@ -1259,7 +1259,9 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
     await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
     await partnerPage.getByRole("button", { name: "發布公開頁" }).click();
-    await expect(partnerPage.getByRole("status").filter({ hasText: "夥伴頁已發布" })).toBeVisible();
+    // Development mode may compile this Server Action on first use. Keep the
+    // wait bounded while matching the other cold-action checks in this flow.
+    await expect(partnerPage.getByRole("status").filter({ hasText: "夥伴頁已發布" })).toBeVisible({ timeout: 30_000 });
 
     const publicPage = track(await partnerContext.newPage(), "public-team-funnel");
     let formSubmissionReferer: string | undefined;

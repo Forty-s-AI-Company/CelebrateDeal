@@ -26,7 +26,9 @@ if (!process.env.DIRECT_URL || process.env.DIRECT_URL.startsWith("file:")) {
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  expect: { timeout: 8_000 },
+  // Next development mode compiles routes and Server Actions lazily. Keep
+  // assertions bounded, but allow cold paths to finish without CI-only flakes.
+  expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
