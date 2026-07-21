@@ -21,5 +21,9 @@ export default defineConfig({
   },
   test: {
     exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    // Database integration tests share one local PostgreSQL schema. Running
+    // test files concurrently lets one fixture cleanup deadlock another file's
+    // serializable payment transaction, so keep file execution deterministic.
+    fileParallelism: false,
   },
 });
