@@ -40,6 +40,7 @@ import {
 } from "@/lib/mfa";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
+import { isAllowedSmokeTestRecipient } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
 import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
@@ -584,6 +585,25 @@ export async function sendPasswordResetSmokeAction(formData: FormData) {
   const appUrl = getCanonicalAppUrl();
   const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
   let sent = false;
+
+  if (!isAllowedSmokeTestRecipient(auth.user.email)) {
+    redirect(`${destination}?error=password_reset_smoke_recipient`);
+  }
+
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  const rateLimited = await checkRateLimit(
+    new Request(appUrl, { headers: rateLimitHeaders }),
+    `password-reset-smoke:${auth.user.id}`,
+    3,
+    15 * 60 * 1000,
+  );
+  if (rateLimited) {
+    redirect(`${destination}?error=${rateLimited.status === 429 ? "password_reset_smoke_rate_limited" : "password_reset_smoke_unavailable"}`);
+  }
 
   try {
     await sendPasswordResetLink({

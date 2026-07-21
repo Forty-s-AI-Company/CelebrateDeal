@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   headers: vi.fn(),
   invoiceUpsert: vi.fn(),
+  isAllowedSmokeTestRecipient: vi.fn(),
   interactionEventCreate: vi.fn(),
   interactionEventDeleteMany: vi.fn(),
   interactionRoleCreateMany: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock("@/lib/billing", () => ({
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink: mocks.sendPasswordResetLink }));
+vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
@@ -137,6 +139,7 @@ import {
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
   requestPasswordResetAction,
+  sendPasswordResetSmokeAction,
   updatePasswordAction,
   unbindInteractionScriptFromLiveAction,
   upsertInteractionScriptAction,
@@ -330,6 +333,7 @@ beforeEach(() => {
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
   mocks.interactionRoleFindMany.mockResolvedValue([]);
   mocks.interactionRoleCreateMany.mockResolvedValue({ count: 0 });
+  mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
       findUnique: mocks.findUnique,
@@ -600,6 +604,64 @@ describe("requestPasswordResetAction", () => {
     );
 
     expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendPasswordResetSmokeAction", () => {
+  function authenticatedSmokeRecipient() {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-1", email: "smoke@example.test", platformRole: "user" },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin: false,
+    });
+  }
+
+  it("does not create a reset token when the current account is not the configured test recipient", async () => {
+    authenticatedSmokeRecipient();
+    mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(
+      "redirect:/settings/security?error=password_reset_smoke_recipient",
+    );
+
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
+  it("does not create a reset token after the per-account smoke limit is reached", async () => {
+    authenticatedSmokeRecipient();
+    mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(
+      "redirect:/settings/security?error=password_reset_smoke_rate_limited",
+    );
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(Request),
+      "password-reset-smoke:user-1",
+      3,
+      15 * 60 * 1000,
+    );
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
+  it("sends only after allowlist and rate-limit checks and records a safe audit event", async () => {
+    authenticatedSmokeRecipient();
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(
+      "redirect:/settings/security?updated=password_reset_smoke",
+    );
+
+    expect(mocks.isAllowedSmokeTestRecipient).toHaveBeenCalledWith("smoke@example.test");
+    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith(expect.objectContaining({
+      email: "smoke@example.test",
+    }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "password_reset_smoke_email_sent",
+      targetId: "user-1",
+    }));
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("one-time-reset-token");
   });
 });
 

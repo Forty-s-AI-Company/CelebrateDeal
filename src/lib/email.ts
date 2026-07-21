@@ -5,6 +5,36 @@ type SendEmailInput = {
   text?: string;
 };
 
+export type TransactionalEmailErrorCode =
+  | "configuration"
+  | "network"
+  | "provider_rejected"
+  | "invalid_response";
+
+export class TransactionalEmailError extends Error {
+  constructor(
+    public readonly code: TransactionalEmailErrorCode,
+    public readonly providerStatus: number | null = null,
+  ) {
+    super(`Transactional email failed (${code}).`);
+    this.name = "TransactionalEmailError";
+  }
+}
+
+function normalizedEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+export function getSmokeTestEmail() {
+  const email = normalizedEmail(process.env.SMOKE_TEST_EMAIL ?? "");
+  return email.length > 0 ? email : null;
+}
+
+export function isAllowedSmokeTestRecipient(email: string) {
+  const configuredRecipient = getSmokeTestEmail();
+  return configuredRecipient !== null && normalizedEmail(email) === configuredRecipient;
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -19,29 +49,40 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
   const from = process.env.EMAIL_FROM;
 
   if (!apiKey || !from) {
-    throw new Error("Resend env is not configured.");
+    throw new TransactionalEmailError("configuration");
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: input.to,
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new TransactionalEmailError("network");
+  }
 
   if (!response.ok) {
-    throw new Error(`Resend email failed: ${await response.text()}`);
+    throw new TransactionalEmailError("provider_rejected", response.status);
   }
 
-  return response.json();
+  const result = await response.json().catch(() => null) as { id?: unknown } | null;
+  if (!result || typeof result.id !== "string" || result.id.length === 0) {
+    throw new TransactionalEmailError("invalid_response", response.status);
+  }
+
+  return { id: result.id };
 }
 
 export async function sendPasswordResetEmail({

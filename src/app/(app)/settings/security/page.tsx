@@ -41,6 +41,9 @@ const errorMessages: Record<string, string> = {
   mfa_required: "管理後台前需要先完成 MFA 設定。",
   mfa_code: "TOTP 驗證碼不正確。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",
+  password_reset_smoke_recipient: "目前帳號不是允許的測試收件人，未寄出測試信。",
+  password_reset_smoke_rate_limited: "測試信寄送次數過多，請 15 分鐘後再試。",
+  password_reset_smoke_unavailable: "測試信寄送保護暫時無法使用，請稍後再試。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -301,7 +304,7 @@ export default async function SecuritySettingsPage({
           <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
             <h3 className="text-sm font-semibold text-blue-900">密碼重設 smoke test</h3>
             <p className="mt-1 text-sm text-blue-800">
-              忘記密碼時可從登入頁進入 `/password-reset/request`，系統會寄出 Resend 交易信，token 30 分鐘後過期，使用後會撤銷所有 session。
+              忘記密碼時可從登入頁進入 `/password-reset/request`；此 smoke test 僅允許寄到環境設定的測試收件人。
             </p>
             <form action={sendPasswordResetSmokeAction} className="mt-3">
               <CsrfField />

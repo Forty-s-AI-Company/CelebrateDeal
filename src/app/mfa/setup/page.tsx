@@ -15,6 +15,9 @@ const errorMessages: Record<string, string> = {
   mfa_code: "TOTP 驗證碼不正確。",
   mfa_required: "請先啟用 MFA。",
   password_reset_smoke: "密碼重設測試信寄送失敗，請檢查 Resend 設定。",
+  password_reset_smoke_recipient: "目前帳號不是允許的測試收件人，未寄出測試信。",
+  password_reset_smoke_rate_limited: "測試信寄送次數過多，請 15 分鐘後再試。",
+  password_reset_smoke_unavailable: "測試信寄送保護暫時無法使用，請稍後再試。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -124,7 +127,7 @@ export default async function MfaSetupPage({
         <Card className="mt-5">
           <h2 className="text-lg font-semibold text-slate-950">Password reset email smoke</h2>
           <p className="mt-1 text-sm text-slate-500">
-            寄送一封密碼重設測試信到目前登入帳號，驗證 Resend、reset link、token TTL 與 session revoke 流程。
+            僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />

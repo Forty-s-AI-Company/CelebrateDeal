@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getSmokeTestEmail: vi.fn(),
+  isAllowedSmokeTestRecipient: vi.fn(),
   sendTransactionalEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/email", () => ({
+  getSmokeTestEmail: mocks.getSmokeTestEmail,
+  isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient,
   sendTransactionalEmail: mocks.sendTransactionalEmail,
 }));
 
@@ -37,6 +41,8 @@ function requestWithJsonSpy(authorization?: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("JOB_SECRET", jobSecret);
+  mocks.getSmokeTestEmail.mockReturnValue("recipient@example.test");
+  mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -78,9 +84,28 @@ describe("POST /api/admin/ops/test-email", () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 
-  it("sends the fixed smoke-test email and returns its result for a valid request", async () => {
-    const result = { id: "mock-email-id" };
-    mocks.sendTransactionalEmail.mockResolvedValue(result);
+  it("returns 503 without sending when the smoke-test recipient is not configured", async () => {
+    mocks.getSmokeTestEmail.mockReturnValue(null);
+
+    const response = await POST(authorizedRequest({ to: "recipient@example.test" }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Test email recipient is not configured" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects any recipient outside the configured smoke-test allowlist", async () => {
+    mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
+
+    const response = await POST(authorizedRequest({ to: "other@example.test" }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Test email recipient is not allowed" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("sends the fixed smoke-test email without returning provider metadata", async () => {
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "mock-email-id" });
 
     const response = await POST(authorizedRequest({ to: "recipient@example.test" }));
 
@@ -91,6 +116,17 @@ describe("POST /api/admin/ops/test-email", () => {
       text: "If you received this email, Resend is wired correctly.",
     });
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, result });
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("returns a generic error without exposing the provider response", async () => {
+    mocks.sendTransactionalEmail.mockRejectedValue(new Error("provider-secret-response"));
+
+    const response = await POST(authorizedRequest({ to: "recipient@example.test" }));
+    const body = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(body).toContain("Email provider request failed");
+    expect(body).not.toContain("provider-secret-response");
   });
 });
