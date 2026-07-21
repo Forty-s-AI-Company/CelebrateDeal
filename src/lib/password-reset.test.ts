@@ -1,12 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
-import { consumePasswordResetToken, createPasswordResetToken } from "@/lib/password-reset";
+
+const mocks = vi.hoisted(() => ({ sendPasswordResetEmail: vi.fn() }));
+
+vi.mock("@/lib/email", () => ({ sendPasswordResetEmail: mocks.sendPasswordResetEmail }));
+
+import { consumePasswordResetToken, createPasswordResetToken, sendPasswordResetLink } from "@/lib/password-reset";
 
 const createdUserIds: string[] = [];
 
 afterEach(async () => {
   await getDb().user.deleteMany({ where: { id: { in: createdUserIds.splice(0) } } });
+  vi.clearAllMocks();
 });
 
 describe("password reset flow", () => {
@@ -50,5 +56,26 @@ describe("password reset flow", () => {
     });
     expect(refreshedUser.sessions.every((session) => session.revokedAt)).toBe(true);
     expect(refreshedUser.passwordResetTokens.some((token) => token.usedAt)).toBe(true);
+  });
+
+  it("revokes a newly created token when email delivery fails", async () => {
+    const user = await getDb().user.create({
+      data: {
+        email: `reset-email-failure-${Date.now()}@example.test`,
+        name: "Reset Email Failure User",
+        passwordHash: hashPassword("old-password-123"),
+      },
+    });
+    createdUserIds.push(user.id);
+    mocks.sendPasswordResetEmail.mockRejectedValueOnce(new Error("provider failure with sensitive details"));
+
+    await expect(sendPasswordResetLink({
+      email: user.email,
+      appUrl: "https://app.example.test",
+    })).rejects.toThrow("provider failure");
+
+    const tokens = await getDb().passwordResetToken.findMany({ where: { userId: user.id } });
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]?.usedAt).not.toBeNull();
   });
 });

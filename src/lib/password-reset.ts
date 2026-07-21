@@ -27,7 +27,7 @@ export async function createPasswordResetToken({
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
 
-  await getDb().$transaction([
+  const [, createdToken] = await getDb().$transaction([
     getDb().passwordResetToken.updateMany({
       where: {
         userId: user.id,
@@ -47,7 +47,7 @@ export async function createPasswordResetToken({
     }),
   ]);
 
-  return { user, token, expiresAt };
+  return { user, token, tokenId: createdToken.id, expiresAt };
 }
 
 export async function sendPasswordResetLink({
@@ -73,16 +73,33 @@ export async function sendPasswordResetLink({
   }
 
   const resetUrl = `${appUrl.replace(/\/$/, "")}/password-reset/confirm?token=${encodeURIComponent(reset.token)}`;
-  await sendPasswordResetEmail({
-    to: reset.user.email,
-    resetUrl,
-  });
+  try {
+    await sendPasswordResetEmail({
+      to: reset.user.email,
+      resetUrl,
+    });
+  } catch (error) {
+    // 外部寄信失敗時不能留下收件人從未取得的有效 token。
+    await getDb().passwordResetToken.updateMany({
+      where: { id: reset.tokenId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    await writeAuditLog({
+      actorId: reset.user.id,
+      actorLabel: "password_reset_request",
+      action: "password_reset_email_failed",
+      targetType: "PasswordResetToken",
+      targetId: reset.tokenId,
+      after: auditSnapshot({ email: reset.user.email, tokenRevoked: true }),
+    });
+    throw error;
+  }
   await writeAuditLog({
     actorId: reset.user.id,
     actorLabel: "password_reset_request",
     action: "password_reset_requested",
     targetType: "PasswordResetToken",
-    targetId: reset.user.id,
+    targetId: reset.tokenId,
     after: auditSnapshot({ email: reset.user.email, expiresAt: reset.expiresAt.toISOString() }),
   });
 
