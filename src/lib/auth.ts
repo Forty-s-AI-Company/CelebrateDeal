@@ -186,6 +186,13 @@ export async function requireVendor() {
 export async function requireFinanceAdmin() {
   const auth = await requireAuth();
 
+  // `/admin`、退款、月結、出款與 webhook 重送都是平台層級操作。
+  // 商家 owner/admin/accountant 另有 tenant-scoped `/billing` 畫面，不能因
+  // 角色名稱含財務權限就取得跨商家的平台後台資料。
+  if (!auth.isPlatformAdmin) {
+    redirect("/dashboard");
+  }
+
   if (auth.requiresAdminMfa) {
     if (!auth.user.mfaFactor) {
       redirect("/mfa/setup");
@@ -196,24 +203,11 @@ export async function requireFinanceAdmin() {
     }
   }
 
-  if (auth.isPlatformAdmin) {
-    return {
-      user: auth.user,
-      vendor: auth.vendor,
-      member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
-      isPlatformAdmin: true,
-    };
-  }
-
-  if (!auth.vendor || !auth.member || !FINANCE_ROLES.includes(auth.member.role as (typeof FINANCE_ROLES)[number])) {
-    redirect("/dashboard");
-  }
-
   return {
     user: auth.user,
     vendor: auth.vendor,
-    member: auth.member as FinanceActor,
-    isPlatformAdmin: false,
+    member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
+    isPlatformAdmin: true,
   };
 }
 
