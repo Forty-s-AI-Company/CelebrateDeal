@@ -13,6 +13,9 @@ const eslintConfig = defineConfig([
     "build/**",
     // Test coverage is generated output, not source code to lint.
     "coverage/**",
+    // Playwright recreates this directory at run start; ignoring it also avoids
+    // an ESLint filesystem race when browser tests and lint overlap in CI.
+    "test-results/**",
     "next-env.d.ts",
   ]),
 ]);
