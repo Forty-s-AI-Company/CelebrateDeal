@@ -1,9 +1,113 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestCheckout, submitCheckout } from "./live-playback";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const hookState = vi.hoisted(() => ({
+  cursor: 0,
+  refCursor: 0,
+  values: [] as unknown[],
+  refs: [] as Array<{ current: unknown }>,
+}));
+
+vi.mock("react", async (importOriginal) => {
+  const react = await importOriginal<typeof import("react")>();
+
+  return {
+    ...react,
+    useEffect: () => undefined,
+    useMemo: <Value,>(factory: () => Value) => factory(),
+    useRef: <Value,>(initialValue: Value) => {
+      const index = hookState.refCursor++;
+      if (!hookState.refs[index]) hookState.refs[index] = { current: initialValue };
+      return hookState.refs[index] as { current: Value };
+    },
+    useState: <Value,>(initialValue: Value | (() => Value)) => {
+      const index = hookState.cursor++;
+      if (hookState.values.length === index) {
+        hookState.values.push(typeof initialValue === "function" ? (initialValue as () => Value)() : initialValue);
+      }
+
+      const setValue = (nextValue: Value | ((currentValue: Value) => Value)) => {
+        const currentValue = hookState.values[index] as Value;
+        hookState.values[index] = typeof nextValue === "function"
+          ? (nextValue as (currentValue: Value) => Value)(currentValue)
+          : nextValue;
+      };
+
+      return [hookState.values[index] as Value, setValue] as const;
+    },
+  };
+});
+
+vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
+vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
+
+import { LivePlayback, requestCheckout, submitCheckout } from "./live-playback";
+
+type ElementNode = {
+  type: unknown;
+  props: Record<string, unknown>;
+};
+
+function isElementNode(value: unknown): value is ElementNode {
+  return typeof value === "object" && value !== null && "props" in value && "type" in value;
+}
+
+function findElements(value: unknown, predicate: (element: ElementNode) => boolean): ElementNode[] {
+  if (Array.isArray(value)) return value.flatMap((child) => findElements(child, predicate));
+  if (!isElementNode(value)) return [];
+
+  return [
+    ...(predicate(value) ? [value] : []),
+    ...findElements(value.props.children, predicate),
+  ];
+}
+
+function textContent(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(textContent).join("");
+  return isElementNode(value) ? textContent(value.props.children) : "";
+}
+
+const live = {
+  id: "test-fixture-live-1",
+  title: "測試直播",
+  slug: "test-fixture-live",
+  description: null,
+  accentCopy: null,
+  heroImageUrl: null,
+  videoUrl: null,
+  vendorId: "test-fixture-vendor-1",
+  brand: { name: "測試品牌", logoUrl: null, primaryColor: "#000000", ctaColor: "#f97316" },
+  form: null,
+  interactionEvents: [],
+  products: [
+    { id: "test-fixture-product-1", name: "測試商品一", description: null, priceCents: 1000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
+    { id: "test-fixture-product-2", name: "測試商品二", description: null, priceCents: 2000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
+  ],
+};
+
+function renderLive() {
+  hookState.cursor = 0;
+  hookState.refCursor = 0;
+  return LivePlayback({ live });
+}
+
+function checkoutButtons(tree: unknown) {
+  return findElements(tree, (element) => (
+    element.type === "button" && ["立即搶購", "結帳送出中...", "買", "送出中"].includes(textContent(element.props.children))
+  ));
+}
 
 describe("LivePlayback checkout", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  beforeEach(() => {
+    hookState.cursor = 0;
+    hookState.refCursor = 0;
+    hookState.values = [];
+    hookState.refs = [];
+    vi.clearAllMocks();
   });
 
   it("submits every PayUni form-post field without redirecting to the product checkout URL", () => {
@@ -82,5 +186,36 @@ describe("LivePlayback checkout", () => {
 
     expect(window.location.href).toBe("https://app.example.test/live/demo");
     expect(window.location.href).not.toBe(productCheckoutUrl);
+  });
+
+  it("disables every checkout button while a checkout request is pending and prevents a second request", async () => {
+    let resolveCheckout: ((response: { ok: boolean }) => void) | undefined;
+    const checkoutResponse = new Promise<{ ok: boolean }>((resolve) => {
+      resolveCheckout = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(checkoutResponse));
+
+    let tree = renderLive();
+    const productsTab = findElements(tree, (element) => element.type === "button" && textContent(element.props.children) === "商品")[0];
+    (productsTab.props.onClick as () => void)();
+    tree = renderLive();
+
+    const initialButtons = checkoutButtons(tree);
+    expect(initialButtons).toHaveLength(3);
+    const firstCheckout = initialButtons[0].props.onClick as () => Promise<void>;
+    const secondCheckout = initialButtons[1].props.onClick as () => Promise<void>;
+    const pendingCheckout = firstCheckout();
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
+
+    await secondCheckout();
+    expect(fetch).toHaveBeenCalledOnce();
+
+    expect(resolveCheckout).toBeDefined();
+    resolveCheckout?.({ ok: false });
+    await pendingCheckout;
+
+    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === false)).toBe(true);
   });
 });
