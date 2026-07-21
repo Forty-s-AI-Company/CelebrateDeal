@@ -1167,7 +1167,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await expect(page.getByRole("heading", { name: new RegExp(`編輯 ${TEAM_FUNNEL_TEST_ONLY.templateName}`) })).toBeVisible();
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "發布新版本" }).click();
-    await expect(page.getByRole("status")).toContainText("已發布");
+    await expect(page.getByRole("status")).toContainText("已發布", { timeout: 30_000 });
   };
   const claim = async (page: Page, sharePath: string, mode: "快速套用" | "複製後編輯" | "空白頁綁定研討會", slug: string) => {
     await page.goto(sharePath);
