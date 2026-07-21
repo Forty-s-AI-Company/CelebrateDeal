@@ -6,13 +6,45 @@ import { getDb } from "@/lib/db";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-const AnalyticsPayload = z.object({
-  vendorId: z.string().min(1),
-  liveId: z.string().nullable().optional(),
-  visitorId: z.string().min(1),
-  eventType: z.string().min(1).max(80),
-  payload: z.record(z.string(), z.unknown()).optional(),
-});
+const AnalyticsId = z.string().min(1).max(128);
+const AnalyticsSlug = z.string().min(1).max(160);
+const ReferralCode = z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/).nullable().optional();
+const analyticsBase = {
+  vendorId: AnalyticsId,
+  liveId: AnalyticsId,
+  visitorId: AnalyticsId,
+};
+
+const AnalyticsPayload = z.discriminatedUnion("eventType", [
+  z.object({
+    ...analyticsBase,
+    eventType: z.literal("page_view"),
+    payload: z.object({ slug: AnalyticsSlug }).strict(),
+  }).strict(),
+  z.object({
+    ...analyticsBase,
+    eventType: z.literal("video_play"),
+    payload: z.object({ slug: AnalyticsSlug, ref: ReferralCode }).strict(),
+  }).strict(),
+  z.object({
+    ...analyticsBase,
+    eventType: z.literal("play_progress"),
+    payload: z.object({
+      seconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300), z.literal(600)]),
+      ref: ReferralCode,
+    }).strict(),
+  }).strict(),
+  z.object({
+    ...analyticsBase,
+    eventType: z.literal("product_click"),
+    payload: z.object({ productId: AnalyticsId, ref: ReferralCode }).strict(),
+  }).strict(),
+  z.object({
+    ...analyticsBase,
+    eventType: z.literal("cta_click"),
+    payload: z.object({ label: z.string().min(1).max(160), ref: ReferralCode }).strict(),
+  }).strict(),
+]);
 
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
@@ -26,28 +58,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  if (parsed.data.liveId) {
-    const live = await getDb().live.findFirst({
-      where: { id: parsed.data.liveId, vendorId: parsed.data.vendorId },
-      select: { id: true },
-    });
-    if (!live) {
-      return NextResponse.json({ error: "Live not found" }, { status: 404 });
-    }
-  } else {
-    const vendor = await getDb().vendor.findUnique({ where: { id: parsed.data.vendorId }, select: { id: true } });
-    if (!vendor) {
-      return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
-    }
+  const live = await getDb().live.findFirst({
+    where: { id: parsed.data.liveId, vendorId: parsed.data.vendorId },
+    select: { id: true },
+  });
+  if (!live) {
+    return NextResponse.json({ error: "Live not found" }, { status: 404 });
   }
 
   await getDb().analyticsEvent.create({
     data: {
       vendorId: parsed.data.vendorId,
-      liveId: parsed.data.liveId ?? null,
+      liveId: parsed.data.liveId,
       visitorId: parsed.data.visitorId,
       eventType: parsed.data.eventType,
-      payload: (parsed.data.payload ?? {}) as Prisma.InputJsonValue,
+      payload: parsed.data.payload as Prisma.InputJsonValue,
     },
   });
 
@@ -56,8 +81,8 @@ export async function POST(request: Request) {
     event: parsed.data.eventType,
     properties: {
       vendorId: parsed.data.vendorId,
-      liveId: parsed.data.liveId ?? null,
-      ...(parsed.data.payload ?? {}),
+      liveId: parsed.data.liveId,
+      ...parsed.data.payload,
     },
   }).catch(() => null);
 

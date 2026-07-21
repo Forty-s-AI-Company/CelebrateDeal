@@ -198,7 +198,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, [chatEvents.length]);
 
   function trackProgress(seconds: number) {
-    const checkpoint = [30, 60, 120, 300, 600].find((value) => seconds >= value && !reportedProgress.has(value));
+    const checkpoints = [30, 60, 120, 300, 600] as const;
+    const checkpoint = checkpoints.find((value) => seconds >= value && !reportedProgress.has(value));
     if (!checkpoint) return;
     const nextReported = new Set(reportedProgress);
     nextReported.add(checkpoint);
@@ -238,13 +239,13 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }
 
   async function trackCta() {
-    if (!latestCtaEvent) return;
+    if (!latestCtaEvent?.ctaLabel) return;
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
       visitorId,
       eventType: "cta_click",
-      payload: { label: latestCtaEvent.ctaLabel, url: latestCtaEvent.ctaUrl, ref: referralCode },
+      payload: { label: latestCtaEvent.ctaLabel, ref: referralCode },
     });
     openExternalUrl(latestCtaEvent.ctaUrl);
   }
