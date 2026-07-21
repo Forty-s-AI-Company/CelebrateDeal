@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 
 function csvCell(value: string | number | null | undefined) {
   const raw = String(value ?? "");
@@ -9,7 +10,7 @@ function csvCell(value: string | number | null | undefined) {
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  await requireFinanceAdmin();
+  const { member } = await requireFinanceAdmin();
   const { id } = await params;
   const batch = await getDb().payoutBatch.findUnique({
     where: { id },
@@ -32,11 +33,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     item.status,
   ]);
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  const safeFilename = batch.batchNumber.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "payout";
+
+  await writeAuditLog({
+    actorId: member.id,
+    actorLabel: member.role,
+    action: "download_payout_csv",
+    targetType: "PayoutBatch",
+    targetId: batch.id,
+    after: auditSnapshot({ batchNumber: batch.batchNumber, itemCount: batch.items.length }),
+  });
 
   return new NextResponse(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${batch.batchNumber}.csv"`,
+      "Content-Disposition": `attachment; filename="${safeFilename}.csv"`,
+      "Cache-Control": "private, no-store, max-age=0",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
