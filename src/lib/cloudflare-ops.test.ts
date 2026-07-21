@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createDirectCreatorUpload: vi.fn(),
@@ -36,9 +36,11 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { createDirectUploadMapping, createLiveInputMapping } from "./cloudflare-ops";
+import { decryptSensitiveValue } from "./sensitive-data";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-cloudflare-ops");
   mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1" });
   mocks.videoFindFirst.mockResolvedValue(null);
   mocks.liveFindFirst.mockResolvedValue(null);
@@ -50,6 +52,10 @@ beforeEach(() => {
   mocks.videoCreate.mockResolvedValue({ id: "video-new" });
   mocks.videoUpdate.mockResolvedValue({ id: "video-1" });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("Cloudflare tenant resource preflight", () => {
@@ -109,5 +115,19 @@ describe("Cloudflare tenant resource preflight", () => {
       where: { id: "video-1", vendorId: "vendor-1" },
     }));
     expect(mocks.videoCreate).not.toHaveBeenCalled();
+  });
+
+  it("encrypts a returned live stream key before database persistence", async () => {
+    const plaintextStreamKey = "test-fixture-plaintext-stream-key";
+    mocks.createLiveInput.mockResolvedValue({
+      uid: "live-input-1",
+      rtmps: { url: "rtmps://live.example.test", streamKey: plaintextStreamKey },
+    });
+
+    await createLiveInputMapping({ vendorId: "vendor-1", name: "Test live" });
+
+    const stored = mocks.videoCreate.mock.calls[0]?.[0].data.liveStreamKey as string;
+    expect(stored).not.toContain(plaintextStreamKey);
+    expect(decryptSensitiveValue(stored, "cloudflare-live-stream-key")).toBe(plaintextStreamKey);
   });
 });

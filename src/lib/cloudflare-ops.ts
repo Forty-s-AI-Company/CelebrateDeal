@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { CloudflareStreamError, createDirectCreatorUpload, createLiveInput } from "@/lib/cloudflare-stream";
 import { getDb } from "@/lib/db";
+import { encryptSensitiveValue } from "@/lib/sensitive-data";
+
+const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
 
 export const DirectUploadRequest = z.object({
   vendorId: z.string().min(1),
@@ -104,6 +107,9 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
   const { db, video: existingVideo } = await requireCloudflareMappingResources(input);
   const liveInput = await createLiveInput(input.name);
   const videoUrl = `https://videodelivery.net/${liveInput.uid}/manifest/video.m3u8`;
+  const encryptedStreamKey = liveInput.rtmps?.streamKey
+    ? encryptSensitiveValue(liveInput.rtmps.streamKey, CLOUDFLARE_STREAM_KEY_PURPOSE)
+    : null;
   const video = existingVideo
     ? await db.video.update({
         where: { id: existingVideo.id, vendorId: input.vendorId },
@@ -114,7 +120,7 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
           status: "processing",
           cloudflareLiveInputUid: liveInput.uid,
           cloudflarePlaybackId: liveInput.uid,
-          liveStreamKey: liveInput.rtmps?.streamKey ?? null,
+          liveStreamKey: encryptedStreamKey,
           liveInputStatus: "created",
         },
       })
@@ -127,7 +133,7 @@ export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequ
           status: "processing",
           cloudflareLiveInputUid: liveInput.uid,
           cloudflarePlaybackId: liveInput.uid,
-          liveStreamKey: liveInput.rtmps?.streamKey ?? null,
+          liveStreamKey: encryptedStreamKey,
           liveInputStatus: "created",
         },
       });
