@@ -672,7 +672,7 @@ loginRateLimitTest("login failures are audited and the sixth UI attempt is rejec
   expect(await db.userSession.count({ where: { userId } })).toBe(sessionCountBaseline);
 });
 
-passwordResetTest("password reset request shows the anti-enumeration response and creates one active reset record", async ({ page, passwordResetUser }) => {
+passwordResetTest("password reset request hides account existence and revokes an undelivered reset record", async ({ page, passwordResetUser }) => {
   await page.goto("/password-reset/request");
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByRole("button", { name: "寄送重設信" }).click();
@@ -684,7 +684,7 @@ passwordResetTest("password reset request shows the anti-enumeration response an
     where: { userId: passwordResetUser.id },
   });
   expect(resetRecords).toHaveLength(1);
-  expect(resetRecords[0]?.usedAt).toBeNull();
+  expect(resetRecords[0]?.usedAt).not.toBeNull();
   expect(resetRecords[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
   expect(await db.auditLog.count({
     where: {
@@ -718,7 +718,8 @@ passwordResetTest("security password reset smoke targets only the signed-in user
     select: { userId: true, usedAt: true, expiresAt: true },
   });
   expect(resetRecords).toHaveLength(1);
-  expect(resetRecords[0]).toMatchObject({ userId: passwordResetUser.id, usedAt: null });
+  expect(resetRecords[0]?.userId).toBe(passwordResetUser.id);
+  expect(resetRecords[0]?.usedAt).not.toBeNull();
   expect(resetRecords[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
   const failedAudits = await db.auditLog.findMany({
