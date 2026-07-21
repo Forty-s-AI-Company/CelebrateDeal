@@ -5,6 +5,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
+import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
@@ -52,16 +53,15 @@ export async function POST(request: Request) {
   let normalized;
   try {
     normalized = await adapter.normalizePayload(rawBody);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid webhook payload";
+  } catch {
     await writeAuditLog({
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_invalid",
       targetType: "WebhookEvent",
       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
-      after: auditSnapshot({ error: message }),
+      after: auditSnapshot({ errorCode: "invalid_payload" }),
     });
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: "Invalid payment webhook payload", code: "invalid_payload" }, { status: 400 });
   }
 
   const payload = normalized.payload;
@@ -98,7 +98,8 @@ export async function POST(request: Request) {
       transactionId: result.transaction.id,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown webhook error";
+    const errorCode = classifyPaymentWebhookFailure(error);
+    const message = paymentWebhookFailureMessage(errorCode);
     await db.webhookEvent.update({
       where: { id: event.id },
       data: {
@@ -114,8 +115,8 @@ export async function POST(request: Request) {
       targetType: "WebhookEvent",
       targetId: event.id,
       before: auditSnapshot(payload),
-      after: auditSnapshot({ error: message }),
+      after: auditSnapshot({ errorCode }),
     });
-    return NextResponse.json({ error: message, eventId: event.id }, { status: 500 });
+    return NextResponse.json({ error: "Payment webhook processing failed", code: errorCode, eventId: event.id }, { status: 500 });
   }
 }

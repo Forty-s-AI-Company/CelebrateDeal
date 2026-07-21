@@ -1,5 +1,6 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
 function nextRetryDate() {
@@ -50,7 +51,8 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   } catch (error) {
     const updatedRetryCount = event.retryCount + 1;
     const status = updatedRetryCount >= event.maxRetries ? "exhausted" : "failed";
-    const message = error instanceof Error ? error.message : "Unknown retry error";
+    const errorCode = classifyPaymentWebhookFailure(error);
+    const message = paymentWebhookFailureMessage(errorCode);
     await db.webhookEvent.update({
       where: { id: event.id },
       data: {
@@ -67,9 +69,9 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       targetType: "WebhookEvent",
       targetId: event.id,
       before: auditSnapshot(event),
-      after: auditSnapshot({ error: message, status }),
+      after: auditSnapshot({ errorCode, status }),
     });
-    return { status, event, error: message };
+    return { status, event, error: message, errorCode };
   }
 }
 

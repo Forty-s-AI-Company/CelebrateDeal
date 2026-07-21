@@ -149,16 +149,24 @@ describe("webhook retry worker", () => {
     dependencies.db.webhookEvent.update.mockResolvedValue({});
     dependencies.processPaymentWebhook.mockRejectedValueOnce(new Error("temporary failure")).mockRejectedValueOnce(new Error("final failure"));
 
-    await expect(retryWebhookEvent(retryable.id)).resolves.toMatchObject({ status: "failed", error: "temporary failure" });
-    await expect(retryWebhookEvent(finalAttempt.id)).resolves.toMatchObject({ status: "exhausted", error: "final failure" });
+    await expect(retryWebhookEvent(retryable.id)).resolves.toMatchObject({
+      status: "failed",
+      error: "Payment webhook processing failed (processing_failed).",
+      errorCode: "processing_failed",
+    });
+    await expect(retryWebhookEvent(finalAttempt.id)).resolves.toMatchObject({
+      status: "exhausted",
+      error: "Payment webhook processing failed (processing_failed).",
+      errorCode: "processing_failed",
+    });
 
     expect(dependencies.db.webhookEvent.update).toHaveBeenNthCalledWith(2, {
       where: { id: retryable.id },
-      data: { status: "failed", errorMessage: "temporary failure", retryCount: { increment: 1 }, nextRetryAt: new Date("2025-01-01T00:15:00.000Z") },
+      data: { status: "failed", errorMessage: "Payment webhook processing failed (processing_failed).", retryCount: { increment: 1 }, nextRetryAt: new Date("2025-01-01T00:15:00.000Z") },
     });
     expect(dependencies.db.webhookEvent.update).toHaveBeenNthCalledWith(4, {
       where: { id: finalAttempt.id },
-      data: { status: "exhausted", errorMessage: "final failure", retryCount: { increment: 1 }, nextRetryAt: null },
+      data: { status: "exhausted", errorMessage: "Payment webhook processing failed (processing_failed).", retryCount: { increment: 1 }, nextRetryAt: null },
     });
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(1, expect.objectContaining({ action: "webhook_retry_failed", targetId: retryable.id }));
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(2, expect.objectContaining({ action: "webhook_retry_exhausted", targetId: finalAttempt.id }));

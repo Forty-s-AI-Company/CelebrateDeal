@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   demoNormalizePayload: vi.fn(),
   payUniVerifySignature: vi.fn(),
   payUniNormalizePayload: vi.fn(),
+  webhookEventFindUnique: vi.fn(),
+  webhookEventCreate: vi.fn(),
+  webhookEventUpdate: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
@@ -56,6 +59,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("PAYMENT_PROVIDER", "demo");
   vi.stubEnv("NODE_ENV", "test");
+  mocks.getDb.mockReturnValue({
+    webhookEvent: {
+      findUnique: mocks.webhookEventFindUnique,
+      create: mocks.webhookEventCreate,
+      update: mocks.webhookEventUpdate,
+    },
+  });
 });
 
 afterEach(() => {
@@ -157,5 +167,53 @@ describe("payment webhook provider selection", () => {
     expect(response.status).toBe(401);
     expect(mocks.demoVerifySignature).toHaveBeenCalledTimes(1);
     expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("does not expose provider parser details when a signed payload is invalid", async () => {
+    mocks.demoVerifySignature.mockResolvedValue(true);
+    mocks.demoNormalizePayload.mockRejectedValue(new Error("secret=provider-private-value"));
+
+    const response = await POST(webhookRequest("?provider=demo"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({ error: "Invalid payment webhook payload", code: "invalid_payload" });
+    expect(JSON.stringify(payload)).not.toContain("provider-private-value");
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("provider-private-value");
+  });
+
+  it("stores and returns only a closed failure code when processing throws an unknown exception", async () => {
+    const event = { id: "webhook-event-1", status: "received" };
+    const normalizedPayload = {
+      provider: "demo",
+      eventId: "provider-event-1",
+      eventType: "paid",
+    };
+    mocks.demoVerifySignature.mockResolvedValue(true);
+    mocks.demoNormalizePayload.mockResolvedValue({ payload: normalizedPayload, rawPayload: {} });
+    mocks.webhookEventFindUnique.mockResolvedValue(null);
+    mocks.webhookEventCreate.mockResolvedValue(event);
+    mocks.processPaymentWebhook.mockRejectedValue(new Error("postgresql://user:password@private-db.example.test/app"));
+
+    const response = await POST(webhookRequest("?provider=demo"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual({
+      error: "Payment webhook processing failed",
+      code: "processing_failed",
+      eventId: event.id,
+    });
+    expect(mocks.webhookEventUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: event.id },
+      data: expect.objectContaining({
+        errorMessage: "Payment webhook processing failed (processing_failed).",
+      }),
+    }));
+    expect(JSON.stringify([
+      payload,
+      mocks.webhookEventUpdate.mock.calls,
+      mocks.writeAuditLog.mock.calls,
+    ])).not.toContain("private-db.example.test");
   });
 });
