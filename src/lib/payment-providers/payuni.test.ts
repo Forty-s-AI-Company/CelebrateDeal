@@ -106,15 +106,13 @@ describe("PayUni provider", () => {
   });
 
   it.each([
-    ["order number too long", { orderNumber: "CD-12345678901234567890123", grossAmountCents: 199000 }, undefined],
-    ["order number characters", { orderNumber: "CD INVALID", grossAmountCents: 199000 }, undefined],
-    ["fractional TWD", { orderNumber: "CD-TEST-002", grossAmountCents: 199050 }, undefined],
-    ["credit amount below range", { orderNumber: "CD-TEST-003", grossAmountCents: 0 }, undefined],
-    ["credit amount above range", { orderNumber: "CD-TEST-004", grossAmountCents: 20_000_000 }, undefined],
-    ["environment endpoint mismatch", { orderNumber: "CD-TEST-005", grossAmountCents: 199000 }, "https://api.payuni.com.tw/api"],
-  ])("rejects invalid PayUni checkout contract: %s", async (_label, transactionInput, apiBaseUrl) => {
+    ["order number too long", { orderNumber: "CD-12345678901234567890123", grossAmountCents: 199000 }],
+    ["order number characters", { orderNumber: "CD INVALID", grossAmountCents: 199000 }],
+    ["fractional TWD", { orderNumber: "CD-TEST-002", grossAmountCents: 199050 }],
+    ["credit amount below range", { orderNumber: "CD-TEST-003", grossAmountCents: 0 }],
+    ["credit amount above range", { orderNumber: "CD-TEST-004", grossAmountCents: 20_000_000 }],
+  ])("rejects invalid PayUni checkout contract: %s", async (_label, transactionInput) => {
     stubPayUniEnv();
-    if (apiBaseUrl) vi.stubEnv("PAYUNI_API_BASE_URL", apiBaseUrl);
 
     await expect(payUniPaymentProvider.createCheckoutSession?.({
       transaction: { id: "tx_invalid", ...transactionInput } as PaymentTransaction,

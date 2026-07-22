@@ -54,7 +54,7 @@ export function buildPaymentWebhookDiagnostics(providerId: string, rawBody: stri
       hashInfo: fieldSummary(hashInfo),
       hashInfoVerification: expectedHash && hashInfo ? (safeEqual(expectedHash, hashInfo.trim()) ? "pass" : "fail") : "not_checked",
       dashboardChecklist: [
-        "PayUni UPP endpoint must match PAYUNI_ENV / PAYUNI_API_BASE_URL.",
+        "PayUni UPP endpoint is selected from the approved PAYUNI_ENV mapping.",
         "MerID must match PAYUNI_MERCHANT_ID.",
         "HashKey and HashIV must be stored only in server-side env vars.",
         "NotifyURL and ReturnURL must point to /api/webhooks/payments?provider=payuni.",

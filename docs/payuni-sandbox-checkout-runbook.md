@@ -32,7 +32,9 @@ PayUni `upp` form post 應包含：
 
 - sandbox：`https://sandbox-api.payuni.com.tw/api/upp`
 - production：`https://api.payuni.com.tw/api/upp`
-- 若 PayUni 後台提供不同 sandbox URL，請以 `PAYUNI_API_BASE_URL` 覆蓋。External required
+
+Endpoint 由 `PAYUNI_ENV` 決定，程式只使用內建核准的 Sandbox 或 Production UPP endpoint，
+避免透過環境變數將 Sandbox 與 Production 設定混用。
 
 `EncryptInfo` 內應包含：
 

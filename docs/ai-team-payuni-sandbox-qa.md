@@ -17,7 +17,7 @@ PAYUNI_TEST_APP_URL=https://staging.example.test
 PAYUNI_STAGING_ALLOWED_HOST=staging.example.test
 PAYUNI_PRODUCTION_APP_HOST=celebratedeal.carry-digital-nomad.in.net
 PAYUNI_TEST_LIVE_PATH=/live/summer-glow-live
-PAYUNI_TEST_CARD_NUMBER=        # 可留白，使用 PAYUNI_SANDBOX_ONETIME_CARD_NO
+PAYUNI_SANDBOX_ONETIME_CARD_NO=<PayUni Sandbox 一次付清測試卡>
 PAYUNI_TEST_EXPIRY=MMYY
 PAYUNI_TEST_CVV=123
 ```

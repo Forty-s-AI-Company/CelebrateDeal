@@ -77,12 +77,7 @@ function payUniApiBaseUrl() {
     throw new Error("PAYUNI_ENV must be sandbox or production.");
   }
 
-  const expected = PAYUNI_API_BASE_URLS[environment];
-  const configured = process.env.PAYUNI_API_BASE_URL?.trim().replace(/\/+$/, "");
-  if (configured && configured !== expected) {
-    throw new Error("PAYUNI_API_BASE_URL does not match PAYUNI_ENV.");
-  }
-  return expected;
+  return PAYUNI_API_BASE_URLS[environment];
 }
 
 function payUniOrderNumber(transaction: { id: string; orderNumber: string | null }) {

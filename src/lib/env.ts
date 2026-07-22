@@ -2,7 +2,6 @@ import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
 
 const RequiredUrl = z.string().url();
-const OptionalUrl = z.string().url().optional().or(z.literal(""));
 const OptionalSecret = z.string().optional();
 const OptionalSentryEnvironment = z.string().refine(
   (value) => !value || isValidSentryEnvironment(value),
@@ -33,7 +32,6 @@ export const ProductionEnvSchema = z.object({
   PAYUNI_HASH_IV: OptionalSecret,
   PAYUNI_MERCHANT_ID: OptionalSecret,
   PAYUNI_ENV: z.enum(["sandbox", "production"]).optional(),
-  PAYUNI_API_BASE_URL: OptionalUrl,
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: EmailFrom,
