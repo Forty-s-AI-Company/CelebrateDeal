@@ -1,0 +1,15 @@
+# Local secrets and controlled QA fixtures are supplied through Vercel Preview
+# environment variables only. They must never become deployment source files.
+.env
+.env.*
+.private/
+
+# Generated diagnostics can contain browser state, request traces, or test data.
+coverage/
+reports/
+test-results/
+error.log
+
+# Local database and compiler artefacts are not application source.
+prisma/dev.db
+tsconfig.tsbuildinfo
