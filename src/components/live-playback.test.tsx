@@ -40,7 +40,7 @@ vi.mock("react", async (importOriginal) => {
 vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
-import { LivePlayback, openExternalUrl, requestCheckout, submitCheckout } from "./live-playback";
+import { isHlsPlaybackUrl, LivePlayback, openExternalUrl, requestCheckout, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -156,6 +156,14 @@ describe("LivePlayback checkout", () => {
     expect(appendToBody).toHaveBeenCalledWith(form);
     expect(form.submit).toHaveBeenCalledOnce();
     expect(window.location.href).toBe("https://shop.example.test/product-checkout");
+  });
+
+  it("detects Cloudflare Stream HLS playback URLs for browser player fallback", () => {
+    expect(isHlsPlaybackUrl("https://videodelivery.net/video-1/manifest/video.m3u8")).toBe(true);
+    expect(isHlsPlaybackUrl("https://customer-example.cloudflarestream.com/video-1/manifest/video.m3u8")).toBe(true);
+    expect(isHlsPlaybackUrl("http://videodelivery.net/video-1/manifest/video.m3u8")).toBe(false);
+    expect(isHlsPlaybackUrl("https://videodelivery.net/video-1/watch")).toBe(false);
+    expect(isHlsPlaybackUrl("not-a-url")).toBe(false);
   });
 
   it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(

@@ -14,6 +14,16 @@ const clientHeaders = {
   "X-CelebrateDeal-Client": "web",
 };
 
+export function isHlsPlaybackUrl(url: string | null) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.pathname.endsWith("/manifest/video.m3u8");
+  } catch {
+    return false;
+  }
+}
+
 type LivePageData = {
   id: string;
   title: string;
@@ -149,6 +159,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
     () => (typeof window === "undefined" ? "server" : getOrCreateVisitorId(() => crypto.randomUUID(), () => window.localStorage)),
@@ -196,6 +207,33 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
   }, [chatEvents.length]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const playbackUrl = live.videoUrl;
+    if (!video || !isHlsPlaybackUrl(playbackUrl) || !playbackUrl) return;
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = playbackUrl;
+      return;
+    }
+
+    let disposed = false;
+    let hls: { destroy: () => void } | null = null;
+    void import("hls.js")
+      .then(({ default: Hls }) => {
+        if (disposed || !Hls.isSupported()) return;
+        const player = new Hls();
+        hls = player;
+        player.loadSource(playbackUrl);
+        player.attachMedia(video);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      hls?.destroy();
+    };
+  }, [live.videoUrl]);
 
   function trackProgress(seconds: number) {
     const checkpoints = [30, 60, 120, 300, 600] as const;
@@ -256,6 +294,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         <div className="absolute inset-0">
           {live.videoUrl ? (
             <video
+              ref={videoRef}
               className="h-full w-full object-cover"
               src={live.videoUrl}
               controls
