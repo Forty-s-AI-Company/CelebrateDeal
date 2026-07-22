@@ -163,7 +163,7 @@ npm run db:seed
 正式 MVP 上線前至少要做到：
 
 - 依 Supabase organization plan 確認可用的 backup 形式，並留下非敏感驗收紀錄。Pro、Team、Enterprise 才有 dashboard daily backup；Free plan 必須用加密的站外 logical dump。
-- 每次 production migration 前建立可驗證的 backup。可用 dashboard backup 時記錄 restore point；否則建立 roles、schema、data 與 migration history 的 logical dump。
+- 每次 production migration 前建立可驗證的 backup。可用 dashboard backup 時記錄 restore point；否則建立 roles、schema、data 的 logical dump。CelebrateDeal 的 Prisma migration history 位於 `public._prisma_migrations`，已包含於 public data dump。
 - 每次月結 lock settlement 前與每次建立 payout batch 前建立可驗證的 backup。
 - 每週至少一次 restore drill 到隔離 staging / restore project，不得覆寫正在使用的 Staging。
 - 依 [Staging 備份與還原演練 Runbook](./staging-backup-restore-drill-runbook.md) 執行，並保存 SHA-256 manifest、RTO 與驗收結果；不得保存 secret 或 customer data。
