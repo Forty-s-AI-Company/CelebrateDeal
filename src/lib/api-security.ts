@@ -63,12 +63,16 @@ function allowedRequestOrigins(request: Request) {
 
 export function requireSameOriginRequest(request: Request, options: { requireClientHeader?: boolean } = {}) {
   const incomingOrigin = requestOrigin(request);
-  if (incomingOrigin && !allowedRequestOrigins(request).has(incomingOrigin)) {
-    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
-  }
-
   if (options.requireClientHeader && request.headers.get(CLIENT_REQUEST_HEADER) !== CLIENT_REQUEST_HEADER_VALUE) {
     return NextResponse.json({ error: "Missing trusted client header" }, { status: 403 });
+  }
+
+  if (options.requireClientHeader && !incomingOrigin) {
+    return NextResponse.json({ error: "Missing request origin" }, { status: 403 });
+  }
+
+  if (incomingOrigin && !allowedRequestOrigins(request).has(incomingOrigin)) {
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   }
 
   return null;

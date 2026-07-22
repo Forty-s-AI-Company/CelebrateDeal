@@ -91,6 +91,22 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("rejects a client-marked checkout with no same-origin evidence before reading products", async () => {
+    const response = await POST(new Request("https://app.example.test/api/payments/checkout", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-celebratedeal-client": "web",
+      },
+      body: JSON.stringify({ vendorId: "vendor-1", productId: "product-1" }),
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Missing request origin" });
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
   it("prevents caching while preserving the checkout payload", async () => {
     createCheckoutSession.mockResolvedValue({
       provider: "demo",

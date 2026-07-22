@@ -48,6 +48,13 @@ describe("requireSameOriginRequest", () => {
     await expect(response?.json()).resolves.toEqual({ error: "Missing trusted client header" });
   });
 
+  it("rejects a trusted client marker when both Origin and Referer are missing", async () => {
+    const response = requireSameOriginRequest(trustedRequest(), { requireClientHeader: true });
+
+    expect(response?.status).toBe(403);
+    await expect(response?.json()).resolves.toEqual({ error: "Missing request origin" });
+  });
+
   it("rejects a cross-origin Origin even with the trusted client marker", async () => {
     const response = requireSameOriginRequest(trustedRequest({ origin: "https://attacker.example.test" }), {
       requireClientHeader: true,
