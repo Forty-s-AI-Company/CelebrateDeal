@@ -24,6 +24,7 @@ function analyticsRequest(payload?: unknown, body?: string) {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      origin: "https://app.example.test",
       "x-celebratedeal-client": "web",
     },
     body: body ?? (payload === undefined ? undefined : JSON.stringify(payload)),
