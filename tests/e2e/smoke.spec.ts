@@ -1088,7 +1088,10 @@ test("public form can submit a lead", async ({ page }) => {
 
 test("checkout ignores client amount and uses product price", async ({ request }) => {
   const response = await request.post("/api/payments/checkout", {
-    headers: { "X-CelebrateDeal-Client": "web" },
+    headers: {
+      "X-CelebrateDeal-Client": "web",
+      Origin: e2eOrigin,
+    },
     data: {
       vendorId: seed.vendorId,
       productId: seed.productId,

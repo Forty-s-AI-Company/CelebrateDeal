@@ -9,6 +9,8 @@ const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
 const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public";
 const resendApiKeyEnvironmentName = ["RESEND", "API", "KEY"].join("_");
 const emailFromEnvironmentName = ["EMAIL", "FROM"].join("_");
+const sentryDsnEnvironmentName = ["SENTRY", "DSN"].join("_");
+const publicSentryDsnEnvironmentName = ["NEXT", "PUBLIC", "SENTRY", "DSN"].join("_");
 const e2eSmokeTestEmail = process.env.E2E_SMOKE_TEST_EMAIL
   ?? `e2e-smoke-${Date.now().toString(36)}-${process.pid}@celebratedeal.local`;
 const e2eRateLimitProvider = process.env.E2E_RATE_LIMIT_PROVIDER ?? "memory";
@@ -56,6 +58,11 @@ export default defineConfig({
       SMOKE_TEST_EMAIL: e2eSmokeTestEmail,
       [resendApiKeyEnvironmentName]: "",
       [emailFromEnvironmentName]: "",
+      // Browser smoke must remain local and deterministic. Sentry delivery is
+      // verified separately against Staging, so do not let an unreachable
+      // external ingest endpoint delay page loads or surface false 500s here.
+      [sentryDsnEnvironmentName]: "",
+      [publicSentryDsnEnvironmentName]: "",
     } as Record<string, string>,
   },
   projects: [
