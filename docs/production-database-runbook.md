@@ -162,11 +162,11 @@ npm run db:seed
 
 正式 MVP 上線前至少要做到：
 
-- Supabase daily backup enabled。
-- 每次 production migration 前手動 snapshot。
-- 每次月結 lock settlement 前手動 snapshot。
-- 每次建立 payout batch 前手動 snapshot。
-- 每週至少一次 restore drill 到 staging / restore project。
+- 依 Supabase organization plan 確認可用的 backup 形式，並留下非敏感驗收紀錄。Pro、Team、Enterprise 才有 dashboard daily backup；Free plan 必須用加密的站外 logical dump。
+- 每次 production migration 前建立可驗證的 backup。可用 dashboard backup 時記錄 restore point；否則建立 roles、schema、data 與 migration history 的 logical dump。
+- 每次月結 lock settlement 前與每次建立 payout batch 前建立可驗證的 backup。
+- 每週至少一次 restore drill 到隔離 staging / restore project，不得覆寫正在使用的 Staging。
+- 依 [Staging 備份與還原演練 Runbook](./staging-backup-restore-drill-runbook.md) 執行，並保存 SHA-256 manifest、RTO 與驗收結果；不得保存 secret 或 customer data。
 
 建議 RPO / RTO：
 
@@ -219,6 +219,7 @@ npm run db:seed
 - [ ] Production bootstrap 只 upsert billing plans
 - [ ] Smoke test 通過
 - [ ] Backup restore drill 完成
+- [ ] 備份形式與 organization plan 相符，且 backup / restore evidence 不含 secret 或 customer data
 - [ ] Webhook retry / reconciliation 沒有異常
 
 ## 10. 參考資料
