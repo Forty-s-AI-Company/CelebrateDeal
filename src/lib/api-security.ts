@@ -13,8 +13,11 @@ function safeEqual(left: string, right: string) {
 
 function bearerToken(request: Request) {
   const header = request.headers.get("authorization") ?? "";
-  const [scheme, token] = header.split(/\s+/, 2);
-  return scheme?.toLowerCase() === "bearer" ? token : null;
+  const parts = header.trim().split(/\s+/);
+  if (parts.length !== 2) return null;
+
+  const [scheme, token] = parts;
+  return scheme.toLowerCase() === "bearer" && token ? token : null;
 }
 
 export function isAuthorizedBearer(request: Request, secret: string | undefined) {

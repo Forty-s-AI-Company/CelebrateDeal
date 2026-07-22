@@ -3,6 +3,7 @@ import {
   CLIENT_REQUEST_HEADER,
   CLIENT_REQUEST_HEADER_VALUE,
   MAX_JSON_BODY_BYTES,
+  isAuthorizedBearer,
   readFormDataBody,
   readJsonBody,
   readTextBody,
@@ -96,6 +97,24 @@ describe("requireSameOriginRequest", () => {
 
     expect(response?.status).toBe(403);
     await expect(response?.json()).resolves.toEqual({ error: "Invalid request origin" });
+  });
+});
+
+describe("isAuthorizedBearer", () => {
+  const secret = "test-fixture-job-secret";
+
+  it.each([
+    ["Bearer test-fixture-job-secret", true],
+    ["bearer test-fixture-job-secret", true],
+    ["Bearer test-fixture-job-secret trailing", false],
+    ["Bearer", false],
+    ["Basic test-fixture-job-secret", false],
+  ])("accepts only an exact two-part Bearer authorization value", (authorization, expected) => {
+    const request = new Request("https://request.example.test/api/test", {
+      headers: { authorization },
+    });
+
+    expect(isAuthorizedBearer(request, secret)).toBe(expected);
   });
 });
 
