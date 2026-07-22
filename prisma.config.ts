@@ -18,6 +18,8 @@ function migrationDatabaseUrl() {
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+  // Prisma 6 only applies datasource.url to the classic schema engine.
+  engine: "classic",
   migrations: {
     path: "prisma/migrations",
     seed: "node --import tsx prisma/seed.ts",
