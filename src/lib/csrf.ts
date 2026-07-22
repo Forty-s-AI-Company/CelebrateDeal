@@ -8,13 +8,18 @@ export { CSRF_FIELD_NAME };
 const TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 
 function csrfSecret() {
-  return process.env.CSRF_SECRET ?? process.env.JOB_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "development-csrf-secret");
+  const configured = process.env.CSRF_SECRET?.trim();
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV === "production") return "";
+
+  return process.env.JOB_SECRET?.trim() || "development-csrf-secret";
 }
 
 function sign(value: string) {
   const secret = csrfSecret();
   if (!secret) {
-    throw new Error("CSRF_SECRET or JOB_SECRET must be configured in production.");
+    throw new Error("CSRF_SECRET must be configured in production.");
   }
   return createHmac("sha256", secret).update(value).digest("base64url");
 }
