@@ -3,6 +3,7 @@ import { test, vi } from "vitest";
 
 import {
   PayUniQueryFailure,
+  assertPublicPayUniCallbackHost,
   callbackTimeoutDiagnostic,
   payUniRequest,
   paymentPageStructure,
@@ -50,6 +51,23 @@ test("Vercel preview protection bypass cookie URL is explicit and opt-in", () =>
   assert.equal(url.pathname, "/");
   assert.equal(url.searchParams.get("x-vercel-protection-bypass"), "preview-bypass-token");
   assert.equal(url.searchParams.get("x-vercel-set-bypass-cookie"), "true");
+});
+
+test("Sandbox QA refuses a Deployment Protection callback host before charging a test card", async () => {
+  await assert.rejects(
+    () => assertPublicPayUniCallbackHost("https://preview.example.test", async () => new Response(null, {
+      status: 401,
+    })),
+    /受到 Deployment Protection 保護/,
+  );
+});
+
+test("Sandbox QA accepts a publicly reachable callback host", async () => {
+  await assert.doesNotReject(
+    () => assertPublicPayUniCallbackHost("https://staging.example.test", async () => new Response("ok", {
+      status: 200,
+    })),
+  );
 });
 
 function pageAt(url) {

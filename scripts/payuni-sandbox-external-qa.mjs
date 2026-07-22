@@ -183,6 +183,20 @@ function vercelProtectionBypassCookieUrl(appUrl, source = process.env) {
   return url.toString();
 }
 
+async function assertPublicPayUniCallbackHost(appUrl, request = fetch) {
+  const healthUrl = new URL("/api/health", appUrl).toString();
+  let response;
+  try {
+    response = await request(healthUrl, { redirect: "manual" });
+  } catch {
+    throw new PayUniCallbackHostError("unreachable");
+  }
+
+  if (!response.ok) {
+    throw new PayUniCallbackHostError("protected");
+  }
+}
+
 async function installVercelProtectionBypassCookie(page, appUrl) {
   const bypassUrl = vercelProtectionBypassCookieUrl(appUrl);
   if (!bypassUrl) return;
@@ -716,6 +730,18 @@ class CallbackTimeoutError extends Error {
   }
 }
 
+class PayUniCallbackHostError extends Error {
+  constructor(reason) {
+    const messages = {
+      protected: "PayUni Sandbox callback host 受到 Deployment Protection 保護；請使用公開的非 Production Staging host，且不得把 Vercel bypass secret 放進 ReturnURL 或 NotifyURL。",
+      unreachable: "PayUni Sandbox callback host 無法公開連線；請使用公開的非 Production Staging host。",
+    };
+    super(messages[reason] ?? "PayUni Sandbox callback host 無法使用。");
+    this.name = "PayUniCallbackHostError";
+    this.reason = reason === "protected" || reason === "unreachable" ? reason : "unknown";
+  }
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -1038,6 +1064,7 @@ async function main() {
   assert(env("PAYUNI_ENV") === "sandbox", "此命令只允許 PAYUNI_ENV=sandbox。");
   assert(env("PAYUNI_SANDBOX_QA_ENABLED") === "true", "需明確設定 PAYUNI_SANDBOX_QA_ENABLED=true。");
   assert(env("PAYUNI_SANDBOX_REFUND_ENABLED") === "true", "需明確設定 PAYUNI_SANDBOX_REFUND_ENABLED=true。");
+  await assertPublicPayUniCallbackHost(appUrl);
 
   const checkout = await runCheckout(appUrl);
   assert(Number.isInteger(checkout.amount) && checkout.amount > 0, "Sandbox 退款金額無效。");
@@ -1113,6 +1140,7 @@ async function execute() {
   } catch (error) {
     if (error instanceof CallbackTimeoutError) await cleanUpTimedOutPayment(error);
     const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
+    const callbackHostError = error instanceof PayUniCallbackHostError ? error : null;
     console.log(JSON.stringify({
       schema: SCHEMA,
       success: false,
@@ -1120,8 +1148,9 @@ async function execute() {
       completedAt: new Date().toISOString(),
       // A browser/provider exception can carry a URL, response body, or card
       // field. Only the closed callback receipt is allowed to supply detail.
-      error: callbackTimeout?.error ?? "PayUni Sandbox QA failed.",
+      error: callbackTimeout?.error ?? callbackHostError?.message ?? "PayUni Sandbox QA failed.",
       ...(callbackTimeout ? { checks: callbackTimeout.checks } : {}),
+      ...(callbackHostError ? { checks: { callbackHost: callbackHostError.reason } } : {}),
       productionValidation: {
         status: "human-approval-required",
         automatedChargeAllowed: false,
@@ -1135,6 +1164,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
 
 export {
   PAYUNI_PROVIDER_DISPOSITION_TABLES,
+  assertPublicPayUniCallbackHost,
   callbackTimeoutDiagnostic,
   payUniRequest,
   paymentPageStructure,

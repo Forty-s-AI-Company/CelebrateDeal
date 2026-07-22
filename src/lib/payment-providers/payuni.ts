@@ -136,14 +136,9 @@ function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
   const url = new URL("/api/webhooks/payments", appUrl);
   url.searchParams.set("provider", "payuni");
   url.searchParams.set("source", source);
-
-  const bypassSecret = process.env.VERCEL_ENV === "preview"
-    ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()
-    : "";
-  if (bypassSecret) {
-    url.searchParams.set("x-vercel-protection-bypass", bypassSecret);
-  }
-
+  // ReturnURL is shown to the payer and NotifyURL is stored by PayUni. Neither
+  // URL may contain a Vercel automation bypass secret. Sandbox callbacks must
+  // therefore use a public, non-production Staging host.
   return url.toString();
 }
 
