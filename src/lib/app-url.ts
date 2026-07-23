@@ -1,5 +1,14 @@
 const DEVELOPMENT_APP_URL = "http://localhost:31023";
 
+function isExplicitLocalE2eUrl(url: URL, env: NodeJS.ProcessEnv) {
+  return (
+    env.E2E_TEST_MODE === "true"
+    && env.E2E_BASE_URL === url.origin
+    && url.protocol === "http:"
+    && ["127.0.0.1", "localhost"].includes(url.hostname)
+  );
+}
+
 /**
  * 取得伺服器產生郵件連結與付款回呼時唯一可信任的公開網址。
  * 正式環境刻意不接受 request Host fallback，避免 Host header 影響密碼
@@ -27,7 +36,7 @@ export function getCanonicalAppUrl(env: NodeJS.ProcessEnv = process.env) {
   if (url.username || url.password) {
     throw new Error("NEXT_PUBLIC_APP_URL must not contain credentials.");
   }
-  if (env.NODE_ENV === "production" && url.protocol !== "https:") {
+  if (env.NODE_ENV === "production" && url.protocol !== "https:" && !isExplicitLocalE2eUrl(url, env)) {
     throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS in production.");
   }
 

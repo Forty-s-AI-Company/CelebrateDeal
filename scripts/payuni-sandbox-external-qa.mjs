@@ -1,9 +1,37 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
+import { PrismaClient } from "@prisma/client";
 
-const SCHEMA = "celebratedeal-payuni-sandbox-qa/v1";
+const SCHEMA = "celebratedeal-payuni-sandbox-qa/v2";
+const QA_ARTIFACT_SCHEMA = "celebratedeal-ai-team-payuni-artifact/v1";
+const QA_ARTIFACT_DIRECTORY_SEGMENTS = ["reports", "ai-team", "qa-payuni-sandbox"];
+const QA_ARTIFACT_GATES = Object.freeze({
+  paymentTransactionRefunded: "paymentTransactionRefunded",
+  refundRecordProcessed: "refundRecordProcessed",
+  refundIdempotency: "refundIdempotency",
+  singleRefundRecord: "singleRefundRecord",
+});
+const QA_ARTIFACT_GATE_RESULTS = new Set(["passed", "failed", "unknown"]);
+const QA_ARTIFACT_FAILURE_CATEGORIES = new Set([
+  "none",
+  "authentication",
+  "authorization",
+  "request-contract",
+  "provider-response-validation",
+  "network",
+  "database",
+  "unknown",
+]);
+const FINANCE_DASHBOARD_ERROR_CATEGORIES = new Set([
+  "authentication",
+  "timeout",
+  "assertion-or-interaction",
+  "unknown",
+]);
+const QA_ARTIFACT_SIGNER_ROLES = new Set(["delivery-qa", "platform-admin", "release-manager"]);
 const KNOWN_PRODUCTION_APP_HOST = "celebratedeal.carry-digital-nomad.in.net";
 const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_API_ORIGIN = `https://${PAYUNI_HOST}`;
@@ -125,6 +153,16 @@ const FLOW_STAGES = new Set([
   "confirming-payment",
   "waiting-payment-callback",
   "verifying-payment-callback",
+  "opening-finance-login",
+  "submitting-finance-login",
+  "opening-billing-dashboard",
+  "locating-billing-refund",
+  "filling-finance-refund",
+  "clicking-finance-refund",
+  "submitting-finance-refund",
+  "waiting-finance-refund-response",
+  "waiting-refund-accounting",
+  "submitting-duplicate-finance-refund",
 ]);
 const CALLBACK_QUERY_FAILURES = new Map([
   ["query-timeout", "bounded-timeout"],
@@ -145,6 +183,77 @@ function env(name, fallback = "") {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function safeQaArtifactGate(value) {
+  return QA_ARTIFACT_GATE_RESULTS.has(value) ? value : "unknown";
+}
+
+function safeQaArtifactRevision(value) {
+  const revision = String(value ?? "").trim().toLowerCase();
+  return /^[a-f0-9]{7,64}$/.test(revision) ? revision : "unavailable";
+}
+
+function safeQaArtifactSignerRole(value) {
+  return QA_ARTIFACT_SIGNER_ROLES.has(value) ? value : "delivery-qa";
+}
+
+function safeQaArtifactFailureCategory(receipt) {
+  if (receipt?.success === true) return "none";
+
+  const checks = receipt?.checks ?? {};
+  const candidates = [
+    checks.financeErrorCategory,
+    checks.browserErrorCategory,
+    checks.callbackErrorCategory,
+    checks.errorCategory,
+  ];
+  const category = candidates.find((candidate) => QA_ARTIFACT_FAILURE_CATEGORIES.has(candidate));
+  return category ?? "unknown";
+}
+
+function artifactTimestamp(value) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function buildQaArtifact(receipt, source = process.env) {
+  const completedAt = artifactTimestamp(receipt?.completedAt);
+  const checks = receipt?.checks ?? {};
+  const status = receipt?.success === true ? "completed" : "failed";
+
+  // This is intentionally a closed receipt: no transaction references,
+  // provider payloads, URLs, secrets, customer data, or exception text cross
+  // this boundary into the persisted artifact.
+  return Object.freeze({
+    schemaVersion: QA_ARTIFACT_SCHEMA,
+    executedAtUtc: completedAt.toISOString(),
+    environment: "staging",
+    revision: safeQaArtifactRevision(source.AI_TEAM_PROJECT_REVISION),
+    status,
+    gates: Object.freeze({
+      paymentTransactionRefunded: safeQaArtifactGate(checks[QA_ARTIFACT_GATES.paymentTransactionRefunded]),
+      refundRecordProcessed: safeQaArtifactGate(checks[QA_ARTIFACT_GATES.refundRecordProcessed]),
+      refundIdempotency: safeQaArtifactGate(checks[QA_ARTIFACT_GATES.refundIdempotency]),
+      singleRefundRecord: safeQaArtifactGate(checks[QA_ARTIFACT_GATES.singleRefundRecord]),
+    }),
+    safeFailureCategory: safeQaArtifactFailureCategory(receipt),
+    signerRole: safeQaArtifactSignerRole(source.AI_TEAM_QA_SIGNER_ROLE),
+  });
+}
+
+async function writeQaArtifact(receipt, source = process.env, rootDirectory = process.cwd()) {
+  const artifact = buildQaArtifact(receipt, source);
+  const artifactDirectory = resolve(rootDirectory, ...QA_ARTIFACT_DIRECTORY_SEGMENTS);
+  const timestamp = artifact.executedAtUtc.replace(/[-:.]/g, "").replace("Z", "Z");
+  const artifactPath = resolve(artifactDirectory, `${timestamp}.json`);
+
+  // `artifactPath` is derived solely from a UTC timestamp and the fixed
+  // repository directory. It cannot be redirected with environment input.
+  assert(artifactPath.startsWith(`${artifactDirectory}\\`) || artifactPath.startsWith(`${artifactDirectory}/`), "QA artifact path is invalid.");
+  await mkdir(artifactDirectory, { recursive: true });
+  await writeFile(artifactPath, `${JSON.stringify(artifact)}\n`, { encoding: "utf8", flag: "wx" });
+  return artifact;
 }
 
 function assertExactHttpsHost(rawUrl, expectedHost, label) {
@@ -253,6 +362,27 @@ function safePageHttpsHostPath(page) {
 function safeDiagnosticToken(value) {
   const token = String(value ?? "").trim();
   return FLOW_STAGES.has(token) ? token : "unavailable";
+}
+
+function safeQaErrorClass(error) {
+  if (!(error instanceof Error)) return "non-error-throw";
+  const allowed = new Set([
+    "Error",
+    "TypeError",
+    "SyntaxError",
+    "TimeoutError",
+    "CallbackTimeoutError",
+    "PayUniCallbackHostError",
+    "SandboxBrowserFlowError",
+  ]);
+  return allowed.has(error.name) ? error.name : "other-error";
+}
+
+function financeDashboardErrorCategory(cause) {
+  if (cause?.name === "MfaRequiredError") return "authentication";
+  if (cause instanceof errors.TimeoutError) return "timeout";
+  if (cause instanceof Error) return "assertion-or-interaction";
+  return "unknown";
 }
 
 function safeTradeStatus(value) {
@@ -742,6 +872,25 @@ class PayUniCallbackHostError extends Error {
   }
 }
 
+class SandboxBrowserFlowError extends Error {
+  constructor(stage, category, cause) {
+    super("PayUni Sandbox browser flow failed.", { cause });
+    this.name = "SandboxBrowserFlowError";
+    this.stage = safeDiagnosticToken(stage, "unknown");
+    this.category = category === "timeout" || category === "assertion-or-interaction" ? category : "unknown";
+  }
+}
+
+class SandboxFinanceDashboardError extends Error {
+  constructor(stage, cause) {
+    super("CelebrateDeal finance dashboard flow failed.", { cause });
+    this.name = "SandboxFinanceDashboardError";
+    this.stage = safeDiagnosticToken(stage);
+    const category = financeDashboardErrorCategory(cause);
+    this.category = FINANCE_DASHBOARD_ERROR_CATEGORIES.has(category) ? category : "unknown";
+  }
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -932,6 +1081,158 @@ async function waitForRefund(orderNumber) {
   return row;
 }
 
+function stagingDatabaseUrl() {
+  const rawUrl = env("STAGING_DATABASE_URL");
+  const password = env("STAGING_DATABASE_PASSWORD");
+  assert(rawUrl && password, "AI Team 退款驗收需要 Staging 資料庫受限讀取設定。");
+  const url = new URL(rawUrl);
+  assert(url.hostname.endsWith(".pooler.supabase.com"), "AI Team 只允許 Staging Supabase Transaction Pooler。");
+  url.port = "6543";
+  url.password = password;
+  url.searchParams.set("pgbouncer", "true");
+  url.searchParams.set("connection_limit", "1");
+  url.searchParams.set("sslmode", "require");
+  return url.toString();
+}
+
+async function waitForRefundPersistence(transactionId, paymentWebhookRecordId = "") {
+  const db = new PrismaClient({ datasources: { db: { url: stagingDatabaseUrl() } } });
+  try {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const transaction = await db.paymentTransaction.findUnique({
+        where: { id: transactionId },
+        select: {
+          status: true,
+          grossAmountCents: true,
+          refundedAmountCents: true,
+          providerTradeNo: true,
+          refunds: { select: { status: true, refundAmountCents: true, providerEventId: true } },
+        },
+      });
+      const paymentWebhook = paymentWebhookRecordId
+        ? await db.webhookEvent.findUnique({
+          where: { id: paymentWebhookRecordId },
+          select: { provider: true, status: true },
+        })
+        : transaction?.providerTradeNo
+          ? await db.webhookEvent.findUnique({
+            where: {
+              provider_eventId: {
+                provider: "payuni",
+                eventId: transaction.providerTradeNo,
+              },
+            },
+            select: { provider: true, status: true },
+          })
+          : null;
+      if (refundPersistencePassed(transaction, paymentWebhook)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+  } finally {
+    await db.$disconnect();
+  }
+  throw new Error("CelebrateDeal 尚未將退款完成為單一 processed RefundRecord。");
+}
+
+function refundPersistencePassed(transaction, paymentWebhook) {
+  const refunds = transaction?.refunds ?? [];
+  const providerEventIds = refunds
+    .map((refund) => refund.providerEventId)
+    .filter((id) => typeof id === "string" && id.trim().length > 0);
+
+  return (
+    transaction?.status === "refunded"
+    && transaction.refundedAmountCents === transaction.grossAmountCents
+    && refunds.length === 1
+    && refunds[0]?.status === "processed"
+    && refunds[0]?.refundAmountCents === transaction.grossAmountCents
+    && providerEventIds.length === refunds.length
+    && new Set(providerEventIds).size === providerEventIds.length
+    && paymentWebhook?.provider === "payuni"
+    && paymentWebhook?.status === "processed"
+  );
+}
+
+async function latestRefundableCheckout() {
+  const db = new PrismaClient({ datasources: { db: { url: stagingDatabaseUrl() } } });
+  try {
+    const transaction = await db.paymentTransaction.findFirst({
+      where: { providerName: "payuni", status: "paid", refunds: { none: {} } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, orderNumber: true, grossAmountCents: true },
+    });
+    assert(transaction?.orderNumber, "找不到可續跑退款的已付款 PayUni Sandbox 交易。");
+    const amount = Math.round(transaction.grossAmountCents / 100);
+    assert(Number.isInteger(amount) && amount > 0, "可續跑退款的 Sandbox 金額無效。");
+    return { transactionId: transaction.id, orderNumber: transaction.orderNumber, amount, callbackEventId: "" };
+  } finally {
+    await db.$disconnect();
+  }
+}
+
+async function refundThroughCelebrateDeal(appUrl, checkout) {
+  const email = env("PAYUNI_QA_FINANCE_EMAIL", env("PLATFORM_ADMIN_EMAIL"));
+  const password = env("PAYUNI_QA_FINANCE_PASSWORD", env("PLATFORM_ADMIN_PASSWORD"));
+  assert(email && password, "AI Team 退款驗收需要受限 Staging 財務 QA 帳號。");
+
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ locale: "zh-TW" });
+  let flowStage = "opening-finance-login";
+  try {
+    await installVercelProtectionBypassCookie(page, appUrl);
+    await page.goto(new URL("/login", appUrl).toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("密碼", { exact: true }).fill(password);
+    flowStage = "submitting-finance-login";
+    await Promise.all([
+      page.waitForURL((url) => url.origin === appUrl && url.pathname !== "/login", { waitUntil: "domcontentloaded", timeout: 45_000 }),
+      page.getByRole("button", { name: "登入", exact: true }).click(),
+    ]);
+    flowStage = "opening-billing-dashboard";
+    await page.goto(new URL("/admin/billing/dashboard", appUrl).toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+    if (["/mfa/setup", "/mfa/verify"].includes(new URL(page.url()).pathname)) {
+      // Dedicated QA credentials may have a valid password but still require a
+      // human TOTP verification. Surface that as an authentication gate rather
+      // than waiting for the absent refund form and misclassifying it as a UI timeout.
+      const mfaError = new Error("MFA_REQUIRED");
+      mfaError.name = "MfaRequiredError";
+      throw mfaError;
+    }
+    const refundForm = page.getByTestId(`billing-refund-${checkout.transactionId}`);
+    flowStage = "locating-billing-refund";
+    await refundForm.waitFor({ state: "visible", timeout: 45_000 });
+    const submitFullRefund = async () => {
+      flowStage = "filling-finance-refund";
+      await refundForm.getByLabel("退款金額", { exact: true }).fill(String(checkout.amount));
+      flowStage = "clicking-finance-refund";
+      await refundForm.getByRole("button", { name: "退款", exact: true }).click();
+      // Server Action 會以 redirect 回到同一頁；資料庫的狀態輪詢才是成功與否的權威。
+      flowStage = "waiting-finance-refund-response";
+      await page.waitForTimeout(750);
+    };
+
+    // 第一次由後台單一路徑發起退款，確認 pending 最終被結算為 processed。
+    flowStage = "submitting-finance-refund";
+    await submitFullRefund();
+    flowStage = "waiting-refund-accounting";
+    await waitForRefundPersistence(checkout.transactionId, checkout.callbackEventId);
+
+    // 以相同交易與金額重送一次，驗證服務端在呼叫 PayUni 前即拒絕重複退款。
+    flowStage = "submitting-duplicate-finance-refund";
+    await submitFullRefund();
+    assert(
+      new URL(page.url()).searchParams.get("error") === "refund",
+      "重複退款未被 CelebrateDeal 後台拒絕。",
+    );
+  } catch (error) {
+    throw new SandboxFinanceDashboardError(flowStage, error);
+  } finally {
+    await browser.close();
+  }
+}
+
 async function runCheckout(appUrl) {
   // 僅接受已命名為一次付清用途的 Sandbox 測試卡，避免同一張卡以多個環境變數名稱漂移。
   const cardNumber = env("PAYUNI_SANDBOX_ONETIME_CARD_NO").replace(/\D/g, "");
@@ -1009,6 +1310,10 @@ async function runCheckout(appUrl) {
       flowStage = "confirming-payment";
       await confirmButton.click();
       confirmationDialogClicked = true;
+      // PayUni 的「確定」只關閉確認視窗；仍須再送出一次付款表單。
+      // 以送出按鈕仍可見作為 UI 證據，避免把關窗誤當成實際扣款。
+      flowStage = "submitting-confirmed-payment";
+      await page.getByRole("button", { name: "確認送出", exact: true }).click();
     }
 
     flowStage = "waiting-payment-callback";
@@ -1049,6 +1354,13 @@ async function runCheckout(appUrl) {
       amount: Math.round(Number(checkout.amountCents) / 100),
       callbackEventId: String(callback.eventId ?? ""),
     };
+  } catch (error) {
+    if (error instanceof CallbackTimeoutError) throw error;
+    throw new SandboxBrowserFlowError(
+      flowStage,
+      error instanceof errors.TimeoutError ? "timeout" : "assertion-or-interaction",
+      error,
+    );
   } finally {
     await browser.close();
   }
@@ -1062,17 +1374,20 @@ async function main() {
   assert(env("PAYUNI_SANDBOX_REFUND_ENABLED") === "true", "需明確設定 PAYUNI_SANDBOX_REFUND_ENABLED=true。");
   await assertPublicPayUniCallbackHost(appUrl);
 
-  const checkout = await runCheckout(appUrl);
+  const checkout = env("PAYUNI_QA_REFUND_ONLY") === "true"
+    ? await latestRefundableCheckout()
+    : await runCheckout(appUrl);
   assert(Number.isInteger(checkout.amount) && checkout.amount > 0, "Sandbox 退款金額無效。");
   const paid = await queryTransaction(checkout.orderNumber);
   assert(String(paid.TradeStatus) === "1", "PayUni 後台查詢尚未顯示已付款。");
   assert(String(paid.TradeNo ?? "").length > 0, "PayUni 後台查詢缺少交易序號。");
   assert(Number(paid.TradeAmt) === checkout.amount, "PayUni 後台金額與 CelebrateDeal 結帳金額不一致。");
 
-  await refundTransaction(String(paid.TradeNo), checkout.amount);
+  await refundThroughCelebrateDeal(appUrl, checkout);
   const refunded = await waitForRefund(checkout.orderNumber);
   const refundStatus = String(refunded?.RefundStatus ?? "");
   assert(["1", "2", "8"].includes(refundStatus), "PayUni 後台尚未記錄 Sandbox 退款。");
+  await waitForRefundPersistence(checkout.transactionId, checkout.callbackEventId);
 
   return {
     schema: SCHEMA,
@@ -1092,6 +1407,10 @@ async function main() {
       providerReconciliation: "passed",
       sandboxRefundAccepted: "passed",
       refundVisibleInProviderQuery: "passed",
+      paymentTransactionRefunded: "passed",
+      refundRecordProcessed: "passed",
+      refundIdempotency: "passed",
+      singleRefundRecord: "passed",
     },
     providerState: {
       tradeStatus: String(refunded.TradeStatus ?? ""),
@@ -1131,13 +1450,18 @@ async function cleanUpTimedOutPayment(error) {
 }
 
 async function execute() {
+  let receipt;
+
   try {
-    console.log(JSON.stringify(await main()));
+    receipt = await main();
   } catch (error) {
     if (error instanceof CallbackTimeoutError) await cleanUpTimedOutPayment(error);
     const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
     const callbackHostError = error instanceof PayUniCallbackHostError ? error : null;
-    console.log(JSON.stringify({
+    const browserFlowError = error instanceof SandboxBrowserFlowError ? error : null;
+    const financeDashboardError = error instanceof SandboxFinanceDashboardError ? error : null;
+    const errorClass = safeQaErrorClass(error);
+    receipt = {
       schema: SCHEMA,
       success: false,
       environment: "sandbox",
@@ -1147,13 +1471,28 @@ async function execute() {
       error: callbackTimeout?.error ?? callbackHostError?.message ?? "PayUni Sandbox QA failed.",
       ...(callbackTimeout ? { checks: callbackTimeout.checks } : {}),
       ...(callbackHostError ? { checks: { callbackHost: callbackHostError.reason } } : {}),
+      ...(browserFlowError ? { checks: { browserCheckout: "failed", browserStage: browserFlowError.stage, browserErrorCategory: browserFlowError.category } } : {}),
+      ...(financeDashboardError ? { checks: { financeDashboard: "failed", financeStage: financeDashboardError.stage, financeErrorCategory: financeDashboardError.category } } : {}),
+      ...(!callbackTimeout && !callbackHostError && !browserFlowError && !financeDashboardError ? { checks: { errorClass } } : {}),
       productionValidation: {
         status: "human-approval-required",
         automatedChargeAllowed: false,
       },
-    }));
+    };
     process.exitCode = 1;
   }
+
+  let artifactStatus = "written";
+  try {
+    await writeQaArtifact(receipt);
+  } catch {
+    // An absent receipt is a release-gate failure, but storage details must
+    // not expose local paths or exception messages in the terminal output.
+    artifactStatus = "failed";
+    process.exitCode = 1;
+  }
+
+  console.log(JSON.stringify({ ...receipt, qaArtifact: artifactStatus }));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await execute();
@@ -1161,12 +1500,17 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
 export {
   PAYUNI_PROVIDER_DISPOSITION_TABLES,
   assertPublicPayUniCallbackHost,
+  buildQaArtifact,
   callbackTimeoutDiagnostic,
+  financeDashboardErrorCategory,
   payUniRequest,
   paymentPageStructure,
   providerResultDiagnostic,
+  refundPersistencePassed,
+  refundThroughCelebrateDeal,
   resolvePayUniStagingAppUrl,
   safeDiagnosticToken,
   safeTradeStatus,
   vercelProtectionBypassCookieUrl,
+  writeQaArtifact,
 };

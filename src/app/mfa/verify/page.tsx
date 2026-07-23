@@ -1,5 +1,6 @@
 import { verifyMfaAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireAuth } from "@/lib/auth";
 
 const errorMessages: Record<string, string> = {
@@ -36,7 +37,13 @@ export default async function MfaVerifyPage({
             驗證碼
             <input name="code" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456 或 ABCDE-12345" />
           </label>
-          <button className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">確認並進入後台</button>
+          <FormSubmitButton
+            className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+            pendingChildren="驗證中…"
+            pendingMessage="正在驗證，請勿重複送出。"
+          >
+            確認並進入後台
+          </FormSubmitButton>
         </form>
       </section>
     </main>

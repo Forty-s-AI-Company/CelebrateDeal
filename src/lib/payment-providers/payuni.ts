@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
-import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
+import { RefundProviderError, type PaymentProviderAdapter, type RefundPaymentInput } from "@/lib/payment-providers/types";
 
 const PAYUNI_UPP_VERSION = "2.0";
 const PAYUNI_API_BASE_URLS = {
@@ -10,6 +10,7 @@ const PAYUNI_API_BASE_URLS = {
 const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
 const PAYUNI_MIN_TRADE_AMOUNT = 1;
 const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
+const PAYUNI_REFUND_VERSION = "1.0";
 
 function cents(value: unknown) {
   const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
@@ -125,6 +126,102 @@ function decryptInfo(encryptStr: string) {
 function hashInfo(encryptStr: string) {
   const { key, iv } = payUniKeyMaterial();
   return createHash("sha256").update(`${key}${encryptStr}${iv}`).digest("hex").toUpperCase();
+}
+
+function payUniResultRow(value: Record<string, unknown>) {
+  const result = value.Result;
+  if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
+  if (typeof result === "string") {
+    try {
+      const parsed = JSON.parse(result) as unknown;
+      return Array.isArray(parsed) ? parsed[0] as Record<string, unknown> | undefined : parsed as Record<string, unknown>;
+    } catch {
+      const parsed = Object.fromEntries(new URLSearchParams(result).entries());
+      return Object.keys(parsed).length > 0 ? parsed : undefined;
+    }
+  }
+  return result && typeof result === "object" ? result as Record<string, unknown> : undefined;
+}
+
+/**
+ * Sends only the documented PayUni close/refund envelope.  Errors deliberately
+ * stay generic so provider responses, URLs and cryptographic material cannot
+ * leak into Server Action responses or runtime logs.
+ */
+async function refundPayUniTransaction({ transaction, refundAmountCents }: RefundPaymentInput) {
+  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+  const tradeNo = transaction.providerTradeNo?.trim();
+  if (!merchantId || !tradeNo) throw new RefundProviderError("request_contract");
+
+  const amount = payUniTradeAmount(refundAmountCents);
+  const encrypted = encryptInfo({
+    MerID: merchantId,
+    TradeNo: tradeNo,
+    Timestamp: Math.floor(Date.now() / 1000),
+    CloseType: 2,
+    TradeAmt: amount,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${payUniApiBaseUrl().replace(/\/$/, "")}/trade/close`, {
+      method: "POST",
+      // PayUni 的信用卡退款 API 要求明確提供 User-Agent；沒有時可能被
+      // 閘道拒絕，即使 EncryptInfo／HashInfo 都正確。
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "payuni",
+      },
+      body: new URLSearchParams({
+        MerID: merchantId,
+        Version: PAYUNI_REFUND_VERSION,
+        EncryptInfo: encrypted,
+        HashInfo: hashInfo(encrypted),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new RefundProviderError("network");
+  }
+
+  if (!response.ok) throw new RefundProviderError("provider_response");
+
+  let outer: Record<string, unknown>;
+  try {
+    outer = parseRawPayload(await response.text());
+  } catch {
+    throw new RefundProviderError("provider_response");
+  }
+
+  const responseEncrypted = optionalPayloadText(outer.EncryptInfo);
+  const responseHash = optionalPayloadText(outer.HashInfo);
+  if (!responseEncrypted || !responseHash || !safeEqual(hashInfo(responseEncrypted), responseHash)) {
+    throw new RefundProviderError("authentication");
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = decryptInfo(responseEncrypted);
+  } catch {
+    throw new RefundProviderError("authentication");
+  }
+
+  // 文件中的成功回覆將 Status、TradeNo、CloseType 直接放在解密內容，
+  // 舊版整合則可能包在 Result。兩者都要驗證同一組回傳欄位。
+  const result = payUniResultRow(payload) ?? payload;
+  if (
+    optionalPayloadText(payload.Status) !== "SUCCESS"
+    || optionalPayloadText(result?.TradeNo) !== tradeNo
+    || optionalPayloadText(result?.CloseType) !== "2"
+  ) {
+    throw new RefundProviderError("provider_response");
+  }
+
+  return {
+    providerEventId: optionalPayloadText(result?.CloseNo)
+      ?? optionalPayloadText(result?.RefundNo)
+      ?? tradeNo,
+  };
 }
 
 function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
@@ -246,5 +343,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       payload: PaymentWebhookPayload.parse(normalized),
       rawPayload,
     };
+  },
+  async refundPayment(input) {
+    return refundPayUniTransaction(input);
   },
 };

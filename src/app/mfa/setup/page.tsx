@@ -1,4 +1,6 @@
 import { cookies } from "next/headers";
+import Image from "next/image";
+import QRCode from "qrcode";
 import {
   confirmMfaEnrollmentAction,
   dismissRecoveryCodesAction,
@@ -7,6 +9,7 @@ import {
   startMfaEnrollmentAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
@@ -41,6 +44,14 @@ export default async function MfaSetupPage({
   const pendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
+  const mfaQrCode = mfaUri
+    ? await QRCode.toDataURL(mfaUri, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 224,
+      color: { dark: "#0f172a", light: "#ffffff" },
+    })
+    : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
 
   return (
@@ -72,24 +83,59 @@ export default async function MfaSetupPage({
               </div>
             ) : pendingMfa ? (
               <div className="grid gap-4">
-                <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
-                  <p className="text-sm font-semibold text-slate-900">手動密鑰</p>
-                  <p className="mt-2 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
-                  {mfaUri ? <p className="mt-3 break-all text-xs text-slate-500">{mfaUri}</p> : null}
+                <div className="grid justify-items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-4 text-center">
+                  <p className="text-sm font-semibold text-slate-900">使用驗證器 App 掃描 QR Code</p>
+                  {mfaQrCode ? (
+                    <Image
+                      src={mfaQrCode}
+                      alt="CelebrateDeal TOTP 設定 QR Code"
+                      width={224}
+                      height={224}
+                      unoptimized
+                      className="rounded-md bg-white p-2"
+                    />
+                  ) : null}
+                  <p className="text-xs text-slate-600">掃描後，請輸入 App 顯示的 6 位數驗證碼完成啟用。</p>
                 </div>
+                <details className="rounded-lg border border-border bg-white p-4 text-left">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">無法掃描 QR Code？顯示手動密鑰</summary>
+                  <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
+                </details>
+                <form action={startMfaEnrollmentAction} className="justify-self-start">
+                  <CsrfField />
+                  <FormSubmitButton
+                    className="text-sm font-semibold text-primary underline underline-offset-4"
+                    pendingChildren="重新建立中…"
+                    pendingMessage="正在建立新的 TOTP 設定。"
+                  >
+                    重新建立 TOTP 設定
+                  </FormSubmitButton>
+                </form>
                 <form action={confirmMfaEnrollmentAction} className="grid gap-3">
                   <CsrfField />
                   <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                     6 位數驗證碼
                     <input name="code" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                   </label>
-                  <button className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">啟用 MFA</button>
+                  <FormSubmitButton
+                    className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                    pendingChildren="啟用中…"
+                    pendingMessage="正在啟用 MFA，請勿重複送出。"
+                  >
+                    啟用 MFA
+                  </FormSubmitButton>
                 </form>
               </div>
             ) : (
               <form action={startMfaEnrollmentAction} className="grid gap-3">
                 <CsrfField />
-                <button className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">開始建立 TOTP</button>
+                <FormSubmitButton
+                  className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                  pendingChildren="建立中…"
+                  pendingMessage="正在建立 TOTP 設定。"
+                >
+                  開始建立 TOTP
+                </FormSubmitButton>
               </form>
             )}
           </Card>
@@ -105,7 +151,13 @@ export default async function MfaSetupPage({
                 </div>
                 <form action={dismissRecoveryCodesAction} className="mt-4">
                   <CsrfField />
-                  <button className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">我已保存 recovery codes</button>
+                  <FormSubmitButton
+                    className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                    pendingChildren="確認中…"
+                    pendingMessage="正在確認保存狀態。"
+                  >
+                    我已保存 recovery codes
+                  </FormSubmitButton>
                 </form>
               </>
             ) : (
@@ -120,9 +172,13 @@ export default async function MfaSetupPage({
                       目前 TOTP 驗證碼
                       <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                     </label>
-                    <button className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50">
+                    <FormSubmitButton
+                      className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50"
+                      pendingChildren="重新產生中…"
+                      pendingMessage="正在重新產生 recovery codes。"
+                    >
                       重新產生 recovery codes
-                    </button>
+                    </FormSubmitButton>
                   </form>
                 ) : null}
               </div>
@@ -137,9 +193,13 @@ export default async function MfaSetupPage({
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />
-            <button className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+            <FormSubmitButton
+              className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
+              pendingChildren="寄送中…"
+              pendingMessage="正在寄送測試信，請稍候。"
+            >
               寄送 password reset 測試信
-            </button>
+            </FormSubmitButton>
           </form>
         </Card>
       </section>

@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
   refundRecordAggregate: vi.fn(),
   refundRecordCreate: vi.fn(),
+  refundRecordUpdate: vi.fn(),
+  getPaymentProvider: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
   requireVendor: vi.fn(),
@@ -128,7 +130,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.payoutBatchFindUnique,
       updateMany: mocks.payoutBatchUpdateMany,
     },
-    refundRecord: { aggregate: mocks.refundRecordAggregate },
+    refundRecord: { aggregate: mocks.refundRecordAggregate, update: mocks.refundRecordUpdate },
     settlement: { findUnique: mocks.settlementFindUnique },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
     interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
@@ -171,6 +173,7 @@ vi.mock("@/lib/db", () => ({
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
   }),
 }));
+vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
 
 import {
   createVendorMemberAction,
@@ -200,6 +203,7 @@ import { hashPassword } from "@/lib/password";
 const transaction = {
   id: "payment-1",
   vendorId: "vendor-1",
+  status: "paid",
   grossAmountCents: 10_000,
   refundedAmountCents: 6_000,
   gatewayFeeCents: 1_000,
@@ -407,6 +411,8 @@ beforeEach(() => {
   mocks.refundRecordAggregate.mockResolvedValue({
     _sum: { gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 },
   });
+  mocks.refundRecordCreate.mockResolvedValue({ id: "refund-1" });
+  mocks.refundRecordUpdate.mockResolvedValue({ id: "refund-1", status: "processed" });
   mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1", slug: "vendor" });
   mocks.vendorMemberFindFirst.mockResolvedValue(null);
   mocks.vendorMemberFindMany.mockResolvedValue([]);
@@ -434,6 +440,7 @@ beforeEach(() => {
     refundRecord: {
       aggregate: mocks.refundRecordAggregate,
       create: mocks.refundRecordCreate,
+      update: mocks.refundRecordUpdate,
     },
   }));
   mocks.redirect.mockImplementation((path: string) => {
@@ -1868,6 +1875,98 @@ describe("generateSettlementAction", () => {
 });
 
 describe("refundPaymentTransactionAction", () => {
+  it("uses one recoverable PayUni path: reserve pending, refund provider, then mark processed", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn().mockResolvedValue({ providerEventId: "refund-456" });
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "pending", paymentTransactionId: transaction.id }),
+    });
+    expect(providerRefund).toHaveBeenCalledWith(expect.objectContaining({
+      transaction: payUniTransaction,
+      refundAmountCents: 4_000,
+      requestId: expect.stringMatching(/^[a-f0-9]{32}$/),
+    }));
+    expect(mocks.refundRecordUpdate).toHaveBeenCalledWith({
+      where: { id: "refund-1" },
+      data: { status: "processed", providerEventId: "refund-456" },
+    });
+    expect(mocks.paymentTransactionUpdate).toHaveBeenCalledWith({
+      where: { id: transaction.id },
+      data: expect.objectContaining({ status: "refunded", refundedAmountCents: 10_000 }),
+    });
+  });
+
+  it("marks the reserved PayUni refund failed when the provider call fails", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockRejectedValue(new Error("provider unavailable")) });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+
+    expect(mocks.refundRecordUpdate).toHaveBeenCalledWith({
+      where: { id: "refund-1" },
+      data: { status: "failed" },
+    });
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("retries only local PayUni refund completion after a serialization conflict", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn().mockResolvedValue({ providerEventId: "refund-456" });
+    let transactionAttempts = 0;
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      transactionAttempts += 1;
+      const result = await callback({
+        paymentTransaction: {
+          findUnique: mocks.findUnique,
+          update: mocks.paymentTransactionUpdate,
+        },
+        refundRecord: {
+          aggregate: mocks.refundRecordAggregate,
+          create: mocks.refundRecordCreate,
+          update: mocks.refundRecordUpdate,
+        },
+      });
+      if (transactionAttempts === 2) throw Object.assign(new Error("serialization failure"), { code: "P2034" });
+      return result;
+    });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(transactionAttempts).toBe(3);
+    expect(providerRefund).toHaveBeenCalledTimes(1);
+    expect(mocks.refundRecordUpdate).toHaveBeenCalledTimes(2);
+    expect(mocks.paymentTransactionUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a non-refundable PayUni transaction before creating a reservation or calling the provider", async () => {
+    const nonRefundable = { ...transaction, status: "refunded", providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn();
+    mocks.findUnique.mockResolvedValue(nonRefundable);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+    expect(providerRefund).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid settlement month without creating a refund, updating the transaction, or writing an audit log", async () => {
     await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", "2026-13"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",

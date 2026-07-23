@@ -15,6 +15,11 @@ const cspReportOnly = [
   "report-uri /api/security/csp-report",
 ].join("; ");
 
+// Local release-mode QA uses this explicit switch so `next build` cannot
+// publish source maps or create a Sentry release as an external side effect.
+// Vercel/CI builds keep the normal upload behaviour unless they opt out.
+const disableSentryAutoUpload = process.env.SENTRY_DISABLE_AUTO_UPLOAD === "true";
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   images: {
@@ -44,7 +49,10 @@ export default withSentryConfig(nextConfig, {
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,
   silent: !process.env.CI,
-  widenClientFileUpload: Boolean(process.env.SENTRY_AUTH_TOKEN),
+  widenClientFileUpload: Boolean(process.env.SENTRY_AUTH_TOKEN) && !disableSentryAutoUpload,
+  sourcemaps: {
+    disable: disableSentryAutoUpload,
+  },
   tunnelRoute: "/monitoring",
   webpack: {
     automaticVercelMonitors: true,

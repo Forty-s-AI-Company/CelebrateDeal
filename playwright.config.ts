@@ -11,6 +11,7 @@ const resendApiKeyEnvironmentName = ["RESEND", "API", "KEY"].join("_");
 const emailFromEnvironmentName = ["EMAIL", "FROM"].join("_");
 const sentryDsnEnvironmentName = ["SENTRY", "DSN"].join("_");
 const publicSentryDsnEnvironmentName = ["NEXT", "PUBLIC", "SENTRY", "DSN"].join("_");
+const sentryAuthTokenEnvironmentName = ["SENTRY", "AUTH", "TOKEN"].join("_");
 const e2eSmokeTestEmail = process.env.E2E_SMOKE_TEST_EMAIL
   ?? `e2e-smoke-${Date.now().toString(36)}-${process.pid}@celebratedeal.local`;
 const e2eRateLimitProvider = process.env.E2E_RATE_LIMIT_PROVIDER ?? "memory";
@@ -32,8 +33,11 @@ if (!process.env.DIRECT_URL || process.env.DIRECT_URL.startsWith("file:")) {
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  // Next development mode compiles routes and Server Actions lazily. Keep
-  // assertions bounded, but allow cold paths to finish without CI-only flakes.
+  // Browser smoke is a release gate. Run a production build/start lifecycle
+  // instead of Turbopack dev mode, whose local filesystem cache can make
+  // instrumentation and in-memory rate-limit tests restart mid-suite on
+  // Windows. Preflight is exercised independently with real configured env;
+  // this isolated browser server intentionally blanks external telemetry.
   expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
@@ -43,12 +47,19 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run dev",
+    command: `npx prisma generate && npx next build && npx next start --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
       ...process.env,
+      // Playwright itself may run under NODE_ENV=test. The child process is a
+      // real Next production server, so give it the matching runtime mode.
+      NODE_ENV: "production",
+      // This is intentionally accepted only for the matching local HTTP
+      // origin by getCanonicalAppUrl; it cannot relax a deployed public URL.
+      E2E_TEST_MODE: "true",
+      E2E_BASE_URL: baseURL,
       NEXT_PUBLIC_APP_URL: baseURL,
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? "demo",
       // 空字串也視為未設定；E2E 僅使用明確標註的測試密鑰。
@@ -63,6 +74,10 @@ export default defineConfig({
       // external ingest endpoint delay page loads or surface false 500s here.
       [sentryDsnEnvironmentName]: "",
       [publicSentryDsnEnvironmentName]: "",
+      // Release-mode browser QA must never publish local source maps or create
+      // an external Sentry release as a side effect of its child build.
+      [sentryAuthTokenEnvironmentName]: "",
+      SENTRY_DISABLE_AUTO_UPLOAD: "true",
     } as Record<string, string>,
   },
   projects: [

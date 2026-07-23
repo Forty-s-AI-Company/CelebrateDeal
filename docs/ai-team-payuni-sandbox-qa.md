@@ -4,7 +4,7 @@ AI Team 的 `delivery-qa` 外部驗收現在會在變更成功合併到 staging 
 
 1. PayUni Sandbox 結帳與付款回呼
 2. PayUni 查詢結果與 CelebrateDeal 訂單對帳
-3. Sandbox 退款及退款狀態回查
+3. 由 CelebrateDeal 財務後台發起 Sandbox 退款、退款狀態回查，以及 `PaymentTransaction=refunded`、單筆 `RefundRecord=processed` 的冪等性驗收
 
 設定位置是 `.ai-team/project.yaml` 的 `external_qa`。實際命令固定為 `npm run qa:payuni:sandbox`，只允許 `PAYUNI_ENV=sandbox`、核准的 staging HTTPS host，以及明確的 QA/退款開關；正式交易不會由 AI Team 自動執行。
 
@@ -20,6 +20,8 @@ PAYUNI_TEST_LIVE_PATH=/live/summer-glow-live
 PAYUNI_SANDBOX_ONETIME_CARD_NO=<PayUni Sandbox 一次付清測試卡>
 PAYUNI_TEST_EXPIRY=MMYY
 PAYUNI_TEST_CVV=123
+PAYUNI_QA_FINANCE_EMAIL=<僅限 staging 的財務 QA 帳號；未設時才使用 PLATFORM_ADMIN_EMAIL>
+PAYUNI_QA_FINANCE_PASSWORD=<僅限 staging 的財務 QA 密碼；未設時才使用 PLATFORM_ADMIN_PASSWORD>
 ```
 
 執行前必須用 `vercel inspect https://staging.example.test` 確認 target 不是

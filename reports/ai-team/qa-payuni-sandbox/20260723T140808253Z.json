@@ -1,0 +1,1 @@
+{"schemaVersion":"celebratedeal-ai-team-payuni-artifact/v1","executedAtUtc":"2026-07-23T14:08:08.253Z","environment":"staging","revision":"unavailable","status":"failed","gates":{"paymentTransactionRefunded":"unknown","refundRecordProcessed":"unknown","refundIdempotency":"unknown","singleRefundRecord":"unknown"},"safeFailureCategory":"unknown","signerRole":"delivery-qa"}

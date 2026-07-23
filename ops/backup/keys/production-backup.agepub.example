@@ -1,0 +1,3 @@
+# Replace this single placeholder with an age recipient public key before enabling backups.
+# Public recipients are safe to store in source control. Never store an age private identity here.
+age1replace_with_your_offline_backup_recipient_public_key

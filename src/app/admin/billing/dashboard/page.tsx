@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCards } from "lucide-react";
 import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -24,17 +25,18 @@ export default async function AdminBillingDashboardPage() {
   await requireFinanceAdmin();
   const db = getDb();
   const start = sevenDaysAgo();
-  const [subscriptions, unlockedSettlements, readySettlements, failedPayouts, recentTransactions, recentCommissions, webhookEvents, failedWebhookCount, auditLogs] = await Promise.all([
-    db.vendorSubscription.findMany({ where: { status: "active" }, include: { plan: true, vendor: true } }),
-    db.settlement.findMany({ where: { lockedAt: null }, include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.settlement.findMany({ where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, include: { vendor: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
-    db.payoutItem.findMany({ where: { status: "failed" }, include: { vendor: true, payoutBatch: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
-    db.paymentTransaction.findMany({ where: { occurredAt: { gte: start } }, include: { vendor: true, refunds: true }, orderBy: { occurredAt: "desc" }, take: 10 }),
-    db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved", "locked"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.webhookEvent.count({ where: { status: "failed" } }),
-    db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
-  ]);
+  // Staging 的 Transaction Pooler 設為單連線；此頁同時發出九個查詢會造成
+  // Prisma P2024 pool timeout。依序讀取可維持同一條可用連線，避免 MFA 成功後
+  // 進入後台卻因頁面載入失敗而看似沒有反應。
+  const subscriptions = await db.vendorSubscription.findMany({ where: { status: "active" }, include: { plan: true, vendor: true } });
+  const unlockedSettlements = await db.settlement.findMany({ where: { lockedAt: null }, include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 });
+  const readySettlements = await db.settlement.findMany({ where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, include: { vendor: true }, orderBy: { updatedAt: "desc" }, take: 8 });
+  const failedPayouts = await db.payoutItem.findMany({ where: { status: "failed" }, include: { vendor: true, payoutBatch: true }, orderBy: { updatedAt: "desc" }, take: 8 });
+  const recentTransactions = await db.paymentTransaction.findMany({ where: { occurredAt: { gte: start } }, include: { vendor: true, refunds: true }, orderBy: { occurredAt: "desc" }, take: 10 });
+  const recentCommissions = await db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved", "locked"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 });
+  const webhookEvents = await db.webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 });
+  const failedWebhookCount = await db.webhookEvent.count({ where: { status: "failed" } });
+  const auditLogs = await db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 });
 
   const mrr = subscriptions.reduce((sum, subscription) => sum + subscription.plan.monthlyPriceCents, 0);
   const pendingPayoutAmount = readySettlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
@@ -89,21 +91,25 @@ export default async function AdminBillingDashboardPage() {
                 </div>
                 <div className="min-w-[280px]">
                   <p className="text-right text-lg font-bold text-slate-950">{formatCurrency(transaction.grossAmountCents)}</p>
-                  <form action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
+                  <form data-testid={`billing-refund-${transaction.id}`} action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
                     <CsrfField />
                     <input type="hidden" name="id" value={transaction.id} />
                     <input name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
                     <div className="grid grid-cols-3 gap-2">
-                      <input name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退款金額" name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
                       <input name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
                       <input name="platformFeeRefund" type="number" step="1" placeholder="退平台費" className="h-9 rounded-md border border-border px-2 text-xs" />
                     </div>
                     <div className="grid grid-cols-[1fr_auto] gap-2">
                       <input name="reason" placeholder="退款原因" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <button className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700">
+                      <FormSubmitButton
+                        className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700"
+                        pendingChildren="退款處理中…"
+                        pendingMessage="正在建立退款，請勿重複送出。"
+                      >
                         <RotateCcw size={13} />
                         退款
-                      </button>
+                      </FormSubmitButton>
                     </div>
                   </form>
                 </div>

@@ -24,6 +24,8 @@ import { calculateSettlement, invoiceNumber, payoutBatchNumber } from "@/lib/bil
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
+import { getPaymentProvider } from "@/lib/payment-providers";
+import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
   decryptMfaSecret,
   encryptMfaSecret,
@@ -1950,12 +1952,163 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   }
   const db = getDb();
 
+  // PayUni does not send a refund callback for the close API used by Sandbox.
+  // Reserve a local pending record first, then let this finance-admin action be
+  // the sole issuer of the provider refund.  This keeps a recoverable record if
+  // the provider succeeds but the final local commit cannot complete.
+  const providerTransaction = await db.paymentTransaction.findUnique({ where: { id } });
+  if (providerTransaction?.providerName === "payuni") {
+    const provider = getPaymentProvider("payuni");
+    if (!provider.refundPayment || !providerTransaction.providerTradeNo) {
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+
+    const requestId = randomBytes(16).toString("hex");
+    let reserved: { transaction: typeof providerTransaction; refundId: string };
+    try {
+      reserved = await db.$transaction(async (tx) => {
+        const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
+        if (!transaction) throw new RefundValidationError();
+        // A provider-side refund is valid only after this transaction has been
+        // recorded as paid.  Do not allow a provider trade reference alone to
+        // move a pending, failed, or already-refunded transaction forward.
+        if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
+          throw new RefundValidationError();
+        }
+
+        const reservedRefunds = await tx.refundRecord.aggregate({
+          where: { paymentTransactionId: transaction.id, status: { in: ["pending", "processed"] } },
+          _sum: {
+            refundAmountCents: true,
+            gatewayFeeRefundCents: true,
+            platformFeeRefundCents: true,
+          },
+        });
+        const reservedAmountCents = reservedRefunds._sum.refundAmountCents ?? 0;
+        const reservedGatewayFeeCents = reservedRefunds._sum.gatewayFeeRefundCents ?? 0;
+        const reservedPlatformFeeCents = reservedRefunds._sum.platformFeeRefundCents ?? 0;
+        if (
+          refundAmountCents > transaction.grossAmountCents - reservedAmountCents
+          || reservedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents
+          || reservedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
+        ) {
+          throw new RefundValidationError();
+        }
+
+        const refund = await tx.refundRecord.create({
+          data: {
+            vendorId: transaction.vendorId,
+            paymentTransactionId: transaction.id,
+            providerEventId: `request:${requestId}`,
+            monthKey,
+            refundAmountCents,
+            gatewayFeeRefundCents,
+            platformFeeRefundCents,
+            reason,
+            status: "pending",
+          },
+        });
+        return { transaction, refundId: refund.id };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof RefundValidationError || isDatabaseTransactionConflict(error)) {
+        redirect("/admin/billing/dashboard?error=refund");
+      }
+      throw error;
+    }
+
+    let providerResult: Awaited<ReturnType<NonNullable<typeof provider.refundPayment>>>;
+    try {
+      providerResult = await provider.refundPayment({
+        transaction: reserved.transaction,
+        refundAmountCents,
+        requestId,
+      });
+    } catch (error) {
+      await db.refundRecord.update({
+        where: { id: reserved.refundId },
+        data: { status: "failed" },
+      });
+      // 僅輸出安全分類，避免 provider payload、URL 或密鑰進入 runtime log。
+      console.info("payuni_refund_failed", {
+        category: error instanceof RefundProviderError ? error.category : "unknown",
+      });
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+
+    let completed: typeof reserved.transaction;
+    try {
+      completed = await (async () => {
+        for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            return await db.$transaction(async (tx) => {
+              // The provider has already accepted this exact reservation. Read
+              // the transaction again inside the serializable completion
+              // transaction so a concurrent partial refund cannot overwrite a
+              // newer refunded total with the pre-provider snapshot.
+              const currentTransaction = await tx.paymentTransaction.findUnique({ where: { id: reserved.transaction.id } });
+              if (!currentTransaction) throw new RefundValidationError();
+              const refundedAmountCents = currentTransaction.refundedAmountCents + refundAmountCents;
+              if (refundedAmountCents > currentTransaction.grossAmountCents) throw new RefundValidationError();
+
+              await tx.refundRecord.update({
+                where: { id: reserved.refundId },
+                data: {
+                  status: "processed",
+                  providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
+                },
+              });
+              return tx.paymentTransaction.update({
+                where: { id: currentTransaction.id },
+                data: {
+                  status: refundedAmountCents >= currentTransaction.grossAmountCents ? "refunded" : "partially_refunded",
+                  refundedAmountCents,
+                  refundReason: reason,
+                  refundedAt: new Date(),
+                },
+              });
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+          } catch (error) {
+            if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) continue;
+            throw error;
+          }
+        }
+        throw new Error("PayUni refund completion retry loop exited unexpectedly");
+      })();
+    } catch (error) {
+      // Keep the reservation pending after a provider-confirmed refund when
+      // local accounting cannot finish. This is recoverable and must not cause
+      // a second provider call on a later reconciliation attempt.
+      console.info("payuni_refund_completion_failed", {
+        category: isDatabaseTransactionConflict(error) ? "database" : "unknown",
+      });
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+
+    await writeAuditLog({
+      vendorId: reserved.transaction.vendorId,
+      actorId: member.id,
+      actorLabel: member.role,
+      action: "refund_payment_transaction",
+      targetType: "PaymentTransaction",
+      targetId: reserved.transaction.id,
+      before: auditSnapshot(reserved.transaction),
+      after: auditSnapshot(completed),
+    });
+    revalidatePath("/admin/billing/dashboard");
+    revalidatePath("/admin/billing/settlements");
+    redirect("/admin/billing/dashboard");
+  }
+
   const { transaction, updated } = await (async () => {
     for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
       try {
         return await db.$transaction(async (tx) => {
           const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
           if (!transaction) throw new RefundValidationError();
+          if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
+            throw new RefundValidationError();
+          }
 
           const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
           if (refundAmountCents > remainingRefundAmountCents) throw new RefundValidationError();

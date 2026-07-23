@@ -1,4 +1,4 @@
-import { createDecipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
@@ -23,6 +23,20 @@ function decryptCheckoutPayload(encryptInfo: string) {
     decipher.final(),
   ]).toString("utf8");
   return Object.fromEntries(new URLSearchParams(plaintext));
+}
+
+function payUniEnvelope(payload: Record<string, unknown>) {
+  const cipher = createCipheriv("aes-256-gcm", Buffer.from(hashKey), Buffer.from(hashIv), { authTagLength: 16 });
+  const plaintext = new URLSearchParams(
+    Object.entries(payload).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]),
+  ).toString();
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]).toString("base64");
+  const tag = cipher.getAuthTag().toString("base64");
+  const encryptInfo = Buffer.from(`${encrypted}:::${tag}`).toString("hex");
+  return new URLSearchParams({
+    EncryptInfo: encryptInfo,
+    HashInfo: createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase(),
+  }).toString();
 }
 
 afterEach(() => {
@@ -103,6 +117,63 @@ describe("PayUni provider", () => {
     expect(returnUrl.searchParams.has("x-vercel-protection-bypass")).toBe(false);
     expect(notifyUrl.searchParams.has("x-vercel-protection-bypass")).toBe(false);
     expect(JSON.stringify(payload)).not.toContain("preview-bypass-token");
+  });
+
+  it("submits a signed close request and accepts only the matching PayUni refund response", async () => {
+    stubPayUniEnv();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify({ TradeNo: "trade-123", CloseType: "2", CloseNo: "refund-456" }),
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      refundAmountCents: 199_000,
+      requestId: "local-request-id",
+    })).resolves.toEqual({ providerEventId: "refund-456" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sandbox-api.payuni.com.tw/api/trade/close",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const form = request.body as URLSearchParams;
+    expect(form.get("Version")).toBe("1.0");
+    expect(request.headers).toMatchObject({ "user-agent": "payuni" });
+    const requestPayload = decryptCheckoutPayload(form.get("EncryptInfo") ?? "");
+    expect(requestPayload).toMatchObject({ MerID: "TESTMER", TradeNo: "trade-123", CloseType: "2", TradeAmt: "1990" });
+    expect(JSON.stringify(request)).not.toContain(hashKey);
+    expect(JSON.stringify(request)).not.toContain(hashIv);
+  });
+
+  it("accepts PayUni's documented direct encrypted refund response", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      TradeNo: "trade-direct-123",
+      CloseType: "2",
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-direct", providerTradeNo: "trade-direct-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      refundAmountCents: 199_000,
+      requestId: "local-request-id",
+    })).resolves.toEqual({ providerEventId: "trade-direct-123" });
+  });
+
+  it("fails closed when PayUni's close response cannot be authenticated", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new URLSearchParams({
+      EncryptInfo: "invalid",
+      HashInfo: "invalid",
+    }).toString(), { status: 200 })));
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      refundAmountCents: 199_000,
+      requestId: "local-request-id",
+    })).rejects.toThrow("Payment provider refund failed.");
   });
 
   it.each([

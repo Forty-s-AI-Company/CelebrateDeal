@@ -63,7 +63,7 @@
 ## 3. Production 驗收
 
 - [ ] Vercel production env vars 已設定
-- [ ] Production migration 前 Supabase snapshot 已建立
+- [ ] Production migration 前備份已建立（Supabase managed snapshot 或已簽核的加密自管邏輯備份）
 - [ ] `npm run db:migrate:deploy` 對 production DB 成功
 - [ ] `npm run db:migrate:status` 顯示 up to date
 - [ ] `SEED_MODE=production-bootstrap npm run db:seed` 成功
@@ -94,8 +94,8 @@
 正式收費前必須全部通過：
 
 - [ ] Staging 全部 P0 測試通過
-- [ ] Production DB snapshot 完成
-- [ ] Backup restore drill 完成
+- [ ] Production DB backup 完成（managed snapshot 或加密自管邏輯備份）
+- [ ] Backup restore drill 完成（隔離 target、目標／實測 RTO、aggregate 一致性均已簽核）
 - [ ] PayUni checkout / paid / refunded / duplicate webhook 通過（External required）
 - [ ] Cloudflare Stream upload / live input / ready webhook 通過（External required）
 - [ ] Sentry alert 可收到測試錯誤（External required）

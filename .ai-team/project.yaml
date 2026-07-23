@@ -24,6 +24,11 @@ external_qa:
   run_once_per_revision: true
   reviewer_role: delivery-qa
   production_requires_human_approval: true
+  required_checks:
+    - payment_transaction_refunded
+    - refund_record_processed
+    - refund_idempotency
+    - single_refund_record
   trigger_paths:
     - src/app/api/payments/
     - src/app/api/webhooks/payments/
