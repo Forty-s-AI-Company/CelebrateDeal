@@ -63,21 +63,41 @@ describe("GET /api/health", () => {
   it.each([
     ["TLS handshake failed for postgresql://user:secret@private-host.example", "tls"],
     ["password authentication failed for user postgres", "authentication"],
-    ["Timed out fetching a new connection", "network_timeout"],
-    ["Connection refused by database server", "connection_refused"],
+    ["Timed out fetching a new connection", "network-timeout"],
+    ["Connection refused by database server", "connection-refused"],
     ["unclassified failure with secret=do-not-log", "unknown"],
-  ] as const)("logs only the safe %s classification in Preview", async (sensitiveError, category) => {
-    const error = new Prisma.PrismaClientInitializationError(sensitiveError, "6.19.3", "P1001");
-    mocks.queryRaw.mockRejectedValue(error);
-    vi.stubEnv("VERCEL_ENV", "preview");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  ] as const)(
+    "logs only the safe %s classification in Preview and Production",
+    async (sensitiveError, category) => {
+      for (const environment of ["preview", "production"] as const) {
+        vi.clearAllMocks();
+        mocks.getDb.mockReturnValue({ $queryRaw: mocks.queryRaw });
+        const error = new Prisma.PrismaClientInitializationError(sensitiveError, "6.19.3", "P1001");
+        mocks.queryRaw.mockRejectedValue(error);
+        vi.stubEnv("VERCEL_ENV", environment);
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const response = await GET();
+        const response = await GET();
+        const body = await response.json();
 
-    expect(response.status).toBe(503);
-    expect(warn).toHaveBeenCalledExactlyOnceWith("health_database_error", { category, code: "P1001" });
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveError);
-  });
+        expect(response.status).toBe(503);
+        expect(body).toEqual({
+          ok: false,
+          database: "failed",
+          latencyMs: expect.any(Number),
+          error: "Database health check failed",
+        });
+        expect(warn).toHaveBeenCalledExactlyOnceWith("health_database_error", {
+          category,
+          code: "P1001",
+          environment,
+        });
+        expect(JSON.stringify(body)).not.toContain(sensitiveError);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveError);
+        warn.mockRestore();
+      }
+    },
+  );
 
   it("classifies a known Prisma pool timeout without logging its message or metadata", async () => {
     const sensitiveError = "pool timeout at a private database endpoint";
@@ -94,10 +114,27 @@ describe("GET /api/health", () => {
 
     expect(response.status).toBe(503);
     expect(warn).toHaveBeenCalledExactlyOnceWith("health_database_error", {
-      category: "network_timeout",
+      category: "network-timeout",
       code: "P2024",
+      environment: "preview",
     });
     expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitiveError);
     expect(JSON.stringify(warn.mock.calls)).not.toContain("do-not-log");
+  });
+
+  it("does not log diagnostics for an unrecognized runtime environment", async () => {
+    const error = new Prisma.PrismaClientInitializationError(
+      "password authentication failed for postgresql://user:secret@private-host.example",
+      "6.19.3",
+      "P1000",
+    );
+    mocks.queryRaw.mockRejectedValue(error);
+    vi.stubEnv("VERCEL_ENV", "development");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const response = await GET();
+
+    expect(response.status).toBe(503);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

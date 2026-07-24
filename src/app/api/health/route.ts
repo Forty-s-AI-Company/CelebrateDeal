@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
 type SafePrismaDiagnostic = {
-  category: "tls" | "authentication" | "network_timeout" | "connection_refused" | "unknown";
+  category: "tls" | "authentication" | "network-timeout" | "connection-refused" | "unknown";
   code: string;
 };
+
+type SafeVercelEnvironment = "preview" | "production";
 
 function safePrismaCode(code: string | undefined) {
   // Prisma engine codes are fixed identifiers such as P1001. Do not log an
@@ -16,8 +18,8 @@ function safePrismaCode(code: string | undefined) {
 function getInitializationCategory(message: string): SafePrismaDiagnostic["category"] {
   if (/\b(tls|ssl|certificate|x509|handshake)\b/i.test(message)) return "tls";
   if (/\b(authentication failed|password authentication failed|invalid password|role .* does not exist)\b/i.test(message)) return "authentication";
-  if (/\b(timeout|timed out|deadline has elapsed)\b/i.test(message)) return "network_timeout";
-  if (/\b(connection refused|econnrefused)\b/i.test(message)) return "connection_refused";
+  if (/\b(timeout|timed out|deadline has elapsed)\b/i.test(message)) return "network-timeout";
+  if (/\b(connection refused|econnrefused)\b/i.test(message)) return "connection-refused";
   return "unknown";
 }
 
@@ -26,8 +28,8 @@ function getKnownRequestCategory(code: string): SafePrismaDiagnostic["category"]
   // error instead of an initialization error. Classify only fixed Prisma
   // codes here; never inspect or log the accompanying message or metadata.
   if (code === "P1000") return "authentication";
-  if (code === "P1001") return "connection_refused";
-  if (code === "P1002" || code === "P2024") return "network_timeout";
+  if (code === "P1001") return "connection-refused";
+  if (code === "P1002" || code === "P2024") return "network-timeout";
   if (code === "P1011") return "tls";
   return "unknown";
 }
@@ -52,12 +54,23 @@ function getSafePrismaDiagnostic(error: unknown): SafePrismaDiagnostic {
   return { category: "unknown", code: "unavailable" };
 }
 
-function logPreviewDatabaseDiagnostic(error: unknown) {
-  // Preview is CelebrateDeal's staging runtime. Production must retain the
-  // generic public health response and must not receive this extra diagnostic.
-  if (process.env.VERCEL_ENV !== "preview") return;
+function getSafeVercelEnvironment(): SafeVercelEnvironment | null {
+  if (process.env.VERCEL_ENV === "preview") return "preview";
+  if (process.env.VERCEL_ENV === "production") return "production";
+  return null;
+}
 
-  console.warn("health_database_error", getSafePrismaDiagnostic(error));
+function logDatabaseDiagnostic(error: unknown) {
+  const environment = getSafeVercelEnvironment();
+  if (!environment) return;
+
+  // Keep the log payload allowlisted. In particular, never spread or serialize
+  // the original error because Prisma messages and metadata can contain URLs,
+  // hosts, usernames, or credentials.
+  console.warn("health_database_error", {
+    ...getSafePrismaDiagnostic(error),
+    environment,
+  });
 }
 
 export async function GET() {
@@ -71,7 +84,7 @@ export async function GET() {
       latencyMs: Date.now() - startedAt,
     });
   } catch (error) {
-    logPreviewDatabaseDiagnostic(error);
+    logDatabaseDiagnostic(error);
     return NextResponse.json({
       ok: false,
       database: "failed",
