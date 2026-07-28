@@ -28,6 +28,7 @@ const seed = {
   productSlug: `e2e-product-${stamp}`,
   formSlug: `e2e-form-${stamp}`,
   liveSlug: `e2e-live-${stamp}`,
+  draftLiveSlug: `e2e-draft-live-${stamp}`,
   vendorId: "",
   userId: "",
   productId: "",
@@ -488,6 +489,18 @@ test.beforeAll(async () => {
       isActive: true,
     },
   });
+  const inactiveProduct = await db.product.create({
+    data: {
+      vendorId: vendor.id,
+      name: "E2E 停用商品",
+      slug: `e2e-inactive-product-${stamp}`,
+      description: "Must never appear on the public live page",
+      priceCents: e2eProductPriceCents,
+      currency: "TWD",
+      inventory: 10,
+      isActive: false,
+    },
+  });
   const form = await db.registrationForm.create({
     data: {
       vendorId: vendor.id,
@@ -515,8 +528,20 @@ test.beforeAll(async () => {
       status: "scheduled",
       accentCopy: "E2E 優惠",
       products: {
-        create: [{ productId: product.id, sortOrder: 1, isPinned: true }],
+        create: [
+          { productId: product.id, sortOrder: 1, isPinned: true },
+          { productId: inactiveProduct.id, sortOrder: 2, isPinned: false },
+        ],
       },
+    },
+  });
+  await db.live.create({
+    data: {
+      vendorId: vendor.id,
+      title: "E2E 未發布直播",
+      slug: seed.draftLiveSlug,
+      scheduledAt: new Date(Date.now() + 120_000),
+      status: "draft",
     },
   });
 
@@ -564,6 +589,17 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+});
+
+test("dashboard onboarding checklist provides concrete next-step links", async ({ page }) => {
+  await loginSeededOwner(page);
+  const checklist = page.getByRole("heading", { name: "Onboarding checklist" }).locator("..");
+
+  await expect(checklist.getByRole("link", { name: /建立商品/ })).toHaveAttribute("href", "/products/new");
+  await expect(checklist.getByRole("link", { name: /建立直播間/ })).toHaveAttribute("href", "/lives/new");
+  await expect(checklist.getByRole("link", { name: /建立互動角色/ })).toHaveAttribute("href", "/interaction-roles/new");
+  await expect(checklist.getByRole("link", { name: /建立互動腳本/ })).toHaveAttribute("href", "/interaction-scripts/new");
+  await expect(checklist.getByRole("link", { name: /設定追蹤/ })).toHaveAttribute("href", "/settings/tracking");
 });
 
 test("merchant can drag the last template message to the first timeline slot", async ({ page }) => {
@@ -1075,7 +1111,36 @@ test("public live page renders mobile-first commerce surface", async ({ page }) 
   await page.goto(`/live/${seed.liveSlug}`);
   await expect(page.getByText("E2E 直播頁")).toBeVisible();
   await expect(page.getByText("E2E 測試品牌")).toBeVisible();
-  await expect(page.getByRole("button", { name: /商品/ })).toBeVisible();
+  await expect(page.getByText("即將直播")).toBeVisible();
+  await page.getByRole("button", { name: /商品/ }).click();
+  const productsPanel = page.getByRole("complementary", { name: "直播商品" });
+  await expect(productsPanel.getByRole("heading", { name: "E2E 導購商品" })).toBeVisible();
+  await expect(productsPanel.getByText("E2E 停用商品")).toHaveCount(0);
+});
+
+test("public live page rejects an unpublished draft", async ({ page }) => {
+  const response = await page.goto(`/live/${seed.draftLiveSlug}`);
+
+  expect(response?.status()).toBe(404);
+  await expect(page.getByText("E2E 未發布直播")).toHaveCount(0);
+});
+
+test("live creation stepper blocks incomplete forward jumps and explains the next action", async ({ page }) => {
+  await loginSeededOwner(page);
+  await page.goto("/lives/new");
+
+  await page.getByRole("button", { name: "發布" }).click();
+  await expect(page.getByRole("button", { name: "基本資料" })).toHaveAttribute("aria-current", "step");
+  await expect(page.getByRole("status")).toContainText("請先完成本步驟的必填欄位");
+
+  await page.getByLabel("直播標題").fill("E2E 建立流程驗收");
+  await page.getByLabel("Slug").fill(`e2e-stepper-${stamp}`);
+  await page.getByLabel("開播時間").fill("2026-07-26T12:00");
+  await page.getByRole("button", { name: "發布" }).click();
+
+  await expect(page.getByRole("button", { name: "發布" })).toHaveAttribute("aria-current", "step");
+  await expect(page.getByRole("heading", { name: "確認直播間設定" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "建立直播間" })).toBeEnabled();
 });
 
 test("public form can submit a lead", async ({ page }) => {
