@@ -636,9 +636,10 @@ model PayoutItem {
   payoutBatchId     String
   vendorId          String
   settlementId      String?
-  bankAccountName   String
-  bankCode          String
-  bankAccountNumber String
+  bankAccountDisplayName   String    @map("bankAccountName")
+  bankCodeDisplay          String    @map("bankCode")
+  bankAccountDisplayNumber String    @map("bankAccountNumber")
+  bankAccountEncrypted     String?
   payoutAmountCents Int
   status            String    @default("pending")
   failReason        String?
@@ -665,9 +666,10 @@ model PaymentAccount {
   status            String   @default("pending")
   apiKeyRef         String?
   merchantIdRef     String?
-  bankAccountName   String?
-  bankCode          String?
-  bankAccountNumber String?
+  bankAccountLegacyName   String?  @map("bankAccountName")
+  bankCodeLegacy          String?  @map("bankCode")
+  bankAccountLegacyNumber String?  @map("bankAccountNumber")
+  bankAccountEncrypted    String?
   riskHoldEnabled   Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
