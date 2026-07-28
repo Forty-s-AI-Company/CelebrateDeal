@@ -12,7 +12,7 @@ describe("payment webhook failure classification", () => {
   });
 
   it("never includes an unknown exception message in the persisted description", () => {
-    const secretBearingError = new Error("postgresql://user:password@db.example.test/private");
+    const secretBearingError = new Error("postgresql://user:password@db.example.test/private"); // secret-scan: allow-test-fixture
     const code = classifyPaymentWebhookFailure(secretBearingError);
     const message = paymentWebhookFailureMessage(code);
 
