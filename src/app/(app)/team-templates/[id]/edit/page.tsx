@@ -9,14 +9,35 @@ import { getDb } from "@/lib/db";
 export default async function EditTeamTemplatePage({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, vendor, auth, csrfToken] = await Promise.all([params, requireVendor(), requireAuth(), getCsrfToken()]);
   const memberships = await getDb().teamMembership.findMany({ where: { vendorId: vendor.id, vendorMemberId: auth.member?.id, status: "ACTIVE", leftAt: null }, include: { team: { select: { name: true } } } });
+  const membershipIds = memberships.map((membership) => membership.id);
   const template = await getDb().teamFunnelTemplate.findFirst({
-    where: { id, vendorId: vendor.id, teamId: { in: memberships.map((membership) => membership.teamId) } },
-    include: { versions: { orderBy: { version: "desc" }, take: 1, include: { fieldLocks: true, productSlots: true } } },
+    where: {
+      id,
+      vendorId: vendor.id,
+      teamId: { in: memberships.map((membership) => membership.teamId) },
+      versions: { some: { contentOwnerMembershipId: { in: membershipIds } } },
+    },
+    include: {
+      versions: {
+        where: { contentOwnerMembershipId: { in: membershipIds } },
+        orderBy: { version: "desc" },
+        take: 1,
+        include: { fieldLocks: true, productSlots: true },
+      },
+    },
   });
   if (!template || !template.versions[0]) notFound();
   const [products, webinars] = await Promise.all([
     getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
-    getDb().live.findMany({ where: { vendorId: vendor.id, teamId: template.teamId }, select: { id: true, title: true, scheduledAt: true }, orderBy: { scheduledAt: "desc" } }),
+    getDb().live.findMany({
+      where: {
+        vendorId: vendor.id,
+        teamId: template.teamId,
+        seminarOwnerMembershipId: { in: membershipIds },
+      },
+      select: { id: true, title: true, scheduledAt: true },
+      orderBy: { scheduledAt: "desc" },
+    }),
   ]);
   const version = template.versions[0];
   const source = await getDb().partnerFunnelPage.findFirst({

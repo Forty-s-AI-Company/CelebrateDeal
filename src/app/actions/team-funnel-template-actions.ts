@@ -95,12 +95,22 @@ async function addSelectedProductSlots(formData: FormData, teamId: string, templ
  * lookup only allows the selected team's existing webinar to be attached to
  * that source page.
  */
-async function selectedWebinarId(formData: FormData, vendorId: string, teamId: string) {
+async function selectedWebinarId(formData: FormData, vendorId: string, teamId: string, vendorMemberId: string) {
   const webinarId = optionalValue(formData, "webinarId");
   if (!webinarId) return null;
 
   const webinar = await getDb().live.findFirst({
-    where: { id: webinarId, vendorId, teamId },
+    where: {
+      id: webinarId,
+      vendorId,
+      teamId,
+      seminarOwner: {
+        vendorMemberId,
+        status: "ACTIVE",
+        leftAt: null,
+        vendorMember: { status: "active", deactivatedAt: null },
+      },
+    },
     select: { id: true },
   });
   if (!webinar) throw new TeamFunnelAccessDeniedError("missing_resource");
@@ -207,7 +217,7 @@ export async function manageTeamFunnelTemplateAction(
 
     const [vendor, auth] = await Promise.all([requireVendor(), requireAuth()]);
     if (!auth.member) return { status: "error", message: "你沒有管理這個團隊模板的權限，或該資源已不存在。" };
-    const webinarId = await selectedWebinarId(formData, vendor.id, teamId);
+    const webinarId = await selectedWebinarId(formData, vendor.id, teamId, auth.member.id);
 
     if (operation === "create") {
       const name = value(formData, "name");

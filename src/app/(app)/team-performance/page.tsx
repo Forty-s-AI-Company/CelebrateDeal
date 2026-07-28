@@ -17,10 +17,14 @@ export default async function TeamPerformancePage({ searchParams }: { searchPara
   if (memberships.length === 0) {
     return <EmptyState title="沒有可查看的團隊成效" description="你目前沒有有效團隊成員身分，因此沒有可授權的展業資料。" />;
   }
+  const firstMembership = memberships[0];
+  if (!firstMembership) {
+    return <EmptyState title="沒有可查看的團隊成效" description="目前無法解析有效的團隊成員身分。" />;
+  }
 
   const teamId = first(query.teamId) && memberships.some((membership) => membership.teamId === first(query.teamId))
     ? first(query.teamId)!
-    : memberships[0].teamId;
+    : firstMembership.teamId;
   const range = resolvePerformanceRange(first(query.startDate), first(query.endDate), vendor.timezone);
   const selected = {
     teamId,
