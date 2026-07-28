@@ -76,14 +76,16 @@ export type PublicTeamFunnelPageRecord = {
     slug: string;
     title: string;
     scheduledAt: Date;
+    status: string;
+    replayEnabled: boolean;
     seminarOwnerMembershipId: string | null;
     form: { id: string; slug: string; isActive: boolean; fields: unknown; submitLabel: string; successMessage: string } | null;
   } | null;
   templateVersion: {
     contentOwnerMembershipId: string;
-    productSlots: Array<{ id: string; slotKey: string; productId: string; offerLabel: string | null; product: { id: string; checkoutUrl: string | null } | null }>;
+    productSlots: Array<{ id: string; slotKey: string; productId: string; offerLabel: string | null; product: { id: string; checkoutUrl: string | null; isActive: boolean } | null }>;
   };
-  productOverrides: Array<{ productSlotId: string; productId: string | null; overrideUrl: string | null; product: { id: string; checkoutUrl: string | null } | null }>;
+  productOverrides: Array<{ productSlotId: string; productId: string | null; overrideUrl: string | null; product: { id: string; checkoutUrl: string | null; isActive: boolean } | null }>;
 };
 
 /**
@@ -108,11 +110,11 @@ export async function getPublicTeamFunnelPage(slug: string): Promise<TeamFunnelP
           affiliate: { select: { code: true, isActive: true } },
         },
       },
-      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, seminarOwnerMembershipId: true, form: { select: { id: true, slug: true, isActive: true, fields: true, submitLabel: true, successMessage: true } } } },
+      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, status: true, replayEnabled: true, seminarOwnerMembershipId: true, form: { select: { id: true, slug: true, isActive: true, fields: true, submitLabel: true, successMessage: true } } } },
       templateVersion: {
-        select: { contentOwnerMembershipId: true, productSlots: { include: { product: { select: { id: true, checkoutUrl: true } } } } },
+        select: { contentOwnerMembershipId: true, productSlots: { include: { product: { select: { id: true, checkoutUrl: true, isActive: true } } } } },
       },
-      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true, isActive: true } } } },
     },
   });
 
@@ -137,6 +139,7 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
     || page.live.teamId !== page.teamId
     || !page.live.form?.isActive
     || page.live.seminarOwnerMembershipId !== page.contentOwnerMembershipId
+    || !isPublicLiveLifecycle(page.live.status, page.live.replayEnabled)
   ) {
     return { state: "missing_webinar" };
   }
@@ -225,6 +228,10 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
   };
 }
 
+function isPublicLiveLifecycle(status: string, replayEnabled: boolean) {
+  return status === "scheduled" || status === "live" || (status === "ended" && replayEnabled);
+}
+
 /** Only paragraphs and simple unordered lists are supported as rich content. */
 export function toStructuredContentBlocks(value: string): TeamFunnelContentBlock[] {
   const lines = value.replace(/\r\n?/g, "\n").split("\n");
@@ -242,9 +249,10 @@ export function toStructuredContentBlocks(value: string): TeamFunnelContentBlock
 
   for (const line of lines) {
     const item = /^\s*[-*]\s+(.+)$/u.exec(line);
-    if (item) {
+    const itemText = item?.[1];
+    if (itemText) {
       flushParagraph();
-      list.push(item[1]);
+      list.push(itemText);
     } else if (line.trim()) {
       flushList();
       paragraph.push(line.trim());

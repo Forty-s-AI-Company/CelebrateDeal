@@ -28,6 +28,8 @@ function page(overrides: Partial<PublicTeamFunnelPageRecord> = {}): PublicTeamFu
       slug: "webinar-a",
       title: "A 的講座",
       scheduledAt: new Date("2026-07-17T10:00:00.000Z"),
+      status: "scheduled",
+      replayEnabled: true,
       seminarOwnerMembershipId: "member-a",
       form: {
         id: "form-a",
@@ -42,12 +44,12 @@ function page(overrides: Partial<PublicTeamFunnelPageRecord> = {}): PublicTeamFu
       contentOwnerMembershipId: "member-a",
       productSlots: [{
         id: "slot-main", slotKey: "main_product", productId: "product-a", offerLabel: "主打方案",
-        product: { id: "product-a", checkoutUrl: "https://shop.example.test/a" },
+        product: { id: "product-a", checkoutUrl: "https://shop.example.test/a", isActive: true },
       }],
     },
     productOverrides: [{
       productSlotId: "slot-main", productId: "product-b", overrideUrl: "https://shop.example.test/b",
-      product: { id: "product-b", checkoutUrl: "https://shop.example.test/b-product" },
+      product: { id: "product-b", checkoutUrl: "https://shop.example.test/b-product", isActive: true },
     }],
     ...overrides,
   };
@@ -109,5 +111,33 @@ describe("public team funnel page resolver", () => {
     const result = prepareTeamFunnelPublicPage(page({ ctaUrl: "/\\\\attacker.example.test/collect" }));
 
     expect(result.page?.cta.href).toBe("#registration-heading");
+  });
+
+  it.each([
+    ["draft", true],
+    ["ended", false],
+    ["archived", true],
+  ])("does not expose a %s webinar with replay=%s", (status, replayEnabled) => {
+    expect(prepareTeamFunnelPublicPage(page({
+      live: { ...page().live!, status, replayEnabled },
+    }))).toEqual({ state: "missing_webinar" });
+  });
+
+  it("does not expose checkout links from inactive products", () => {
+    const inactive = page({
+      productOverrides: [],
+      templateVersion: {
+        contentOwnerMembershipId: "member-a",
+        productSlots: [{
+          id: "slot-main",
+          slotKey: "main_product",
+          productId: "product-a",
+          offerLabel: "主打方案",
+          product: { id: "product-a", checkoutUrl: "https://shop.example.test/a", isActive: false },
+        }],
+      },
+    });
+
+    expect(prepareTeamFunnelPublicPage(inactive)).toEqual({ state: "missing_slot" });
   });
 });
