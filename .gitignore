@@ -17,6 +17,14 @@
 /reports/playwright-results
 /reports/playwright-html
 /reports/lighthouse
+/reports/ai-team/
+/reports/quality/
+/reports/security/
+/reports/night-review/**
+!/reports/night-review/20260725T194948Z/
+!/reports/night-review/20260725T194948Z/NIGHT_FINAL_REPORT.md
+!/reports/night-review/20260725T194948Z/CLOUD_FINAL_AUDIT.md
+!/reports/night-review/20260725T194948Z/GEMINI_COVERAGE_REVIEW.md
 
 # next.js
 /.next/
