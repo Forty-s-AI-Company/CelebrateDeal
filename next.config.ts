@@ -48,6 +48,9 @@ export default withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,
+  // 本機隔離回歸會以 SENTRY_DISABLE_AUTO_UPLOAD=true 啟動；同步關閉
+  // Sentry build telemetry，避免測試本身產生任何外部請求。
+  telemetry: !disableSentryAutoUpload,
   silent: !process.env.CI,
   widenClientFileUpload: Boolean(process.env.SENTRY_AUTH_TOKEN) && !disableSentryAutoUpload,
   sourcemaps: {
