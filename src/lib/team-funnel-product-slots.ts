@@ -15,6 +15,7 @@ export type TeamFunnelProductSlotKey = (typeof teamFunnelProductSlotKeys)[number
 type ProductLink = {
   id: string;
   checkoutUrl?: string | null;
+  isActive?: boolean;
 };
 
 export type TeamFunnelTemplateSlot = {
@@ -186,9 +187,16 @@ export function resolveTeamFunnelProductSlot(input: {
 }): ResolvedTeamFunnelProductSlot {
   const template = input.templateSlot;
   const override = input.partnerOverride;
-  const overrideUrl = override?.overrideUrl == null ? null : parseSafeTeamFunnelProductUrl(override.overrideUrl);
-  const overrideProductUrl = override?.product?.checkoutUrl == null ? null : parseSafeTeamFunnelProductUrl(override.product.checkoutUrl);
-  const templateUrl = template?.product?.checkoutUrl == null ? null : parseSafeTeamFunnelProductUrl(template.product.checkoutUrl);
+  const overrideProductIsUsable = override?.productId == null || override.product?.isActive === true;
+  const overrideUrl = !overrideProductIsUsable || override?.overrideUrl == null
+    ? null
+    : parseSafeTeamFunnelProductUrl(override.overrideUrl);
+  const overrideProductUrl = override?.product?.isActive !== true || override.product.checkoutUrl == null
+    ? null
+    : parseSafeTeamFunnelProductUrl(override.product.checkoutUrl);
+  const templateUrl = template?.product?.isActive !== true || template.product.checkoutUrl == null
+    ? null
+    : parseSafeTeamFunnelProductUrl(template.product.checkoutUrl);
   const offerLabel = template?.offerLabel ?? null;
 
   if (overrideUrl) {
@@ -352,10 +360,10 @@ async function loadPage(actor: TeamFunnelMembership, pageId: string) {
       templateVersion: {
         include: {
           fieldLocks: { select: { field: true } },
-          productSlots: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+          productSlots: { include: { product: { select: { id: true, checkoutUrl: true, isActive: true } } } },
         },
       },
-      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true, isActive: true } } } },
     },
   });
   if (!page) throw new TeamFunnelAccessDeniedError("missing_resource");

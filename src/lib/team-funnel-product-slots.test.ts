@@ -63,7 +63,7 @@ function persistedPage(overrides: Record<string, unknown> = {}) {
       fieldLocks: [],
       productSlots: [{
         id: "slot-main", slotKey: "main_product", productId: "product-default", displayOrder: 0, offerLabel: "Starter",
-        product: { id: "product-default", checkoutUrl: "https://shop.example.test/default" },
+        product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true },
       }],
     },
     productOverrides: [],
@@ -98,7 +98,7 @@ describe("team-funnel product slot pure functions", () => {
   it("resolves B's URL first, then the template product default, then an explicit missing state", () => {
     const templateSlot = {
       id: "slot-main", slotKey: "main_product", productId: "product-default", offerLabel: "Starter",
-      product: { id: "product-default", checkoutUrl: "https://shop.example.test/default" },
+      product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true },
     } as const;
 
     expect(resolveTeamFunnelProductSlot({
@@ -117,11 +117,26 @@ describe("team-funnel product slot pure functions", () => {
 
   it("exposes all four approved slots and never turns an unsafe stored URL into a link", () => {
     const slots = resolveTeamFunnelProductSlots({
-      templateSlots: [{ id: "slot-main", slotKey: "main_product", productId: "product-1", product: { id: "product-1", checkoutUrl: "javascript:alert(1)" } }],
+      templateSlots: [{ id: "slot-main", slotKey: "main_product", productId: "product-1", product: { id: "product-1", checkoutUrl: "javascript:alert(1)", isActive: true } }],
       partnerOverrides: [], attribution: attribution(),
     });
     expect(slots.map((slot) => slot.slotKey)).toEqual(["main_product", "bundle_product", "join_member", "consultation"]);
     expect(slots).toEqual(expect.arrayContaining([expect.objectContaining({ slotKey: "main_product", status: "missing" })]));
+  });
+
+  it("never resolves a checkout URL from an inactive product", () => {
+    const result = resolveTeamFunnelProductSlot({
+      slotKey: "main_product",
+      templateSlot: {
+        id: "slot-main",
+        slotKey: "main_product",
+        productId: "product-inactive",
+        product: { id: "product-inactive", checkoutUrl: "https://shop.example.test/inactive", isActive: false },
+      },
+      attribution: attribution(),
+    });
+
+    expect(result).toMatchObject({ status: "missing", source: "missing", url: null });
   });
 
   it("accepts only credential-free http(s) URLs", () => {
@@ -238,7 +253,7 @@ describe("team-funnel product slot routes", () => {
     db.partnerFunnelPage.findFirst.mockResolvedValueOnce(persistedPage({
       productOverrides: [{
         productSlotId: "slot-main", productId: "product-b", overrideUrl: "https://b.example.test/offer",
-        product: { id: "product-b", checkoutUrl: "https://b.example.test/product" },
+        product: { id: "product-b", checkoutUrl: "https://b.example.test/product", isActive: true },
       }],
     }));
 
