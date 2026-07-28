@@ -56,7 +56,7 @@ export function LeadForm({
   }
 
   if (status === "success") {
-    return <p className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-700">{successMessage}</p>;
+    return <p role="status" aria-live="polite" className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-700">{successMessage}</p>;
   }
 
   return (
@@ -75,8 +75,8 @@ export function LeadForm({
           />
         </label>
       ))}
-      {status === "error" ? <p className="text-sm text-red-600">送出失敗，請稍後再試。</p> : null}
-      <button disabled={status === "loading"} className="h-11 rounded-md bg-orange-500 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-60">
+      {status === "error" ? <p role="alert" className="text-sm text-red-700">送出失敗，請稍後再試。</p> : null}
+      <button disabled={status === "loading"} className="h-11 rounded-md bg-orange-700 text-sm font-bold text-white transition hover:bg-orange-800 disabled:opacity-60">
         {status === "loading" ? "送出中..." : submitLabel}
       </button>
     </form>

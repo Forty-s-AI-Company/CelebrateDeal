@@ -59,11 +59,35 @@ export async function POST(request: Request) {
   }
 
   const live = await getDb().live.findFirst({
-    where: { id: parsed.data.liveId, vendorId: parsed.data.vendorId },
+    where: {
+      id: parsed.data.liveId,
+      vendorId: parsed.data.vendorId,
+      OR: [
+        { status: { in: ["scheduled", "live"] } },
+        { status: "ended", replayEnabled: true },
+      ],
+    },
     select: { id: true },
   });
   if (!live) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
+  }
+
+  if (parsed.data.eventType === "product_click") {
+    const liveProduct = await getDb().liveProduct.findFirst({
+      where: {
+        liveId: parsed.data.liveId,
+        productId: parsed.data.payload.productId,
+        product: {
+          vendorId: parsed.data.vendorId,
+          isActive: true,
+        },
+      },
+      select: { id: true },
+    });
+    if (!liveProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
   }
 
   await getDb().analyticsEvent.create({

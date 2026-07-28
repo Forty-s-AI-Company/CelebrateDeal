@@ -96,7 +96,15 @@ export async function POST(request: Request) {
 
   if (parsed.data.liveId) {
     const live = await getDb().live.findFirst({
-      where: { id: parsed.data.liveId, vendorId: form.vendorId, formId: form.id },
+      where: {
+        id: parsed.data.liveId,
+        vendorId: form.vendorId,
+        formId: form.id,
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
       select: { id: true },
     });
     if (!live) {
@@ -138,7 +146,6 @@ export async function POST(request: Request) {
     referral,
   });
   if (duplicate) {
-    await recordLeadAttribution(duplicate.id, attribution);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, duplicate.id);
   }
 
@@ -171,7 +178,6 @@ export async function POST(request: Request) {
       select: { id: true },
     });
     if (!concurrentSubmission) throw error;
-    await recordLeadAttribution(concurrentSubmission.id, attribution);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, concurrentSubmission.id);
   }
   await recordLeadAttribution(submission.id, attribution);

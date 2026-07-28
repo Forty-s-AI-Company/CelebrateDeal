@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   captureProductEvent: vi.fn(),
   checkRateLimit: vi.fn(),
   liveFindFirst: vi.fn(),
+  liveProductFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     analyticsEvent: { create: mocks.analyticsCreate },
     live: { findFirst: mocks.liveFindFirst },
+    liveProduct: { findFirst: mocks.liveProductFindFirst },
   }),
 }));
 vi.mock("@/lib/product-analytics", () => ({ captureProductEvent: mocks.captureProductEvent }));
@@ -43,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.liveFindFirst.mockResolvedValue({ id: "live-1" });
+  mocks.liveProductFindFirst.mockResolvedValue({ id: "live-product-1" });
   mocks.analyticsCreate.mockResolvedValue({ id: "event-1" });
   mocks.captureProductEvent.mockResolvedValue({ skipped: false });
 });
@@ -93,7 +96,14 @@ describe("analytics route", () => {
 
     expect(response.status).toBe(404);
     expect(mocks.liveFindFirst).toHaveBeenCalledWith({
-      where: { id: "live-1", vendorId: "vendor-1" },
+      where: {
+        id: "live-1",
+        vendorId: "vendor-1",
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
       select: { id: true },
     });
     expect(mocks.analyticsCreate).not.toHaveBeenCalled();
@@ -115,5 +125,26 @@ describe("analytics route", () => {
         ref: "PARTNER_1",
       },
     });
+  });
+
+  it("rejects a product click for an inactive, foreign, or unbound product", async () => {
+    mocks.liveProductFindFirst.mockResolvedValue(null);
+
+    const response = await POST(analyticsRequest(validEvent));
+
+    expect(response.status).toBe(404);
+    expect(mocks.liveProductFindFirst).toHaveBeenCalledWith({
+      where: {
+        liveId: "live-1",
+        productId: "product-1",
+        product: {
+          vendorId: "vendor-1",
+          isActive: true,
+        },
+      },
+      select: { id: true },
+    });
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.captureProductEvent).not.toHaveBeenCalled();
   });
 });

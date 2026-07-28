@@ -71,6 +71,7 @@ describe("team lead attribution", () => {
   it("keeps A's webinar/form but assigns B-promoted lead using server-resolved lineage", async () => {
     db.partnerFunnelPage.findFirst.mockResolvedValue({
       id: "page-b", teamId: "team-1", templateVersionId: "version-a", promoterMembershipId: "member-b", contentOwnerMembershipId: "member-a",
+      sharing: { accessMode: "PUBLIC", isEnabled: true, expiresAt: null },
     });
     db.teamMembership.findMany.mockResolvedValue([{ id: "member-a", affiliateId: "affiliate-a" }, { id: "member-b", affiliateId: "affiliate-b" }]);
     db.teamMembershipRelationship.findMany.mockResolvedValue([{ uplineMembershipId: "member-a", downlineMembershipId: "member-b" }]);
@@ -89,7 +90,20 @@ describe("team lead attribution", () => {
 
   it("makes a repeated registration idempotent", async () => {
     db.formSubmission.findFirst.mockResolvedValue({ id: "submission-existing" });
-    const response = await POST(jsonRequest({ formId: "form-1", payload: { name: "Lead", email: "lead@example.test" } }));
+    db.partnerFunnelPage.findFirst.mockResolvedValue({
+      id: "page-b",
+      teamId: "team-1",
+      templateVersionId: "version-a",
+      promoterMembershipId: "member-b",
+      contentOwnerMembershipId: "member-a",
+      sharing: { accessMode: "PUBLIC", isEnabled: true, expiresAt: null },
+    });
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      liveId: "live-a",
+      referralCode: "b-code",
+      payload: { name: "Lead", email: "lead@example.test" },
+    }));
 
     await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true });
     expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=submission-existing");
@@ -183,6 +197,7 @@ describe("team lead attribution", () => {
       where: { id: expect.stringMatching(/^formsub_[a-f0-9]{32}$/) },
       select: { id: true },
     });
+    expect(db.teamLeadAttribution.upsert).not.toHaveBeenCalled();
   });
 
   it("stores the created registration ID in a short-lived HttpOnly cookie", async () => {
@@ -215,7 +230,15 @@ describe("team lead attribution", () => {
 
     expect(response.status).toBe(404);
     expect(db.live.findFirst).toHaveBeenCalledWith({
-      where: { id: "live-a", vendorId: "vendor-1", formId: "form-1" },
+      where: {
+        id: "live-a",
+        vendorId: "vendor-1",
+        formId: "form-1",
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
       select: { id: true },
     });
     expect(db.formSubmission.create).not.toHaveBeenCalled();
