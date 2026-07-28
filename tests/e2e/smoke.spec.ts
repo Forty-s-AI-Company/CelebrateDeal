@@ -716,10 +716,13 @@ passwordResetTest("password reset request hides account existence and revokes an
   await expect(page).toHaveURL(/\/password-reset\/request\?updated=sent/);
   await expect(page.getByText("如果這個 Email 存在，系統已寄出密碼重設信。")).toBeVisible();
 
-  // The token is also created inside after(). Wait for this exact fixture's
-  // single record instead of racing the generic response or submitting again.
+  // Token creation and the delivery-failure revoke both happen inside after().
+  // Wait for this exact fixture's final revoked state instead of racing the
+  // generic response or submitting again.
   await expect.poll(
-    () => db.passwordResetToken.count({ where: { userId: passwordResetUser.id } }),
+    () => db.passwordResetToken.count({
+      where: { userId: passwordResetUser.id, usedAt: { not: null } },
+    }),
     { timeout: 5_000, intervals: [100, 250, 500] },
   ).toBe(1);
   const resetRecords = await db.passwordResetToken.findMany({
