@@ -1,8 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
-import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
+import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
@@ -29,6 +27,9 @@ if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
 if (!process.env.DIRECT_URL || process.env.DIRECT_URL.startsWith("file:")) {
   process.env.DIRECT_URL = process.env.DATABASE_URL;
 }
+
+assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
+assertLocalTestDatabase("DIRECT_URL", process.env.DIRECT_URL);
 
 export default defineConfig({
   testDir: "./tests/e2e",
