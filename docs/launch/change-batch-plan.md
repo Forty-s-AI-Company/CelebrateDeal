@@ -55,3 +55,12 @@
 - 已新增獨立 commit：`92a1caa`（Lite runtime）、`caf10b4`（WP-04）、`0746502`（WP-12）、`844062b`／`e48c3b7`（generated artifact ignore）、`b8a29d8`／`424a3c4`（canonical evidence/docs）。
 - 285 份 raw report 已逐檔 SHA-256 驗證後封存到專案外；本機刪除受安全層阻擋，已以精確 `.gitignore` 規則防止再次納入 Git。
 - Prisma schema 的 WP-12 欄位已以 index-level 精確 patch 與 WP-13／14 hunk 分離；其餘 migration 與產品變更維持明確 NEEDS_REVIEW。
+
+## WP-16-GR-01 checkpoint（2026-07-28）
+
+- strict-index CI 最小 patch 已在 clean HEAD archive snapshot 驗證，但既有 source/schema 基準未通過 typecheck，且 strict-index 需要修正三檔範圍以外的 source。
+- 本包標記 `NOT_READY`；沒有 staging 或 commit，既有 backlog 保留不動。
+
+## WP-16 Git 工作樹歸零結案（2026-07-28）
+
+此段優先於上方歷史批次紀錄：初始 101 筆狀態已完成分類並以 domain commit 提交；全部 13 份 Prisma migration 已只在 disposable loopback schema 驗證，937/937 unit tests、lint、一般與 strict-index typecheck、secret scan、Prisma validate/generate 皆通過。不得將舊的 `NOT_READY` 或 frozen 描述解讀為現況。

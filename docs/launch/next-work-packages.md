@@ -30,3 +30,13 @@
 - 已完成可提交部分：Lite runtime、WP-04 runner、WP-12 bank encryption、canonical evidence/docs 與 generated artifact ignore。
 - 下一個窄範圍包必須先處理 WP-06 tenant-ledger migration 或 no-dotenv tooling/CI，不能直接開始 WP-13／WP-14 或新的產品功能。
 - 其餘 product/test/API/UI 修改已列於 `.ai-team/reports/git-backlog-liquidation-20260728-134500/remaining-uncommitted-files.txt`，必須依 domain 重建成可測試批次。
+
+## WP-16-GR-01 checkpoint（2026-07-28）
+
+`WP-16-GR-01` 因 clean HEAD 的既有 bank-account schema/source 不一致，以及 strict-index 需要處理範圍外 production source，標為 `NOT_READY`。下一次 Sol 規劃須先重新界定可使 HEAD 基準 typecheck 通過的依賴邊界；不得直接重試或跳到下一個 Git Review 批次。
+
+## WP-16 結案更新（2026-07-28）
+
+上方為歷史規劃。Git 工作樹歸零已完成，原先的 bank-account schema/source 與 strict-index 基準已修正並通過驗證；WP-13／WP-14 已作為已驗證 financial-integrity changes 提交，不應再以 frozen 或 pending 身分重啟。
+
+下一個工作包可正常回到 Sol 規劃，從新的產品需求選擇單一 30–90 分鐘範圍；本次沒有遺留 WIP 或人工 blocker。

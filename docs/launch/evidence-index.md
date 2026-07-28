@@ -217,3 +217,19 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - 新外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-backlog-liquidation-20260728-131914`。
 - 續作報告：`.ai-team/reports/git-backlog-liquidation-20260728-134500/`。
 - Lite MCP 6/6、lint、typecheck、WP-12 bank encryption 5/5、Prisma validate/generate 與 secret scan 皆有本次 receipts；WP-04 完整 runner 受終端時限阻擋，採用既有完整 receipt，未誤稱本次重跑成功。
+
+## WP-16-GR-01 — TypeScript strict indexed access CI Gate（2026-07-28，NOT_READY）
+
+- `.ai-team/reports/wp-16-gr-01-20260728-161709/final-verdict.md`
+- `.ai-team/reports/wp-16-gr-01-20260728-161709/test-results.md`
+- `.ai-team/logs/wp-16-gr-01/typecheck-after-prisma.log`
+- `.ai-team/logs/wp-16-gr-01/strict-index-corrected.log`
+
+本包未提交：clean snapshot 的一般與 strict-index typecheck 皆因既有範圍外 source/schema 問題失敗；lint PASS，secret scan 在 archive snapshot 無 Git metadata 時 BLOCKED。
+
+## WP-16 Git 工作樹歸零結案（2026-07-28）
+
+- 外部安全快照、inventory、測試輸出與 staged patch：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-zero-20260728-165539`。
+- 隔離 DB schema：`wp16_git_zero_20260728_1715`（loopback Docker；未操作正式資料庫或原 `public` schema）。
+- 最終 unit receipt：117 files／937 tests PASS；secret scan、lint、typecheck、strict-index、Prisma validate/generate 與 diff check PASS。
+- 此結案紀錄優先於本文件舊有的 WP-16-GR-01 `NOT_READY` 證據；該證據保留為歷史脈絡。
