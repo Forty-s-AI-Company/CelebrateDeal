@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { checkRateLimit, sendPasswordResetLink } = vi.hoisted(() => ({
+const { checkRateLimit, schedulePasswordResetLink } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
-  sendPasswordResetLink: vi.fn(),
+  schedulePasswordResetLink: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
-vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink }));
+vi.mock("@/lib/password-reset", () => ({ schedulePasswordResetLink }));
 
 import { POST } from "@/app/api/auth/password-reset/request/route";
 
@@ -31,9 +31,6 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://configured.example.test");
   vi.stubEnv("NODE_ENV", "test");
   checkRateLimit.mockResolvedValue(null);
-  sendPasswordResetLink.mockResolvedValue({
-    resetUrl: "https://configured.example.test/password-reset/confirm?token=test-fixture-reset-token",
-  });
 });
 
 afterEach(() => {
@@ -50,7 +47,7 @@ describe("POST /api/auth/password-reset/request", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({ error });
     expect(checkRateLimit).not.toHaveBeenCalled();
-    expect(sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("returns the rate-limit response without sending a reset email", async () => {
@@ -63,7 +60,7 @@ describe("POST /api/auth/password-reset/request", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("60");
     expect(checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "password-reset-request", 5, 60_000);
-    expect(sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid email without sending a reset email", async () => {
@@ -71,14 +68,10 @@ describe("POST /api/auth/password-reset/request", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid password reset request" });
-    expect(sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("returns success for valid requests whether or not the email belongs to an account", async () => {
-    sendPasswordResetLink
-      .mockResolvedValueOnce({ resetUrl: "https://configured.example.test/password-reset/confirm?token=test-fixture-existing-token" })
-      .mockResolvedValueOnce(null);
-
     const existingAccountResponse = await POST(passwordResetRequest({ email: "member@example.test" }));
     const unknownAccountResponse = await POST(passwordResetRequest({ email: "unknown@example.test" }));
 
@@ -86,15 +79,15 @@ describe("POST /api/auth/password-reset/request", () => {
     expect(unknownAccountResponse.status).toBe(200);
     await expect(existingAccountResponse.json()).resolves.toMatchObject({ ok: true });
     await expect(unknownAccountResponse.json()).resolves.toEqual({ ok: true });
+    expect(schedulePasswordResetLink).toHaveBeenCalledTimes(2);
   });
 
-  it("returns generic success when the reset email service rejects", async () => {
-    sendPasswordResetLink.mockRejectedValue(new Error("test-fixture-email-provider-failure"));
-
+  it("schedules provider work after the generic response", async () => {
     const response = await POST(passwordResetRequest());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(schedulePasswordResetLink).toHaveBeenCalledOnce();
   });
 
   it("forwards the email, first forwarded IP, user agent, and configured app URL to the reset service", async () => {
@@ -107,7 +100,7 @@ describe("POST /api/auth/password-reset/request", () => {
     ));
 
     expect(response.status).toBe(200);
-    expect(sendPasswordResetLink).toHaveBeenCalledWith({
+    expect(schedulePasswordResetLink).toHaveBeenCalledWith({
       email: "member@example.test",
       appUrl: "https://configured.example.test",
       ipAddress: "203.0.113.10",
@@ -115,8 +108,7 @@ describe("POST /api/auth/password-reset/request", () => {
     });
   });
 
-  it("does not expose the reset URL in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
+  it("does not expose the reset URL in any environment", async () => {
 
     const response = await POST(passwordResetRequest());
 
@@ -132,6 +124,6 @@ describe("POST /api/auth/password-reset/request", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 });

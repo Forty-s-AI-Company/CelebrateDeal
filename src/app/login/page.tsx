@@ -27,25 +27,25 @@ export default async function LoginPage({
             {showDemoHint ? "Demo 帳號：demo@celebratedeal.local / demo1234" : "請使用已開通的管理員或商家帳號登入。"}
           </p>
         </div>
-        {params.revoked ? <p className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">所有 session 已撤銷，請重新登入。</p> : null}
-        {params.reset ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已重設，請用新密碼登入。</p> : null}
-        {params.password_changed ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已更新，所有舊 session 已撤銷，請重新登入。</p> : null}
-        {params.error ? <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "登入失敗，請稍後再試。"}</p> : null}
+        {params.revoked ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">所有 session 已撤銷，請重新登入。</p> : null}
+        {params.reset ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已重設，請用新密碼登入。</p> : null}
+        {params.password_changed ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已更新，所有舊 session 已撤銷，請重新登入。</p> : null}
+        {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "登入失敗，請稍後再試。"}</p> : null}
         <form action={loginAction} className="grid gap-4">
           <CsrfField />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             Email
-            <input name="email" type="email" required defaultValue={showDemoHint ? "demo@celebratedeal.local" : ""} className="h-10 rounded-md border border-border px-3" />
+            <input name="email" type="email" autoComplete="email" spellCheck={false} required defaultValue={showDemoHint ? "demo@celebratedeal.local" : ""} className="h-11 rounded-md border border-border px-3" />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             密碼
-            <input name="password" type="password" required defaultValue={showDemoHint ? "demo1234" : ""} className="h-10 rounded-md border border-border px-3" />
+            <input name="password" type="password" autoComplete="current-password" required defaultValue={showDemoHint ? "demo1234" : ""} className="h-11 rounded-md border border-border px-3" />
           </label>
-          <button className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">登入</button>
+          <button className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">登入</button>
         </form>
         <div className="mt-4 flex items-center justify-between text-sm">
           <a href="/password-reset/request" className="font-semibold text-primary hover:underline">忘記密碼</a>
-          <a href="/dashboard" className="text-slate-400 hover:text-slate-600">返回首頁</a>
+          <a href="/dashboard" className="font-medium text-slate-600 hover:text-slate-800">返回首頁</a>
         </div>
       </section>
     </main>

@@ -11,8 +11,8 @@ import {
 } from "@/lib/mfa";
 
 beforeEach(() => {
-  vi.stubEnv("CSRF_SECRET", "test-secret");
-  vi.stubEnv("JOB_SECRET", "test-job-secret");
+  vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-mfa-at-least-32-bytes");
+  vi.stubEnv("JOB_SECRET", "test-job-secret-for-mfa-at-least-32-bytes");
 });
 
 afterEach(() => {
@@ -30,9 +30,22 @@ describe("mfa helpers", () => {
 
   it("serializes pending mfa setup payloads", () => {
     const secret = generateTotpSecret();
-    const payload = serializePendingMfaSetup(secret);
+    const payload = serializePendingMfaSetup(secret, "user-1");
 
-    expect(parsePendingMfaSetup(payload)?.secret).toBe(secret);
+    expect(parsePendingMfaSetup(payload)).toEqual({
+      secret,
+      userId: "user-1",
+      createdAt: expect.any(Number),
+    });
+  });
+
+  it("rejects legacy pending setup payloads that are not bound to a user", () => {
+    const encryptedLegacyPayload = encryptMfaSecret(JSON.stringify({
+      secret: generateTotpSecret(),
+      createdAt: Date.now(),
+    }));
+
+    expect(parsePendingMfaSetup(encryptedLegacyPayload)).toBeNull();
   });
 
   it("verifies generated totp codes within the allowed window", () => {

@@ -41,7 +41,8 @@ export default async function MfaSetupPage({
   const params = await searchParams;
   const auth = await requireAuth();
   const cookieStore = await cookies();
-  const pendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
+  const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
+  const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
   const mfaQrCode = mfaUri
@@ -60,17 +61,17 @@ export default async function MfaSetupPage({
         <div className="mb-6">
           <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-950">設定管理員 MFA</h1>
-          <p className="mt-2 text-sm text-slate-500">進入 `/admin/*` 之前，先完成一次 TOTP 設定與驗證。</p>
+          <p className="mt-2 text-sm text-slate-600">進入 `/admin/*` 之前，先完成一次 TOTP 設定與驗證。</p>
         </div>
-        {params.updated ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
-        {params.error ? <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "設定失敗。"}</p> : null}
+        {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+        {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "設定失敗。"}</p> : null}
 
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Card>
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">TOTP 設定</h2>
-                <p className="mt-1 text-sm text-slate-500">可使用 Google Authenticator、1Password、Authy 或其他支援 TOTP 的 App。</p>
+                <p className="mt-1 text-sm text-slate-600">可使用 Google Authenticator、1Password、Authy 或其他支援 TOTP 的 App。</p>
               </div>
               <Badge tone={auth.user.mfaFactor ? "green" : "orange"}>{auth.user.mfaFactor ? "enabled" : "setup required"}</Badge>
             </div>
@@ -115,10 +116,10 @@ export default async function MfaSetupPage({
                   <CsrfField />
                   <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                     6 位數驗證碼
-                    <input name="code" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
+                    <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                   </label>
                   <FormSubmitButton
-                    className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                    className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
                     pendingChildren="啟用中…"
                     pendingMessage="正在啟用 MFA，請勿重複送出。"
                   >
@@ -130,7 +131,7 @@ export default async function MfaSetupPage({
               <form action={startMfaEnrollmentAction} className="grid gap-3">
                 <CsrfField />
                 <FormSubmitButton
-                  className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                  className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
                   pendingChildren="建立中…"
                   pendingMessage="正在建立 TOTP 設定。"
                 >
@@ -162,7 +163,7 @@ export default async function MfaSetupPage({
               </>
             ) : (
               <div className="grid gap-3">
-                <div className="rounded-lg border border-border bg-slate-50 p-4 text-sm text-slate-500">
+                <div className="rounded-lg border border-border bg-slate-50 p-4 text-sm text-slate-600">
                   啟用後會顯示一次 recovery codes。資料庫只保存 hash，不保存明碼。
                 </div>
                 {auth.user.mfaFactor ? (
@@ -170,10 +171,10 @@ export default async function MfaSetupPage({
                     <CsrfField />
                     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                       目前 TOTP 驗證碼
-                      <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
+                      <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                     </label>
                     <FormSubmitButton
-                      className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50"
+                      className="h-11 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-800 hover:bg-orange-50"
                       pendingChildren="重新產生中…"
                       pendingMessage="正在重新產生 recovery codes。"
                     >
@@ -188,13 +189,13 @@ export default async function MfaSetupPage({
 
         <Card className="mt-5">
           <h2 className="text-lg font-semibold text-slate-950">Password reset email smoke</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />
             <FormSubmitButton
-              className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
+              className="h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
               pendingChildren="寄送中…"
               pendingMessage="正在寄送測試信，請稍候。"
             >

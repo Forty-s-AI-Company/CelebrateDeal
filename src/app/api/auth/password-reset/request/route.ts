@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { sendPasswordResetLink } from "@/lib/password-reset";
+import { schedulePasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const PasswordResetRequest = z.object({
@@ -21,22 +21,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password reset request" }, { status: 400 });
   }
 
-  let reset: Awaited<ReturnType<typeof sendPasswordResetLink>> = null;
+  let appUrl: string;
   try {
-    reset = await sendPasswordResetLink({
-      email: parsed.data.email,
-      appUrl: getCanonicalAppUrl(),
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: request.headers.get("user-agent"),
-    });
+    appUrl = getCanonicalAppUrl();
   } catch {
-    // Preserve the generic success response when the email provider is unavailable.
+    // Keep the anonymous response generic without falling back to the
+    // attacker-controlled request Host when Production is misconfigured.
+    return NextResponse.json({ ok: true });
   }
 
-  const response: Record<string, unknown> = { ok: true };
-  if (reset && process.env.NODE_ENV !== "production") {
-    response.resetUrl = reset.resetUrl;
-  }
+  schedulePasswordResetLink({
+    email: parsed.data.email,
+    appUrl,
+    ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    userAgent: request.headers.get("user-agent"),
+  });
 
-  return NextResponse.json(response);
+  return NextResponse.json({ ok: true });
 }

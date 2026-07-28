@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import type { Prisma, User, VendorMember } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync } from "@/lib/password";
 
 export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
@@ -14,6 +14,11 @@ const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
 const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
 const PLATFORM_ROLES = ["platform_admin"] as const;
 const ACTIVE_MEMBER_STATUS = "active";
+// A fixed, valid scrypt record makes unknown-account logins perform the same
+// asynchronous password derivation as known accounts without creating a
+// request-time synchronous hash.
+const DUMMY_PASSWORD_HASH =
+  "scrypt:000102030405060708090a0b0c0d0e0f:65c37c85e9aefa50a1f444621f7edb56f3b1e94a9ef3928cb01f59a6153d44286c55fb3532d67eb6f759e734c8c06a07918d5ae25593811db1727a668938246d";
 
 type VendorWithTracking = Prisma.VendorGetPayload<{ include: { tracking: true } }>;
 type UserWithMemberships = Prisma.UserGetPayload<{
@@ -58,6 +63,12 @@ function requiresAdminMfa(input: {
   memberRole?: string | null;
 }) {
   return input.isPlatformAdmin || isFinanceRole(input.memberRole);
+}
+
+function safeMfaNextPath(value: string, fallback = "/billing/usage") {
+  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+    ? value
+    : fallback;
 }
 
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
@@ -233,6 +244,43 @@ export async function requireFinanceAdmin() {
   };
 }
 
+export async function requireVendorFinance(nextPath = "/billing/usage") {
+  const { auth, vendor } = await requireVendorContext();
+  const member = auth.member;
+
+  if (
+    !member
+    || member.status !== ACTIVE_MEMBER_STATUS
+    || !isFinanceRole(member.role)
+  ) {
+    redirect("/dashboard?error=insufficient_role");
+  }
+
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath);
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
+  }
+
+  return {
+    user: auth.user,
+    vendor,
+    member,
+  };
+}
+
+export async function requireVendorOwnerFinance(nextPath = "/billing/plans") {
+  const context = await requireVendorFinance(nextPath);
+  if (context.member.role !== "owner") {
+    redirect("/settings/security?error=owner_required");
+  }
+
+  return context;
+}
+
 export async function requireVendorOwner() {
   const auth = await requireAuth();
 
@@ -260,7 +308,11 @@ export async function authenticateUser(email: string, password: string) {
     },
   });
 
-  if (!user || !isActiveUser(user) || !verifyPassword(password, user.passwordHash)) {
+  const passwordMatches = await verifyPasswordAsync(
+    password,
+    user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
+  if (!user || !isActiveUser(user) || !passwordMatches) {
     return null;
   }
 
