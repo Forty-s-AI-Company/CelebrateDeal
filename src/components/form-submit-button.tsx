@@ -22,6 +22,7 @@ export function FormSubmitButton({ children, pendingChildren, pendingMessage, cl
         type="submit"
         disabled={pending}
         aria-disabled={pending}
+        aria-busy={pending}
         className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
       >
         {pending ? pendingChildren : children}
