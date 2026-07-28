@@ -100,6 +100,7 @@ describe("CSRF tokens", () => {
   it("rejects missing and malformed values", async () => {
     await expect(verifyCsrfToken(null)).resolves.toBe(false);
     await expect(verifyCsrfToken("only.three.parts")).resolves.toBe(false);
+    await expect(verifyCsrfToken(".nonce.fingerprint.signature")).resolves.toBe(false);
   });
 
   it("binds values to the current session fingerprint", async () => {
