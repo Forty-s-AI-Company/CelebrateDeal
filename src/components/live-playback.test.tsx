@@ -40,7 +40,7 @@ vi.mock("react", async (importOriginal) => {
 vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
-import { isHlsPlaybackUrl, LivePlayback, openExternalUrl, requestCheckout, submitCheckout } from "./live-playback";
+import { getLiveStatusLabel, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -67,10 +67,11 @@ function textContent(value: unknown): string {
   return isElementNode(value) ? textContent(value.props.children) : "";
 }
 
-const live = {
+const live: Parameters<typeof LivePlayback>[0]["live"] = {
   id: "test-fixture-live-1",
   title: "測試直播",
   slug: "test-fixture-live",
+  status: "live",
   description: null,
   accentCopy: null,
   heroImageUrl: null,
@@ -85,20 +86,20 @@ const live = {
   ],
 };
 
-function renderLive() {
+function renderLive(overrides: Partial<Parameters<typeof LivePlayback>[0]["live"]> = {}) {
   hookState.cursor = 0;
   hookState.refCursor = 0;
-  return LivePlayback({ live });
+  return LivePlayback({ live: { ...live, ...overrides } });
 }
 
 function checkoutButtons(tree: unknown) {
   return findElements(tree, (element) => (
-    element.type === "button" && ["立即搶購", "結帳送出中...", "買", "送出中"].includes(textContent(element.props.children))
+    element.type === "button" && ["立即搶購", "結帳送出中…", "購買", "送出中…"].includes(textContent(element.props.children))
   ));
 }
 
 function checkoutErrors(tree: unknown) {
-  return findElements(tree, (element) => element.props["aria-live"] === "polite");
+  return findElements(tree, (element) => element.props.role === "alert");
 }
 
 describe("LivePlayback checkout", () => {
@@ -166,6 +167,28 @@ describe("LivePlayback checkout", () => {
     expect(isHlsPlaybackUrl("not-a-url")).toBe(false);
   });
 
+  it.each([
+    ["scheduled", "即將直播"],
+    ["live", "直播中"],
+    ["ended", "精彩回放"],
+    ["unknown", "直播"],
+  ])("maps %s to the truthful %s public status", (status, label) => {
+    expect(getLiveStatusLabel(status)).toBe(label);
+  });
+
+  it("only points aria-controls at the panel that currently exists", () => {
+    const navigation = PlaybackNavigation({ panel: "chat", onPanelChange: vi.fn() });
+    const inactiveButtons = findElements(navigation, (element) => element.type === "button");
+    expect(inactiveButtons.every((button) => button.props["aria-controls"] === undefined)).toBe(true);
+
+    const productsNavigation = PlaybackNavigation({ panel: "products", onPanelChange: vi.fn() });
+    const productButton = findElements(productsNavigation, (element) => (
+      element.type === "button" && textContent(element.props.children) === "商品"
+    ))[0];
+
+    expect(productButton?.props["aria-controls"]).toBe("live-playback-panel");
+  });
+
   it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(
     "does not submit an unsafe provider form action %s",
     (formAction) => {
@@ -193,6 +216,37 @@ describe("LivePlayback checkout", () => {
       "_blank",
       "noopener,noreferrer",
     );
+  });
+
+  it("shows a safe visible error when a timed CTA has no valid destination", async () => {
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      open: vi.fn(),
+      localStorage: {},
+    });
+    const interactionEvents = [{
+      id: "test-fixture-cta",
+      eventType: "cta_switch",
+      triggerSec: 0,
+      title: "了解活動",
+      message: null,
+      productId: null,
+      ctaLabel: "立即了解",
+      ctaUrl: "javascript:alert(document.cookie)",
+      role: null,
+    }];
+
+    let tree = renderLive({ interactionEvents });
+    const ctaButton = findElements(
+      tree,
+      (element) => element.type === "button" && textContent(element.props.children) === "立即了解",
+    )[0];
+    if (!ctaButton) throw new Error("Expected timed CTA button");
+    await (ctaButton.props.onClick as () => Promise<void>)();
+
+    tree = renderLive({ interactionEvents });
+    expect(checkoutErrors(tree)).toHaveLength(1);
+    expect(textContent(checkoutErrors(tree)[0]?.props.children)).toBe("目前無法開啟這個連結，請稍後再試。");
   });
 
   it("does not navigate to the external product checkout URL when the checkout API fails", async () => {
@@ -290,8 +344,9 @@ describe("LivePlayback checkout", () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(checkoutResponse));
 
     let tree = renderLive();
-    const productsTab = findElements(tree, (element) => element.type === "button" && textContent(element.props.children) === "商品")[0];
-    (productsTab.props.onClick as () => void)();
+    const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    if (!navigation) throw new Error("Expected playback navigation");
+    (navigation.props.onPanelChange as (panel: "products") => void)("products");
     tree = renderLive();
 
     const initialButtons = checkoutButtons(tree);

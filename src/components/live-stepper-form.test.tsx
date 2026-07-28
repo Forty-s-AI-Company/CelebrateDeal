@@ -26,6 +26,7 @@ vi.mock("react", async (importOriginal) => {
 
       return [hookState.values[index] as Value, setValue];
     },
+    useRef: <Value,>(initialValue: Value) => ({ current: initialValue }),
   };
 });
 
@@ -141,17 +142,31 @@ function control(tree: unknown, name: string, value?: string) {
   };
 }
 
-function showPublishPreview(tree: unknown) {
-  const nextButton = findElement(tree, (candidate) => (
-    candidate.type === "button" && textContent(candidate.props.children) === "下一步"
+function productSelection(tree: unknown) {
+  const element = findElement(tree, (candidate) => (
+    typeof candidate.type === "function" && candidate.type.name === "ProductSelection"
   ));
-  expect(nextButton).toBeDefined();
+  expect(element).toBeDefined();
+  return element as ElementNode & {
+    props: Record<string, unknown> & {
+      onSelectionChange: (productId: string, checked: boolean) => void;
+    };
+  };
+}
 
-  const onClick = nextButton?.props.onClick as () => void;
-  for (let step = 0; step < 7; step += 1) onClick();
+function showPublishPreview(tree: unknown) {
+  let currentTree = tree;
+  for (let step = 0; step < 7; step += 1) {
+    const nextButton = findElement(currentTree, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "下一步"
+    ));
+    expect(nextButton).toBeDefined();
+    (nextButton?.props.onClick as () => void)();
+    currentTree = renderForm();
+  }
 
-  const publishPanel = findElement(renderForm(), (candidate) => (
-    candidate.props.active === true && textContent(candidate.props.children).includes("確認建立 Cloudflare-first 直播間")
+  const publishPanel = findElement(currentTree, (candidate) => (
+    candidate.props.active === true && textContent(candidate.props.children).includes("確認直播間設定")
   ));
   expect(publishPanel).toBeDefined();
   return renderToStaticMarkup(publishPanel as unknown as ReactElement);
@@ -171,13 +186,45 @@ describe("LiveStepperForm", () => {
     expect(preview).toContain("尚未選擇主打商品");
   });
 
+  it("does not expose a writable Cloudflare Live Input UID field", () => {
+    const form = renderForm();
+    const providerUidInput = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.name === "cloudflareLiveInputUid"
+    ));
+
+    expect(providerUidInput).toBeUndefined();
+  });
+
+  it("marks the current step and connects every step control to its panel", () => {
+    const form = renderForm();
+    const basicsButton = findElement(form, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "基本資料"
+    ));
+
+    expect(basicsButton?.props["aria-current"]).toBe("step");
+    expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-0");
+  });
+
+  it("shows an instructive empty product state instead of a blank panel", () => {
+    const form = renderForm([]);
+    const productButton = findElement(form, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "商品"
+    ));
+    expect(productButton).toBeDefined();
+
+    const onClick = productButton?.props.onClick as () => void;
+    onClick();
+    const productPanel = findElement(renderForm([]), (candidate) => candidate.props.active === true);
+    const markup = renderToStaticMarkup(productPanel as unknown as ReactElement);
+    expect(markup).toContain("目前沒有可綁定的啟用商品");
+  });
+
   it("updates the publish phone preview with entered copy and selected product summary", () => {
     const form = renderForm();
     control(form, "title").props.onChange({ target: { value: "夏日保養直播" } });
     control(form, "accentCopy").props.onChange({ target: { value: "今晚滿額免運" } });
-    for (const product of products) {
-      control(form, "productIds", product.id).props.onChange({ target: { checked: true } });
-    }
+    const selection = productSelection(form);
+    for (const product of products) selection.props.onSelectionChange(product.id, true);
 
     const preview = showPublishPreview(form);
 

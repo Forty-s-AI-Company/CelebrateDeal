@@ -74,7 +74,12 @@ export default async function EditLivePage({
           <Field label="Hero 圖片 URL" name="heroImageUrl" defaultValue={live.heroImageUrl} />
           <Field label="促銷短句" name="accentCopy" defaultValue={live.accentCopy} />
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Cloudflare Live Input UID" name="cloudflareLiveInputUid" defaultValue={live.cloudflareLiveInputUid} />
+            <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-slate-700">
+              <p className="font-semibold">Cloudflare Live Input</p>
+              <p className="mt-1 text-xs text-slate-600">
+                {live.cloudflareLiveInputUid ? "已由串流流程綁定" : "尚未建立"}
+              </p>
+            </div>
             <Field label="觀看人數上限" name="maxConcurrentViewers" type="number" defaultValue={500} />
             <Field label="點數低於多少停止推播" name="stopWhenCreditsBelow" type="number" defaultValue={300} />
           </div>

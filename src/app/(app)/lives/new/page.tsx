@@ -8,7 +8,11 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const vendor = await requireVendorManager();
   const { error } = await searchParams;
   const [videos, products, forms, templates, scripts, affiliates, csrfToken] = await Promise.all([
-    getDb().video.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
+    getDb().video.findMany({
+      where: { vendorId: vendor.id },
+      select: { id: true, title: true },
+      orderBy: { createdAt: "desc" },
+    }),
     getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { createdAt: "desc" } }),
     getDb().registrationForm.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { createdAt: "desc" } }),
     getDb().messageTemplate.findMany({ where: { vendorId: vendor.id, isActive: true }, orderBy: { createdAt: "desc" } }),
@@ -19,7 +23,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="建立直播間" description="用四步驟串起直播基本資料、影片、表單與商品。先能跑起完整漏斗，再慢慢加自動化。" />
+      <PageHeader title="建立直播間" description="用八個清楚步驟設定基本資料、串流、商品、報名、通知、互動與營運規則。" />
       <LiveStepperForm videos={videos} products={products} forms={forms} templates={templates} scripts={scripts} affiliates={affiliates} csrfToken={csrfToken} error={error} />
     </>
   );

@@ -14,6 +14,12 @@ const clientHeaders = {
   "X-CelebrateDeal-Client": "web",
 };
 
+const playbackPanels = [
+  { key: "chat", label: "聊天", Icon: MessageCircle },
+  { key: "products", label: "商品", Icon: Package },
+  { key: "form", label: "報名", Icon: Send },
+] as const;
+
 export function isHlsPlaybackUrl(url: string | null) {
   if (!url) return false;
   try {
@@ -28,6 +34,7 @@ type LivePageData = {
   id: string;
   title: string;
   slug: string;
+  status: string;
   description: string | null;
   accentCopy: string | null;
   heroImageUrl: string | null;
@@ -87,6 +94,43 @@ function secondsLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainSeconds = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+export function getLiveStatusLabel(status: string) {
+  if (status === "live") return "直播中";
+  if (status === "scheduled") return "即將直播";
+  if (status === "ended") return "精彩回放";
+  return "直播";
+}
+
+export function PlaybackNavigation({
+  panel,
+  onPanelChange,
+}: {
+  panel: "chat" | "products" | "form";
+  onPanelChange: (panel: "chat" | "products" | "form") => void;
+}) {
+  return (
+    <nav aria-label="直播功能" className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/10 bg-black/55 px-3 py-3 backdrop-blur-xl">
+      <div className="grid grid-cols-3 gap-2">
+        {playbackPanels.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onPanelChange(key)}
+            aria-controls={key !== "chat" && panel === key ? "live-playback-panel" : undefined}
+            aria-current={panel === key ? "page" : undefined}
+            className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition ${
+              panel === key ? "bg-white text-slate-950 shadow-lg" : "bg-white/10 text-white"
+            }`}
+          >
+            <Icon size={16} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
 export function submitCheckout(checkout: CheckoutResponse) {
@@ -280,6 +324,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
 
   async function trackCta() {
     if (!latestCtaEvent?.ctaLabel) return;
+    setCheckoutError(null);
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
@@ -287,7 +332,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       eventType: "cta_click",
       payload: { label: latestCtaEvent.ctaLabel, ref: referralCode },
     });
-    openExternalUrl(latestCtaEvent.ctaUrl);
+    if (!openExternalUrl(latestCtaEvent.ctaUrl)) {
+      setCheckoutError("目前無法開啟這個連結，請稍後再試。");
+    }
   }
 
   return (
@@ -331,19 +378,21 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               <h1 className="truncate text-sm font-bold">{live.title}</h1>
             </div>
           </div>
-          <div className="rounded-full bg-red-600 px-3 py-1 text-xs font-black tracking-wide shadow-lg shadow-red-950/40">LIVE</div>
+          <div className="rounded-full bg-red-700 px-3 py-1 text-xs font-black tracking-wide shadow-lg shadow-red-950/40">
+            {getLiveStatusLabel(live.status)}
+          </div>
         </header>
 
         <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
-            {live.accentCopy ? <span className="rounded-full bg-orange-500/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
+            {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
           </div>
 
           {latestCtaEvent ? (
-            <button onClick={trackCta} className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-3 text-sm font-black text-white shadow-2xl shadow-orange-950/40">
-              <Megaphone size={17} />
+            <button type="button" onClick={trackCta} className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-700 px-4 py-3 text-sm font-black text-white shadow-2xl shadow-orange-950/40 hover:bg-orange-800">
+              <Megaphone size={17} aria-hidden="true" />
               {latestCtaEvent.ctaLabel}
             </button>
           ) : null}
@@ -351,22 +400,24 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           {spotlightProduct ? (
             <div className="mb-3 animate-[fadeInUp_260ms_ease-out] rounded-2xl border border-white/20 bg-white/95 p-3 text-slate-950 shadow-2xl">
               <div className="flex gap-3">
-                {spotlightProduct.imageUrl ? <Image src={spotlightProduct.imageUrl} alt="" width={92} height={92} unoptimized className="h-20 w-20 rounded-xl object-cover" /> : null}
+                {spotlightProduct.imageUrl ? <Image src={spotlightProduct.imageUrl} alt={spotlightProduct.name} width={92} height={92} unoptimized className="h-20 w-20 rounded-xl object-cover" /> : null}
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex items-center gap-2">
-                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-black text-orange-700">
+                    <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-slate-950">
                       {latestProductEvent ? "剛剛浮出" : "主打商品"}
                     </span>
-                    {latestProductEvent ? <span className="text-xs text-slate-400">{secondsLabel(latestProductEvent.triggerSec)}</span> : null}
+                    {latestProductEvent ? <span className="text-xs text-slate-600">{secondsLabel(latestProductEvent.triggerSec)}</span> : null}
                   </div>
                   <h2 className="line-clamp-1 font-bold">{spotlightProduct.name}</h2>
-                  <p className="mt-1 text-sm font-black text-orange-600">{formatCurrency(spotlightProduct.priceCents, spotlightProduct.currency)}</p>
+                  <p className="mt-1 text-sm font-black text-orange-700">{formatCurrency(spotlightProduct.priceCents, spotlightProduct.currency)}</p>
                   <button
+                    type="button"
                     onClick={() => trackProduct(spotlightProduct.id)}
                     disabled={isSubmittingCheckout}
-                    className="mt-2 h-9 w-full rounded-lg bg-orange-500 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-busy={isSubmittingCheckout}
+                    className="mt-2 min-h-11 w-full rounded-lg bg-orange-700 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSubmittingCheckout ? "結帳送出中..." : "立即搶購"}
+                    {isSubmittingCheckout ? "結帳送出中…" : "立即搶購"}
                   </button>
                 </div>
               </div>
@@ -392,57 +443,40 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           </div>
         </div>
 
-        <nav className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/10 bg-black/55 px-3 py-3 backdrop-blur-xl">
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              ["chat", "聊天", MessageCircle],
-              ["products", "商品", Package],
-              ["form", "報名", Send],
-            ].map(([key, label, Icon]) => (
-              <button
-                key={String(key)}
-                onClick={() => setPanel(key as typeof panel)}
-                className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition ${
-                  panel === key ? "bg-white text-slate-950 shadow-lg" : "bg-white/10 text-white"
-                }`}
-              >
-                <Icon size={16} />
-                {String(label)}
-              </button>
-            ))}
-          </div>
-        </nav>
+        <PlaybackNavigation panel={panel} onPanelChange={setPanel} />
 
         {checkoutError ? (
-          <p aria-live="polite" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
+          <p role="alert" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
             {checkoutError}
           </p>
         ) : null}
 
         {panel !== "chat" ? (
-          <aside className="absolute bottom-20 left-3 right-3 z-30 max-h-[58vh] overflow-auto rounded-2xl border border-white/15 bg-white p-4 text-slate-950 shadow-2xl">
+          <aside id="live-playback-panel" aria-label={panel === "products" ? "直播商品" : "直播報名"} className="absolute bottom-20 left-3 right-3 z-30 max-h-[58vh] overflow-auto rounded-2xl border border-white/15 bg-white p-4 text-slate-950 shadow-2xl">
             {panel === "products" ? (
               <div className="grid gap-3">
                 <div className="flex items-center justify-between">
                   <h2 className="font-black">直播商品</h2>
-                  <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-700">{live.products.length} 件</span>
+                  <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-black text-slate-950">{live.products.length} 件</span>
                 </div>
                 {sortedProducts.map((product) => (
                   <article key={product.id} className={`rounded-xl border p-3 ${product.id === spotlightProduct?.id ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
                     <div className="flex gap-3">
-                      {product.imageUrl ? <Image src={product.imageUrl} alt="" width={84} height={84} unoptimized className="h-20 w-20 rounded-lg object-cover" /> : null}
+                      {product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={84} height={84} unoptimized className="h-20 w-20 rounded-lg object-cover" /> : null}
                       <div className="min-w-0 flex-1">
                         <h3 className="line-clamp-1 font-bold">{product.name}</h3>
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{product.description}</p>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="font-black text-orange-600">{formatCurrency(product.priceCents, product.currency)}</p>
+                          <p className="font-black text-orange-700">{formatCurrency(product.priceCents, product.currency)}</p>
                           <button
+                            type="button"
                             onClick={() => trackProduct(product.id)}
                             disabled={isSubmittingCheckout}
-                            className="inline-flex h-9 items-center gap-1 rounded-lg bg-orange-500 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-busy={isSubmittingCheckout}
+                            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-orange-700 px-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <ShoppingBag size={14} />
-                            {isSubmittingCheckout ? "送出中" : "買"}
+                            <ShoppingBag size={14} aria-hidden="true" />
+                            {isSubmittingCheckout ? "送出中…" : "購買"}
                           </button>
                         </div>
                       </div>

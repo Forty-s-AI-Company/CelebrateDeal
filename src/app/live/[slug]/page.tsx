@@ -18,8 +18,14 @@ function normalizeFields(fields: unknown) {
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const live = await getDb().live.findUnique({
-    where: { slug },
+  const live = await getDb().live.findFirst({
+    where: {
+      slug,
+      OR: [
+        { status: { in: ["scheduled", "live"] } },
+        { status: "ended", replayEnabled: true },
+      ],
+    },
     include: {
       vendor: true,
       video: true,
@@ -32,7 +38,11 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
           },
         },
       },
-      products: { orderBy: { sortOrder: "asc" }, include: { product: true } },
+      products: {
+        where: { product: { isActive: true } },
+        orderBy: { sortOrder: "asc" },
+        include: { product: true },
+      },
     },
   });
 
@@ -44,6 +54,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         id: live.id,
         title: live.title,
         slug: live.slug,
+        status: live.status,
         description: live.description,
         accentCopy: live.accentCopy,
         heroImageUrl: live.heroImageUrl,
@@ -55,7 +66,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
           primaryColor: live.vendor.primaryColor,
           ctaColor: live.vendor.ctaColor,
         },
-        form: live.form
+        form: live.form?.isActive
           ? {
               id: live.form.id,
               headline: live.form.headline,
