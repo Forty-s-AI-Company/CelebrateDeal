@@ -79,3 +79,9 @@ next-env.d.ts
 /ops/backup/keys/*.agekey
 /ops/backup/rclone/
 /ops/backup/*.rclone.conf
+.ai-team/.venv/
+.ai-team/logs/
+.ai-team/backups/
+.ai-team/tmp/
+.ai-team/state/
+.ai-team/worktrees/
