@@ -162,8 +162,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
-    () => (typeof window === "undefined" ? "server" : getOrCreateVisitorId(() => crypto.randomUUID(), () => window.localStorage)),
-    [],
+    () => (typeof window === "undefined"
+      ? "server"
+      : getOrCreateVisitorId(live.vendorId, () => crypto.randomUUID(), () => window.localStorage)),
+    [live.vendorId],
   );
   const referralCode = useMemo(() => {
     if (typeof window === "undefined") return null;
