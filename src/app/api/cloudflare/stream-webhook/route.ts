@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readTextBody } from "@/lib/api-security";
+import { resolveCloudflareVideoStatusTransition } from "@/lib/cloudflare-video-status";
 import { verifyCloudflareStreamWebhookRequest } from "@/lib/cloudflare-webhook-signature";
 import { getDb } from "@/lib/db";
 
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
         { cloudflarePlaybackId: payload.uid },
       ],
     },
-    select: { id: true },
+    select: { id: true, status: true },
     take: 2,
   });
 
@@ -86,11 +87,22 @@ export async function POST(request: Request) {
   if (matches.length === 0) {
     return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
   }
+  const match = matches[0];
+  if (!match) {
+    return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+  }
 
-  await db.video.update({
-    where: { id: matches[0].id },
+  const nextStatus = resolveCloudflareVideoStatusTransition(match.status, status);
+  if (!nextStatus) {
+    return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+  }
+
+  const updated = await db.video.updateMany({
+    // The status predicate is an optimistic claim. A concurrent newer callback
+    // wins instead of being overwritten by this request's stale snapshot.
+    where: { id: match.id, status: match.status },
     data: {
-      status,
+      status: nextStatus,
       cloudflareReadyToStream: payload.readyToStream ?? false,
       cloudflarePlaybackId: payload.uid,
       videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
@@ -99,5 +111,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, updated: 1, verificationMode: verification.mode });
+  return NextResponse.json({ ok: true, updated: updated.count, verificationMode: verification.mode });
 }
