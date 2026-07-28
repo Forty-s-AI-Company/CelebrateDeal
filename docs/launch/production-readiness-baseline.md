@@ -87,12 +87,12 @@ no-dotenv disposable `wp17_*` snapshot 以兩個 action-level `verifyMfaAction` 
 
 此 evidence 僅將該單一 race 列為 `MITIGATED_CURRENT_SNAPSHOT`；完整 MFA journey、其餘 security candidates、E2E、部署與外部／人工 gates 均未外推。Gemini Fast wrapper 在模型啟動前 `TOOL_BLOCKED`，為 non-blocking QA。Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**。
 
-## WP-18 — Payout Batch PostgreSQL 併發 claim 證據閉環（2026-07-28，BLOCKED_BY_TEST_INFRA）
+## WP-18 — Payout Batch PostgreSQL 併發 claim 證據閉環（2026-07-28，COMPLETE）
 
 no-dotenv disposable `wp18_*` runner 已通過 Prisma validate/generate/deploy/status、110 targeted tests、lint、typecheck、strict-index、marker cleanup、source hash 與 WP-17 protected hash。兩個 action callers 確實同時讀到同一 settlement；以不同 synthetic batch number 進行真實 PostgreSQL transaction claim 後，得到一個正常 redirect、一個 `error=conflict`、恰好一個 batch／item／settlement link，沒有 orphan batch 或 raw DB error。
 
-必要 coverage gate 仍被既有 WP-17 DB test 的專用 synthetic schema flag 缺漏阻擋，並非 payout race regression。故 payout batch race 尚不得標為 `MITIGATED_CURRENT_SNAPSHOT`，兩個 readiness 分數均維持 **57/100**／**45/100**。
+WP-19 已以兩個互斥 synthetic schema owner coverage projects 補齊必要 gate：WP-17 107 targeted、WP-18 110 targeted、119 files／939 tests coverage、Prisma、lint、typecheck、strict-index、secret scan、protected hashes 與雙 marker-gated cleanup 均 PASS。因此 payout batch race 是 bounded `MITIGATED_CURRENT_SNAPSHOT`；兩個 readiness 分數仍維持 **57/100**／**45/100**，不外推到 E2E、部署或外部商業 gate。
 
-## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，NOT_READY）
+## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，COMPLETE）
 
-本次只完成 closure reconciliation，沒有執行 coverage 修復或採用 ignored raw run artifact 作為 canonical evidence。WP-18 仍是 `BLOCKED_BY_TEST_INFRA`，其 payout batch race 尚不得列為 `MITIGATED_CURRENT_SNAPSHOT`。Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**。
+既有 `5c9139c` 候選修復在新的 no-dotenv canonical run 中通過：coverage runner 以 process-scoped bridge variables 傳遞兩個真實、互斥 owner schema，再由 coverage-only Vitest projects 注入對應的 `WP17_DISPOSABLE_SCHEMA` 或 `WP18_DISPOSABLE_SCHEMA`。沒有讀取 `.env*`、沒有使用正式資料庫，雙 schema cleanup PASS。TB-16 已解除，WP-18 改為 `COMPLETE`；Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**，因本包沒有新增 E2E、部署或外部 Gate 證據。詳見 `docs/launch/wp19-coverage-synthetic-schema-20260728.md`。

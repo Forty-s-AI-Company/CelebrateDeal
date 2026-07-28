@@ -27,6 +27,6 @@ WP-14 disposable runner 與獨立 Fast／Deep 複核均完成；TB-11 不再阻�
 
 | TB-15 | Gemini Fast WP-17 wrapper | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/gemini-fast-result.sanitized.json`：`Invoke-AgyFast.ps1` 在 AGY/Gemini 啟動前遇到本機 `ProcessStartInfo.ArgumentList` null 相容性錯誤；依 WP 規則不重試 | WP-17 deterministic PostgreSQL receipts 與主 Codex 驗收 |
 
-| TB-16 | WP-18 coverage cross-WP DB test environment | BLOCKED_BY_TEST_INFRA | WP-18 canonical final verdict：完整 coverage 載入既有 WP-17 DB test 時，缺少其專用 `WP17_DISPOSABLE_SCHEMA` synthetic flag 而在 `beforeAll` 停止；core payout race 並非 regression。先前 WP-19 raw receipts 已解除 active 引用，不能作為解除 blocker 的依據。 | Sol 必須先重新規劃窄範圍 WP-19，明確隔離 schema owner flag；在新的 canonical receipt 前不得解除 TB-16 |
+| TB-16 | WP-18 coverage cross-WP DB test environment | RESOLVED | WP-19 canonical run `20260728213657260` 以互斥 `wp17-db`／`wp18-main` coverage projects 傳遞各自 schema owner flag；WP-17 107 targeted、WP-18 110 targeted、119 files／939 tests coverage、雙 marker-gated cleanup 與全部品質 gates 均 PASS。證據見 `docs/launch/wp19-coverage-synthetic-schema-20260728.md`。 | 已解除；保留此歷史根因與 receipt 指標 |
 
 | TB-17 | Gemini Fast WP-18 wrapper | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/gemini-fast-result.sanitized.json`：wrapper 在模型啟動前出現本機 null ArgumentList 相容性錯誤 | 主 Codex deterministic receipts |

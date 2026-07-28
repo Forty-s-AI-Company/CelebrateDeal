@@ -259,8 +259,13 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - 最終 unit receipt：117 files／937 tests PASS；secret scan、lint、typecheck、strict-index、Prisma validate/generate 與 diff check PASS。
 - 此結案紀錄優先於本文件舊有的 WP-16-GR-01 `NOT_READY` 證據；該證據保留為歷史脈絡。
 
-## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，NOT_READY）
+## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，COMPLETE）
 
-- `docs/launch/wp19-closure-reconciliation-20260728.md`
+- `docs/launch/wp19-coverage-synthetic-schema-20260728.md`
+- `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/command-receipts.sanitized.json`
+- `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/coverage-project-schema-identity.sanitized.json`
+- `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/schema-cleanup.sanitized.json`
+- `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/wp17-protected-manifest.json`
+- `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/postflight-wp17-protected-manifest.json`
 
-本索引的 canonical 狀態是：WP-18 保持 `BLOCKED_BY_TEST_INFRA`，WP-19 尚未開始、不得標示為完成。先前 run-scoped coverage receipts 與 closure addendum 屬 ignored raw artifacts，已外部封存並解除 active 引用；它們不得提升 readiness、解除 TB-16，或取代 WP-18 的 final verdict。WP-19 必須在 closure reconciliation 後交由 Sol 重新規劃。
+新的 no-dotenv canonical run 已通過 WP-17 107 targeted tests、WP-18 110 targeted tests、119 files／939 tests coverage、Prisma、lint、typecheck、strict-index、secret scan 與 diff check；雙 synthetic schema 均 marker-gated cleanup PASS。TB-16 已 `RESOLVED`，WP-18 為 `COMPLETE`／其 payout race 限定為 `MITIGATED_CURRENT_SNAPSHOT`。過往 raw receipt 仍只保留歷史診斷用途，沒有被用作本次結案依據。
