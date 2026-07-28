@@ -73,7 +73,8 @@ export default async function SecuritySettingsPage({
   const vendorId = auth.vendor?.id;
   const isOwner = auth.member?.role === "owner";
   const cookieStore = await cookies();
-  const pendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
+  const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
+  const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
@@ -219,7 +220,7 @@ export default async function SecuritySettingsPage({
                   <Badge tone={session.revokedAt ? "gray" : "green"}>{session.revokedAt ? "revoked" : "active"}</Badge>
                 </div>
                 <p className="mt-1 truncate text-xs text-slate-500">{session.userAgent ?? "unknown user agent"}</p>
-                <p className="mt-1 text-xs text-slate-400">建立：{session.createdAt.toLocaleString("zh-TW")} / 到期：{session.expiresAt.toLocaleString("zh-TW")}</p>
+                <p className="mt-1 text-xs text-slate-600">建立：{session.createdAt.toLocaleString("zh-TW")} / 到期：{session.expiresAt.toLocaleString("zh-TW")}</p>
               </div>
             ))}
           </div>

@@ -15,7 +15,7 @@ export function PageHeader({
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p> : null}
+        {description ? <p className="mt-1 max-w-2xl text-sm text-slate-600">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -45,7 +45,7 @@ export function ButtonLink({
     <Link
       href={href}
       className={clsx(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition",
         tone === "primary" && "bg-primary text-white hover:bg-primary-dark",
         tone === "cta" && "bg-cta text-white hover:bg-cta-dark",
         tone === "secondary" && "border border-border bg-white text-slate-700 hover:bg-slate-50",
@@ -97,6 +97,9 @@ export function Field({
   placeholder,
   autoComplete,
   minLength,
+  min,
+  max,
+  step,
 }: {
   label: string;
   name: string;
@@ -106,18 +109,24 @@ export function Field({
   placeholder?: string;
   autoComplete?: string;
   minLength?: number;
+  min?: number;
+  max?: number;
+  step?: number;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <input
-        className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         type={type}
         required={required}
         placeholder={placeholder}
         autoComplete={autoComplete}
         minLength={minLength}
+        min={min}
+        max={max}
+        step={step}
         defaultValue={defaultValue ?? ""}
       />
     </label>
@@ -166,7 +175,7 @@ export function SelectField({
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <select
-        className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         defaultValue={defaultValue ?? ""}
       >
@@ -196,7 +205,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
   return (
     <Card className="flex flex-col items-center justify-center py-12 text-center">
       <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      <p className="mt-2 max-w-md text-sm text-slate-500">{description}</p>
+      <p className="mt-2 max-w-md text-sm text-slate-600">{description}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </Card>
   );

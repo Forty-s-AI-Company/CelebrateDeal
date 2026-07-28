@@ -14,12 +14,17 @@ import {
   requireAuth,
   requireFinanceAdmin,
   requireVendorManager,
-  requireVendorOwner,
   revokeCurrentSession,
   sessionCookieOptions,
 } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import {
+  AffiliateCommissionRateBps,
+  assertAffiliateCommissionTransition,
+} from "@/lib/affiliate-commission";
+import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
+import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { calculateSettlement, invoiceNumber, payoutBatchNumber } from "@/lib/billing";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
@@ -31,17 +36,17 @@ import {
   encryptMfaSecret,
   generateRecoveryCodes,
   generateTotpSecret,
-  hashRecoveryCode,
+  hashRecoveryCodeAsync,
   MFA_RECOVERY_COOKIE,
   MFA_SETUP_COOKIE,
   parsePendingMfaSetup,
   serializePendingMfaSetup,
   serializeRecoveryCodes,
-  verifyRecoveryCode,
+  verifyRecoveryCodeAsync,
   verifyTotpCode,
 } from "@/lib/mfa";
-import { hashPassword, verifyPassword } from "@/lib/password";
-import { sendPasswordResetLink } from "@/lib/password-reset";
+import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
+import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSlug } from "@/lib/format";
@@ -92,6 +97,7 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
 }
 
 class RefundValidationError extends Error {}
+class PayoutBatchClaimConflict extends Error {}
 
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
@@ -106,14 +112,15 @@ const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_SOURCE_LIMIT = 20;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
-const MEMBER_ROLES = new Set(["owner", "admin", "accountant"]);
-
 function normalizedEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
 function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  return value.startsWith("/") && !value.startsWith("//") ? value : fallback;
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+    return fallback;
+  }
+  return value;
 }
 
 export async function loginAction(formData: FormData) {
@@ -264,7 +271,7 @@ export async function updatePasswordAction(formData: FormData) {
   const password = text(formData, "password");
   const confirmPassword = text(formData, "confirmPassword");
 
-  if (!verifyPassword(currentPassword, auth.user.passwordHash)) {
+  if (!await verifyPasswordAsync(currentPassword, auth.user.passwordHash)) {
     redirect("/settings/security?error=current_password");
   }
   if (password.length < 12) {
@@ -273,7 +280,7 @@ export async function updatePasswordAction(formData: FormData) {
   if (password !== confirmPassword) {
     redirect("/settings/security?error=password_mismatch");
   }
-  if (verifyPassword(password, auth.user.passwordHash)) {
+  if (await verifyPasswordAsync(password, auth.user.passwordHash)) {
     redirect("/settings/security?error=password_reuse");
   }
 
@@ -282,7 +289,7 @@ export async function updatePasswordAction(formData: FormData) {
   await db.$transaction([
     db.user.update({
       where: { id: auth.user.id },
-      data: { passwordHash: hashPassword(password) },
+      data: { passwordHash: await hashPasswordAsync(password) },
     }),
     db.userSession.updateMany({
       where: { userId: auth.user.id, revokedAt: null },
@@ -328,30 +335,13 @@ export async function requestPasswordResetAction(formData: FormData) {
     redirect("/password-reset/request?error=invalid");
   }
 
-  let previewUrl: string | null = null;
-  try {
-    const result = await sendPasswordResetLink({
-      email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    });
+  schedulePasswordResetLink({
+    email,
+    appUrl,
+    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    userAgent: headerStore.get("user-agent"),
+  });
 
-    if (process.env.NODE_ENV !== "production" && result?.resetUrl) {
-      previewUrl = result.resetUrl;
-    }
-  } catch {
-    await writeAuditLog({
-      actorLabel: "password_reset_request_failed",
-      action: "password_reset_email_failed",
-      targetType: "PasswordResetToken",
-      after: auditSnapshot({ email }),
-    });
-  }
-
-  if (previewUrl) {
-    redirect(`/password-reset/request?updated=sent&preview=${encodeURIComponent(previewUrl)}`);
-  }
   redirect("/password-reset/request?updated=sent");
 }
 
@@ -408,7 +398,11 @@ export async function startMfaEnrollmentAction(formData: FormData) {
 
   const cookieStore = await cookies();
   const secret = generateTotpSecret();
-  cookieStore.set(MFA_SETUP_COOKIE, serializePendingMfaSetup(secret), longLivedCookieOptions());
+  cookieStore.set(
+    MFA_SETUP_COOKIE,
+    serializePendingMfaSetup(secret, auth.user.id),
+    longLivedCookieOptions(),
+  );
   cookieStore.delete(MFA_RECOVERY_COOKIE);
   redirect(`${destination}?updated=mfa_started`);
 }
@@ -421,11 +415,12 @@ export async function confirmMfaEnrollmentAction(formData: FormData) {
   const cookieStore = await cookies();
   const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
 
-  if (!pending || !verifyTotpCode(pending.secret, code)) {
+  if (!pending || pending.userId !== auth.user.id || !verifyTotpCode(pending.secret, code)) {
     redirect(`${destination}?error=mfa_code`);
   }
 
   const recoveryCodes = generateRecoveryCodes();
+  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
   const secretEncrypted = encryptMfaSecret(pending.secret);
 
   await getDb().$transaction([
@@ -447,9 +442,9 @@ export async function confirmMfaEnrollmentAction(formData: FormData) {
     }),
     getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
     getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue) => ({
+      data: recoveryCodes.map((codeValue, index) => ({
         userId: auth.user.id,
-        codeHash: hashRecoveryCode(codeValue),
+        codeHash: recoveryCodeHashes[index]!,
       })),
     }),
   ]);
@@ -504,7 +499,10 @@ export async function verifyMfaAction(formData: FormData) {
     },
   });
 
-  const matchedRecoveryCode = recoveryCodes.find((recoveryCode) => verifyRecoveryCode(code, recoveryCode.codeHash));
+  const recoveryCodeMatches = await Promise.all(
+    recoveryCodes.map((recoveryCode) => verifyRecoveryCodeAsync(code, recoveryCode.codeHash)),
+  );
+  const matchedRecoveryCode = recoveryCodes.find((_, index) => recoveryCodeMatches[index]);
   if (!verifyTotpCode(secret, code) && !matchedRecoveryCode) {
     await writeAuditLog({
       vendorId: auth.vendor?.id ?? null,
@@ -518,10 +516,25 @@ export async function verifyMfaAction(formData: FormData) {
   }
 
   if (matchedRecoveryCode) {
-    await getDb().userRecoveryCode.update({
-      where: { id: matchedRecoveryCode.id },
+    const claim = await getDb().userRecoveryCode.updateMany({
+      where: {
+        id: matchedRecoveryCode.id,
+        userId: auth.user.id,
+        usedAt: null,
+      },
       data: { usedAt: new Date() },
     });
+    if (claim.count !== 1) {
+      await writeAuditLog({
+        vendorId: auth.vendor?.id ?? null,
+        actorId: auth.user.id,
+        actorLabel: auth.member?.role ?? auth.user.platformRole,
+        action: "mfa_verify_failed",
+        targetType: "UserMfaFactor",
+        targetId: auth.user.id,
+      });
+      redirect(`/mfa/verify?error=invalid&next=${encodeURIComponent(next)}`);
+    }
   } else {
     await getDb().userMfaFactor.update({
       where: { userId: auth.user.id },
@@ -589,12 +602,13 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
   }
 
   const recoveryCodes = generateRecoveryCodes();
+  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
   await getDb().$transaction([
     getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
     getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue) => ({
+      data: recoveryCodes.map((codeValue, index) => ({
         userId: auth.user.id,
-        codeHash: hashRecoveryCode(codeValue),
+        codeHash: recoveryCodeHashes[index]!,
       })),
     }),
     getDb().userMfaFactor.update({
@@ -676,327 +690,11 @@ export async function sendPasswordResetSmokeAction(formData: FormData) {
   redirect(sent ? `${destination}?updated=password_reset_smoke` : `${destination}?error=password_reset_smoke`);
 }
 
-export async function createVendorMemberAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const email = normalizedEmail(text(formData, "email"));
-  const name = text(formData, "name");
-  const role = text(formData, "role", "accountant");
-
-  if (!email || !name || !MEMBER_ROLES.has(role)) {
-    redirect("/settings/security?error=member_invalid");
-  }
-
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "vendor-member-invitation",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
-  }
-
-  const db = getDb();
-  const existingUser = await db.user.findUnique({
-    where: { email },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      platformRole: true,
-      status: true,
-    },
-  });
-  if (existingUser?.platformRole && existingUser.platformRole !== "none") {
-    redirect("/settings/security?error=platform_user");
-  }
-  if (existingUser && existingUser.status !== "active") {
-    // Tenant owners may restore membership in their own vendor, but only the
-    // platform may reactivate a globally suspended user account.
-    redirect("/settings/security?error=inactive_user");
-  }
-
-  const existingMember = existingUser
-    ? await db.vendorMember.findUnique({
-        where: { vendorId_userId: { vendorId: auth.vendor.id, userId: existingUser.id } },
-        include: {
-          user: {
-            select: {
-              email: true,
-            },
-          },
-        },
-      })
-    : null;
-
-  if (existingMember?.userId === auth.user.id && role !== "owner") {
-    redirect("/settings/security?error=self_role");
-  }
-
-  const savedMember = await db.$transaction(async (tx) => {
-    const user = existingUser ?? await tx.user.create({
-      data: {
-        email,
-        name,
-        // New members set their real password through the one-time reset link below.
-        passwordHash: hashPassword(randomBytes(32).toString("base64url")),
-        status: "active",
-      },
-    });
-
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        name: user.name || name,
-      },
-    });
-
-    return tx.vendorMember.upsert({
-      where: { vendorId_userId: { vendorId: auth.vendor.id, userId: user.id } },
-      create: {
-        vendorId: auth.vendor.id,
-        userId: user.id,
-        role,
-        status: "active",
-      },
-      update: {
-        role,
-        status: "active",
-        deactivatedAt: null,
-      },
-      include: {
-        user: {
-          select: {
-            email: true,
-          },
-        },
-      },
-    });
-  });
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: existingMember?.status === "inactive"
-      ? "reactivate_vendor_member"
-      : existingMember
-        ? "invite_vendor_member"
-        : "create_vendor_member",
-    targetType: "VendorMember",
-    targetId: savedMember.id,
-    before: auditSnapshot(existingMember ? {
-      id: existingMember.id,
-      email: existingMember.user.email,
-      role: existingMember.role,
-      status: existingMember.status,
-    } : null),
-    after: auditSnapshot({
-      id: savedMember.id,
-      email: savedMember.user.email,
-      role: savedMember.role,
-      status: savedMember.status,
-    }),
-  });
-
-  let invitationSent = false;
-  try {
-    invitationSent = Boolean(await sendPasswordResetLink({
-      email: savedMember.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    }));
-  } catch {}
-
-  if (!invitationSent) {
-    await writeAuditLog({
-      vendorId: auth.vendor.id,
-      actorId: auth.user.id,
-      actorLabel: auth.member.role,
-      action: "vendor_member_invitation_email_failed",
-      targetType: "VendorMember",
-      targetId: savedMember.id,
-      after: auditSnapshot({
-        email: savedMember.user.email,
-        role: savedMember.role,
-        status: savedMember.status,
-      }),
-    });
-    // The membership transaction has already committed, so refresh the list even
-    // when the invitation provider is unavailable.
-    revalidatePath("/settings/security");
-    redirect("/settings/security?error=member_invitation");
-  }
-
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=member");
-}
-
-export async function resendVendorMemberInvitationAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const id = text(formData, "id");
-  const db = getDb();
-  const member = await db.vendorMember.findFirst({
-    where: {
-      id,
-      vendorId: auth.vendor.id,
-      status: "active",
-    },
-    include: { user: true },
-  });
-
-  if (member?.status !== "active" || member.userId === auth.user.id || member.user.platformRole !== "none") {
-    redirect("/settings/security?error=member_invitation_resend_invalid");
-  }
-
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "vendor-member-invitation",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
-  }
-
-  let invitationSent = false;
-  try {
-    invitationSent = Boolean(await sendPasswordResetLink({
-      email: member.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    }));
-  } catch {}
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: invitationSent ? "vendor_member_invitation_resent" : "vendor_member_invitation_resend_email_failed",
-    targetType: "VendorMember",
-    targetId: member.id,
-    after: auditSnapshot({
-      email: member.user.email,
-      role: member.role,
-      status: member.status,
-    }),
-  });
-
-  if (invitationSent) {
-    revalidatePath("/settings/security");
-    redirect("/settings/security?updated=member_invitation_resent");
-  }
-
-  redirect("/settings/security?error=member_invitation_resend_failed");
-}
-
-export async function deactivateVendorMemberAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const id = text(formData, "id");
-  const confirmation = normalizedEmail(text(formData, "confirmation"));
-  const db = getDb();
-  const member = await db.vendorMember.findFirst({
-    where: { id, vendorId: auth.vendor.id },
-    include: { user: true },
-  });
-
-  if (!member || member.status !== "active" || member.user.platformRole !== "none") {
-    redirect("/settings/security?error=member_not_found");
-  }
-
-  if (member.userId === auth.user.id) {
-    redirect("/settings/security?error=self_deactivate");
-  }
-
-  if (confirmation !== normalizedEmail(member.user.email)) {
-    redirect("/settings/security?error=member_confirmation");
-  }
-
-  const updated = await (async () => {
-    try {
-      return await db.$transaction(async (tx) => {
-        // 這個檢查必須和停用處於同一個 Serializable 交易，避免兩位 owner
-        // 同時停用彼此，形成沒有任何有效 owner 的租戶。
-        if (member.role === "owner") {
-          const activeOwnerCount = await tx.vendorMember.count({
-            where: {
-              vendorId: auth.vendor.id,
-              role: "owner",
-              status: "active",
-              id: { not: member.id },
-            },
-          });
-          if (activeOwnerCount === 0) {
-            redirect("/settings/security?error=last_owner");
-          }
-        }
-
-        const saved = await tx.vendorMember.update({
-          where: {
-            id: member.id,
-            vendorId: auth.vendor.id,
-            status: "active",
-            role: member.role,
-          },
-          data: {
-            status: "inactive",
-            deactivatedAt: new Date(),
-          },
-        });
-        await tx.userSession.updateMany({
-          where: {
-            userId: member.userId,
-            vendorId: auth.vendor.id,
-            revokedAt: null,
-          },
-          data: { revokedAt: new Date() },
-        });
-        return saved;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (error) {
-      if (member.role === "owner" && isSerializationConflict(error)) {
-        redirect("/settings/security?error=last_owner");
-      }
-      if (isDatabaseTransactionConflict(error)) {
-        redirect("/settings/security?error=member_not_found");
-      }
-      throw error;
-    }
-  })();
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: "deactivate_vendor_member",
-    targetType: "VendorMember",
-    targetId: member.id,
-    before: auditSnapshot(member),
-    after: auditSnapshot(updated),
-  });
-
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=member_deactivated");
-}
+export {
+  createVendorMemberAction,
+  deactivateVendorMemberAction,
+  resendVendorMemberInvitationAction,
+} from "./actions/vendor-member-actions";
 
 export async function revokeOtherSessionsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
@@ -1051,26 +749,40 @@ export async function upsertVideoAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  const data = {
+  const editableData = {
     title: text(formData, "title"),
     description: optionalText(formData, "description"),
-    sourceType: text(formData, "sourceType", "url"),
-    videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
     thumbnailUrl: optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址"),
     durationSec: intValue(formData, "durationSec"),
-    status: text(formData, "status", "ready"),
-    cloudflareStreamUid: optionalText(formData, "cloudflareStreamUid"),
-    cloudflareLiveInputUid: optionalText(formData, "cloudflareLiveInputUid"),
-    cloudflarePlaybackId: optionalText(formData, "cloudflarePlaybackId"),
-    cloudflareReadyToStream: formData.get("cloudflareReadyToStream") === "on",
-    liveInputStatus: optionalText(formData, "liveInputStatus"),
     estimatedMinutes: intValue(formData, "estimatedMinutes"),
   };
+  const db = getDb();
 
   if (id) {
-    await getDb().video.update({ where: { id, vendorId: vendor.id }, data });
+    const existingVideo = await db.video.findFirst({
+      where: { id, vendorId: vendor.id },
+      select: { id: true, sourceType: true },
+    });
+    if (!existingVideo) redirect("/videos?error=not_found");
+
+    const data = existingVideo.sourceType === "url"
+      ? {
+          ...editableData,
+          videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
+          status: text(formData, "status") === "archived" ? "archived" : "ready",
+        }
+      : editableData;
+    await db.video.update({ where: { id, vendorId: vendor.id }, data });
   } else {
-    await getDb().video.create({ data: { ...data, vendorId: vendor.id } });
+    await db.video.create({
+      data: {
+        ...editableData,
+        vendorId: vendor.id,
+        sourceType: "url",
+        videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
+        status: "ready",
+      },
+    });
   }
 
   redirect("/videos");
@@ -1211,7 +923,6 @@ export async function upsertLiveAction(formData: FormData) {
     accentCopy: optionalText(formData, "accentCopy"),
     replayEnabled: formData.get("replayEnabled") !== "off",
     streamMode: text(formData, "streamMode", "vod"),
-    cloudflareLiveInputUid: optionalText(formData, "cloudflareLiveInputUid"),
     quotaPolicy: {
       maxConcurrentViewers: intValue(formData, "maxConcurrentViewers", 500),
       stopWhenCreditsBelow: intValue(formData, "stopWhenCreditsBelow", 300),
@@ -1528,12 +1239,18 @@ export async function upsertAffiliateAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
+  const commissionRate = AffiliateCommissionRateBps.safeParse(
+    Number(text(formData, "commissionRateBps")),
+  );
+  if (!commissionRate.success) {
+    redirect("/affiliates?error=invalid_commission_rate");
+  }
   const data = {
     name: text(formData, "name"),
     code: text(formData, "code").toUpperCase(),
     source: optionalText(formData, "source"),
     contactEmail: optionalText(formData, "contactEmail"),
-    commissionRateBps: intValue(formData, "commissionRateBps"),
+    commissionRateBps: commissionRate.data,
     isActive: formData.get("isActive") === "on",
   };
 
@@ -1612,11 +1329,11 @@ export async function generateSettlementAction(formData: FormData) {
       calculation.affiliateManagementFeeCents;
 
     await tx.invoice.upsert({
-      where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey) },
+      where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId) },
       create: {
         vendorId,
         monthKey,
-        invoiceNumber: invoiceNumber(vendor.slug, monthKey),
+        invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId),
         invoiceType: "monthly",
         monthlyFeeCents: calculation.monthlyFeeCents,
         overflowFeeCents: calculation.overflowFeeCents,
@@ -1741,7 +1458,10 @@ export async function lockSettlementAction(formData: FormData) {
 export async function createPayoutBatchAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
-  const settlementIds = formData.getAll("settlementIds").filter((value): value is string => typeof value === "string" && value.length > 0);
+  const settlementIds = Array.from(new Set(
+    formData.getAll("settlementIds")
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+  ));
   if (settlementIds.length === 0) {
     redirect("/admin/billing/payouts?error=empty");
   }
@@ -1757,7 +1477,7 @@ export async function createPayoutBatchAction(formData: FormData) {
     include: { vendor: { include: { paymentAccounts: true } } },
   });
 
-  if (settlements.length === 0) {
+  if (settlements.length !== settlementIds.length) {
     redirect("/admin/billing/payouts?error=no_locked");
   }
 
@@ -1765,45 +1485,82 @@ export async function createPayoutBatchAction(formData: FormData) {
   const batchNumber = payoutBatchNumber(now);
   const totalAmountCents = settlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
 
-  const batch = await db.$transaction(async (tx) => {
-    const batch = await tx.payoutBatch.create({
-      data: {
-        batchNumber,
-        batchDate: now,
-        totalAmountCents,
-        totalCount: settlements.length,
-        status: "draft",
-        exportedFilePath: `/admin/billing/payouts/${batchNumber}/csv`,
-      },
-    });
-
-    for (const settlement of settlements) {
-      const account = settlement.vendor.paymentAccounts.find((item) => item.mode === "platform" && item.bankAccountNumber) ?? settlement.vendor.paymentAccounts[0];
-      await tx.payoutItem.create({
+  let batch;
+  try {
+    batch = await db.$transaction(async (tx) => {
+      const createdBatch = await tx.payoutBatch.create({
         data: {
-          payoutBatchId: batch.id,
-          vendorId: settlement.vendorId,
-          settlementId: settlement.id,
-          bankAccountName: account?.bankAccountName ?? settlement.vendor.name,
-          bankCode: account?.bankCode ?? "000",
-          bankAccountNumber: account?.bankAccountNumber ?? "未設定",
-          payoutAmountCents: settlement.finalPayoutAmountCents,
-          status: "pending",
-        },
-      });
-      await tx.settlement.update({
-        where: { id: settlement.id },
-        data: {
-          payoutBatchId: batch.id,
           batchNumber,
-          status: "ready_for_payout",
-          payoutDate: now,
+          batchDate: now,
+          totalAmountCents,
+          totalCount: settlements.length,
+          status: "draft",
+          exportedFilePath: `/admin/billing/payouts/${batchNumber}/csv`,
         },
       });
-    }
 
-    return batch;
-  });
+      for (const settlement of settlements) {
+        // Claim the settlement before creating a payout item. updateMany makes
+        // the eligibility check and bind one atomic row-locking operation, so
+        // concurrent batches cannot both consume the same settlement.
+        const claim = await tx.settlement.updateMany({
+          where: {
+            id: settlement.id,
+            lockedAt: { not: null },
+            payoutBatchId: null,
+            finalPayoutAmountCents: { gt: 0 },
+          },
+          data: {
+            payoutBatchId: createdBatch.id,
+            batchNumber,
+            status: "ready_for_payout",
+            payoutDate: now,
+          },
+        });
+        if (claim.count !== 1) {
+          throw new PayoutBatchClaimConflict();
+        }
+
+        const account = settlement.vendor.paymentAccounts.find(
+          (item) => item.mode === "platform" && (item.bankAccountEncrypted || item.bankAccountLegacyNumber),
+        ) ?? settlement.vendor.paymentAccounts[0];
+        const bankAccount = account
+          ? resolveStoredBankAccount({
+              vendorId: settlement.vendorId,
+              bankAccountEncrypted: account.bankAccountEncrypted,
+              legacyAccountName: account.bankAccountLegacyName,
+              legacyBankCode: account.bankCodeLegacy,
+              legacyAccountNumber: account.bankAccountLegacyNumber,
+            })
+          : {
+              accountName: settlement.vendor.name,
+              bankCode: "000",
+              accountNumber: "未設定",
+            };
+        const bankAccountDisplay = maskBankAccount(bankAccount);
+        await tx.payoutItem.create({
+          data: {
+            payoutBatchId: createdBatch.id,
+            vendorId: settlement.vendorId,
+            settlementId: settlement.id,
+            bankAccountDisplayName: bankAccountDisplay.accountName,
+            bankCodeDisplay: bankAccountDisplay.bankCode,
+            bankAccountDisplayNumber: bankAccountDisplay.accountNumber,
+            bankAccountEncrypted: encryptBankAccount(bankAccount, settlement.vendorId),
+            payoutAmountCents: settlement.finalPayoutAmountCents,
+            status: "pending",
+          },
+        });
+      }
+
+      return createdBatch;
+    });
+  } catch (error) {
+    if (error instanceof PayoutBatchClaimConflict || isDatabaseTransactionConflict(error)) {
+      redirect("/admin/billing/payouts?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlements[0]?.vendorId ?? null,
@@ -1867,9 +1624,21 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
         });
 
         if (item.settlementId && status === "paid") {
-          await tx.settlement.update({
-            where: { id: item.settlementId },
-            data: { status: "paid", paidAt: new Date() },
+          const settlement = await tx.settlement.findFirst({
+            where: { id: item.settlementId, vendorId: item.vendorId },
+          });
+          if (!settlement) throw new PayoutBatchClaimConflict();
+          const paidAt = new Date();
+          const settlementTransition = await tx.settlement.updateMany({
+            where: { id: settlement.id, vendorId: item.vendorId, status: { not: "paid" } },
+            data: { status: "paid", paidAt },
+          });
+          if (settlementTransition.count !== 1) throw new PayoutBatchClaimConflict();
+          // Lock-to-paid happens in the same serializable transaction as the
+          // payout item. Tenant and month are both part of the predicate.
+          await tx.affiliateCommission.updateMany({
+            where: { vendorId: item.vendorId, monthKey: settlement.monthKey, status: "locked" },
+            data: { status: "paid", settledAt: paidAt },
           });
         }
 
@@ -2191,19 +1960,37 @@ export async function voidAffiliateCommissionAction(formData: FormData) {
   const id = text(formData, "id");
   const reason = optionalText(formData, "reason");
   const commission = await getDb().affiliateCommission.findUnique({ where: { id } });
-  if (!commission || commission.status === "paid") {
+  if (!commission || commission.status === "void") {
     redirect("/admin/billing/dashboard?error=commission");
   }
 
-  const updated = await getDb().affiliateCommission.update({
-    where: { id },
-    data: {
-      status: "void",
-      commissionAmountCents: 0,
-      settledAt: new Date(),
-      sourceType: reason ? `${commission.sourceType}: ${reason}` : commission.sourceType,
-    },
-  });
+  if (commission.status !== "paid") assertAffiliateCommissionTransition(commission.status, "void");
+  const updated = await getDb().$transaction(async (tx) => {
+    const balance = await commissionLedgerBalance(tx, commission.vendorId, commission.id);
+    if (balance > 0) {
+      await appendCommissionLedgerEntry(tx, {
+        vendorId: commission.vendorId,
+        affiliateCommissionId: commission.id,
+        entryType: "reversal",
+        providerName: "admin",
+        // Reason is intentionally excluded from identity: repeating a request
+        // must return the original immutable reversal rather than double it.
+        eventIdentity: `admin:void:${commission.id}`,
+        amountCents: -balance,
+        occurredAt: new Date(),
+      });
+    }
+    if (commission.status === "paid") {
+      return tx.affiliateCommission.findUniqueOrThrow({ where: { id } });
+    }
+    const transition = await tx.affiliateCommission.updateMany({
+      where: { id, vendorId: commission.vendorId, status: commission.status },
+      // Never rewrite the original amount after it has entered accounting.
+      data: { status: "void", settledAt: new Date() },
+    });
+    if (transition.count !== 1) throw new PayoutBatchClaimConflict();
+    return tx.affiliateCommission.findUniqueOrThrow({ where: { id } });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   await writeAuditLog({
     vendorId: commission.vendorId,
@@ -2213,7 +2000,7 @@ export async function voidAffiliateCommissionAction(formData: FormData) {
     targetType: "AffiliateCommission",
     targetId: commission.id,
     before: auditSnapshot(commission),
-    after: auditSnapshot(updated),
+    after: auditSnapshot({ commission: updated, reason }),
   });
 
   revalidatePath("/admin/billing/dashboard");

@@ -27,13 +27,16 @@ const avatarSeeds = [
   "helper-gold",
   "official-mint",
 ];
+const defaultAvatarSeed = "host-blue";
 
 function avatarUrl(seed: string) {
   return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
 }
 
 export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRole; csrfToken: string }) {
-  const [selectedAvatar, setSelectedAvatar] = useState(role?.avatarUrl ?? avatarUrl(avatarSeeds[0]));
+  const [selectedAvatar, setSelectedAvatar] = useState(
+    role?.avatarUrl ?? avatarUrl(avatarSeeds[0] ?? defaultAvatarSeed),
+  );
   const [roleType, setRoleType] = useState(role?.roleType ?? "official");
   const [label, setLabel] = useState(role?.label ?? getInteractionRoleDefaultLabel(role?.roleType ?? "official"));
 

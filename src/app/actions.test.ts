@@ -1,7 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
+  affiliateCreate: vi.fn(),
+  affiliateUpdate: vi.fn(),
+  affiliateCommissionUpdateMany: vi.fn(),
   authenticateUser: vi.fn(),
   calculateSettlement: vi.fn(),
   cookies: vi.fn(),
@@ -21,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   liveCreate: vi.fn(),
   productFindMany: vi.fn(),
   videoFindFirst: vi.fn(),
+  videoCreate: vi.fn(),
+  videoUpdate: vi.fn(),
   registrationFormFindFirst: vi.fn(),
   messageTemplateFindFirst: vi.fn(),
   interactionScriptFindFirst: vi.fn(),
@@ -28,7 +33,9 @@ const mocks = vi.hoisted(() => ({
   paymentTransactionUpdate: vi.fn(),
   payoutItemFindUnique: vi.fn(),
   payoutItemFindMany: vi.fn(),
+  payoutItemCreate: vi.fn(),
   payoutItemUpdate: vi.fn(),
+  payoutBatchCreate: vi.fn(),
   payoutBatchFindUnique: vi.fn(),
   payoutBatchUpdateMany: vi.fn(),
   payoutBatchUpdate: vi.fn(),
@@ -44,7 +51,11 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
   sendPasswordResetLink: vi.fn(),
+  schedulePasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
+  settlementFindFirst: vi.fn(),
+  settlementFindMany: vi.fn(),
+  settlementUpdateMany: vi.fn(),
   settlementUpsert: vi.fn(),
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
@@ -62,6 +73,7 @@ const mocks = vi.hoisted(() => ({
   userRecoveryCodeDeleteMany: vi.fn(),
   userRecoveryCodeFindMany: vi.fn(),
   userRecoveryCodeUpdate: vi.fn(),
+  userRecoveryCodeUpdateMany: vi.fn(),
   userUpdate: vi.fn(),
   verifyRecoveryCode: vi.fn(),
   verifyTotpCode: vi.fn(),
@@ -100,23 +112,27 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/billing", () => ({
   calculateSettlement: mocks.calculateSettlement,
-  invoiceNumber: (vendorSlug: string, monthKey: string) => `${vendorSlug}-${monthKey}`,
+  invoiceNumber: (vendorSlug: string, monthKey: string, vendorId: string) => `${vendorSlug}-${monthKey}-${vendorId}`,
+  payoutBatchNumber: () => "PB-20260725-00001",
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
-vi.mock("@/lib/password-reset", () => ({ sendPasswordResetLink: mocks.sendPasswordResetLink }));
+vi.mock("@/lib/password-reset", () => ({
+  schedulePasswordResetLink: mocks.schedulePasswordResetLink,
+  sendPasswordResetLink: mocks.sendPasswordResetLink,
+}));
 vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,
   generateTotpUri: vi.fn(),
-  hashRecoveryCode: (code: string) => `test-hash:${code}`,
+  hashRecoveryCodeAsync: async (code: string) => `test-hash:${code}`,
   MFA_RECOVERY_COOKIE: "mfa_recovery_codes",
   MFA_SETUP_COOKIE: "mfa_setup",
   parsePendingMfaSetup: vi.fn(),
   parseRecoveryCodes: vi.fn(),
   serializeRecoveryCodes: (codes: string[]) => JSON.stringify(codes),
-  verifyRecoveryCode: mocks.verifyRecoveryCode,
+  verifyRecoveryCodeAsync: mocks.verifyRecoveryCode,
   verifyTotpCode: mocks.verifyTotpCode,
 }));
 vi.mock("@/lib/db", () => ({
@@ -125,13 +141,21 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.findUnique,
       update: mocks.paymentTransactionUpdate,
     },
-    payoutItem: { findUnique: mocks.payoutItemFindUnique },
+    payoutItem: {
+      create: mocks.payoutItemCreate,
+      findUnique: mocks.payoutItemFindUnique,
+    },
     payoutBatch: {
+      create: mocks.payoutBatchCreate,
       findUnique: mocks.payoutBatchFindUnique,
       updateMany: mocks.payoutBatchUpdateMany,
     },
     refundRecord: { aggregate: mocks.refundRecordAggregate, update: mocks.refundRecordUpdate },
-    settlement: { findUnique: mocks.settlementFindUnique },
+    settlement: {
+      findMany: mocks.settlementFindMany,
+      findUnique: mocks.settlementFindUnique,
+      updateMany: mocks.settlementUpdateMany,
+    },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
     interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
     interactionScript: {
@@ -141,7 +165,11 @@ vi.mock("@/lib/db", () => ({
     },
     live: { create: mocks.liveCreate, updateMany: mocks.liveUpdateMany },
     product: { findMany: mocks.productFindMany },
-    video: { findFirst: mocks.videoFindFirst },
+    video: {
+      create: mocks.videoCreate,
+      findFirst: mocks.videoFindFirst,
+      update: mocks.videoUpdate,
+    },
     messageTemplate: { findFirst: mocks.messageTemplateFindFirst },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
@@ -151,6 +179,7 @@ vi.mock("@/lib/db", () => ({
       deleteMany: mocks.userRecoveryCodeDeleteMany,
       findMany: mocks.userRecoveryCodeFindMany,
       update: mocks.userRecoveryCodeUpdate,
+      updateMany: mocks.userRecoveryCodeUpdateMany,
     },
     vendor: { findUnique: mocks.vendorFindUnique },
     vendorMember: {
@@ -164,6 +193,8 @@ vi.mock("@/lib/db", () => ({
     teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
+    affiliate: { create: mocks.affiliateCreate, update: mocks.affiliateUpdate },
+    affiliateCommission: { updateMany: mocks.affiliateCommissionUpdateMany },
     blacklist: { create: mocks.blacklistCreate },
     registrationForm: {
       create: mocks.registrationFormCreate,
@@ -177,6 +208,7 @@ vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPayment
 
 import {
   createVendorMemberAction,
+  createPayoutBatchAction,
   deactivateVendorMemberAction,
   generateSettlementAction,
   importSystemRolesAction,
@@ -191,8 +223,10 @@ import {
   updatePayoutItemStatusAction,
   unbindInteractionScriptFromLiveAction,
   upsertBlacklistAction,
+  upsertAffiliateAction,
   upsertFormAction,
   upsertLiveAction,
+  upsertVideoAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
@@ -304,6 +338,21 @@ function liveFormData() {
   return formData;
 }
 
+function videoFormData(id?: string) {
+  const formData = new FormData();
+  if (id) formData.set("id", id);
+  formData.set("title", "受控影片");
+  formData.set("videoUrl", "https://media.example.test/video.mp4");
+  formData.set("sourceType", "cloudflare_live");
+  formData.set("status", "processing");
+  formData.set("cloudflareStreamUid", "forged-stream-uid");
+  formData.set("cloudflareLiveInputUid", "forged-live-input-uid");
+  formData.set("cloudflarePlaybackId", "forged-playback-id");
+  formData.set("cloudflareReadyToStream", "on");
+  formData.set("liveInputStatus", "connected");
+  return formData;
+}
+
 function payoutStatusFormData(status: string, failReason?: string) {
   const formData = new FormData();
   formData.set("id", "payout-item-1");
@@ -369,6 +418,7 @@ function formActions(node: unknown): unknown[] {
 }
 
 beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "test-actions-sensitive-data-secret-32-bytes");
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.authenticateUser.mockResolvedValue(null);
@@ -406,6 +456,7 @@ beforeEach(() => {
   mocks.userRecoveryCodeDeleteMany.mockResolvedValue({ count: 0 });
   mocks.userMfaFactorUpdate.mockResolvedValue({ id: "factor-1" });
   mocks.userRecoveryCodeUpdate.mockResolvedValue({ id: "recovery-1" });
+  mocks.userRecoveryCodeUpdateMany.mockResolvedValue({ count: 1 });
   mocks.markCurrentSessionMfaVerified.mockResolvedValue(undefined);
   mocks.findUnique.mockResolvedValue(transaction);
   mocks.refundRecordAggregate.mockResolvedValue({
@@ -417,6 +468,10 @@ beforeEach(() => {
   mocks.vendorMemberFindFirst.mockResolvedValue(null);
   mocks.vendorMemberFindMany.mockResolvedValue([]);
   mocks.settlementFindUnique.mockResolvedValue(null);
+  mocks.settlementFindMany.mockResolvedValue([]);
+  mocks.settlementUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.payoutBatchCreate.mockResolvedValue({ id: "payout-batch-1" });
+  mocks.payoutItemCreate.mockResolvedValue({ id: "payout-item-1" });
   mocks.userSessionFindMany.mockResolvedValue([]);
   mocks.calculateSettlement.mockResolvedValue({
     monthlyFeeCents: 1_000,
@@ -446,6 +501,10 @@ beforeEach(() => {
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
   });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("loginAction", () => {
@@ -740,6 +799,47 @@ describe("upsertBlacklistAction", () => {
   });
 });
 
+describe("upsertAffiliateAction", () => {
+  function affiliateFormData(rate: string) {
+    const formData = new FormData();
+    formData.set("name", "受控夥伴");
+    formData.set("code", "partner");
+    formData.set("commissionRateBps", rate);
+    formData.set("isActive", "on");
+    return formData;
+  }
+
+  it.each(["-1", "10001", "1.5", "not-a-number"])(
+    "rejects the out-of-range commission rate %s before persistence",
+    async (rate) => {
+      mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+      await expect(upsertAffiliateAction(affiliateFormData(rate))).rejects.toThrow(
+        "redirect:/affiliates?error=invalid_commission_rate",
+      );
+
+      expect(mocks.affiliateCreate).not.toHaveBeenCalled();
+      expect(mocks.affiliateUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("persists the normalized upper-bound rate for the current vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+    await expect(upsertAffiliateAction(affiliateFormData("10000"))).rejects.toThrow(
+      "redirect:/affiliates",
+    );
+
+    expect(mocks.affiliateCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        code: "PARTNER",
+        commissionRateBps: 10_000,
+      }),
+    });
+  });
+});
+
 describe("upsertLiveAction", () => {
   function allowCurrentVendorLiveReferences() {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
@@ -753,8 +853,10 @@ describe("upsertLiveAction", () => {
 
   it("creates a live only after every relation is verified against the current vendor", async () => {
     allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("cloudflareLiveInputUid", "forged-live-input-uid");
 
-    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/live-1/preview");
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
 
     expect(mocks.productFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", id: { in: ["product-1"] } },
@@ -780,6 +882,7 @@ describe("upsertLiveAction", () => {
         products: { create: [{ productId: "product-1", sortOrder: 1, isPinned: true }] },
       }),
     });
+    expect(mocks.liveCreate.mock.calls[0]?.[0]?.data).not.toHaveProperty("cloudflareLiveInputUid");
   });
 
   it("rejects a product from another vendor before creating a live", async () => {
@@ -805,12 +908,81 @@ describe("upsertLiveAction", () => {
   });
 });
 
+describe("upsertVideoAction", () => {
+  beforeEach(() => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.videoCreate.mockResolvedValue({ id: "video-1" });
+    mocks.videoUpdate.mockResolvedValue({ id: "video-1" });
+  });
+
+  it("creates only an external URL video and ignores forged provider-owned fields", async () => {
+    await expect(upsertVideoAction(videoFormData())).rejects.toThrow("redirect:/videos");
+
+    const data = mocks.videoCreate.mock.calls[0]?.[0]?.data;
+    expect(data).toEqual(expect.objectContaining({
+      vendorId: "vendor-1",
+      sourceType: "url",
+      status: "ready",
+      videoUrl: "https://media.example.test/video.mp4",
+    }));
+    for (const providerOwnedField of [
+      "cloudflareStreamUid",
+      "cloudflareLiveInputUid",
+      "cloudflarePlaybackId",
+      "cloudflareReadyToStream",
+      "liveInputStatus",
+    ]) {
+      expect(data).not.toHaveProperty(providerOwnedField);
+    }
+  });
+
+  it("preserves provider-owned playback URL, mapping, and state when editing a Cloudflare video", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", sourceType: "cloudflare_stream" });
+
+    await expect(upsertVideoAction(videoFormData("video-1"))).rejects.toThrow("redirect:/videos");
+
+    expect(mocks.videoFindFirst).toHaveBeenCalledWith({
+      where: { id: "video-1", vendorId: "vendor-1" },
+      select: { id: true, sourceType: true },
+    });
+    const data = mocks.videoUpdate.mock.calls[0]?.[0]?.data;
+    for (const providerOwnedField of [
+      "sourceType",
+      "videoUrl",
+      "status",
+      "cloudflareStreamUid",
+      "cloudflareLiveInputUid",
+      "cloudflarePlaybackId",
+      "cloudflareReadyToStream",
+      "liveInputStatus",
+    ]) {
+      expect(data).not.toHaveProperty(providerOwnedField);
+    }
+  });
+
+  it("allows an external URL video to change its URL and archive state", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", sourceType: "url" });
+    const formData = videoFormData("video-1");
+    formData.set("status", "archived");
+
+    await expect(upsertVideoAction(formData)).rejects.toThrow("redirect:/videos");
+
+    expect(mocks.videoUpdate).toHaveBeenCalledWith({
+      where: { id: "video-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        videoUrl: "https://media.example.test/video.mp4",
+        status: "archived",
+      }),
+    });
+  });
+});
+
 describe("requestPasswordResetAction", () => {
-  it("allows a request after CSRF validation and preserves the non-production reset preview", async () => {
+  it("allows a request after CSRF validation without exposing the reset token", async () => {
     const formData = passwordResetFormData();
 
     await expect(requestPasswordResetAction(formData)).rejects.toThrow(
-      "redirect:/password-reset/request?updated=sent&preview=https%3A%2F%2Fapp.test%2Fpassword-reset%2Fconfirm%3Ftoken%3Done-time-reset-token",
+      "redirect:/password-reset/request?updated=sent",
     );
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
@@ -822,7 +994,7 @@ describe("requestPasswordResetAction", () => {
     );
     const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
     expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
-    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith({
+    expect(mocks.schedulePasswordResetLink).toHaveBeenCalledWith({
       email: "member@example.com",
       appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023",
       ipAddress: "203.0.113.10",
@@ -837,7 +1009,7 @@ describe("requestPasswordResetAction", () => {
       "redirect:/password-reset/request?error=rate_limited",
     );
 
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(mocks.schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("fails closed without sending email when the rate-limit service is unavailable", async () => {
@@ -847,7 +1019,7 @@ describe("requestPasswordResetAction", () => {
       "redirect:/password-reset/request?error=temporarily_unavailable",
     );
 
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(mocks.schedulePasswordResetLink).not.toHaveBeenCalled();
   });
 });
 
@@ -931,6 +1103,54 @@ describe("verifyMfaAction", () => {
       data: { lastUsedAt: expect.any(Date) },
     });
     expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("falls back when MFA next uses a backslash-prefixed external path", async () => {
+    const formData = mfaVerifyFormData("123456", "/\\evil.example.test");
+
+    await expect(verifyMfaAction(formData)).rejects.toThrow("redirect:/admin/billing/dashboard");
+
+    expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("claims a recovery code with a conditional update before marking the session verified", async () => {
+    const formData = mfaVerifyFormData("recovery-code-1");
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    mocks.verifyRecoveryCode.mockReturnValueOnce(true);
+    mocks.userRecoveryCodeFindMany.mockResolvedValueOnce([
+      { id: "recovery-1", userId: "admin-1", codeHash: "test-hash:recovery-code-1", usedAt: null },
+    ]);
+
+    await expect(verifyMfaAction(formData)).rejects.toThrow("redirect:/admin/billing/dashboard");
+
+    expect(mocks.userRecoveryCodeUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "recovery-1",
+        userId: "admin-1",
+        usedAt: null,
+      },
+      data: { usedAt: expect.any(Date) },
+    });
+    expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a recovery code if the conditional claim has already been consumed", async () => {
+    const formData = mfaVerifyFormData("recovery-code-1");
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    mocks.verifyRecoveryCode.mockReturnValueOnce(true);
+    mocks.userRecoveryCodeFindMany.mockResolvedValueOnce([
+      { id: "recovery-1", userId: "admin-1", codeHash: "test-hash:recovery-code-1", usedAt: null },
+    ]);
+    mocks.userRecoveryCodeUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(verifyMfaAction(formData)).rejects.toThrow(
+      "redirect:/mfa/verify?error=invalid&next=%2Fadmin%2Fbilling%2Fdashboard",
+    );
+
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "mfa_verify_failed",
+    }));
   });
 
   it("does not validate or update MFA state when the attempt limit is exceeded", async () => {
@@ -1170,6 +1390,55 @@ describe("createVendorMemberAction", () => {
     expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith(expect.objectContaining({ email: existingUser.email }));
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "reactivate_vendor_member" }));
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("existing-password-hash");
+  });
+
+  it("checks the last-owner invariant inside a Serializable role-update transaction", async () => {
+    const existingUser = {
+      id: "user-2",
+      email: "member@example.com",
+      name: "Second Owner",
+      status: "active",
+      platformRole: "none",
+    };
+    const existingOwner = {
+      id: "member-2",
+      userId: existingUser.id,
+      role: "owner",
+      status: "active",
+      user: { email: existingUser.email },
+    };
+    mocks.userFindUnique.mockResolvedValueOnce(existingUser);
+    mocks.vendorMemberFindUnique.mockResolvedValueOnce(existingOwner);
+    mocks.vendorMemberCount.mockResolvedValueOnce(0);
+    mocks.transaction.mockImplementationOnce(async (
+      callback: (tx: unknown) => Promise<unknown>,
+      options: unknown,
+    ) => {
+      expect(options).toEqual({ isolationLevel: "Serializable" });
+      return callback({
+        user: { create: mocks.userCreate, update: mocks.userUpdate },
+        vendorMember: {
+          count: mocks.vendorMemberCount,
+          upsert: mocks.vendorMemberUpsert,
+        },
+      });
+    });
+    mocks.userUpdate.mockResolvedValueOnce(existingUser);
+
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow(
+      "redirect:/settings/security?error=last_owner",
+    );
+
+    expect(mocks.vendorMemberCount).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        status: "active",
+        role: "owner",
+        id: { not: "member-2" },
+      },
+    });
+    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
   it("does not let a tenant owner reactivate a globally inactive user", async () => {
@@ -1666,6 +1935,92 @@ describe("upsertInteractionScriptAction", () => {
   );
 });
 
+describe("createPayoutBatchAction", () => {
+  function payoutBatchFormData() {
+    const formData = new FormData();
+    formData.append("settlementIds", "settlement-1");
+    return formData;
+  }
+
+  const eligibleSettlement = {
+    id: "settlement-1",
+    vendorId: "vendor-1",
+    finalPayoutAmountCents: 8_000,
+    vendor: {
+      name: "Vendor One",
+      paymentAccounts: [{
+        mode: "platform",
+        bankAccountEncrypted: null,
+        bankAccountLegacyName: "Vendor One",
+        bankCodeLegacy: "001",
+        bankAccountLegacyNumber: "test-fixture-account",
+      }],
+    },
+  };
+
+  it("atomically claims each eligible settlement before creating its payout item", async () => {
+    mocks.settlementFindMany.mockResolvedValueOnce([eligibleSettlement]);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutBatch: { create: mocks.payoutBatchCreate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+      payoutItem: { create: mocks.payoutItemCreate },
+    }));
+
+    await expect(createPayoutBatchAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "settlement-1",
+        lockedAt: { not: null },
+        payoutBatchId: null,
+        finalPayoutAmountCents: { gt: 0 },
+      },
+      data: {
+        payoutBatchId: "payout-batch-1",
+        batchNumber: "PB-20260725-00001",
+        status: "ready_for_payout",
+        payoutDate: expect.any(Date),
+      },
+    });
+    expect(mocks.payoutItemCreate).toHaveBeenCalledOnce();
+    expect(mocks.payoutItemCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        bankAccountDisplayName: "V＊＊＊＊",
+        bankCodeDisplay: "001",
+        bankAccountDisplayNumber: "****ount",
+        // WP-12 introduced versioned keyring envelopes; the isolated runner
+        // uses the synthetic active key id rather than the retired v1 shape.
+        bankAccountEncrypted: expect.stringMatching(/^v2\.synthetic\./),
+      }),
+    });
+    expect(JSON.stringify(mocks.payoutItemCreate.mock.calls)).not.toContain(
+      "test-fixture-account",
+    );
+    expect(mocks.settlementUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.payoutItemCreate.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("rolls back and reports a conflict when another batch wins the settlement claim", async () => {
+    mocks.settlementFindMany.mockResolvedValueOnce([eligibleSettlement]);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutBatch: { create: mocks.payoutBatchCreate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+      payoutItem: { create: mocks.payoutItemCreate },
+    }));
+
+    await expect(createPayoutBatchAction(payoutBatchFormData())).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=conflict",
+    );
+
+    expect(mocks.payoutItemCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
 describe("updatePayoutItemStatusAction", () => {
   const payoutItem = {
     id: "payout-item-1",
@@ -1723,6 +2078,48 @@ describe("updatePayoutItemStatusAction", () => {
     expect(mocks.payoutBatchUpdate).toHaveBeenCalledWith({
       where: { id: "batch-1" },
       data: { status: "retrying", executedAt: null },
+    });
+  });
+
+  it("marks only the matching vendor and settlement month locked commissions paid with the payout", async () => {
+    const retryingItem = {
+      ...payoutItem,
+      status: "retrying",
+      payoutBatch: { id: "batch-1", status: "retrying", executedAt: null },
+    };
+    mocks.payoutItemFindUnique.mockResolvedValue(retryingItem);
+    mocks.payoutItemUpdate.mockResolvedValue({ ...retryingItem, status: "paid" });
+    mocks.payoutItemFindMany.mockResolvedValue([{ id: "payout-item-1", status: "retrying" }]);
+    mocks.payoutBatchUpdate.mockResolvedValue({ id: "batch-1", status: "completed" });
+    mocks.settlementFindFirst.mockResolvedValue({
+      id: "settlement-1",
+      vendorId: "vendor-1",
+      monthKey: "2026-07",
+      status: "ready_for_payout",
+    });
+    mocks.settlementUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.affiliateCommissionUpdateMany.mockResolvedValue({ count: 2 });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutItem: { update: mocks.payoutItemUpdate, findMany: mocks.payoutItemFindMany },
+      payoutBatch: { update: mocks.payoutBatchUpdate },
+      settlement: { findFirst: mocks.settlementFindFirst, updateMany: mocks.settlementUpdateMany },
+      affiliateCommission: { updateMany: mocks.affiliateCommissionUpdateMany },
+    }));
+
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("paid"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    expect(mocks.settlementFindFirst).toHaveBeenCalledWith({
+      where: { id: "settlement-1", vendorId: "vendor-1" },
+    });
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
+      where: { id: "settlement-1", vendorId: "vendor-1", status: { not: "paid" } },
+      data: { status: "paid", paidAt: expect.any(Date) },
+    });
+    expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", monthKey: "2026-07", status: "locked" },
+      data: { status: "paid", settledAt: expect.any(Date) },
     });
   });
 

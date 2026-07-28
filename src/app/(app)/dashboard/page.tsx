@@ -1,4 +1,5 @@
 import { CheckCircle2, Plus, Radio } from "lucide-react";
+import Link from "next/link";
 import { Card, PageHeader, Badge, ButtonLink } from "@/components/ui";
 import { requireVendor } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
@@ -46,13 +47,15 @@ export default async function DashboardPage() {
     ctaClicks,
     submissions: leadCount,
   });
-  const usagePercent = usageLimit ? Math.round((usageLimit.creditsUsed / usageLimit.creditsLimit) * 100) : 0;
+  const usagePercent = usageLimit && usageLimit.creditsLimit > 0
+    ? Math.round((usageLimit.creditsUsed / usageLimit.creditsLimit) * 100)
+    : 0;
   const checklist = [
-    { label: "建立商品", done: productCount > 0 },
-    { label: "建立直播間", done: liveCount > 0 },
-    { label: "建立互動角色", done: roles > 0 },
-    { label: "建立互動腳本", done: scripts > 0 },
-    { label: "設定追蹤", done: Boolean(vendor.tracking?.googleTagManagerId || vendor.tracking?.facebookPixelId) },
+    { label: "建立商品", href: "/products/new", done: productCount > 0 },
+    { label: "建立直播間", href: "/lives/new", done: liveCount > 0 },
+    { label: "建立互動角色", href: "/interaction-roles/new", done: roles > 0 },
+    { label: "建立互動腳本", href: "/interaction-scripts/new", done: scripts > 0 },
+    { label: "設定追蹤", href: "/settings/tracking", done: Boolean(vendor.tracking?.googleTagManagerId || vendor.tracking?.facebookPixelId) },
   ];
 
   const kpis = [
@@ -113,11 +116,12 @@ export default async function DashboardPage() {
             <h2 className="text-lg font-semibold text-slate-950">近期直播</h2>
             <ButtonLink href="/lives" tone="secondary">查看全部</ButtonLink>
           </div>
-          <div className="grid gap-3">
-            {recentLives.map((live) => (
-              <a key={live.id} href={`/lives/${live.id}/analytics`} className="flex flex-col gap-3 rounded-lg border border-border p-4 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
+          {recentLives.length > 0 ? (
+            <div className="grid gap-3">
+              {recentLives.map((live) => (
+                <Link key={live.id} href={`/lives/${live.id}/analytics`} className="flex flex-col gap-3 rounded-lg border border-border p-4 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
                 <span className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-primary"><Radio size={18} /></span>
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-primary"><Radio size={18} aria-hidden="true" /></span>
                   <span>
                     <span className="block font-semibold text-slate-900">{live.title}</span>
                     <span className="block text-sm text-slate-500">{formatDateTime(live.scheduledAt)}</span>
@@ -127,19 +131,36 @@ export default async function DashboardPage() {
                   <Badge tone="blue">{live.status}</Badge>
                   <Badge tone="green">{live.submissions.length} 名單</Badge>
                 </span>
-              </a>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md bg-slate-50 px-4 py-5 text-sm text-slate-600">
+              <p>目前還沒有直播資料。</p>
+              <Link href="/lives/new" className="mt-2 inline-flex font-semibold text-primary hover:underline">
+                建立第一場直播
+              </Link>
+            </div>
+          )}
         </Card>
 
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">Onboarding checklist</h2>
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             {checklist.map((item) => (
-              <div key={item.label} className="flex items-center gap-2 text-sm">
-                <CheckCircle2 size={18} className={item.done ? "text-emerald-600" : "text-slate-300"} />
-                <span className={item.done ? "text-slate-700" : "text-slate-400"}>{item.label}</span>
-              </div>
+              <Link
+                key={item.label}
+                href={item.href}
+                className="flex min-h-11 items-center gap-2 rounded-md px-2 text-sm hover:bg-slate-50"
+              >
+                <CheckCircle2
+                  size={18}
+                  aria-hidden="true"
+                  className={item.done ? "text-emerald-600" : "text-slate-300"}
+                />
+                <span className={item.done ? "text-slate-700" : "font-medium text-primary"}>{item.label}</span>
+                <span className="sr-only">{item.done ? "已完成" : "尚未完成，前往設定"}</span>
+              </Link>
             ))}
           </div>
         </Card>
@@ -148,35 +169,43 @@ export default async function DashboardPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">即將開播</h2>
-          <div className="grid gap-3">
-            {upcomingLives.map((live) => (
-              <div key={live.id} className="rounded-md border border-border p-3">
-                <p className="font-semibold text-slate-950">{live.title}</p>
-                <p className="mt-1 text-sm text-slate-500">{formatDateTime(live.scheduledAt)}</p>
-                <p className="mt-2 text-sm font-medium text-primary">
-                  即將開播倒數：{formatLiveCountdown(live.scheduledAt, now) ?? "排程時間無效"}
-                </p>
-              </div>
-            ))}
-          </div>
+          {upcomingLives.length > 0 ? (
+            <div className="grid gap-3">
+              {upcomingLives.map((live) => (
+                <div key={live.id} className="rounded-md border border-border p-3">
+                  <p className="font-semibold text-slate-950">{live.title}</p>
+                  <p className="mt-1 text-sm text-slate-500">{formatDateTime(live.scheduledAt)}</p>
+                  <p className="mt-2 text-sm font-medium text-primary">
+                    即將開播倒數：{formatLiveCountdown(live.scheduledAt, now) ?? "排程時間無效"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">目前沒有排定中的直播。</p>
+          )}
         </Card>
 
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">聯盟來源摘要</h2>
-          <div className="grid gap-3">
-            {affiliates.map((affiliate) => (
-              <div key={affiliate.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-                <span>
-                  <b className="block text-slate-950">{affiliate.code}</b>
-                  <span className="text-slate-500">{affiliate.name}</span>
-                </span>
-                <span className="text-right">
-                  <b className="block">{affiliate.clicks.length}</b>
-                  <span className="text-slate-500">點擊</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          {affiliates.length > 0 ? (
+            <div className="grid gap-3">
+              {affiliates.map((affiliate) => (
+                <div key={affiliate.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+                  <span>
+                    <b className="block text-slate-950">{affiliate.code}</b>
+                    <span className="text-slate-500">{affiliate.name}</span>
+                  </span>
+                  <span className="text-right">
+                    <b className="block">{affiliate.clicks.length}</b>
+                    <span className="text-slate-500">點擊</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">尚未建立聯盟來源。</p>
+          )}
         </Card>
 
         <Card>

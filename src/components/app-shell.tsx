@@ -82,10 +82,16 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-white p-4 lg:block">
-        <Link href="/dashboard" className="mb-8 flex items-center gap-3">
+      <a
+        href="#main-content"
+        className="fixed left-4 top-4 z-50 -translate-y-24 rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform focus:translate-y-0"
+      >
+        跳至主要內容
+      </a>
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-border bg-white p-4 lg:flex">
+        <Link href="/dashboard" className="mb-8 flex min-h-11 shrink-0 items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-white">
-            <Tags size={20} />
+            <Tags size={20} aria-hidden="true" />
           </span>
           <span>
             <span className="block text-sm font-bold text-slate-950">CelebrateDeal</span>
@@ -93,18 +99,18 @@ export function AppShell({
           </span>
         </Link>
 
-        <nav className="space-y-6">
+        <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1" aria-label="主要導覽">
           {visibleGroups.map((group) => (
             <div key={group.label}>
-              <p className="mb-2 px-2 text-xs font-semibold uppercase text-slate-400">{group.label}</p>
+              <p className="mb-2 px-2 text-xs font-semibold uppercase text-slate-600">{group.label}</p>
               <div className="grid gap-1">
                 {group.items.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-primary"
+                    className="flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-primary"
                   >
-                    <item.icon size={17} />
+                    <item.icon size={17} aria-hidden="true" />
                     {item.label}
                   </Link>
                 ))}
@@ -113,10 +119,10 @@ export function AppShell({
           ))}
         </nav>
 
-        <form action={logoutAction} className="absolute bottom-4 left-4 right-4">
+        <form action={logoutAction} className="mt-4 shrink-0">
           <CsrfField />
-          <button className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-            <Lock size={16} />
+          <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+            <Lock size={16} aria-hidden="true" />
             登出
           </button>
         </form>
@@ -124,22 +130,22 @@ export function AppShell({
 
       <header className="sticky top-0 z-20 border-b border-border bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="font-bold text-slate-950">CelebrateDeal</Link>
+          <Link href="/dashboard" className="inline-flex min-h-11 items-center font-bold text-slate-950">CelebrateDeal</Link>
           <form action={logoutAction}>
             <CsrfField />
-            <button className="rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-slate-600">登出</button>
+            <button className="min-h-11 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600">登出</button>
           </form>
         </div>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="行動版主要導覽">
           {visibleGroups.flatMap((group) => group.items).map((item) => (
-            <Link key={item.href} href={item.href} className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+            <Link key={item.href} href={item.href} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
               {item.label}
             </Link>
           ))}
-        </div>
+        </nav>
       </header>
 
-      <main className="px-4 py-6 lg:ml-64 lg:px-8">{children}</main>
+      <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-64 lg:px-8">{children}</main>
     </div>
   );
 }

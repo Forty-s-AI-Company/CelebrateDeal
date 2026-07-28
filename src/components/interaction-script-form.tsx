@@ -74,6 +74,11 @@ function messageText(event: TimelineEvent) {
   return event.message ?? event.ctaLabel ?? event.title ?? "";
 }
 
+function initialTimelineEvents(script?: ScriptWithEvents): TimelineEvent[] {
+  if (script?.events.length) return script.events;
+  return timelineTemplates[1]?.events ?? timelineTemplates[0]?.events ?? [];
+}
+
 export function InteractionScriptForm({
   script,
   roles,
@@ -88,7 +93,7 @@ export function InteractionScriptForm({
   csrfToken: string;
   error?: string;
 }) {
-  const initialEvents = useMemo<TimelineEvent[]>(() => (script?.events.length ? script.events : timelineTemplates[1].events), [script]);
+  const initialEvents = useMemo(() => initialTimelineEvents(script), [script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
   const [timeInputs, setTimeInputs] = useState(() => initialEvents.map((event) => secondsToClock(event.triggerSec)));
   const [timeErrors, setTimeErrors] = useState<Record<number, string>>({});
@@ -297,14 +302,14 @@ export function InteractionScriptForm({
               <h2 className="font-semibold text-slate-950">留言清單</h2>
               <p className="text-sm text-slate-500">最新新增的留言會出現在最上方。</p>
             </div>
-            <button type="button" onClick={addEvent} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark">
-              <Plus size={16} />
+            <button type="button" onClick={addEvent} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark">
+              <Plus size={16} aria-hidden="true" />
               新增留言
             </button>
           </div>
 
           <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
-            <div className="grid grid-cols-[112px_64px_1fr_auto] gap-2 border-b border-border bg-white px-4 py-3 text-xs font-bold uppercase text-slate-400">
+            <div className="grid grid-cols-[112px_64px_1fr_auto] gap-2 border-b border-border bg-white px-4 py-3 text-xs font-bold uppercase text-slate-600">
               <span>時間</span>
               <span>角色</span>
               <span>留言內容</span>
@@ -331,6 +336,7 @@ export function InteractionScriptForm({
                         name="triggerSec"
                         value={timeInputs[index] ?? secondsToClock(event.triggerSec)}
                         onChange={(inputEvent) => updateTimeInput(index, inputEvent.target.value)}
+                        aria-label={`第 ${index + 1} 則留言時間`}
                         aria-describedby={timeErrors[index] ? `triggerSec-error-${index}` : undefined}
                         aria-invalid={Boolean(timeErrors[index])}
                         className="h-10 rounded-md border border-border px-2 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
@@ -339,7 +345,13 @@ export function InteractionScriptForm({
                     </div>
                     <div className="relative grid h-10 w-10 place-items-center rounded-full bg-slate-100">
                       {selectedAvatar ? <Image src={selectedAvatar} alt="" width={40} height={40} unoptimized className="h-10 w-10 rounded-full object-cover" /> : null}
-                      <select name="roleId" value={event.roleId ?? selectedRole?.id ?? ""} onChange={(selectEvent) => updateEvent(index, { roleId: selectEvent.target.value || null })} className="absolute inset-0 cursor-pointer opacity-0">
+                      <select
+                        name="roleId"
+                        value={event.roleId ?? selectedRole?.id ?? ""}
+                        onChange={(selectEvent) => updateEvent(index, { roleId: selectEvent.target.value || null })}
+                        aria-label={`第 ${index + 1} 則留言角色`}
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                      >
                         <option value="">不指定</option>
                         {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
                       </select>
@@ -355,6 +367,7 @@ export function InteractionScriptForm({
                         name="message"
                         value={messageText(event)}
                         onChange={(inputEvent) => updateEvent(index, { message: inputEvent.target.value, title: inputEvent.target.value.slice(0, 24) || "留言" })}
+                        aria-label={`第 ${index + 1} 則留言內容`}
                         rows={1}
                         className="min-h-10 w-full resize-y rounded-md border border-border px-3 py-2 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
                         placeholder="輸入留言內容"

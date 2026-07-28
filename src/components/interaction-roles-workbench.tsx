@@ -34,6 +34,7 @@ const avatarGroups = {
     "chat-mint",
   ],
 };
+const defaultAvatarSeed = "host-blue";
 
 function avatarUrl(seed: string) {
   return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
@@ -62,7 +63,7 @@ export function InteractionRolesWorkbench({
     allSeeds.findIndex((seed) => avatarUrl(seed) === selectedRole?.avatarUrl),
   );
   const [avatarIndex, setAvatarIndex] = useState(initialIndex === -1 ? 0 : initialIndex);
-  const selectedAvatar = avatarUrl(allSeeds[avatarIndex] ?? allSeeds[0]);
+  const selectedAvatar = avatarUrl(allSeeds[avatarIndex] ?? allSeeds[0] ?? defaultAvatarSeed);
   const isEditing = Boolean(selectedRole);
 
   function shiftAvatar(direction: -1 | 1) {
@@ -82,8 +83,12 @@ export function InteractionRolesWorkbench({
             <h2 className="font-semibold text-slate-950">使用者清單</h2>
             <p className="text-sm text-slate-500">{roles.length} 個官方互動角色</p>
           </div>
-          <Link href="/interaction-roles/new" className="grid h-9 w-9 place-items-center rounded-md bg-primary text-white shadow-sm hover:bg-primary-dark">
-            <Plus size={17} />
+          <Link
+            href="/interaction-roles/new"
+            aria-label="新增互動角色"
+            className="grid h-11 w-11 place-items-center rounded-md bg-primary text-white shadow-sm hover:bg-primary-dark"
+          >
+            <Plus size={17} aria-hidden="true" />
           </Link>
         </div>
         <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-3">
@@ -94,11 +99,11 @@ export function InteractionRolesWorkbench({
             }`}
           >
             <span className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 text-white">
-              <Plus size={18} />
+              <Plus size={18} aria-hidden="true" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-slate-950">新增使用者</span>
-              <span className="block text-xs text-slate-500">選頭像、輸入暱稱即可</span>
+              <span className="block text-xs text-slate-600">選頭像、輸入暱稱即可</span>
             </span>
           </Link>
           <div className="grid gap-2">
@@ -113,7 +118,7 @@ export function InteractionRolesWorkbench({
                 {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
-                  <span className="block truncate text-xs text-slate-500">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
+                  <span className="block truncate text-xs text-slate-600">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
                 </span>
               </Link>
             ))}
@@ -143,6 +148,7 @@ export function InteractionRolesWorkbench({
                     key={item}
                     type="button"
                     onClick={() => switchGender(item)}
+                    aria-pressed={gender === item}
                     className={`h-9 flex-1 rounded-md text-sm font-semibold transition ${
                       gender === item ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"
                     }`}
@@ -153,12 +159,22 @@ export function InteractionRolesWorkbench({
               </div>
 
               <div className="flex items-center justify-center gap-3">
-                <button type="button" onClick={() => shiftAvatar(-1)} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50">
-                  <ChevronLeft size={18} />
+                <button
+                  type="button"
+                  onClick={() => shiftAvatar(-1)}
+                  aria-label="上一個頭像"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                >
+                  <ChevronLeft size={18} aria-hidden="true" />
                 </button>
                 <Image src={selectedAvatar} alt="目前選取頭像" width={150} height={150} unoptimized className="h-36 w-36 rounded-3xl bg-white p-3 shadow-lg" />
-                <button type="button" onClick={() => shiftAvatar(1)} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50">
-                  <ChevronRight size={18} />
+                <button
+                  type="button"
+                  onClick={() => shiftAvatar(1)}
+                  aria-label="下一個頭像"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                >
+                  <ChevronRight size={18} aria-hidden="true" />
                 </button>
               </div>
 
@@ -170,6 +186,8 @@ export function InteractionRolesWorkbench({
                       key={seed}
                       type="button"
                       onClick={() => setAvatarIndex(index)}
+                      aria-label={`選擇頭像 ${index + 1}`}
+                      aria-pressed={selectedAvatar === url}
                       className={`rounded-xl border bg-white p-1 transition hover:-translate-y-0.5 hover:shadow-sm ${
                         selectedAvatar === url ? "border-blue-500 ring-2 ring-blue-100" : "border-slate-200"
                       }`}
@@ -218,12 +236,12 @@ export function InteractionRolesWorkbench({
                 formAction={deleteInteractionRoleAction}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
               >
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
                 刪除
               </button>
             ) : null}
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark">
-              {selectedRole ? <Save size={16} /> : <Plus size={16} />}
+              {selectedRole ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
               {selectedRole ? "儲存" : "新增"}
             </button>
           </div>
