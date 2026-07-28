@@ -25,6 +25,17 @@ describe("AppShell role navigation", () => {
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 
+  it("hides every finance route from a non-finance member", () => {
+    const links = linksFor("member");
+
+    expect(links).not.toContain("/billing/usage");
+    expect(links).not.toContain("/billing/plans");
+    expect(links).not.toContain("/billing/invoices");
+    expect(links).not.toContain("/billing/settlements");
+    expect(links).not.toContain("/billing/payouts");
+    expect(links).not.toContain("/affiliates/commissions");
+  });
+
   it("shows only platform operations to a platform administrator", () => {
     const links = linksFor(null, true);
 

@@ -29,12 +29,12 @@ const navGroups = [
   {
     label: "用量",
     items: [
-      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard },
-      { href: "/billing/plans", label: "方案", icon: Tags },
-      { href: "/billing/invoices", label: "帳單", icon: ReceiptText },
-      { href: "/billing/settlements", label: "月結", icon: WalletCards },
-      { href: "/billing/payouts", label: "批次出款", icon: Banknote },
-      { href: "/affiliates/commissions", label: "聯盟佣金", icon: Handshake },
+      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true },
+      { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true },
+      { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true },
+      { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
+      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true },
+      { href: "/affiliates/commissions", label: "聯盟佣金", icon: Handshake, financeOnly: true },
       { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
       { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText, adminOnly: true },
       { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
@@ -52,6 +52,7 @@ const navGroups = [
 
 export function navigationForRole(memberRole: string | null, isPlatformAdmin = false) {
   const isManager = memberRole === "owner" || memberRole === "admin";
+  const isFinance = isManager || memberRole === "accountant";
   return navGroups
     .map((group) => ({
       ...group,
@@ -59,6 +60,7 @@ export function navigationForRole(memberRole: string | null, isPlatformAdmin = f
         const adminOnly = "adminOnly" in item && item.adminOnly;
         if (isPlatformAdmin) return adminOnly;
         if (adminOnly) return false;
+        if ("financeOnly" in item && item.financeOnly && !isFinance) return false;
         return !("managerOnly" in item && item.managerOnly) || isManager;
       }),
     }))
