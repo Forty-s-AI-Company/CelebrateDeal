@@ -31,8 +31,14 @@
 
 ## 文件索引
 
+- AI Team canonical workflow：`docs/ai-team/workflow-policy.md`
+- AI Team handoff schema：`docs/ai-team/handoff-schema.md`
+- Planner Prompt：`docs/ai-team/prompts/planner-prompt.md`
+- Executor Prompt：`docs/ai-team/prompts/executor-prompt.md`
 - Lite 架構：`docs/ai-team/ARCHITECTURE.md`
 - 路由規則：`docs/ai-team/ROUTING.md`
 - Goal 協議：`docs/ai-team/GOAL-PROTOCOL.md`
 - 疑難排解：`docs/ai-team/TROUBLESHOOTING.md`
 - 上線與人工／工具阻擋：`docs/launch/`
+
+每個 Planner／Executor 任務結束時必須輸出 `AI_TEAM_HANDOFF`；不得自動開始下一個 WP，也不得聲稱已建立 Codex Desktop Task 或修改 Task 標題。角色或 WP 改變時應建立新 Task；同角色、同 WP 的小範圍續修可留在原 Task。舊 Prompt 與 `workflow-policy.md` 衝突時以後者為準，產品安全規則採較嚴格者。已失效的 Codex CLI、Ollama、heavy MCP orchestration 已不再屬於 canonical 流程（no longer current canonical）。
