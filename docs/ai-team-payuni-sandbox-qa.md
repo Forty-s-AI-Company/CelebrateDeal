@@ -6,7 +6,7 @@ AI Team 的 `delivery-qa` 外部驗收現在會在變更成功合併到 staging 
 2. PayUni 查詢結果與 CelebrateDeal 訂單對帳
 3. 由 CelebrateDeal 財務後台發起 Sandbox 退款、退款狀態回查，以及 `PaymentTransaction=refunded`、單筆 `RefundRecord=processed` 的冪等性驗收
 
-設定位置是 `.ai-team/project.yaml` 的 `external_qa`。實際命令固定為 `npm run qa:payuni:sandbox`，只允許 `PAYUNI_ENV=sandbox`、核准的 staging HTTPS host，以及明確的 QA/退款開關；正式交易不會由 AI Team 自動執行。
+AI Team 的安全規則與測試入口已整理到 `docs/ai-team/testing-playbook.md` 與 `docs/ai-team/security-checklist.md`。實際命令固定為 `npm run qa:payuni:sandbox`，只允許 `PAYUNI_ENV=sandbox`、核准的 staging HTTPS host，以及明確的 QA/退款開關；正式交易不會由 AI Team 自動執行。
 
 首次啟用前，在不提交 Git 的 `.env.local` 補上：
 
