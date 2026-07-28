@@ -22,6 +22,11 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
     try {
       return await db.$transaction(operation, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        // Production intentionally runs with a small serverless connection
+        // pool. Concurrent checkout attempts should queue long enough to
+        // resolve through the inventory invariant, not fail at pool admission.
+        maxWait: 5_000,
+        timeout: 10_000,
       });
     } catch (error) {
       if (!isSerializableConflict(error) || attempt === MAX_SERIALIZABLE_ATTEMPTS) throw error;
