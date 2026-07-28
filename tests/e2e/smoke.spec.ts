@@ -716,19 +716,48 @@ passwordResetTest("password reset request hides account existence and revokes an
   await expect(page).toHaveURL(/\/password-reset\/request\?updated=sent/);
   await expect(page.getByText("如果這個 Email 存在，系統已寄出密碼重設信。")).toBeVisible();
 
+  // The token is also created inside after(). Wait for this exact fixture's
+  // single record instead of racing the generic response or submitting again.
+  await expect.poll(
+    () => db.passwordResetToken.count({ where: { userId: passwordResetUser.id } }),
+    { timeout: 5_000, intervals: [100, 250, 500] },
+  ).toBe(1);
   const resetRecords = await db.passwordResetToken.findMany({
     where: { userId: passwordResetUser.id },
   });
   expect(resetRecords).toHaveLength(1);
   expect(resetRecords[0]?.usedAt).not.toBeNull();
   expect(resetRecords[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
-  expect(await db.auditLog.count({
-    where: {
-      actorLabel: "password_reset_request_failed",
-      action: "password_reset_email_failed",
-      after: { path: ["email"], equals: passwordResetUser.email },
-    },
-  })).toBeGreaterThan(0);
+  const failedAuditWhere = {
+    actorId: passwordResetUser.id,
+    actorLabel: "password_reset_request",
+    action: "password_reset_email_failed",
+    targetType: "PasswordResetToken",
+    targetId: resetRecords[0]!.id,
+    after: { path: ["email"], equals: passwordResetUser.email },
+  };
+
+  // Server Action 會在 generic response 後以 after() 寫入 audit；只輪詢同一筆
+  // 精確契約，最長 5 秒，避免固定 sleep 或錯抓其他測試的 password-reset event。
+  await expect.poll(
+    () => db.auditLog.count({ where: failedAuditWhere }),
+    { timeout: 5_000, intervals: [100, 250, 500] },
+  ).toBe(1);
+
+  const failedAudit = await db.auditLog.findFirstOrThrow({
+    where: failedAuditWhere,
+    select: { actorId: true, actorLabel: true, action: true, targetType: true, targetId: true, after: true },
+  });
+  expect(failedAudit).toMatchObject({
+    actorId: passwordResetUser.id,
+    actorLabel: "password_reset_request",
+    action: "password_reset_email_failed",
+    targetType: "PasswordResetToken",
+    targetId: resetRecords[0]!.id,
+    // auditSnapshot redacts token-related metadata before persistence; the
+    // event's targetId and action retain the verifiable revoke contract.
+    after: { email: passwordResetUser.email, tokenRevoked: "[redacted]" },
+  });
 });
 
 passwordResetTest("security password reset smoke targets only the signed-in user and remains locally isolated", async ({ page, passwordResetUser }) => {

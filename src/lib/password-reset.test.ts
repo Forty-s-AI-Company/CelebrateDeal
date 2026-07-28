@@ -20,7 +20,13 @@ import {
 const createdUserIds: string[] = [];
 
 afterEach(async () => {
-  await getDb().user.deleteMany({ where: { id: { in: createdUserIds.splice(0) } } });
+  const userIds = createdUserIds.splice(0);
+  // AuditLog 沒有 User foreign key；先依 synthetic actor 清除，避免 targeted
+  // disposable DB 測試留下跨案例可見的 password-reset audit rows。
+  if (userIds.length > 0) {
+    await getDb().auditLog.deleteMany({ where: { actorId: { in: userIds } } });
+    await getDb().user.deleteMany({ where: { id: { in: userIds } } });
+  }
   vi.clearAllMocks();
 });
 
@@ -155,7 +161,7 @@ describe("password reset flow", () => {
     })).toBe(1);
   });
 
-  it("revokes a newly created token when email delivery fails", async () => {
+  it("revokes a newly created token and records the failure audit contract when email delivery fails", async () => {
     const user = await getDb().user.create({
       data: {
         email: `reset-email-failure-${Date.now()}@example.test`,
@@ -174,5 +180,36 @@ describe("password reset flow", () => {
     const tokens = await getDb().passwordResetToken.findMany({ where: { userId: user.id } });
     expect(tokens).toHaveLength(1);
     expect(tokens[0]?.usedAt).not.toBeNull();
+
+    const failedAudits = await getDb().auditLog.findMany({
+      where: {
+        actorId: user.id,
+        actorLabel: "password_reset_request",
+        action: "password_reset_email_failed",
+        targetType: "PasswordResetToken",
+        targetId: tokens[0]!.id,
+        after: { path: ["email"], equals: user.email },
+      },
+      select: { actorId: true, actorLabel: true, action: true, targetType: true, targetId: true, after: true },
+    });
+    expect(failedAudits).toHaveLength(1);
+    expect(failedAudits[0]).toMatchObject({
+      actorId: user.id,
+      actorLabel: "password_reset_request",
+      action: "password_reset_email_failed",
+      targetType: "PasswordResetToken",
+      targetId: tokens[0]!.id,
+      // Token-related metadata is deliberately redacted by auditSnapshot.
+      // The target token's usedAt assertion above remains the revoke proof.
+      after: { email: user.email, tokenRevoked: "[redacted]" },
+    });
+
+    // The audit is diagnostic only: it must not persist the reset URL/token or
+    // the provider error supplied by the mocked delivery adapter.
+    const resetUrl = mocks.sendPasswordResetEmail.mock.calls[0]?.[0]?.resetUrl;
+    const serializedAudit = JSON.stringify(failedAudits[0]);
+    expect(serializedAudit).not.toContain("provider failure with sensitive details");
+    expect(resetUrl).toBeTruthy();
+    expect(serializedAudit).not.toContain(resetUrl!);
   });
 });
