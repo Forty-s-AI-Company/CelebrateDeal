@@ -75,6 +75,7 @@ describe("team funnel attribution", () => {
   it("attributes B's promotion to B while retaining A's content and webinar ownership", async () => {
     db.partnerFunnelPage.findFirst.mockResolvedValue({
       id: "page-b", teamId: "team-1", templateVersionId: "version-a", promoterMembershipId: "member-b", contentOwnerMembershipId: "member-a",
+      sharing: { accessMode: "PUBLIC", isEnabled: true, expiresAt: null },
     });
     db.live.findFirst.mockResolvedValue({ seminarOwnerMembershipId: "member-a" });
     db.teamMembership.findMany.mockResolvedValue([
@@ -91,6 +92,20 @@ describe("team funnel attribution", () => {
     expect(attribution).toMatchObject({
       sourcePageId: "page-b", templateVersionId: "version-a", promoterMembershipId: "member-b", leadOwnerMembershipId: "member-b",
       contentOwnerMembershipId: "member-a", leaderMembershipId: "member-a", webinarOwnerMembershipId: "member-a", source: "REFERRAL",
+    });
+    expect(db.teamMembership.findMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        teamId: "team-1",
+        status: "ACTIVE",
+        leftAt: null,
+        vendorMember: {
+          status: "active",
+          deactivatedAt: null,
+          user: { status: "active" },
+        },
+      },
+      select: { id: true, affiliateId: true },
     });
   });
 
@@ -127,5 +142,32 @@ describe("team funnel attribution", () => {
     expect(db.partnerFunnelPage.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId: "vendor-1", liveId: "live-a", slug: "b-page" },
     }));
+  });
+
+  it.each([
+    [null],
+    [{ accessMode: "TOKEN_REQUIRED", isEnabled: true, expiresAt: null }],
+    [{ accessMode: "PUBLIC", isEnabled: false, expiresAt: null }],
+    [{ accessMode: "PUBLIC", isEnabled: true, expiresAt: new Date("2026-07-16T23:59:59Z") }],
+  ])("rejects attribution from an unpublished, disabled, or expired page", async (sharing) => {
+    db.partnerFunnelPage.findFirst.mockResolvedValue({
+      id: "page-b",
+      teamId: "team-1",
+      templateVersionId: "version-a",
+      promoterMembershipId: "member-b",
+      contentOwnerMembershipId: "member-a",
+      sharing,
+    });
+
+    const attribution = await resolveTeamFunnelAttribution({
+      vendorId: "vendor-1",
+      liveId: "live-a",
+      sourcePageSlug: "b-page",
+      referral: null,
+      now: new Date("2026-07-17T00:00:00Z"),
+    });
+
+    expect(attribution).toBeNull();
+    expect(db.live.findFirst).not.toHaveBeenCalled();
   });
 });

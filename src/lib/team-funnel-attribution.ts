@@ -159,6 +159,7 @@ export async function resolveTeamFunnelAttribution(input: {
   liveId: string | null;
   sourcePageSlug: string | null;
   referral: ReferralResolution | null;
+  now?: Date;
 }): Promise<TeamFunnelAttribution | null> {
   if (!input.liveId || !input.sourcePageSlug) return null;
 
@@ -171,9 +172,19 @@ export async function resolveTeamFunnelAttribution(input: {
       templateVersionId: true,
       promoterMembershipId: true,
       contentOwnerMembershipId: true,
+      sharing: { select: { accessMode: true, isEnabled: true, expiresAt: true } },
     },
   });
   if (!page) return null;
+  const now = input.now ?? new Date();
+  if (
+    !page.sharing
+    || page.sharing.accessMode !== "PUBLIC"
+    || !page.sharing.isEnabled
+    || (page.sharing.expiresAt && page.sharing.expiresAt <= now)
+  ) {
+    return null;
+  }
 
   const [live, memberships, relationships] = await Promise.all([
     db.live.findFirst({
@@ -181,7 +192,17 @@ export async function resolveTeamFunnelAttribution(input: {
       select: { seminarOwnerMembershipId: true },
     }),
     db.teamMembership.findMany({
-      where: { vendorId: input.vendorId, teamId: page.teamId, status: "ACTIVE", leftAt: null },
+      where: {
+        vendorId: input.vendorId,
+        teamId: page.teamId,
+        status: "ACTIVE",
+        leftAt: null,
+        vendorMember: {
+          status: "active",
+          deactivatedAt: null,
+          user: { status: "active" },
+        },
+      },
       select: { id: true, affiliateId: true },
     }),
     db.teamMembershipRelationship.findMany({

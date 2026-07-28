@@ -32,6 +32,7 @@ beforeEach(() => {
   db.affiliateClick.create.mockResolvedValue({ id: "click-1" });
   db.partnerFunnelPage.findFirst.mockResolvedValue({
     id: "page-a", teamId: "team-1", templateVersionId: "version-a", promoterMembershipId: "member-a", contentOwnerMembershipId: "member-a",
+    sharing: { accessMode: "PUBLIC", isEnabled: true, expiresAt: null },
   });
   db.teamMembership.findMany.mockResolvedValue([{ id: "member-a", affiliateId: "affiliate-a" }]);
   db.teamMembershipRelationship.findMany.mockResolvedValue([]);
@@ -71,5 +72,25 @@ describe("affiliate click attribution", () => {
     await POST(request({ referralCode: "a-code", ownerId: "foreign-page" }));
 
     expect(db.teamClickAttribution.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a live that is not in a public lifecycle", async () => {
+    db.live.findFirst.mockResolvedValue(null);
+
+    const response = await POST(request({ referralCode: "a-code" }));
+
+    expect(response.status).toBe(404);
+    expect(db.live.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "live-a",
+        vendorId: "vendor-1",
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(db.affiliateClick.create).not.toHaveBeenCalled();
   });
 });

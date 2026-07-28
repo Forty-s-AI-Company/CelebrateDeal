@@ -43,7 +43,14 @@ export async function POST(request: Request) {
 
   if (parsed.data.liveId) {
     const live = await getDb().live.findFirst({
-      where: { id: parsed.data.liveId, vendorId: parsed.data.vendorId },
+      where: {
+        id: parsed.data.liveId,
+        vendorId: parsed.data.vendorId,
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
       select: { id: true },
     });
     if (!live) {
