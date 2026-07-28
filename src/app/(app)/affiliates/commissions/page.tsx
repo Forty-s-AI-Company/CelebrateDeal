@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -11,7 +11,7 @@ function statusTone(status: string) {
 }
 
 export default async function AffiliateCommissionsPage() {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/affiliates/commissions");
   const [commissions, payouts] = await Promise.all([
     getDb().affiliateCommission.findMany({
       where: { vendorId: vendor.id },
