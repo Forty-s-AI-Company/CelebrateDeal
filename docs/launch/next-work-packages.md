@@ -14,7 +14,10 @@
 | WP-12 | 銀行帳戶 key lifecycle remediation | **完成**：versioned key、rotation/recovery、disposable lifecycle 與 synthetic `npm run build` gate 均通過 | candidate 10 evidence complete；不得將結果誤延伸到 WP-13 佣金範圍 | Terra high＋Gemini Deep | 自動 | WP-06 review | — | +0 |
 | WP-13 | Commission NULL source identity／status DB policy | **完成**：canonical key、NULL source fail-closed、五態 status、conditional update 與 disposable legacy fixtures 已有 receipts | final verdict 與 `wp13_*` cleanup；不得誤延伸至 paid 後 reversal | Terra high＋Gemini Deep | 自動 | WP-06 review | — | +0（既有總分不預支） |
 | WP-14 | Paid commission reversal、dispute 與 immutable accounting trail | **COMPLETE**：append-only ledger、opening snapshot、paid reversal／dispute、payout transition、disposable verification與 Fast／Deep 複核均完成 | final verdict、162 targeted tests、migration receipts 與 Fast／Deep evidence；不自動選下一包 | Terra high＋Gemini Fast/Deep | 自動 | WP-13 | — | +0（既有總分不預支） |
-| WP-07 | Security 52 candidates triage | **COMPLETE（第一切片）**：Authentication/MFA 四項已對帳並完成 Gemini Deep evidence-governance PASS；MFA recovery race 仍如實為 `INSUFFICIENT_EVIDENCE` | 不得宣告 52 項完成。若後續另建包，才以 disposable DB 補 MFA recovery concurrent receipt；本包完成後不自動選下一包 | Terra high＋Gemini Deep | 自動 | WP-04 | — | +0（分數不預支） |
+| WP-07 | Security 52 candidates triage | **COMPLETE（第一切片）**：Authentication/MFA 四項已對帳並完成 Gemini Deep evidence-governance PASS；其中 MFA recovery race 已由 WP-17 補為 `MITIGATED_CURRENT_SNAPSHOT` | 不得宣告 52 項完成，也不得外推正式環境；本包完成後不自動選下一包 | Terra high＋Gemini Deep | 自動 | WP-04 | — | +0（分數不預支） |
+| WP-17 | MFA Recovery Code PostgreSQL 併發消耗證據閉環 | **COMPLETE**：兩個 action readers 的真實 PostgreSQL conditional claim 已取得一勝一敗 receipt，schema cleanup PASS | 僅關閉單一 current-snapshot race evidence；不重新開啟 WP-07 或其餘 candidates | Terra high＋Gemini Fast | 自動 | WP-07 | — | +0（分數不預支） |
+| WP-18 | Payout Batch PostgreSQL 併發 claim 證據閉環 | **BLOCKED_BY_TEST_INFRA**：核心 payout race receipt 完整，但 required coverage 被 WP-17 synthetic schema flag 缺漏阻擋 | 先由 Sol 重新規劃 WP-19；完成前不得列為 COMPLETE 或 `MITIGATED_CURRENT_SNAPSHOT` | Terra high＋Gemini Fast | 自動 | WP-17 | 1 | +0（分數不預支） |
+| WP-19 | Coverage synthetic schema flag propagation | **NOT_READY**：closure reconciliation 已完成；coverage 修復尚未開始 | 必須重新由 Sol 規劃單一 30–90 分鐘範圍；不得重用 raw run artifact 宣告完成 | Sol High（規劃） | 自動 | WP-18 closure checkpoint | 1 | +0（分數不預支） |
 | WP-08 | 產品 Browser QA | 在本地安全環境跑主要 journey/a11y/performance | screenshots、trace、git status before/after | AGY fast 或 Playwright | 自動 | WP-02、WP-04 | 3 | +5 |
 | WP-09 | 492 changes 分批驗證（第一切片：AI Team runtime／工具政策） | **COMPLETE**：35 個 runtime／工具政策項目、3 個 UNKNOWN 檔與 1 個 deleted legacy descriptor 均已 manifest；沒有 stage/commit | no-dotenv py_compile、strict-index、secret scan、diff check PASS；Fast QA finding 已由 manifest／ignore evidence 處置 | Terra High＋Gemini Fast | 自動 | WP-04 | — | +0（分數不預支） |
 | WP-10 | 外部商業 Gate | PayUni/Supabase/observability/DNS/legal | manual checklist 與 sandbox receipts | 人工＋Sol 驗收 | 人工 | 前述 packages | 4 | +15 |
@@ -40,3 +43,7 @@
 上方為歷史規劃。Git 工作樹歸零已完成，原先的 bank-account schema/source 與 strict-index 基準已修正並通過驗證；WP-13／WP-14 已作為已驗證 financial-integrity changes 提交，不應再以 frozen 或 pending 身分重啟。
 
 下一個工作包可正常回到 Sol 規劃，從新的產品需求選擇單一 30–90 分鐘範圍；本次沒有遺留 WIP 或人工 blocker。
+
+## WP-19 closure reconciliation checkpoint（2026-07-28）
+
+8 個未提交 path 已有明確 ownership，canonical closure inputs 已 checkpoint；ignored raw coverage artifacts 已外部封存並解除 active 引用。此整理不執行 coverage，也不提升 readiness。WP-18 保持 `BLOCKED_BY_TEST_INFRA`，WP-19 是 `NOT_READY`，下一步只能回到 Sol 重新規劃 WP-19；詳見 `docs/launch/wp19-closure-reconciliation-20260728.md`。

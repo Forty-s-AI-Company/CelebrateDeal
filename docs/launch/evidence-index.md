@@ -99,6 +99,20 @@ Session 摘要只保留 CelebrateDeal、最後 agent message、Goal/Spark 與 qu
 
 此 run 未讀取任何 `.env*` 內容，`npm ci` exit 0；loopback disposable DB probe 因 `celebratedeal_ci` 不存在而 exit 1。後續 gate 全數正確標為 `BLOCKED_BY_TEST_INFRA`。
 
+## WP-18 — Payout Batch PostgreSQL 併發 claim 證據閉環（2026-07-28，BLOCKED_BY_TEST_INFRA）
+
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728192659715/command-receipts.sanitized.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728192659715/schema-cleanup.sanitized.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/command-receipts.sanitized.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/concurrency-outcome.sanitized.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/runner-safety.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/wp17-protected-manifest.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/postflight-wp17-protected-manifest.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/gemini-fast-result.sanitized.json`
+- `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/final-verdict.md`
+
+第二次 disposable runner 的 payout action targeted suite 為 3 files／110 tests PASS，且 core PostgreSQL race receipt 完整；coverage 則因既有 WP-17 DB test 缺少其專用 synthetic schema flag 而失敗。兩次 runner 均 marker cleanup PASS，沒有讀取來源 `.env*`。
+
 ## WP-06 — Candidate migration DB Review（2026-07-28，REWORK_REQUIRED）
 
 - `.ai-team/reports/wp-06-migration-review-20260727163722-a1e8affb/candidate-manifest.json`
@@ -206,6 +220,17 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 
 第二次 runner 的 deterministic gates 全數 PASS；source `.env*` 未讀取，資料只在 loopback disposable `wp07_*` schema，已 marker 驗證後清除。MFA recovery code race 沒有 DB concurrency receipt，刻意維持 `INSUFFICIENT_EVIDENCE`；Gemini Deep 已在使用者互動授權下完成唯讀審查並回傳 `PASS`，故此第一切片最終 `COMPLETE`。
 
+## WP-17 — MFA recovery-code PostgreSQL concurrency（2026-07-28，COMPLETE）
+
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/command-receipts.sanitized.json`
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/concurrency-outcome.sanitized.json`
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/runner-safety.json`
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/schema-cleanup.sanitized.json`
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/gemini-fast-result.sanitized.json`
+- `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/final-verdict.md`
+
+兩個 `verifyMfaAction` readers 在 2 秒 fail-fast barrier 前都讀到同一 synthetic recovery row，隨後由真實 PostgreSQL conditional claim 產生一勝一敗；所有 deterministic gates 與 cleanup 均 PASS。來源 `.env*` 未讀取，沒有正式資料或服務輸入。Gemini Fast wrapper 在模型啟動前 TOOL_BLOCKED，屬 non-blocking QA。
+
 ## Git change batching（2026-07-28）
 
 - 外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-batching-20260728-130341`。
@@ -233,3 +258,9 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - 隔離 DB schema：`wp16_git_zero_20260728_1715`（loopback Docker；未操作正式資料庫或原 `public` schema）。
 - 最終 unit receipt：117 files／937 tests PASS；secret scan、lint、typecheck、strict-index、Prisma validate/generate 與 diff check PASS。
 - 此結案紀錄優先於本文件舊有的 WP-16-GR-01 `NOT_READY` 證據；該證據保留為歷史脈絡。
+
+## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，NOT_READY）
+
+- `docs/launch/wp19-closure-reconciliation-20260728.md`
+
+本索引的 canonical 狀態是：WP-18 保持 `BLOCKED_BY_TEST_INFRA`，WP-19 尚未開始、不得標示為完成。先前 run-scoped coverage receipts 與 closure addendum 屬 ignored raw artifacts，已外部封存並解除 active 引用；它們不得提升 readiness、解除 TB-16，或取代 WP-18 的 final verdict。WP-19 必須在 closure reconciliation 後交由 Sol 重新規劃。

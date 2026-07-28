@@ -80,3 +80,19 @@ Gemini Fast／Deep 在使用者完成互動式登入後的 sanitized 複核皆�
 ## WP-07 — Security 52 candidates triage（Authentication／MFA 第一切片，2026-07-28，COMPLETE）
 
 本切片只對帳四個具名候選，不宣告 52 項全部完成。no-dotenv disposable `wp07_*` snapshot 已通過 Prisma validate/generate/deploy、120 targeted tests、lint、typecheck、secret scan、diff check、source hash comparison 與 marker cleanup。password reset enumeration/token race 及 MFA redirect 為目前快照 mitigation；MFA recovery code race 缺少 DB concurrency receipt，維持 `INSUFFICIENT_EVIDENCE`。必要的 Gemini Deep Reviewer 已以互動式唯讀審查回傳 `PASS`，無未解 Critical／High evidence-governance issue，故此第一切片為 `COMPLETE`。兩個 readiness 分數均維持 **57/100**／**45/100**。
+
+## WP-17 — MFA recovery-code PostgreSQL 併發消耗證據閉環（2026-07-28，COMPLETE）
+
+no-dotenv disposable `wp17_*` snapshot 以兩個 action-level `verifyMfaAction` 呼叫與 read barrier，證明真實 PostgreSQL conditional `updateMany` 只允許一個 recovery-code consumer 成功：一個 success redirect、另一個 `error=invalid` fail closed、session verified 一次、lost-claim audit 一次，且資料庫只留下單一 `usedAt` claim。npm ci、Prisma validate/generate/deploy/status、107 targeted tests、lint、typecheck、strict-index、coverage、secret scan、diff check、source hash 與 marker cleanup 均 PASS。
+
+此 evidence 僅將該單一 race 列為 `MITIGATED_CURRENT_SNAPSHOT`；完整 MFA journey、其餘 security candidates、E2E、部署與外部／人工 gates 均未外推。Gemini Fast wrapper 在模型啟動前 `TOOL_BLOCKED`，為 non-blocking QA。Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**。
+
+## WP-18 — Payout Batch PostgreSQL 併發 claim 證據閉環（2026-07-28，BLOCKED_BY_TEST_INFRA）
+
+no-dotenv disposable `wp18_*` runner 已通過 Prisma validate/generate/deploy/status、110 targeted tests、lint、typecheck、strict-index、marker cleanup、source hash 與 WP-17 protected hash。兩個 action callers 確實同時讀到同一 settlement；以不同 synthetic batch number 進行真實 PostgreSQL transaction claim 後，得到一個正常 redirect、一個 `error=conflict`、恰好一個 batch／item／settlement link，沒有 orphan batch 或 raw DB error。
+
+必要 coverage gate 仍被既有 WP-17 DB test 的專用 synthetic schema flag 缺漏阻擋，並非 payout race regression。故 payout batch race 尚不得標為 `MITIGATED_CURRENT_SNAPSHOT`，兩個 readiness 分數均維持 **57/100**／**45/100**。
+
+## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，NOT_READY）
+
+本次只完成 closure reconciliation，沒有執行 coverage 修復或採用 ignored raw run artifact 作為 canonical evidence。WP-18 仍是 `BLOCKED_BY_TEST_INFRA`，其 payout batch race 尚不得列為 `MITIGATED_CURRENT_SNAPSHOT`。Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**。

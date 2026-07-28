@@ -16,3 +16,7 @@ WP-14 已由使用者完成 AGY 互動式登入並以 `agy models` 驗證；Fast
 WP-07 沒有新增人工帳號、正式 Secret 或正式服務 blocker；Gemini Deep 已由使用者互動式唯讀審查完成並回傳 PASS，無此工作包的未解人工 blocker。
 
 WP-09 沒有新增人工帳號、正式授權、正式 Secret 或正式服務 blocker；舊 `.codex/agents/*.toml` 的治理去留只列為下一個窄範圍決策，不阻擋本切片 manifest 結案。
+
+WP-17 未新增人工 blocker；所有資料為 synthetic loopback disposable schema，未要求正式帳號、授權、Secret 或人工外部操作。
+
+WP-18 未新增人工 blocker；coverage 阻擋是既有 WP-17 DB test 的合成環境旗標缺漏，無須正式帳號、授權或資料庫操作。

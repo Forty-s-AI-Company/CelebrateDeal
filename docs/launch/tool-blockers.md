@@ -24,3 +24,9 @@ WP-14 disposable runner 與獨立 Fast／Deep 複核均完成；TB-11 不再阻�
 | TB-12 | Gemini Fast WP-05 | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-05-vendor-member-actions-20260728054000-001/gemini-fast-result.sanitized.json`：wrapper 在本機 Prompt 參數驗證即停止，未啟動 AGY/Gemini；依 WP 規則不重試 | deterministic targeted tests、architecture gate、lint、typecheck、diff check |
 
 | TB-13 | Gemini Deep Reviewer（WP-07） | RESOLVED | 三次 headless wrapper 歷史嘗試均無模型輸出；使用者後以互動式唯讀 Gemini Deep 審查、只核准精確 read-only Bash command，成功回傳 `PASS`，無未解 Critical／High evidence-governance issue；證據見 `wp-07-auth-mfa-triage-20260728060121-511/gemini-deep-interactive-review.sanitized.json` | 無 |
+
+| TB-15 | Gemini Fast WP-17 wrapper | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-17-mfa-recovery-concurrency-20260728184630752/gemini-fast-result.sanitized.json`：`Invoke-AgyFast.ps1` 在 AGY/Gemini 啟動前遇到本機 `ProcessStartInfo.ArgumentList` null 相容性錯誤；依 WP 規則不重試 | WP-17 deterministic PostgreSQL receipts 與主 Codex 驗收 |
+
+| TB-16 | WP-18 coverage cross-WP DB test environment | BLOCKED_BY_TEST_INFRA | WP-18 canonical final verdict：完整 coverage 載入既有 WP-17 DB test 時，缺少其專用 `WP17_DISPOSABLE_SCHEMA` synthetic flag 而在 `beforeAll` 停止；core payout race 並非 regression。先前 WP-19 raw receipts 已解除 active 引用，不能作為解除 blocker 的依據。 | Sol 必須先重新規劃窄範圍 WP-19，明確隔離 schema owner flag；在新的 canonical receipt 前不得解除 TB-16 |
+
+| TB-17 | Gemini Fast WP-18 wrapper | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/gemini-fast-result.sanitized.json`：wrapper 在模型啟動前出現本機 null ArgumentList 相容性錯誤 | 主 Codex deterministic receipts |
