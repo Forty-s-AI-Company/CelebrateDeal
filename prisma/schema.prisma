@@ -611,6 +611,7 @@ model Settlement {
   payoutItems PayoutItem[]
 
   @@unique([vendorId, monthKey])
+  @@unique([vendorId, id])
   @@index([status, monthKey])
 }
 
@@ -651,7 +652,7 @@ model PayoutItem {
 
   payoutBatch PayoutBatch @relation(fields: [payoutBatchId], references: [id], onDelete: Cascade)
   vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  settlement  Settlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  settlement  Settlement? @relation(fields: [vendorId, settlementId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([payoutBatchId, status])
   @@index([vendorId, createdAt])
@@ -772,7 +773,7 @@ model RefundRecord {
   updatedAt              DateTime @updatedAt
 
   vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)
 
   @@index([vendorId, monthKey])
   @@index([paymentTransactionId, processedAt])
