@@ -40,7 +40,7 @@ import { decryptSensitiveValue } from "./sensitive-data";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-cloudflare-ops");
+  vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-cloudflare-ops-32-bytes");
   mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1" });
   mocks.videoFindFirst.mockResolvedValue(null);
   mocks.liveFindFirst.mockResolvedValue(null);
