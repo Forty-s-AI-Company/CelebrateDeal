@@ -55,6 +55,11 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
+import {
+  createVendorMemberAction as createVendorMemberActionImpl,
+  deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
+  resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
+} from "./actions/vendor-member-actions";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -690,11 +695,20 @@ export async function sendPasswordResetSmokeAction(formData: FormData) {
   redirect(sent ? `${destination}?updated=password_reset_smoke` : `${destination}?error=password_reset_smoke`);
 }
 
-export {
-  createVendorMemberAction,
-  deactivateVendorMemberAction,
-  resendVendorMemberInvitationAction,
-} from "./actions/vendor-member-actions";
+// A file-level `use server` module must expose direct async function exports.
+// Wrapping the isolated vendor-member actions keeps their public import path
+// stable while allowing Next.js to register each root action at build time.
+export async function createVendorMemberAction(formData: FormData) {
+  return createVendorMemberActionImpl(formData);
+}
+
+export async function deactivateVendorMemberAction(formData: FormData) {
+  return deactivateVendorMemberActionImpl(formData);
+}
+
+export async function resendVendorMemberInvitationAction(formData: FormData) {
+  return resendVendorMemberInvitationActionImpl(formData);
+}
 
 export async function revokeOtherSessionsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
