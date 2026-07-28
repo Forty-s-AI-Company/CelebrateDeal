@@ -16,7 +16,8 @@ function bearerToken(request: Request) {
   const parts = header.trim().split(/\s+/);
   if (parts.length !== 2) return null;
 
-  const [scheme, token] = parts;
+  const scheme = parts[0]!;
+  const token = parts[1]!;
   return scheme.toLowerCase() === "bearer" && token ? token : null;
 }
 
