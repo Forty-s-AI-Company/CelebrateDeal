@@ -12,66 +12,90 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   const event = await db.webhookEvent.findUnique({ where: { id: eventId } });
   if (!event) return { status: "missing" as const };
   if (event.retryCount >= event.maxRetries) {
-    await db.webhookEvent.update({ where: { id: event.id }, data: { status: "exhausted", nextRetryAt: null } });
+    const exhausted = await db.webhookEvent.updateMany({
+      where: { id: event.id, status: "failed", retryCount: event.retryCount },
+      data: { status: "exhausted", nextRetryAt: null },
+    });
+    if (exhausted.count !== 1) return { status: "claimed_elsewhere" as const, event };
     return { status: "exhausted" as const, event };
   }
 
+  const claimedRetryCount = event.retryCount + 1;
+  const claimed = await db.webhookEvent.updateMany({
+    where: {
+      id: event.id,
+      status: "failed",
+      retryCount: event.retryCount,
+    },
+    data: {
+      status: "retrying",
+      retryCount: { increment: 1 },
+      nextRetryAt: null,
+    },
+  });
+  if (claimed.count !== 1) return { status: "claimed_elsewhere" as const, event };
+
+  const claimedEvent = {
+    ...event,
+    status: "retrying",
+    retryCount: claimedRetryCount,
+    nextRetryAt: null,
+  };
   const eventPayload = event.payload as { normalized?: unknown };
   const parsed = PaymentWebhookPayload.safeParse(eventPayload.normalized ?? event.payload);
   if (!parsed.success) {
-    const updatedRetryCount = event.retryCount + 1;
-    const status = updatedRetryCount >= event.maxRetries ? "exhausted" : "failed";
-    await db.webhookEvent.update({
-      where: { id: event.id },
+    const status = claimedRetryCount >= event.maxRetries ? "exhausted" : "failed";
+    const finalized = await db.webhookEvent.updateMany({
+      where: { id: event.id, status: "retrying", retryCount: claimedRetryCount },
       data: {
         status,
         errorMessage: "Stored payload is invalid",
-        retryCount: { increment: 1 },
         nextRetryAt: status === "exhausted" ? null : nextRetryDate(),
       },
     });
+    if (finalized.count !== 1) return { status: "claimed_elsewhere" as const, event: claimedEvent };
     return { status, event };
   }
 
-  await db.webhookEvent.update({ where: { id: event.id }, data: { status: "retrying" } });
-
   try {
-    const result = await processPaymentWebhook(parsed.data, event);
-    await db.webhookEvent.update({ where: { id: event.id }, data: { status: "processed", nextRetryAt: null, errorMessage: null } });
+    const result = await processPaymentWebhook(parsed.data, claimedEvent);
+    await db.webhookEvent.updateMany({
+      where: { id: event.id, status: "processed", retryCount: claimedRetryCount },
+      data: { nextRetryAt: null, errorMessage: null },
+    });
     await writeAuditLog({
       vendorId: result.vendor.id,
       actorLabel,
       action: "retry_webhook_event",
       targetType: "WebhookEvent",
       targetId: event.id,
-      before: auditSnapshot(event),
+      before: auditSnapshot(claimedEvent),
       after: auditSnapshot(result),
     });
-    return { status: "processed" as const, event, result };
+    return { status: "processed" as const, event: claimedEvent, result };
   } catch (error) {
-    const updatedRetryCount = event.retryCount + 1;
-    const status = updatedRetryCount >= event.maxRetries ? "exhausted" : "failed";
+    const status = claimedRetryCount >= event.maxRetries ? "exhausted" : "failed";
     const errorCode = classifyPaymentWebhookFailure(error);
     const message = paymentWebhookFailureMessage(errorCode);
-    await db.webhookEvent.update({
-      where: { id: event.id },
+    const finalized = await db.webhookEvent.updateMany({
+      where: { id: event.id, status: "retrying", retryCount: claimedRetryCount },
       data: {
         status,
         errorMessage: message,
-        retryCount: { increment: 1 },
         nextRetryAt: status === "exhausted" ? null : nextRetryDate(),
       },
     });
+    if (finalized.count !== 1) return { status: "claimed_elsewhere" as const, event: claimedEvent };
     await writeAuditLog({
       vendorId: event.vendorId,
       actorLabel,
       action: status === "exhausted" ? "webhook_retry_exhausted" : "webhook_retry_failed",
       targetType: "WebhookEvent",
       targetId: event.id,
-      before: auditSnapshot(event),
+      before: auditSnapshot(claimedEvent),
       after: auditSnapshot({ errorCode, status }),
     });
-    return { status, event, error: message, errorCode };
+    return { status, event: claimedEvent, error: message, errorCode };
   }
 }
 
@@ -89,11 +113,6 @@ export async function processDueWebhookRetries(limit = 20) {
 
   const results = [];
   for (const event of events) {
-    if (event.retryCount >= event.maxRetries) {
-      await db.webhookEvent.update({ where: { id: event.id }, data: { status: "exhausted", nextRetryAt: null } });
-      results.push({ eventId: event.id, status: "exhausted" });
-      continue;
-    }
     const result = await retryWebhookEvent(event.id);
     results.push({ eventId: event.id, status: result.status });
   }
