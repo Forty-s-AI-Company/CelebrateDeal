@@ -49,7 +49,12 @@ export default async function AdminBillingWebhooksPage() {
         <div className="border-b border-border px-5 py-4">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-950"><Webhook size={18} />事件列表</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="付款 Webhook 事件表格，可水平捲動"
+        >
           <table className="w-full min-w-[1040px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>

@@ -1,6 +1,5 @@
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { redirect } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
@@ -16,19 +15,15 @@ function queryValue(value: string | string[] | undefined) {
 }
 
 export default async function BillingPlansPage({ searchParams = Promise.resolve({}) }: BillingPlansPageProps = {}) {
-  const auth = await requireAuth();
-  if (!auth.vendor) {
-    redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/login?error=no_vendor");
-  }
-
-  const canManageBilling = auth.member?.status === "active" && auth.member.role === "owner";
+  const { vendor, member } = await requireVendorFinance("/billing/plans");
+  const canManageBilling = member.role === "owner";
   const [plans, currentSubscription, csrfToken, query] = await Promise.all([
     getDb().billingPlan.findMany({
       where: { isActive: true },
       orderBy: { monthlyPriceCents: "asc" },
     }),
     getDb().vendorSubscription.findFirst({
-      where: { vendorId: auth.vendor.id, status: "active" },
+      where: { vendorId: vendor.id, status: "active" },
       include: { plan: true },
       orderBy: { startedAt: "desc" },
     }),

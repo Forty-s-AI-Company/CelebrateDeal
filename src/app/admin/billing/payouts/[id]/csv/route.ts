@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { resolveStoredBankAccount } from "@/lib/bank-account";
 
 function csvCell(value: string | number | null | undefined) {
   const raw = String(value ?? "");
@@ -22,16 +23,25 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const header = ["批次編號", "商家", "月結月份", "銀行代碼", "銀行帳號", "戶名", "出款金額", "狀態"];
-  const rows = batch.items.map((item) => [
-    batch.batchNumber,
-    item.vendor.name,
-    item.settlement?.monthKey ?? "",
-    item.bankCode,
-    item.bankAccountNumber,
-    item.bankAccountName,
-    item.payoutAmountCents / 100,
-    item.status,
-  ]);
+  const rows = batch.items.map((item) => {
+    const bankAccount = resolveStoredBankAccount({
+      vendorId: item.vendorId,
+      bankAccountEncrypted: item.bankAccountEncrypted,
+      legacyAccountName: item.bankAccountDisplayName,
+      legacyBankCode: item.bankCodeDisplay,
+      legacyAccountNumber: item.bankAccountDisplayNumber,
+    });
+    return [
+      batch.batchNumber,
+      item.vendor.name,
+      item.settlement?.monthKey ?? "",
+      bankAccount.bankCode,
+      bankAccount.accountNumber,
+      bankAccount.accountName,
+      item.payoutAmountCents / 100,
+      item.status,
+    ];
+  });
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
   const safeFilename = batch.batchNumber.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "payout";
 

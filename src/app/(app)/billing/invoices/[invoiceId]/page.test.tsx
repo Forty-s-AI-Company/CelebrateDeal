@@ -2,14 +2,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendor: vi.fn(),
+  requireVendorFinance: vi.fn(),
   invoiceFindFirst: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("not-found");
   }),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendor: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({ requireVendorFinance: mocks.requireVendorFinance }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ invoice: { findFirst: mocks.invoiceFindFirst } }),
 }));
@@ -40,7 +40,9 @@ const invoice = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendor.mockResolvedValue({ id: "vendor-current", name: "賀成交測試商店" });
+  mocks.requireVendorFinance.mockResolvedValue({
+    vendor: { id: "vendor-current", name: "賀成交測試商店" },
+  });
   mocks.invoiceFindFirst.mockResolvedValue(invoice);
 });
 
@@ -50,7 +52,7 @@ describe("/billing/invoices/[invoiceId] route", () => {
       params: Promise.resolve({ invoiceId: invoice.id }),
     }));
 
-    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/billing/invoices");
     expect(mocks.invoiceFindFirst).toHaveBeenCalledWith({
       where: { id: invoice.id, vendorId: "vendor-current" },
     });

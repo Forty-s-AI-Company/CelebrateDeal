@@ -138,6 +138,20 @@ describe("successful checkout response", () => {
       externalRequired: true,
     });
   });
+
+  it("only starts checkout for an active product owned by the requested vendor", async () => {
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(db.product.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "product-1",
+        vendorId: "vendor-1",
+        isActive: true,
+      },
+      include: { vendor: true },
+    });
+  });
 });
 
 describe("checkout affiliate click attribution", () => {

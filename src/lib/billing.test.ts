@@ -12,7 +12,7 @@ const dependencies = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: () => dependencies.db }));
 
-import { calculateSettlement } from "@/lib/billing";
+import { calculateSettlement, invoiceNumber, monthRange } from "@/lib/billing";
 
 const subscription = {
   paymentMode: "platform",
@@ -56,6 +56,41 @@ beforeEach(() => {
   dependencies.db.refundRecord.aggregate.mockResolvedValue(processedRefund(0));
   dependencies.db.affiliateCommission.aggregate.mockResolvedValue({
     _sum: { commissionAmountCents: 0 },
+  });
+});
+
+describe("monthRange", () => {
+  it("builds a UTC month window from a valid key", () => {
+    expect(monthRange("2026-07")).toEqual({
+      start: new Date("2026-07-01T00:00:00.000Z"),
+      end: new Date("2026-08-01T00:00:00.000Z"),
+    });
+  });
+
+  it("falls back safely when the key does not contain numeric parts", () => {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth();
+
+    expect(monthRange("not-a-month")).toEqual({
+      start: new Date(Date.UTC(currentYear, currentMonth, 1)),
+      end: new Date(Date.UTC(currentYear, currentMonth + 1, 1)),
+    });
+  });
+});
+
+describe("invoiceNumber", () => {
+  it("keeps invoices unique when vendor slugs share the same first twelve characters", () => {
+    const first = invoiceNumber("celebrate-deal-alpha", "2026-07", "vendor-alpha");
+    const second = invoiceNumber("celebrate-deal-beta", "2026-07", "vendor-beta");
+
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/^INV-202607-CELEBRATE-DE-[A-F0-9]{8}$/);
+  });
+
+  it("is stable for the same vendor and month", () => {
+    expect(invoiceNumber("celebrate-deal", "2026-07", "vendor-1")).toBe(
+      invoiceNumber("celebrate-deal", "2026-07", "vendor-1"),
+    );
   });
 });
 

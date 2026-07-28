@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
-  requireVendorOwner: vi.fn(),
+  requireVendorOwnerFinance: vi.fn(),
   requestAuditMeta: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
-vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
+vi.mock("@/lib/auth", () => ({ requireVendorOwnerFinance: mocks.requireVendorOwnerFinance }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   requestAuditMeta: mocks.requestAuditMeta,
@@ -70,7 +70,7 @@ function formData() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
-  mocks.requireVendorOwner.mockResolvedValue({
+  mocks.requireVendorOwnerFinance.mockResolvedValue({
     vendor: { id: "vendor-current" },
     member: { id: "member-owner", role: "owner" },
   });
@@ -100,7 +100,7 @@ describe("selectBillingPlanAction", () => {
     await expect(selectBillingPlanAction(data)).rejects.toThrow("redirect:/billing/plans?status=changed");
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(data);
-    expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorOwnerFinance).toHaveBeenCalledExactlyOnceWith("/billing/plans");
     expect(mocks.billingPlanFindFirst).toHaveBeenCalledWith({
       where: { id: plan.id, isActive: true },
     });
@@ -169,7 +169,7 @@ describe("selectBillingPlanAction", () => {
   });
 
   it("does not access billing data when owner authorization fails", async () => {
-    mocks.requireVendorOwner.mockRejectedValue(new Error("redirect:/settings/security?error=owner_required"));
+    mocks.requireVendorOwnerFinance.mockRejectedValue(new Error("redirect:/settings/security?error=owner_required"));
 
     await expect(selectBillingPlanAction(formData())).rejects.toThrow("owner_required");
 

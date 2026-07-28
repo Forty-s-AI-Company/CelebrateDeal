@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   subscriptionFindFirst: vi.fn(),
-  requireAuth: vi.fn(),
+  requireVendorFinance: vi.fn(),
   getCsrfToken: vi.fn(),
 }));
 
@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({
     vendorSubscription: { findFirst: mocks.subscriptionFindFirst },
   }),
 }));
-vi.mock("@/lib/auth", () => ({ requireAuth: mocks.requireAuth }));
+vi.mock("@/lib/auth", () => ({ requireVendorFinance: mocks.requireVendorFinance }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 
 import BillingPlansPage from "./page";
@@ -65,10 +65,9 @@ beforeEach(() => {
   );
   mocks.subscriptionFindFirst.mockResolvedValue(null);
   mocks.getCsrfToken.mockResolvedValue("csrf-test-token");
-  mocks.requireAuth.mockResolvedValue({
+  mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-current" },
     member: { id: "member-owner", role: "owner", status: "active" },
-    isPlatformAdmin: false,
   });
 });
 
@@ -119,10 +118,9 @@ describe("/billing/plans route", () => {
   });
 
   it("allows non-owners to view prices but not change the subscription", async () => {
-    mocks.requireAuth.mockResolvedValue({
+    mocks.requireVendorFinance.mockResolvedValue({
       vendor: { id: "vendor-current" },
-      member: { id: "member-viewer", role: "viewer", status: "active" },
-      isPlatformAdmin: false,
+      member: { id: "member-accountant", role: "accountant", status: "active" },
     });
 
     const html = renderToStaticMarkup(await BillingPlansPage());

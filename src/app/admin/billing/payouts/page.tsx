@@ -4,6 +4,7 @@ import { markPayoutBatchExportedAction, updatePayoutItemStatusAction } from "@/a
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
+import { maskBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -93,7 +94,13 @@ export default async function AdminBillingPayoutsPage({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {batch.items.map((item) => (
+                    {batch.items.map((item) => {
+                      const bankAccount = maskBankAccount({
+                        accountName: item.bankAccountDisplayName,
+                        bankCode: item.bankCodeDisplay,
+                        accountNumber: item.bankAccountDisplayNumber,
+                      });
+                      return (
                       <tr key={item.id} className="align-top hover:bg-slate-50/70">
                         <td className="px-5 py-4">
                           <p className="font-semibold text-slate-950">{item.vendor.name}</p>
@@ -101,9 +108,9 @@ export default async function AdminBillingPayoutsPage({
                         </td>
                         <td className="px-5 py-4">
                           <Landmark className="mr-2 inline text-slate-400" size={16} />
-                          {item.bankCode} / {item.bankAccountNumber}
+                          {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
-                        <td className="px-5 py-4">{item.bankAccountName}</td>
+                        <td className="px-5 py-4">{bankAccount.accountName}</td>
                         <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(item.payoutAmountCents)}</td>
                         <td className="px-5 py-4">
                           <Badge tone={statusTone(item.status)}>{item.status}</Badge>
@@ -140,7 +147,8 @@ export default async function AdminBillingPayoutsPage({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

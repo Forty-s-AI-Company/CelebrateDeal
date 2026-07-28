@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendor: vi.fn(),
+  requireVendorFinance: vi.fn(),
   findUnique: vi.fn(),
   usageRecordFindMany: vi.fn(),
   subscriptionFindFirst: vi.fn(),
@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   refundRecordAggregate: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendor: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({ requireVendorFinance: mocks.requireVendorFinance }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     vendorUsageLimit: { findUnique: mocks.findUnique },
@@ -70,7 +70,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-07-18T12:00:00.000Z"));
   vi.clearAllMocks();
-  mocks.requireVendor.mockResolvedValue(currentVendor);
+  mocks.requireVendorFinance.mockResolvedValue({ vendor: currentVendor });
   mocks.findUnique.mockResolvedValue(null);
   mocks.usageRecordFindMany.mockImplementation(async ({ where }) => {
     if (where.monthKey === "2026-07") return [currentMonthRecord];
@@ -106,7 +106,7 @@ describe("/billing/usage route", () => {
   it("queries the current vendor's completed transactions in the current month's half-open interval", async () => {
     await BillingUsagePage();
 
-    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/billing/usage");
     expect(mocks.transactionFindMany).toHaveBeenCalledWith({
       where: {
         vendorId: currentVendor.id,

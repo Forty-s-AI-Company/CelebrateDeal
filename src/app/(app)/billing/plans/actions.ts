@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
-import { requireVendorOwner } from "@/lib/auth";
+import { requireVendorOwnerFinance } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
@@ -25,7 +25,7 @@ function isSerializationConflict(error: unknown) {
 
 export async function selectBillingPlanAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor, member } = await requireVendorOwner();
+  const { vendor, member } = await requireVendorOwnerFinance("/billing/plans");
   const planId = formText(formData, "planId");
 
   if (!planId || planId.length > 64) {

@@ -1,5 +1,5 @@
 import { Card, PageHeader, Badge } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { monthRange } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -21,7 +21,7 @@ function UsageBar({ label, used, limit, unit }: { label: string; used: number; l
 }
 
 export default async function BillingUsagePage() {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/billing/usage");
   const monthKey = new Date().toISOString().slice(0, 7);
   const { start, end } = monthRange(monthKey);
   const [limit, records, currentMonthRecords, subscription, transactions, refundPlatformFeeTotal] = await Promise.all([

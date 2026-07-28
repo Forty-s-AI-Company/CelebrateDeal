@@ -100,8 +100,8 @@ export async function POST(request: Request) {
   } catch (error) {
     const errorCode = classifyPaymentWebhookFailure(error);
     const message = paymentWebhookFailureMessage(errorCode);
-    await db.webhookEvent.update({
-      where: { id: event.id },
+    await db.webhookEvent.updateMany({
+      where: { id: event.id, status: { not: "processed" } },
       data: {
         status: "failed",
         errorMessage: message,

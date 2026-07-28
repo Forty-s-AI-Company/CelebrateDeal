@@ -1,13 +1,13 @@
 import { Download, ReceiptText } from "lucide-react";
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { invoiceStatusLabel, invoiceStatusTone } from "@/lib/invoice-presentation";
 
 export default async function BillingInvoicesPage() {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/billing/invoices");
   const invoices = await getDb().invoice.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],

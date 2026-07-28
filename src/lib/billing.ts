@@ -1,12 +1,17 @@
 import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { getDb } from "@/lib/db";
 
 type SubscriptionWithPlan = VendorSubscription & { plan: BillingPlan };
 
 export function monthRange(monthKey: string) {
   const [yearValue, monthValue] = monthKey.split("-").map((part) => Number.parseInt(part, 10));
-  const year = Number.isFinite(yearValue) ? yearValue : new Date().getFullYear();
-  const month = Number.isFinite(monthValue) ? monthValue : new Date().getMonth() + 1;
+  const year = yearValue !== undefined && Number.isFinite(yearValue)
+    ? yearValue
+    : new Date().getFullYear();
+  const month = monthValue !== undefined && Number.isFinite(monthValue)
+    ? monthValue
+    : new Date().getMonth() + 1;
   const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
   const end = new Date(Date.UTC(year, month, 1, 0, 0, 0));
 
@@ -141,8 +146,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   };
 }
 
-export function invoiceNumber(vendorSlug: string, monthKey: string) {
-  return `INV-${monthKey.replace("-", "")}-${vendorSlug.toUpperCase().slice(0, 12)}`;
+export function invoiceNumber(vendorSlug: string, monthKey: string, vendorId: string) {
+  const vendorKey = createHash("sha256").update(vendorId).digest("hex").slice(0, 8).toUpperCase();
+  return `INV-${monthKey.replace("-", "")}-${vendorSlug.toUpperCase().slice(0, 12)}-${vendorKey}`;
 }
 
 export function payoutBatchNumber(date = new Date()) {

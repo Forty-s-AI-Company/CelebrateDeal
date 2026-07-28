@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   payUniNormalizePayload: vi.fn(),
   webhookEventFindUnique: vi.fn(),
   webhookEventCreate: vi.fn(),
-  webhookEventUpdate: vi.fn(),
+  webhookEventUpdateMany: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
@@ -63,7 +63,7 @@ beforeEach(() => {
     webhookEvent: {
       findUnique: mocks.webhookEventFindUnique,
       create: mocks.webhookEventCreate,
-      update: mocks.webhookEventUpdate,
+      updateMany: mocks.webhookEventUpdateMany,
     },
   });
 });
@@ -193,7 +193,7 @@ describe("payment webhook provider selection", () => {
     mocks.demoNormalizePayload.mockResolvedValue({ payload: normalizedPayload, rawPayload: {} });
     mocks.webhookEventFindUnique.mockResolvedValue(null);
     mocks.webhookEventCreate.mockResolvedValue(event);
-    mocks.processPaymentWebhook.mockRejectedValue(new Error("postgresql://user:password@private-db.example.test/app"));
+    mocks.processPaymentWebhook.mockRejectedValue(new Error("postgresql://user:password@private-db.example.test/app")); // secret-scan: allow-test-fixture
 
     const response = await POST(webhookRequest("?provider=demo"));
     const payload = await response.json();
@@ -204,15 +204,15 @@ describe("payment webhook provider selection", () => {
       code: "processing_failed",
       eventId: event.id,
     });
-    expect(mocks.webhookEventUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: event.id },
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: event.id, status: { not: "processed" } },
       data: expect.objectContaining({
         errorMessage: "Payment webhook processing failed (processing_failed).",
       }),
     }));
     expect(JSON.stringify([
       payload,
-      mocks.webhookEventUpdate.mock.calls,
+      mocks.webhookEventUpdateMany.mock.calls,
       mocks.writeAuditLog.mock.calls,
     ])).not.toContain("private-db.example.test");
   });

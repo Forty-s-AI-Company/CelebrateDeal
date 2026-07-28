@@ -1,5 +1,5 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
-import { requireVendorContext } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 function csvCell(value: string | number | null | undefined) {
@@ -9,7 +9,7 @@ function csvCell(value: string | number | null | undefined) {
 }
 
 export async function GET() {
-  const { auth, vendor } = await requireVendorContext();
+  const { user, member, vendor } = await requireVendorFinance("/billing/invoices");
   const invoices = await getDb().invoice.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],
@@ -45,8 +45,8 @@ export async function GET() {
 
   await writeAuditLog({
     vendorId: vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
+    actorId: user.id,
+    actorLabel: member.role,
     action: "download_vendor_invoice_csv",
     targetType: "InvoiceExport",
     after: auditSnapshot({ invoiceCount: invoices.length }),

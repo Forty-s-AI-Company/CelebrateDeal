@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, ReceiptText } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { invoiceStatusLabel, invoiceStatusTone } from "@/lib/invoice-presentation";
@@ -13,7 +13,7 @@ type InvoiceDetailPageProps = {
 };
 
 export default async function InvoiceDetailPage({ params }: InvoiceDetailPageProps) {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/billing/invoices");
   const { invoiceId } = await params;
   if (!invoiceId || invoiceId.length > 64) notFound();
 

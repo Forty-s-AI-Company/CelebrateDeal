@@ -1,6 +1,6 @@
 import { LockKeyhole, WalletCards } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -12,7 +12,7 @@ function statusTone(status: string) {
 }
 
 export default async function BillingSettlementsPage() {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/billing/settlements");
   const settlements = await getDb().settlement.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }],

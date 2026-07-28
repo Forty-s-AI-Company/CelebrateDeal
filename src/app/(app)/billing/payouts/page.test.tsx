@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
-  requireVendor: vi.fn(),
+  requireVendorFinance: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendor: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({ requireVendorFinance: mocks.requireVendorFinance }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ payoutBatch: { findMany: mocks.findMany } }),
 }));
@@ -25,9 +25,10 @@ const batch = {
     {
       id: "payout-current",
       vendorId: "vendor-current",
-      bankCode: "812",
-      bankAccountNumber: "1234567890",
-      bankAccountName: "目前商家",
+      bankCodeDisplay: "812",
+      bankAccountDisplayNumber: "1234567890",
+      bankAccountDisplayName: "收款戶名",
+      bankAccountEncrypted: null,
       payoutAmountCents: 10000,
       status: "pending",
       failReason: null,
@@ -37,9 +38,10 @@ const batch = {
     {
       id: "payout-other",
       vendorId: "vendor-other",
-      bankCode: "999",
-      bankAccountNumber: "0987654321",
-      bankAccountName: "其他商家戶名",
+      bankCodeDisplay: "999",
+      bankAccountDisplayNumber: "0987654321",
+      bankAccountDisplayName: "其他商家戶名",
+      bankAccountEncrypted: null,
       payoutAmountCents: 20000,
       status: "paid",
       failReason: "其他商家結算失敗",
@@ -51,7 +53,7 @@ const batch = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendor.mockResolvedValue(currentVendor);
+  mocks.requireVendorFinance.mockResolvedValue({ vendor: currentVendor });
   mocks.findMany.mockImplementation(async (query) => {
     const vendorId = query.include.items.where.vendorId;
     return query.where.items.some.vendorId === vendorId
@@ -64,7 +66,7 @@ describe("/billing/payouts route", () => {
   it("authenticates the current vendor and scopes payout batches and items to it", async () => {
     await BillingPayoutsPage();
 
-    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/billing/payouts");
     expect(mocks.findMany).toHaveBeenCalledWith({
       where: { items: { some: { vendorId: currentVendor.id } } },
       orderBy: { batchDate: "desc" },
@@ -83,7 +85,10 @@ describe("/billing/payouts route", () => {
 
     expect(html).toContain("目前商家");
     expect(html).toContain("812");
-    expect(html).toContain("1234567890");
+    expect(html).toContain("****7890");
+    expect(html).toContain("收＊＊＊");
+    expect(html).not.toContain("1234567890");
+    expect(html).not.toContain("收款戶名");
     expect(html).toContain("$100");
     expect(html).toContain("1 筆");
     expect(html).not.toContain("匯出銀行檔");

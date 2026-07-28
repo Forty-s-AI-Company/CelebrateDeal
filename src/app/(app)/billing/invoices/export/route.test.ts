@@ -3,14 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
-  requireVendor: vi.fn(),
-  requireVendorContext: vi.fn(),
+  requireVendorFinance: vi.fn(),
   writeAuditLog: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
-  requireVendor: mocks.requireVendor,
-  requireVendorContext: mocks.requireVendorContext,
+  requireVendorFinance: mocks.requireVendorFinance,
 }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
@@ -51,13 +49,10 @@ const otherVendorInvoice = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendor.mockResolvedValue(currentVendor);
-  mocks.requireVendorContext.mockResolvedValue({
+  mocks.requireVendorFinance.mockResolvedValue({
     vendor: currentVendor,
-    auth: {
-      user: { id: "user-current", platformRole: "none" },
-      member: { id: "member-current", role: "accountant" },
-    },
+    user: { id: "user-current", platformRole: "none" },
+    member: { id: "member-current", role: "accountant" },
   });
   mocks.findMany.mockResolvedValue([currentInvoice]);
 });
@@ -68,7 +63,7 @@ describe("/billing/invoices/export route", () => {
     const bytes = new Uint8Array(await response.arrayBuffer());
     const csv = new TextDecoder().decode(bytes);
 
-    expect(mocks.requireVendorContext).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/billing/invoices");
     expect(mocks.findMany).toHaveBeenCalledWith({
       where: { vendorId: currentVendor.id },
       orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],
