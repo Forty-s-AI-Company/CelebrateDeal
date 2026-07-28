@@ -6,11 +6,11 @@ const envKey = (...parts: string[]) => parts.join("_");
 function configuredEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "production",
-    [envKey("DATABASE", "URL")]: "postgresql://test:test@database.test:5432/app",
-    [envKey("DIRECT", "URL")]: "postgresql://test:test@database.test:5432/app",
+    [envKey("DATABASE", "URL")]: "postgresql://test:test@database.test:5432/app", // secret-scan: allow-test-fixture
+    [envKey("DIRECT", "URL")]: "postgresql://test:test@database.test:5432/app", // secret-scan: allow-test-fixture
     [envKey("NEXT", "PUBLIC", "APP", "URL")]: "https://app.test",
-    [envKey("JOB", "SECRET")]: "test-job-value-12345",
-    [envKey("CSRF", "SECRET")]: "test-csrf-value-12345",
+    [envKey("JOB", "SECRET")]: "test-job-secret-value-at-least-32-bytes",
+    [envKey("CSRF", "SECRET")]: "test-csrf-secret-value-at-least-32-bytes",
     [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
     [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",
     [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
@@ -257,6 +257,18 @@ describe("getEnvCheckReport", () => {
     expect(report.ok).toBe(false);
     expect(check(report, envKey("CSRF", "SECRET"), "fail")?.message).toBe(
       "CSRF_SECRET 不得與 JOB_SECRET 共用",
+    );
+  });
+
+  it("fails when the encryption source is independent but shorter than 32 bytes", () => {
+    const env = configuredEnv();
+    env[envKey("CSRF", "SECRET")] = "independent-but-short";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("CSRF", "SECRET"), "fail")?.message).toContain(
+      "至少 32 bytes",
     );
   });
 

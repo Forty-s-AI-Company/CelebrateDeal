@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe("sensitive data envelopes", () => {
   it("encrypts values without retaining plaintext and decrypts only for the same purpose", () => {
-    vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-sensitive-data");
+    vi.stubEnv("CSRF_SECRET", "test-csrf-secret-for-sensitive-data-32-bytes");
     const plaintext = "cloudflare-stream-key-fixture";
     const envelope = encryptSensitiveValue(plaintext, "cloudflare-live-stream-key");
 
@@ -15,6 +15,15 @@ describe("sensitive data envelopes", () => {
     expect(envelope).not.toContain(plaintext);
     expect(decryptSensitiveValue(envelope, "cloudflare-live-stream-key")).toBe(plaintext);
     expect(() => decryptSensitiveValue(envelope, "another-purpose")).toThrow();
+  });
+
+  it("fails closed when the configured encryption seed is shorter than 32 bytes", () => {
+    vi.stubEnv("CSRF_SECRET", "short-secret");
+    vi.stubEnv("JOB_SECRET", "");
+
+    expect(() => encryptSensitiveValue("secret", "cloudflare-live-stream-key")).toThrow(
+      "Sensitive data encryption key is too short.",
+    );
   });
 
   it("fails closed when no server-side encryption key is configured", () => {

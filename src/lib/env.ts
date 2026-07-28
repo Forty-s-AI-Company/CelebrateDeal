@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
+import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -55,6 +56,33 @@ export type EnvCheck = {
 
 function secretPresent(value: string | undefined) {
   return Boolean(value && value.trim() && !value.includes("...") && !value.includes("example"));
+}
+
+function strongEncryptionSecret(value: string | undefined) {
+  return secretPresent(value)
+    && Buffer.byteLength(value!.trim(), "utf8") >= MINIMUM_ENCRYPTION_SECRET_BYTES;
+}
+
+function csrfSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const csrfConfigured = secretPresent(env.CSRF_SECRET);
+  const csrfSecretStrong = strongEncryptionSecret(env.CSRF_SECRET);
+  const csrfSecretIsDistinct = csrfConfigured
+    && secretPresent(env.JOB_SECRET)
+    && env.CSRF_SECRET !== env.JOB_SECRET;
+  let message = "已設定獨立且至少 32 bytes 的 CSRF／MFA 加密密鑰";
+  if (!csrfConfigured) {
+    message = "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用";
+  } else if (!csrfSecretStrong) {
+    message = "CSRF_SECRET 作為 MFA／敏感資料加密來源時必須至少 32 bytes";
+  } else if (!csrfSecretIsDistinct) {
+    message = "CSRF_SECRET 不得與 JOB_SECRET 共用";
+  }
+
+  return {
+    key: "CSRF_SECRET",
+    status: csrfSecretStrong && csrfSecretIsDistinct ? "pass" : "fail",
+    message,
+  };
 }
 
 function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
@@ -199,21 +227,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   }
 
   if (deploymentSecurityRequired) {
-    const csrfConfigured = secretPresent(env.CSRF_SECRET);
-    const csrfSecretIsDistinct = csrfConfigured
-      && secretPresent(env.JOB_SECRET)
-      && env.CSRF_SECRET !== env.JOB_SECRET;
-    let csrfMessage = "已設定獨立 CSRF／MFA 加密密鑰";
-    if (!csrfConfigured) {
-      csrfMessage = "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用";
-    } else if (!csrfSecretIsDistinct) {
-      csrfMessage = "CSRF_SECRET 不得與 JOB_SECRET 共用";
-    }
-    checks.push({
-      key: "CSRF_SECRET",
-      status: csrfSecretIsDistinct ? "pass" : "fail",
-      message: csrfMessage,
-    });
+    checks.push(csrfSecretDeploymentCheck(env));
   }
 
   const rateLimitProvider = env.RATE_LIMIT_PROVIDER ?? "memory";
