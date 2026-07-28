@@ -1,31 +1,34 @@
-import { Search } from "lucide-react";
-import { unblockBlacklistAction, upsertBlacklistAction } from "@/app/actions";
+import { upsertBlacklistAction } from "@/app/actions";
+import { BlacklistSearchList } from "@/components/blacklist-search-list";
 import { CsrfField } from "@/components/csrf-field";
-import { Badge, Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
+import { Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
+import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { formatDateTime } from "@/lib/format";
 
 export default async function BlacklistsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; error?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const vendor = await requireVendorManager();
-  const { q = "", error } = await searchParams;
-  const entries = await getDb().blacklist.findMany({
-    where: {
-      vendorId: vendor.id,
-      OR: q
-        ? [
-            { identifier: { contains: q } },
-            { reason: { contains: q } },
-            { notes: { contains: q } },
-          ]
-        : undefined,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const { error } = await searchParams;
+  const [entries, csrfToken] = await Promise.all([
+    getDb().blacklist.findMany({
+      where: { vendorId: vendor.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        identifier: true,
+        identifierType: true,
+        reason: true,
+        notes: true,
+        isActive: true,
+        createdAt: true,
+      },
+    }),
+    getCsrfToken(),
+  ]);
 
   return (
     <>
@@ -57,35 +60,18 @@ export default async function BlacklistsPage({
         </Card>
 
         <Card>
-          <form className="mb-4 flex gap-2">
-            <input name="q" defaultValue={q} placeholder="搜尋識別值、原因、備註" className="h-10 flex-1 rounded-md border border-border px-3 text-sm" />
-            <button className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-600">
-              <Search size={16} />
-              搜尋
-            </button>
-          </form>
-          <div className="grid gap-3">
-            {entries.map((entry) => (
-              <div key={entry.id} className="grid gap-3 rounded-lg border border-border p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-semibold text-slate-950">{entry.identifier}</h2>
-                    <Badge tone={entry.isActive ? "orange" : "gray"}>{entry.isActive ? "封鎖中" : "已解除"}</Badge>
-                    <Badge tone="blue">{entry.identifierType}</Badge>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-600">{entry.reason}</p>
-                  <p className="mt-1 text-xs text-slate-400">建立：{formatDateTime(entry.createdAt)}</p>
-                </div>
-                {entry.isActive ? (
-                  <form action={unblockBlacklistAction}>
-                    <CsrfField />
-                    <input type="hidden" name="id" value={entry.id} />
-                    <button className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">解除封鎖</button>
-                  </form>
-                ) : null}
-              </div>
-            ))}
-          </div>
+          <BlacklistSearchList
+            csrfToken={csrfToken}
+            entries={entries.map((entry) => ({
+              id: entry.id,
+              identifier: entry.identifier,
+              identifierType: entry.identifierType,
+              reason: entry.reason,
+              notes: entry.notes,
+              isActive: entry.isActive,
+              createdAt: entry.createdAt.toISOString(),
+            }))}
+          />
         </Card>
       </div>
     </>
