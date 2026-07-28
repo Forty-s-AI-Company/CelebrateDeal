@@ -147,7 +147,16 @@ afterEach(async () => {
   await db.salesTeam.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.registrationForm.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.vendorMember.deleteMany({ where: { vendorId: { in: vendorIds } } });
-  await db.vendor.deleteMany({ where: { id: { in: vendorIds } } });
+  // Accounting ledger rows intentionally block parent deletion. The disposable
+  // schema runner removes this fixture data by dropping its marker schema.
+  let retainedAccountingFixture = false;
+  try {
+    await db.vendor.deleteMany({ where: { id: { in: vendorIds } } });
+  } catch (error) {
+    if (!(error instanceof Error) || !/append-only|Foreign key constraint/.test(error.message)) throw error;
+    retainedAccountingFixture = true;
+  }
+  if (retainedAccountingFixture) return;
   await db.billingPlan.deleteMany({ where: { id: { in: billingPlanIds } } });
   await db.user.deleteMany({ where: { id: { in: userIds } } });
 });
@@ -203,6 +212,41 @@ describe("payment webhook processing", () => {
     });
   });
 
+  it("does not bind a scoped webhook to another provider's transaction with the same order number", async () => {
+    const suffix = `${Date.now()}-provider-order-scope`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-PROVIDER-SCOPE-${suffix}`;
+    const foreignProviderTransaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "ecpay-like",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-provider-order-scope-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+      currency: "TWD",
+    }));
+
+    expect(await db.paymentTransaction.findUniqueOrThrow({
+      where: { id: foreignProviderTransaction.id },
+    })).toMatchObject({ providerName: "ecpay-like", status: "pending" });
+    expect(await db.paymentTransaction.count({
+      where: { vendorId: vendor.id, providerName: "demo", orderNumber },
+    })).toBe(1);
+  });
+
   it("does not create duplicate transactions for the same order", async () => {
     const suffix = `${Date.now()}a`;
     const { db, vendor } = await createFixture(suffix);
@@ -223,6 +267,31 @@ describe("payment webhook processing", () => {
 
     const transactions = await db.paymentTransaction.findMany({ where: { vendorId: vendor.id, orderNumber: payload.orderNumber } });
     expect(transactions).toHaveLength(1);
+  });
+
+  it("serializes concurrent callbacks for one logical order and commission", async () => {
+    const suffix = `${Date.now()}-concurrent-order`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-CONCURRENT-${suffix}`;
+    const payload = {
+      provider: "demo",
+      eventType: "paid" as const,
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    };
+
+    const results = await Promise.allSettled([
+      processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-a-${suffix}` })),
+      processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-b-${suffix}` })),
+    ]);
+
+    expect(results.some((result) => result.status === "fulfilled")).toBe(true);
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, orderNumber } })).toBe(1);
+    expect(await db.affiliateCommission.count({
+      where: { vendorId: vendor.id, orderNumber, referralCode: affiliate.code },
+    })).toBe(1);
   });
 
   it("commits reserved inventory once and restocks only after a full refund", async () => {
@@ -357,14 +426,14 @@ describe("payment webhook processing", () => {
       grossAmountCents: 100000,
       metadata: { formSubmissionId: formSubmission.id },
     }));
-    await processPaymentWebhook(PaymentWebhookPayload.parse({
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-refund-no-attribution-${suffix}`,
       eventType: "refunded",
       vendorId: leadVendor.id,
       orderNumber: `ORDER-REFUND-NO-ATTRIBUTION-${suffix}`,
       metadata: { formSubmissionId: formSubmission.id },
-    }));
+    }))).rejects.toThrow("找不到既存付款交易");
 
     expect(await db.teamConversionAttribution.count({ where: { vendorId: { in: [leadVendor.id, paymentVendor.id] } } })).toBe(0);
   });
@@ -420,14 +489,14 @@ describe("payment webhook processing", () => {
   it.each([
     { label: "amount", grossAmountCents: 99000, currency: "TWD" },
     { label: "currency", grossAmountCents: 100000, currency: "USD" },
-  ])("rejects a checkout transaction webhook with a mismatched $label", async ({ grossAmountCents, currency }) => {
+  ])("rejects a checkout transaction webhook with a mismatched $label", async ({ label, grossAmountCents, currency }) => {
     const suffix = `${Date.now()}-checkout-mismatch-${currency}`;
     const { db, vendor } = await createFixture(suffix);
     const orderNumber = `ORDER-CHECKOUT-MISMATCH-${suffix}`;
     const checkoutTransaction = await db.paymentTransaction.create({
       data: {
         vendorId: vendor.id,
-        providerName: "checkout",
+        providerName: "demo",
         orderNumber,
         paymentMode: "platform",
         grossAmountCents: 100000,
@@ -445,7 +514,7 @@ describe("payment webhook processing", () => {
       orderNumber,
       grossAmountCents,
       currency,
-    }))).rejects.toThrow("付款 webhook 訂單金額或幣別與既存交易不一致");
+    }))).rejects.toThrow(label === "amount" ? "付款 webhook 訂單金額" : "付款 webhook 訂單幣別");
 
     expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: checkoutTransaction.id } })).toMatchObject({
       grossAmountCents: 100000,
@@ -469,7 +538,7 @@ describe("payment webhook processing", () => {
     await db.paymentTransaction.create({
       data: {
         vendorId: vendor.id,
-        providerName: "checkout",
+        providerName: "demo",
         orderNumber,
         paymentMode: "platform",
         grossAmountCents: 100000,
@@ -519,7 +588,7 @@ describe("payment webhook processing", () => {
     await db.paymentTransaction.create({
       data: {
         vendorId: vendor.id,
-        providerName: "checkout",
+        providerName: "demo",
         orderNumber,
         paymentMode: "platform",
         grossAmountCents: 100000,
@@ -564,13 +633,13 @@ describe("payment webhook processing", () => {
       await db.paymentTransaction.create({
         data: {
           vendorId: vendor.id,
-          providerName: "checkout",
+          providerName: "demo",
           orderNumber: `ORDER-AFFILIATE-CLICK-${rejected.label}-${suffix}`,
           paymentMode: "platform",
           grossAmountCents: 100000,
           netAmountCents: 100000,
           currency: "TWD",
-          status: "pending",
+          status: rejected.eventType === "refunded" ? "paid" : "pending",
           metadata: rejected.metadata,
         },
       });
@@ -641,7 +710,7 @@ describe("payment webhook processing", () => {
     expect(transaction.refundedAmountCents).toBe(20000);
   });
 
-  it("deduplicates resent partial-refund commission adjustments while accumulating distinct refunds", async () => {
+  it("deduplicates resent partial-refund ledger entries while accumulating distinct refunds", async () => {
     const suffix = `${Date.now()}-affiliate-refund-retry`;
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
@@ -666,8 +735,11 @@ describe("payment webhook processing", () => {
     };
     await processPaymentWebhook(PaymentWebhookPayload.parse(firstPartialRefund));
     await processPaymentWebhook(PaymentWebhookPayload.parse(firstPartialRefund));
-    expect(await db.affiliateCommission.count({
-      where: { vendorId: vendor.id, orderNumber, sourceType: "refund_adjustment" },
+    const original = await db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
+    });
+    expect(await db.affiliateCommissionLedgerEntry.count({
+      where: { vendorId: vendor.id, affiliateCommissionId: original.id, entryType: "refund" },
     })).toBe(1);
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       ...firstPartialRefund,
@@ -676,23 +748,25 @@ describe("payment webhook processing", () => {
     }));
 
     const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
-    const adjustments = await db.affiliateCommission.findMany({
-      where: { vendorId: vendor.id, orderNumber, sourceType: "refund_adjustment" },
+    const refunds = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id, affiliateCommissionId: original.id, entryType: "refund" },
+      orderBy: { createdAt: "asc" },
     });
-    const commissionTotal = (await db.affiliateCommission.findMany({ where: { vendorId: vendor.id, orderNumber } }))
-      .reduce((total, commission) => total + commission.commissionAmountCents, 0);
+    const ledgerNet = (await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id, affiliateCommissionId: original.id },
+    })).reduce((total, entry) => total + entry.amountCents, 0);
 
-    expect(adjustments).toHaveLength(2);
-    expect(adjustments.map((adjustment) => adjustment.sourceId).sort()).toEqual([
+    expect(refunds).toHaveLength(2);
+    expect(refunds.map((entry) => entry.eventIdentity).sort()).toEqual([
       firstPartialRefund.eventId,
       `evt-refund-second-${suffix}`,
     ]);
-    expect(adjustments.map((adjustment) => adjustment.commissionAmountCents).sort((a, b) => a - b)).toEqual([-2400, -1600]);
+    expect(refunds.map((entry) => entry.amountCents).sort((a, b) => a - b)).toEqual([-2400, -1600]);
     expect(transaction.refundedAmountCents).toBe(50000);
-    expect(commissionTotal).toBe(4000);
+    expect(ledgerNet).toBe(4000);
   });
 
-  it("zeros affiliate commissions and prior refund adjustments when a full refund follows a partial refund", async () => {
+  it("keeps source commission immutable and brings ledger net to zero after a full refund", async () => {
     const suffix = `${Date.now()}-affiliate-full-refund`;
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
@@ -732,20 +806,24 @@ describe("payment webhook processing", () => {
     const transactionAfterFullRefund = await db.paymentTransaction.findFirstOrThrow({
       where: { vendorId: vendor.id, orderNumber },
     });
-    const adjustmentsAfterFullRefund = commissionsAfterFullRefund.filter((commission) => commission.sourceType === "refund_adjustment");
+    const originalCommission = commissionsAfterFullRefund.find((commission) => commission.sourceType !== "refund_adjustment");
+    const ledgerEntries = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id, affiliateCommissionId: originalCommission?.id },
+      orderBy: { createdAt: "asc" },
+    });
     const commissionStateAfterFullRefund = commissionsAfterFullRefund.map((commission) => ({
       id: commission.id,
       status: commission.status,
       commissionAmountCents: commission.commissionAmountCents,
     }));
 
-    expect(commissionsAfterFullRefund.reduce((total, commission) => total + commission.commissionAmountCents, 0)).toBe(0);
-    expect(adjustmentsAfterFullRefund).toHaveLength(1);
-    expect(adjustmentsAfterFullRefund[0]).toMatchObject({ status: "void", commissionAmountCents: 0 });
-    expect(commissionsAfterFullRefund.find((commission) => commission.sourceType !== "refund_adjustment")).toMatchObject({
+    expect(commissionsAfterFullRefund).toHaveLength(1);
+    expect(originalCommission).toMatchObject({
       status: "void",
-      commissionAmountCents: 0,
+      commissionAmountCents: 8000,
     });
+    expect(ledgerEntries.map((entry) => entry.entryType)).toEqual(["accrual", "refund", "refund"]);
+    expect(ledgerEntries.reduce((total, entry) => total + entry.amountCents, 0)).toBe(0);
     expect(transactionAfterFullRefund.refundedAmountCents).toBe(100000);
 
     await processPaymentWebhook(fullRefund);
@@ -762,6 +840,59 @@ describe("payment webhook processing", () => {
     expect(await db.refundRecord.count({
       where: { paymentTransactionId: transactionAfterFullRefund.id, providerEventId: fullRefund.eventId },
     })).toBe(1);
+  });
+
+  it("keeps a paid commission and payment state immutable through a synthetic dispute lifecycle", async () => {
+    const suffix = `${Date.now()}-affiliate-dispute`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    const paidPayload = {
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid" as const,
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100_000,
+      referralCode: affiliate.code,
+    };
+    await processPaymentWebhook(PaymentWebhookPayload.parse(paidPayload));
+    const commission = await db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
+    });
+    await db.affiliateCommission.update({ where: { id: commission.id }, data: { status: "paid" } });
+    const caseId = `case-${suffix}`;
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: `evt-lost-before-open-${suffix}`, eventType: "dispute_lost",
+      vendorSlug: vendor.slug, orderNumber, disputeCaseId: caseId,
+    }))).rejects.toThrow("必須先有 opened");
+
+    const opened = {
+      provider: "demo", eventId: `evt-opened-${suffix}`, eventType: "dispute_opened" as const,
+      vendorSlug: vendor.slug, orderNumber, disputeCaseId: caseId,
+    };
+    await processPaymentWebhook(PaymentWebhookPayload.parse(opened));
+    await processPaymentWebhook(PaymentWebhookPayload.parse(opened));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: `evt-lost-${suffix}`, eventType: "dispute_lost",
+      vendorSlug: vendor.slug, orderNumber, disputeCaseId: caseId,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: `evt-late-failed-${suffix}`, eventType: "failed",
+      vendorSlug: vendor.slug, orderNumber,
+    }));
+
+    const currentCommission = await db.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } });
+    const payment = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    const entries = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id, affiliateCommissionId: commission.id }, orderBy: { createdAt: "asc" },
+    });
+
+    expect(currentCommission).toMatchObject({ status: "paid", commissionAmountCents: 8_000 });
+    expect(payment.status).toBe("paid");
+    expect(entries.map((entry) => entry.entryType)).toEqual(["accrual", "dispute_opened", "dispute_lost"]);
+    expect(entries.filter((entry) => entry.entryType === "dispute_opened")).toHaveLength(1);
+    expect(entries.reduce((total, entry) => total + entry.amountCents, 0)).toBe(0);
   });
 
   it("does not restore commission or transaction state when a paid webhook arrives after a full refund", async () => {
@@ -802,8 +933,97 @@ describe("payment webhook processing", () => {
       where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
     });
 
-    expect(commission).toMatchObject({ status: "void", commissionAmountCents: 0 });
+    expect(commission).toMatchObject({ status: "void", commissionAmountCents: 8000 });
+    expect((await db.affiliateCommissionLedgerEntry.aggregate({
+      where: { vendorId: vendor.id, affiliateCommissionId: commission.id }, _sum: { amountCents: true },
+    }))._sum.amountCents).toBe(0);
     expect(transaction).toMatchObject({ status: "refunded", refundedAmountCents: 100000 });
+    expect(await db.refundRecord.count({ where: { paymentTransactionId: transaction.id } })).toBe(1);
+  });
+
+  it.each([
+    ["paid", "paid"],
+    ["partially_refunded", "partially_refunded"],
+    ["refunded", "refunded"],
+  ] as const)("does not regress a %s transaction when a late failed callback arrives", async (initialStatus, expectedStatus) => {
+    const suffix = `${Date.now()}-late-failed-${initialStatus}`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-LATE-FAILED-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+    }));
+    if (initialStatus === "partially_refunded") {
+      await processPaymentWebhook(PaymentWebhookPayload.parse({
+        provider: "demo",
+        eventId: `evt-partial-${suffix}`,
+        eventType: "partially_refunded",
+        vendorId: vendor.id,
+        orderNumber,
+        refundAmountCents: 20_000,
+      }));
+    }
+    if (initialStatus === "refunded") {
+      await processPaymentWebhook(PaymentWebhookPayload.parse({
+        provider: "demo",
+        eventId: `evt-refund-${suffix}`,
+        eventType: "refunded",
+        vendorId: vendor.id,
+        orderNumber,
+        refundAmountCents: 100_000,
+      }));
+    }
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-failed-late-${suffix}`,
+      eventType: "failed",
+      vendorId: vendor.id,
+      orderNumber,
+    }));
+
+    expect(await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } }))
+      .toMatchObject({ status: expectedStatus });
+  });
+
+  it("rejects a refund that exceeds the remaining amount without creating ledger rows", async () => {
+    const suffix = `${Date.now()}-over-refund`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-OVER-REFUND-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100_000,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-partial-${suffix}`,
+      eventType: "partially_refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 40_000,
+    }));
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-over-${suffix}`,
+      eventType: "partially_refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 70_000,
+    }))).rejects.toThrow("剩餘可退款額度");
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    expect(transaction.refundedAmountCents).toBe(40_000);
     expect(await db.refundRecord.count({ where: { paymentTransactionId: transaction.id } })).toBe(1);
   });
 
@@ -825,10 +1045,14 @@ describe("payment webhook processing", () => {
       occurredAt: paidAt,
     }));
 
+    const firstEventType = "partially_refunded" as const;
+    const secondEventType = eventType;
+    const secondRefundAmount = eventType === "refunded" ? 80_000 : 30_000;
+
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-refund-first-${suffix}`,
-      eventType,
+      eventType: firstEventType,
       vendorSlug: vendor.slug,
       orderNumber,
       refundAmountCents: 20000,
@@ -837,10 +1061,10 @@ describe("payment webhook processing", () => {
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-refund-second-${suffix}`,
-      eventType,
+      eventType: secondEventType,
       vendorSlug: vendor.slug,
       orderNumber,
-      refundAmountCents: 30000,
+      refundAmountCents: secondRefundAmount,
       occurredAt: secondRefundAt,
     }));
 
@@ -848,7 +1072,7 @@ describe("payment webhook processing", () => {
     expect(transaction.status).toBe(eventType);
     expect(transaction.occurredAt.toISOString()).toBe(paidAt);
     expect(transaction.refundedAt?.toISOString()).toBe(secondRefundAt);
-    expect(transaction.refundedAmountCents).toBe(50000);
+    expect(transaction.refundedAmountCents).toBe(eventType === "refunded" ? 100000 : 50000);
   });
 
   it("creates affiliate commission when referralCode is present", async () => {

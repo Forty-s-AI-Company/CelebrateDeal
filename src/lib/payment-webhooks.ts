@@ -1,13 +1,31 @@
 import { Prisma, type WebhookEvent } from "@prisma/client";
 import { z } from "zod";
+import {
+  AffiliateCommissionRateBps,
+  assertAffiliateCommissionAmounts,
+  buildCommissionDeduplicationKey,
+  commissionAmountCents,
+} from "@/lib/affiliate-commission";
+import {
+  appendCommissionLedgerEntry,
+  appendDisputeLedgerEntry,
+  commissionLedgerBalance,
+} from "@/lib/affiliate-commission-accounting";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
+import {
+  isRefundEvent,
+  isDisputeEvent,
+  isPaymentLifecycleEvent,
+  resolvePaymentStatus,
+  validatePaymentWebhookInvariants,
+} from "@/lib/payment-webhook-invariants";
 
 export const PaymentWebhookPayload = z.object({
   provider: z.string().min(1),
   eventId: z.string().min(1),
-  eventType: z.enum(["paid", "refunded", "partially_refunded", "failed"]),
+  eventType: z.enum(["paid", "refunded", "partially_refunded", "failed", "dispute_opened", "dispute_released", "dispute_lost"]),
   vendorSlug: z.string().optional(),
   vendorId: z.string().optional(),
   orderNumber: z.string().min(1),
@@ -17,14 +35,15 @@ export const PaymentWebhookPayload = z.object({
   gatewayFeeCents: z.number().int().nonnegative().default(0),
   platformFeeCents: z.number().int().nonnegative().default(0),
   netAmountCents: z.number().int().nonnegative().optional(),
-  currency: z.string().default("TWD"),
+  currency: z.string().trim().length(3).optional(),
   occurredAt: z.string().datetime().optional(),
   refundAmountCents: z.number().int().nonnegative().default(0),
   gatewayFeeRefundCents: z.number().int().nonnegative().default(0),
   platformFeeRefundCents: z.number().int().nonnegative().default(0),
   refundReason: z.string().optional(),
+  disputeCaseId: z.string().trim().min(1).optional(),
   referralCode: z.string().optional(),
-  commissionRateBps: z.number().int().nonnegative().optional(),
+  commissionRateBps: AffiliateCommissionRateBps.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -104,7 +123,8 @@ async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
       throw new Error("付款 webhook 訂單識別不唯一，拒絕自動歸屬商家。");
     }
 
-    const [transaction] = matchingTransactions;
+    // The zero/multiple guards above prove the singleton exists.
+    const transaction = matchingTransactions[0]!;
     return { vendor: transaction.vendor, existingTransaction: transaction };
   }
 
@@ -114,23 +134,28 @@ async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
   }
 
   const existingTransaction = await db.paymentTransaction.findFirst({
-    where: { vendorId: vendor.id, orderNumber: payload.orderNumber },
+    where: {
+      vendorId: vendor.id,
+      providerName: payload.provider,
+      orderNumber: payload.orderNumber,
+    },
     include: { refunds: true },
   });
   return { vendor, existingTransaction };
 }
 
 async function upsertAffiliateCommission(
+  db: Pick<Prisma.TransactionClient, "affiliate" | "affiliateCommission" | "affiliateCommissionLedgerEntry">,
   payload: PaymentWebhookPayloadInput,
   vendorId: string,
   transactionId: string,
+  grossAmountCents: number,
   occurredAt: Date,
   hasRefundedOrder: boolean,
   referralCode: string | null | undefined,
 ) {
   if (!referralCode || payload.eventType !== "paid") return null;
 
-  const db = getDb();
   const normalizedReferralCode = referralCode.toUpperCase();
   const affiliate = await db.affiliate.findFirst({
     where: {
@@ -142,50 +167,85 @@ async function upsertAffiliateCommission(
 
   if (!affiliate) return null;
 
-  const commissionRateBps = payload.commissionRateBps ?? affiliate.commissionRateBps;
-  const commissionAmountCents = Math.round((payload.grossAmountCents * commissionRateBps) / 10000);
-  const existing = await db.affiliateCommission.findFirst({
-    where: { vendorId, orderNumber: payload.orderNumber, referralCode: normalizedReferralCode },
+  const commissionRateBps = AffiliateCommissionRateBps.parse(
+    payload.commissionRateBps ?? affiliate.commissionRateBps,
+  );
+  const calculatedCommissionCents = commissionAmountCents(grossAmountCents, commissionRateBps);
+  const sourceType = "webhook";
+  const deduplicationKey = buildCommissionDeduplicationKey({
+    affiliateId: affiliate.id,
+    sourceType,
+    sourceId: transactionId,
+  });
+  assertAffiliateCommissionAmounts({
+    sourceType,
+    orderAmountCents: grossAmountCents,
+    commissionAmountCents: calculatedCommissionCents,
+  });
+  const immutableData = {
+    affiliateId: affiliate.id,
+    sourceType,
+    sourceId: transactionId,
+    referralCode: normalizedReferralCode,
+    orderNumber: payload.orderNumber,
+    orderAmountCents: grossAmountCents,
+    commissionRateBps,
+    commissionAmountCents: calculatedCommissionCents,
+  };
+  const uniqueCommission = {
+    vendorId,
+    deduplicationKey,
+  };
+  const existing = await db.affiliateCommission.findUnique({
+    where: { vendorId_deduplicationKey: uniqueCommission },
   });
 
   if (existing) {
+    for (const [field, value] of Object.entries(immutableData)) {
+      if (existing[field as keyof typeof immutableData] !== value) {
+        throw new Error(`相同佣金去重鍵的不可變身分不一致：${field}`);
+      }
+    }
     if (hasRefundedOrder || existing.status === "void") {
       return existing;
     }
-
-    return db.affiliateCommission.update({
-      where: { id: existing.id },
-      data: {
-        affiliateId: affiliate.id,
-        orderAmountCents: payload.grossAmountCents,
-        commissionRateBps,
-        commissionAmountCents,
-        status: existing.status,
-      },
-    });
+    return existing;
   }
 
   if (hasRefundedOrder) return null;
 
-  return db.affiliateCommission.create({
-    data: {
+  const saved = await db.affiliateCommission.upsert({
+    where: { vendorId_deduplicationKey: uniqueCommission },
+    create: {
       vendorId,
-      affiliateId: affiliate.id,
       monthKey: monthKeyFromDate(occurredAt),
-      sourceType: "webhook",
-      sourceId: transactionId,
-      referralCode: normalizedReferralCode,
-      orderNumber: payload.orderNumber,
-      orderAmountCents: payload.grossAmountCents,
-      commissionRateBps,
-      commissionAmountCents,
+      deduplicationKey,
+      ...immutableData,
       status: "pending",
     },
+    // A concurrent winner must never have its immutable business identity
+    // rewritten by a duplicate webhook.
+    update: {},
   });
+  for (const [field, value] of Object.entries(immutableData)) {
+    if (saved[field as keyof typeof immutableData] !== value) {
+      throw new Error(`相同佣金去重鍵的不可變身分不一致：${field}`);
+    }
+  }
+  await appendCommissionLedgerEntry(db, {
+    vendorId,
+    affiliateCommissionId: saved.id,
+    entryType: "accrual",
+    providerName: payload.provider,
+    eventIdentity: payload.eventId,
+    amountCents: saved.commissionAmountCents,
+    occurredAt,
+  });
+  return saved;
 }
 
 async function applyRefundToCommission(
-  db: Pick<Prisma.TransactionClient, "affiliateCommission">,
+  db: Pick<Prisma.TransactionClient, "affiliateCommission" | "affiliateCommissionLedgerEntry">,
   payload: PaymentWebhookPayloadInput,
   vendorId: string,
 ) {
@@ -196,126 +256,150 @@ async function applyRefundToCommission(
       vendorId,
       orderNumber: payload.orderNumber,
       sourceType: { not: "refund_adjustment" },
-      status: { in: ["pending", "approved", "locked"] },
     },
   });
 
-  if (payload.eventType === "refunded") {
-    const settledAt = new Date();
-    const voidedCommission = commission
-      ? await db.affiliateCommission.update({
-          where: { id: commission.id },
-          data: {
-            status: "void",
-            commissionAmountCents: 0,
-            settledAt,
-            sourceType: `${commission.sourceType}: webhook_refund`,
-          },
-        })
-      : null;
-
-    await db.affiliateCommission.updateMany({
-      where: {
-        vendorId,
-        orderNumber: payload.orderNumber,
-        sourceType: "refund_adjustment",
-      },
-      data: {
-        status: "void",
-        commissionAmountCents: 0,
-        settledAt,
-      },
-    });
-
-    return voidedCommission;
-  }
-
   if (!commission) return null;
-
-  if (payload.refundAmountCents >= commission.orderAmountCents) {
-    return db.affiliateCommission.update({
-      where: { id: commission.id },
-      data: {
-        status: "void",
-        commissionAmountCents: 0,
-        settledAt: new Date(),
-        sourceType: `${commission.sourceType}: webhook_refund`,
-      },
+  const currentBalance = await commissionLedgerBalance(db, vendorId, commission.id);
+  const calculatedRefund = commissionAmountCents(payload.refundAmountCents, commission.commissionRateBps);
+  const refundAmount = payload.eventType === "refunded"
+    ? currentBalance
+    : Math.min(currentBalance, calculatedRefund);
+  if (refundAmount > 0) {
+    await appendCommissionLedgerEntry(db, {
+      vendorId,
+      affiliateCommissionId: commission.id,
+      entryType: "refund",
+      providerName: payload.provider,
+      eventIdentity: payload.eventId,
+      amountCents: -refundAmount,
+      occurredAt: new Date(payload.occurredAt ?? new Date().toISOString()),
     });
   }
+  if (commission.status !== "paid") {
+    const voided = await db.affiliateCommission.updateMany({
+      where: { id: commission.id, vendorId, status: { in: ["pending", "approved", "locked"] } },
+      // The original amount is immutable accounting evidence. Ledger entries
+      // express the refund/reversal rather than erasing this source amount.
+      data: { status: "void", settledAt: new Date() },
+    });
+    if (voided.count !== 1 && commission.status !== "void") {
+      throw new Error("退款佣金狀態已被其他交易變更。");
+    }
+  }
+  return db.affiliateCommission.findUnique({ where: { id: commission.id } });
+}
 
-  const negativeAmount = -Math.round((payload.refundAmountCents * commission.commissionRateBps) / 10000);
-  return db.affiliateCommission.create({
-    data: {
-      vendorId,
-      affiliateId: commission.affiliateId,
-      monthKey: monthKeyFromDate(new Date(payload.occurredAt ?? new Date().toISOString())),
-      sourceType: "refund_adjustment",
-      sourceId: payload.eventId,
-      referralCode: commission.referralCode,
-      orderNumber: payload.orderNumber,
-      orderAmountCents: -payload.refundAmountCents,
-      commissionRateBps: commission.commissionRateBps,
-      commissionAmountCents: negativeAmount,
-      status: "approved",
-    },
+async function applyDisputeToCommission(
+  db: Pick<Prisma.TransactionClient, "affiliateCommission" | "affiliateCommissionLedgerEntry">,
+  payload: PaymentWebhookPayloadInput,
+  vendorId: string,
+) {
+  if (!isDisputeEvent(payload.eventType)) return null;
+  if (!payload.disputeCaseId) throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
+  const commission = await db.affiliateCommission.findFirst({
+    where: { vendorId, orderNumber: payload.orderNumber, sourceType: { not: "refund_adjustment" } },
+  });
+  if (!commission) throw new Error("dispute webhook 找不到對應佣金。");
+  return appendDisputeLedgerEntry(db, {
+    vendorId,
+    affiliateCommissionId: commission.id,
+    entryType: payload.eventType,
+    providerName: payload.provider,
+    eventIdentity: payload.eventId,
+    disputeCaseId: payload.disputeCaseId,
+    occurredAt: new Date(payload.occurredAt ?? new Date().toISOString()),
   });
 }
 
-export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
   const db = getDb();
   const { vendor, existingTransaction } = await resolveWebhookScope(payload);
 
   const occurredAt = new Date(payload.occurredAt ?? new Date().toISOString());
-  if (existingTransaction && payload.eventType === "paid" && (
-    payload.grossAmountCents !== existingTransaction.grossAmountCents
-    || payload.currency !== existingTransaction.currency
-  )) {
-    throw new Error("付款 webhook 訂單金額或幣別與既存交易不一致。");
+  if (isDisputeEvent(payload.eventType) && !payload.disputeCaseId) {
+    throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
   }
+  const {
+    transaction,
+    commission,
+    refundCommission,
+    disputeEntry,
+  // The ordered re-read and writes must remain in one serializable closure.
+  // eslint-disable-next-line complexity -- splitting this scope weakens its transaction invariant.
+  } = await db.$transaction(async (tx) => {
+    // Re-read the logical order inside the serializable transaction. This keeps
+    // amount, refund and state checks bound to the row version being updated.
+    const currentTransaction = await tx.paymentTransaction.findFirst({
+      where: {
+        vendorId: vendor.id,
+        providerName: payload.provider,
+        orderNumber: payload.orderNumber,
+      },
+      include: { refunds: true },
+    });
+    const invariant = validatePaymentWebhookInvariants({
+      eventId: payload.eventId,
+      eventType: payload.eventType,
+      grossAmountCents: payload.grossAmountCents > 0 ? payload.grossAmountCents : undefined,
+      refundAmountCents: payload.refundAmountCents,
+      currency: payload.currency,
+    }, currentTransaction);
+    if (!currentTransaction && payload.eventType === "paid" && payload.grossAmountCents <= 0) {
+      throw new Error("付款 webhook 缺少有效訂單金額。");
+    }
 
-  const hasRefundedOrder = Boolean(existingTransaction && (
-    existingTransaction.refundedAmountCents > 0
-    || existingTransaction.refunds.length > 0
-    || ["refunded", "partially_refunded"].includes(existingTransaction.status)
-  ));
-  const grossAmountCents = payload.grossAmountCents || existingTransaction?.grossAmountCents || 0;
-  const gatewayFeeCents = payload.gatewayFeeCents || existingTransaction?.gatewayFeeCents || 0;
-  const platformFeeCents = payload.platformFeeCents || existingTransaction?.platformFeeCents || 0;
-  const netAmountCents = payload.netAmountCents ?? existingTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
-  const existingMetadata = metadataObject(existingTransaction?.metadata);
-  const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
-  const checkoutAffiliateClickId = affiliateClickIdFromMetadata(existingMetadata);
-  const payloadMetadata = { ...metadataObject(payload.metadata) };
-  delete payloadMetadata.referralCode;
-  delete payloadMetadata.affiliateClickId;
-  const formSubmissionId = payload.eventType === "paid"
-    ? formSubmissionIdFromMetadata(payloadMetadata) ?? formSubmissionIdFromMetadata(existingMetadata)
-    : formSubmissionIdFromMetadata(existingMetadata);
-  const transactionMetadata = {
-    ...existingMetadata,
-    ...payloadMetadata,
-    ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
-    ...(formSubmissionId ? { formSubmissionId } : {}),
-  } as Prisma.InputJsonObject;
-  const preservesOccurredAt = Boolean(existingTransaction) && ["refunded", "partially_refunded"].includes(payload.eventType);
-  const preservesRefundState = payload.eventType === "paid" && hasRefundedOrder;
+    const hasRefundedOrder = Boolean(currentTransaction && (
+      currentTransaction.refundedAmountCents > 0
+      || currentTransaction.refunds.length > 0
+      || ["refunded", "partially_refunded"].includes(currentTransaction.status)
+    ));
+    const grossAmountCents = currentTransaction?.grossAmountCents || payload.grossAmountCents;
+    const gatewayFeeCents = payload.eventType === "paid"
+      ? payload.gatewayFeeCents || currentTransaction?.gatewayFeeCents || 0
+      : currentTransaction?.gatewayFeeCents || 0;
+    const platformFeeCents = payload.eventType === "paid"
+      ? payload.platformFeeCents || currentTransaction?.platformFeeCents || 0
+      : currentTransaction?.platformFeeCents || 0;
+    const netAmountCents = payload.eventType === "paid"
+      ? payload.netAmountCents ?? currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents)
+      : currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
+    const currency = currentTransaction?.currency ?? payload.currency ?? "TWD";
+    const existingMetadata = metadataObject(currentTransaction?.metadata);
+    const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
+    const checkoutAffiliateClickId = affiliateClickIdFromMetadata(existingMetadata);
+    const payloadMetadata = { ...metadataObject(payload.metadata) };
+    delete payloadMetadata.referralCode;
+    delete payloadMetadata.affiliateClickId;
+    const formSubmissionId = payload.eventType === "paid"
+      ? formSubmissionIdFromMetadata(payloadMetadata) ?? formSubmissionIdFromMetadata(existingMetadata)
+      : formSubmissionIdFromMetadata(existingMetadata);
+    const transactionMetadata = {
+      ...existingMetadata,
+      ...payloadMetadata,
+      ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
+      ...(formSubmissionId ? { formSubmissionId } : {}),
+    } as Prisma.InputJsonObject;
+    const nextStatus = resolvePaymentStatus(currentTransaction?.status ?? null, payload.eventType);
+    const ignoredIncomingState = nextStatus !== payload.eventType;
+    const noOpTransactionEvent = ignoredIncomingState || invariant.duplicateRefundEvent;
+    const updatesOccurredAt = !currentTransaction
+      || (currentTransaction.status !== nextStatus && !isRefundEvent(payload.eventType));
 
-  const { transaction, refundCommission } = await db.$transaction(async (tx) => {
-    const savedTransaction = existingTransaction
+    const savedTransaction = currentTransaction
       ? await tx.paymentTransaction.update({
-          where: { id: existingTransaction.id },
-          data: {
+          where: { id: currentTransaction.id },
+          data: noOpTransactionEvent ? { status: nextStatus } : {
             providerName: payload.provider,
-            providerTradeNo: payload.providerTradeNo,
+            providerTradeNo: payload.providerTradeNo ?? currentTransaction.providerTradeNo,
             paymentMode: payload.paymentMode,
             grossAmountCents,
             gatewayFeeCents,
             platformFeeCents,
             netAmountCents,
-            currency: payload.currency,
-            status: preservesRefundState ? existingTransaction.status : payload.eventType === "paid" ? "paid" : payload.eventType,
-            ...(preservesOccurredAt ? {} : { occurredAt }),
+            currency,
+            status: nextStatus,
+            ...(updatesOccurredAt ? { occurredAt } : {}),
             metadata: transactionMetadata,
           },
         })
@@ -330,8 +414,8 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
             gatewayFeeCents,
             platformFeeCents,
             netAmountCents,
-            currency: payload.currency,
-            status: payload.eventType === "paid" ? "paid" : payload.eventType,
+            currency,
+            status: nextStatus,
             occurredAt,
             metadata: transactionMetadata,
           },
@@ -339,7 +423,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
 
     // Product identity is trusted only from the server-created checkout
     // transaction. Provider metadata must never choose another tenant's stock.
-    if (!(payload.eventType === "paid" && preservesRefundState)) {
+    if (isPaymentLifecycleEvent(payload.eventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
       await applyPaymentInventoryTransition(tx, {
         transaction: savedTransaction,
         eventType: payload.eventType,
@@ -350,8 +434,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
 
     let refundCommission = null;
     if (["refunded", "partially_refunded"].includes(payload.eventType) && payload.refundAmountCents > 0) {
-      const alreadyRefunded = existingTransaction?.refunds.some((refund) => refund.providerEventId === payload.eventId) ?? false;
-      if (!alreadyRefunded) {
+      if (!invariant.duplicateRefundEvent) {
         await tx.refundRecord.create({
           data: {
             vendorId: vendor.id,
@@ -367,7 +450,7 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
         await tx.paymentTransaction.update({
           where: { id: savedTransaction.id },
           data: {
-            refundedAmountCents: Math.min(grossAmountCents, savedTransaction.refundedAmountCents + payload.refundAmountCents),
+            refundedAmountCents: savedTransaction.refundedAmountCents + payload.refundAmountCents,
             refundReason: payload.refundReason,
             refundedAt: occurredAt,
           },
@@ -375,6 +458,8 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
         refundCommission = await applyRefundToCommission(tx, payload, vendor.id);
       }
     }
+
+    const disputeEntry = await applyDisputeToCommission(tx, payload, vendor.id);
 
     if (payload.eventType === "paid" && formSubmissionId) {
       const leadAttribution = await tx.teamLeadAttribution.findFirst({
@@ -411,11 +496,24 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
       }
     }
 
+    // Keep commission creation in the same serializable transaction as the
+    // logical payment row so concurrent callbacks cannot both commit it.
+    const commission = await upsertAffiliateCommission(
+      tx,
+      payload,
+      vendor.id,
+      savedTransaction.id,
+      savedTransaction.grossAmountCents,
+      occurredAt,
+      hasRefundedOrder,
+      currentTransaction ? checkoutReferralCode : payload.referralCode,
+    );
+
     // Conversion attribution can only be established by checkout metadata. The
     // provider payload is intentionally not a source of click IDs or referral codes.
     if (
       payload.eventType === "paid"
-      && existingTransaction
+      && currentTransaction
       && !hasRefundedOrder
       && checkoutAffiliateClickId
       && checkoutReferralCode
@@ -432,8 +530,12 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     }
 
     if (event) {
-      await tx.webhookEvent.update({
-        where: { id: event.id },
+      const processedEvent = await tx.webhookEvent.updateMany({
+        where: {
+          id: event.id,
+          status: event.status,
+          retryCount: event.retryCount,
+        },
         data: {
           vendorId: vendor.id,
           status: "processed",
@@ -441,19 +543,18 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
           errorMessage: null,
         },
       });
+      if (processedEvent.count !== 1) {
+        throw new Error("付款 webhook 事件處理權已變更。");
+      }
     }
 
-    return { transaction: savedTransaction, refundCommission };
+    return {
+      transaction: savedTransaction,
+      commission,
+      refundCommission,
+      disputeEntry,
+    };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-
-  const commission = await upsertAffiliateCommission(
-    payload,
-    vendor.id,
-    transaction.id,
-    occurredAt,
-    hasRefundedOrder,
-    existingTransaction ? checkoutReferralCode : payload.referralCode,
-  );
 
   await writeAuditLog({
     vendorId: vendor.id,
@@ -462,8 +563,31 @@ export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput,
     targetType: "WebhookEvent",
     targetId: event?.id ?? payload.eventId,
     before: auditSnapshot(existingTransaction),
-    after: auditSnapshot({ transaction, commission, refundCommission, eventId: payload.eventId }),
+    after: auditSnapshot({ transaction, commission, refundCommission, disputeEntry, eventId: payload.eventId }),
   });
 
-  return { vendor, transaction, commission, refundCommission };
+  return { vendor, transaction, commission, refundCommission, disputeEntry };
+}
+
+function isRetryableCommissionWriteConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError
+    && (error.code === "P2034" || error.code === "P2002");
+}
+
+/**
+ * A serializable abort is expected when two callbacks race for the same
+ * business identity. Retry a bounded number of times; the second read/upsert
+ * then returns the existing commission instead of creating another row.
+ */
+export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await processPaymentWebhookOnce(payload, event);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;
+    }
+  }
+  throw lastError;
 }

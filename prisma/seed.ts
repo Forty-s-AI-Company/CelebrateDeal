@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { buildCommissionDeduplicationKey } from "../src/lib/affiliate-commission";
 import { hashPassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
@@ -448,9 +449,9 @@ async function main() {
         accountLabel: "平台統一金流代收",
         status: "verified",
         merchantIdRef: "vault:ecpay:demo-merchant",
-        bankAccountName: "五合選品有限公司",
-        bankCode: "013",
-        bankAccountNumber: "vault:bank:wuhe-main",
+        bankAccountLegacyName: "五合選品有限公司",
+        bankCodeLegacy: "013",
+        bankAccountLegacyNumber: "vault:bank:wuhe-main",
       },
       {
         vendorId: vendor.id,
@@ -516,6 +517,11 @@ async function main() {
         monthKey: "2026-07",
         sourceType: "product",
         sourceId: products[0].id,
+        deduplicationKey: buildCommissionDeduplicationKey({
+          affiliateId: affiliate.id,
+          sourceType: "product",
+          sourceId: products[0].id,
+        }),
         referralCode: affiliate.code,
         orderNumber: "ORDER-1001",
         orderAmountCents: 168000,
@@ -529,6 +535,11 @@ async function main() {
         monthKey: "2026-07",
         sourceType: "product",
         sourceId: products[1].id,
+        deduplicationKey: buildCommissionDeduplicationKey({
+          affiliateId: affiliate.id,
+          sourceType: "product",
+          sourceId: products[1].id,
+        }),
         referralCode: affiliate.code,
         orderNumber: "ORDER-1002",
         orderAmountCents: 69000,
@@ -590,9 +601,9 @@ async function main() {
         create: {
           vendorId: vendor.id,
           settlementId: settlement.id,
-          bankAccountName: "五合選品有限公司",
-          bankCode: "013",
-          bankAccountNumber: "****7788",
+          bankAccountDisplayName: "五＊＊＊",
+          bankCodeDisplay: "013",
+          bankAccountDisplayNumber: "****7788",
           payoutAmountCents: 231075,
           status: "pending_review",
         },

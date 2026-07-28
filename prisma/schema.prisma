@@ -41,6 +41,7 @@ model Vendor {
   affiliates                 Affiliate[]
   affiliateClicks            AffiliateClick[]
   affiliateCommissions       AffiliateCommission[]
+  affiliateCommissionLedgerEntries AffiliateCommissionLedgerEntry[]
   affiliatePayouts           AffiliatePayout[]
   usageRecords               UsageRecord[]
   usageLimit                 VendorUsageLimit?
@@ -633,22 +634,22 @@ model PayoutBatch {
 }
 
 model PayoutItem {
-  id                String    @id @default(cuid())
-  payoutBatchId     String
-  vendorId          String
-  settlementId      String?
+  id                       String    @id @default(cuid())
+  payoutBatchId            String
+  vendorId                 String
+  settlementId             String?
   bankAccountDisplayName   String    @map("bankAccountName")
-  bankCodeDisplay          String    @map("bankCode")
+  bankCodeDisplay           String    @map("bankCode")
   bankAccountDisplayNumber String    @map("bankAccountNumber")
   bankAccountEncrypted     String?
-  payoutAmountCents Int
-  status            String    @default("pending")
-  failReason        String?
-  paidAt            DateTime?
-  retryCount        Int       @default(0)
-  retriedAt         DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  payoutAmountCents        Int
+  status                   String    @default("pending")
+  failReason               String?
+  paidAt                   DateTime?
+  retryCount               Int       @default(0)
+  retriedAt                DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   payoutBatch PayoutBatch @relation(fields: [payoutBatchId], references: [id], onDelete: Cascade)
   vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
@@ -659,21 +660,21 @@ model PayoutItem {
 }
 
 model PaymentAccount {
-  id                String   @id @default(cuid())
-  vendorId          String
-  mode              String   @default("byo")
-  providerName      String
-  accountLabel      String
-  status            String   @default("pending")
-  apiKeyRef         String?
-  merchantIdRef     String?
+  id                      String   @id @default(cuid())
+  vendorId                String
+  mode                    String   @default("byo")
+  providerName            String
+  accountLabel            String
+  status                  String   @default("pending")
+  apiKeyRef               String?
+  merchantIdRef           String?
   bankAccountLegacyName   String?  @map("bankAccountName")
-  bankCodeLegacy          String?  @map("bankCode")
+  bankCodeLegacy           String?  @map("bankCode")
   bankAccountLegacyNumber String?  @map("bankAccountNumber")
   bankAccountEncrypted    String?
-  riskHoldEnabled   Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  riskHoldEnabled         Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
@@ -808,22 +809,67 @@ model AffiliateCommission {
   monthKey              String
   sourceType            String    @default("product")
   sourceId              String?
+  deduplicationKey      String
   referralCode          String?
   orderNumber           String?
   orderAmountCents      Int       @default(0)
   commissionRateBps     Int       @default(0)
   commissionAmountCents Int       @default(0)
-  status                String    @default("pending")
+  status                AffiliateCommissionStatus @default(pending)
   attributedAt          DateTime  @default(now())
   settledAt             DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+  affiliate Affiliate? @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  ledgerEntries AffiliateCommissionLedgerEntry[]
 
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+  @@unique([vendorId, id])
+  @@unique([vendorId, deduplicationKey])
+}
+
+/// Immutable accounting entries. Operational commission status remains separate
+/// from its financial balance so a paid commission is never rewritten after payout.
+model AffiliateCommissionLedgerEntry {
+  id                    String                         @id @default(cuid())
+  vendorId              String
+  affiliateCommissionId String
+  entryType             AffiliateCommissionLedgerEntryType
+  deduplicationKey      String
+  providerName          String
+  eventIdentity         String
+  disputeCaseId         String?
+  amountCents           Int
+  occurredAt            DateTime
+  createdAt             DateTime                       @default(now())
+
+  vendor      Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  commission  AffiliateCommission @relation(fields: [vendorId, affiliateCommissionId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, deduplicationKey])
+  @@index([vendorId, affiliateCommissionId, createdAt], map: "AffiliateCommissionLedger_v_c_created_idx")
+  @@index([vendorId, affiliateCommissionId, disputeCaseId], map: "AffiliateCommissionLedger_v_c_case_idx")
+}
+
+enum AffiliateCommissionLedgerEntryType {
+  opening_balance
+  accrual
+  refund
+  reversal
+  dispute_opened
+  dispute_released
+  dispute_lost
+}
+
+enum AffiliateCommissionStatus {
+  pending
+  approved
+  locked
+  paid
+  void
 }
 
 model AffiliatePayout {
@@ -841,7 +887,7 @@ model AffiliatePayout {
   updatedAt             DateTime  @updatedAt
 
   vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate Affiliate? @relation(fields: [affiliateId], references: [id], onDelete: SetNull)
+  affiliate Affiliate? @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
