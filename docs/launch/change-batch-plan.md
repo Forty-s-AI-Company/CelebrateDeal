@@ -49,3 +49,9 @@
 - 其餘 497 筆原始變更均已分類且保留在工作區：291 筆 historical/raw reports 為 archive-or-ignore candidate；26 筆 AI Team、7 筆 DB、71 筆產品、58 筆測試、12 筆 tooling/CI、32 筆文件皆為 needs-review。
 - AI Team candidate 的 MCP unit test 有 route expectation mismatch；本次不修程式、不強行提交。DB、payment、UI 與測試的混合檔案也沒有 stage。
 - 完整報告：`.ai-team/reports/git-change-batching-20260728-133000/`。
+
+## 2026-07-28 清算續作
+
+- 已新增獨立 commit：`92a1caa`（Lite runtime）、`caf10b4`（WP-04）、`0746502`（WP-12）、`844062b`／`e48c3b7`（generated artifact ignore）、`b8a29d8`／`424a3c4`（canonical evidence/docs）。
+- 285 份 raw report 已逐檔 SHA-256 驗證後封存到專案外；本機刪除受安全層阻擋，已以精確 `.gitignore` 規則防止再次納入 Git。
+- Prisma schema 的 WP-12 欄位已以 index-level 精確 patch 與 WP-13／14 hunk 分離；其餘 migration 與產品變更維持明確 NEEDS_REVIEW。

@@ -24,3 +24,9 @@
 ## Git batching handoff（2026-07-28）
 
 本次已提交兩筆已驗證的 launch evidence／batching 文件批次。其餘 497 筆原始變更全部保留並有分類；下一個工作包不得直接混入它們，應先以 `git-change-batching-20260728-133000` 報告中列出的單一 domain 邊界重建可測試批次。
+
+## Git backlog liquidation continuation（2026-07-28）
+
+- 已完成可提交部分：Lite runtime、WP-04 runner、WP-12 bank encryption、canonical evidence/docs 與 generated artifact ignore。
+- 下一個窄範圍包必須先處理 WP-06 tenant-ledger migration 或 no-dotenv tooling/CI，不能直接開始 WP-13／WP-14 或新的產品功能。
+- 其餘 product/test/API/UI 修改已列於 `.ai-team/reports/git-backlog-liquidation-20260728-134500/remaining-uncommitted-files.txt`，必須依 domain 重建成可測試批次。

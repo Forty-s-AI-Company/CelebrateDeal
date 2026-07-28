@@ -211,3 +211,9 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - 外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-batching-20260728-130341`。
 - 分類與 commit report：`.ai-team/reports/git-change-batching-20260728-133000/`。
 - 已提交：`725c17a docs(launch): record verification evidence` 與 `893865c docs(launch): record change batching outcome`；其餘原始變更均維持未暫存並依報告分類。
+
+## Git backlog liquidation continuation（2026-07-28）
+
+- 新外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-backlog-liquidation-20260728-131914`。
+- 續作報告：`.ai-team/reports/git-backlog-liquidation-20260728-134500/`。
+- Lite MCP 6/6、lint、typecheck、WP-12 bank encryption 5/5、Prisma validate/generate 與 secret scan 皆有本次 receipts；WP-04 完整 runner 受終端時限阻擋，採用既有完整 receipt，未誤稱本次重跑成功。
