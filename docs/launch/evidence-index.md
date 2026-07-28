@@ -205,3 +205,9 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - `.ai-team/reports/wp-07-auth-mfa-triage-20260728060121-511/final-verdict.md`
 
 第二次 runner 的 deterministic gates 全數 PASS；source `.env*` 未讀取，資料只在 loopback disposable `wp07_*` schema，已 marker 驗證後清除。MFA recovery code race 沒有 DB concurrency receipt，刻意維持 `INSUFFICIENT_EVIDENCE`；Gemini Deep 已在使用者互動授權下完成唯讀審查並回傳 `PASS`，故此第一切片最終 `COMPLETE`。
+
+## Git change batching（2026-07-28）
+
+- 外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-batching-20260728-130341`。
+- 分類與 commit report：`.ai-team/reports/git-change-batching-20260728-133000/`。
+- 已提交：`725c17a docs(launch): record verification evidence`；其餘原始變更均維持未暫存並依報告分類。

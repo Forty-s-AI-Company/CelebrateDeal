@@ -20,3 +20,7 @@
 | WP-10 | 外部商業 Gate | PayUni/Supabase/observability/DNS/legal | manual checklist 與 sandbox receipts | 人工＋Sol 驗收 | 人工 | 前述 packages | 4 | +15 |
 
 高風險：WP-06 涉及 migration，只能在 disposable DB 做 review；不得執行正式 migration。
+
+## Git batching handoff（2026-07-28）
+
+本次只提交一筆已驗證的 launch evidence 文件批次。其餘 498 筆原始變更全部保留並有分類；下一個工作包不得直接混入它們，應先以 `git-change-batching-20260728-133000` 報告中列出的單一 domain 邊界重建可測試批次。
