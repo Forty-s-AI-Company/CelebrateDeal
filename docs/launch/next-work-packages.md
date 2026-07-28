@@ -23,4 +23,4 @@
 
 ## Git batching handoff（2026-07-28）
 
-本次只提交一筆已驗證的 launch evidence 文件批次。其餘 498 筆原始變更全部保留並有分類；下一個工作包不得直接混入它們，應先以 `git-change-batching-20260728-133000` 報告中列出的單一 domain 邊界重建可測試批次。
+本次已提交兩筆已驗證的 launch evidence／batching 文件批次。其餘 497 筆原始變更全部保留並有分類；下一個工作包不得直接混入它們，應先以 `git-change-batching-20260728-133000` 報告中列出的單一 domain 邊界重建可測試批次。

@@ -45,7 +45,7 @@
 ## 2026-07-28 實際批次結果
 
 - 原始快照為 502 筆、0 staged；外部安全備份位於 `C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-batching-20260728-130341`。
-- 已提交一筆可獨立驗證的 launch evidence commit：`725c17a docs(launch): record verification evidence`（4 檔）。
-- 其餘 498 筆均已分類且保留在工作區：291 筆 historical/raw reports 為 archive-or-ignore candidate；26 筆 AI Team、7 筆 DB、71 筆產品、58 筆測試、12 筆 tooling/CI、33 筆文件皆為 needs-review。
+- 已提交 `725c17a docs(launch): record verification evidence`（4 檔）與 `893865c docs(launch): record change batching outcome`（含原始 snapshot 的 change-batch plan）。
+- 其餘 497 筆原始變更均已分類且保留在工作區：291 筆 historical/raw reports 為 archive-or-ignore candidate；26 筆 AI Team、7 筆 DB、71 筆產品、58 筆測試、12 筆 tooling/CI、33 筆文件皆為 needs-review。
 - AI Team candidate 的 MCP unit test 有 route expectation mismatch；本次不修程式、不強行提交。DB、payment、UI 與測試的混合檔案也沒有 stage。
 - 完整報告：`.ai-team/reports/git-change-batching-20260728-133000/`。

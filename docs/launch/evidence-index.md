@@ -210,4 +210,4 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 
 - 外部安全備份：`C:\Users\eden\Downloads\AI-Team-Migration-Backups\CelebrateDeal-git-batching-20260728-130341`。
 - 分類與 commit report：`.ai-team/reports/git-change-batching-20260728-133000/`。
-- 已提交：`725c17a docs(launch): record verification evidence`；其餘原始變更均維持未暫存並依報告分類。
+- 已提交：`725c17a docs(launch): record verification evidence` 與 `893865c docs(launch): record change batching outcome`；其餘原始變更均維持未暫存並依報告分類。
