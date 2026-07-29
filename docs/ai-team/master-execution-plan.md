@@ -11,7 +11,7 @@ FIRST_EXECUTABLE_WP：M1-PLANNING-COMMIT
 RECOMMENDED_EXECUTOR_MODEL：gpt-5.6-terra／High
 USER_AUTHORIZATION_REQUIRED_TO_START：NO
 PRODUCTION_ACCESS_REQUIRED：NO
-SELF_HASH_CANONICAL_SHA256：78A7BBAF7FF0AB451E3F1235AB24A873775A1C5036813609C7D72DA58A056937
+SELF_HASH_CANONICAL_SHA256：DA73D63055ADB4A1701306C7B6B000B0F2D7E85E00717A9398838BDF84379FB1
 
 > 本文件是 living plan。M1 詳細規劃；M2、M3 保留中等粒度；更後面的工作只保留方向與候選 Work Package。每個 Milestone 完成後必須停止，由 Sol 依最新程式碼、Git 與 canonical evidence 重新校準。
 
@@ -582,3 +582,11 @@ Terra遇到以下任一情況必須停止：
 | Version | 日期 | 變更 |
 |---|---|---|
 | 1 | 2026-07-29 | 建立rolling Master Plan；以最新WP-08 final summary更新根因；建立M1 planning commit、WP-22與WP-23；加入完整dirty ownership、manifest時點、smoke hunk與commit授權邊界。 |
+
+## 17. M1 execution record
+
+| 時間（UTC） | 單位 | 結果 | 證據／後續 |
+|---|---|---|---|
+| 2026-07-29T04:31:22Z | M1-PLANNING-COMMIT | PASS；commit `f2bacb1` | 兩份規劃文件精確暫存、cached diff review、diff check與secret scan均通過；其餘9個dirty path hash未漂移。 |
+| 2026-07-29T04:31:22Z | WP-22 | FAIL；停止M1 | 單次 canonical run `20260729042417940` 的 unit-coverage exit 1。已執行的Browser、quality、source manifest、package lock、snapshot/runtime與三schema marker cleanup皆PASS；coverage未完成固定119／939／0／0 gate。不得執行WP-23、不得更新launch evidence或readiness；交回Sol重新規劃。 |
+| 2026-07-29T05:04:08Z | WP-22-R1 | PASS；canonical run `20260729050408559` | RUNNER_INVENTORY_STALE 已修正為 HARD_PROTECTED／PRESERVE_ONLY／MUTABLE_CONTROL_PLANE ownership validation；Master Plan 排除於產品 source manifest，但由 preserve-only 前後 hash 驗證。npm ci、secret scan、Prisma、三 schema、39 Browser、lint、typecheck、strict-index、固定 119／939／0／0 coverage、source manifest、七個 hard-protected hash、preserve-only、snapshot/runtime與三 schema cleanup 全部 PASS；可進入 WP-22 commit 與 WP-23。 |
