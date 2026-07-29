@@ -269,3 +269,15 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - `.ai-team/reports/wp-19-coverage-synthetic-schema-20260728213657260/postflight-wp17-protected-manifest.json`
 
 新的 no-dotenv canonical run 已通過 WP-17 107 targeted tests、WP-18 110 targeted tests、119 files／939 tests coverage、Prisma、lint、typecheck、strict-index、secret scan 與 diff check；雙 synthetic schema 均 marker-gated cleanup PASS。TB-16 已 `RESOLVED`，WP-18 為 `COMPLETE`／其 payout race 限定為 `MITIGATED_CURRENT_SNAPSHOT`。過往 raw receipt 仍只保留歷史診斷用途，沒有被用作本次結案依據。
+
+## WP-08 — Product Browser QA（2026-07-29，COMPLETE；38／1 為歷史）
+
+- `docs/launch/wp08-product-browser-qa-20260728.md`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/environment-safety.json`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/command-receipts.sanitized.json`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/browser-qa-summary.md`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/final-verdict.md`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/preflight-git-state.json`
+- `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/postflight-git-state.json`
+
+歷史 run `20260728140909347` 的 38 passed／1 failed 僅保留根因脈絡。canonical run `20260729050408559` 已通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、secret scan、source manifest與snapshot/runtime／三 schema cleanup；final summary SHA-256 為 `31E12C426FC8466A5A96B273C17BCD023C8511D60C6892969B752D01CA0D71CB`，schema cleanup SHA-256 為 `F6EE5BA0466933DDC5D0A06A031B6AD9B9ABA76073FDA3F2B3163896628421DB`。readiness 仍為 57／45，待 Sol 重新計分。

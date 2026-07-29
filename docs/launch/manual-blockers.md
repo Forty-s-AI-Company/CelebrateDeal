@@ -20,3 +20,5 @@ WP-09 沒有新增人工帳號、正式授權、正式 Secret 或正式服務 bl
 WP-17 未新增人工 blocker；所有資料為 synthetic loopback disposable schema，未要求正式帳號、授權、Secret 或人工外部操作。
 
 WP-18 未新增人工 blocker；coverage 阻擋是既有 WP-17 DB test 的合成環境旗標缺漏，無須正式帳號、授權或資料庫操作。
+
+WP-08 歷史 password-reset audit assertion failure 已在 canonical run `20260729050408559` 完成全套回歸驗證；目前沒有 WP-08 人工 blocker。此結果不解除外部服務、部署、法務或營運的既有人工 Gate。

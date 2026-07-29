@@ -40,3 +40,11 @@
 Gemini Fast 在早期 P1003 receipt 上已完成一次 sanitized-receipt completeness QA；最終 run 則由主 Codex 逐份回查 receipt、raw log、schema 清理與 telemetry log。Gemini Deep 不需要且未使用。
 
 這份基準不代表 Supabase ACL、PayUni sandbox、觀測平台、正式 Browser journey、screen-reader、DNS／法務／營運等人工或外部 Gate 已通過。
+
+## WP-08 Browser QA follow-up（2026-07-28，REWORK_REQUIRED）
+
+WP-08 canonical no-dotenv run `20260728140909347` 已超出本文件原本的 discovery 範圍，實際啟動 Chromium 與 full suite；結果為 38 passed／1 failed。password-reset request 的 audit-log assertion在 retry 後仍不成立，因此此 WP-04 baseline 不能被升格為 app-level Browser QA PASS。詳見 `docs/launch/wp08-product-browser-qa-20260728.md`。
+
+## WP-08 canonical closure（2026-07-29）
+
+上述 38／1 為歷史 evidence，已由 canonical run `20260729050408559` 取代。新的 no-dotenv disposable run 通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、兩種 typecheck、secret scan、source manifest 與 marker-gated snapshot/runtime／三 schema cleanup；沒有讀取來源 `.env*`、沒有使用正式服務或資料。這是本機 current-snapshot evidence，不等同部署、外部服務、screen-reader 或商業上線核准。

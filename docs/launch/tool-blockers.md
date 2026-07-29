@@ -30,3 +30,5 @@ WP-14 disposable runner 與獨立 Fast／Deep 複核均完成；TB-11 不再阻�
 | TB-16 | WP-18 coverage cross-WP DB test environment | RESOLVED | WP-19 canonical run `20260728213657260` 以互斥 `wp17-db`／`wp18-main` coverage projects 傳遞各自 schema owner flag；WP-17 107 targeted、WP-18 110 targeted、119 files／939 tests coverage、雙 marker-gated cleanup 與全部品質 gates 均 PASS。證據見 `docs/launch/wp19-coverage-synthetic-schema-20260728.md`。 | 已解除；保留此歷史根因與 receipt 指標 |
 
 | TB-17 | Gemini Fast WP-18 wrapper | TOOL_BLOCKED（non-blocking） | `.ai-team/reports/wp-18-payout-batch-concurrency-20260728193607750/gemini-fast-result.sanitized.json`：wrapper 在模型啟動前出現本機 null ArgumentList 相容性錯誤 | 主 Codex deterministic receipts |
+
+| TB-18 | WP-08 isolated Chromium cache | RESOLVED | runner 明確注入本機 immutable Playwright browser cache；canonical run `20260729050408559` 已通過 39 Browser tests 與全套 local gates | 無；不外推為外部或 production Browser evidence |

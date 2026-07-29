@@ -96,3 +96,9 @@ WP-19 已以兩個互斥 synthetic schema owner coverage projects 補齊必要 g
 ## WP-19 — Coverage synthetic schema flag propagation（2026-07-28，COMPLETE）
 
 既有 `5c9139c` 候選修復在新的 no-dotenv canonical run 中通過：coverage runner 以 process-scoped bridge variables 傳遞兩個真實、互斥 owner schema，再由 coverage-only Vitest projects 注入對應的 `WP17_DISPOSABLE_SCHEMA` 或 `WP18_DISPOSABLE_SCHEMA`。沒有讀取 `.env*`、沒有使用正式資料庫，雙 schema cleanup PASS。TB-16 已解除，WP-18 改為 `COMPLETE`；Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**，因本包沒有新增 E2E、部署或外部 Gate 證據。詳見 `docs/launch/wp19-coverage-synthetic-schema-20260728.md`。
+
+## WP-08 — Product Browser QA（2026-07-29，COMPLETE；歷史 38／1 已 supersede）
+
+歷史 `20260728140909347` 的 38／1 不再是目前結論。canonical run `20260729050408559` 已通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、secret scan、source manifest及snapshot/runtime／三 schema cleanup；來源 `.env*` 未讀取，也沒有連到正式服務或資料。
+
+Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**；Terra 不直接加分，類別 2、6、7、8 交由 Sol 以最新 receipts 重評。詳見 `docs/launch/wp08-product-browser-qa-20260728.md`。
