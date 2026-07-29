@@ -26,6 +26,7 @@ function Get-ProjectFile {
 
 $canonicalFiles = @(
     'docs/ai-team/workflow-policy.md',
+    'docs/ai-team/workflow-mode.md',
     'docs/ai-team/handoff-schema.md',
     'docs/ai-team/prompts/planner-prompt.md',
     'docs/ai-team/prompts/executor-prompt.md',
@@ -58,13 +59,18 @@ if (Test-Path -LiteralPath $handoffPath -PathType Leaf) {
             Add-Failure "Handoff schema is missing required field: $field"
         }
     }
+    foreach ($field in @('LAST_SUCCESSFUL_STAGE:', 'NEXT_COMMAND:', 'PROCESS_STARTED:', 'EXIT_CODE:', 'EXCEPTION_TYPE:', 'STDERR_SUMMARY:', 'ROOT_CAUSE_CONFIRMED:', 'ROOT_CAUSE_CATEGORY:', 'CURRENT_SCOPE_FILES:', 'PROPOSED_SCOPE_EXPANSION:', 'REMEDIATION_ROUND:', 'FULL_RUN_COUNT:', 'SCOPE_EXPANSION_REQUIRED:', 'USER_DECISION_REQUIRED:', 'PRODUCTION_ACCESS_REQUIRED:')) {
+        if (-not $handoff.Contains($field)) {
+            Add-Failure "Handoff schema is missing PRELAUNCH_DEV diagnostic field: $field"
+        }
+    }
 }
 
 $plannerPath = Get-ProjectFile 'docs/ai-team/prompts/planner-prompt.md'
 $executorPath = Get-ProjectFile 'docs/ai-team/prompts/executor-prompt.md'
 if (Test-Path -LiteralPath $plannerPath -PathType Leaf) {
     $planner = [System.IO.File]::ReadAllText($plannerPath)
-    foreach ($requiredText in @('workflow-policy.md', 'handoff-schema.md', 'AI_TEAM_HANDOFF', 'READY_FOR_TERRA')) {
+    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'AI_TEAM_HANDOFF', 'READY_FOR_TERRA', 'PRELAUNCH_DEV')) {
         if (-not $planner.Contains($requiredText)) {
             Add-Failure "Planner template is missing required reference or gate: $requiredText"
         }
@@ -76,7 +82,7 @@ if (Test-Path -LiteralPath $plannerPath -PathType Leaf) {
 
 if (Test-Path -LiteralPath $executorPath -PathType Leaf) {
     $executor = [System.IO.File]::ReadAllText($executorPath)
-    foreach ($requiredText in @('workflow-policy.md', 'handoff-schema.md', 'current-work-package.md', 'AI_TEAM_HANDOFF')) {
+    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'current-work-package.md', 'AI_TEAM_HANDOFF', 'PRELAUNCH_DEV', 'CONTINUE_CURRENT_WP')) {
         if (-not $executor.Contains($requiredText)) {
             Add-Failure "Executor template is missing required reference or handoff: $requiredText"
         }
@@ -95,6 +101,11 @@ if (Test-Path -LiteralPath $policyPath -PathType Leaf) {
     foreach ($requiredDecision in @('NEXT_TASK_REQUIRED', 'PLAN_REMEDIATION', 'CONTINUE_CURRENT_WP', 'USER_AUTHORIZATION_REQUIRED', 'MIXED_HUNKS')) {
         if (-not $policy.Contains($requiredDecision)) {
             Add-Failure "Workflow policy is missing task-boundary decision: $requiredDecision"
+        }
+    }
+    foreach ($requiredText in @('PRELAUNCH_DEV', 'RELEASE_HARDENING', 'UNKNOWN = 0', '最多 3 輪', '最多 2 次', '最多 8 個', 'self-hash')) {
+        if (-not $policy.Contains($requiredText)) {
+            Add-Failure "Workflow policy is missing PRELAUNCH_DEV rule: $requiredText"
         }
     }
 }

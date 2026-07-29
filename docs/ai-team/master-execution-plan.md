@@ -441,6 +441,17 @@ docs(launch): close wp08 deterministic evidence
 - 部署與rollback rehearsal、telemetry delivery、screen-reader journey分開驗收。
 - 不把本機build或Browser結果外推成正式部署PASS。
 
+### PRELAUNCH_DEV execution protocol
+
+`WORKFLOW_MODE：PRELAUNCH_DEV`
+
+本節只更新未來執行協議，不改變既有 WP 結果、receipts、M1、WP-25、M2-A01 或 readiness。`docs/ai-team/workflow-policy.md` 與 `workflow-mode.md` 是本節的 canonical 補充；其規則優先於本文件較早的 M1／WP-24 歷史執行契約。
+
+- living Master Plan、goal state、checkpoint、sanitized receipts、logs 與 runtime metadata 是 `MUTABLE_CONTROL_PLANE`，不納入產品 source manifest；self-hash 保留為資訊性 integrity metadata，不得成為 control-plane 更新的 blocking gate。
+- 不再使用固定 dirty path count。每個 dirty path 必須有 ownership，`UNKNOWN` 或無法安全分離的 mixed hunks 仍為 hard stop；`HARD_PROTECTED` 的非預期變更與 `PRESERVE_ONLY` 覆蓋仍不允許。
+- 同一 WP 可在 3 輪 bounded remediation 與 2 次 canonical full run 的配額內持續；每次 full run 前可執行 targeted diagnostic。Terra 可在同一 root cause 與驗收目標下擴張最多 8 個直接相關檔案並記錄 scope expansion。
+- 每個 Milestone 完成後仍停止並交回 Sol；不得自動進入下一個 Milestone。正式環境、正式 DB、正式 Secret、付費、部署與未核准破壞性 migration 仍是人工授權點。
+
 ### M6 — Commercial operations
 
 - DNS、法務、客服、商家onboarding由人工owner簽核。

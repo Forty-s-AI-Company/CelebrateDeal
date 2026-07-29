@@ -4,6 +4,8 @@
 
 ## AI Team Lite v5.3
 
+目前預設 workflow mode 為 `PRELAUNCH_DEV`；只有使用者明確要求才能切換至 `RELEASE_HARDENING`。完整規則見 `docs/ai-team/workflow-mode.md`、`workflow-policy.md`、`handoff-schema.md` 與 Planner／Executor prompts。
+
 - Codex Desktop 主代理是唯一總指揮、整合者與最終驗收者。
 - `/goal` 必須由 `gpt-5.6-terra`、High 執行；若主模型不同，停止並請使用者切換。
 - Planner 為 `gpt-5.6-sol`、High、唯讀；只產生一次 30～90 分鐘工作包，完成後停止。
@@ -28,6 +30,7 @@
 - 不得自動 commit、push、merge、部署、正式資料庫操作、真實付款／退款／寄信。
 - 修改前保留既有使用者變更；不得 reset、clean、stash、checkout、rebase 或丟棄變更。
 - 正式修改後執行相關測試；未執行或遭外部條件阻擋的驗證必須如實標記。
+- `PRELAUNCH_DEV` 以 ownership 驗證 dirty inventory，不以固定數量阻擋；living plan self-hash 不得成為循環 blocking gate。`BLOCKED` 不必然交回 Sol：同一 WP、同一根因且 scope 可控時，Terra 可在配額內留在目前 Task remediation。
 
 ## 文件索引
 
