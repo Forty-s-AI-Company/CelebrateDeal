@@ -1,18 +1,24 @@
 # AI Team Workflow Mode
 
-目前模式：`PRELAUNCH_DEV`
+目前模式：`PRELAUNCH_DEV_AUTONOMOUS`
 
-`PRELAUNCH_DEV` 是 CelebrateDeal 本機開發與驗證的預設模式。除非使用者明確要求，任何角色不得自行切換到 `RELEASE_HARDENING`。
+## PRELAUNCH_DEV_AUTONOMOUS
 
-## PRELAUNCH_DEV
+這是尚未對外營運專案的自主開發模式：
 
-- 以 Git ownership、可分離 hunks 與產品保護邊界驗證 working tree；不以固定 dirty path 數量當 hard gate。
-- living Master Plan、checkpoint、sanitized evidence、reports 與 runtime metadata 屬於 mutable control plane，不納入產品 source-integrity manifest；Master Plan self-hash 僅作資訊性 integrity metadata。
-- 同一 WP、同一驗收目標、根因與 ownership 可控時，Terra 可採取合理、可回滾的診斷與修復；不以固定 remediation 輪數、full run 次數或直接相關檔案數量作為強制邊界。
-- 仍必須保留適用的 deterministic tests、integration gate、sanitized evidence、Git diff/status 檢查、checkpoint 與 rollback 說明。完成實作後預設進行唯讀 AGY QA，再由 Sol 做 acceptance review；只有 `ACCEPT` 可 finalize。
+- Goal 可以跨多個 WP 連續執行，不受固定時間、固定檔案數或固定 remediation 輪數限制。
+- 允許本機、loopback、disposable、Preview、staging、sandbox、Docker、Browser 與 PayUni Sandbox。
+- 允許精確 scope 的 local checkpoint commit，以及必要的 reversible integration。
+- 可依產品價值選擇 targeted tests、完整測試、coverage、E2E 或外部 sandbox evidence。
+- 不需要每個 WP 都執行相同的 planner、AGY、acceptance 與 finalize 流程。
 
 ## RELEASE_HARDENING
 
-僅能由使用者明確切換，用於正式部署前的精確 scope、hash、migration、rollback、production evidence 與人工授權。此模式不會由 PRELAUNCH_DEV 自動啟用。
+只有使用者明確要求時才切換。此模式會增加 production deployment、release rollback、migration、外部服務、監控與人工簽核的精確 Gate。
 
-無論模式為何，正式 DB、正式 Secret、正式外部服務、部署、付費操作、未核准破壞性 migration，以及 Git 的 push、merge、rebase、amend、reset、clean、stash、restore 或 checkout 丟棄未知變更，一律禁止。
+## 永遠有效的安全底線
+
+- 正式 DB、正式 Secret、正式付款、正式退款、正式寄信與正式服務一律隔離；Production deployment 需額外授權。
+- 未核准破壞性 migration、資料刪除、廣域 Docker cleanup 與不可逆 Git 操作一律禁止。
+- 不偽造 evidence，不把未執行測試標成 PASS，不降低 assertion／threshold，不以 skip／exclude 掩蓋問題。
+- 保留使用者既有變更；同一資源保持單一 writer；外部操作保存 sanitized evidence。

@@ -1,21 +1,21 @@
-# AI Team Lite Troubleshooting
+# AI Team Troubleshooting
 
-## MCP 沒有載入
+## MCP、模型或工具不可用
 
-確認 `.codex/config.toml` 的 `ai_team_router` command、args、cwd、env 路徑，以及專案 venv 存在。完整重開 Codex Desktop 後，用 `router_status` 驗證；它只讀設定，不會啟動外部程序。
+記錄實際錯誤與 sanitized 摘要，然後自動改用可用模型、deterministic tests 或 Terra 本地診斷。不要因單一工具無法啟動而停止整個 Goal。
 
-## AGY 未登入或沒有輸出
+## AGY fallback
 
-先在專案目錄執行 `agy --version`、`agy models`、`agy --help`。再以 Fast 或 Deep wrapper 傳送最小唯讀 prompt。wrapper 回傳 `LOGIN_REQUIRED` 時需由使用者登入；`TOOL_BLOCKED` 時最多保留兩次嘗試證據，改由 `Invoke-AiTeamReadOnlyFailover.ps1` 依核准 chain 產生 sanitized fallback receipt，或交由 Terra／專案測試繼續。Luna 只回傳 `FALLBACK_HANDOFF_REQUIRED` metadata；不得在 PowerShell 或 MCP 中啟動 Luna。
+AGY 可依序 Fast → Deep → native Luna。每層都必須如實標記 `PASS`、`TOOL_BLOCKED`、`LOGIN_REQUIRED` 或 `FALLBACK_HANDOFF_REQUIRED`，不能把沒有輸出寫成 PASS。對同一失敗命令不得無限重試；改用不同診斷或繼續其他產品工作。
 
-## 子代理模型不可用
+## Goal 恢復與連續推進
 
-不得靜默改模型。記錄 unavailable、實際 fallback chain 與每次嘗試；Gemini fallback 受全鏈總嘗試上限約束。若需要 Luna，記錄 `FALLBACK_HANDOFF_REQUIRED`，由主代理在核准的 native-agent runtime 以 read-only 方式接手；不由 wrapper、MCP 或 PowerShell 啟動。
+讀取目前 Goal state 與最後 checkpoint，從未完成的最高價值工作繼續。不要建立不必要的新 Task，也不要因完成一個 WP 就停止長程 Goal。
 
-## Goal 恢復
+## 外部／staging／sandbox 阻擋
 
-呼叫 `goal_get_state` 與 `goal_resume`。若 state 不存在，建立新的單一工作包；若 state 已有未完成 phase，從它繼續並保留既有 checkpoint。
+若需要 Preview、staging、sandbox、disposable DB、Browser 或 PayUni Sandbox，可在非 Production 且 scope 明確時繼續。若需要正式 Secret、正式 DB、真實付款、Production 或不可逆操作，才停下要求授權。
 
-## Fast → Deep → Luna fallback
+## 安全底線
 
-重要產品／安全／release Work Package 的 AGY QA 若 Fast 兩次都沒有 structured verdict（例如 `FIRST_OUTPUT_TIMEOUT` 或 `TOOL_BLOCKED`），才使用核准 failover wrapper 做一次 bounded Deep 唯讀審查。Deep 仍無法使用時記錄 `FALLBACK_HANDOFF_REQUIRED`，由主代理交給核准的 native-agent Luna read-only runtime；不可由 PowerShell、MCP 或 wrapper 自動啟動 Luna。每層都要保存 sanitized receipt，不得把沒有輸出或工具錯誤標成 PASS，也不得在 `LOOP_DETECTED` 後繼續重試。
+任何診斷都不得讀取或輸出 `.env*`、Token、Cookie、正式 Secret、正式客戶資料或付款資料；不得偽造 evidence、虛報 PASS、降低 assertion／threshold、用 skip／exclude 掩蓋失敗，或使用 destructive Git。

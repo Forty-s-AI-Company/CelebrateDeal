@@ -1,26 +1,51 @@
 # Goal Protocol
 
-每個 `/goal` 只處理一個 30～90 分鐘 Work Package，主代理必須為 `gpt-5.6-terra`／High。
+## 長程 Goal
 
-1. Terra 先做唯讀 scan；沒有可執行計畫時，交由 Sol 產生一次唯讀計畫與完整 handoff，Sol 隨即停止。
-2. Terra 依 Sol handoff 建立或更新 control-plane packet，並以 `goal_bootstrap` 建立含下列 phases 的 state：`terra_scan`、`sol_plan`、`terra_implement_and_tests`、`agy_qa`、`sol_acceptance_review`。
-3. 每個 phase 完成後由 Terra 使用 `goal_checkpoint` 記錄摘要、evidence、deterministic tests 與下一步；Sol 不寫入 control plane。
-4. Terra 實作後先跑適用 deterministic tests，再預設交 AGY Fast 做唯讀 QA。Fast wrapper 固定 plan + sandbox、預設自動同意 headless 權限提示、最多兩次；`TOOL_BLOCKED`／`LOGIN_REQUIRED` 必須保留，不能取代 tests。
-5. AGY QA 後，Sol 以唯讀方式做 acceptance review，結論只能是 `ACCEPT`、`CONTINUE_CURRENT_WP` 或 `PLAN_REMEDIATION`。Terra 將該結論記入 `sol_acceptance_review` checkpoint。
-6. `CONTINUE_CURRENT_WP` 留在同一 Terra Task；`PLAN_REMEDIATION` 交給 Sol 規劃；只有 `ACCEPT` 才能繼續。
-7. 所有 phases 完成、無未解決人工阻擋、handoff 已驗證且 acceptance 為 `ACCEPT` 時，主代理才可使用 `goal_finalize`。
-8. finalize 前後皆檢查 Git diff 與 Git status，保存證據後停止；不得因 finalize 自動開始下一個 WP。
+CelebrateDeal 的 Goal 是持續任務，不以固定時間或單一 Work Package 結束。主代理可依 roadmap 持續完成：
 
-狀態檔：`.ai-team/state/goal-state.json`；進度檔：`.ai-team/logs/goal-progress.md`。
+1. product feature closure
+2. product security hardening
+3. disposable／staging／sandbox verification
+4. quality and coverage improvement
+5. release evidence and scoring
 
-## 每輪價值檢查與迴圈停止規則
+每完成一項就保存 checkpoint，然後自動挑選下一個已核准且有最高產品價值的工作。只有 Goal 的所有目標已完成，或遇到安全／授權阻擋，才停止。
 
-每輪開始前，主代理必須先回答：「下一個動作是否會有效推進重要產品功能、產品安全、上線必要證據，或解除目前阻擋？」若否，必須重新規劃，不得繼續低價值重跑、補測或只追求 coverage 小幅上升。
+## 自主執行
 
-若同一 Work Package、同一根因、同一失敗命令或同一指標連續兩次沒有可量化改善，必須標記 `LOOP_DETECTED`、保存精確證據並停止，向使用者詢問是否改變方向；不得自動重試形成迴圈。AGY `TOOL_BLOCKED` 最多保留兩次事實結果，不得藉此無限重試。
+- Terra 可以掃描、規劃、修改、測試、建立 evidence、checkpoint 與本地 commit。
+- Sol 可以在需求改變、scope 擴大、根因改變或需要 acceptance 時重新規劃。
+- AGY Fast、AGY Deep 與 native Luna 可依需要自動使用，不要求固定順序或固定次數。
+- 同一檔案或資料資源維持單一 writer；不相交 scope 可並行。
+- 測試、coverage、Browser、Preview、staging、sandbox 與 disposable DB 依價值與風險選擇，不必每個 WP 全部執行。
 
-每次 handoff 都要記錄 `VALUE_CHECK`：本輪要改善的產品結果、預期驗收、實際結果與迴圈狀態。對使用者明確要求的長程 Goal，單一 WP acceptance 後可銜接下一個已核准 WP；但價值檢查失敗、偵測迴圈、範圍／風險改變或需新授權時，必須停下詢問使用者。
+## 必須保留的安全規則
 
-## AGY fallback 順序
+- 禁止讀取或輸出 `.env*`、Token、Cookie、私鑰、正式 Secret、正式客戶資料或付款資料。
+- 禁止正式資料庫、正式付款、正式退款、正式寄信與正式服務操作；Production deploy 需明確授權。
+- 禁止未核准破壞性 migration、資料刪除、廣域 Docker cleanup 與不可逆操作。
+- 禁止偽造 evidence、虛報測試 PASS、降低 assertion／threshold 或以 skip／exclude 掩蓋失敗。
+- 必須保留使用者既有變更，不得使用 destructive Git 操作。
+- 外部與 disposable 操作必須有 ownership、最小 scope、cleanup 與 sanitized evidence。
 
-重要產品 Work Package 在 deterministic tests 完成後，依序使用 **AGY Fast → AGY Deep → Luna**：Fast 最多兩次；兩次 `FIRST_OUTPUT_TIMEOUT`／`TOOL_BLOCKED` 或沒有 structured verdict，才經核准 failover wrapper 做一次 bounded Deep 唯讀審查。Deep 若仍無法取得可驗證結果，保存 `FALLBACK_HANDOFF_REQUIRED`，交由 native-agent Luna read-only runtime；PowerShell、MCP 與 wrapper 不得自動啟動 Luna，也不得把沒有結果寫成 PASS。任何 fallback 都必須記錄實際嘗試、狀態與 sanitized evidence，且不得取代 deterministic tests 或 Sol acceptance。
+## Goal state
+
+Goal state 位於 `.ai-team/state/goal-state.json`；進度可記錄於 `.ai-team/logs/goal-progress.md`。這些是 control-plane metadata，可由主代理在每個 checkpoint 更新，不必等待 Sol 或停止 Goal。
+
+建議狀態：`IN_PROGRESS`、`WAITING_AUTHORIZATION`、`BLOCKED_ENVIRONMENT`、`COMPLETE`。`BLOCKED` 只代表目前路徑停滯，主代理可以在保留證據後改走另一個已授權路徑。
+
+## 迴圈停止
+
+- 同一命令或根因沒有改善時，不重試原命令；改用不同診斷或轉往下一個產品工作。
+- `LOOP_DETECTED` 只標記該路徑，不阻止整個 Goal 持續推進。
+- AGY 工具阻擋不能偽造成 PASS，也不能觸發無限重試；可自動使用其他模型或 deterministic evidence。
+
+## 完成條件
+
+只有以下全部成立才可將長程 Goal 標記 `COMPLETE`：
+
+- 所有核准功能與必要產品風險已處理。
+- 所有指定 launch score 與 canonical CAT01～CAT10 達標，或明確記錄仍需人工／外部 owner 的部分。
+- 必要 deterministic、integration、staging、sandbox、監控與人工證據均可追溯。
+- 沒有未揭露的安全阻擋，且 release decision 已由授權 owner 作出。
