@@ -4,7 +4,10 @@ import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
-const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public";
+// Browser fixtures may write data, so isolate them from the interactive local
+// development database. Provision this database from committed migrations
+// before running browser tests.
+const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
 const resendApiKeyEnvironmentName = ["RESEND", "API", "KEY"].join("_");
 const emailFromEnvironmentName = ["EMAIL", "FROM"].join("_");
 const sentryDsnEnvironmentName = ["SENTRY", "DSN"].join("_");

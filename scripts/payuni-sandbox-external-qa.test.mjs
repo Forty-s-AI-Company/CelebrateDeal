@@ -3,14 +3,17 @@ import { test, vi } from "vitest";
 
 import {
   PayUniQueryFailure,
+  assertExactHttpsHost,
+  assertSandboxExecutionEnvironment,
   assertPublicPayUniCallbackHost,
+  buildQaArtifact,
   callbackTimeoutDiagnostic,
   payUniRequest,
   paymentPageStructure,
   providerResultDiagnostic,
   reconcileCallbackTimeout,
   resolvePayUniStagingAppUrl,
-  vercelProtectionBypassCookieUrl,
+  sandboxEnvironmentAvailability,
 } from "./payuni-sandbox-external-qa.mjs";
 
 const DIAGNOSTIC_HASH_KEY = "12345678901234567890123456789012";
@@ -40,17 +43,62 @@ test("Sandbox QA requires an explicit non-production Staging host allowlist", ()
   }), "https://staging.example.test");
 });
 
-test("Vercel preview protection bypass cookie URL is explicit and opt-in", () => {
-  assert.equal(vercelProtectionBypassCookieUrl("https://preview.example.test", {}), null);
+test("Sandbox execution preflight is process-env-only and missing values fail before any network stage", () => {
+  const secret = "do-not-persist-payuni-secret";
+  const availability = sandboxEnvironmentAvailability({ PAYUNI_HASH_KEY: secret });
+  assert.equal(availability.PAYUNI_HASH_KEY, true);
+  assert.equal(availability.PAYUNI_HASH_IV, false);
+  assert.equal("PAYUNI_QA_FINANCE_EMAIL" in availability, false);
+  assert.equal("PAYUNI_QA_FINANCE_PASSWORD" in availability, false);
+  assert.equal("PLATFORM_ADMIN_EMAIL" in availability, false);
+  assert.equal("PLATFORM_ADMIN_PASSWORD" in availability, false);
+  assert.equal(JSON.stringify(availability).includes(secret), false);
 
-  const url = new URL(vercelProtectionBypassCookieUrl("https://preview.example.test/live/path", {
-    VERCEL_AUTOMATION_BYPASS_SECRET: "preview-bypass-token",
-  }));
+  assert.throws(
+    () => assertSandboxExecutionEnvironment({ PAYUNI_HASH_KEY: secret }),
+    (error) => error?.name === "SandboxExecutionBlockedError" && error.status === "LOGIN_REQUIRED",
+  );
+});
 
-  assert.equal(url.origin, "https://preview.example.test");
-  assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("x-vercel-protection-bypass"), "preview-bypass-token");
-  assert.equal(url.searchParams.get("x-vercel-set-bypass-cookie"), "true");
+test("Sandbox payment-only preflight does not require a separate finance login", () => {
+  const environment = {
+    PAYUNI_ENV: "sandbox",
+    PAYUNI_SANDBOX_QA_ENABLED: "true",
+    PAYUNI_SANDBOX_REFUND_ENABLED: "true",
+    PAYUNI_TEST_APP_URL: "https://staging.example.test",
+    PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+    PAYUNI_MERCHANT_ID: "synthetic-merchant",
+    PAYUNI_HASH_KEY: "12345678901234567890123456789012",
+    PAYUNI_HASH_IV: "1234567890123456",
+    PAYUNI_SANDBOX_ONETIME_CARD_NO: "4000000000000002",
+    PAYUNI_TEST_EXPIRY: "1230",
+    PAYUNI_TEST_CVV: "123",
+  };
+  assert.doesNotThrow(() => assertSandboxExecutionEnvironment(environment));
+});
+
+test("Sandbox failure artifact retains only the allowlisted browser stage", () => {
+  const artifact = buildQaArtifact({
+    success: false,
+    completedAt: "2026-07-30T00:00:00.000Z",
+    checks: { browserStage: "waiting-payuni-checkout", browserErrorCategory: "assertion-or-interaction" },
+  });
+  assert.equal(artifact.safeFailureStage, "waiting-payuni-checkout");
+  assert.equal(artifact.safeFailureCategory, "unknown");
+  assert.equal(JSON.stringify(artifact).includes("assertion-or-interaction"), false);
+});
+
+test("Sandbox host allowlist rejects production, lookalikes, credentials, and explicit ports", () => {
+  assert.doesNotThrow(() => assertExactHttpsHost("https://sandbox-api.payuni.com.tw/api/upp", "sandbox-api.payuni.com.tw", "PayUni API"));
+  for (const candidate of [
+    "https://api.payuni.com.tw/api/upp",
+    "https://sandbox-api.payuni.com.tw.attacker.invalid/api/upp",
+    "https://user@sandbox-api.payuni.com.tw/api/upp",
+    "http://sandbox-api.payuni.com.tw/api/upp",
+    "https://sandbox-api.payuni.com.tw:443/api/upp",
+  ]) {
+    assert.throws(() => assertExactHttpsHost(candidate, "sandbox-api.payuni.com.tw", "PayUni API"), /核准的 HTTPS/);
+  }
 });
 
 test("Sandbox QA refuses a Deployment Protection callback host before charging a test card", async () => {
@@ -67,6 +115,24 @@ test("Sandbox QA accepts a publicly reachable callback host", async () => {
     () => assertPublicPayUniCallbackHost("https://staging.example.test", async () => new Response("ok", {
       status: 200,
     })),
+  );
+});
+
+test("Sandbox QA accepts a public callback 405 but rejects local, redirects, and server failures", async () => {
+  await assert.doesNotReject(
+    () => assertPublicPayUniCallbackHost("https://staging.example.test", async () => new Response(null, { status: 405 })),
+  );
+  await assert.rejects(
+    () => assertPublicPayUniCallbackHost("https://localhost:3000", async () => new Response(null, { status: 200 })),
+    /公開、無憑證/,
+  );
+  await assert.rejects(
+    () => assertPublicPayUniCallbackHost("https://staging.example.test", async () => new Response(null, { status: 302 })),
+    /Deployment Protection/,
+  );
+  await assert.rejects(
+    () => assertPublicPayUniCallbackHost("https://staging.example.test", async () => new Response(null, { status: 503 })),
+    /Deployment Protection/,
   );
 });
 

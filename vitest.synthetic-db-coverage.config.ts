@@ -2,6 +2,7 @@ import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
 import { assertLocalTestDatabase } from "./scripts/local-database-safety";
+import { findNodeTapContractTests } from "./scripts/node-tap-contract-tests";
 
 type SchemaOwner = "wp17" | "wp18";
 
@@ -27,7 +28,25 @@ function readCoverageOwner(owner: SchemaOwner) {
 
 const wp17 = readCoverageOwner("wp17");
 const wp18 = readCoverageOwner("wp18");
-const testExclude = [...configDefaults.exclude, "tests/e2e/**"];
+
+// The payout concurrency case reaches the same fail-closed encryption
+// boundary as the normal Vitest suite. Keep this deterministic key scoped to
+// the runner process; it never reads developer or deployment configuration.
+process.env.BANK_ACCOUNT_KEYRING_JSON = JSON.stringify({
+  activeKeyId: "synthetic",
+  keys: {
+    synthetic: Buffer.alloc(32, 17).toString("base64url"),
+  },
+});
+
+const nodeTapContractTests = findNodeTapContractTests(__dirname)
+  .map((filePath) => path.relative(__dirname, filePath).split(path.sep).join("/"));
+const testExclude = [
+  ...configDefaults.exclude,
+  "tests/e2e/**",
+  ".ai-team/tmp/**",
+  ...nodeTapContractTests,
+];
 
 const resolve = {
   alias: {

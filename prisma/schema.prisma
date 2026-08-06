@@ -875,7 +875,7 @@ enum AffiliateCommissionStatus {
 model AffiliatePayout {
   id                    String    @id @default(cuid())
   vendorId              String
-  affiliateId           String?
+  affiliateId           String
   monthKey              String
   commissionAmountCents Int       @default(0)
   adjustmentAmountCents Int       @default(0)
@@ -887,10 +887,11 @@ model AffiliatePayout {
   updatedAt             DateTime  @updatedAt
 
   vendor    Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate Affiliate? @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  affiliate Affiliate  @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+  @@unique([vendorId, affiliateId, monthKey])
 }
 
 enum TeamMembershipStatus {

@@ -2,8 +2,12 @@ import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
 import { assertLocalTestDatabase } from "./scripts/local-database-safety";
+import { findNodeTapContractTests } from "./scripts/node-tap-contract-tests";
 
-const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public";
+// Keep automated tests away from the developer's interactive local database.
+// `celebratedeal_test` is a disposable loopback-only database that must be
+// provisioned from the repository migrations before database-backed test runs.
+const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
   process.env.DATABASE_URL = localPostgresUrl;
 }
@@ -24,6 +28,9 @@ process.env.BANK_ACCOUNT_KEYRING_JSON = JSON.stringify({
 assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
 assertLocalTestDatabase("DIRECT_URL", process.env.DIRECT_URL);
 
+const nodeTapContractTests = findNodeTapContractTests(__dirname)
+  .map((filePath) => path.relative(__dirname, filePath).split(path.sep).join("/"));
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -31,7 +38,18 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "tests/e2e/**",
+      // Historical AI Team snapshots are evidence, not active test sources.
+      ".ai-team/tmp/**",
+      // Node TAP contracts run through `npm run test:contracts`.
+      ...nodeTapContractTests,
+      // These PostgreSQL race tests require isolated owner schemas and run
+      // only through `npm run test:db:concurrency`.
+      "src/app/actions.mfa-db.test.ts",
+      "src/app/actions.payout-db.test.ts",
+    ],
     // Database integration tests share one local PostgreSQL schema. Running
     // test files concurrently lets one fixture cleanup deadlock another file's
     // serializable payment transaction, so keep file execution deterministic.
@@ -46,9 +64,9 @@ export default defineConfig({
         "**/*.test.{ts,tsx,mjs}",
         "**/*.d.ts",
       ],
-      reporter: ["text", "json-summary"],
+      reporter: ["text", "json", "json-summary"],
       reportsDirectory: "coverage",
-      thresholds: {
+      thresholds: process.env.COMBINED_COVERAGE_COLLECTION === "true" ? undefined : {
         // These floors use the full source inventory, including files that are
         // currently exercised through Playwright rather than imported by unit
         // tests. Keep the global gate honest while separately protecting the

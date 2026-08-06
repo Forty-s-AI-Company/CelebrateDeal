@@ -13,7 +13,7 @@ test("classifies only whitelisted Prisma connection error codes", () => {
   for (const [code, category] of cases) {
     assert.deepEqual(
       classifyPrismaMigrateStatus(`Error: ${code}: redacted diagnostic`),
-      { category, errorCode: code, pendingMigrations: [] },
+      { category, errorCode: code, pendingMigrations: [], rootCauseConfirmed: true },
     );
   }
 });
@@ -28,6 +28,7 @@ test("classifies explicit pending migration output and exposes only migration di
     category: "pending-migrations",
     errorCode: null,
     pendingMigrations: ["20260721133000_inventory_reservations"],
+    rootCauseConfirmed: true,
   });
 });
 
@@ -42,35 +43,40 @@ test("classifies explicit migration history divergence", () => {
     category: "history-diverged",
     errorCode: null,
     pendingMigrations: ["20260721133000_inventory_reservations"],
+    rootCauseConfirmed: true,
   });
 });
 
 test("classifies an explicit missing migration table", () => {
   assert.deepEqual(
     classifyPrismaMigrateStatus("No migration table is found."),
-    { category: "migration-table-missing", errorCode: null, pendingMigrations: [] },
+    { category: "migration-table-missing", errorCode: null, pendingMigrations: [], rootCauseConfirmed: true },
   );
 });
 
 test("classifies failed migrations through explicit text or a whitelisted Prisma code", () => {
   assert.deepEqual(
     classifyPrismaMigrateStatus("Failed migrations are found."),
-    { category: "failed-migrations", errorCode: null, pendingMigrations: [] },
+    { category: "failed-migrations", errorCode: null, pendingMigrations: [], rootCauseConfirmed: true },
   );
   assert.deepEqual(
     classifyPrismaMigrateStatus("Error: P3018: redacted diagnostic"),
-    { category: "failed-migrations", errorCode: "P3018", pendingMigrations: [] },
+    { category: "failed-migrations", errorCode: "P3018", pendingMigrations: [], rootCauseConfirmed: true },
   );
 });
 
-test("ordinary Schema Engine text and unknown codes stay unknown", () => {
+test("generic Schema engine errors are classified without asserting a root cause", () => {
+  assert.deepEqual(
+    classifyPrismaMigrateStatus("Schema engine error"),
+    { category: "schema-engine-error", errorCode: null, pendingMigrations: [], rootCauseConfirmed: false },
+  );
   assert.deepEqual(
     classifyPrismaMigrateStatus("Schema Engine completed a local startup check."),
-    { category: "unknown", errorCode: null, pendingMigrations: [] },
+    { category: "unknown", errorCode: null, pendingMigrations: [], rootCauseConfirmed: false },
   );
   assert.deepEqual(
     classifyPrismaMigrateStatus("Error: P9999: redacted diagnostic"),
-    { category: "unknown", errorCode: null, pendingMigrations: [] },
+    { category: "unknown", errorCode: null, pendingMigrations: [], rootCauseConfirmed: false },
   );
 });
 
@@ -85,5 +91,15 @@ test("pending diagnostics disclose only repository-whitelisted migration names",
     category: "pending-migrations",
     errorCode: null,
     pendingMigrations: ["20260721133000_inventory_reservations"],
+    rootCauseConfirmed: true,
   });
+});
+
+test("keeps legacy 12-digit migration names when explicitly whitelisted", () => {
+  const diagnostic = classifyPrismaMigrateStatus(`
+    The following migrations have not yet been applied:
+    202607170001_team_funnel_domain
+  `, { knownMigrationNames: ["202607170001_team_funnel_domain"] });
+
+  assert.deepEqual(diagnostic.pendingMigrations, ["202607170001_team_funnel_domain"]);
 });

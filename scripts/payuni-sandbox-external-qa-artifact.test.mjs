@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildQaArtifact,
-  financeDashboardErrorCategory,
-  refundPersistencePassed,
 } from "./payuni-sandbox-external-qa.mjs";
 
 describe("PayUni Sandbox QA artifact", () => {
@@ -40,6 +38,7 @@ describe("PayUni Sandbox QA artifact", () => {
         singleRefundRecord: "passed",
       },
       safeFailureCategory: "none",
+      safeFailureStage: "unavailable",
       signerRole: "delivery-qa",
     });
     expect(JSON.stringify(artifact)).not.toContain(sensitiveMarker);
@@ -70,8 +69,7 @@ describe("PayUni Sandbox QA artifact", () => {
     expect(JSON.stringify(artifact)).not.toContain(sensitiveMarker);
   });
 
-  it("classifies an MFA redirect as authentication without retaining browser details", () => {
-    expect(financeDashboardErrorCategory({ name: "MfaRequiredError" })).toBe("authentication");
+  it("retains only the allowlisted authentication category", () => {
     expect(buildQaArtifact({
       success: false,
       completedAt: "2026-07-23T12:34:56.789Z",
@@ -87,25 +85,26 @@ describe("PayUni Sandbox QA artifact", () => {
     }).safeFailureCategory).toBe("authorization");
   });
 
-  it("requires a provider reference and the original processed payment webhook", () => {
-    const transaction = {
-      status: "refunded",
-      grossAmountCents: 10_000,
-      refundedAmountCents: 10_000,
-      providerTradeNo: "masked-in-test-only",
-      refunds: [{
-        status: "processed",
-        refundAmountCents: 10_000,
-        providerEventId: "refund-reference",
-      }],
-    };
+  it("retains refund evidence only as allowlisted gate states", () => {
+    const privateProviderReference = "provider-reference-must-not-persist";
+    const artifact = buildQaArtifact({
+      success: true,
+      completedAt: "2026-07-23T12:34:56.789Z",
+      checks: {
+        paymentTransactionRefunded: "passed",
+        refundRecordProcessed: "passed",
+        refundIdempotency: "passed",
+        singleRefundRecord: "passed",
+        providerReference: privateProviderReference,
+      },
+    });
 
-    expect(refundPersistencePassed(transaction, { provider: "payuni", status: "processed" })).toBe(true);
-    expect(refundPersistencePassed({
-      ...transaction,
-      refunds: [{ ...transaction.refunds[0], providerEventId: null }],
-    }, { provider: "payuni", status: "processed" })).toBe(false);
-    expect(refundPersistencePassed(transaction, { provider: "payuni", status: "failed" })).toBe(false);
-    expect(refundPersistencePassed(transaction, { provider: "other", status: "processed" })).toBe(false);
+    expect(artifact.gates).toEqual({
+      paymentTransactionRefunded: "passed",
+      refundRecordProcessed: "passed",
+      refundIdempotency: "passed",
+      singleRefundRecord: "passed",
+    });
+    expect(JSON.stringify(artifact)).not.toContain(privateProviderReference);
   });
 });

@@ -16,8 +16,10 @@ const PRISMA_ERROR_CATEGORY = Object.freeze({
   P3019: "migration-provider-mismatch",
 });
 
-const SAFE_MIGRATION_NAME = /\b\d{14}_[a-z0-9_]+\b/gi;
-const SAFE_MIGRATION_NAME_EXACT = /^\d{14}_[a-z0-9_]+$/i;
+// Canonical history contains both legacy 12-digit and current 14-digit
+// timestamp prefixes. The directory name is still allowlisted by the caller.
+const SAFE_MIGRATION_NAME = /\b\d{12,14}_[a-z0-9_]+\b/gi;
+const SAFE_MIGRATION_NAME_EXACT = /^\d{12,14}_[a-z0-9_]+$/i;
 
 function safeText(value) {
   return typeof value === "string" ? value : "";
@@ -52,6 +54,10 @@ function explicitStatusCategory(output) {
   return null;
 }
 
+function isGenericSchemaEngineError(output) {
+  return /\bSchema engine error\b/i.test(safeText(output));
+}
+
 function knownMigrationNameSet(knownMigrationNames) {
   if (!Array.isArray(knownMigrationNames)) return new Set();
   return new Set(knownMigrationNames.filter((name) => (
@@ -77,11 +83,14 @@ export function classifyPrismaMigrateStatus(output, { knownMigrationNames = [] }
   const errorCode = knownErrorCode(output);
   const category = errorCode
     ? PRISMA_ERROR_CATEGORY[errorCode]
-    : explicitStatusCategory(output) ?? "unknown";
+    : explicitStatusCategory(output) ?? (isGenericSchemaEngineError(output) ? "schema-engine-error" : "unknown");
 
   return Object.freeze({
     category,
     errorCode,
     pendingMigrations: pendingMigrations(output, category, knownMigrationNames),
+    // A generic engine error has no stable Prisma code or migration identity.
+    // Keep it observable without pretending that its root cause is known.
+    rootCauseConfirmed: errorCode !== null || category === "up-to-date" || category === "pending-migrations" || category === "history-diverged" || category === "migration-table-missing" || category === "failed-migrations",
   });
 }

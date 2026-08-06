@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = process.cwd();
 const productionRoots = ["src", "scripts", "ops"];
 const sourceExtensions = new Set([".ts", ".tsx", ".mjs", ".ps1"]);
+const productionDebtComment = /(?:\/\/|\/\*|\*)\s*(?:TODO|FIXME|HACK|XXX)\b/;
 
 function normalize(filePath: string) {
   return filePath.split(path.sep).join("/");
@@ -59,7 +60,7 @@ describe("repository hygiene", () => {
         .flatMap((filePath) => {
           const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
           return lines.flatMap((line, index) => (
-            /\b(?:TODO|FIXME|HACK|XXX)\b/.test(line)
+            productionDebtComment.test(line)
               ? [`${normalize(path.relative(repositoryRoot, filePath))}:${index + 1}`]
               : []
           ));

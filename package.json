@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit",
     "typecheck:strict-index": "tsc --project tsconfig.strict-index.json --noEmit",
     "test": "vitest run",
+    "test:contracts": "node --import tsx scripts/run-node-tap-contracts.ts",
+    "test:db:concurrency": "vitest run --config vitest.synthetic-db-coverage.config.ts",
     "security:bank-accounts:backfill": "tsx scripts/backfill-bank-account-encryption.ts",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "node --import tsx scripts/run-combined-coverage.mjs",
     "e2e": "playwright test",
     "e2e:smoke": "prisma generate && playwright test tests/e2e/smoke.spec.ts",
     "e2e:a11y": "prisma generate && playwright test tests/e2e/accessibility.spec.ts",
@@ -20,7 +22,9 @@
     "preflight": "node --import tsx scripts/preflight.ts",
     "external:smoke": "node --import tsx scripts/external-smoke.ts",
     "payuni:fixture": "node --import tsx scripts/payuni-webhook-fixtures.ts",
-    "qa:payuni:sandbox": "node --env-file=.env.local scripts/payuni-sandbox-external-qa.mjs",
+    "qa:payuni:sandbox": "node scripts/payuni-sandbox-external-qa.mjs",
+    "release:verify:local": "node scripts/release-local-readiness.mjs verify",
+    "test:release-readiness": "vitest run scripts/release-local-readiness.test.mjs",
     "cloudflare:fixtures": "node --import tsx scripts/cloudflare-webhook-fixtures.ts",
     "admin:bootstrap": "node --import tsx scripts/bootstrap-platform-admin.ts",
     "db:generate": "prisma generate",
@@ -59,7 +63,13 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "fast-uri": "^3.1.4",
+    "fast-uri": "^3.1.5",
+    "minimatch@10.2.5": {
+      "brace-expansion": "^5.0.9"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "^1.1.18"
+    },
     "postcss": "^8.5.16",
     "sharp": "^0.35.3"
   }
