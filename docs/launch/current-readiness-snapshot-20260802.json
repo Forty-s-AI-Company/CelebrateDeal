@@ -1,0 +1,182 @@
+{
+  "schema_version": "celebratedeal-readiness-current/v1",
+  "snapshot_date": "2026-08-02",
+  "status": "CURRENT_TRUTH",
+  "goal_status": "WAITING_AUTHORIZATION",
+  "updated_at": "2026-08-04T17:15:56+08:00",
+  "total": 73.5,
+  "score_change_in_wp119": 0,
+  "score_change_in_wp122": 0.5,
+  "score_change_in_wp123": 0.5,
+  "score_change_in_wp131": 0.5,
+  "score_change_in_wp148": 0.5,
+  "score_change_in_wp175": 0.5,
+  "score_change_in_wp187": 0.5,
+  "score_change_in_wp192": 0.5,
+  "score_change_in_wp195": 0.5,
+  "categories": {
+    "CAT01": { "name": "產品核心功能", "score": 7.5, "provenance": ["docs/launch/production-readiness-baseline.md", ".ai-team/reports/wp131-cloudflare-stream-webhook-idempotency-receipt.json", "docs/ai-team/evidence/wp-131-cloudflare-stream-webhook-idempotency.md"] },
+    "CAT02": { "name": "註冊、登入與主要使用流程", "score": 8.0, "provenance": ["docs/launch/wp08-product-browser-qa-20260728.md"] },
+    "CAT03": { "name": "認證、權限與安全", "score": 8.0, "provenance": [".ai-team/reports/wp88-g1-direct-url-matrix-receipt.json", "docs/ai-team/evidence/wp-88-g1-direct-url-guard-matrix.md"] },
+    "CAT04": { "name": "金流、訂閱、退款與帳務", "score": 6.0, "provenance": [".ai-team/reports/wp117-20260802-payuni-refund-reconciliation/sanitized-receipt.json", ".ai-team/reports/wp118-payuni-refund-reconciliation-local-receipt.json", ".ai-team/reports/wp196-final-staging-payuni-authorization-receipt.json"] },
+    "CAT05": { "name": "資料完整性、Migration、備份與恢復", "score": 8.5, "provenance": [".ai-team/reports/wp89-migration-drift-receipt.json", "docs/ai-team/evidence/wp-89-migration-drift-platform-finance.md"] },
+    "CAT06": { "name": "UX、RWD、無障礙與錯誤狀態", "score": 7.0, "provenance": ["docs/launch/production-readiness-baseline.md"] },
+    "CAT07": { "name": "Unit、Integration、E2E 與回歸", "score": 9.0, "provenance": ["docs/launch/wp08-product-browser-qa-20260728.md"] },
+    "CAT08": { "name": "效能、可靠性、Log、監控與追蹤", "score": 7.5, "provenance": [".ai-team/reports/wp-116-payment-failure-observability-receipt.json", "docs/ai-team/evidence/wp-116-payment-failure-observability.md", ".ai-team/reports/wp123-observability-rehearsal-receipt.json", "docs/ai-team/evidence/wp-123-observability-rehearsal.md", ".ai-team/reports/wp148-local-reliability-contract.json", ".ai-team/reports/wp148-sol-acceptance.json", "docs/ai-team/evidence/wp-148-local-reliability-contract.md"] },
+    "CAT09": { "name": "部署、環境、Release 與回滾", "score": 7.5, "provenance": ["docs/ai-team/evidence/wp-91-local-release-readiness.md", "docs/ai-team/evidence/wp-92-fresh-no-dotenv-release-build.md", ".ai-team/reports/wp187-latest-workspace-preview-freshness.json", "docs/ai-team/evidence/wp-187-latest-workspace-preview-freshness.md", ".ai-team/reports/wp191-staging-alias-rollback-rehearsal.json", "docs/ai-team/evidence/wp-191-staging-alias-rollback-rehearsal.md", ".ai-team/reports/wp192-staging-alias-propagation-verification.json", "docs/ai-team/evidence/wp-192-staging-alias-propagation-verification.md"] },
+    "CAT10": { "name": "可販售文件、客服、法務與營運", "score": 4.5, "provenance": [".ai-team/reports/wp110-merchant-onboarding-readiness-receipt.json", "docs/ai-team/evidence/wp-110-merchant-onboarding-readiness.md", ".ai-team/reports/wp122-merchant-onboarding-receipt.json", "docs/ai-team/evidence/wp-122-merchant-onboarding-contract.md", ".ai-team/reports/wp175-sales-to-support-operational-rehearsal-receipt.json", "docs/ai-team/evidence/wp-175-sales-to-support-operational-rehearsal.md", ".ai-team/reports/wp195-launch-owner-acceptance.json", "docs/ai-team/evidence/wp-195-launch-owner-acceptance.md"] }
+  },
+  "gates": {
+    "G1": { "status": "CLOSED", "provenance": [".ai-team/reports/wp-86-m2-a01-direct-url-closure-20260801125227709/final-runner-summary.json", ".ai-team/reports/wp88-g1-direct-url-matrix-receipt.json"] },
+    "G2": { "status": "LOCAL_REHEARSAL_PASS", "provenance": [".ai-team/reports/wp87-g2-recovery-receipt.json"] },
+    "G3": { "status": "NOT_VERIFIED", "provenance": [] },
+    "G4": { "status": "NOT_VERIFIED", "provenance": [] },
+    "G5": { "status": "NOT_VERIFIED", "provenance": [] },
+    "G6": { "status": "NOT_VERIFIED", "provenance": [] }
+  },
+  "staging_gates": {
+    "ROLLBACK": { "status": "CLOSED_FOR_STAGING", "provenance": [".ai-team/reports/wp191-staging-alias-rollback-rehearsal.json", ".ai-team/reports/wp192-staging-alias-propagation-verification.json", "docs/ai-team/evidence/wp-192-staging-alias-propagation-verification.md"] }
+  },
+  "readiness_labels": {
+    "SANDBOX_READY": false,
+    "PRODUCTION_READY": false
+  },
+  "unresolved": [
+    "WP-117 provider refund/query completed but live staging local reconciliation is not proven",
+    "WP-118 LOCAL accepted; external staging/provider-query stage needs exact authorization",
+    "CAT08 local reliability contract accepted; external telemetry delivery is not proven",
+    "CAT10 manual legal/support/operations acceptance is not complete",
+    "WP-196 final staging DB／PayUni read-only attempt fail-closed at parent binding preflight; four controlled target names were present in process environment, so DB identity and provider reconciliation were not attempted",
+    "WP-197 fresh staging lineage／Preview binding gate fail-closed at parent contamination; current staging metadata is Preview／READY/non-Production but differs from the WP-196 expected deployment, and no new inspect/probe was permitted after contamination",
+    "CAT06 WP-193 fresh staging version gate passed, but Chrome automation was blocked by an open extension UI before the 8-cell matrix; CAT06 remains 7.0",
+    "CAT06 WP-194 fresh staging version gate passed, but the only Chrome navigation timed out before the 8-cell matrix; CAT06 remains 7.0"
+  ],
+  "superseded_legacy_sources": [
+    "docs/launch/production-readiness-baseline.md",
+    "docs/launch/readiness-reconciliation-2026-07-30.md",
+    "docs/launch/m2-g1-acceptance-ledger-20260730.md",
+    "docs/ai-team/current-work-package.md",
+    "docs/launch/evidence-index.md"
+  ],
+  "wp119_scope": {
+    "purpose": "documentation truth reconciliation only",
+    "external_side_effects": false,
+    "score_update": false,
+    "gate_update": false
+  },
+  "wp122_scope": {
+    "purpose": "fresh executable local onboarding contract evidence",
+    "external_side_effects": false,
+    "score_update": { "CAT10": 0.5, "total": 0.5 },
+    "manual_rehearsal": "PENDING",
+    "legal_approval": "PENDING",
+    "support_readiness": "PENDING",
+    "overall_readiness": "NOT_READY"
+  },
+  "wp123_scope": {
+    "purpose": "fresh executable local incident lifecycle evidence",
+    "external_side_effects": false,
+    "score_update": { "CAT08": 0.5, "total": 0.5 },
+    "external_telemetry": "PENDING",
+    "alert_delivery": "NOT_VERIFIED",
+    "pager": "NOT_VERIFIED"
+  },
+  "wp148_scope": {
+    "purpose": "fresh executable local reliability and sanitized incident diagnostic contract",
+    "external_side_effects": false,
+    "score_update": { "CAT08": 0.5, "total": 0.5 },
+    "local_contract": "ACCEPTED",
+    "external_telemetry": "NOT_COLLECTED",
+    "receiver_delivery": "NOT_VERIFIED",
+    "production_measurements": "NOT_VERIFIED"
+  },
+  "wp175_scope": {
+    "purpose": "fresh executable local sales-to-support operational rehearsal",
+    "external_side_effects": false,
+    "score_update": { "CAT10": 0.5, "total": 0.5 },
+    "manual_legal_and_owner_acceptance": "PENDING"
+  },
+  "wp187_scope": {
+    "purpose": "fresh Preview deployment source fingerprint and staging alias CAS",
+    "external_side_effects": true,
+    "score_update": { "CAT09": 0.5, "total": 0.5 },
+    "preview_source_freshness": "PASS",
+    "production_ready": false
+  },
+  "wp192_scope": {
+    "purpose": "bounded read-only staging alias propagation and forward content identity verification",
+    "external_side_effects": false,
+    "score_update": { "CAT09": 0.5, "total": 0.5 },
+    "staging_rollback_gate": "CLOSED_FOR_STAGING",
+    "production_ready": false,
+    "sol_acceptance": "ACCEPT"
+  },
+  "wp193_scope": {
+    "purpose": "fresh staging four-surface desktop/mobile UX, RWD, accessibility and error-state matrix",
+    "result": "FAIL_CLOSED_CHROME_EXTENSION_UI",
+    "external_side_effects": false,
+    "score_update": { "CAT06": 0.0, "total": 0.0 },
+    "version_gate": "PASS",
+    "matrix_completed": 0,
+    "matrix_expected": 8,
+    "axe_execution": "NOT_STARTED",
+    "production_ready": false,
+    "sol_acceptance": "ACCEPT"
+  },
+  "wp194_scope": {
+    "purpose": "fresh staging Chrome control re-verification before the four-surface desktop/mobile UX matrix",
+    "result": "FAIL_CLOSED_CHROME_CONTROL_TIMEOUT",
+    "external_side_effects": false,
+    "score_update": { "CAT06": 0.0, "total": 0.0 },
+    "version_gate": "PASS",
+    "chrome_navigation_attempts": 1,
+    "matrix_completed": 0,
+    "matrix_expected": 8,
+    "axe_execution": "NOT_STARTED",
+    "production_ready": false,
+    "sol_acceptance": "ACCEPT"
+  },
+  "wp195_scope": {
+    "purpose": "offline executable five-owner launch acceptance contract and fail-closed go/no-go aggregation",
+    "external_side_effects": false,
+    "score_update": { "CAT10": 0.5, "total": 0.5 },
+    "owner_matrix": "PASS_5_OF_5",
+    "synthetic_scenarios": "PASS_12_OF_12",
+    "manual_signatures": "PENDING",
+    "release_status": "HOLD_NOT_READY",
+    "overall_commercial_readiness": "NOT_READY",
+    "production_ready": false,
+    "sol_acceptance": "ACCEPT"
+  },
+  "wp196_scope": {
+    "purpose": "single final staging DB and official PayUni Sandbox read-only reconciliation authorization attempt",
+    "result": "WP196_FINAL_NO_GO_BINDING",
+    "external_side_effects": false,
+    "score_update": { "CAT04": 0.0, "total": 0.0 },
+    "attempt_disposition": "FINAL_ATTEMPT_CONSUMED_NO_RERUN",
+    "binding_presence_count": 4,
+    "broker_attempts": 0,
+    "database_selects": 0,
+    "payuni_queries": 0,
+    "authorization_decision": "FINAL_NO_SCORE_AUTHORIZATION",
+    "follow_up_work_package": "NONE",
+    "sol_acceptance": "ACCEPT",
+    "production_ready": false
+  },
+  "wp197_scope": {
+    "purpose": "single fresh staging lineage and Preview binding value-free prerequisite gate",
+    "result": "TERMINAL_NO_GO_CONTAMINATION",
+    "external_side_effects": false,
+    "score_update": { "CAT04": 0.0, "total": 0.0 },
+    "attempt_disposition": "FINAL_ATTEMPT_CONSUMED_NO_RERUN",
+    "parent_target_contaminated": true,
+    "inspect_attempts": 0,
+    "probe_attempts": 0,
+    "database_attempts": 0,
+    "payuni_attempts": 0,
+    "authorization_gap": "CURRENT_STAGING_LINEAGE_OR_PREVIEW_BINDING_REQUIRES_EXPLICIT_OWNER_AUTHORIZATION",
+    "follow_up_work_package": "NONE",
+    "sol_acceptance": "ACCEPT",
+    "production_ready": false
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "work_package": "WP-127",
+  "name": "Route Contract Source-Mapping and Ownership Review",
+  "scope": "LOCAL_READ_ONLY_DIAGNOSTIC",
+  "generated_path": ".next/types/app/api/cloudflare/stream-webhook/route.ts",
+  "source_path": "src/app/api/cloudflare/stream-webhook/route.ts",
+  "expected_exports": [
+    "POST",
+    "createCloudflareStreamWebhookHandler"
+  ],
+  "allowed_export_kinds": [
+    "function",
+    "const",
+    "let",
+    "var",
+    "default"
+  ],
+  "constraints": {
+    "read_only": true,
+    "source_snippets_persisted": false,
+    "generated_artifact_regenerated": false,
+    "compiler_or_build_run": false,
+    "dotenv_content_read": false,
+    "network_requested": false,
+    "database_contacted": false,
+    "provider_contacted": false,
+    "deployment_attempted": false,
+    "existing_dirty_changes": "PRESERVE_ONLY",
+    "staged_index_modified": false
+  },
+  "outcomes": [
+    "CLEAN_SEPARABLE_CANDIDATE",
+    "EXACT_NO_GO",
+    "UNKNOWN_FAIL_CLOSED"
+  ]
+}

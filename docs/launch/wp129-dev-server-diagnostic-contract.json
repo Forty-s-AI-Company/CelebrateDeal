@@ -1,0 +1,27 @@
+{
+  "work_package": "WP-129",
+  "name": "Local Next Dev-Server Boundary Diagnostic",
+  "scope": "LOCAL_READ_ONLY_DIAGNOSTIC",
+  "allowed_classifications": [
+    "MIRROR_INPUT_MISSING",
+    "NODE_MODULES_JUNCTION_FAILURE",
+    "MODULE_RESOLUTION_FAILURE",
+    "PORT_ALLOCATION_FAILURE",
+    "READINESS_PROBE_MISMATCH",
+    "PROCESS_LIFECYCLE_FAILURE",
+    "EXISTING_APP_OR_NEXT_BOUNDARY",
+    "UNKNOWN_FAIL_CLOSED"
+  ],
+  "constraints": {
+    "wp128_artifacts_modified": false,
+    "application_modified": false,
+    "next_config_modified": false,
+    "package_metadata_modified": false,
+    "dotenv_content_read": false,
+    "raw_logs_persisted": false,
+    "external_operations": false,
+    "repository_next_written": false,
+    "staged_index_modified": false
+  },
+  "conditional_browser_result": "Only if deterministic classification proves a new runner/mirror boundary and the original unavailable-state browser contract runs completely."
+}

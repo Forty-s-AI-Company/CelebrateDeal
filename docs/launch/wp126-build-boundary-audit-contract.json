@@ -1,0 +1,52 @@
+{
+  "work_package": "WP-126",
+  "title": "Exact Build-Boundary Ownership Audit",
+  "timebox_minutes": 75,
+  "maximum_timebox_minutes": 90,
+  "scope": "LOCAL_READ_ONLY_DIAGNOSTIC",
+  "objective": "將 WP-125 NEXT_WEBPACK_BOUNDARY 進一步定位到 build phase、diagnostic code、repository-relative path、import/config chain 與 ownership，不修改既有檔案。",
+  "classifications": [
+    "CLEAN_SEPARABLE_CANDIDATE",
+    "PRESERVE_ONLY_EXACT_PATH",
+    "CONFIG_BOUNDARY",
+    "DEPENDENCY_OR_LOCKFILE_BOUNDARY",
+    "GENERATED_ARTIFACT_BOUNDARY",
+    "NONDETERMINISTIC_FAILURE",
+    "UNKNOWN_FAIL_CLOSED"
+  ],
+  "preserve_only": [
+    "WP-124 artifacts",
+    "WP-125 artifacts",
+    "application source",
+    "Next.js configuration",
+    "package metadata and lockfiles",
+    "dependencies",
+    "all existing dirty entries",
+    ".env*"
+  ],
+  "receipt_policy": {
+    "raw_stdout": false,
+    "raw_stderr": false,
+    "source_snippets": false,
+    "dotenv_content": false,
+    "absolute_paths": false,
+    "output": "allowlisted code, phase, relative paths, ownership and fingerprint only"
+  },
+  "score_gate": {
+    "category": "CAT09",
+    "before": 6.5,
+    "score_delta": 0,
+    "total_before": 70.5,
+    "preawarded": false
+  },
+  "stop_conditions": [
+    "target path exists or is dirty",
+    "raw logs, source snippets or dotenv content are required",
+    "failure cannot be reproduced with stable fingerprint",
+    "import/config chain cannot be determined",
+    "existing application/config/package/dependency file must be changed",
+    "network, install, DB, provider, staging, Production or deployment is required",
+    "workspace preservation cannot be proven",
+    "timebox exceeds 90 minutes"
+  ]
+}
