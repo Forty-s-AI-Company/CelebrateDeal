@@ -1,0 +1,78 @@
+{
+  "work_package": "WP-124",
+  "title": "Hermetic No-dotenv Production Build Rehearsal",
+  "timebox_minutes": 90,
+  "scope": "LOCAL_ONLY",
+  "objective": "在不讀取任何 .env*、不安裝依賴、不連外的暫存 mirror 中，完成一次 fresh production build，並保存遮罩化 receipt。",
+  "source_policy": {
+    "existing_dirty": "PRESERVE_ONLY",
+    "new_files_only": true,
+    "dotenv": "path-only exclusion; never open, copy, hash, print, rename, or move",
+    "secret_values": "synthetic allowlisted values only",
+    "dependency_install": false,
+    "network": false,
+    "database": false,
+    "provider": false,
+    "deployment": false,
+    "production": false
+  },
+  "synthetic_environment_allowlist": [
+    "NODE_ENV",
+    "VERCEL_ENV",
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "JOB_SECRET",
+    "CSRF_SECRET",
+    "RATE_LIMIT_PROVIDER",
+    "PAYMENT_PROVIDER",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "SENTRY_DSN",
+    "SENTRY_DISABLE_AUTO_UPLOAD",
+    "NEXT_PUBLIC_POSTHOG_KEY",
+    "NEXT_PUBLIC_POSTHOG_HOST",
+    "NEXT_TELEMETRY_DISABLED",
+    "NPM_CONFIG_OFFLINE",
+    "npm_config_offline",
+    "NPM_CONFIG_AUDIT",
+    "npm_config_audit",
+    "NPM_CONFIG_FUND",
+    "npm_config_fund"
+  ],
+  "excluded_path_classes": [
+    "dotenv",
+    "git_metadata",
+    "build_output",
+    "coverage",
+    "dependency_tree",
+    "ai_team_reports",
+    "private_key_or_certificate",
+    "database_file"
+  ],
+  "required_artifacts": [
+    ".next/BUILD_ID",
+    ".next/build-manifest.json",
+    ".next/routes-manifest.json",
+    ".next/server/app-paths-manifest.json"
+  ],
+  "score_gate": {
+    "category": "CAT09",
+    "before": 6.5,
+    "target_if_accepted": 7.0,
+    "total_before": 70.5,
+    "total_target_if_accepted": 71.0,
+    "preawarded": false,
+    "gates_unchanged": ["G1:CLOSED", "G2:LOCAL_REHEARSAL_PASS", "G3:NOT_VERIFIED", "G4:NOT_VERIFIED", "G5:NOT_VERIFIED", "G6:NOT_VERIFIED"]
+  },
+  "stop_conditions": [
+    "target path exists or is dirty",
+    "dotenv or non-synthetic secret is required",
+    "application/build configuration/package lock must change",
+    "dependency installation or network is required",
+    "database/provider/staging/Production is required",
+    "source digest or dirty inventory cannot be proven unchanged",
+    "temporary mirror cannot be safely cleaned",
+    "fresh build and cleanup exceed 90 minutes"
+  ]
+}
