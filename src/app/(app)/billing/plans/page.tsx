@@ -1,4 +1,5 @@
 import { Badge, Card, PageHeader } from "@/components/ui";
+import type { ReactElement } from "react";
 import { requireVendorFinance } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -6,15 +7,25 @@ import { formatCurrency } from "@/lib/format";
 import { selectBillingPlanAction } from "./actions";
 import { PlanSubmitButton } from "./plan-submit-button";
 
+type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[] };
+
 type BillingPlansPageProps = {
-  searchParams?: Promise<{ status?: string | string[]; error?: string | string[] }>;
+  searchParams?: Promise<BillingPlansSearchParams>;
 };
 
 function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function BillingPlansPage({ searchParams = Promise.resolve({}) }: BillingPlansPageProps = {}) {
+// The route-facing overload keeps the App Router PageProps contract required.
+// The zero-argument overload preserves direct server-component test rendering.
+function BillingPlansPage(): Promise<ReactElement>;
+function BillingPlansPage(props: BillingPlansPageProps): Promise<ReactElement>;
+async function BillingPlansPage(props?: BillingPlansPageProps) {
+  // Next.js validates the page's first argument against PageProps. Keep the
+  // route-facing signature required, while direct component tests retain an
+  // empty-query render path.
+  const queryPromise = props?.searchParams ?? Promise.resolve<BillingPlansSearchParams>({});
   const { vendor, member } = await requireVendorFinance("/billing/plans");
   const canManageBilling = member.role === "owner";
   const [plans, currentSubscription, csrfToken, query] = await Promise.all([
@@ -28,7 +39,7 @@ export default async function BillingPlansPage({ searchParams = Promise.resolve(
       orderBy: { startedAt: "desc" },
     }),
     canManageBilling ? getCsrfToken() : Promise.resolve(""),
-    searchParams,
+    queryPromise,
   ]);
   const status = queryValue(query.status);
   const error = queryValue(query.error);
@@ -101,6 +112,8 @@ export default async function BillingPlansPage({ searchParams = Promise.resolve(
     </>
   );
 }
+
+export default BillingPlansPage;
 
 function PlanRow({ label, value }: { label: string; value: string }) {
   return (

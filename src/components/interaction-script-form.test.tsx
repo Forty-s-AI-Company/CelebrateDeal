@@ -152,3 +152,66 @@ describe("InteractionScriptForm", () => {
     expect(preventDefault).toHaveBeenCalledOnce();
   });
 });
+
+function renderNewForm() {
+  hookState.cursor = 0;
+  return InteractionScriptForm({
+    roles: [],
+    products: [],
+    csrfToken: "test-new-script-csrf-token",
+  });
+}
+
+describe("InteractionScriptForm deterministic edit states", () => {
+  beforeEach(() => {
+    hookState.cursor = 0;
+    hookState.values = [];
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the new-script templates and applies a template without a bound live", () => {
+    const form = renderNewForm();
+    expect(textContent(form)).toContain("常見留言組範本");
+    expect(textContent(form)).toContain("尚未綁定直播");
+    const templateButton = findElements(form, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "新品快閃"
+    )).at(0);
+    expect(templateButton).toBeDefined();
+    (templateButton?.props.onClick as () => void)();
+
+    const applied = renderNewForm();
+    expect(findElements(applied, (candidate) => candidate.props["data-testid"] === "interaction-message-row")).toHaveLength(4);
+    expect(textContent(findElements(applied, (candidate) => candidate.props["data-testid"] === "interaction-timeline-outline-time"))).toContain("00:00:05");
+  });
+
+  it("adds and removes a message while keeping the time validation state deterministic", () => {
+    const form = renderNewForm();
+    // The lightweight React test double keeps lazy initializers as values; seed the
+    // deterministic clock array before exercising the append/remove handlers.
+    hookState.values[1] = Array.from({ length: 5 }, () => "00:00:00");
+    const addButton = findElements(form, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "新增留言"
+    )).at(0);
+    expect(addButton).toBeDefined();
+    (addButton?.props.onClick as () => void)();
+
+    const added = renderNewForm();
+    expect(findElements(added, (candidate) => candidate.props["data-testid"] === "interaction-message-row")).toHaveLength(6);
+    const firstTimeInput = findElements(added, (candidate) => candidate.props["data-testid"] === "interaction-message-time").at(0);
+    expect(firstTimeInput).toBeDefined();
+    (firstTimeInput?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "not-a-time" } });
+
+    const invalid = renderNewForm();
+    const invalidInput = findElements(invalid, (candidate) => candidate.props["data-testid"] === "interaction-message-time").at(0);
+    expect(invalidInput?.props["aria-invalid"]).toBe(true);
+    expect(findElements(invalid, (candidate) => candidate.props.id === "triggerSec-error-0")).toHaveLength(1);
+
+    const deleteButton = findElements(invalid, (candidate) => (
+      candidate.type === "button" && String(candidate.props["aria-label"] ?? "").startsWith("刪除第")
+    )).at(0);
+    expect(deleteButton).toBeDefined();
+    (deleteButton?.props.onClick as () => void)();
+    const removed = renderNewForm();
+    expect(findElements(removed, (candidate) => candidate.props["data-testid"] === "interaction-message-row")).toHaveLength(5);
+  });
+});

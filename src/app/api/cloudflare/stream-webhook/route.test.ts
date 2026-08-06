@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
-import { POST } from "@/app/api/cloudflare/stream-webhook/route";
+import { createCloudflareStreamWebhookHandler, POST } from "@/app/api/cloudflare/stream-webhook/route";
 import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
 import { buildCloudflareStreamWebhookFixture } from "@/lib/cloudflare-webhook-fixtures";
 
@@ -370,5 +370,38 @@ describe("Cloudflare Stream webhook", () => {
 
     expect(response.status).toBe(401);
     expect(payload.reason).toBe("expired_timestamp");
+  });
+
+  it("returns a fixed retryable response when bounded contention cannot converge", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_contention");
+    const captureError = vi.fn(() => {
+      throw new Error("monitoring unavailable");
+    });
+    const handler = createCloudflareStreamWebhookHandler({
+      captureError,
+      converge: async () => ({ outcome: "contention_exhausted" }),
+    });
+    const body = JSON.stringify({ uid: "cf_uid_contention", readyToStream: true });
+
+    const response = await handler(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+    const payload = await response.json() as { error: string; code: string };
+    const unchanged = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({
+      error: "Cloudflare Stream webhook update is temporarily unavailable",
+      code: "contention_exhausted",
+    });
+    expect(JSON.stringify(payload)).not.toContain(video.id);
+    expect(captureError).toHaveBeenCalledTimes(1);
+    expect(unchanged.status).toBe("processing");
   });
 });

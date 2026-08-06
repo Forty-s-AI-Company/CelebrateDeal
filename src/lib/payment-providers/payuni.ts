@@ -1,6 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
-import { RefundProviderError, type PaymentProviderAdapter, type RefundPaymentInput } from "@/lib/payment-providers/types";
+import {
+  PaymentQueryProviderError,
+  RefundProviderError,
+  type PaymentProviderAdapter,
+  type RefundPaymentInput,
+  type QueryPaymentInput,
+} from "@/lib/payment-providers/types";
 
 const PAYUNI_UPP_VERSION = "2.0";
 const PAYUNI_API_BASE_URLS = {
@@ -11,6 +17,7 @@ const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
 const PAYUNI_MIN_TRADE_AMOUNT = 1;
 const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
 const PAYUNI_REFUND_VERSION = "1.0";
+const PAYUNI_QUERY_VERSION = "2.0";
 
 function cents(value: unknown) {
   const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
@@ -141,6 +148,174 @@ function payUniResultRow(value: Record<string, unknown>) {
     }
   }
   return result && typeof result === "object" ? result as Record<string, unknown> : undefined;
+}
+
+function queryAmountCents(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) return undefined;
+    return value <= Number.MAX_SAFE_INTEGER / 100 ? value * 100 : undefined;
+  }
+  if (typeof value !== "string" || value.trim() !== value) return undefined;
+  // PayUni TWD amounts are whole units. Accept only a complete decimal
+  // token (optional .0/.00), never parseFloat prefixes such as `1680junk`.
+  if (!/^(?:0|[1-9]\d*)(?:\.0{1,2})?$/.test(value)) return undefined;
+  const wholeUnits = Number(value.split(".")[0]);
+  if (!Number.isSafeInteger(wholeUnits) || wholeUnits < 0 || wholeUnits > Number.MAX_SAFE_INTEGER / 100) {
+    return undefined;
+  }
+  return wholeUnits * 100;
+}
+
+function firstQueryAmountCents(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (!(key in row)) continue;
+    const value = queryAmountCents(row[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function payUniQueryRow(payload: Record<string, unknown>, orderNumber: string) {
+  const row = payUniResultRow(payload) ?? payload;
+  if (!row || typeof row !== "object") throw new PaymentQueryProviderError("provider_response");
+  const normalized = row as Record<string, unknown>;
+  if (optionalPayloadText(normalized.MerTradeNo) !== orderNumber) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const providerTradeNo = optionalPayloadText(normalized.TradeNo);
+  const grossAmountCents = queryAmountCents(normalized.TradeAmt);
+  const refundStatus = optionalPayloadText(normalized.RefundStatus);
+  const tradeStatus = optionalPayloadText(normalized.TradeStatus);
+  if (!providerTradeNo || grossAmountCents === undefined || !refundStatus || !tradeStatus) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+
+  let status: "paid" | "partially_refunded" | "refunded";
+  let refundedAmountCents: number;
+  if (refundStatus === "0") {
+    status = "paid";
+    refundedAmountCents = 0;
+  } else if (refundStatus === "1") {
+    status = "refunded";
+    refundedAmountCents = grossAmountCents;
+  } else if (refundStatus === "2") {
+    status = "partially_refunded";
+    const partialAmount = firstQueryAmountCents(normalized, [
+      "RefundAmt",
+      "RefundAmount",
+      "RefundedAmt",
+      "RefundedAmount",
+      "CloseAmt",
+      "CloseAmount",
+    ]);
+    if (partialAmount === undefined) throw new PaymentQueryProviderError("provider_response");
+    refundedAmountCents = partialAmount;
+  } else {
+    // RefundStatus 8 and future provider values are intentionally not
+    // interpreted. A reconciliation must never promote an ambiguous state.
+    throw new PaymentQueryProviderError("provider_response");
+  }
+
+  if (refundedAmountCents < 0 || refundedAmountCents > grossAmountCents) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  if (status === "paid" && tradeStatus !== "1") {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  if (status === "partially_refunded" && (refundedAmountCents <= 0 || refundedAmountCents >= grossAmountCents)) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  if (status === "refunded" && tradeStatus !== "1" && tradeStatus !== "6") {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+
+  const providerRemaining = firstQueryAmountCents(normalized, [
+    "RemainAmt",
+    "RemainingAmt",
+    "RemainAmount",
+    "RemainingAmount",
+  ]);
+  const remainingRefundableAmountCents = grossAmountCents - refundedAmountCents;
+  if (providerRemaining !== undefined && providerRemaining !== remainingRefundableAmountCents) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+
+  return {
+    providerTradeNo,
+    orderNumber,
+    grossAmountCents,
+    refundedAmountCents,
+    remainingRefundableAmountCents,
+    status,
+  };
+}
+
+async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
+  // WP-118 is a Sandbox-only reconciliation path. Production query access is
+  // deliberately a separate launch-authorized operation, not a fallback.
+  if (process.env.PAYUNI_ENV?.trim() !== "sandbox") {
+    throw new PaymentQueryProviderError("request_contract");
+  }
+  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+  const orderNumber = transaction.orderNumber?.trim();
+  if (!merchantId || !orderNumber) throw new PaymentQueryProviderError("request_contract");
+
+  let encrypted: string;
+  try {
+    encrypted = encryptInfo({
+      MerID: merchantId,
+      MerTradeNo: orderNumber,
+      Timestamp: Math.floor(Date.now() / 1000),
+    });
+  } catch {
+    throw new PaymentQueryProviderError("authentication");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${payUniApiBaseUrl().replace(/\/$/, "")}/trade/query`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "payuni",
+      },
+      body: new URLSearchParams({
+        MerID: merchantId,
+        Version: PAYUNI_QUERY_VERSION,
+        EncryptInfo: encrypted,
+        HashInfo: hashInfo(encrypted),
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new PaymentQueryProviderError("network");
+  }
+  if (!response.ok) throw new PaymentQueryProviderError("provider_response");
+
+  let outer: Record<string, unknown>;
+  try {
+    outer = parseRawPayload(await response.text());
+  } catch {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const responseEncrypted = optionalPayloadText(outer.EncryptInfo);
+  const responseHash = optionalPayloadText(outer.HashInfo);
+  if (!responseEncrypted || !responseHash || !safeEqual(hashInfo(responseEncrypted), responseHash)) {
+    throw new PaymentQueryProviderError("authentication");
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = decryptInfo(responseEncrypted);
+  } catch {
+    throw new PaymentQueryProviderError("authentication");
+  }
+  if (optionalPayloadText(payload.Status) !== "SUCCESS") {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  return payUniQueryRow(payload, orderNumber);
 }
 
 /**
@@ -346,5 +521,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   },
   async refundPayment(input) {
     return refundPayUniTransaction(input);
+  },
+  async queryPayment(input) {
+    return queryPayUniTransaction(input);
   },
 };

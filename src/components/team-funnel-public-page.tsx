@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatDateTime } from "@/lib/format";
 import type { TeamFunnelPublicPageView } from "@/lib/team-funnel-public-page";
 import { LeadForm } from "@/components/lead-form";
@@ -103,6 +104,12 @@ export function PublicPageState({ state }: { state: Exclude<TeamFunnelPublicPage
       <section className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm" role="status" aria-live="polite">
         <h1 className="text-xl font-bold text-slate-950">{message[0]}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">{message[1]}</p>
+        <Link
+          className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+          href="/"
+        >
+          返回首頁
+        </Link>
       </section>
     </main>
   );

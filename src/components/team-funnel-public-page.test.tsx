@@ -32,6 +32,24 @@ describe("TeamFunnelPublicPage", () => {
     const html = renderToStaticMarkup(<TeamFunnelPublicPage view={{ state: "missing_slot" }} />);
     expect(html).toContain("推薦內容尚未完成");
     expect(html).toContain('role="status"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain("返回首頁");
+  });
+
+  it.each([
+    ["not_found", "找不到此公開頁"],
+    ["unpublished", "此頁尚未公開"],
+    ["disabled", "此頁目前無法使用"],
+    ["inactive_partner", "此頁目前無法使用"],
+    ["missing_webinar", "活動資訊尚未完成"],
+    ["missing_slot", "推薦內容尚未完成"],
+  ] as const)("keeps %s unavailable state actionable and announced", (state, heading) => {
+    const html = renderToStaticMarkup(<TeamFunnelPublicPage view={{ state }} />);
+    expect(html).toContain(heading);
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain("min-h-11");
   });
 
   it("renders an explicit empty state when the optional activity description is absent", () => {

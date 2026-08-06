@@ -103,3 +103,65 @@ describe("affiliate commission accounting ledger", () => {
     })).rejects.toThrow("不可同時");
   });
 });
+
+describe("FIN-01 ledger lifecycle boundaries", () => {
+  it("returns zero for an empty commission ledger", async () => {
+    const { client } = ledgerFixture();
+    const { commissionLedgerBalance } = await import("@/lib/affiliate-commission-accounting");
+
+    await expect(commissionLedgerBalance(client, "vendor-a", "commission-a")).resolves.toBe(0);
+  });
+
+  it("requires a dispute case identity and preserves released idempotency", async () => {
+    const { client, entries } = ledgerFixture();
+    await expect(appendDisputeLedgerEntry(client, {
+      ...base,
+      entryType: "dispute_opened",
+      eventIdentity: "opened-missing-case",
+      disputeCaseId: "   ",
+    })).rejects.toThrow("disputeCaseId 不可為空白");
+
+    await appendCommissionLedgerEntry(client, { ...base, entryType: "accrual", eventIdentity: "paid-release", amountCents: 250 });
+    await appendDisputeLedgerEntry(client, {
+      ...base,
+      entryType: "dispute_opened",
+      eventIdentity: "opened-release",
+      disputeCaseId: "case-release",
+    });
+    await appendDisputeLedgerEntry(client, {
+      ...base,
+      entryType: "dispute_released",
+      eventIdentity: "released-1",
+      disputeCaseId: "case-release",
+    });
+    await appendDisputeLedgerEntry(client, {
+      ...base,
+      entryType: "dispute_released",
+      eventIdentity: "released-1",
+      disputeCaseId: "case-release",
+    });
+
+    expect(entries.filter((entry) => entry.disputeCaseId === "case-release")).toHaveLength(2);
+    expect(entries.at(-1)?.amountCents).toBe(0);
+  });
+
+  it("rejects malformed provider and event identity before a ledger write", async () => {
+    const { client, entries } = ledgerFixture();
+
+    await expect(appendCommissionLedgerEntry(client, {
+      ...base,
+      entryType: "accrual",
+      providerName: "   ",
+      eventIdentity: "event-1",
+      amountCents: 100,
+    })).rejects.toThrow("providerName 不可為空白");
+    await expect(appendCommissionLedgerEntry(client, {
+      ...base,
+      entryType: "accrual",
+      providerName: "demo",
+      eventIdentity: "   ",
+      amountCents: 100,
+    })).rejects.toThrow("eventIdentity 不可為空白");
+    expect(entries).toHaveLength(0);
+  });
+});

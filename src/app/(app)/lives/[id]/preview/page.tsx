@@ -12,7 +12,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
 
   return (
     <>
-      <PageHeader title="直播預覽" description="確認公開頁資訊，並取得可分享連結。" action={<ButtonLink href={`/live/${live.slug}`} tone="cta">開啟公開頁</ButtonLink>} />
+      <PageHeader title="直播預覽" description="確認公開頁資訊，並取得可分享連結。" action={<ButtonLink href={`/live/${live.slug}`} tone="cta" prefetch={false}>開啟公開頁</ButtonLink>} />
       <Card>
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
@@ -22,7 +22,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
           </div>
           <div className="rounded-lg bg-slate-50 p-4">
             <p className="text-sm font-semibold text-slate-700">公開連結</p>
-            <Link className="mt-2 block break-all text-primary" href={`/live/${live.slug}`}>/live/{live.slug}</Link>
+            <Link className="mt-2 block break-all text-primary" href={`/live/${live.slug}`} prefetch={false}>/live/{live.slug}</Link>
             <p className="mt-5 text-sm font-semibold text-slate-700">綁定內容</p>
             <ul className="mt-2 space-y-2 text-sm text-slate-600">
               <li>影片：{live.video?.title ?? "未綁定"}</li>

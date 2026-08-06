@@ -23,8 +23,22 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
-export default async function AdminBillingSettlementsPage() {
+const settlementErrorMessages: Record<string, string> = {
+  conflict: "月結資料已被其他操作更新，請重新整理後再試一次。",
+  invalid_payout_account: "無法建立出款批次：每個商家都必須恰好設定一筆有效的平台出款帳戶。",
+  locked: "這筆月結已鎖定，不能再重新計算或調整。",
+  missing: "找不到指定的商家或月結資料。",
+  negative_payout: "調整後的結算金額不可小於 0 元，資料未儲存。",
+};
+
+export default async function AdminBillingSettlementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   await requireFinanceAdmin();
+  const { error } = await searchParams;
+  const errorMessage = error ? settlementErrorMessages[error] : null;
   const db = getDb();
   const [vendors, settlements] = await Promise.all([
     db.vendor.findMany({
@@ -47,6 +61,12 @@ export default async function AdminBillingSettlementsPage() {
         description="產生商家月結、覆核人工調整、鎖單，並將已鎖定月結送入批次出款。"
         action={<Link href="/billing/settlements" className="text-sm font-semibold text-primary hover:underline">查看商家端月結</Link>}
       />
+
+      {errorMessage ? (
+        <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-white to-blue-50">

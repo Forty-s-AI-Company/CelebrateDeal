@@ -14,6 +14,7 @@ const dependencies = vi.hoisted(() => {
     processPaymentWebhook: vi.fn(),
     auditSnapshot: vi.fn(() => ({ snapshot: "redacted" })),
     writeAuditLog: vi.fn(),
+    captureOperationalError: vi.fn(),
   };
 });
 
@@ -21,6 +22,9 @@ vi.mock("@/lib/db", () => ({ getDb: () => dependencies.db }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: dependencies.auditSnapshot,
   writeAuditLog: dependencies.writeAuditLog,
+}));
+vi.mock("@/lib/monitoring", () => ({
+  captureOperationalError: dependencies.captureOperationalError,
 }));
 vi.mock("@/lib/payment-webhooks", () => ({
   PaymentWebhookPayload: {
@@ -34,7 +38,7 @@ vi.mock("@/lib/payment-webhooks", () => ({
   processPaymentWebhook: dependencies.processPaymentWebhook,
 }));
 
-import { processDueWebhookRetries, retryWebhookEvent } from "@/lib/webhook-retry";
+import { processDueWebhookRetries, recoverStaleWebhookRetryClaim, retryWebhookEvent } from "@/lib/webhook-retry";
 
 const now = new Date("2025-01-01T00:00:00.000Z");
 
@@ -49,6 +53,7 @@ function event(overrides: Record<string, unknown> = {}) {
     retryCount: 0,
     maxRetries: 3,
     nextRetryAt: new Date("2024-12-31T23:59:00.000Z"),
+    updatedAt: new Date("2024-12-31T23:59:00.000Z"),
     errorMessage: "prior failure",
     payload: { normalized: { provider: "demo", eventId: "event-reference-1" } },
     ...overrides,
@@ -87,7 +92,7 @@ describe("webhook retry worker", () => {
 
     await expect(retryWebhookEvent(storedEvent.id)).resolves.toMatchObject({ status: "exhausted", event: storedEvent });
     expect(dependencies.db.webhookEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: storedEvent.id, status: "failed", retryCount: 3 },
+      where: { id: storedEvent.id, status: "failed", retryCount: 3, updatedAt: storedEvent.updatedAt },
       data: { status: "exhausted", nextRetryAt: null },
     });
   });
@@ -104,7 +109,7 @@ describe("webhook retry worker", () => {
     await expect(retryWebhookEvent(finalAttempt.id)).resolves.toMatchObject({ status: "exhausted" });
 
     expect(dependencies.db.webhookEvent.updateMany).toHaveBeenNthCalledWith(1, {
-      where: { id: retryable.id, status: "failed", retryCount: 1 },
+      where: { id: retryable.id, status: "failed", retryCount: 1, updatedAt: retryable.updatedAt },
       data: { status: "retrying", retryCount: { increment: 1 }, nextRetryAt: null },
     });
     expect(dependencies.db.webhookEvent.updateMany).toHaveBeenNthCalledWith(2, {
@@ -139,7 +144,7 @@ describe("webhook retry worker", () => {
     });
 
     expect(dependencies.db.webhookEvent.updateMany).toHaveBeenNthCalledWith(1, {
-      where: { id: storedEvent.id, status: "failed", retryCount: 0 },
+      where: { id: storedEvent.id, status: "failed", retryCount: 0, updatedAt: storedEvent.updatedAt },
       data: { status: "retrying", retryCount: { increment: 1 }, nextRetryAt: null },
     });
     expect(dependencies.db.webhookEvent.updateMany).toHaveBeenNthCalledWith(2, {
@@ -194,6 +199,48 @@ describe("webhook retry worker", () => {
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(1, expect.objectContaining({ action: "webhook_retry_failed", targetId: retryable.id }));
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(2, expect.objectContaining({ action: "webhook_retry_exhausted", targetId: finalAttempt.id }));
     expect(dependencies.auditSnapshot).toHaveBeenCalledTimes(4);
+    expect(dependencies.captureOperationalError).toHaveBeenCalledTimes(2);
+    expect(dependencies.captureOperationalError).toHaveBeenNthCalledWith(1, expect.any(Error), {
+      source: "webhook_retry",
+      operation: "retry_claim",
+      provider: "demo",
+      status: "failed",
+    });
+  });
+
+  it("recovers a stale retrying claim with an updatedAt fence before scheduling its next attempt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const stale = event({ status: "retrying", retryCount: 1, updatedAt: new Date("2024-12-31T23:40:00.000Z") });
+    dependencies.db.webhookEvent.updateMany.mockResolvedValueOnce({ count: 1 });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue({ ...stale, status: "failed", updatedAt: now });
+    dependencies.db.webhookEvent.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(recoverStaleWebhookRetryClaim(stale, now)).resolves.toMatchObject({ status: "claimed_elsewhere" });
+    expect(dependencies.db.webhookEvent.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: stale.id, status: "retrying", retryCount: 1, updatedAt: stale.updatedAt },
+      data: { status: "failed", nextRetryAt: now, errorMessage: "Webhook retry lease expired" },
+    });
+  });
+
+  it("exhausts a stale maxed claim without calling the processor", async () => {
+    const stale = event({ status: "retrying", retryCount: 3, updatedAt: new Date("2024-12-31T23:40:00.000Z") });
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(recoverStaleWebhookRetryClaim(stale, now)).resolves.toMatchObject({ status: "exhausted" });
+    expect(dependencies.db.webhookEvent.updateMany).toHaveBeenCalledWith({
+      where: { id: stale.id, status: "retrying", retryCount: 3, updatedAt: stale.updatedAt },
+      data: { status: "exhausted", nextRetryAt: null, errorMessage: "Webhook retry lease expired after maximum retries" },
+    });
+    expect(dependencies.processPaymentWebhook).not.toHaveBeenCalled();
+  });
+
+  it("refuses to recover a fresh retrying claim", async () => {
+    const fresh = event({ status: "retrying" });
+
+    await expect(recoverStaleWebhookRetryClaim(fresh, now)).resolves.toMatchObject({ status: "not_stale" });
+    expect(dependencies.db.webhookEvent.updateMany).not.toHaveBeenCalled();
+    expect(dependencies.processPaymentWebhook).not.toHaveBeenCalled();
   });
 
   it("fetches only due failed events in next-retry order, obeys the limit, and returns that order", async () => {
@@ -201,7 +248,7 @@ describe("webhook retry worker", () => {
     vi.setSystemTime(now);
     const first = event({ id: "oldest", retryCount: 3, nextRetryAt: new Date("2024-12-31T23:58:00.000Z") });
     const second = event({ id: "newer", retryCount: 3, nextRetryAt: new Date("2024-12-31T23:59:00.000Z") });
-    dependencies.db.webhookEvent.findMany.mockResolvedValue([first, second]);
+    dependencies.db.webhookEvent.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([first, second]);
     dependencies.db.webhookEvent.findUnique.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
     dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
 
@@ -209,7 +256,12 @@ describe("webhook retry worker", () => {
       { eventId: first.id, status: "exhausted" },
       { eventId: second.id, status: "exhausted" },
     ]);
-    expect(dependencies.db.webhookEvent.findMany).toHaveBeenCalledWith({
+    expect(dependencies.db.webhookEvent.findMany).toHaveBeenNthCalledWith(1, {
+      where: { status: "retrying", updatedAt: { lte: new Date("2024-12-31T23:50:00.000Z") } },
+      orderBy: { updatedAt: "asc" },
+      take: 2,
+    });
+    expect(dependencies.db.webhookEvent.findMany).toHaveBeenNthCalledWith(2, {
       where: { status: "failed", nextRetryAt: { lte: now } },
       orderBy: { nextRetryAt: "asc" },
       take: 2,

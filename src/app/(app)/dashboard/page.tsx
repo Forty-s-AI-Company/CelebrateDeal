@@ -1,8 +1,12 @@
 import { CheckCircle2, Plus, Radio } from "lucide-react";
 import Link from "next/link";
 import { Card, PageHeader, Badge, ButtonLink } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorContext } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
+import {
+  dashboardChecklistForRole,
+  isDashboardManagerRole,
+} from "@/lib/dashboard-checklist";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { formatLiveCountdown } from "@/lib/live-countdown";
@@ -12,7 +16,7 @@ function getDateDaysAgo(days: number) {
 }
 
 export default async function DashboardPage() {
-  const vendor = await requireVendor();
+  const { auth, vendor } = await requireVendorContext();
   const db = getDb();
   const sevenDaysAgo = getDateDaysAgo(7);
   const now = getDateDaysAgo(0);
@@ -50,13 +54,19 @@ export default async function DashboardPage() {
   const usagePercent = usageLimit && usageLimit.creditsLimit > 0
     ? Math.round((usageLimit.creditsUsed / usageLimit.creditsLimit) * 100)
     : 0;
-  const checklist = [
-    { label: "建立商品", href: "/products/new", done: productCount > 0 },
-    { label: "建立直播間", href: "/lives/new", done: liveCount > 0 },
-    { label: "建立互動角色", href: "/interaction-roles/new", done: roles > 0 },
-    { label: "建立互動腳本", href: "/interaction-scripts/new", done: scripts > 0 },
-    { label: "設定追蹤", href: "/settings/tracking", done: Boolean(vendor.tracking?.googleTagManagerId || vendor.tracking?.facebookPixelId) },
-  ];
+  const checklist = dashboardChecklistForRole(
+    {
+      productCount,
+      liveCount,
+      interactionRoleCount: roles,
+      interactionScriptCount: scripts,
+      trackingConfigured: Boolean(
+        vendor.tracking?.googleTagManagerId || vendor.tracking?.facebookPixelId,
+      ),
+    },
+    auth.member?.role ?? null,
+  );
+  const isManager = isDashboardManagerRole(auth.member?.role ?? null);
 
   const kpis = [
     { label: "近 7 天觀看", value: viewCount, tone: "blue" },
@@ -70,7 +80,7 @@ export default async function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
-        action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>}
+        action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
       />
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -114,15 +124,16 @@ export default async function DashboardPage() {
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-950">近期直播</h2>
-            <ButtonLink href="/lives" tone="secondary">查看全部</ButtonLink>
+            {isManager ? <ButtonLink href="/lives" tone="secondary">查看全部</ButtonLink> : null}
           </div>
           {recentLives.length > 0 ? (
             <div className="grid gap-3">
-              {recentLives.map((live) => (
-                <Link key={live.id} href={`/lives/${live.id}/analytics`} className="flex flex-col gap-3 rounded-lg border border-border p-4 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-primary"><Radio size={18} aria-hidden="true" /></span>
-                  <span>
+              {recentLives.map((live) => {
+                const content = (
+                  <>
+                  <span className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-primary"><Radio size={18} aria-hidden="true" /></span>
+                    <span>
                     <span className="block font-semibold text-slate-900">{live.title}</span>
                     <span className="block text-sm text-slate-500">{formatDateTime(live.scheduledAt)}</span>
                   </span>
@@ -131,15 +142,27 @@ export default async function DashboardPage() {
                   <Badge tone="blue">{live.status}</Badge>
                   <Badge tone="green">{live.submissions.length} 名單</Badge>
                 </span>
-                </Link>
-              ))}
+                  </>
+                );
+                return isManager ? (
+                  <Link key={live.id} href={`/lives/${live.id}/analytics`} className="flex flex-col gap-3 rounded-lg border border-border p-4 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
+                    {content}
+                  </Link>
+                ) : (
+                  <div key={live.id} className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    {content}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-md bg-slate-50 px-4 py-5 text-sm text-slate-600">
               <p>目前還沒有直播資料。</p>
-              <Link href="/lives/new" className="mt-2 inline-flex font-semibold text-primary hover:underline">
-                建立第一場直播
-              </Link>
+              {isManager ? (
+                <Link href="/lives/new" className="mt-2 inline-flex font-semibold text-primary hover:underline">
+                  建立第一場直播
+                </Link>
+              ) : null}
             </div>
           )}
         </Card>

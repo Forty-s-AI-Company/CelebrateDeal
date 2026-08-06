@@ -157,6 +157,21 @@ test("authenticated dashboard stays within the release performance budget", asyn
   expectWithinBudget(await measurePage(page), dashboardBudget, "/dashboard");
 });
 
+test("authenticated billing usage stays within the release performance budget", async ({ page }) => {
+  await loginOwner(page);
+  const billingBudget: PerformanceBudget = {
+    domContentLoadedMs: 5_000,
+    loadMs: 5_000,
+    resourceCount: 80,
+    totalTransferBytes: 3_000_000,
+    scriptTransferBytes: 2_500_000,
+  };
+
+  const response = await page.goto("/billing/usage", { waitUntil: "load" });
+  expect(response?.status()).toBe(200);
+  expectWithinBudget(await measurePage(page), billingBudget, "/billing/usage");
+});
+
 test("public live commerce stays within the release performance budget", async ({ page }) => {
   const route = `/live/${fixture.liveSlug}`;
   const liveBudget: PerformanceBudget = {

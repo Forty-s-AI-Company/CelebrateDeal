@@ -36,14 +36,18 @@ export function ButtonLink({
   href,
   children,
   tone = "primary",
+  prefetch,
 }: {
   href: string;
   children: React.ReactNode;
   tone?: "primary" | "secondary" | "cta";
+  /** Keeps the Next.js default unless a caller explicitly opts out. */
+  prefetch?: boolean;
 }) {
   return (
     <Link
       href={href}
+      prefetch={prefetch}
       className={clsx(
         "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition",
         tone === "primary" && "bg-primary text-white hover:bg-primary-dark",

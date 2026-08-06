@@ -1141,6 +1141,71 @@ describe("payment webhook processing", () => {
     expect(results.some((result) => result.eventId === future.id)).toBe(false);
   });
 
+  it("recovers a stale retrying webhook claim while leaving a fresh claim untouched", async () => {
+    const suffix = `${Date.now()}stale`;
+    const { db, vendor } = await createFixture(suffix);
+    const payload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-stale-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber: `ORDER-STALE-${suffix}`,
+      grossAmountCents: 100000,
+    });
+    const [stale, fresh] = await Promise.all([
+      db.webhookEvent.create({
+        data: { provider: "demo", eventId: payload.eventId, eventType: payload.eventType, status: "retrying", retryCount: 0, payload: webhookPayloadJson(payload) },
+      }),
+      db.webhookEvent.create({
+        data: { provider: "demo", eventId: `evt-fresh-${suffix}`, eventType: payload.eventType, status: "retrying", retryCount: 0, payload: webhookPayloadJson({ ...payload, eventId: `evt-fresh-${suffix}` }) },
+      }),
+    ]);
+    createdWebhookEventIds.push(stale.id, fresh.id);
+    await db.webhookEvent.update({ where: { id: stale.id }, data: { updatedAt: new Date(Date.now() - 1000 * 60 * 11) } });
+
+    const results = await processDueWebhookRetries();
+    const [recovered, unchanged] = await Promise.all([
+      db.webhookEvent.findUniqueOrThrow({ where: { id: stale.id } }),
+      db.webhookEvent.findUniqueOrThrow({ where: { id: fresh.id } }),
+    ]);
+
+    expect(results.some((result) => result.eventId === stale.id && result.status === "processed")).toBe(true);
+    expect(recovered.status).toBe("processed");
+    expect(recovered.retryCount).toBe(1);
+    expect(unchanged.status).toBe("retrying");
+    expect(unchanged.retryCount).toBe(0);
+  });
+
+  it("exhausts a stale maxed retry claim without creating a payment transaction", async () => {
+    const suffix = `${Date.now()}maxed`;
+    const { db } = await createFixture(suffix);
+    const event = await db.webhookEvent.create({
+      data: {
+        provider: "demo",
+        eventId: `evt-maxed-${suffix}`,
+        eventType: "paid",
+        status: "retrying",
+        retryCount: 1,
+        maxRetries: 1,
+        payload: webhookPayloadJson({ provider: "demo", eventId: `evt-maxed-${suffix}` }),
+      },
+    });
+    createdWebhookEventIds.push(event.id);
+    await db.webhookEvent.update({ where: { id: event.id }, data: { updatedAt: new Date(Date.now() - 1000 * 60 * 11) } });
+
+    const transactionCountBefore = await db.paymentTransaction.count();
+    const results = await processDueWebhookRetries();
+    const [updated, transactionCountAfter] = await Promise.all([
+      db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } }),
+      db.paymentTransaction.count(),
+    ]);
+
+    expect(results).toContainEqual({ eventId: event.id, status: "exhausted" });
+    expect(updated.status).toBe("exhausted");
+    expect(updated.nextRetryAt).toBeNull();
+    expect(transactionCountAfter).toBe(transactionCountBefore);
+  });
+
   it("marks webhook exhausted after max retries", async () => {
     const suffix = `${Date.now()}e`;
     const { db } = await createFixture(suffix);

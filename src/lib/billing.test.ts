@@ -133,3 +133,89 @@ describe("calculateSettlement transaction service fee", () => {
     expect(settlement.transactionServiceFeeCents).toBe(0);
   });
 });
+
+describe("FIN-01 settlement boundary coverage", () => {
+  it("fails closed when no active subscription exists", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(null);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toThrow(
+      "找不到有效訂閱方案，無法產生月結。",
+    );
+  });
+
+  it("does not create a payout amount for a non-platform payment mode", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce({
+      ...subscription,
+      paymentMode: "byo",
+    });
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      ...transactions,
+      { grossAmountCents: 50_000, gatewayFeeCents: 500, platformFeeCents: 700 },
+    ]);
+    dependencies.db.affiliateCommission.aggregate.mockResolvedValueOnce({
+      _sum: { commissionAmountCents: 9_999 },
+    });
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement.paymentGatewayFeeCents).toBe(0);
+    expect(settlement.transactionServiceFeeCents).toBe(0);
+    expect(settlement.paymentServiceFeeCents).toBe(0);
+    expect(settlement.payoutableAmountCents).toBe(0);
+    expect(settlement.finalPayoutAmountCents).toBe(0);
+  });
+
+  it("clamps gross revenue and gateway fees after processed refunds", async () => {
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100 },
+    ]);
+    dependencies.db.refundRecord.aggregate.mockResolvedValueOnce({
+      _sum: {
+        refundAmountCents: 1_500,
+        gatewayFeeRefundCents: 450,
+        platformFeeRefundCents: 50,
+      },
+    });
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement.grossRevenueCents).toBe(0);
+    expect(settlement.paymentGatewayFeeCents).toBe(0);
+    expect(settlement.transactionServiceFeeCents).toBe(50);
+  });
+
+  it("uses the highest observed usage totals and charges only positive overflow", async () => {
+    dependencies.db.usageRecord.findMany.mockResolvedValueOnce([
+      {
+        recordType: "stream_minutes",
+        quantity: 6_100,
+        totalWatchMinutes: 5_000,
+        totalEvents: 12,
+        totalAffiliates: 4,
+        totalStorageMinutes: 2_000,
+      },
+      {
+        recordType: "storage_minutes",
+        quantity: 7_200,
+        totalWatchMinutes: 5_500,
+        totalEvents: 15,
+        totalAffiliates: 8,
+        totalStorageMinutes: 6_000,
+      },
+    ]);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([]);
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement.totals).toEqual({
+      totalWatchMinutes: 6_100,
+      totalEvents: 15,
+      totalAffiliates: 8,
+      totalStorageMinutes: 7_200,
+    });
+    expect(settlement.overflowWatchMinutes).toBe(6_100);
+    expect(settlement.overflowEvents).toBe(15);
+    expect(settlement.overflowAffiliates).toBe(8);
+    expect(settlement.overflowStorageMinutes).toBe(7_200);
+  });
+});

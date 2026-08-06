@@ -1,10 +1,62 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { captureOperationalError } from "@/lib/monitoring";
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
+const WEBHOOK_RETRY_LEASE_MS = 1000 * 60 * 10;
+
 function nextRetryDate() {
   return new Date(Date.now() + 1000 * 60 * 15);
+}
+
+type RetryableWebhookEvent = {
+  id: string;
+  vendorId: string | null;
+  provider: string;
+  status: string;
+  retryCount: number;
+  maxRetries: number;
+  updatedAt: Date;
+};
+
+/**
+ * Reclaims only a retry claim whose owner has stopped making progress. The
+ * `updatedAt` fence prevents an old scan from changing a claim a newer worker
+ * has already touched. This recovers the next scheduling opportunity; it does
+ * not pretend to cancel a still-running processor call.
+ */
+export async function recoverStaleWebhookRetryClaim(event: RetryableWebhookEvent, now = new Date()) {
+  const db = getDb();
+  if (event.status !== "retrying") return { status: "not_retrying" as const, event };
+  if (event.updatedAt > new Date(now.getTime() - WEBHOOK_RETRY_LEASE_MS)) {
+    return { status: "not_stale" as const, event };
+  }
+
+  const exhausted = event.retryCount >= event.maxRetries;
+  const recovered = await db.webhookEvent.updateMany({
+    where: {
+      id: event.id,
+      status: "retrying",
+      retryCount: event.retryCount,
+      updatedAt: event.updatedAt,
+    },
+    data: exhausted
+      ? {
+          status: "exhausted",
+          nextRetryAt: null,
+          errorMessage: "Webhook retry lease expired after maximum retries",
+        }
+      : {
+          status: "failed",
+          nextRetryAt: now,
+          errorMessage: "Webhook retry lease expired",
+        },
+  });
+
+  if (recovered.count !== 1) return { status: "claimed_elsewhere" as const, event };
+  if (exhausted) return { status: "exhausted" as const, event };
+  return retryWebhookEvent(event.id);
 }
 
 export async function retryWebhookEvent(eventId: string, actorLabel = "job:webhook-retry") {
@@ -13,7 +65,7 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   if (!event) return { status: "missing" as const };
   if (event.retryCount >= event.maxRetries) {
     const exhausted = await db.webhookEvent.updateMany({
-      where: { id: event.id, status: "failed", retryCount: event.retryCount },
+      where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt },
       data: { status: "exhausted", nextRetryAt: null },
     });
     if (exhausted.count !== 1) return { status: "claimed_elsewhere" as const, event };
@@ -26,6 +78,7 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       id: event.id,
       status: "failed",
       retryCount: event.retryCount,
+      updatedAt: event.updatedAt,
     },
     data: {
       status: "retrying",
@@ -86,6 +139,12 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       },
     });
     if (finalized.count !== 1) return { status: "claimed_elsewhere" as const, event: claimedEvent };
+    captureOperationalError(error, {
+      source: "webhook_retry",
+      operation: "retry_claim",
+      provider: event.provider,
+      status,
+    });
     await writeAuditLog({
       vendorId: event.vendorId,
       actorLabel,
@@ -102,16 +161,34 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
 export async function processDueWebhookRetries(limit = 20) {
   const db = getDb();
   const now = new Date();
+  const leaseCutoff = new Date(now.getTime() - WEBHOOK_RETRY_LEASE_MS);
+  const staleRetryingEvents = await db.webhookEvent.findMany({
+    where: {
+      status: "retrying",
+      updatedAt: { lte: leaseCutoff },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+  });
+
+  const results = [];
+  for (const event of staleRetryingEvents) {
+    const result = await recoverStaleWebhookRetryClaim(event, now);
+    results.push({ eventId: event.id, status: result.status });
+  }
+
+  const remaining = Math.max(0, limit - results.length);
+  if (remaining === 0) return results;
+
   const events = await db.webhookEvent.findMany({
     where: {
       status: "failed",
       nextRetryAt: { lte: now },
     },
     orderBy: { nextRetryAt: "asc" },
-    take: limit,
+    take: remaining,
   });
 
-  const results = [];
   for (const event of events) {
     const result = await retryWebhookEvent(event.id);
     results.push({ eventId: event.id, status: result.status });

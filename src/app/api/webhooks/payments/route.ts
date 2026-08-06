@@ -9,19 +9,84 @@ import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/l
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
+type CallbackSource = "return" | "notify" | "unknown";
+type ObservedMethod = "POST" | "HEAD" | "OTHER";
+
+function classifyCallbackSource(searchParams: URLSearchParams): CallbackSource {
+  const values = searchParams.getAll("source");
+  if (values.length !== 1) return "unknown";
+  return values[0] === "return" || values[0] === "notify" ? values[0] : "unknown";
+}
+
+function observedMethod(method: string): ObservedMethod {
+  if (method === "POST" || method === "HEAD") return method;
+  return "OTHER";
+}
+
+/**
+ * Vercel request records omit query strings. For preview-only callback proof,
+ * emit a fixed schema that keeps only an allowlisted source enum. Never pass
+ * request URL, body, headers, identifiers, or exception data to this log.
+ */
+function observeCallbackRequest(requestUrl: URL, method: ObservedMethod, status: number) {
+  if (process.env.VERCEL_ENV !== "preview") return;
+
+  try {
+    console.info(JSON.stringify({
+      event: "payment_webhook_request_v1",
+      method,
+      path: "/api/webhooks/payments",
+      source: classifyCallbackSource(requestUrl.searchParams),
+      status,
+      timestamp: new Date().toISOString(),
+    }));
+  } catch {
+    // Observability must not change webhook response semantics.
+  }
+}
+
+function observePaymentWebhookFailure(requestUrl: URL, code: ReturnType<typeof classifyPaymentWebhookFailure>) {
+  if (process.env.VERCEL_ENV !== "preview") return;
+
+  try {
+    console.info(JSON.stringify({
+      event: "payment_webhook_failure_v1",
+      method: "POST",
+      path: "/api/webhooks/payments",
+      source: classifyCallbackSource(requestUrl.searchParams),
+      status: 500,
+      code,
+      timestamp: new Date().toISOString(),
+    }));
+  } catch {
+    // Observability must not change webhook response semantics.
+  }
+}
+
+function webhookJson(requestUrl: URL, status: number, payload: unknown) {
+  observeCallbackRequest(requestUrl, "POST", status);
+  return NextResponse.json(payload, { status });
+}
+
+export async function HEAD(request: Request) {
+  const requestUrl = new URL(request.url);
+  observeCallbackRequest(requestUrl, observedMethod(request.method), 405);
+  return new NextResponse(null, { status: 405, headers: { Allow: "POST" } });
+}
+
 export async function POST(request: Request) {
+  const requestUrl = new URL(request.url);
   let adapter: PaymentProviderAdapter;
   try {
     adapter = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   } catch {
-    return NextResponse.json({ error: "Invalid payment provider configuration" }, { status: 500 });
+    return webhookJson(requestUrl, 500, { error: "Invalid payment provider configuration" });
   }
 
   if (process.env.NODE_ENV === "production" && adapter.id === "demo") {
-    return NextResponse.json({ error: "Demo payment webhooks are not allowed in production" }, { status: 403 });
+    return webhookJson(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
   }
 
-  const requestUrl = new URL(request.url);
   const providerIds = [
     requestUrl.searchParams.get("provider"),
     request.headers.get("x-payment-provider"),
@@ -29,12 +94,12 @@ export async function POST(request: Request) {
   ].filter((providerId): providerId is string => providerId !== null);
 
   if (providerIds.length === 0 || providerIds.some((providerId) => providerId !== adapter.id)) {
-    return NextResponse.json({ error: "Unsupported payment provider" }, { status: 400 });
+    return webhookJson(requestUrl, 400, { error: "Unsupported payment provider" });
   }
 
   const rawBody = await readTextBody(request);
   if (rawBody === null) {
-    return NextResponse.json({ error: "Webhook payload too large" }, { status: 413 });
+    return webhookJson(requestUrl, 413, { error: "Webhook payload too large" });
   }
 
   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
@@ -47,7 +112,7 @@ export async function POST(request: Request) {
       targetType: "WebhookEvent",
       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
     });
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    return webhookJson(requestUrl, 401, { error: "Invalid signature" });
   }
 
   let normalized;
@@ -61,7 +126,7 @@ export async function POST(request: Request) {
       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
       after: auditSnapshot({ errorCode: "invalid_payload" }),
     });
-    return NextResponse.json({ error: "Invalid payment webhook payload", code: "invalid_payload" }, { status: 400 });
+    return webhookJson(requestUrl, 400, { error: "Invalid payment webhook payload", code: "invalid_payload" });
   }
 
   const payload = normalized.payload;
@@ -71,7 +136,7 @@ export async function POST(request: Request) {
   });
 
   if (existing?.status === "processed") {
-    return NextResponse.json({ ok: true, duplicate: true, eventId: existing.id });
+    return webhookJson(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
   }
 
   const event = existing ?? await db.webhookEvent.create({
@@ -91,14 +156,24 @@ export async function POST(request: Request) {
 
   try {
     const result = await processPaymentWebhook(payload, event);
-    return NextResponse.json({
+    return webhookJson(requestUrl, 200, {
       ok: true,
       eventId: event.id,
       vendorId: result.vendor.id,
       transactionId: result.transaction.id,
     });
   } catch (error) {
+    try {
+      const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
+      if (latestEvent?.status === "processed") {
+        return webhookJson(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
+      }
+    } catch {
+      // Keep the original failure path when convergence cannot be confirmed.
+    }
+
     const errorCode = classifyPaymentWebhookFailure(error);
+    observePaymentWebhookFailure(requestUrl, errorCode);
     const message = paymentWebhookFailureMessage(errorCode);
     await db.webhookEvent.updateMany({
       where: { id: event.id, status: { not: "processed" } },
@@ -117,6 +192,6 @@ export async function POST(request: Request) {
       before: auditSnapshot(payload),
       after: auditSnapshot({ errorCode }),
     });
-    return NextResponse.json({ error: "Payment webhook processing failed", code: errorCode, eventId: event.id }, { status: 500 });
+    return webhookJson(requestUrl, 500, { error: "Payment webhook processing failed", code: errorCode, eventId: event.id });
   }
 }

@@ -4,7 +4,15 @@ const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   affiliateCreate: vi.fn(),
   affiliateUpdate: vi.fn(),
+  affiliateCommissionFindMany: vi.fn(),
   affiliateCommissionUpdateMany: vi.fn(),
+  affiliateCommissionLedgerEntryAggregate: vi.fn(),
+  affiliateCommissionLedgerEntryFindUnique: vi.fn(),
+  affiliateCommissionLedgerEntryCreate: vi.fn(),
+  affiliatePayoutFindFirst: vi.fn(),
+  affiliatePayoutFindUnique: vi.fn(),
+  affiliatePayoutCreate: vi.fn(),
+  affiliatePayoutUpdateMany: vi.fn(),
   authenticateUser: vi.fn(),
   calculateSettlement: vi.fn(),
   cookies: vi.fn(),
@@ -47,6 +55,7 @@ const mocks = vi.hoisted(() => ({
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
   requireVendor: vi.fn(),
+  requireVendorFinance: vi.fn(),
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
@@ -56,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   settlementFindFirst: vi.fn(),
   settlementFindMany: vi.fn(),
   settlementUpdateMany: vi.fn(),
+  settlementCreate: vi.fn(),
   settlementUpsert: vi.fn(),
   partnerFunnelPageFindFirst: vi.fn(),
   partnerFunnelPageUpdateMany: vi.fn(),
@@ -88,6 +98,8 @@ const mocks = vi.hoisted(() => ({
   userSessionFindMany: vi.fn(),
   userSessionUpdateMany: vi.fn(),
   writeAuditLog: vi.fn(),
+  requestAuditMeta: vi.fn(),
+  auditLogCreate: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -96,6 +108,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
+  requestAuditMeta: mocks.requestAuditMeta,
 }));
 vi.mock("@/lib/auth", () => ({
   AUTH_COOKIE: "celebrate_session",
@@ -106,6 +119,7 @@ vi.mock("@/lib/auth", () => ({
   requireAuth: mocks.requireAuth,
   requireFinanceAdmin: mocks.requireFinanceAdmin,
   requireVendor: mocks.requireVendor,
+  requireVendorFinance: mocks.requireVendorFinance,
   requireVendorManager: mocks.requireVendor,
   requireVendorOwner: mocks.requireVendorOwner,
   sessionCookieOptions: vi.fn(),
@@ -194,7 +208,22 @@ vi.mock("@/lib/db", () => ({
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
     affiliate: { create: mocks.affiliateCreate, update: mocks.affiliateUpdate },
-    affiliateCommission: { updateMany: mocks.affiliateCommissionUpdateMany },
+    affiliateCommission: {
+      findMany: mocks.affiliateCommissionFindMany,
+      updateMany: mocks.affiliateCommissionUpdateMany,
+    },
+    affiliateCommissionLedgerEntry: {
+      aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+      findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      create: mocks.affiliateCommissionLedgerEntryCreate,
+    },
+    affiliatePayout: {
+      findFirst: mocks.affiliatePayoutFindFirst,
+      findUnique: mocks.affiliatePayoutFindUnique,
+      create: mocks.affiliatePayoutCreate,
+      updateMany: mocks.affiliatePayoutUpdateMany,
+    },
+    auditLog: { create: mocks.auditLogCreate },
     blacklist: { create: mocks.blacklistCreate },
     registrationForm: {
       create: mocks.registrationFormCreate,
@@ -213,6 +242,7 @@ import {
   generateSettlementAction,
   importSystemRolesAction,
   loginAction,
+  lockSettlementAction,
   markPayoutBatchExportedAction,
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
@@ -220,6 +250,8 @@ import {
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
+  updateSettlementAdjustmentAction,
+  recordAffiliatePayoutOutcomeAction,
   updatePayoutItemStatusAction,
   unbindInteractionScriptFromLiveAction,
   upsertBlacklistAction,
@@ -426,6 +458,10 @@ beforeEach(() => {
   mocks.createUserSession.mockResolvedValue({ token: "test-fixture-session-token", expiresAt: new Date("2026-07-18T00:00:00.000Z") });
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
+  mocks.requireVendorFinance.mockResolvedValue({
+    vendor: { id: "vendor-1" },
+    member: { id: "merchant-finance-1", role: "owner" },
+  });
   mocks.requireAuth.mockResolvedValue({
     user: {
       id: "admin-1",
@@ -470,6 +506,18 @@ beforeEach(() => {
   mocks.settlementFindUnique.mockResolvedValue(null);
   mocks.settlementFindMany.mockResolvedValue([]);
   mocks.settlementUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.settlementCreate.mockResolvedValue({ id: "settlement-1" });
+  mocks.affiliateCommissionFindMany.mockResolvedValue([]);
+  mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+  mocks.affiliateCommissionLedgerEntryFindUnique.mockResolvedValue(null);
+  mocks.affiliateCommissionLedgerEntryCreate.mockResolvedValue({ id: "ledger-entry-1" });
+  mocks.affiliateCommissionUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.affiliatePayoutFindFirst.mockResolvedValue(null);
+  mocks.affiliatePayoutFindUnique.mockResolvedValue(null);
+  mocks.affiliatePayoutCreate.mockResolvedValue({ id: "affiliate-payout-1" });
+  mocks.affiliatePayoutUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.auditLogCreate.mockResolvedValue({ id: "audit-1" });
+  mocks.requestAuditMeta.mockResolvedValue({ ipAddress: "203.0.113.10", userAgent: "CelebrateDeal test" });
   mocks.payoutBatchCreate.mockResolvedValue({ id: "payout-batch-1" });
   mocks.payoutItemCreate.mockResolvedValue({ id: "payout-item-1" });
   mocks.userSessionFindMany.mockResolvedValue([]);
@@ -497,6 +545,22 @@ beforeEach(() => {
       create: mocks.refundRecordCreate,
       update: mocks.refundRecordUpdate,
     },
+    affiliateCommission: {
+      findMany: mocks.affiliateCommissionFindMany,
+      updateMany: mocks.affiliateCommissionUpdateMany,
+    },
+    affiliateCommissionLedgerEntry: {
+      aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+      findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      create: mocks.affiliateCommissionLedgerEntryCreate,
+    },
+    affiliatePayout: {
+      findFirst: mocks.affiliatePayoutFindFirst,
+      findUnique: mocks.affiliatePayoutFindUnique,
+      create: mocks.affiliatePayoutCreate,
+      updateMany: mocks.affiliatePayoutUpdateMany,
+    },
+    auditLog: { create: mocks.auditLogCreate },
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -1950,6 +2014,7 @@ describe("createPayoutBatchAction", () => {
       name: "Vendor One",
       paymentAccounts: [{
         mode: "platform",
+        status: "active",
         bankAccountEncrypted: null,
         bankAccountLegacyName: "Vendor One",
         bankCodeLegacy: "001",
@@ -2246,9 +2311,9 @@ describe("generateSettlementAction", () => {
 
   it("generates a settlement and invoice for a valid settlement month", async () => {
     const settlement = { id: "settlement-1" };
-    mocks.settlementUpsert.mockResolvedValue(settlement);
+    mocks.settlementCreate.mockResolvedValue(settlement);
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: { upsert: mocks.settlementUpsert },
+      settlement: { create: mocks.settlementCreate },
       invoice: { upsert: mocks.invoiceUpsert },
     }));
 
@@ -2257,10 +2322,9 @@ describe("generateSettlementAction", () => {
     );
 
     expect(mocks.calculateSettlement).toHaveBeenCalledWith("vendor-1", "2026-12");
-    expect(mocks.settlementUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { vendorId_monthKey: { vendorId: "vendor-1", monthKey: "2026-12" } },
-      create: expect.objectContaining({ monthKey: "2026-12" }),
-    }));
+    expect(mocks.settlementCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ monthKey: "2026-12" }),
+    });
     expect(mocks.invoiceUpsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ monthKey: "2026-12" }),
     }));
@@ -2349,14 +2413,14 @@ describe("refundPaymentTransactionAction", () => {
     expect(mocks.paymentTransactionUpdate).toHaveBeenCalledTimes(2);
   });
 
-  it("rejects a non-refundable PayUni transaction before creating a reservation or calling the provider", async () => {
+  it("rejects a non-refundable PayUni transaction before validating blank refund fields, creating a reservation, or calling the provider", async () => {
     const nonRefundable = { ...transaction, status: "refunded", providerName: "payuni", providerTradeNo: "trade-123" };
     const providerRefund = vi.fn();
     mocks.findUnique.mockResolvedValue(nonRefundable);
     mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
 
-    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
-      "redirect:/admin/billing/dashboard?error=refund",
+    await expect(refundPaymentTransactionAction(refundFormData(""))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund_already_processed",
     );
 
     expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
@@ -2579,5 +2643,899 @@ describe("refundPaymentTransactionAction", () => {
     expect(committedPaymentTransactions).toHaveLength(1);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(events).toEqual(["committed", "audit"]);
+  });
+});
+
+describe("COV-04 login success attribution", () => {
+  it("creates a vendor session, clears the legacy cookie, audits success, and redirects to the dashboard", async () => {
+    const cookieStore = { delete: vi.fn(), set: vi.fn() };
+    mocks.cookies.mockResolvedValue(cookieStore);
+    mocks.authenticateUser.mockResolvedValue({
+      user: { id: "user-1", email: "member@example.com", platformRole: "user", mfaFactor: null },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin: false,
+    });
+
+    await expect(loginAction(loginFormData())).rejects.toThrow("redirect:/dashboard");
+
+    expect(mocks.createUserSession).toHaveBeenCalledWith({
+      userId: "user-1",
+      vendorId: "vendor-1",
+      ipAddress: "203.0.113.10",
+      userAgent: "CelebrateDeal test",
+    });
+    expect(cookieStore.set.mock.calls[0]?.slice(0, 2)).toEqual([
+      "celebrate_session",
+      "test-fixture-session-token",
+    ]);
+    expect(cookieStore.delete).toHaveBeenCalledWith("celebrate_vendor_id");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "login_success",
+      actorId: "user-1",
+      vendorId: "vendor-1",
+    }));
+  });
+
+  it("routes a platform administrator without MFA to setup and preserves the success audit", async () => {
+    mocks.authenticateUser.mockResolvedValue({
+      user: { id: "admin-1", email: "admin@example.com", platformRole: "platform_admin", mfaFactor: null },
+      vendor: null,
+      member: null,
+      isPlatformAdmin: true,
+    });
+
+    await expect(loginAction(loginFormData("admin@example.com"))).rejects.toThrow("redirect:/mfa/setup");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "login_success",
+      actorLabel: "platform_admin",
+      targetId: "admin-1",
+    }));
+  });
+
+  it("routes a platform administrator with MFA to the verification challenge", async () => {
+    mocks.authenticateUser.mockResolvedValue({
+      user: {
+        id: "admin-1",
+        email: "admin@example.com",
+        platformRole: "platform_admin",
+        mfaFactor: { id: "factor-1" },
+      },
+      vendor: null,
+      member: null,
+      isPlatformAdmin: true,
+    });
+
+    await expect(loginAction(loginFormData("admin@example.com"))).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard",
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "login_success",
+      actorLabel: "platform_admin",
+    }));
+  });
+});
+
+describe("FIN-01 payout account selection boundary", () => {
+  it("prefers a platform account over an earlier BYO account and persists only a masked display", async () => {
+    mocks.settlementFindMany.mockResolvedValueOnce([{
+      id: "settlement-fin-01",
+      vendorId: "vendor-1",
+      finalPayoutAmountCents: 12_000,
+      vendor: {
+        name: "Finance Vendor",
+        paymentAccounts: [
+          {
+            mode: "byo",
+            status: "active",
+            bankAccountEncrypted: null,
+            bankAccountLegacyName: "BYO Account",
+            bankCodeLegacy: "999",
+            bankAccountLegacyNumber: "byo-raw-account",
+          },
+          {
+            mode: "platform",
+            status: "active",
+            bankAccountEncrypted: null,
+            bankAccountLegacyName: "Platform Account",
+            bankCodeLegacy: "700",
+            bankAccountLegacyNumber: "platform-raw-account",
+          },
+        ],
+      },
+    }]);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutBatch: { create: mocks.payoutBatchCreate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+      payoutItem: { create: mocks.payoutItemCreate },
+    }));
+
+    const formData = new FormData();
+    formData.append("settlementIds", "settlement-fin-01");
+
+    await expect(createPayoutBatchAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    expect(mocks.payoutItemCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        bankCodeDisplay: "700",
+        bankAccountDisplayNumber: "****ount",
+      }),
+    });
+    expect(JSON.stringify(mocks.payoutItemCreate.mock.calls)).not.toContain("platform-raw-account");
+    expect(JSON.stringify(mocks.payoutItemCreate.mock.calls)).not.toContain("byo-raw-account");
+  });
+});
+
+describe("FIN-02 settlement mutation invariants", () => {
+  const updatedAt = new Date("2026-08-05T08:00:00.000Z");
+  const settlement = {
+    id: "settlement-fin-02",
+    vendorId: "vendor-1",
+    monthKey: "2026-08",
+    payoutableAmountCents: 10_000,
+    adjustmentAmountCents: 0,
+    adjustmentReason: null,
+    finalPayoutAmountCents: 10_000,
+    status: "draft",
+    lockedAt: null,
+    updatedAt,
+  };
+
+  function adjustmentFormData(adjustmentAmount: string) {
+    const formData = new FormData();
+    formData.set("id", settlement.id);
+    formData.set("adjustmentAmount", adjustmentAmount);
+    formData.set("adjustmentReason", "synthetic finance review");
+    return formData;
+  }
+
+  function lockFormData() {
+    const formData = new FormData();
+    formData.set("id", settlement.id);
+    return formData;
+  }
+
+  it("rejects a negative generated payout before settlement or invoice writes", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce({
+      ...settlement,
+      adjustmentAmountCents: -11_000,
+    });
+
+    await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=negative_payout",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.settlementCreate).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails a settlement regeneration when its optimistic conditional write loses", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+      invoice: { upsert: mocks.invoiceUpsert },
+    }));
+
+    await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
+      where: { id: settlement.id, lockedAt: null, updatedAt },
+      data: expect.objectContaining({ finalPayoutAmountCents: 8_000, status: "draft" }),
+    });
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("classifies a concurrent first-generation unique conflict without auditing success", async () => {
+    mocks.transaction.mockRejectedValueOnce({ code: "P2002" });
+
+    await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("rejects a negative manual adjustment before starting a transaction", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-101"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=negative_payout",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails a manual adjustment when the settlement version changes concurrently", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("5"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
+      where: { id: settlement.id, lockedAt: null, updatedAt },
+      data: {
+        adjustmentAmountCents: 500,
+        adjustmentReason: "synthetic finance review",
+        reviewedBy: "finance-1",
+        finalPayoutAmountCents: 10_500,
+      },
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("persists and audits a non-negative adjustment after a successful conditional write", async () => {
+    const saved = { ...settlement, adjustmentAmountCents: -10_000, finalPayoutAmountCents: 0 };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(saved);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-100"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledOnce();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "update_settlement_adjustment",
+      before: settlement,
+      after: saved,
+    }));
+  });
+
+  it("rejects locking a negative settlement before touching commissions", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce({ ...settlement, finalPayoutAmountCents: -1 });
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=negative_payout",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("does not lock commissions when the settlement claim loses a race", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("allows a zero-value settlement to lock while preserving the conditional version predicate", async () => {
+    const zeroSettlement = { ...settlement, finalPayoutAmountCents: 0 };
+    const lockedSettlement = {
+      ...zeroSettlement,
+      status: "locked",
+      lockedAt: new Date("2026-08-05T08:01:00.000Z"),
+    };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(zeroSettlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+
+    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
+      where: { id: settlement.id, lockedAt: null, updatedAt },
+      data: expect.objectContaining({ status: "locked", lockedBy: "finance-1" }),
+    });
+    expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledOnce();
+  });
+
+  it("creates one merchant-owned AffiliatePayout per affiliate from immutable ledger balances", async () => {
+    const lockedSettlement = {
+      ...settlement,
+      status: "locked",
+      lockedAt: new Date("2026-08-05T08:01:00.000Z"),
+    };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce([
+      { id: "commission-a1", affiliateId: "affiliate-a" },
+      { id: "commission-a2", affiliateId: "affiliate-a" },
+      { id: "commission-b1", affiliateId: "affiliate-b" },
+    ]);
+    mocks.affiliateCommissionLedgerEntryAggregate
+      .mockResolvedValueOnce({ _sum: { amountCents: 300 } })
+      .mockResolvedValueOnce({ _sum: { amountCents: 200 } })
+      .mockResolvedValueOnce({ _sum: { amountCents: 0 } });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+
+    expect(mocks.affiliatePayoutCreate).toHaveBeenCalledOnce();
+    expect(mocks.affiliatePayoutCreate).toHaveBeenCalledWith({
+      data: {
+        vendorId: "vendor-1",
+        affiliateId: "affiliate-a",
+        monthKey: "2026-08",
+        commissionAmountCents: 500,
+        adjustmentAmountCents: 0,
+        finalAmountCents: 500,
+        status: "pending",
+      },
+    });
+    expect(mocks.affiliatePayoutFindUnique).toHaveBeenCalledWith({
+      where: {
+        vendorId_affiliateId_monthKey: {
+          vendorId: "vendor-1",
+          affiliateId: "affiliate-a",
+          monthKey: "2026-08",
+        },
+      },
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "lock_settlement" }));
+  });
+
+  it("keeps an existing matching AffiliatePayout idempotent without creating another row", async () => {
+    const lockedSettlement = { ...settlement, status: "locked", lockedAt: new Date("2026-08-05T08:01:00.000Z") };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{ id: "commission-a1", affiliateId: "affiliate-a" }]);
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliatePayoutFindUnique.mockResolvedValueOnce({
+      id: "affiliate-payout-1",
+      commissionAmountCents: 500,
+      adjustmentAmountCents: 0,
+      finalAmountCents: 500,
+      status: "pending",
+    });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+
+    expect(mocks.affiliatePayoutCreate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an existing AffiliatePayout amount disagrees with the ledger", async () => {
+    const lockedSettlement = { ...settlement, status: "locked", lockedAt: new Date("2026-08-05T08:01:00.000Z") };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{ id: "commission-a1", affiliateId: "affiliate-a" }]);
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliatePayoutFindUnique.mockResolvedValueOnce({
+      id: "affiliate-payout-1",
+      commissionAmountCents: 400,
+      adjustmentAmountCents: 0,
+      finalAmountCents: 400,
+      status: "pending",
+    });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.affiliatePayoutCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an immutable ledger balance is negative", async () => {
+    const lockedSettlement = { ...settlement, status: "locked", lockedAt: new Date("2026-08-05T08:01:00.000Z") };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{ id: "commission-a1", affiliateId: "affiliate-a" }]);
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: -1 } });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.affiliatePayoutCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("FIN-02 payout account fail-closed boundary", () => {
+  const completeAccount = {
+    mode: "platform",
+    status: "active",
+    bankAccountEncrypted: null,
+    bankAccountLegacyName: "Synthetic Vendor",
+    bankCodeLegacy: "700",
+    bankAccountLegacyNumber: "synthetic-account-number",
+  };
+
+  function payoutFormData() {
+    const formData = new FormData();
+    formData.append("settlementIds", "settlement-fin-02-account");
+    return formData;
+  }
+
+  it.each([
+    ["no account", []],
+    ["BYO-only", [{ ...completeAccount, mode: "byo" }]],
+    ["inactive platform", [{ ...completeAccount, status: "inactive" }]],
+    ["incomplete legacy", [{ ...completeAccount, bankCodeLegacy: null }]],
+    ["ambiguous platform accounts", [completeAccount, { ...completeAccount }]],
+    ["one complete plus one incomplete active platform account", [
+      completeAccount,
+      { ...completeAccount, bankAccountLegacyNumber: null },
+    ]],
+    ["unreadable encrypted account", [{
+      ...completeAccount,
+      bankAccountEncrypted: "invalid-envelope",
+      bankAccountLegacyName: null,
+      bankCodeLegacy: null,
+      bankAccountLegacyNumber: null,
+    }]],
+  ])("rejects %s before creating a payout transaction", async (_label, paymentAccounts) => {
+    mocks.settlementFindMany.mockResolvedValueOnce([{
+      id: "settlement-fin-02-account",
+      vendorId: "vendor-1",
+      finalPayoutAmountCents: 5_000,
+      vendor: { name: "Synthetic Vendor", paymentAccounts },
+    }]);
+
+    await expect(createPayoutBatchAction(payoutFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=invalid_payout_account",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.payoutBatchCreate).not.toHaveBeenCalled();
+    expect(mocks.payoutItemCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
+  const payout = {
+    id: "affiliate-payout-fin-05",
+    vendorId: "vendor-1",
+    affiliateId: "affiliate-1",
+    monthKey: "2026-08",
+    commissionAmountCents: 500,
+    adjustmentAmountCents: 0,
+    finalAmountCents: 500,
+    status: "pending",
+    payoutItemId: null,
+    paidAt: null,
+  };
+  const commission = { id: "commission-fin-05", vendorId: "vendor-1", affiliateId: "affiliate-1", monthKey: "2026-08", status: "locked" };
+  const transitionAt = new Date("2026-08-06T09:00:00.000Z");
+
+  function outcomeFormData(status = "paid", reason = "merchant transfer confirmed", id = payout.id) {
+    const formData = new FormData();
+    formData.set("id", id);
+    formData.set("status", status);
+    formData.set("reason", reason);
+    return formData;
+  }
+
+  function configureOutcomeTransaction(updatedPayout: Omit<typeof payout, "paidAt"> & { paidAt: Date | null }, commissions = [commission]) {
+    mocks.affiliatePayoutFindFirst.mockResolvedValueOnce(payout);
+    mocks.affiliatePayoutFindUnique.mockResolvedValueOnce(updatedPayout);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce(commissions);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: {
+        aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+        findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+        create: mocks.affiliateCommissionLedgerEntryCreate,
+      },
+      affiliatePayout: {
+        findFirst: mocks.affiliatePayoutFindFirst,
+        findUnique: mocks.affiliatePayoutFindUnique,
+        updateMany: mocks.affiliatePayoutUpdateMany,
+      },
+      auditLog: { create: mocks.auditLogCreate },
+    }));
+  }
+
+  async function withFixedClock(run: () => Promise<void>) {
+    vi.useFakeTimers();
+    vi.setSystemTime(transitionAt);
+    try {
+      await run();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it.each([
+    ["failed", "merchant transfer failed"],
+    ["unknown", "merchant transfer confirmed"],
+    ["paid", ""],
+    ["void", "x".repeat(501)],
+  ])("rejects invalid status/reason %s before transaction", async (status, reason) => {
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData(status, reason))).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=invalid_payout",
+    );
+    expect(mocks.requireVendorFinance).toHaveBeenCalledWith("/affiliates/commissions");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("uses the merchant finance MFA boundary before accepting a valid outcome", async () => {
+    mocks.requireVendorFinance.mockRejectedValueOnce(new Error("redirect:/mfa/verify"));
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("redirect:/mfa/verify");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", null],
+    ["foreign tenant", { ...payout, vendorId: "vendor-2" }],
+  ])("fails closed identically for %s payout", async (_label, row) => {
+    mocks.affiliatePayoutFindFirst.mockResolvedValueOnce(row);
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a payout already attached to a platform payout item without delegating", async () => {
+    mocks.affiliatePayoutFindFirst.mockResolvedValueOnce({ ...payout, payoutItemId: "platform-payout-item" });
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.payoutItemFindUnique).not.toHaveBeenCalled();
+    expect(mocks.payoutItemUpdate).not.toHaveBeenCalled();
+    expect(mocks.payoutBatchUpdate).not.toHaveBeenCalled();
+    expect(mocks.settlementUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("marks pending payout paid atomically without creating a ledger entry", async () => {
+    await withFixedClock(async () => {
+      configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+      mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+
+      await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+        "redirect:/affiliates/commissions",
+      );
+
+      expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+      expect(mocks.affiliatePayoutUpdateMany).toHaveBeenCalledWith({
+        where: { id: payout.id, vendorId: "vendor-1", status: "pending", payoutItemId: null },
+        data: { status: "paid", paidAt: transitionAt },
+      });
+      expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
+        where: { vendorId: "vendor-1", id: { in: [commission.id] }, status: "locked" },
+        data: { status: "paid", settledAt: transitionAt },
+      });
+      expect(mocks.affiliateCommissionLedgerEntryCreate).not.toHaveBeenCalled();
+      expect(mocks.auditLogCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          vendorId: "vendor-1",
+          actorId: "merchant-finance-1",
+          actorLabel: "owner",
+          action: "mark_affiliate_payout_paid",
+          targetType: "AffiliatePayout",
+          targetId: payout.id,
+          after: expect.objectContaining({ reason: "merchant transfer confirmed", transitionedAt: transitionAt }),
+          ipAddress: "203.0.113.10",
+          userAgent: "CelebrateDeal test",
+        }),
+      });
+      expect(mocks.revalidatePath).toHaveBeenCalledWith("/affiliates/commissions");
+      expect(mocks.payoutItemCreate).not.toHaveBeenCalled();
+      expect(mocks.payoutBatchCreate).not.toHaveBeenCalled();
+      expect(mocks.settlementUpdateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  it("marks pending payout void with one stable merchant reversal per positive commission", async () => {
+    await withFixedClock(async () => {
+      configureOutcomeTransaction({ ...payout, status: "void", paidAt: null });
+      mocks.affiliateCommissionLedgerEntryAggregate
+        .mockResolvedValueOnce({ _sum: { amountCents: 500 } })
+        .mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+
+      await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData("void", "merchant cancelled transfer"))).rejects.toThrow(
+        "redirect:/affiliates/commissions",
+      );
+
+      expect(mocks.affiliateCommissionLedgerEntryCreate).toHaveBeenCalledWith({
+        data: {
+          vendorId: "vendor-1",
+          affiliateCommissionId: commission.id,
+          entryType: "reversal",
+          deduplicationKey: expect.stringMatching(/^commission-ledger:v1\|sha256:[a-f0-9]{64}$/),
+          providerName: "merchant",
+          eventIdentity: `affiliate-payout:void:${payout.id}:${commission.id}`,
+          disputeCaseId: null,
+          amountCents: -500,
+          occurredAt: transitionAt,
+        },
+      });
+      expect(mocks.affiliatePayoutUpdateMany).toHaveBeenCalledWith({
+        where: { id: payout.id, vendorId: "vendor-1", status: "pending", payoutItemId: null },
+        data: { status: "void", paidAt: null },
+      });
+      expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
+        where: { vendorId: "vendor-1", id: { in: [commission.id] }, status: "locked" },
+        data: { status: "void", settledAt: transitionAt },
+      });
+      expect(mocks.auditLogCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: "mark_affiliate_payout_void",
+          after: expect.objectContaining({ reason: "merchant cancelled transfer", transitionedAt: transitionAt }),
+        }),
+      });
+    });
+  });
+
+  it("fails closed on a ledger amount mismatch without claims or audit", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 400 } });
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no commissions", []],
+    ["unlocked commission", [{ ...commission, status: "approved" }]],
+  ])("fails closed for %s", async (_label, commissions) => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt }, commissions);
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("rolls back success audit when the payout claim loses a race", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliatePayoutUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("rolls back success audit when the commission claim loses a race", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliateCommissionUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("treats the same terminal outcome as idempotent without adding audit or ledger rows", async () => {
+    mocks.affiliatePayoutFindFirst.mockResolvedValueOnce({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliatePayout: { findFirst: mocks.affiliatePayoutFindFirst },
+    }));
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow(
+      "redirect:/affiliates/commissions",
+    );
+    expect(mocks.affiliateCommissionFindMany).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionLedgerEntryCreate).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a reverse terminal transition", async () => {
+    mocks.affiliatePayoutFindFirst.mockResolvedValueOnce({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliatePayout: { findFirst: mocks.affiliatePayoutFindFirst },
+    }));
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData("void", "merchant reversal request"))).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=conflict",
+    );
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect success when audit persistence fails", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt });
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.auditLogCreate.mockRejectedValueOnce(new Error("audit persistence failed"));
+
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("audit persistence failed");
+    expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/affiliates/commissions");
+  });
+});
+
+describe("FIN-07 refund reconciliation closure", () => {
+  it("does not call PayUni again while a pending refund reservation exists", async () => {
+    mocks.refundRecordAggregate.mockReset();
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn();
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+    mocks.refundRecordAggregate
+      .mockResolvedValueOnce({ _sum: { refundAmountCents: 0, gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 } })
+      .mockResolvedValueOnce({ _count: { _all: 1 } });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(providerRefund).not.toHaveBeenCalled();
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the provider-confirmed reservation pending when in-transaction audit fails", async () => {
+    mocks.refundRecordAggregate.mockReset();
+    mocks.transaction.mockReset();
+    mocks.writeAuditLog.mockReset();
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    const providerRefund = vi.fn().mockResolvedValue({ providerEventId: "refund-456" });
+    let committedRefundStatus = "pending";
+    let committedTransactionStatus = "paid";
+    let transactionAttempts = 0;
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: providerRefund });
+    mocks.refundRecordAggregate
+      .mockResolvedValueOnce({ _sum: { refundAmountCents: 0, gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 } })
+      .mockResolvedValueOnce({ _count: { _all: 0 } });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      transactionAttempts += 1;
+      let stagedRefundStatus = committedRefundStatus;
+      let stagedTransactionStatus = committedTransactionStatus;
+      const result = await callback({
+        paymentTransaction: {
+          findUnique: mocks.findUnique,
+          update: async () => {
+            stagedTransactionStatus = "refunded";
+            return { ...payUniTransaction, status: stagedTransactionStatus, refundedAmountCents: 10_000 };
+          },
+        },
+        refundRecord: {
+          aggregate: mocks.refundRecordAggregate,
+          create: async () => ({ id: "refund-1" }),
+          update: async () => { stagedRefundStatus = "processed"; return { id: "refund-1", status: stagedRefundStatus }; },
+        },
+        auditLog: {
+          create: async () => { throw new Error("audit persistence failed"); },
+        },
+      });
+      committedRefundStatus = stagedRefundStatus;
+      committedTransactionStatus = stagedTransactionStatus;
+      return result;
+    });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(transactionAttempts).toBe(2);
+    expect(providerRefund).toHaveBeenCalledOnce();
+    expect(committedRefundStatus).toBe("pending");
+    expect(committedTransactionStatus).toBe("paid");
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });

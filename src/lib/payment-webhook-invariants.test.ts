@@ -103,4 +103,30 @@ describe("payment webhook invariants", () => {
       refundAmountCents: 30_000,
     }, existing)).toThrow("事件金額");
   });
+
+  it("rejects a duplicate whose partial/full event type conflicts with the current state", () => {
+    const existing = payment({
+      status: "partially_refunded",
+      refundedAmountCents: 20_000,
+      refunds: [{ providerEventId: "evt-refund", refundAmountCents: 20_000 }],
+    });
+
+    expect(() => validatePaymentWebhookInvariants({
+      eventId: "evt-refund",
+      eventType: "refunded",
+      refundAmountCents: 20_000,
+    }, existing)).toThrow("事件類型");
+  });
+
+  it("rejects a refund callback while a request reservation is pending", () => {
+    const existing = payment({
+      refunds: [{ providerEventId: `request:${"b".repeat(32)}`, refundAmountCents: 20_000, status: "pending" }],
+    });
+
+    expect(() => validatePaymentWebhookInvariants({
+      eventId: "evt-callback",
+      eventType: "partially_refunded",
+      refundAmountCents: 20_000,
+    }, existing)).toThrow("待處理退款");
+  });
 });

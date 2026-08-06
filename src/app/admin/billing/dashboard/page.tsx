@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCards } from "lucide-react";
 import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
+import { RefundResultNotice } from "@/components/billing/refund-result-notice";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
@@ -21,6 +22,15 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
+type RecentCommissionReadModel = {
+  id: string;
+  referralCode: string | null;
+  monthKey: string;
+  commissionAmountCents: number;
+  vendorName: string;
+  affiliateName: string | null;
+};
+
 export default async function AdminBillingDashboardPage() {
   await requireFinanceAdmin();
   const db = getDb();
@@ -28,15 +38,56 @@ export default async function AdminBillingDashboardPage() {
   // Staging 的 Transaction Pooler 設為單連線；此頁同時發出九個查詢會造成
   // Prisma P2024 pool timeout。依序讀取可維持同一條可用連線，避免 MFA 成功後
   // 進入後台卻因頁面載入失敗而看似沒有反應。
-  const subscriptions = await db.vendorSubscription.findMany({ where: { status: "active" }, include: { plan: true, vendor: true } });
-  const unlockedSettlements = await db.settlement.findMany({ where: { lockedAt: null }, include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 });
-  const readySettlements = await db.settlement.findMany({ where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, include: { vendor: true }, orderBy: { updatedAt: "desc" }, take: 8 });
-  const failedPayouts = await db.payoutItem.findMany({ where: { status: "failed" }, include: { vendor: true, payoutBatch: true }, orderBy: { updatedAt: "desc" }, take: 8 });
-  const recentTransactions = await db.paymentTransaction.findMany({ where: { occurredAt: { gte: start } }, include: { vendor: true, refunds: true }, orderBy: { occurredAt: "desc" }, take: 10 });
-  const recentCommissions = await db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved", "locked"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 });
-  const webhookEvents = await db.webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 });
+  const subscriptions = await db.vendorSubscription.findMany({
+    where: { status: "active" },
+    select: { plan: { select: { monthlyPriceCents: true } } },
+  });
+  const unlockedSettlements = await db.settlement.findMany({
+    where: { lockedAt: null }, orderBy: { createdAt: "desc" }, take: 8,
+    select: { id: true, status: true, monthKey: true, finalPayoutAmountCents: true, vendor: { select: { name: true } } },
+  });
+  const readySettlements = await db.settlement.findMany({
+    where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, orderBy: { updatedAt: "desc" }, take: 8,
+    select: { id: true, status: true, monthKey: true, finalPayoutAmountCents: true, vendor: { select: { name: true } } },
+  });
+  // The dashboard only displays the failed-item total. Count it directly so
+  // this read model neither selects nor serializes encrypted payout-bank data.
+  // It also keeps this operational summary compatible with a safely detected
+  // local schema drift while the migration gate remains fail-closed elsewhere.
+  const failedPayoutCount = await db.payoutItem.count({ where: { status: "failed" } });
+  const recentTransactions = await db.paymentTransaction.findMany({
+    where: { occurredAt: { gte: start } }, orderBy: { occurredAt: "desc" }, take: 10,
+    select: { id: true, orderNumber: true, providerTradeNo: true, status: true, occurredAt: true, refundedAmountCents: true, grossAmountCents: true, vendor: { select: { name: true } } },
+  });
+  // This fixed, field-limited query intentionally compares status as text.
+  // Older local development schemas predate AffiliateCommissionStatus, while
+  // the dashboard needs only this operational summary—not the newer enum or
+  // any other commission fields. The migration drift rehearsal remains the
+  // gate that reports schema divergence instead of concealing it.
+  const recentCommissions = await db.$queryRaw<RecentCommissionReadModel[]>`
+    SELECT
+      commission."id",
+      commission."referralCode",
+      commission."monthKey",
+      commission."commissionAmountCents",
+      vendor."name" AS "vendorName",
+      affiliate."name" AS "affiliateName"
+    FROM public."AffiliateCommission" AS commission
+    INNER JOIN public."Vendor" AS vendor ON vendor."id" = commission."vendorId"
+    LEFT JOIN public."Affiliate" AS affiliate ON affiliate."id" = commission."affiliateId"
+    WHERE commission."status"::text IN ('pending', 'approved', 'locked')
+    ORDER BY commission."createdAt" DESC
+    LIMIT 8
+  `;
+  const webhookEvents = await db.webhookEvent.findMany({
+    orderBy: { createdAt: "desc" }, take: 8,
+    select: { id: true, provider: true, eventId: true, eventType: true, status: true, errorMessage: true, nextRetryAt: true, createdAt: true, vendor: { select: { name: true } } },
+  });
   const failedWebhookCount = await db.webhookEvent.count({ where: { status: "failed" } });
-  const auditLogs = await db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 });
+  const auditLogs = await db.auditLog.findMany({
+    orderBy: { createdAt: "desc" }, take: 10,
+    select: { id: true, action: true, targetType: true, targetId: true, actorLabel: true, createdAt: true },
+  });
 
   const mrr = subscriptions.reduce((sum, subscription) => sum + subscription.plan.monthlyPriceCents, 0);
   const pendingPayoutAmount = readySettlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
@@ -48,6 +99,7 @@ export default async function AdminBillingDashboardPage() {
         description="平台月費收入、月結狀態、出款異常、退款調整與稽核紀錄集中檢視。"
         action={<Link href="/admin/billing/settlements" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">月結管理</Link>}
       />
+      <RefundResultNotice />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card className="bg-gradient-to-br from-white to-blue-50">
@@ -64,7 +116,7 @@ export default async function AdminBillingDashboardPage() {
         </Card>
         <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><AlertTriangle size={16} />出款異常</p>
-          <p className="mt-2 text-3xl font-bold text-slate-950">{failedPayouts.length}</p>
+          <p className="mt-2 text-3xl font-bold text-slate-950">{failedPayoutCount}</p>
         </Card>
         <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><AlertTriangle size={16} />Webhook 異常</p>
@@ -147,8 +199,8 @@ export default async function AdminBillingDashboardPage() {
                 <div key={commission.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-950">{commission.affiliate?.name ?? commission.referralCode ?? "未綁定推廣者"}</p>
-                      <p className="mt-1 text-sm text-slate-500">{commission.vendor.name} · {commission.monthKey}</p>
+                      <p className="font-semibold text-slate-950">{commission.affiliateName ?? commission.referralCode ?? "未綁定推廣者"}</p>
+                      <p className="mt-1 text-sm text-slate-500">{commission.vendorName} · {commission.monthKey}</p>
                     </div>
                     <p className="font-bold text-slate-950">{formatCurrency(commission.commissionAmountCents)}</p>
                   </div>

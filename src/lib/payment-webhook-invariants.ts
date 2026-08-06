@@ -6,6 +6,7 @@ export type PaymentLifecycleWebhookEventType = Exclude<PaymentWebhookEventType, 
 type RefundSnapshot = {
   providerEventId: string | null;
   refundAmountCents: number;
+  status?: string;
 };
 
 export type ExistingPaymentSnapshot = {
@@ -68,10 +69,20 @@ export function validatePaymentWebhookInvariants(
     return { duplicateRefundEvent: false, remainingRefundableCents };
   }
 
+  if (existing.refunds.some((refund) => refund.status === "pending")) {
+    throw new Error("付款交易仍有待處理退款。");
+  }
+
   const duplicateRefund = existing.refunds.find((refund) => refund.providerEventId === input.eventId);
   if (duplicateRefund) {
     if (duplicateRefund.refundAmountCents !== input.refundAmountCents) {
       throw new Error("退款 webhook 事件金額與既存退款紀錄不一致。");
+    }
+    if (
+      (existing.status === "partially_refunded" && input.eventType === "refunded")
+      || (existing.status === "refunded" && input.eventType === "partially_refunded")
+    ) {
+      throw new Error("退款 webhook 事件類型與既存退款紀錄不一致。");
     }
     return { duplicateRefundEvent: true, remainingRefundableCents };
   }

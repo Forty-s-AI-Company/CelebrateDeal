@@ -5,6 +5,7 @@ export type PaymentWebhookFailureCode =
   | "order_ambiguous"
   | "amount_mismatch"
   | "inventory_conflict"
+  | "processing_claim_lost"
   | "processing_failed";
 
 const KNOWN_FAILURES = new Map<string, PaymentWebhookFailureCode>([
@@ -19,6 +20,7 @@ const KNOWN_FAILURES = new Map<string, PaymentWebhookFailureCode>([
   ["Inventory reservation tenant mismatch.", "inventory_conflict"],
   ["Inventory reservation product mismatch.", "inventory_conflict"],
   ["Inventory reservation changed concurrently.", "inventory_conflict"],
+  ["付款 webhook 事件處理權已變更。", "processing_claim_lost"],
 ]);
 
 /**

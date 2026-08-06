@@ -9,6 +9,9 @@ describe("payment webhook failure classification", () => {
     expect(classifyPaymentWebhookFailure(new Error(
       "Inventory reservation tenant mismatch.",
     ))).toBe("inventory_conflict");
+    expect(classifyPaymentWebhookFailure(new Error(
+      "付款 webhook 事件處理權已變更。",
+    ))).toBe("processing_claim_lost");
   });
 
   it("never includes an unknown exception message in the persisted description", () => {

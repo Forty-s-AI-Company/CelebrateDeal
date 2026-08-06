@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readTextBody } from "@/lib/api-security";
-import { resolveCloudflareVideoStatusTransition } from "@/lib/cloudflare-video-status";
+import { convergeCloudflareVideoTransition } from "@/lib/cloudflare-video-transition";
 import { verifyCloudflareStreamWebhookRequest } from "@/lib/cloudflare-webhook-signature";
 import { getDb } from "@/lib/db";
+import { captureOperationalError } from "@/lib/monitoring";
 
 const StreamWebhookPayload = z.object({
   uid: z.string().min(1),
@@ -31,7 +32,18 @@ function normalizedVideoStatus(payload: z.infer<typeof StreamWebhookPayload>) {
   return null;
 }
 
-export async function POST(request: Request) {
+type StreamWebhookDependencies = {
+  db?: ReturnType<typeof getDb>;
+  converge?: typeof convergeCloudflareVideoTransition;
+  captureError?: typeof captureOperationalError;
+};
+
+export function createCloudflareStreamWebhookHandler({
+  db = getDb(),
+  converge = convergeCloudflareVideoTransition,
+  captureError = captureOperationalError,
+}: StreamWebhookDependencies = {}) {
+  return async function POST(request: Request) {
   const rawBody = await readTextBody(request);
   if (rawBody === null) {
     return NextResponse.json({ error: "Cloudflare Stream webhook payload too large" }, { status: 413 });
@@ -66,7 +78,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unsupported Cloudflare Stream status" }, { status: 400 });
   }
 
-  const db = getDb();
   const matches = await db.video.findMany({
     where: {
       OR: [
@@ -92,24 +103,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
   }
 
-  const nextStatus = resolveCloudflareVideoStatusTransition(match.status, status);
-  if (!nextStatus) {
+  if (match.status === "ready" && status === "ready") {
     return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
   }
 
-  const updated = await db.video.updateMany({
-    // The status predicate is an optimistic claim. A concurrent newer callback
-    // wins instead of being overwritten by this request's stale snapshot.
-    where: { id: match.id, status: match.status },
-    data: {
-      status: nextStatus,
-      cloudflareReadyToStream: payload.readyToStream ?? false,
-      cloudflarePlaybackId: payload.uid,
-      videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
-      thumbnailUrl: payload.thumbnail,
-      durationSec: payload.duration ? Math.round(payload.duration) : undefined,
+  const transition = await converge({
+    snapshot: match,
+    incomingStatus: status,
+    claim: async ({ id, expectedStatus, nextStatus }) => {
+      const updated = await db.video.updateMany({
+        // The status predicate is an optimistic claim. A concurrent newer
+        // callback wins, then the bounded helper re-evaluates that state.
+        where: { id, status: expectedStatus },
+        data: {
+          status: nextStatus,
+          cloudflareReadyToStream: payload.readyToStream ?? false,
+          cloudflarePlaybackId: payload.uid,
+          videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
+          thumbnailUrl: payload.thumbnail,
+          durationSec: payload.duration ? Math.round(payload.duration) : undefined,
+        },
+      });
+      return updated.count === 1;
     },
+    readLatest: async (id) => db.video.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    }),
   });
 
-  return NextResponse.json({ ok: true, updated: updated.count, verificationMode: verification.mode });
+  if (transition.outcome === "contention_exhausted") {
+    try {
+      captureError(new Error("Cloudflare Stream webhook contention exhausted"), {
+        source: "cloudflare_stream_webhook",
+        operation: "status_convergence",
+        provider: "cloudflare_stream",
+        status: "contention_exhausted",
+      });
+    } catch {
+      // Monitoring is best-effort; it must not turn a deterministic retryable
+      // response into an internal error or leak provider diagnostics.
+    }
+    return NextResponse.json(
+      { error: "Cloudflare Stream webhook update is temporarily unavailable", code: "contention_exhausted" },
+      { status: 503 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    updated: transition.outcome === "applied" ? 1 : 0,
+    verificationMode: verification.mode,
+  });
+  };
 }
+
+export const POST = createCloudflareStreamWebhookHandler();

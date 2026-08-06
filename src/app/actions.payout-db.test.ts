@@ -14,6 +14,10 @@ let rejectReadBarrier: ((reason?: unknown) => void) | undefined;
 let readBarrierPromise: Promise<void> | undefined;
 let readBarrierTimeout: ReturnType<typeof setTimeout> | undefined;
 let settlementReads = 0;
+let lockSettlementReadBarrierEnabled = false;
+let lockSettlementReads = 0;
+let releaseLockSettlementReads: (() => void) | undefined;
+let lockSettlementReadBarrierPromise: Promise<void> | undefined;
 
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()), cookies: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -46,6 +50,15 @@ vi.mock("@/lib/db", () => ({
   // wrapped to hold both action callers after they read the eligible row.
   getDb: () => ({
     settlement: {
+      findUnique: async (...args: Parameters<PrismaClient["settlement"]["findUnique"]>) => {
+        const row = await database.settlement.findUnique(...args);
+        if (lockSettlementReadBarrierEnabled && args[0]?.where && "id" in args[0].where) {
+          lockSettlementReads += 1;
+          if (lockSettlementReads === 2) releaseLockSettlementReads?.();
+          await lockSettlementReadBarrierPromise;
+        }
+        return row;
+      },
       findMany: async (...args: Parameters<PrismaClient["settlement"]["findMany"]>) => {
         const rows = await database.settlement.findMany(...args);
         settlementReads += 1;
@@ -64,11 +77,17 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 
-import { createPayoutBatchAction } from "./actions";
+import { createPayoutBatchAction, lockSettlementAction } from "./actions";
 
 function payoutFormData(settlementId: string) {
   const formData = new FormData();
   formData.append("settlementIds", settlementId);
+  return formData;
+}
+
+function lockSettlementFormData(settlementId: string) {
+  const formData = new FormData();
+  formData.append("id", settlementId);
   return formData;
 }
 
@@ -118,6 +137,18 @@ describe("createPayoutBatchAction PostgreSQL conditional settlement claim", () =
       },
     });
     createdVendorIds.push(vendor.id);
+    await database.paymentAccount.create({
+      data: {
+        vendorId: vendor.id,
+        mode: "platform",
+        providerName: "synthetic",
+        accountLabel: "WP18 Synthetic Platform Account",
+        status: "active",
+        bankAccountLegacyName: "Synthetic Merchant",
+        bankCodeLegacy: "000",
+        bankAccountLegacyNumber: "1234567890",
+      },
+    });
     const settlement = await database.settlement.create({
       data: {
         vendorId: vendor.id,
@@ -179,4 +210,118 @@ describe("createPayoutBatchAction PostgreSQL conditional settlement claim", () =
     // otherwise unbound payout item can remain after transaction rollback.
     expect(await database.payoutItem.count({ where: { vendorId: vendor.id } })).toBe(1);
   }, 15_000);
+});
+
+describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", () => {
+  const createdVendorIds: string[] = [];
+
+  beforeAll(() => {
+    expect(process.env.WP18_DISPOSABLE_SCHEMA).toMatch(/^wp18_[a-z0-9_]+$/);
+    database = new PrismaClient({ log: [] });
+  });
+
+  it("creates exactly one merchant self-pay AffiliatePayout when two locks race", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const vendor = await database.vendor.create({
+      data: {
+        name: "FIN04 Synthetic Vendor",
+        slug: `fin04-${suffix}`,
+        email: `fin04-${suffix}@invalid.test`,
+        passwordHash: "synthetic-password-hash",
+      },
+    });
+    createdVendorIds.push(vendor.id);
+    const affiliate = await database.affiliate.create({
+      data: {
+        vendorId: vendor.id,
+        name: "FIN04 Synthetic Affiliate",
+        code: `FIN04-${suffix}`,
+        commissionRateBps: 1000,
+      },
+    });
+    const settlement = await database.settlement.create({
+      data: {
+        vendorId: vendor.id,
+        monthKey: "2099-11",
+        payoutableAmountCents: 9_000,
+        finalPayoutAmountCents: 9_000,
+        status: "draft",
+      },
+    });
+    const commission = await database.affiliateCommission.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: settlement.monthKey,
+        sourceType: "product",
+        deduplicationKey: `fin04-commission-${suffix}`,
+        commissionAmountCents: 750,
+        status: "approved",
+      },
+    });
+    await database.affiliateCommissionLedgerEntry.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateCommissionId: commission.id,
+        entryType: "accrual",
+        deduplicationKey: `fin04-ledger-${suffix}`,
+        providerName: "synthetic",
+        eventIdentity: `fin04-event-${suffix}`,
+        amountCents: 750,
+        occurredAt: new Date("2099-11-15T00:00:00.000Z"),
+      },
+    });
+
+    mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+    mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "fin04-synthetic-admin", role: "finance_admin" } });
+    mocks.writeAuditLog.mockResolvedValue(undefined);
+    lockSettlementReadBarrierEnabled = true;
+    lockSettlementReadBarrierPromise = new Promise<void>((resolve) => { releaseLockSettlementReads = resolve; });
+
+    const outcomes = await Promise.allSettled([
+      lockSettlementAction(lockSettlementFormData(settlement.id)),
+      lockSettlementAction(lockSettlementFormData(settlement.id)),
+    ]);
+
+    expect(lockSettlementReads).toBe(2);
+    expect(outcomes.map(redirectUrl).sort()).toEqual([
+      "/admin/billing/settlements",
+      "/admin/billing/settlements?error=conflict",
+    ]);
+    expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
+
+    const [payouts, savedSettlement, savedCommission] = await Promise.all([
+      database.affiliatePayout.findMany({ where: { vendorId: vendor.id, affiliateId: affiliate.id, monthKey: settlement.monthKey } }),
+      database.settlement.findUniqueOrThrow({ where: { id: settlement.id } }),
+      database.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } }),
+    ]);
+    expect(payouts).toHaveLength(1);
+    expect(payouts[0]).toMatchObject({
+      vendorId: vendor.id,
+      affiliateId: affiliate.id,
+      monthKey: settlement.monthKey,
+      commissionAmountCents: 750,
+      adjustmentAmountCents: 0,
+      finalAmountCents: 750,
+      status: "pending",
+      payoutItemId: null,
+    });
+    expect(savedSettlement.lockedAt).not.toBeNull();
+    expect(savedCommission.status).toBe("locked");
+  }, 15_000);
+
+  afterEach(async () => {
+    if (createdVendorIds.length > 0) {
+      await database.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
+    }
+    vi.clearAllMocks();
+    lockSettlementReadBarrierEnabled = false;
+    lockSettlementReads = 0;
+    releaseLockSettlementReads = undefined;
+    lockSettlementReadBarrierPromise = undefined;
+  });
+
+  afterAll(async () => {
+    await database.$disconnect();
+  });
 });

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { recordAffiliatePayoutOutcomeAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -10,8 +12,18 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
-export default async function AffiliateCommissionsPage() {
+const payoutErrorMessages: Record<string, string> = {
+  conflict: "這筆聯盟月結已被其他操作更新，請重新整理後再試一次。",
+  invalid_payout: "聯盟月結操作資料不完整，請重新整理後再試一次。",
+};
+
+export default async function AffiliateCommissionsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string }>;
+} = {}) {
   const { vendor } = await requireVendorFinance("/affiliates/commissions");
+  const query = await searchParams;
   const [commissions, payouts] = await Promise.all([
     getDb().affiliateCommission.findMany({
       where: { vendorId: vendor.id },
@@ -34,6 +46,12 @@ export default async function AffiliateCommissionsPage() {
         title="聯盟分潤"
         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
       />
+
+      {query?.error && payoutErrorMessages[query.error] ? (
+        <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {payoutErrorMessages[query.error]}
+        </p>
+      ) : null}
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <Card className="bg-gradient-to-br from-white to-blue-50">
@@ -107,8 +125,35 @@ export default async function AffiliateCommissionsPage() {
                     <p className="font-semibold text-slate-950">{payout.monthKey} · {payout.affiliate?.name ?? "未綁定推廣者"}</p>
                     <p className="mt-1 text-sm text-slate-500">調整 {formatCurrency(payout.adjustmentAmountCents)}</p>
                   </div>
-                  <Badge tone={statusTone(payout.status)}>{payout.status}</Badge>
-                  <p className="text-lg font-bold text-slate-950">{formatCurrency(payout.finalAmountCents)}</p>
+                  <div className="flex items-center gap-3">
+                    <Badge tone={statusTone(payout.status)}>{payout.status}</Badge>
+                    <p className="text-lg font-bold text-slate-950">{formatCurrency(payout.finalAmountCents)}</p>
+                  </div>
+                  {payout.status === "pending"
+                    && payout.vendorId === vendor.id
+                    && payout.payoutItemId === null
+                    && payout.finalAmountCents > 0
+                    && payout.finalAmountCents === payout.commissionAmountCents + payout.adjustmentAmountCents ? (
+                    <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_auto] md:items-end">
+                      <p className="text-sm text-slate-600">商家完成自行付款後，請留下付款原因；若作廢，系統會沖回尚未支付的佣金並同步更新聯盟月結狀態。</p>
+                      <div className="flex flex-wrap gap-2">
+                        <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
+                          <CsrfField />
+                          <input type="hidden" name="id" value={payout.id} />
+                          <input type="hidden" name="status" value="paid" />
+                          <input name="reason" required maxLength={500} placeholder="付款備註" aria-label="付款備註" className="h-9 w-32 rounded-md border border-border px-2 text-xs" />
+                          <button className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">標記已付款</button>
+                        </form>
+                        <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
+                          <CsrfField />
+                          <input type="hidden" name="id" value={payout.id} />
+                          <input type="hidden" name="status" value="void" />
+                          <input name="reason" required maxLength={500} placeholder="作廢原因" aria-label="作廢原因" className="h-9 w-32 rounded-md border border-border px-2 text-xs" />
+                          <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">標記作廢並沖回佣金</button>
+                        </form>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

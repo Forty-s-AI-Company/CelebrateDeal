@@ -87,3 +87,53 @@ describe("affiliate commission invariants", () => {
     })).toThrow();
   });
 });
+
+describe("FIN-01 commission lifecycle boundaries", () => {
+  it("normalizes source identity and rejects ambiguous dual identities", () => {
+    expect(buildCommissionDeduplicationKey({
+      affiliateId: " affiliate-a ",
+      sourceType: " Provider Event ",
+      sourceId: " event-7 ",
+    })).toBe(buildCommissionDeduplicationKey({
+      affiliateId: "affiliate-a",
+      sourceType: "provider_event",
+      sourceId: "event-7",
+    }));
+
+    expect(() => buildCommissionDeduplicationKey({
+      affiliateId: "affiliate-a",
+      sourceType: "webhook",
+      sourceId: "event-7",
+      idempotencyToken: "manual-7",
+    })).toThrow("不可同時使用 sourceId 與 idempotency token");
+  });
+
+  it("allows only forward commission transitions and an explicit void path", () => {
+    expect(canTransitionAffiliateCommission("pending", "void")).toBe(true);
+    expect(canTransitionAffiliateCommission("approved", "void")).toBe(true);
+    expect(canTransitionAffiliateCommission("locked", "void")).toBe(true);
+    expect(canTransitionAffiliateCommission("paid", "void")).toBe(false);
+    expect(() => assertAffiliateCommissionTransition("paid", "void")).toThrow(
+      "非法佣金狀態轉換：paid -> void",
+    );
+  });
+
+  it("rounds commission amounts deterministically at half-cent boundaries", () => {
+    expect(commissionAmountCents(1, 5_000)).toBe(1);
+    expect(commissionAmountCents(3, 5_000)).toBe(2);
+    expect(commissionAmountCents(10_001, 1)).toBe(1);
+  });
+
+  it("rejects blank beneficiary and source identity fields", () => {
+    expect(() => buildCommissionDeduplicationKey({
+      affiliateId: "   ",
+      sourceType: "webhook",
+      sourceId: "event-1",
+    })).toThrow("affiliateId 不可為空白");
+    expect(() => buildCommissionDeduplicationKey({
+      affiliateId: "affiliate-a",
+      sourceType: "   ",
+      sourceId: "event-1",
+    })).toThrow("sourceType 不可為空白");
+  });
+});

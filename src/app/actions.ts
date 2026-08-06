@@ -13,12 +13,13 @@ import {
   markCurrentSessionMfaVerified,
   requireAuth,
   requireFinanceAdmin,
+  requireVendorFinance,
   requireVendorManager,
   revokeCurrentSession,
   sessionCookieOptions,
 } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import {
   AffiliateCommissionRateBps,
   assertAffiliateCommissionTransition,
@@ -55,6 +56,7 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
+import { selectPayoutAccount } from "@/lib/payout-account";
 import {
   createVendorMemberAction as createVendorMemberActionImpl,
   deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
@@ -103,10 +105,22 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
 
 class RefundValidationError extends Error {}
 class PayoutBatchClaimConflict extends Error {}
+class SettlementMutationConflict extends Error {}
+class AffiliatePayoutMutationConflict extends Error {}
 
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2025" || error.code === "P2034");
+}
+
+function isSettlementMutationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
+}
+
+function isAffiliatePayoutMutationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
 }
 
 function isSerializationConflict(error: unknown) {
@@ -1301,27 +1315,14 @@ export async function generateSettlementAction(formData: FormData) {
   const adjustmentAmountCents = existing?.adjustmentAmountCents ?? 0;
   const adjustmentReason = existing?.adjustmentReason ?? null;
   const finalPayoutAmountCents = calculation.payoutableAmountCents + adjustmentAmountCents;
+  if (finalPayoutAmountCents < 0) {
+    redirect("/admin/billing/settlements?error=negative_payout");
+  }
 
-  const settlement = await db.$transaction(async (tx) => {
-    const savedSettlement = await tx.settlement.upsert({
-      where: { vendorId_monthKey: { vendorId, monthKey } },
-      create: {
-        vendorId,
-        monthKey,
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        paymentGatewayFeeCents: calculation.paymentGatewayFeeCents,
-        grossRevenueCents: calculation.grossRevenueCents,
-        payoutableAmountCents: calculation.payoutableAmountCents,
-        adjustmentAmountCents,
-        adjustmentReason,
-        finalPayoutAmountCents,
-        status: "draft",
-      },
-      update: {
+  let settlement;
+  try {
+    settlement = await db.$transaction(async (tx) => {
+      const calculatedAmounts = {
         monthlyFeeCents: calculation.monthlyFeeCents,
         overflowFeeCents: calculation.overflowFeeCents,
         paymentServiceFeeCents: calculation.paymentServiceFeeCents,
@@ -1332,46 +1333,72 @@ export async function generateSettlementAction(formData: FormData) {
         payoutableAmountCents: calculation.payoutableAmountCents,
         finalPayoutAmountCents,
         status: "draft",
-      },
+      };
+
+      let savedSettlement;
+      if (existing) {
+        const updated = await tx.settlement.updateMany({
+          where: { id: existing.id, lockedAt: null, updatedAt: existing.updatedAt },
+          data: calculatedAmounts,
+        });
+        if (updated.count !== 1) throw new SettlementMutationConflict();
+        savedSettlement = await tx.settlement.findUnique({ where: { id: existing.id } });
+        if (!savedSettlement) throw new SettlementMutationConflict();
+      } else {
+        savedSettlement = await tx.settlement.create({
+          data: {
+            vendorId,
+            monthKey,
+            ...calculatedAmounts,
+            adjustmentAmountCents,
+            adjustmentReason,
+          },
+        });
+      }
+
+      const subtotalCents =
+        calculation.monthlyFeeCents +
+        calculation.overflowFeeCents +
+        calculation.paymentServiceFeeCents +
+        calculation.transactionServiceFeeCents +
+        calculation.affiliateManagementFeeCents;
+
+      await tx.invoice.upsert({
+        where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId) },
+        create: {
+          vendorId,
+          monthKey,
+          invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId),
+          invoiceType: "monthly",
+          monthlyFeeCents: calculation.monthlyFeeCents,
+          overflowFeeCents: calculation.overflowFeeCents,
+          paymentServiceFeeCents: calculation.paymentServiceFeeCents,
+          transactionServiceFeeCents: calculation.transactionServiceFeeCents,
+          affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
+          subtotalCents,
+          totalCents: subtotalCents,
+          status: "issued",
+        },
+        update: {
+          monthlyFeeCents: calculation.monthlyFeeCents,
+          overflowFeeCents: calculation.overflowFeeCents,
+          paymentServiceFeeCents: calculation.paymentServiceFeeCents,
+          transactionServiceFeeCents: calculation.transactionServiceFeeCents,
+          affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
+          subtotalCents,
+          totalCents: subtotalCents,
+          status: "issued",
+        },
+      });
+
+      return savedSettlement;
     });
-
-    const subtotalCents =
-      calculation.monthlyFeeCents +
-      calculation.overflowFeeCents +
-      calculation.paymentServiceFeeCents +
-      calculation.transactionServiceFeeCents +
-      calculation.affiliateManagementFeeCents;
-
-    await tx.invoice.upsert({
-      where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId) },
-      create: {
-        vendorId,
-        monthKey,
-        invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId),
-        invoiceType: "monthly",
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        subtotalCents,
-        totalCents: subtotalCents,
-        status: "issued",
-      },
-      update: {
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        subtotalCents,
-        totalCents: subtotalCents,
-        status: "issued",
-      },
-    });
-
-    return savedSettlement;
-  });
+  } catch (error) {
+    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId,
@@ -1400,16 +1427,35 @@ export async function updateSettlementAdjustmentAction(formData: FormData) {
   if (!settlement || settlement.lockedAt) {
     redirect("/admin/billing/settlements?error=locked");
   }
+  const finalPayoutAmountCents = settlement.payoutableAmountCents + adjustmentAmountCents;
+  if (finalPayoutAmountCents < 0) {
+    redirect("/admin/billing/settlements?error=negative_payout");
+  }
 
-  const updated = await getDb().settlement.update({
-    where: { id },
-    data: {
-      adjustmentAmountCents,
-      adjustmentReason,
-      reviewedBy: member.id,
-      finalPayoutAmountCents: settlement.payoutableAmountCents + adjustmentAmountCents,
-    },
-  });
+  const db = getDb();
+  let updated;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      const result = await tx.settlement.updateMany({
+        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
+        data: {
+          adjustmentAmountCents,
+          adjustmentReason,
+          reviewedBy: member.id,
+          finalPayoutAmountCents,
+        },
+      });
+      if (result.count !== 1) throw new SettlementMutationConflict();
+      const saved = await tx.settlement.findUnique({ where: { id } });
+      if (!saved) throw new SettlementMutationConflict();
+      return saved;
+    });
+  } catch (error) {
+    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlement.vendorId,
@@ -1431,27 +1477,106 @@ export async function lockSettlementAction(formData: FormData) {
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
   const settlement = await getDb().settlement.findUnique({ where: { id } });
-  if (!settlement || settlement.lockedAt) {
-    redirect("/admin/billing/settlements");
+  if (!settlement) {
+    redirect("/admin/billing/settlements?error=missing");
+  }
+  if (settlement.lockedAt) {
+    redirect("/admin/billing/settlements?error=locked");
+  }
+  if (settlement.finalPayoutAmountCents < 0) {
+    redirect("/admin/billing/settlements?error=negative_payout");
   }
 
   const db = getDb();
-  const updated = await db.$transaction(async (tx) => {
-    const locked = await tx.settlement.update({
-      where: { id },
-      data: {
-        status: "locked",
-        lockedAt: new Date(),
-        lockedBy: member.id,
-        reviewedBy: member.id,
-      },
+  let updated;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      const lockedAt = new Date();
+      const result = await tx.settlement.updateMany({
+        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
+        data: {
+          status: "locked",
+          lockedAt,
+          lockedBy: member.id,
+          reviewedBy: member.id,
+        },
+      });
+      if (result.count !== 1) throw new SettlementMutationConflict();
+
+      const locked = await tx.settlement.findUnique({ where: { id } });
+      if (!locked) throw new SettlementMutationConflict();
+      await tx.affiliateCommission.updateMany({
+        where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
+        data: { status: "locked", settledAt: lockedAt },
+      });
+
+      // Affiliate payouts are merchant-owned payables, not platform payout
+      // items. Derive them from the immutable ledger and keep the identity
+      // boundary in the database's vendor/affiliate/month unique key.
+      const lockedCommissions = await tx.affiliateCommission.findMany({
+        where: {
+          vendorId: settlement.vendorId,
+          monthKey: settlement.monthKey,
+          status: "locked",
+          affiliateId: { not: null },
+        },
+        select: { id: true, affiliateId: true },
+      });
+      const balancesByAffiliate = new Map<string, number>();
+      for (const commission of lockedCommissions) {
+        if (!commission.affiliateId) continue;
+        const balance = await commissionLedgerBalance(tx, settlement.vendorId, commission.id);
+        const current = balancesByAffiliate.get(commission.affiliateId) ?? 0;
+        const next = current + balance;
+        if (next < 0) throw new SettlementMutationConflict();
+        balancesByAffiliate.set(commission.affiliateId, next);
+      }
+
+      for (const [affiliateId, commissionAmountCents] of balancesByAffiliate) {
+        // A zero balance is a valid locked commission state but is not an
+        // amount payable to a merchant's affiliate.
+        if (commissionAmountCents === 0) continue;
+
+        const existingPayout = await tx.affiliatePayout.findUnique({
+          where: {
+            vendorId_affiliateId_monthKey: {
+              vendorId: settlement.vendorId,
+              affiliateId,
+              monthKey: settlement.monthKey,
+            },
+          },
+        });
+        if (existingPayout) {
+          if (
+            existingPayout.commissionAmountCents !== commissionAmountCents
+            || existingPayout.adjustmentAmountCents !== 0
+            || existingPayout.finalAmountCents !== commissionAmountCents
+          ) {
+            throw new SettlementMutationConflict();
+          }
+          continue;
+        }
+
+        await tx.affiliatePayout.create({
+          data: {
+            vendorId: settlement.vendorId,
+            affiliateId,
+            monthKey: settlement.monthKey,
+            commissionAmountCents,
+            adjustmentAmountCents: 0,
+            finalAmountCents: commissionAmountCents,
+            status: "pending",
+          },
+        });
+      }
+      return locked;
     });
-    await tx.affiliateCommission.updateMany({
-      where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
-      data: { status: "locked", settledAt: new Date() },
-    });
-    return locked;
-  });
+  } catch (error) {
+    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlement.vendorId,
@@ -1467,6 +1592,119 @@ export async function lockSettlementAction(formData: FormData) {
   revalidatePath("/admin/billing/settlements");
   revalidatePath("/billing/settlements");
   redirect("/admin/billing/settlements");
+}
+
+export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { vendor, member } = await requireVendorFinance("/affiliates/commissions");
+  const id = text(formData, "id");
+  const status = text(formData, "status");
+  const reason = text(formData, "reason");
+  if (!id || id.length > 200 || (status !== "paid" && status !== "void") || reason.length < 1 || reason.length > 500) {
+    redirect("/affiliates/commissions?error=invalid_payout");
+  }
+
+  const auditMeta = await requestAuditMeta();
+  try {
+    await getDb().$transaction(async (tx) => {
+      const payout = await tx.affiliatePayout.findFirst({
+        where: { id, vendorId: vendor.id },
+      });
+      if (!payout) throw new AffiliatePayoutMutationConflict();
+      if (
+        payout.payoutItemId !== null
+        || payout.finalAmountCents <= 0
+        || payout.finalAmountCents !== payout.commissionAmountCents + payout.adjustmentAmountCents
+      ) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+      if (payout.status === "paid" && !payout.paidAt) throw new AffiliatePayoutMutationConflict();
+      if (payout.status === "void" && payout.paidAt) throw new AffiliatePayoutMutationConflict();
+      if (payout.status === status) return;
+      if (payout.status !== "pending") throw new AffiliatePayoutMutationConflict();
+
+      const commissions = await tx.affiliateCommission.findMany({
+        where: {
+          vendorId: vendor.id,
+          affiliateId: payout.affiliateId,
+          monthKey: payout.monthKey,
+        },
+        select: { id: true, affiliateId: true, status: true },
+      });
+      if (commissions.length === 0 || commissions.some((commission) => commission.status !== "locked" || commission.affiliateId !== payout.affiliateId)) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+
+      const balances = [] as Array<{ id: string; amountCents: number }>;
+      let commissionTotalCents = 0;
+      for (const commission of commissions) {
+        const amountCents = await commissionLedgerBalance(tx, vendor.id, commission.id);
+        if (amountCents < 0) throw new AffiliatePayoutMutationConflict();
+        balances.push({ id: commission.id, amountCents });
+        commissionTotalCents += amountCents;
+      }
+      if (commissionTotalCents !== payout.commissionAmountCents) throw new AffiliatePayoutMutationConflict();
+
+      const transitionedAt = new Date();
+      if (status === "void") {
+        for (const balance of balances) {
+          if (balance.amountCents === 0) continue;
+          await appendCommissionLedgerEntry(tx, {
+            vendorId: vendor.id,
+            affiliateCommissionId: balance.id,
+            entryType: "reversal",
+            providerName: "merchant",
+            eventIdentity: `affiliate-payout:void:${payout.id}:${balance.id}`,
+            amountCents: -balance.amountCents,
+            occurredAt: transitionedAt,
+          });
+        }
+      }
+
+      const payoutClaim = await tx.affiliatePayout.updateMany({
+        where: { id: payout.id, vendorId: vendor.id, status: "pending", payoutItemId: null },
+        data: { status, paidAt: status === "paid" ? transitionedAt : null },
+      });
+      if (payoutClaim.count !== 1) throw new AffiliatePayoutMutationConflict();
+
+      const commissionClaim = await tx.affiliateCommission.updateMany({
+        where: {
+          vendorId: vendor.id,
+          id: { in: commissions.map((commission) => commission.id) },
+          status: "locked",
+        },
+        data: { status, settledAt: transitionedAt },
+      });
+      if (commissionClaim.count !== commissions.length) throw new AffiliatePayoutMutationConflict();
+
+      const updated = await tx.affiliatePayout.findUnique({ where: { id: payout.id } });
+      if (!updated || updated.vendorId !== vendor.id || updated.status !== status) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+      await tx.auditLog.create({
+        data: {
+          vendorId: vendor.id,
+          actorId: member.id,
+          actorLabel: member.role,
+          action: status === "paid" ? "mark_affiliate_payout_paid" : "mark_affiliate_payout_void",
+          targetType: "AffiliatePayout",
+          targetId: payout.id,
+          before: auditSnapshot(payout),
+          after: auditSnapshot({ payout: updated, reason, transitionedAt }),
+          ipAddress: auditMeta.ipAddress,
+          userAgent: auditMeta.userAgent,
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof AffiliatePayoutMutationConflict || isAffiliatePayoutMutationConflict(error)) {
+      redirect("/affiliates/commissions?error=conflict");
+    }
+    throw error;
+  }
+
+  revalidatePath("/affiliates/commissions");
+  redirect("/affiliates/commissions");
 }
 
 export async function createPayoutBatchAction(formData: FormData) {
@@ -1493,6 +1731,22 @@ export async function createPayoutBatchAction(formData: FormData) {
 
   if (settlements.length !== settlementIds.length) {
     redirect("/admin/billing/payouts?error=no_locked");
+  }
+
+  const bankAccountsBySettlementId = new Map<string, ReturnType<typeof resolveStoredBankAccount>>();
+  try {
+    for (const settlement of settlements) {
+      const account = selectPayoutAccount(settlement.vendor.paymentAccounts);
+      bankAccountsBySettlementId.set(settlement.id, resolveStoredBankAccount({
+        vendorId: settlement.vendorId,
+        bankAccountEncrypted: account.bankAccountEncrypted,
+        legacyAccountName: account.bankAccountLegacyName,
+        legacyBankCode: account.bankCodeLegacy,
+        legacyAccountNumber: account.bankAccountLegacyNumber,
+      }));
+    }
+  } catch {
+    redirect("/admin/billing/settlements?error=invalid_payout_account");
   }
 
   const now = new Date();
@@ -1535,22 +1789,7 @@ export async function createPayoutBatchAction(formData: FormData) {
           throw new PayoutBatchClaimConflict();
         }
 
-        const account = settlement.vendor.paymentAccounts.find(
-          (item) => item.mode === "platform" && (item.bankAccountEncrypted || item.bankAccountLegacyNumber),
-        ) ?? settlement.vendor.paymentAccounts[0];
-        const bankAccount = account
-          ? resolveStoredBankAccount({
-              vendorId: settlement.vendorId,
-              bankAccountEncrypted: account.bankAccountEncrypted,
-              legacyAccountName: account.bankAccountLegacyName,
-              legacyBankCode: account.bankCodeLegacy,
-              legacyAccountNumber: account.bankAccountLegacyNumber,
-            })
-          : {
-              accountName: settlement.vendor.name,
-              bankCode: "000",
-              accountNumber: "未設定",
-            };
+        const bankAccount = bankAccountsBySettlementId.get(settlement.id)!;
         const bankAccountDisplay = maskBankAccount(bankAccount);
         await tx.payoutItem.create({
           data: {
@@ -1720,6 +1959,21 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
+  const db = getDb();
+
+  // An already-refunded PayUni transaction must be rejected before validating
+  // the editable refund fields. The dashboard intentionally leaves those
+  // fields blank for terminal transactions, so validating them first would
+  // hide the real idempotency result behind the generic `error=refund` path.
+  const providerTransaction = await db.paymentTransaction.findUnique({ where: { id } });
+  if (
+    providerTransaction?.providerName === "payuni"
+    && providerTransaction.status !== "paid"
+    && providerTransaction.status !== "partially_refunded"
+  ) {
+    redirect("/admin/billing/dashboard?error=refund_already_processed");
+  }
+
   const refundAmountCents = moneyToCents(formData, "refundAmount");
   const gatewayFeeRefundCents = moneyToCents(formData, "gatewayFeeRefund");
   const platformFeeRefundCents = moneyToCents(formData, "platformFeeRefund");
@@ -1733,13 +1987,11 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
-  const db = getDb();
 
   // PayUni does not send a refund callback for the close API used by Sandbox.
   // Reserve a local pending record first, then let this finance-admin action be
   // the sole issuer of the provider refund.  This keeps a recoverable record if
   // the provider succeeds but the final local commit cannot complete.
-  const providerTransaction = await db.paymentTransaction.findUnique({ where: { id } });
   if (providerTransaction?.providerName === "payuni") {
     const provider = getPaymentProvider("payuni");
     if (!provider.refundPayment || !providerTransaction.providerTradeNo) {
@@ -1770,6 +2022,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
         const reservedAmountCents = reservedRefunds._sum.refundAmountCents ?? 0;
         const reservedGatewayFeeCents = reservedRefunds._sum.gatewayFeeRefundCents ?? 0;
         const reservedPlatformFeeCents = reservedRefunds._sum.platformFeeRefundCents ?? 0;
+        const pendingReservations = await tx.refundRecord.aggregate({ where: { paymentTransactionId: transaction.id, status: "pending" }, _count: { _all: true } });
+        if ((pendingReservations._count?._all ?? 0) > 0) throw new RefundValidationError();
         if (
           refundAmountCents > transaction.grossAmountCents - reservedAmountCents
           || reservedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents
@@ -1819,9 +2073,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
       redirect("/admin/billing/dashboard?error=refund");
     }
 
-    let completed: typeof reserved.transaction;
     try {
-      completed = await (async () => {
+      await (async () => {
         for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
           try {
             return await db.$transaction(async (tx) => {
@@ -1841,7 +2094,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
                   providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
                 },
               });
-              return tx.paymentTransaction.update({
+              const completedTransaction = await tx.paymentTransaction.update({
                 where: { id: currentTransaction.id },
                 data: {
                   status: refundedAmountCents >= currentTransaction.grossAmountCents ? "refunded" : "partially_refunded",
@@ -1850,6 +2103,13 @@ export async function refundPaymentTransactionAction(formData: FormData) {
                   refundedAt: new Date(),
                 },
               });
+              const auditData = { vendorId: reserved.transaction.vendorId, actorId: member.id, actorLabel: member.role, action: "refund_payment_transaction", targetType: "PaymentTransaction", targetId: reserved.transaction.id, before: auditSnapshot(reserved.transaction), after: auditSnapshot(completedTransaction) };
+              if (tx.auditLog && typeof tx.auditLog.create === "function") {
+                await tx.auditLog.create({ data: auditData });
+              } else {
+                await writeAuditLog(auditData);
+              }
+              return completedTransaction;
             }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
           } catch (error) {
             if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) continue;
@@ -1868,16 +2128,6 @@ export async function refundPaymentTransactionAction(formData: FormData) {
       redirect("/admin/billing/dashboard?error=refund");
     }
 
-    await writeAuditLog({
-      vendorId: reserved.transaction.vendorId,
-      actorId: member.id,
-      actorLabel: member.role,
-      action: "refund_payment_transaction",
-      targetType: "PaymentTransaction",
-      targetId: reserved.transaction.id,
-      before: auditSnapshot(reserved.transaction),
-      after: auditSnapshot(completed),
-    });
     revalidatePath("/admin/billing/dashboard");
     revalidatePath("/admin/billing/settlements");
     redirect("/admin/billing/dashboard");

@@ -1139,7 +1139,10 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
   ]);
 });
 
-test("public live page renders mobile-first commerce surface", async ({ page }) => {
+test("public live page renders mobile-first commerce surface", async ({ page }, testInfo) => {
+  // 此案例只瀏覽公開 commerce surface，不會建立登入狀態或接觸一次性憑證。
+  // 因此它是 WP-08 唯一允許保留成功 screenshot／trace 的既有產品 gate。
+  await page.context().tracing.start({ screenshots: true, snapshots: true, sources: false });
   await page.goto(`/live/${seed.liveSlug}`);
   await expect(page.getByText("E2E 直播頁")).toBeVisible();
   await expect(page.getByText("E2E 測試品牌")).toBeVisible();
@@ -1148,6 +1151,8 @@ test("public live page renders mobile-first commerce surface", async ({ page }) 
   const productsPanel = page.getByRole("complementary", { name: "直播商品" });
   await expect(productsPanel.getByRole("heading", { name: "E2E 導購商品" })).toBeVisible();
   await expect(productsPanel.getByText("E2E 停用商品")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("wp08-public-commerce.png"), fullPage: true });
+  await page.context().tracing.stop({ path: testInfo.outputPath("wp08-public-commerce-trace.zip") });
 });
 
 test("public live page rejects an unpublished draft", async ({ page }) => {
