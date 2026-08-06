@@ -45,6 +45,15 @@ class LiteRouterTest(unittest.TestCase):
         self.assertEqual(config["router"]["external_execution"], False)
         self.assertEqual(config["gemini_profiles"]["fast"]["model"], "gemini-3.6-flash-high")
         self.assertEqual(config["gemini_profiles"]["deep"]["model"], "gemini-3.1-pro-high")
+        self.assertEqual(config["codex_profiles"]["luna"]["model"], "gpt-5.6-luna")
+        self.assertEqual(config["codex_profiles"]["luna"]["reasoning_effort"], "xhigh")
+        self.assertTrue(config["codex_profiles"]["luna"]["fallback_only"])
+        self.assertEqual(config["codex_profiles"]["luna"]["availability"], "runtime_dependent")
+        self.assertEqual(
+            [item["profile"] for item in config["fallback_chains"]["gemini_fast"]["profiles"]],
+            ["gemini_fast", "gemini_deep", "codex_luna"],
+        )
+        self.assertEqual(config["fallback_chains"]["gemini_fast"]["max_total_attempts"], 2)
 
     def test_server_has_only_allowed_tools_and_no_external_runtime(self) -> None:
         source = SERVER.read_text(encoding="utf-8")
@@ -59,6 +68,7 @@ class LiteRouterTest(unittest.TestCase):
             self.assertEqual(status["probe_mode"], "config_only")
             self.assertFalse(status["external_execution"])
             self.assertEqual(len(status["allowed_tools"]), 7)
+            self.assertEqual(status["codex_profiles"]["luna"]["model"], "gpt-5.6-luna")
 
     def test_route_task_uses_fixed_routes_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -78,6 +88,11 @@ class LiteRouterTest(unittest.TestCase):
                 result = module.route_task("safe task", task_type)
                 self.assertEqual(result["target"], target)
                 self.assertEqual(result["execution"], "recommendation_only")
+            fallback = module.route_task("summarize safely", "summarize")
+            self.assertEqual(
+                [item["profile"] for item in fallback["fallback_chain"]["profiles"]],
+                ["gemini_fast", "gemini_deep", "codex_luna"],
+            )
 
     def test_goal_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

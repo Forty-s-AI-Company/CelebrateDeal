@@ -12,7 +12,7 @@ Canonical run：`20260729050408559`
 
 歷史 no-dotenv run 的 38 passed／1 failed 已保留在下方作為根因脈絡。新的 canonical no-dotenv disposable run `20260729050408559` 在 loopback `celebratedeal_ci` 與三個 marker-gated disposable schemas 完成：39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、npm ci、secret scan、Prisma、lint、typecheck、strict-index、source manifest、snapshot/runtime與三 schema cleanup 全部 PASS。來源 `.env*` 未讀取，沒有正式服務、正式資料或外部 delivery。
 
-因此 WP-08 可列為 local deterministic Browser QA `COMPLETE`。Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**；readiness 僅可由 Sol 重新計分，且本機結果不代表部署、外部服務、screen-reader、法務或商業上線通過。
+因此 WP-08 可列為 local deterministic Browser QA `COMPLETE`。Sol已依最新receipts將Automatable Readiness重評為 **63/100**，Full Commercial Launch維持 **45/100**；本機結果不代表部署、外部服務、screen-reader、法務或商業上線通過。
 
 ## 實際證據
 
@@ -36,4 +36,4 @@ Canonical run：`20260729050408559`
 
 ## 後續界線
 
-WP-08 已完成，下一步是由 Sol 依最新 receipts 重評 readiness；不得把本機結果外推為部署、外部服務或商業上線核准。
+WP-08已完成，Sol亦已完成63／45 readiness重評；後續進入M2 security／authorization residual inventory。不得把本機結果外推為部署、外部服務或商業上線核准。

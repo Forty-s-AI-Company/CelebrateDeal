@@ -4,7 +4,7 @@
 
 ## 目的
 
-本文件用來驗收 CelebrateDeal PayUni sandbox checkout、paid webhook、refunded webhook、duplicate webhook 與 reconciliation。此流程不提交任何真實 secret 到 repo；所有 HashKey / HashIV / merchant id 只放在 Vercel / 本機 `.env.local`。
+本文件用來驗收 CelebrateDeal PayUni sandbox checkout、paid webhook、refunded webhook、duplicate webhook 與 reconciliation。此流程不提交任何真實 secret 到 repo；所有 HashKey / HashIV / merchant id 僅由受控 secret provider 注入當次 process environment，Runner 不讀取 `.env*`。
 
 ## 前置條件
 
@@ -15,7 +15,8 @@
 - [ ] `PAYUNI_MERCHANT_ID` 已設定
 - [ ] `PAYUNI_HASH_KEY` 已設定
 - [ ] `PAYUNI_HASH_IV` 已設定
-- [ ] `NEXT_PUBLIC_APP_URL` 指向 staging 或本機 tunnel URL
+- [ ] callback URL 指向已確認公開、非 Production 的 staging host（不得使用本機 tunnel）
+- [ ] **Staging 版號 Gate 已通過**：alias 指向目前 workspace 的最新 `READY` deployment；已記錄 project、deployment ID／URL、revision／digest、route status 與 timestamp。若不是最新版本，先更新 staging 再開始任何測試。
 
 ## Checkout Form Post 欄位
 
@@ -125,9 +126,8 @@ npm run test -- src/lib/payment-providers/payuni.test.ts
 - production webhook body 若需要排錯，只能在受控環境短期擷取並立即刪除。
 - Sandbox QA 只會顯示官方文件中封閉列舉的交易查詢狀態碼；未知值維持 `unavailable`，`Message` 只顯示安全分類。`QUERY03001` 表示 PayUni 查無該筆交易，不能誤判成 callback 網路中斷。
 
-## External Required
+## 受控外部前置條件
 
 - PayUni sandbox dashboard credentials。
-- PayUni sandbox checkout 實際付款。
-- PayUni sandbox refund 操作。
+- PayUni sandbox synthetic checkout 與退款（使用者已授權時可由受控 runner 執行）。
 - PayUni production merchant 審核與正式 webhook URL 設定。

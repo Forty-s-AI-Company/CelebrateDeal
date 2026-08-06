@@ -8,8 +8,8 @@
 
 - 以 Git ownership、可分離 hunks 與產品保護邊界驗證 working tree；不以固定 dirty path 數量當 hard gate。
 - living Master Plan、checkpoint、sanitized evidence、reports 與 runtime metadata 屬於 mutable control plane，不納入產品 source-integrity manifest；Master Plan self-hash 僅作資訊性 integrity metadata。
-- 同一 WP、同一驗收目標內，Terra 可進行最多 3 輪 bounded remediation、最多 2 次 canonical full run，並在符合 policy 時擴張至最多 8 個直接相關檔案。
-- 仍必須保留 targeted tests、適用的 integration gate、sanitized evidence、精確 stage、staged diff review、secret scan、`git diff --cached --check`、獨立 commit、checkpoint 與 rollback 說明。
+- 同一 WP、同一驗收目標、根因與 ownership 可控時，Terra 可採取合理、可回滾的診斷與修復；不以固定 remediation 輪數、full run 次數或直接相關檔案數量作為強制邊界。
+- 仍必須保留適用的 deterministic tests、integration gate、sanitized evidence、Git diff/status 檢查、checkpoint 與 rollback 說明。完成實作後預設進行唯讀 AGY QA，再由 Sol 做 acceptance review；只有 `ACCEPT` 可 finalize。
 
 ## RELEASE_HARDENING
 

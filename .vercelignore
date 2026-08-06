@@ -13,3 +13,6 @@ error.log
 # Local database and compiler artefacts are not application source.
 prisma/dev.db
 tsconfig.tsbuildinfo
+
+# Supabase CLI link/cache metadata may include runtime connection details.
+/supabase/.temp/

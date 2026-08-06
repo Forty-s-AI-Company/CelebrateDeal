@@ -9,10 +9,10 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 52 |
-| Migration directories | 13 |
+| Migration directories | 14 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 13/13 |
+| Applied migrations in isolated DB | 14/14 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -41,6 +41,7 @@
 | `20260725231500_harden_affiliate_commissions` | affiliate commission hardening |
 | `20260728183500_harden_affiliate_commission_identity_and_status` | canonical commission idempotency and status policy |
 | `20260728210000_add_affiliate_commission_accounting_ledger` | append-only affiliate commission accounting ledger |
+| `20260806090000_affiliate_payout_contract` | fail-closed AffiliatePayout vendor/affiliate/month identity and non-negative amount contract |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -113,7 +114,7 @@
 ## 驗收判定
 
 - 52/52 models 已納入 identity、tenant、payment、form、Team Funnel 或 supporting/telemetry 類別。
-- 13/13 migrations 已在 isolated PostgreSQL 套用。
+- 14/14 migrations 已在 isolated PostgreSQL 套用。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I05 已有本機 reviewed migration、zero-mismatch aggregate 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I06～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。

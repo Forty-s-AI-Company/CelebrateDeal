@@ -280,4 +280,87 @@ Runner 以同一 `cmd setlocal` child process 傳入 synthetic build variables�
 - `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/preflight-git-state.json`
 - `.ai-team/reports/wp-08-product-browser-qa-20260728140909347/postflight-git-state.json`
 
-歷史 run `20260728140909347` 的 38 passed／1 failed 僅保留根因脈絡。canonical run `20260729050408559` 已通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、secret scan、source manifest與snapshot/runtime／三 schema cleanup；final summary SHA-256 為 `31E12C426FC8466A5A96B273C17BCD023C8511D60C6892969B752D01CA0D71CB`，schema cleanup SHA-256 為 `F6EE5BA0466933DDC5D0A06A031B6AD9B9ABA76073FDA3F2B3163896628421DB`。readiness 仍為 57／45，待 Sol 重新計分。
+歷史 run `20260728140909347` 的 38 passed／1 failed 僅保留根因脈絡。canonical run `20260729050408559` 已通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、secret scan、source manifest與snapshot/runtime／三 schema cleanup；final summary SHA-256 為 `31E12C426FC8466A5A96B273C17BCD023C8511D60C6892969B752D01CA0D71CB`，schema cleanup SHA-256 為 `F6EE5BA0466933DDC5D0A06A031B6AD9B9ABA76073FDA3F2B3163896628421DB`。readiness已由Sol重評為63／45。
+
+## WP-24 — Canonical security／authorization residual inventory（2026-07-29）
+
+- `docs/launch/m2-security-authorization-inventory-20260729.md`
+- `docs/ai-team/current-work-package.md`
+- `docs/ai-team/master-execution-plan.md`
+
+WP-24以current HEAD `8a78acd`完成純靜態inventory：27個route handlers、5個Server Action modules、50個textual exported async actions；20個具名歷史候選逐項重新分類，6個current authorization residuals與external/manual register分離。歷史52項中未具名的32項只標為`HISTORICAL_DETAIL_UNAVAILABLE`，沒有發明finding ID、位置或current verdict。
+
+本WP沒有執行產品測試、runner、Codex Security、npm audit或外部工具，也沒有讀取`.env*`或正式資料。Lite Goal bootstrap因歷史WP-08 phase與頂層`complete`不一致而受阻，記為control-plane `TOOL_BLOCKED`，不影響文件型deterministic verdict。
+## WP-192 — Staging alias propagation verification（2026-08-04，ACCEPT）
+
+- `.ai-team/reports/wp192-staging-alias-propagation-verification.json`
+- `.ai-team/reports/wp192-agy-fast-qa.json`
+- `docs/ai-team/evidence/wp-192-staging-alias-propagation-verification.md`
+
+WP-191 已證明 staging alias rollback／restore transition；WP-192 以一次 bounded read-only execution 再證明 exact latest Preview routing、direct／alias WP-187 source digest與login identity。Sol High `ACCEPT`：CAT09 `7.0→7.5`、總分`72.5→73.0`，`STAGING_ROLLBACK_GATE=CLOSED_FOR_STAGING`；`PRODUCTION_READY=false`。AGY Fast兩次逾時為`TOOL_BLOCKED`，未冒充QA通過。
+
+## WP-193 — Fresh staging UX matrix（2026-08-04，ACCEPT／FAIL_CLOSED）
+
+- `.ai-team/reports/wp193-staging-ux-matrix.json`
+- `.ai-team/reports/wp193-agy-fast-qa.json`
+- `docs/ai-team/evidence/wp-193-staging-ux-matrix.md`
+- `scripts/qa/wp193-staging-ux-matrix-receipt.mjs`
+- `scripts/qa/wp193-staging-ux-matrix-receipt.test.mjs`
+
+Fresh staging version Gate 通過，精確對應 WP-187 Preview／READY deployment 與已核准 digest。Chrome 自動化隨後被已開啟的 extension UI 阻擋，因此依計畫立即 fail closed：Browser matrix `0/8`、Axe `NOT_STARTED`、authenticated session `UNVERIFIED`，未重試或改用其他瀏覽器。Deterministic receipt tests `5/5`、ESLint、TypeScript、strict readback／text scan、diff-check與staged-empty皆PASS；AGY Fast兩次逾時為`TOOL_BLOCKED`。Sol High `ACCEPT`此安全停止結果；CAT06維持7.0、總分維持73.0，不宣稱staging UX QA通過。
+
+## WP-194 — Chrome control re-verification（2026-08-04，ACCEPT／FAIL_CLOSED）
+
+- `.ai-team/reports/wp194-staging-ux-matrix.json`
+- `.ai-team/reports/wp194-agy-fast-qa.json`
+- `docs/ai-team/evidence/wp-194-staging-ux-matrix.md`
+- `scripts/qa/wp194-staging-ux-matrix-receipt.mjs`
+- `scripts/qa/wp194-staging-ux-matrix-receipt.test.mjs`
+
+Fresh staging version Gate再次通過。Chrome binding可用，但唯一new-tab staging navigation發生CDP `Page.navigate` timeout；依Sol計畫未重試、未fallback、未操作extension，並成功finalize。Matrix `0/8`、Axe `NOT_STARTED`、auth `UNVERIFIED`；所有禁止操作與敏感資料存取為0。Receipt tests `5/5`、ESLint、TypeScript、strict readback、sanitized evidence scan、diff-check與staged-empty PASS。AGY Fast兩次後`TOOL_BLOCKED`且無verdict；Sol High `ACCEPT`安全fail-closed結案，CAT06維持7.0、total維持73.0。
+
+## WP-195 — Five-owner launch acceptance packet（2026-08-04，ACCEPT）
+
+- `docs/launch/wp195-launch-owner-acceptance-contract.json`
+- `scripts/wp195-launch-owner-acceptance-fixtures.json`
+- `scripts/wp195-launch-owner-acceptance.mjs`
+- `scripts/wp195-launch-owner-acceptance.test.mjs`
+- `.ai-team/reports/wp195-launch-owner-acceptance.json`
+- `.ai-team/reports/wp195-agy-fast-qa.json`
+- `docs/ai-team/evidence/wp-195-launch-owner-acceptance.md`
+
+WP-195新增跨merchant、support、finance、privacy-legal、release五owner的exact acceptance matrix、15責任檢查、evidence schema與go/no-go aggregation。唯一offline synthetic dry-run 12/12 scenarios與tests7/7、ESLint、TypeScript、strict readback、sanitized scan、diff-check、staged-empty均PASS；外部side effects與敏感資料存取為0。AGY Fast兩次FIRST_OUTPUT_TIMEOUT後`TOOL_BLOCKED`；Sol High `ACCEPT`新鮮商業流程coverage，CAT10 `4.0→4.5`、total `73.0→73.5`。Manual signatures=`PENDING`、release=`HOLD_NOT_READY`、overall=`NOT_READY`、Production ready=false。
+## WP-196 — Final staging DB／PayUni Sandbox authorization attempt（2026-08-04，NO-GO／待 Sol acceptance）
+
+- `scripts/wp196-final-staging-payuni-readonly-reconciliation-runner.mjs`
+- `scripts/wp196-final-staging-payuni-readonly-reconciliation-runner.test.mjs`
+- `.ai-team/reports/wp196-final-staging-payuni-authorization-receipt.json`
+- `.ai-team/reports/wp196-agy-fast-qa.json`
+- `.ai-team/reports/wp196-sol-acceptance.json`
+- `docs/ai-team/evidence/wp-196-final-staging-payuni-authorization.md`
+
+唯一 live attempt 在 parent binding presence preflight 以 `WP196_FINAL_NO_GO_BINDING` fail closed：
+偵測到 4 個受控 target key 已存在於 process environment，因此 broker、staging DB、
+candidate SELECT 與 PayUni query 皆為 0。Receipt 為 sanitized、strict readback PASS，
+`FINAL_ATTEMPT_CONSUMED_NO_RERUN`、`FINAL_NO_SCORE_AUTHORIZATION`；CAT04 維持 6.0、
+total 維持 73.5，`SANDBOX_READY=false`、`PRODUCTION_READY=false`。AGY Fast 兩次
+`FIRST_OUTPUT_TIMEOUT`，如實標記 `TOOL_BLOCKED`，不取代 deterministic evidence。Sol High
+`ACCEPT` 僅接受安全 fail-closed no-go，不代表商業 reconciliation 成功。
+低於 7.5 的 CAT04、CAT06、CAT10 目前分別等待受控 binding lineage、Chrome 外部狀態與
+真人 owner／法務／客服／release 簽核；Goal 狀態為 `WAITING_AUTHORIZATION`，不再自動重跑。
+## WP-197 — Staging lineage／Preview binding value-free gate（2026-08-04，NO-GO／待 Sol acceptance）
+
+- `scripts/wp197-staging-lineage-binding-gate.mjs`
+- `scripts/wp197-staging-lineage-binding-gate.test.mjs`
+- `.ai-team/reports/wp197-staging-lineage-binding-gate.json`
+- `.ai-team/reports/wp197-agy-fast-qa.json`
+- `.ai-team/reports/wp197-sol-acceptance.json`
+- `docs/ai-team/evidence/wp-197-staging-lineage-binding-gate.md`
+
+Fresh Vercel metadata observation 發現 staging alias 為 Preview／READY、非 Production，但
+不匹配 WP-196 期待 deployment。WP-197 唯一 live attempt 隨後在 parent contamination gate
+以 `TERMINAL_NO_GO_CONTAMINATION` fail closed；inspect、probe、DB、PayUni 與 mutation 全為0。
+Tests5/5、ESLint、TypeScript、strict readback、diff-check、staged-empty PASS；AGY Fast兩次
+`FIRST_OUTPUT_TIMEOUT`=`TOOL_BLOCKED`。CAT04／total維持6.0／73.5，禁止重跑或另拆 retry WP。
+Sol High `ACCEPT` 僅接受安全 no-go，不代表 staging／PayUni readiness；Goal 維持
+`WAITING_AUTHORIZATION`，唯一缺口是修正 staging parent target-name metadata／routing contamination。

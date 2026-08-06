@@ -1,5 +1,5 @@
-model = "gpt-5.6-terra"
-model_reasoning_effort = "high"
+#model = "gpt-5.6-terra"
+#model_reasoning_effort = "high"
 
 [mcp_servers.ai_team_router]
 command = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\.venv\\Scripts\\python.exe"

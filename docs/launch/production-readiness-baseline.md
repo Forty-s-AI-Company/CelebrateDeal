@@ -1,25 +1,31 @@
 # Production Readiness Baseline
 
-日期：2026-07-27
+日期：2026-07-29
 評分原則：每一分都要有目前證據；舊報告不能直接繼承。
 
 | 類別 | 分數 | 目前證據 | 扣分原因 |
 |---|---:|---|---|
 | 1. 產品核心功能 | 7/10 | lint、typecheck、923 tests 與 local build 均有目前 snapshot receipt | 492 changes 尚未分批驗證 |
-| 2. 註冊、登入與主要流程 | 6/10 | auth/MFA/password reset 程式與 tests 存在 | 目前 snapshot 沒有 app-level browser E2E |
-| 3. 認證、權限與安全 | 6/10 | authorization matrix、security reports、targeted fixes | 52 candidates 未完整重現；外部 ACL 人工阻擋 |
+| 2. 註冊、登入與主要流程 | 8/10 | 39-test Browser suite 覆蓋登入、密碼重設、MFA及主要 authenticated／commerce journey | 外部 Email/provider、正式 session 行為與完整商業 journey 未驗 |
+| 3. 認證、權限與安全 | 6/10 | 20個具名歷史候選已完成current-HEAD分類；authorization matrix與targeted fixes存在 | webinar release E2E、full role／direct-URL negative matrix、產品決策與外部ACL仍未完成 |
 | 4. 金流、訂閱、退款與帳務 | 4/10 | checkout/webhook/refund/payout 程式與 tests 存在 | sandbox/Production 未驗；candidate DB constraints 未過 Gate |
 | 5. 資料完整性、Migration、備份與回滾 | 5/10 | 11 migration 已在 disposable scoped schema deploy/status 通過 | candidate migration 的獨立 review、backup/rollback 仍未驗 |
-| 6. UX、RWD、無障礙與錯誤狀態 | 5/10 | UI 修改、a11y/performance specs、本地 isolated browser 可用 | 未跑目前 app E2E；screen-reader 人工阻擋 |
-| 7. Unit、Integration、E2E 與回歸 | 8/10 | 116 files／923 tests coverage 通過；Playwright discovery 找到 39 tests | 沒有獨立 integration suite，也尚未實跑產品 E2E |
-| 8. 效能、可靠性、Log、監控與追蹤 | 4/10 | monitoring/retry/log code 與 reports 存在 | 外部 delivery、current performance/reliability 未驗 |
+| 6. UX、RWD、無障礙與錯誤狀態 | 7/10 | 8個accessibility cases、鍵盤焦點、skip link、axe、reduced motion、mobile overflow／touch target全過 | 真實NVDA／VoiceOver、實機與人工UX驗收未完成 |
+| 7. Unit、Integration、E2E 與回歸 | 9/10 | 119 files／939 tests、39 Browser tests、lint與兩種typecheck同次closure | 仍沒有獨立integration-test command／suite |
+| 8. 效能、可靠性、Log、監控與追蹤 | 5/10 | 3個release performance budgets、rate-limit、CSP、cleanup／integrity gates全過 | 外部telemetry delivery、長時間可靠性與正式流量未驗 |
 | 9. 部署、環境、Release 與回滾 | 5/10 | isolated production build、synthetic env 與 cleanup receipts 通過 | 尚無部署、正式 rollback 與外部 Gate evidence |
 | 10. 可販售文件、客服、法務與營運 | 2/10 | 有 runbook、manual actions、QA docs | 客服、法務、商家 onboarding、正式營運未驗 |
 
 ## 分數
 
-- Automatable Readiness Score：**57/100**
+- Automatable Readiness Score：**63/100**
 - Full Commercial Launch Score：**45/100**
+
+## M1 closure 後 Sol 重評（2026-07-29）
+
+Canonical run `20260729050408559` 提供同一次39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、source integrity與cleanup receipts。依既有57分基準，類別2增加2分、類別6增加2分、類別7增加1分、類別8增加1分，因此Automatable Readiness調整為63／100。
+
+Full Commercial Launch維持45／100。本次沒有deployment、正式資料、Supabase ACL、PayUni、外部observability delivery、screen-reader、法務、客服或商家onboarding evidence。
 
 ## WP-09 — AI Team runtime／工具政策第一切片（2026-07-28，COMPLETE）
 
@@ -101,4 +107,10 @@ WP-19 已以兩個互斥 synthetic schema owner coverage projects 補齊必要 g
 
 歷史 `20260728140909347` 的 38／1 不再是目前結論。canonical run `20260729050408559` 已通過 39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）、Prisma、lint、typecheck、strict-index、secret scan、source manifest及snapshot/runtime／三 schema cleanup；來源 `.env*` 未讀取，也沒有連到正式服務或資料。
 
-Automatable Readiness 維持 **57/100**，Full Commercial Launch 維持 **45/100**；Terra 不直接加分，類別 2、6、7、8 交由 Sol 以最新 receipts 重評。詳見 `docs/launch/wp08-product-browser-qa-20260728.md`。
+Sol已依最新receipts完成重評：Automatable Readiness為 **63/100**，Full Commercial Launch維持 **45/100**。本機結果不外推deployment、外部服務或商業上線。詳見 `docs/launch/wp08-product-browser-qa-20260728.md`。
+
+## WP-24 — M2 security／authorization residual inventory rebuild（2026-07-29，COMPLETE）
+
+WP-24以current HEAD重新分類歷史summary唯一具名的20項候選，並將6個current authorization residuals、27個route handlers、50個textual exported async actions與外部／人工register分離記錄。歷史52項中缺少原始明細的32項只保留一列`HISTORICAL_DETAIL_UNAVAILABLE`，未發明finding或current狀態。
+
+本包是唯讀來源盤點與文件正規化，沒有新增產品修復、產品測試、production或external receipts，因此Automatable Readiness維持 **63/100**，Full Commercial Launch維持 **45/100**。詳見 `docs/launch/m2-security-authorization-inventory-20260729.md`。

@@ -5,13 +5,15 @@
 
 專案路徑：C:\Users\eden\Downloads\AI\CelebrateDeal
 
-先讀取：AGENTS.md、docs/ai-team/workflow-mode.md、docs/ai-team/workflow-policy.md、docs/ai-team/handoff-schema.md、docs/launch/next-work-packages.md、.ai-team/state/goal-state.json，以及本次所需 evidence 與 Git 狀態。
+先讀取：AGENTS.md、docs/ai-team/workflow-mode.md、docs/ai-team/workflow-policy.md、docs/ai-team/handoff-schema.md、docs/ai-team/GOAL-PROTOCOL.md、必要 evidence、Git status 與既有 control-plane packet。
 
-目標：只規劃一個 30～90 分鐘的 Work Package；優先處理未完成原始 WP 的 blocker。覆寫 docs/ai-team/current-work-package.md，列明精確 scope、禁止事項、驗收、風險與 PLAN_STATUS。
+目標：為一個 30～90 分鐘 Work Package 產生完整、可直接執行的計畫。列出精確目標、核准 scope、禁止事項、ownership 風險、deterministic tests、AGY QA 輸入與可回滾停止條件；不得使用固定 remediation／full run／檔案數作為自動阻擋。
 
-PRELAUNCH_DEV：使用 ownership 判斷 dirty paths，不以固定數量或 living plan self-hash 變動判定 NOT_READY。同一 WP 的小型 runner、fixture、query、test helper 或直接相關產品 Bug remediation，應由 Terra 留在原 Task 處理；僅在 Milestone 初始規劃、重大架構／產品決策、Milestone 結束或明確 escalation 時建立新 WP。規劃時定義 Terra 可自主處理的 root cause 與直接相關檔案範圍（最多 8 個）。
+嚴格唯讀：不得修改產品程式碼、docs/ai-team/current-work-package.md、Goal state 或其他 control-plane 檔案；不得執行產品測試、commit 或開始執行 WP。Terra 才建立或更新 control-plane packet。
 
-禁止：修改產品程式碼、執行產品測試、commit、開始執行 WP，或在 PLAN_STATUS 不是 READY_FOR_TERRA 時交給 Terra。
-
-完成後：依 handoff-schema.md 輸出完整 AI_TEAM_HANDOFF，產生可直接貼入的 Terra Executor NEXT_PROMPT，然後停止。
+完成後：依 handoff-schema.md 輸出完整 AI_TEAM_HANDOFF，給出可直接貼入的 Terra Executor NEXT_PROMPT，然後停止。
 ```
+
+## Sol acceptance review 補充
+
+AGY QA 與 Terra 的 deterministic-test evidence 完成後，Sol 以唯讀方式複審。結論只能是 `ACCEPT`、`CONTINUE_CURRENT_WP` 或 `PLAN_REMEDIATION`；不得修改工作區、補跑實作，亦不得以 AGY QA 取代 deterministic tests。只有 `ACCEPT` 可交由主代理 finalize。

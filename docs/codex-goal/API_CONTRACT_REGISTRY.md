@@ -44,6 +44,7 @@
 | 25 | `POST /api/team-funnel/shares` | same-origin + client marker；domain actor policy | Zod create/disable，64 KiB；maxUses bounded | content owner／direct-downline／member audience policy | create/disable share；衝突回 409 | 400／404／409／500 使用穩定 error code | route + audience policy unit |
 | 26 | `POST /api/team-funnel/templates` | same-origin + client marker；domain actor policy | Zod publish payload，64 KiB；content/locks bounded | template、team、content owner membership | publish immutable next version；DB unique template/version 抗 concurrent duplicate | 400／404／409／500 使用穩定 error code | route + ownership/version unit |
 | 27 | `POST /api/webhooks/payments` | configured provider + raw-body signature | raw body 64 KiB；adapter normalization + `PaymentWebhookPayload` | vendor 由 verified payload 或既有 provider order 解析；scoped lookup 必須同 vendor/provider/order；amount/currency/status invariant | `WebhookEvent(provider,eventId)` DB unique；processed replay 直接成功；ledger 於 SERIALIZABLE transaction 處理 | 400／401／403／413／500 使用安全 error code；成功回 provider ack | route fixture + isolated PostgreSQL logical-order/refund/concurrency/provider-scope regression |
+| 28 | `GET /__celebratedeal_wp187_fingerprint.json`／`HEAD /__celebratedeal_wp187_fingerprint.json` | public read-only；無認證 | 無 body | 固定 Preview deployment lineage v2 payload | 無寫入；不讀 env、DB、PayUni 或 request metadata | 200；固定五欄 JSON；`Cache-Control: no-store, max-age=0`；`X-Content-Type-Options: nosniff`；HEAD 無 body | 同路徑 deterministic unit；遠端 Preview 驗證另行驗收 |
 
 ## 已確認的 contract 缺口
 
@@ -57,8 +58,8 @@
 
 ## 驗收判定
 
-- Static inventory：27/27 route handlers 已登錄。
-- Same-path test：27/27。
+- Static inventory：28/28 route handlers 已登錄。
+- Same-path test：28/28。
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。

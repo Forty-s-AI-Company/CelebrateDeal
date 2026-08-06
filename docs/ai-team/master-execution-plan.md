@@ -1,52 +1,58 @@
 # CelebrateDeal 滾動式 Master Execution Plan
 
 PLAN_STATUS：READY_FOR_TERRA
-PLAN_VERSION：1
+PLAN_VERSION：2
 PLANNED_AT：2026-07-29T01:59:43+08:00
 SOURCE_INPUT：docs/ai-team/master-planning-input.md
-CURRENT_BASELINE_COMMIT：c9fb0822e7bb883bcc197e1b26328592492466d6
-FIRST_MILESTONE：M1
-FIRST_MILESTONE_WP_COUNT：2
-FIRST_EXECUTABLE_WP：M1-PLANNING-COMMIT
+CURRENT_BASELINE_COMMIT：8a78acd1b6cf22978a71eff4d7448a3730006d44
+LAST_COMPLETED_MILESTONE：M1
+CURRENT_MILESTONE：M2
+CURRENT_EXECUTABLE_WP：WP-24
+CURRENT_WP_COUNT：1
 RECOMMENDED_EXECUTOR_MODEL：gpt-5.6-terra／High
 USER_AUTHORIZATION_REQUIRED_TO_START：NO
 PRODUCTION_ACCESS_REQUIRED：NO
-SELF_HASH_CANONICAL_SHA256：4E11CC82ABE8B74D9A47D07C6BAD70171397A44A636D8AF4C859D68F93FBC24D
+SELF_HASH_CANONICAL_SHA256：87A1AB8D81405FBB37DB1501D178C7695FF428D6357F89893E414AFB3C858621
 
-> 本文件是 living plan。M1 詳細規劃；M2、M3 保留中等粒度；更後面的工作只保留方向與候選 Work Package。每個 Milestone 完成後必須停止，由 Sol 依最新程式碼、Git 與 canonical evidence 重新校準。
+> 本文件是 living plan。M1 保留歷史執行契約；M2 依 current evidence 逐包詳細規劃；M3 與更後面的工作只保留方向與候選 Work Package。每個 Milestone 完成後必須停止，由 Sol 依最新程式碼、Git 與 canonical evidence 重新校準。
 
 ## 1. Executive summary
 
-CelebrateDeal 目前第一優先仍是關閉 WP-08 的本機 deterministic evidence。最新 canonical evidence 已比部分 launch 文件更新：
+M1 已完成。WP-22-R1 commit `a4cdf0e` 與 WP-23 commit `8a78acd` 已將 WP-08 local deterministic evidence 關閉；canonical run `20260729050408559` 通過39 Browser tests、119 files／939 tests coverage（0 failed／0 skipped）及全部quality、integrity與cleanup gates。
 
-- run `20260728170501031` 後來產生的 final summary 證明 Browser E2E 為 `39 passed／0 failed`。
-- `wp08_*`、`wp17_*`、`wp18_*` 三組 disposable schemas 的 bootstrap、13 migrations deploy/status 與 marker-gated cleanup 均通過。
-- WP-17／WP-18 coverage owner bridge 已存在於 runner，但該次 run 在 coverage 前因 lint 失敗，因此 WP-08 尚未取得同一次 `119 files／939 passed／0 failed／0 skipped` 的 coverage closure。
-- lint 直接根因是 runner 將 `TEMP`／`TMP`／`HOME` 與 Playwright transform cache 放在 snapshot source tree 內，導致 ESLint 掃描生成的 CommonJS cache。
-- pre-run／post-run source manifest 唯一差異為 runner 執行期間遭更新的 ignored `.ai-team/state/goal-state.json`；control-plane state 不應混入產品 source-integrity manifest，而且 runner 執行期間也不得更新。
+Sol依此將Automatable Readiness由57／100重評為63／100；Full Commercial Launch維持45／100。本機evidence不代表deployment、正式資料、外部服務、screen-reader、法務或商業上線通過。
 
-M1 依序執行：
-
-1. `M1-PLANNING-COMMIT`：先獨立提交兩份規劃文件。
-2. `WP-22`：修正 runner runtime isolation，保留 coverage owner bridge，執行一次完整 WP-08 canonical run。
-3. `WP-23`：只在 WP-22 全部通過後，整理 launch evidence 與關閉 WP-08。
-
-本計畫不授權 M2、正式環境、正式資料、正式 Secret、部署或外部付費操作。
+M2聚焦security／authorization residuals。第一個且唯一可執行單位為WP-24：重建current-HEAD canonical candidate inventory；不得把歷史52 candidates當成目前總數，也不得在inventory WP同時修改產品程式碼。
 
 ## 2. Current verified baseline
 
 ### 2.1 Repository baseline
 
 - Branch：`chore/ai-team-v5.1-migration`
-- HEAD：`c9fb0822e7bb883bcc197e1b26328592492466d6`
+- HEAD：`8a78acd1b6cf22978a71eff4d7448a3730006d44`
 - staged files：0
-- Current readiness：Automatable `57/100`；Full Commercial Launch `45/100`
+- Current readiness：Automatable `63/100`；Full Commercial Launch `45/100`
 - 現行 PostgreSQL migrations：13
 - 最新 WP-08 Browser：39 passed／0 failed
-- 最新 WP-08 coverage：未在同一次修正後 runner 執行；舊 run 為 937 passed／2 skipped
-- WP-19 verified coverage：119 files／939 passed／0 failed／0 skipped
+- 最新 WP-08 coverage：119 files／939 passed／0 failed／0 skipped
+- M2 current surface：27 route handlers、5 Server Action modules、50 textual exported async actions
 
 ### 2.2 Dirty inventory ownership
+
+WP-24 preflight時只有既有 `tests/e2e/smoke.spec.ts` 修改且staged為空。WP-24只可產生下列七個allowlist文件的變更；其中current work package是ignored control-plane packet，其餘六份為tracked／new tracked候選文件。M1 inventory保留在下方作歷史紀錄，不再作current gate。
+
+| 相對路徑 | Ownership | WP-24可修改 | 備註 |
+|---|---|---:|---|
+| `docs/ai-team/current-work-package.md` | WP-24 | YES | ignored control-plane packet；不得force-add |
+| `docs/ai-team/master-execution-plan.md` | WP-24 | YES | M1 closure、readiness與M2 record |
+| `docs/launch/m2-security-authorization-inventory-20260729.md` | WP-24 | YES | 新增canonical inventory |
+| `docs/launch/production-readiness-baseline.md` | WP-24 | YES | Current score 63／45 |
+| `docs/launch/wp08-product-browser-qa-20260728.md` | WP-24 | YES | 同步Sol重評 |
+| `docs/launch/evidence-index.md` | WP-24 | YES | 增加WP-24 evidence |
+| `docs/launch/next-work-packages.md` | WP-24 | YES | 增加WP-24 closure |
+| `tests/e2e/smoke.spec.ts` | USER_EXISTING | **NO** | 必須byte-stable，不納入任何diff／stage |
+
+#### Historical M1 ownership snapshot
 
 本表是 Terra 啟動前的 fail-closed ownership baseline。寫入本文件後共 11 個 dirty paths；所有 ownership 均已明確，沒有 `UNKNOWN`，也沒有無法安全分離的 mixed hunks。
 
@@ -68,6 +74,10 @@ M1 依序執行：
 
 ### 2.3 Ownership fail-closed 規則
 
+- WP-24開始前與結束後都必須確認staged為空。
+- 除七個WP-24 allowlist文件與既有smoke diff外，任何dirty path均停止。
+- `tests/e2e/smoke.spec.ts`不得修改、stage或納入WP-24 rollback。
+- 下列M1規則只保留為歷史執行契約。
 - Terra 開始前必須重新計算 11 個 paths 的 Git 狀態與 SHA-256。
 - planning commit 後，`master-planning-input.md` 與 `master-execution-plan.md` 應由 untracked 轉成 tracked clean；其餘 inventory 不得漂移。
 - 新增未知 path、staged change、hash 不符或出現無法安全分離的 hunk，一律停止。
@@ -82,22 +92,19 @@ M1 依序執行：
 - `WP-06`：本機 candidate remediation 已由 WP-12、WP-13、WP-14 關閉；只保留需人工授權的正式 legacy data／backup／rollback review。
 - `WP-10`：拆到 M4～M6，不再用一個 WP 同時承載 Supabase、PayUni、observability、DNS、法務與營運。
 - `WP-20`：COMPLETE，不重開。
-- `WP-21`：保留為 coverage bridge integration 的歷史 remediation；最新 runtime-isolation blocker交由 WP-22。
-- `WP-08`：仍是原始 closure target；Browser-only PASS 或 remediation PASS 都不能取代完整 all-gate closure。
+- `WP-21`：保留為coverage bridge integration歷史 remediation；已由WP-22-R1 closure取代。
+- `WP-22`／`WP-23`／`WP-08`：全部`COMPLETE`，不重開。
 
 ## 4. Dependency graph
 
 ```mermaid
 flowchart LR
-  PLAN["M1-PLANNING-COMMIT"] --> WP22["WP-22 runner isolation與完整重驗"]
-  WP19["WP-19 coverage owner contract"] --> WP22
-  WP20["WP-20 password-reset remediation"] --> WP22
-  WP21["WP-21 runner candidate"] --> WP22
-  WP22 --> WP23["WP-23 WP-08 evidence closure"]
-  WP23 --> SOL1["Sol recalibration"]
-  SOL1 --> M2["M2 security與權限"]
+  M1["M1 COMPLETE／WP-08 closure"] --> SOL1["Sol readiness 63／45"]
+  SOL1 --> WP24["WP-24 canonical security inventory"]
+  WP24 --> SOL2["Sol next-slice planning"]
+  SOL2 --> WP25["WP-25 candidate：webinar owner boundary"]
   SOL1 --> M3["M3 data／migration readiness"]
-  M2 --> M4["M4 external commercial sandbox"]
+  WP25 --> M4["M4 external commercial sandbox"]
   M3 --> M4
   M4 --> M5["M5 release reliability"]
   M5 --> M6["M6 commercial launch"]
@@ -107,8 +114,8 @@ flowchart LR
 
 | Milestone | 名稱 | 商業／技術目的 | 包含 WP | 依賴順序 | 平行性 | 完整 integration gate | Readiness 預期影響 | Sol 重校準 | 人工授權點 | 停止條件 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M1 | WP-08 deterministic local closure | 建立可信的本機 Browser、coverage、quality與cleanup同次證據 | WP-22、WP-23；前置planning commit | planning commit → WP-22 → WP-23 | 不可平行 | 同一runner全綠＋文件一致 | 允許重評類別2、6、7、8；不自動加分 | YES | 無額外授權 | M1完成、任一安全／測試／Git停止條件 |
-| M2 | Security與authorization residuals | 重建WP-07未覆蓋候選與tenant權限證據 | 待Sol切片 | M1後 | 唯讀盤點可平行；寫入仍單一Worker | auth matrix、DB contract、targeted Browser | Automatable可能提升 | YES | 外部ACL另授權 | 產品決策、正式ACL或scope擴張 |
+| M1 | WP-08 deterministic local closure | 建立可信的本機 Browser、coverage、quality與cleanup同次證據 | WP-22、WP-23；前置planning commit | planning commit → WP-22 → WP-23 | 完成 | run `20260729050408559`全綠＋文件一致 | Automatable 57→63；Full 45 | COMPLETE | 無額外授權 | 已停止並交回Sol |
+| M2 | Security與authorization residuals | 重建current-HEAD candidate inventory與tenant權限證據 | WP-24；後續切片待Sol | M1→WP-24 | 寫入仍單一Worker | current surface＋candidate classification＋static gates | WP-24不自行加分 | YES | 外部ACL、產品決策另授權 | WP-24完成、Critical／High、產品決策或外部scope |
 | M3 | Data、migration、backup／rollback readiness | 將WP-06殘項轉為非正式rehearsal與授權式legacy review | 待Sol切片 | M1後；WP-12～14已完成 | disposable rehearsal可與M2概念平行 | backup／restore／rollback receipts | 資料完整性類別可能提升 | YES | 任何正式資料盤點 | 正式DB、legacy mapping或破壞性操作 |
 | M4 | External commercial sandbox | 分別驗證Supabase ACL、PayUni sandbox與observability | 待Sol切片 | M2＋M3 | 各外部gate概念獨立；寫入不平行 | sandbox、idempotency、delivery receipts | Commercial readiness可能提升 | YES | Secret、帳號、sandbox服務 | 付費、正式金流、正式Secret |
 | M5 | Release、deployment與reliability | 部署／rollback rehearsal、telemetry與screen-reader | 候選 | M4 | 人工檢查可分流 | rollback rehearsal、delivery、人工journey | Release／UX類別可能提升 | YES | 部署與外部dashboard | 正式部署或不可逆操作 |
@@ -420,10 +427,11 @@ docs(launch): close wp08 deterministic evidence
 
 ### M2 — Security與authorization residuals
 
-- 先由Sol重建剩餘security candidates的canonical inventory。
-- 依auth、tenant authorization、public endpoints切成30～90分鐘WP。
-- 不預先假設舊「52 candidates」仍完整或仍適用。
-- Supabase正式ACL不納入自動WP。
+- WP-24已依current HEAD重建20個具名歷史候選、6個current authorization residuals與external/manual register。
+- 舊52項只有20項具名；未具名32項固定為`HISTORICAL_DETAIL_UNAVAILABLE`，不列為current finding。
+- Current surface為27 route handlers、5 Server Action modules與50 textual exported async actions；surface本身不是finding。
+- 下一個local候選是WP-25 webinar owner-boundary release-mode negative evidence；必須先交回Sol另行規劃。
+- Supabase正式ACL、產品決策、正式Secret、付款、部署與正式資料不納入自動WP。
 
 ### M3 — Data、migration、backup／rollback readiness
 
@@ -459,21 +467,21 @@ docs(launch): close wp08 deterministic evidence
 
 ## 8. Terra execution protocol
 
-本次使用者明確授權M1長程Goal在同一Terra Task中完成planning commit、WP-22與WP-23。這是M1限定的直接執行契約；不得延伸到M2。
+WP-24是M2第一個且唯一獲授權的文件型WP。它只允許current work package、Master Plan、canonical inventory與四份launch evidence文件；不授權產品修改、產品測試、runner、外部工具、stage或commit。
 
 每完成一個WP，Terra必須：
 
-1. 執行targeted tests。
-2. 執行必要integration gate。
+1. 依WP類型執行必要的deterministic gates；WP-24只做static/reference validation。
+2. 不得用未執行的產品測試作PASS。
 3. 建立sanitized evidence。
-4. 精確stage該WP檔案或hunk。
-5. staged diff review、diff check與secret scan。
-6. 建立獨立commit。
+4. 只有另獲commit授權時才可精確stage。
+5. diff review、diff check、secret scan與staged-empty gate。
+6. 未授權時保持未staged／未commit。
 7. 更新WP狀態。
 8. 寫入checkpoint。
 9. 更新Master Plan execution record。
 10. 確認Git可安全進入下一WP。
-11. 只選同一M1中的下一個READY單位。
+11. 完成後停止並交回Sol；不得自選下一WP。
 
 不得：
 
@@ -485,25 +493,28 @@ docs(launch): close wp08 deterministic evidence
 - 降低assertion或threshold
 - 偽造evidence
 - 因Gemini QA失敗偽造deterministic gate失敗
-- 自動跨越人工授權點或M1邊界
+- 自動跨越人工授權點或WP／Milestone邊界
 
 ## 9. Test strategy
 
-- M1-PLANNING-COMMIT：文件、staged allowlist、secret與diff gates。
-- WP-22：runner targeted static gates＋一次canonical full runner。
-- WP-23：receipt解析、文件一致性、reference、secret與diff gates；不重跑產品測試。
-- Gemini Fast不是M1必要gate；若呼叫失敗，標記`TOOL_BLOCKED`且不掩蓋deterministic結果。
+- M1歷史：M1-PLANNING-COMMIT、WP-22與WP-23 gates均已完成。
+- WP-24：current source manifest、20個具名候選分類、6個authorization residuals、Markdown references、allowlist、secret與diff gates；不跑產品測試。
+- Lite Goal bootstrap因舊WP-08 phase不一致被拒絕，記為control-plane `TOOL_BLOCKED`；不掩蓋WP-24文件型deterministic結果。
 - 任何未執行gate不得標PASS。
 
 ## 10. Git and commit protocol
 
-使用者只授權以下三筆本機commit：
+M1歷史已授權並完成以下三筆本機commit：
 
 1. `docs(ai-team): add rolling master execution plan`
 2. `test(qa): isolate wp08 runner runtime`
 3. `docs(launch): close wp08 deterministic evidence`
 
-明確未授權：
+WP-24明確未授權stage或commit。若後續另行授權，單一候選commit為：
+
+`docs(security): establish m2 residual inventory and readiness`
+
+仍明確未授權：
 
 - push
 - merge
@@ -514,7 +525,7 @@ docs(launch): close wp08 deterministic evidence
 - stash
 - 部署
 - 正式環境／資料／Secret
-- M2或後續Milestone
+- 任何產品修改或WP-25／後續Milestone
 
 每筆commit前必須：
 
@@ -547,7 +558,7 @@ Terra遇到以下任一情況必須停止：
 7. 必要測試環境或工具阻擋。
 8. Git ownership不明或存在無法安全分離的mixed hunks。
 9. 同一WP經一次修復與一次允許重試後仍無法通過。
-10. M1完成，需要Sol重新校準。
+10. WP-24完成，需要Sol規劃下一個M2切片。
 11. Master Plan過時或依賴順序失效。
 12. Token、時間或上下文不足以安全繼續。
 
@@ -561,11 +572,11 @@ Terra遇到以下任一情況必須停止：
 
 ## 13. Readiness scoring policy
 
-- 目前Automatable Readiness維持`57/100`。
+- M1 closure後Automatable Readiness為`63/100`，由既有`57/100`加上類別2 `+2`、類別6 `+2`、類別7 `+1`、類別8 `+1`。
 - Full Commercial Launch維持`45/100`。
-- Terra不得因單一WP直接加分。
-- M1完成後，Sol依最新evidence重評類別2、6、7、8。
-- External、production、screen-reader、legal與operations未通過前，不提高Full Commercial Launch結論。
+- 63分只代表current-HEAD local deterministic evidence；不得外推為deployment、正式資料、外部服務或商業上線通過。
+- External、production、screen-reader、legal、support與operations evidence未完成前，不提高Full Commercial Launch。
+- 後續Terra不得因單一M2 WP自行加分；每個Milestone結束後交回Sol重評。
 
 ## 14. Recovery and resume instructions
 
@@ -574,25 +585,27 @@ Terra遇到以下任一情況必須停止：
 1. 讀取Master Plan最後execution record、Goal state、Git log與status。
 2. 驗證已完成commit與receipt hashes。
 3. 已通過且hash一致的gate不重跑。
-4. planning commit不存在時，從`M1-PLANNING-COMMIT`恢復。
-5. WP-22尚未commit時，從其preflight與ownership驗證恢復。
-6. WP-22已commit但WP-23未完成時，只執行WP-23。
+4. M1已完成，不重跑WP-22／WP-23。
+5. WP-24中斷時，只核對七個allowlist文件與既有smoke diff。
+6. Lite Goal state仍因舊WP-08 phase不一致受阻時，不手動修改state；保存`TOOL_BLOCKED`並繼續文件驗證。
 7. hash漂移、未知path或scope失效時停止交回Sol。
 8. 不使用reset、checkout、clean或stash恢復。
 
 ## 15. Known unknowns
 
-- WP-17／WP-18 coverage bridge已配置且三schema migration成功，但WP-08 coverage gate尚未在修正後runner真正執行。
-- run `20260728170501031` 的final summary晚於failure receipt；部分文件因此過時。
-- 外部服務、正式資料、部署與商業gate仍為未驗證，不由本機結果推論。
-- Git long-path checkpoint問題延後處理，不阻擋M1。
-- M2後的candidate數量與實際優先級必須在M1完成後由Sol重新盤點。
+- 歷史52-candidate raw artifacts不在repository；summary只具名20項，未具名32項保持`HISTORICAL_DETAIL_UNAVAILABLE`。
+- 歷史scan baseline到HEAD的產品／測試範圍已變更133個檔案；current inventory不得繼承歷史總數。
+- Current source surface為27 route handlers；舊authorization matrix的47 actions已漂移，current textual inventory為50 exported async actions。
+- 外部服務、正式資料、部署、Supabase ACL、screen-reader、法務與商業gate仍未驗證，不由本機結果推論。
+- Goal state頂層`complete`與歷史pending／in-progress phase不一致；此行政異常不重開M1，但阻擋Lite bootstrap新Goal。
+- Git long-path checkpoint問題延後處理，不阻擋M2文件盤點。
 
 ## 16. Plan change log
 
 | Version | 日期 | 變更 |
 |---|---|---|
 | 1 | 2026-07-29 | 建立rolling Master Plan；以最新WP-08 final summary更新根因；建立M1 planning commit、WP-22與WP-23；加入完整dirty ownership、manifest時點、smoke hunk與commit授權邊界。 |
+| 2 | 2026-07-29 | 確認M1 closure與commits；Automatable readiness調整為63、Full維持45；建立WP-24 current-HEAD security／authorization inventory與M2邊界。 |
 
 ## 17. M1 execution record
 
@@ -600,5 +613,11 @@ Terra遇到以下任一情況必須停止：
 |---|---|---|---|
 | 2026-07-29T04:31:22Z | M1-PLANNING-COMMIT | PASS；commit `f2bacb1` | 兩份規劃文件精確暫存、cached diff review、diff check與secret scan均通過；其餘9個dirty path hash未漂移。 |
 | 2026-07-29T04:31:22Z | WP-22 | FAIL；停止M1 | 單次 canonical run `20260729042417940` 的 unit-coverage exit 1。已執行的Browser、quality、source manifest、package lock、snapshot/runtime與三schema marker cleanup皆PASS；coverage未完成固定119／939／0／0 gate。不得執行WP-23、不得更新launch evidence或readiness；交回Sol重新規劃。 |
-| 2026-07-29T05:04:08Z | WP-22-R1 | PASS；canonical run `20260729050408559` | RUNNER_INVENTORY_STALE 已修正為 HARD_PROTECTED／PRESERVE_ONLY／MUTABLE_CONTROL_PLANE ownership validation；Master Plan 排除於產品 source manifest，但由 preserve-only 前後 hash 驗證。npm ci、secret scan、Prisma、三 schema、39 Browser、lint、typecheck、strict-index、固定 119／939／0／0 coverage、source manifest、七個 hard-protected hash、preserve-only、snapshot/runtime與三 schema cleanup 全部 PASS；可進入 WP-22 commit 與 WP-23。 |
-| 2026-07-29T05:12:58Z | WP-23 | PASS | 以 run `20260729050408559` 的 final summary／cleanup hashes更新 8 個 allowlisted launch evidence 文件；WP-08標記 COMPLETE，38／1與前次coverage failure僅保留歷史脈絡，readiness維持57／45並交由Sol重評。M1完成，停止於此。 |
+| 2026-07-29T05:04:08Z–05:11:26Z | WP-22-R1 | PASS；commit `a4cdf0e`；canonical run `20260729050408559` | npm ci、secret scan、Prisma、三schema、39 Browser、lint、typecheck、strict-index、119／939／0／0 coverage、source manifest、HARD_PROTECTED、PRESERVE_ONLY、snapshot/runtime與三schema cleanup全部PASS。 |
+| 2026-07-29T05:12:58Z–05:14:04Z | WP-23／M1 closure | PASS；commit `8a78acd` | 8個allowlisted launch evidence文件已對齊canonical receipts；WP-08與M1為COMPLETE。Sol後續重評Automatable 63／100、Full Commercial Launch維持45／100。 |
+
+## 18. M2 execution record
+
+| 日期 | 單位 | 結果 | 證據／後續 |
+|---|---|---|---|
+| 2026-07-29 | WP-24 | PASS；未stage／未commit；Lite Goal bootstrap `TOOL_BLOCKED` | 已分類20個具名歷史候選、6個current authorization residuals及1列未具名32項gap；重建27 route handlers／50 exported async actions surface manifest。Markdown reference、secret scan、`git diff --check`、exact allowlist與staged-empty均PASS；既有`tests/e2e/smoke.spec.ts`未觸碰。完成後交回Sol，不自動開始WP-25。 |

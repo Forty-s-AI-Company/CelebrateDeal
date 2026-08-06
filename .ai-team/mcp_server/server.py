@@ -202,6 +202,8 @@ def router_status() -> dict[str, Any]:
         ],
         "agents": config.get("agents", {}),
         "gemini_profiles": config.get("gemini_profiles", {}),
+        "codex_profiles": config.get("codex_profiles", {}),
+        "fallback_chains": config.get("fallback_chains", {}),
     }
 
 
@@ -211,11 +213,13 @@ def route_task(task_summary: str, task_type: str = "") -> dict[str, Any]:
     ensure_not_sensitive_text(task_summary)
     route = normalized_task_type(task_summary, task_type)
     recommendation = ROUTES[route]
+    fallback_chains = read_config().get("fallback_chains", {})
     return {
         "status": "planned",
         "execution": "recommendation_only",
         "task_type": route,
         "task_summary": task_summary[:300],
+        "fallback_chain": fallback_chains.get(route, []),
         **recommendation,
     }
 
