@@ -33,6 +33,12 @@ export type MediaUploadState = {
   resumableUploadTicket: string;
 };
 
+export type MediaUploadPersistedValue = {
+  url: string;
+  assetId: string;
+  resourceId: string;
+};
+
 type UploadAction =
   | { type: "select"; file: File; previewUrl: string }
   | { type: "phase"; phase: UploadPhase }
@@ -122,10 +128,18 @@ type MediaUploadFieldProps = {
   resourceIdInputName?: string;
   titleInputName?: string;
   durationInputName?: string;
-  onValueChange?: () => void;
+  onValueChange?: (value: MediaUploadPersistedValue) => void;
   statusInputName?: string;
   onBlockingChange?: (blocked: boolean) => void;
 };
+
+export function mediaUploadPersistedValue(state: MediaUploadState): MediaUploadPersistedValue {
+  return {
+    url: state.remoteUrl,
+    assetId: state.assetId,
+    resourceId: state.resourceId,
+  };
+}
 
 function initialState(props: MediaUploadFieldProps): MediaUploadState {
   return {
@@ -343,7 +357,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<AbortController | null>(null);
-  const persistedValueRef = useRef(`${state.remoteUrl}\u0000${state.assetId}\u0000${state.resourceId}`);
+  const persistedValueRef = useRef(mediaUploadPersistedValue(state));
   const isBusy = ["provisioning", "uploading", "finalizing"].includes(state.phase);
   const blocksFormSubmit = Boolean(state.file) && state.phase !== "success";
   const previewUrl = state.previewUrl || (props.kind === "image" ? state.remoteUrl : "");
@@ -353,11 +367,16 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   }, [state.previewUrl]);
 
   useEffect(() => {
-    const persistedValue = `${state.remoteUrl}\u0000${state.assetId}\u0000${state.resourceId}`;
-    if (persistedValueRef.current === persistedValue) return;
+    const persistedValue = mediaUploadPersistedValue(state);
+    const previousValue = persistedValueRef.current;
+    if (
+      previousValue.url === persistedValue.url
+      && previousValue.assetId === persistedValue.assetId
+      && previousValue.resourceId === persistedValue.resourceId
+    ) return;
     persistedValueRef.current = persistedValue;
-    onValueChange?.();
-  }, [onValueChange, state.assetId, state.remoteUrl, state.resourceId]);
+    onValueChange?.(persistedValue);
+  }, [onValueChange, state]);
 
   useEffect(() => {
     onBlockingChange?.(blocksFormSubmit);

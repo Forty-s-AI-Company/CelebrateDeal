@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MediaUploadField, mediaUploadReducer, type MediaUploadState } from "./media-upload-field";
+import {
+  MediaUploadField,
+  mediaUploadPersistedValue,
+  mediaUploadReducer,
+  type MediaUploadState,
+} from "./media-upload-field";
 
 const baseState: MediaUploadState = {
   phase: "idle",
@@ -99,11 +104,27 @@ describe("mediaUploadReducer", () => {
     const completed = mediaUploadReducer(uploading, { type: "image-success", assetId: "asset-2", publicUrl: "https://media.example.test/new.webp" });
 
     expect(completed).toMatchObject({ phase: "success", progress: 100, assetId: "asset-2", remoteUrl: "https://media.example.test/new.webp" });
+    const persisted = mediaUploadPersistedValue(completed);
+    expect(persisted).toEqual({
+      url: "https://media.example.test/new.webp",
+      assetId: "asset-2",
+      resourceId: "",
+    });
+    expect(Object.keys(persisted)).toEqual(["url", "assetId", "resourceId"]);
   });
 
   it("removes an image reference but preserves the server-owned video resource id", () => {
-    expect(mediaUploadReducer(baseState, { type: "remove", kind: "image" })).toMatchObject({ remoteUrl: "", assetId: "" });
-    expect(mediaUploadReducer({ ...baseState, resourceId: "video-1" }, { type: "remove", kind: "video" }).resourceId).toBe("video-1");
+    const removedImage = mediaUploadReducer(baseState, { type: "remove", kind: "image" });
+    expect(removedImage).toMatchObject({ remoteUrl: "", assetId: "" });
+    expect(mediaUploadPersistedValue(removedImage)).toEqual({ url: "", assetId: "", resourceId: "" });
+
+    const removedVideo = mediaUploadReducer({ ...baseState, resourceId: "video-1" }, { type: "remove", kind: "video" });
+    expect(removedVideo.resourceId).toBe("video-1");
+    expect(mediaUploadPersistedValue(removedVideo)).toEqual({
+      url: baseState.remoteUrl,
+      assetId: baseState.assetId,
+      resourceId: "video-1",
+    });
   });
 
   it("switches from a provider asset to one external URL without retaining stale upload state", () => {
@@ -119,6 +140,11 @@ describe("mediaUploadReducer", () => {
       assetId: "",
       previewUrl: "",
       file: null,
+    });
+    expect(mediaUploadPersistedValue(changed)).toEqual({
+      url: "https://media.example.test/migrated.webp",
+      assetId: "",
+      resourceId: "",
     });
   });
 

@@ -12,6 +12,11 @@ export type RegistrationFormDraftValues = {
   description: string;
   submitLabel: string;
   successMessage: string;
+  heroImageUrl?: string | null;
+  heroImageAssetId?: string | null;
+  backgroundImageUrl?: string | null;
+  backgroundImageAssetId?: string | null;
+  promoVideoId?: string | null;
   themeColor?: string | null;
   countdownMinutes?: number | null;
   stickyText?: string | null;
@@ -44,6 +49,11 @@ const DraftEnvelope = z.object({
     description: z.string().max(5_000),
     submitLabel: z.string().max(80),
     successMessage: z.string().max(500),
+    heroImageUrl: z.string().max(2_048).nullable().default(null),
+    heroImageAssetId: z.string().max(128).nullable().default(null),
+    backgroundImageUrl: z.string().max(2_048).nullable().default(null),
+    backgroundImageAssetId: z.string().max(128).nullable().default(null),
+    promoVideoId: z.string().max(128).nullable().default(null),
     themeColor: z.string().regex(/^#[\da-fA-F]{6}$/).nullable().default(null),
     countdownMinutes: z.number().int().min(0).max(10_080).nullable().default(null),
     stickyText: z.string().max(300).nullable().default(null),
@@ -65,6 +75,11 @@ export function registrationFormDraftStorageKey(scope: string, formId?: string) 
 function draftValuesWithDefaults(values: RegistrationFormDraftValues) {
   return {
     ...values,
+    heroImageUrl: values.heroImageUrl ?? null,
+    heroImageAssetId: values.heroImageAssetId ?? null,
+    backgroundImageUrl: values.backgroundImageUrl ?? null,
+    backgroundImageAssetId: values.backgroundImageAssetId ?? null,
+    promoVideoId: values.promoVideoId ?? null,
     themeColor: values.themeColor ?? null,
     countdownMinutes: values.countdownMinutes ?? null,
     stickyText: values.stickyText ?? null,

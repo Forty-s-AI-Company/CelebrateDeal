@@ -4,6 +4,7 @@ import {
   registrationFormDraftMatches,
   registrationFormDraftStorageKey,
   serializeRegistrationFormDraft,
+  type RegistrationFormDraftValues,
 } from "./registration-form-draft";
 
 const fields = [
@@ -18,6 +19,11 @@ const values = {
   description: "活動說明",
   submitLabel: "送出",
   successMessage: "完成",
+  heroImageUrl: "https://media.example.test/hero.webp",
+  heroImageAssetId: "hero-asset-1",
+  backgroundImageUrl: "https://media.example.test/background.webp",
+  backgroundImageAssetId: "background-asset-1",
+  promoVideoId: "promo-video-1",
   themeColor: "#12aBc9",
   countdownMinutes: 120,
   stickyText: "直播限定",
@@ -90,6 +96,11 @@ describe("registration form draft", () => {
           notice: null,
           seoTitle: null,
           seoDescription: null,
+          heroImageUrl: null,
+          heroImageAssetId: null,
+          backgroundImageUrl: null,
+          backgroundImageAssetId: null,
+          promoVideoId: null,
           maxVisibleSessions: 0,
           hideExpiredSessions: true,
         },
@@ -108,6 +119,14 @@ describe("registration form draft", () => {
     const expected = { formId: "form-1", baseUpdatedAt: updatedAt };
 
     expect(parseRegistrationFormDraft(rawFor({ themeColor: "#12345" }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ heroImageUrl: "x".repeat(2_049) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ backgroundImageUrl: "x".repeat(2_049) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ heroImageAssetId: "x".repeat(129) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ backgroundImageAssetId: "x".repeat(129) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ promoVideoId: "x".repeat(129) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ heroImageUrl: 123 }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ backgroundImageAssetId: true }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ promoVideoId: ["video-1"] }), expected)).toEqual({ status: "invalid" });
     expect(parseRegistrationFormDraft(rawFor({ countdownMinutes: 10_081 }), expected)).toEqual({ status: "invalid" });
     expect(parseRegistrationFormDraft(rawFor({ stickyText: "x".repeat(301) }), expected)).toEqual({ status: "invalid" });
     expect(parseRegistrationFormDraft(rawFor({ bodyContent: "x".repeat(10_001) }), expected)).toEqual({ status: "invalid" });
@@ -122,5 +141,23 @@ describe("registration form draft", () => {
     const baseline = { values, fields };
     expect(registrationFormDraftMatches(baseline, baseline)).toBe(true);
     expect(registrationFormDraftMatches({ values: { ...values, headline: "新標題" }, fields }, baseline)).toBe(false);
+
+    const legacyValues = { ...values } as RegistrationFormDraftValues;
+    delete legacyValues.heroImageUrl;
+    delete legacyValues.heroImageAssetId;
+    delete legacyValues.backgroundImageUrl;
+    delete legacyValues.backgroundImageAssetId;
+    delete legacyValues.promoVideoId;
+    expect(registrationFormDraftMatches({ values: legacyValues, fields }, {
+      values: {
+        ...legacyValues,
+        heroImageUrl: null,
+        heroImageAssetId: null,
+        backgroundImageUrl: null,
+        backgroundImageAssetId: null,
+        promoVideoId: null,
+      },
+      fields,
+    })).toBe(true);
   });
 });
