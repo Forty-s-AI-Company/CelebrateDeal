@@ -19,6 +19,7 @@ function role(overrides: Partial<InteractionRole> = {}): InteractionRole {
     roleType: "ai_host",
     tone: "清楚、自然",
     isActive: true,
+    isSimulated: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,

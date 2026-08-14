@@ -122,6 +122,8 @@ model Vendor {
   liveStudioDrafts                 LiveStudioDraft[]
   emailDeliveries                  EmailDelivery[]
   liveReminderReconciliationJobs   LiveReminderReconciliationJob[]
+  liveChatMessages                 LiveChatMessage[]
+  liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
   supportCases                     SupportCase[]
   supportCaseEvents                SupportCaseEvent[]
@@ -283,9 +285,10 @@ model Video {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  vendor         Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  thumbnailAsset ImageAsset? @relation("VideoThumbnailImageAsset", fields: [vendorId, thumbnailAssetId], references: [vendorId, id], onDelete: Restrict)
-  lives          Live[]
+  vendor                      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  thumbnailAsset              ImageAsset?        @relation("VideoThumbnailImageAsset", fields: [vendorId, thumbnailAssetId], references: [vendorId, id], onDelete: Restrict)
+  lives                       Live[]
+  registrationFormPromoVideos RegistrationForm[] @relation("RegistrationFormPromoVideo")
 
   @@unique([vendorId, id])
   @@index([thumbnailAssetId])
@@ -334,22 +337,39 @@ model Product {
 }
 
 model RegistrationForm {
-  id             String   @id @default(cuid())
-  vendorId       String
-  name           String
-  slug           String   @unique
-  headline       String
-  description    String?
-  submitLabel    String   @default("送出報名")
-  fields         Json
-  successMessage String   @default("已收到你的資料，開播前會再提醒你。")
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  vendorId               String
+  name                   String
+  slug                   String   @unique
+  headline               String
+  description            String?
+  submitLabel            String   @default("送出報名")
+  fields                 Json
+  successMessage         String   @default("已收到你的資料，開播前會再提醒你。")
+  heroImageUrl           String?
+  heroImageAssetId       String?
+  backgroundImageUrl     String?
+  backgroundImageAssetId String?
+  promoVideoId           String?
+  themeColor             String?
+  countdownMinutes       Int?
+  stickyText             String?
+  bodyContent            String?
+  notice                 String?
+  seoTitle               String?
+  seoDescription         String?
+  maxVisibleSessions     Int      @default(0)
+  hideExpiredSessions    Boolean  @default(true)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  vendor      Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  submissions FormSubmission[]
-  lives       Live[]
+  vendor               Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  heroImageAsset       ImageAsset?      @relation("RegistrationFormHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
+  backgroundImageAsset ImageAsset?      @relation("RegistrationFormBackgroundImageAsset", fields: [vendorId, backgroundImageAssetId], references: [vendorId, id], onDelete: Restrict)
+  promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
+  submissions          FormSubmission[]
+  lives                Live[]
 
   @@unique([vendorId, id])
 }
@@ -374,7 +394,9 @@ model FormSubmission {
   live            Live?                @relation(fields: [liveId], references: [id], onDelete: SetNull)
   affiliateClick  AffiliateClick?      @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
   teamAttribution TeamLeadAttribution?
+  chatMessages    LiveChatMessage[]
 
+  @@unique([liveId, id])
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
@@ -386,54 +408,60 @@ enum FormSubmissionVerificationStatus {
 }
 
 model Live {
-  id                       String   @id @default(cuid())
-  vendorId                 String
-  videoId                  String?
-  formId                   String?
-  messageTemplateId        String?
-  liveReminderTemplateId   String?
-  liveReminderOffsetMinutes Int     @default(60)
-  interactionScriptId      String?
-  teamId                   String?
-  seminarOwnerMembershipId String?
-  title                    String
-  slug                     String   @unique
-  description              String?
-  scheduledAt              DateTime
-  status                   String   @default("draft")
-  heroImageUrl             String?
-  heroImageAssetId         String?
-  accentCopy               String?
-  replayEnabled            Boolean  @default(true)
-  streamMode               String   @default("vod")
-  cloudflareLiveInputUid   String?
-  quotaPolicy              Json?
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                        String    @id @default(cuid())
+  vendorId                  String
+  videoId                   String?
+  formId                    String?
+  messageTemplateId         String?
+  liveReminderTemplateId    String?
+  liveReminderOffsetMinutes Int       @default(60)
+  interactionScriptId       String?
+  teamId                    String?
+  seminarOwnerMembershipId  String?
+  title                     String
+  slug                      String    @unique
+  description               String?
+  scheduledAt               DateTime
+  status                    String    @default("draft")
+  startedAt                 DateTime?
+  endedAt                   DateTime?
+  replayAvailableUntil      DateTime?
+  heroImageUrl              String?
+  heroImageAssetId          String?
+  accentCopy                String?
+  replayEnabled             Boolean   @default(true)
+  streamMode                String    @default("vod")
+  cloudflareLiveInputUid    String?
+  quotaPolicy               Json?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  vendor                   Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  heroImageAsset           ImageAsset?                  @relation("LiveHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
-  video                    Video?                       @relation(fields: [videoId], references: [id], onDelete: SetNull)
-  form                     RegistrationForm?            @relation(fields: [formId], references: [id], onDelete: SetNull)
-  messageTemplate          MessageTemplate?             @relation("LiveRegistrationTemplate", fields: [messageTemplateId], references: [id], onDelete: SetNull)
-  liveReminderTemplate     MessageTemplate?             @relation("LiveReminderTemplate", fields: [vendorId, liveReminderTemplateId], references: [vendorId, id], onDelete: Restrict)
-  interactionScript        InteractionScript?           @relation(fields: [interactionScriptId], references: [id], onDelete: SetNull)
-  team                     SalesTeam?                   @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Restrict)
-  seminarOwner             TeamMembership?              @relation("LiveSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
-  products                 LiveProduct[]
-  submissions              FormSubmission[]
-  analytics                AnalyticsEvent[]
-  affiliateClicks          AffiliateClick[]
-  partnerFunnelPages       PartnerFunnelPage[]
-  partnerLiveShares        PartnerLiveShare[]
-  streamUsageLedgerEntries StreamUsageLedgerEntry[]
-  streamUsageAllocations   StreamUsageAllocationEntry[]
-  viewerSessions           LiveViewerSession[]
-  studioDrafts             LiveStudioDraft[]
+  vendor                     Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  heroImageAsset             ImageAsset?                     @relation("LiveHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
+  video                      Video?                          @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  form                       RegistrationForm?               @relation(fields: [formId], references: [id], onDelete: SetNull)
+  messageTemplate            MessageTemplate?                @relation("LiveRegistrationTemplate", fields: [messageTemplateId], references: [id], onDelete: SetNull)
+  liveReminderTemplate       MessageTemplate?                @relation("LiveReminderTemplate", fields: [vendorId, liveReminderTemplateId], references: [vendorId, id], onDelete: Restrict)
+  interactionScript          InteractionScript?              @relation(fields: [interactionScriptId], references: [id], onDelete: SetNull)
+  team                       SalesTeam?                      @relation(fields: [vendorId, teamId], references: [vendorId, id], onDelete: Restrict)
+  seminarOwner               TeamMembership?                 @relation("LiveSeminarOwner", fields: [teamId, seminarOwnerMembershipId], references: [teamId, id], onDelete: Restrict)
+  products                   LiveProduct[]
+  submissions                FormSubmission[]
+  analytics                  AnalyticsEvent[]
+  affiliateClicks            AffiliateClick[]
+  partnerFunnelPages         PartnerFunnelPage[]
+  partnerLiveShares          PartnerLiveShare[]
+  streamUsageLedgerEntries   StreamUsageLedgerEntry[]
+  streamUsageAllocations     StreamUsageAllocationEntry[]
+  viewerSessions             LiveViewerSession[]
+  studioDrafts               LiveStudioDraft[]
   reminderReconciliationJobs LiveReminderReconciliationJob[]
+  liveChatMessages           LiveChatMessage[]
+  notificationRules          LiveNotificationRule[]
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
+  @@index([vendorId, status, replayAvailableUntil])
 }
 
 /// Tenant-owned image upload metadata. Object keys are generated server-side
@@ -450,10 +478,12 @@ model ImageAsset {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  productImages   Product[] @relation("ProductImageAsset")
-  liveHeroImages  Live[]    @relation("LiveHeroImageAsset")
-  videoThumbnails Video[]   @relation("VideoThumbnailImageAsset")
+  vendor                           Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  productImages                    Product[]          @relation("ProductImageAsset")
+  liveHeroImages                   Live[]             @relation("LiveHeroImageAsset")
+  videoThumbnails                  Video[]            @relation("VideoThumbnailImageAsset")
+  registrationFormHeroImages       RegistrationForm[] @relation("RegistrationFormHeroImageAsset")
+  registrationFormBackgroundImages RegistrationForm[] @relation("RegistrationFormBackgroundImageAsset")
 
   @@unique([vendorId, id])
   @@index([vendorId, status, createdAt])
@@ -501,13 +531,15 @@ model LiveViewerSession {
 }
 
 model LiveProduct {
-  id         String  @id @default(cuid())
-  vendorId   String
-  liveId     String
-  productId  String
-  sortOrder  Int     @default(0)
-  offerLabel String?
-  isPinned   Boolean @default(false)
+  id              String  @id @default(cuid())
+  vendorId        String
+  liveId          String
+  productId       String
+  sortOrder       Int     @default(0)
+  offerLabel      String?
+  offerPriceCents Int?
+  isPinned        Boolean @default(false)
+  isVisible       Boolean @default(true)
 
   vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live    Live    @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
@@ -515,6 +547,7 @@ model LiveProduct {
 
   @@unique([vendorId, liveId, productId])
   @@index([vendorId, liveId, sortOrder])
+  @@index([vendorId, liveId, isVisible, sortOrder])
 }
 
 model MessageTemplate {
@@ -529,11 +562,56 @@ model MessageTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  vendor        Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  lives         Live[] @relation("LiveRegistrationTemplate")
-  reminderLives Live[] @relation("LiveReminderTemplate")
+  vendor            Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  lives             Live[]                 @relation("LiveRegistrationTemplate")
+  reminderLives     Live[]                 @relation("LiveReminderTemplate")
+  notificationRules LiveNotificationRule[] @relation("LiveNotificationRuleTemplate")
 
   @@unique([vendorId, id])
+}
+
+model LiveChatMessage {
+  id               String   @id @default(cuid())
+  vendorId         String
+  liveId           String
+  formSubmissionId String?
+  roleId           String?
+  authorName       String
+  body             String
+  source           String   @default("viewer")
+  status           String   @default("visible")
+  isSimulated      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  vendor         Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live           Live             @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission FormSubmission?  @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Restrict)
+  role           InteractionRole? @relation(fields: [vendorId, roleId], references: [vendorId, id], onDelete: Restrict)
+
+  @@index([vendorId, liveId, createdAt])
+  @@index([liveId, createdAt])
+  @@index([vendorId, formSubmissionId, createdAt])
+}
+
+model LiveNotificationRule {
+  id                String   @id @default(cuid())
+  vendorId          String
+  liveId            String
+  messageTemplateId String
+  trigger           String
+  offsetMinutes     Int      @default(0)
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vendor          Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live            Live            @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  messageTemplate MessageTemplate @relation("LiveNotificationRuleTemplate", fields: [vendorId, messageTemplateId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, liveId, trigger, offsetMinutes, sortOrder])
+  @@index([vendorId, liveId, trigger, isActive])
 }
 
 /// Immutable delivery snapshot. Recipient addresses are encrypted at rest;
@@ -577,7 +655,7 @@ model EmailDelivery {
 /// into line after a live reminder configuration changes. The config digest is
 /// immutable so a worker can fail closed when the live changes again mid-run.
 model LiveReminderReconciliationJob {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   vendorId              String
   liveId                String
   liveStatus            String
@@ -586,21 +664,21 @@ model LiveReminderReconciliationJob {
   templateRevision      String?
   scheduledAt           DateTime
   reminderOffsetMinutes Int
-  lifecycle             String   @default("pending")
+  lifecycle             String    @default("pending")
   cursorCreatedAt       DateTime?
   cursorId              String?
-  scannedCount          Int      @default(0)
-  scheduledCount        Int      @default(0)
-  supersededCount       Int      @default(0)
+  scannedCount          Int       @default(0)
+  scheduledCount        Int       @default(0)
+  supersededCount       Int       @default(0)
   claimedAt             DateTime?
-  attemptCount          Int      @default(0)
-  maxAttempts           Int      @default(5)
+  attemptCount          Int       @default(0)
+  maxAttempts           Int       @default(5)
   nextAttemptAt         DateTime?
   lastErrorCode         String?
   completedAt           DateTime?
   supersededAt          DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live   Live   @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
@@ -655,19 +733,23 @@ enum AnalyticsTrustLevel {
 }
 
 model InteractionRole {
-  id        String   @id @default(cuid())
-  vendorId  String
-  name      String
-  avatarUrl String?
-  label     String   @default("官方角色")
-  roleType  String   @default("official")
-  tone      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  vendorId    String
+  name        String
+  avatarUrl   String?
+  label       String   @default("官方角色")
+  roleType    String   @default("official")
+  tone        String?
+  isActive    Boolean  @default(true)
+  isSimulated Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  vendor Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  events InteractionEvent[]
+  vendor       Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  events       InteractionEvent[]
+  chatMessages LiveChatMessage[]
+
+  @@unique([vendorId, id])
 }
 
 model InteractionScript {
@@ -685,19 +767,20 @@ model InteractionScript {
 }
 
 model InteractionEvent {
-  id         String   @id @default(cuid())
-  scriptId   String
-  roleId     String?
-  eventType  String
-  triggerSec Int      @default(0)
-  title      String
-  message    String?
-  productId  String?
-  ctaLabel   String?
-  ctaUrl     String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(cuid())
+  scriptId    String
+  roleId      String?
+  eventType   String
+  triggerSec  Int      @default(0)
+  title       String
+  message     String?
+  productId   String?
+  ctaLabel    String?
+  ctaUrl      String?
+  metadata    Json?
+  isSimulated Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   script InteractionScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
   role   InteractionRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
@@ -1229,8 +1312,8 @@ model CommerceOrder {
   createdAt                   DateTime            @default(now())
   updatedAt                   DateTime            @updatedAt
 
-  vendor                    Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  primaryPaymentTransaction PaymentTransaction?      @relation("CommerceOrderPrimaryPayment", fields: [vendorId, primaryPaymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  vendor                    Vendor                              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  primaryPaymentTransaction PaymentTransaction?                 @relation("CommerceOrderPrimaryPayment", fields: [vendorId, primaryPaymentTransactionId], references: [vendorId, id], onDelete: Restrict)
   items                     CommerceOrderItem[]
   events                    CommerceOrderEvent[]
   refunds                   CommerceOrderRefund[]
@@ -1266,9 +1349,9 @@ model CommerceOrderItem {
   nonSensitiveSnapshot Json
   createdAt            DateTime                @default(now())
 
-  vendor              Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order               CommerceOrder        @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
-  product             Product?             @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  vendor              Vendor                             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order               CommerceOrder                      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+  product             Product?                           @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
   shippingFulfillment ShippingFulfillment?
   entitlement         CommerceEntitlement?
   serviceFulfillment  ServiceFulfillment?
@@ -1319,11 +1402,11 @@ model CommerceOrderRefund {
   occurredAt            DateTime
   createdAt             DateTime                  @default(now())
 
-  vendor             Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order              CommerceOrder         @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
-  paymentTransaction PaymentTransaction?   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
-  refundRecord       RefundRecord?         @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
-  supportHandoff     SupportRefundHandoff? @relation("SupportRefundCompletion")
+  vendor              Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order               CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+  paymentTransaction  PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  refundRecord        RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
+  supportHandoff      SupportRefundHandoff?        @relation("SupportRefundCompletion")
   supportHandoffLinks SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
 
   @@unique([vendorId, id])
@@ -1500,13 +1583,13 @@ model SupportRefundHandoff {
   createdAt               DateTime                   @default(now())
   updatedAt               DateTime                   @updatedAt
 
-  vendor             Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  supportCase        SupportCase          @relation(fields: [vendorId, supportCaseId], references: [vendorId, id], onDelete: Restrict)
-  order              CommerceOrder        @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
-  paymentTransaction PaymentTransaction   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
-  requestedBy        VendorMember         @relation("SupportRefundRequestedBy", fields: [vendorId, requestedByMemberId], references: [vendorId, id], onDelete: Restrict)
-  reviewedBy         User?                @relation("SupportRefundReviewedBy", fields: [reviewedByActorId], references: [id], onDelete: Restrict)
-  completedRefund    CommerceOrderRefund? @relation("SupportRefundCompletion", fields: [vendorId, orderId, completedRefundId], references: [vendorId, orderId, id], onDelete: Restrict)
+  vendor               Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  supportCase          SupportCase                  @relation(fields: [vendorId, supportCaseId], references: [vendorId, id], onDelete: Restrict)
+  order                CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
+  paymentTransaction   PaymentTransaction           @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  requestedBy          VendorMember                 @relation("SupportRefundRequestedBy", fields: [vendorId, requestedByMemberId], references: [vendorId, id], onDelete: Restrict)
+  reviewedBy           User?                        @relation("SupportRefundReviewedBy", fields: [reviewedByActorId], references: [id], onDelete: Restrict)
+  completedRefund      CommerceOrderRefund?         @relation("SupportRefundCompletion", fields: [vendorId, orderId, completedRefundId], references: [vendorId, orderId, id], onDelete: Restrict)
   completedRefundLinks SupportRefundHandoffRefund[] @relation("SupportRefundHandoffCompletionLinks")
 
   @@unique([vendorId, id])
@@ -1521,12 +1604,12 @@ model SupportRefundHandoff {
 /// Immutable, tenant/order-bound refund references used to prove that one or
 /// more processed canonical refunds exactly satisfy a support handoff.
 model SupportRefundHandoffRefund {
-  vendorId           String
-  handoffId          String
-  orderId            String
-  refundId           String
+  vendorId            String
+  handoffId           String
+  orderId             String
+  refundId            String
   amountCentsSnapshot Int
-  linkedAt           DateTime @default(now())
+  linkedAt            DateTime @default(now())
 
   handoff SupportRefundHandoff @relation("SupportRefundHandoffCompletionLinks", fields: [vendorId, handoffId], references: [vendorId, id], onDelete: Restrict)
   refund  CommerceOrderRefund  @relation("CommerceRefundHandoffLinks", fields: [vendorId, orderId, refundId], references: [vendorId, orderId, id], onDelete: Restrict)
@@ -1579,9 +1662,9 @@ model ProductDeliveryConfig {
   createdAt                     DateTime                    @default(now())
   updatedAt                     DateTime                    @updatedAt
 
-  vendor    Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  product   Product                         @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
-  allowlist VendorDeliveryUrlAllowlist?     @relation(fields: [vendorId, allowlistId], references: [vendorId, id], onDelete: Restrict)
+  vendor    Vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product   Product                     @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  allowlist VendorDeliveryUrlAllowlist? @relation(fields: [vendorId, allowlistId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@unique([vendorId, productId])
@@ -2324,7 +2407,7 @@ model StreamUsageLedgerEntry {
 /// Immutable provider-report comparison against the server-owned usage ledger.
 /// The source digest identifies a sanitized report, never a raw provider payload.
 model StreamUsageReconciliation {
-  id                     String                              @id @default(cuid())
+  id                     String                                @id @default(cuid())
   vendorId               String
   provider               String
   monthKey               String
@@ -2345,8 +2428,8 @@ model StreamUsageReconciliation {
   resolvedByActorId      String?
   resolvedByActorLabel   String?
   resolvedAt             DateTime?
-  createdAt              DateTime                            @default(now())
-  updatedAt              DateTime                            @updatedAt
+  createdAt              DateTime                              @default(now())
+  updatedAt              DateTime                              @updatedAt
 
   vendor Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   alerts StreamOperationsAlert[]
@@ -2360,25 +2443,25 @@ model StreamUsageReconciliation {
 /// Persistent operational alerts. Deduplication keys contain only server-owned
 /// identifiers, so retries do not create alert storms or persist provider data.
 model StreamOperationsAlert {
-  id                  String                      @id @default(cuid())
-  vendorId            String
-  type                StreamOperationsAlertType
-  status              StreamOperationsAlertStatus @default(OPEN)
-  dedupKey            String                      @unique
-  provider            String?
-  monthKey            String
-  severity            StreamOperationsAlertSeverity
-  message             String
-  reconciliationId    String?
-  metadata            Json?
+  id                       String                        @id @default(cuid())
+  vendorId                 String
+  type                     StreamOperationsAlertType
+  status                   StreamOperationsAlertStatus   @default(OPEN)
+  dedupKey                 String                        @unique
+  provider                 String?
+  monthKey                 String
+  severity                 StreamOperationsAlertSeverity
+  message                  String
+  reconciliationId         String?
+  metadata                 Json?
   acknowledgedByActorId    String?
   acknowledgedByActorLabel String?
   acknowledgedAt           DateTime?
   resolvedByActorId        String?
   resolvedByActorLabel     String?
   resolvedAt               DateTime?
-  createdAt                DateTime                    @default(now())
-  updatedAt                DateTime                    @updatedAt
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
 
   vendor         Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   reconciliation StreamUsageReconciliation? @relation(fields: [vendorId, reconciliationId], references: [vendorId, id], onDelete: Cascade)
