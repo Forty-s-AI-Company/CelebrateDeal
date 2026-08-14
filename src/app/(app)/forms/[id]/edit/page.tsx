@@ -14,12 +14,20 @@ export default async function EditFormPage({
   const vendor = await requireVendorManager();
   const { id } = await params;
   const { error } = await searchParams;
-  const form = await getDb().registrationForm.findFirst({ where: { id, vendorId: vendor.id } });
+  const db = getDb();
+  const [form, promoVideos] = await Promise.all([
+    db.registrationForm.findFirst({ where: { id, vendorId: vendor.id } }),
+    db.video.findMany({
+      where: { vendorId: vendor.id, status: "ready" },
+      select: { id: true, title: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   if (!form) notFound();
   return (
     <>
       <PageHeader title="編輯報名表" description="調整表單文案、欄位與送出後訊息。" />
-      <FormBuilder form={form} error={error} draftScope={vendor.id} />
+      <FormBuilder form={form} error={error} draftScope={vendor.id} promoVideos={promoVideos} />
     </>
   );
 }

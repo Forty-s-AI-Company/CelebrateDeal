@@ -40,6 +40,7 @@ export type MediaUploadPersistedValue = {
 };
 
 type UploadAction =
+  | { type: "hydrate"; url: string; assetId: string; resourceId: string }
   | { type: "select"; file: File; previewUrl: string }
   | { type: "phase"; phase: UploadPhase }
   | { type: "progress"; progress: number }
@@ -52,6 +53,20 @@ type UploadAction =
 
 export function mediaUploadReducer(state: MediaUploadState, action: UploadAction): MediaUploadState {
   switch (action.type) {
+    case "hydrate":
+      return {
+        ...state,
+        phase: "idle",
+        file: null,
+        previewUrl: "",
+        progress: 0,
+        errorCode: "",
+        remoteUrl: action.url,
+        assetId: action.assetId,
+        resourceId: action.resourceId,
+        resumableUploadUrl: "",
+        resumableUploadTicket: "",
+      };
     case "select":
       return {
         ...state,
@@ -131,6 +146,9 @@ type MediaUploadFieldProps = {
   onValueChange?: (value: MediaUploadPersistedValue) => void;
   statusInputName?: string;
   onBlockingChange?: (blocked: boolean) => void;
+  invalid?: boolean;
+  errorId?: string;
+  hydrationKey?: number;
 };
 
 export function mediaUploadPersistedValue(state: MediaUploadState): MediaUploadPersistedValue {
@@ -330,11 +348,15 @@ function ExternalImageUrlFallback({
   inputName,
   value,
   onChange,
+  invalid,
+  errorId,
 }: {
   enabled: boolean;
   inputName?: string;
   value: string;
   onChange: (value: string) => void;
+  invalid?: boolean;
+  errorId?: string;
 }) {
   if (!enabled || !inputName) return null;
 
@@ -342,7 +364,7 @@ function ExternalImageUrlFallback({
     <details className="rounded-lg border border-border bg-white p-3">
       <summary className="cursor-pointer text-sm font-semibold text-slate-700">進階：使用既有圖片 URL</summary>
       <label className="mt-3 grid gap-1.5 text-sm font-medium text-slate-700">圖片 URL
-        <input type="url" inputMode="url" autoComplete="url" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="https://..." />
+        <input type="url" inputMode="url" autoComplete="url" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} aria-describedby={invalid ? errorId : undefined} className="h-11 rounded-md border border-border px-3" placeholder="https://..." />
       </label>
       <p className="mt-2 text-xs text-slate-500">URL 僅保留給既有 CDN 或搬遷資料；一般使用請直接上傳。</p>
     </details>
@@ -358,6 +380,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<AbortController | null>(null);
   const persistedValueRef = useRef(mediaUploadPersistedValue(state));
+  const hydrationKeyRef = useRef(props.hydrationKey);
   const isBusy = ["provisioning", "uploading", "finalizing"].includes(state.phase);
   const blocksFormSubmit = Boolean(state.file) && state.phase !== "success";
   const previewUrl = state.previewUrl || (props.kind === "image" ? state.remoteUrl : "");
@@ -382,6 +405,23 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     onBlockingChange?.(blocksFormSubmit);
   }, [blocksFormSubmit, onBlockingChange]);
 
+  useEffect(() => {
+    if (hydrationKeyRef.current === props.hydrationKey) return;
+    hydrationKeyRef.current = props.hydrationKey;
+    const next = {
+      url: props.defaultUrl ?? "",
+      assetId: props.defaultAssetId ?? "",
+      resourceId: props.defaultResourceId ?? "",
+    };
+    const hasPendingLocalFile = Boolean(state.file) && state.phase !== "success";
+    if (isBusy || hasPendingLocalFile) return;
+    if (state.remoteUrl === next.url && state.assetId === next.assetId && state.resourceId === next.resourceId) return;
+
+    // 草稿恢復或父層重設時同步持久化值，但不覆蓋正在選檔或上傳中的工作。
+    persistedValueRef.current = next;
+    dispatch({ type: "hydrate", ...next });
+  }, [isBusy, props.defaultAssetId, props.defaultResourceId, props.defaultUrl, props.hydrationKey, state.assetId, state.file, state.phase, state.remoteUrl, state.resourceId]);
+
   function selectFile(file: File | undefined) {
     if (!file || isBusy) return;
     const validation = validateMediaFile(props.kind, file);
@@ -389,6 +429,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
       dispatch({ type: "error", code: validation });
       return;
     }
+    // 先同步通知父表單，避免 React effect 尚未執行時使用者立即送出表單。
+    onBlockingChange?.(true);
     dispatch({ type: "select", file, previewUrl: URL.createObjectURL(file) });
   }
 
@@ -442,6 +484,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   function removeSelection() {
     requestRef.current?.abort();
     if (inputRef.current) inputRef.current.value = "";
+    onBlockingChange?.(false);
     dispatch({ type: "remove", kind: props.kind });
   }
 
@@ -460,7 +503,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         tabIndex={isBusy ? -1 : 0}
         aria-disabled={isBusy}
         aria-labelledby={`${inputId}-label`}
-        aria-describedby={`${inputId}-description`}
+        aria-describedby={[`${inputId}-description`, props.errorId].filter(Boolean).join(" ")}
         onClick={() => !isBusy && inputRef.current?.click()}
         onKeyDown={(event) => {
           if (!isBusy && (event.key === "Enter" || event.key === " ")) {
@@ -488,6 +531,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         accept={props.kind === "image" ? "image/jpeg,image/png,image/webp,image/gif,image/avif" : "video/*"}
         className="sr-only"
         disabled={isBusy}
+        aria-invalid={props.invalid}
+        aria-describedby={[`${inputId}-description`, props.errorId].filter(Boolean).join(" ")}
         onChange={(event) => selectFile(event.target.files?.[0])}
       />
       <FilePreview kind={props.kind} url={previewUrl} fileName={state.file?.name ?? ""} />
@@ -512,6 +557,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         inputName={props.urlInputName}
         value={state.assetId ? "" : state.remoteUrl}
         onChange={(value) => dispatch({ type: "external-url", value })}
+        invalid={props.invalid}
+        errorId={props.errorId}
       />
     </div>
   );

@@ -52,6 +52,24 @@ describe("MediaUploadField", () => {
     expect(markup).toContain('aria-busy="false"');
   });
 
+  it("associates a server error with both image controls", () => {
+    const markup = renderToStaticMarkup(
+      <MediaUploadField
+        kind="image"
+        label="報名頁海報"
+        description="直接上傳主視覺。"
+        urlInputName="heroImageUrl"
+        allowExternalUrlFallback
+        invalid
+        errorId="form-hero-media-error"
+      />,
+    );
+
+    expect(markup).toContain('aria-invalid="true"');
+    expect(markup).toContain('aria-describedby="form-hero-media-error"');
+    expect(markup).toContain("description form-hero-media-error");
+  });
+
   it("keeps a legacy image URL preview and hidden value without showing a URL input by default", () => {
     const markup = renderToStaticMarkup(
       <form>
@@ -99,6 +117,36 @@ describe("MediaUploadField", () => {
 });
 
 describe("mediaUploadReducer", () => {
+  it("hydrates restored draft media and clears stale completed upload state", () => {
+    const restored = mediaUploadReducer(
+      {
+        ...baseState,
+        phase: "success",
+        file: { name: "old.webp" } as File,
+        previewUrl: "blob:old",
+      },
+      {
+        type: "hydrate",
+        url: "https://media.example.test/draft.webp",
+        assetId: "draft-asset",
+        resourceId: "",
+      },
+    );
+
+    expect(restored).toMatchObject({
+      phase: "idle",
+      file: null,
+      previewUrl: "",
+      remoteUrl: "https://media.example.test/draft.webp",
+      assetId: "draft-asset",
+    });
+    expect(mediaUploadPersistedValue(restored)).toEqual({
+      url: "https://media.example.test/draft.webp",
+      assetId: "draft-asset",
+      resourceId: "",
+    });
+  });
+
   it("tracks progress and binds a completed image asset", () => {
     const uploading = mediaUploadReducer(baseState, { type: "progress", progress: 42 });
     const completed = mediaUploadReducer(uploading, { type: "image-success", assetId: "asset-2", publicUrl: "https://media.example.test/new.webp" });

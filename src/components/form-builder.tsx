@@ -1,6 +1,6 @@
 import type { RegistrationForm } from "@prisma/client";
 import { CsrfField } from "@/components/csrf-field";
-import { FormBuilderClient, type FormBuilderValues } from "@/components/form-builder-client";
+import { FormBuilderClient, type FormBuilderValues, type FormPromoVideoOption } from "@/components/form-builder-client";
 import { Card } from "@/components/ui";
 import { defaultRegistrationFormBuilderFields } from "@/lib/registration-form-builder";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
@@ -12,6 +12,11 @@ const NEW_FORM_VALUES: FormBuilderValues = {
   description: "",
   submitLabel: "送出報名",
   successMessage: "已收到你的資料，開播前會再提醒你。",
+  heroImageUrl: null,
+  heroImageAssetId: null,
+  backgroundImageUrl: null,
+  backgroundImageAssetId: null,
+  promoVideoId: null,
   themeColor: null,
   countdownMinutes: null,
   stickyText: null,
@@ -24,6 +29,10 @@ const NEW_FORM_VALUES: FormBuilderValues = {
   isActive: true,
 };
 
+function nullableString(value: string | null | undefined) {
+  return value ?? null;
+}
+
 function formBuilderInitialValues(form?: RegistrationForm): FormBuilderValues {
   if (!form) return NEW_FORM_VALUES;
   return {
@@ -34,7 +43,12 @@ function formBuilderInitialValues(form?: RegistrationForm): FormBuilderValues {
     description: form.description ?? "",
     submitLabel: form.submitLabel,
     successMessage: form.successMessage,
-    themeColor: form.themeColor,
+    heroImageUrl: nullableString(form.heroImageUrl),
+    heroImageAssetId: nullableString(form.heroImageAssetId),
+    backgroundImageUrl: nullableString(form.backgroundImageUrl),
+    backgroundImageAssetId: nullableString(form.backgroundImageAssetId),
+    promoVideoId: nullableString(form.promoVideoId),
+    themeColor: nullableString(form.themeColor),
     countdownMinutes: form.countdownMinutes,
     stickyText: form.stickyText,
     bodyContent: form.bodyContent,
@@ -51,10 +65,12 @@ export function FormBuilder({
   form,
   error,
   draftScope,
+  promoVideos = [],
 }: {
   form?: RegistrationForm;
   error?: string;
   draftScope: string;
+  promoVideos?: FormPromoVideoOption[];
 }) {
   const defaultFields = defaultRegistrationFormBuilderFields();
   const parsedFields = parseRegistrationFormFields(form?.fields ?? defaultFields);
@@ -67,6 +83,7 @@ export function FormBuilder({
         legacyFieldsInvalid={Boolean(form && !parsedFields.success)}
         legacyRouteError={error}
         draftScope={draftScope}
+        promoVideos={promoVideos}
         initialUpdatedAt={form?.updatedAt.toISOString() ?? null}
         csrfField={<CsrfField />}
       />

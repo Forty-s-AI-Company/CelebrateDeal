@@ -1,12 +1,13 @@
 "use client";
 
 import { Plus, RotateCcw, Save } from "lucide-react";
-import { useActionState, useState, type ReactNode } from "react";
+import { useActionState, useCallback, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   upsertFormBuilderAction,
   type FormBuilderActionState,
 } from "@/app/actions/form-actions";
 import { FormFieldEditor, registrationFormFieldTypeLabel } from "@/components/form-field-editor";
+import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import { FormPreview } from "@/components/form-preview";
 import { useRegistrationFormDraft } from "@/components/use-registration-form-draft";
 import {
@@ -26,6 +27,11 @@ export type FormBuilderValues = {
   description: string;
   submitLabel: string;
   successMessage: string;
+  heroImageUrl: string | null;
+  heroImageAssetId: string | null;
+  backgroundImageUrl: string | null;
+  backgroundImageAssetId: string | null;
+  promoVideoId: string | null;
   themeColor: string | null;
   countdownMinutes: number | null;
   stickyText: string | null;
@@ -37,6 +43,8 @@ export type FormBuilderValues = {
   hideExpiredSessions: boolean;
   isActive: boolean;
 };
+
+export type FormPromoVideoOption = { id: string; title: string };
 
 type RemovedField = { field: RegistrationFormBuilderField; index: number };
 
@@ -91,6 +99,11 @@ type UpdateFormValue = <Key extends keyof FormBuilderValues>(key: Key, value: Fo
 function normalizeFormBuilderValues(values: FormBuilderValues | Parameters<Parameters<typeof useRegistrationFormDraft>[0]["onRestore"]>[0]["values"]): FormBuilderValues {
   return {
     ...values,
+    heroImageUrl: values.heroImageUrl ?? null,
+    heroImageAssetId: values.heroImageAssetId ?? null,
+    backgroundImageUrl: values.backgroundImageUrl ?? null,
+    backgroundImageAssetId: values.backgroundImageAssetId ?? null,
+    promoVideoId: values.promoVideoId ?? null,
     themeColor: values.themeColor ?? null,
     countdownMinutes: values.countdownMinutes ?? null,
     stickyText: values.stickyText ?? null,
@@ -101,6 +114,96 @@ function normalizeFormBuilderValues(values: FormBuilderValues | Parameters<Param
     maxVisibleSessions: values.maxVisibleSessions ?? 0,
     hideExpiredSessions: values.hideExpiredSessions ?? true,
   };
+}
+
+function mediaValue(value: MediaUploadPersistedValue) {
+  return { url: value.url || null, assetId: value.assetId || null };
+}
+
+function FormBuilderMediaSettings({
+  values,
+  errors,
+  hydrationKey,
+  promoVideos,
+  updateValue,
+  onHeroBlockingChange,
+  onBackgroundBlockingChange,
+}: {
+  values: FormBuilderValues;
+  errors: FormBuilderErrors;
+  hydrationKey: number;
+  promoVideos: FormPromoVideoOption[];
+  updateValue: UpdateFormValue;
+  onHeroBlockingChange: (blocked: boolean) => void;
+  onBackgroundBlockingChange: (blocked: boolean) => void;
+}) {
+  return (
+    <div className="mt-6 grid gap-4 border-t border-slate-200 pt-5">
+      <h3 className="text-base font-semibold text-slate-900">海報、背景與宣傳影片</h3>
+      <div className="grid gap-1.5">
+        <MediaUploadField
+          kind="image"
+          label="報名頁海報"
+          description="直接拖拉或選擇主視覺；完成後會立即預覽。"
+          defaultUrl={values.heroImageUrl}
+          defaultAssetId={values.heroImageAssetId}
+          urlInputName="heroImageUrl"
+          assetIdInputName="heroImageAssetId"
+          statusInputName="heroImageUploadPhase"
+          allowExternalUrlFallback
+          invalid={Boolean(errors.heroImageAssetId ?? errors.heroImageUrl)}
+          errorId="form-hero-media-error"
+          hydrationKey={hydrationKey}
+          onValueChange={(value) => {
+            const next = mediaValue(value);
+            updateValue("heroImageUrl", next.url);
+            updateValue("heroImageAssetId", next.assetId);
+          }}
+          onBlockingChange={onHeroBlockingChange}
+        />
+        <InlineError id="form-hero-media-error" message={errors.heroImageAssetId ?? errors.heroImageUrl} />
+      </div>
+      <div className="grid gap-1.5">
+        <MediaUploadField
+          kind="image"
+          label="報名頁背景"
+          description="上傳頁面背景圖；文字仍會放在可閱讀的內容卡片上。"
+          defaultUrl={values.backgroundImageUrl}
+          defaultAssetId={values.backgroundImageAssetId}
+          urlInputName="backgroundImageUrl"
+          assetIdInputName="backgroundImageAssetId"
+          statusInputName="backgroundImageUploadPhase"
+          allowExternalUrlFallback
+          invalid={Boolean(errors.backgroundImageAssetId ?? errors.backgroundImageUrl)}
+          errorId="form-background-media-error"
+          hydrationKey={hydrationKey}
+          onValueChange={(value) => {
+            const next = mediaValue(value);
+            updateValue("backgroundImageUrl", next.url);
+            updateValue("backgroundImageAssetId", next.assetId);
+          }}
+          onBlockingChange={onBackgroundBlockingChange}
+        />
+        <InlineError id="form-background-media-error" message={errors.backgroundImageAssetId ?? errors.backgroundImageUrl} />
+      </div>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        宣傳影片
+        <select
+          name="promoVideoId"
+          value={values.promoVideoId ?? ""}
+          onChange={(event) => updateValue("promoVideoId", event.target.value || null)}
+          aria-invalid={Boolean(errors.promoVideoId)}
+          aria-describedby={errors.promoVideoId ? "form-promo-video-error" : "form-promo-video-help"}
+          className={inputClass}
+        >
+          <option value="">不顯示宣傳影片</option>
+          {promoVideos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
+        </select>
+        <span id="form-promo-video-help" className="text-xs font-normal text-slate-500">只列出目前商家已可播放的影片。</span>
+        <InlineError id="form-promo-video-error" message={errors.promoVideoId} />
+      </label>
+    </div>
+  );
 }
 
 function FormBuilderPublicSettings({
@@ -211,6 +314,7 @@ export function FormBuilderClient({
   draftScope,
   initialUpdatedAt,
   csrfField,
+  promoVideos,
 }: {
   values: FormBuilderValues;
   initialFields: RegistrationFormBuilderField[];
@@ -219,6 +323,7 @@ export function FormBuilderClient({
   draftScope: string;
   initialUpdatedAt: string | null;
   csrfField: ReactNode;
+  promoVideos: FormPromoVideoOption[];
 }) {
   const initialActionState: FormBuilderActionState = legacyRouteError === "invalid_fields"
     ? { status: "error", message: "先前的欄位設定無法儲存；請確認下方欄位後再試一次。" }
@@ -230,8 +335,13 @@ export function FormBuilderClient({
   const [legacyNeedsReset, setLegacyNeedsReset] = useState(legacyFieldsInvalid);
   const [removed, setRemoved] = useState<RemovedField | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [heroMediaBlocked, setHeroMediaBlocked] = useState(false);
+  const [backgroundMediaBlocked, setBackgroundMediaBlocked] = useState(false);
+  const [mediaHydrationKey, setMediaHydrationKey] = useState(0);
+  const mediaBlockingRef = useRef({ hero: false, background: false });
   const errors = actionState.fieldErrors ?? {};
   const controlsDisabled = pending || legacyNeedsReset;
+  const mediaBlocked = heroMediaBlocked || backgroundMediaBlocked;
   const draft = useRegistrationFormDraft({
     draftScope,
     initialUpdatedAt,
@@ -243,6 +353,7 @@ export function FormBuilderClient({
     onRestore: (restored) => {
       setValues(normalizeFormBuilderValues(restored.values));
       setFields(restored.fields);
+      setMediaHydrationKey((current) => current + 1);
       setRemoved(null);
       setAnnouncement("已恢復尚未儲存的表單草稿。");
     },
@@ -250,6 +361,25 @@ export function FormBuilderClient({
 
   function updateValue<Key extends keyof FormBuilderValues>(key: Key, value: FormBuilderValues[Key]) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  const onHeroBlockingChange = useCallback((blocked: boolean) => {
+    mediaBlockingRef.current.hero = blocked;
+    setHeroMediaBlocked(blocked);
+  }, []);
+
+  const onBackgroundBlockingChange = useCallback((blocked: boolean) => {
+    mediaBlockingRef.current.background = blocked;
+    setBackgroundMediaBlocked(blocked);
+  }, []);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (mediaBlockingRef.current.hero || mediaBlockingRef.current.background) {
+      event.preventDefault();
+      setAnnouncement("請先完成圖片上傳，或移除尚未上傳的檔案。");
+      return;
+    }
+    draft.clearForSubmission();
   }
 
   function addField() {
@@ -287,7 +417,7 @@ export function FormBuilderClient({
   }
 
   return (
-    <form action={formAction} onSubmit={draft.clearForSubmission} aria-busy={pending} className="grid gap-6">
+    <form action={formAction} onSubmit={handleSubmit} aria-busy={pending} className="grid gap-6">
       {csrfField}
       {values.id ? <input type="hidden" name="id" value={values.id} /> : null}
       {values.id && initialUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={initialUpdatedAt} /> : null}
@@ -358,6 +488,15 @@ export function FormBuilderClient({
                 <InlineError id="form-description-error" message={errors.description} />
               </label>
             </div>
+            <FormBuilderMediaSettings
+              values={values}
+              errors={errors}
+              hydrationKey={mediaHydrationKey}
+              promoVideos={promoVideos}
+              updateValue={updateValue}
+              onHeroBlockingChange={onHeroBlockingChange}
+              onBackgroundBlockingChange={onBackgroundBlockingChange}
+            />
             <FormBuilderPublicSettings values={values} errors={errors} updateValue={updateValue} />
           </section>
 
@@ -437,6 +576,7 @@ export function FormBuilderClient({
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">{announcement}{pending ? "正在儲存表單，請勿重複送出。" : ""}</p>
+      {mediaBlocked ? <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">請先完成圖片上傳，或移除尚未上傳的檔案。</p> : null}
       {errors.root ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-800">{errors.root}</p> : null}
       <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
         <div className="text-xs text-slate-500">
@@ -445,7 +585,7 @@ export function FormBuilderClient({
             {formDraftStatusMessage(draft.saveStatus)}
           </p>
         </div>
-        <button type="submit" disabled={pending || legacyNeedsReset} aria-disabled={pending || legacyNeedsReset} aria-busy={pending} className="inline-flex min-h-11 min-w-36 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="submit" disabled={pending || legacyNeedsReset || mediaBlocked} aria-disabled={pending || legacyNeedsReset || mediaBlocked} aria-busy={pending} className="inline-flex min-h-11 min-w-36 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
           <Save size={16} aria-hidden="true" />{pending ? "儲存中…" : "儲存表單"}
         </button>
       </div>
