@@ -12,6 +12,15 @@ export type RegistrationFormDraftValues = {
   description: string;
   submitLabel: string;
   successMessage: string;
+  themeColor?: string | null;
+  countdownMinutes?: number | null;
+  stickyText?: string | null;
+  bodyContent?: string | null;
+  notice?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  maxVisibleSessions?: number;
+  hideExpiredSessions?: boolean;
   isActive: boolean;
 };
 
@@ -35,6 +44,15 @@ const DraftEnvelope = z.object({
     description: z.string().max(5_000),
     submitLabel: z.string().max(80),
     successMessage: z.string().max(500),
+    themeColor: z.string().regex(/^#[\da-fA-F]{6}$/).nullable().default(null),
+    countdownMinutes: z.number().int().min(0).max(10_080).nullable().default(null),
+    stickyText: z.string().max(300).nullable().default(null),
+    bodyContent: z.string().max(10_000).nullable().default(null),
+    notice: z.string().max(1_000).nullable().default(null),
+    seoTitle: z.string().max(200).nullable().default(null),
+    seoDescription: z.string().max(500).nullable().default(null),
+    maxVisibleSessions: z.number().int().min(0).max(99).default(0),
+    hideExpiredSessions: z.boolean().default(true),
     isActive: z.boolean(),
   }).strict(),
   fields: z.unknown(),
@@ -42,6 +60,21 @@ const DraftEnvelope = z.object({
 
 export function registrationFormDraftStorageKey(scope: string, formId?: string) {
   return `celebratedeal:registration-form-draft:v1:${encodeURIComponent(scope)}:${encodeURIComponent(formId ?? "new")}`;
+}
+
+function draftValuesWithDefaults(values: RegistrationFormDraftValues) {
+  return {
+    ...values,
+    themeColor: values.themeColor ?? null,
+    countdownMinutes: values.countdownMinutes ?? null,
+    stickyText: values.stickyText ?? null,
+    bodyContent: values.bodyContent ?? null,
+    notice: values.notice ?? null,
+    seoTitle: values.seoTitle ?? null,
+    seoDescription: values.seoDescription ?? null,
+    maxVisibleSessions: values.maxVisibleSessions ?? 0,
+    hideExpiredSessions: values.hideExpiredSessions ?? true,
+  };
 }
 
 export function serializeRegistrationFormDraft(input: {
@@ -54,7 +87,7 @@ export function serializeRegistrationFormDraft(input: {
     version: 1,
     baseUpdatedAt: input.baseUpdatedAt,
     savedAt: input.savedAt ?? new Date().toISOString(),
-    values: input.values,
+    values: draftValuesWithDefaults(input.values),
     fields: input.fields,
   } satisfies RegistrationFormDraft);
 }
@@ -93,5 +126,6 @@ export function registrationFormDraftMatches(input: {
   values: RegistrationFormDraftValues;
   fields: RegistrationFormFieldSpec[];
 }) {
-  return JSON.stringify(input) === JSON.stringify(baseline);
+  return JSON.stringify({ ...input, values: draftValuesWithDefaults(input.values) })
+    === JSON.stringify({ ...baseline, values: draftValuesWithDefaults(baseline.values) });
 }

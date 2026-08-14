@@ -18,6 +18,15 @@ const values = {
   description: "活動說明",
   submitLabel: "送出",
   successMessage: "完成",
+  themeColor: "#12aBc9",
+  countdownMinutes: 120,
+  stickyText: "直播限定",
+  bodyContent: "活動內文",
+  notice: "注意事項",
+  seoTitle: "SEO 標題",
+  seoDescription: "SEO 說明",
+  maxVisibleSessions: 3,
+  hideExpiredSessions: false,
   isActive: true,
 };
 const updatedAt = "2026-08-10T01:02:03.000Z";
@@ -49,6 +58,64 @@ describe("registration form draft", () => {
     expect(parseRegistrationFormDraft(raw, { formId: "form-2", baseUpdatedAt: updatedAt })).toEqual({ status: "invalid" });
     expect(parseRegistrationFormDraft("{broken", { formId: "form-1", baseUpdatedAt: updatedAt })).toEqual({ status: "invalid" });
     expect(parseRegistrationFormDraft(JSON.stringify({ ...JSON.parse(raw), fields: fields.slice(1) }), { formId: "form-1", baseUpdatedAt: updatedAt })).toEqual({ status: "invalid" });
+  });
+
+  it("restores schema defaults when a legacy draft omits the new values", () => {
+    const raw = JSON.stringify({
+      version: 1,
+      baseUpdatedAt: updatedAt,
+      savedAt: "2026-08-10T02:00:00.000Z",
+      values: {
+        id: values.id,
+        name: values.name,
+        slug: values.slug,
+        headline: values.headline,
+        description: values.description,
+        submitLabel: values.submitLabel,
+        successMessage: values.successMessage,
+        isActive: values.isActive,
+      },
+      fields,
+    });
+
+    expect(parseRegistrationFormDraft(raw, { formId: "form-1", baseUpdatedAt: updatedAt })).toEqual({
+      status: "ready",
+      draft: expect.objectContaining({
+        values: {
+          ...values,
+          themeColor: null,
+          countdownMinutes: null,
+          stickyText: null,
+          bodyContent: null,
+          notice: null,
+          seoTitle: null,
+          seoDescription: null,
+          maxVisibleSessions: 0,
+          hideExpiredSessions: true,
+        },
+      }),
+    });
+  });
+
+  it("rejects invalid new draft boundaries instead of restoring them", () => {
+    const rawFor = (overrides: Record<string, unknown>) => JSON.stringify({
+      version: 1,
+      baseUpdatedAt: updatedAt,
+      savedAt: "2026-08-10T02:00:00.000Z",
+      values: { ...values, ...overrides },
+      fields,
+    });
+    const expected = { formId: "form-1", baseUpdatedAt: updatedAt };
+
+    expect(parseRegistrationFormDraft(rawFor({ themeColor: "#12345" }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ countdownMinutes: 10_081 }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ stickyText: "x".repeat(301) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ bodyContent: "x".repeat(10_001) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ notice: "x".repeat(1_001) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ seoTitle: "x".repeat(201) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ seoDescription: "x".repeat(501) }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ maxVisibleSessions: 100 }), expected)).toEqual({ status: "invalid" });
+    expect(parseRegistrationFormDraft(rawFor({ hideExpiredSessions: "true" }), expected)).toEqual({ status: "invalid" });
   });
 
   it("detects whether the merchant has changed values or fields", () => {
