@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   registrationForm: { findUnique: vi.fn() },
-  live: { findFirst: vi.fn() },
+  live: { findFirst: vi.fn(), findMany: vi.fn() },
   blacklist: { findFirst: vi.fn() },
   formSubmission: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
   analyticsEvent: { create: vi.fn() },
@@ -61,6 +61,8 @@ beforeEach(() => {
     id: "form-1",
     vendorId: "vendor-1",
     isActive: true,
+    hideExpiredSessions: true,
+    maxVisibleSessions: 1,
     vendor: { name: "測試商家" },
     fields: [
       { key: "name", label: "姓名", type: "text", required: true },
@@ -95,6 +97,7 @@ beforeEach(() => {
     vendor: { name: "測試商家" },
     messageTemplate: null,
   });
+  db.live.findMany.mockResolvedValue([]);
   db.teamMembership.findMany.mockResolvedValue([]);
   db.teamMembershipRelationship.findMany.mockResolvedValue([]);
   db.teamLeadAttribution.upsert.mockResolvedValue({ id: "attribution-1" });
@@ -174,6 +177,82 @@ describe("team lead attribution", () => {
     });
     expect(db.analyticsEvent.create).not.toHaveBeenCalled();
     expect(JSON.stringify(db.analyticsEvent.create.mock.calls)).not.toContain("lead@example.test");
+  });
+
+  it("requires a selected live id when the public form has visible sessions, regardless of maxVisibleSessions", async () => {
+    db.live.findMany.mockResolvedValue([
+      { status: "live", scheduledAt: new Date(Date.now() + 60 * 60 * 1_000) },
+      { status: "scheduled", scheduledAt: new Date(Date.now() + 2 * 60 * 60 * 1_000) },
+    ]);
+
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      payload: { name: "Lead", email: "lead@example.test" },
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Live session selection required" });
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+    expect(db.live.findMany).toHaveBeenCalledWith({
+      where: {
+        formId: "form-1",
+        vendorId: "vendor-1",
+        OR: [
+          { status: { in: ["scheduled", "live"] } },
+          { status: "ended", replayEnabled: true },
+        ],
+      },
+      select: { scheduledAt: true, status: true },
+    });
+  });
+
+  it("keeps ordinary registration when the public form has no visible sessions", async () => {
+    db.live.findMany.mockResolvedValue([]);
+
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      payload: { name: "Lead", email: "lead@example.test" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.formSubmission.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ liveId: null, source: "form" }),
+    }));
+  });
+
+  it("does not require a live id for a stale scheduled session hidden by the form", async () => {
+    db.live.findMany.mockResolvedValue([
+      { status: "scheduled", scheduledAt: new Date(Date.now() - 60 * 60 * 1_000) },
+    ]);
+
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      payload: { name: "Lead", email: "lead@example.test" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.formSubmission.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ liveId: null, source: "form" }),
+    }));
+  });
+
+  it.each([
+    ["forged", null],
+    ["expired replay", null],
+    ["cross-tenant", null],
+  ])("continues rejecting a %s direct live id through the existing lifecycle and tenant gate", async (_label, live) => {
+    db.live.findFirst.mockResolvedValue(live);
+
+    const response = await POST(jsonRequest({
+      formId: "form-1",
+      liveId: "live-forged",
+      payload: { name: "Lead", email: "lead@example.test" },
+    }));
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Live not found" });
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+    expect(db.live.findMany).not.toHaveBeenCalled();
   });
 
   it("queues one encrypted ownership-verification Email before confirmation", async () => {

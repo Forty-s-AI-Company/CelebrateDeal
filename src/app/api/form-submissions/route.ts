@@ -26,6 +26,10 @@ import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers
 import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
+import {
+  hasPublicRegistrationSession,
+  publicRegistrationSessionWhere,
+} from "@/lib/public-registration-form";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -128,12 +132,7 @@ async function loadFormLiveQuotaPolicy({
   const live = await getDb().live.findFirst({
     where: {
       id: liveId,
-      vendorId,
-      formId,
-      OR: [
-        { status: { in: ["scheduled", "live"] } },
-        { status: "ended", replayEnabled: true },
-      ],
+      ...publicRegistrationSessionWhere(formId, vendorId),
     },
     select: {
       id: true,
@@ -163,6 +162,25 @@ async function loadFormLiveQuotaPolicy({
       template: live.messageTemplate,
     },
   } : { found: false, quotaPolicy: null as unknown, notification: null };
+}
+
+async function hasVisiblePublicRegistrationSession({
+  formId,
+  vendorId,
+  hideExpiredSessions,
+}: {
+  formId: string;
+  vendorId: string;
+  hideExpiredSessions: boolean;
+}) {
+  const sessions = await getDb().live.findMany({
+    where: publicRegistrationSessionWhere(formId, vendorId),
+    select: { scheduledAt: true, status: true },
+  });
+  return hasPublicRegistrationSession(sessions, {
+    now: new Date(),
+    hideExpiredSessions,
+  });
 }
 
 type VerifiableSubmission = {
@@ -295,10 +313,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
   }
 
+  const submittedLiveId = parsed.data.liveId ?? null;
+  if (!submittedLiveId) {
+    const hasVisibleSession = await hasVisiblePublicRegistrationSession({
+      formId: form.id,
+      vendorId: form.vendorId,
+      hideExpiredSessions: form.hideExpiredSessions,
+    });
+    if (hasVisibleSession) {
+      return NextResponse.json({ error: "Live session selection required" }, { status: 400 });
+    }
+  }
+
   const liveContext = await loadFormLiveQuotaPolicy({
     formId: form.id,
     vendorId: form.vendorId,
-    liveId: parsed.data.liveId ?? null,
+    liveId: submittedLiveId,
   });
   if (!liveContext.found) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
@@ -320,7 +350,7 @@ export async function POST(request: Request) {
   }
 
   const duplicate = await getDb().formSubmission.findFirst({
-    where: { formId: form.id, liveId: parsed.data.liveId ?? null, email },
+    where: { formId: form.id, liveId: submittedLiveId, email },
     select: {
       id: true,
       name: true,
@@ -335,7 +365,7 @@ export async function POST(request: Request) {
   const { referral, attribution, liveShareCode } = await resolveSubmissionAttribution({
     request,
     vendorId: form.vendorId,
-    liveId: parsed.data.liveId ?? null,
+    liveId: submittedLiveId,
     referralCode: parsed.data.referralCode,
     liveShareCode: parsed.data.shareCode,
     liveQuotaPolicy: liveContext.quotaPolicy,
@@ -356,7 +386,7 @@ export async function POST(request: Request) {
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
   }
 
-  const submissionId = stableSubmissionId(parsed.data.formId, parsed.data.liveId ?? null, email);
+  const submissionId = stableSubmissionId(parsed.data.formId, submittedLiveId, email);
   const normalizedAnswers = {
     ...normalizedFieldAnswers.data,
     name,
@@ -370,11 +400,11 @@ export async function POST(request: Request) {
       data: {
         id: submissionId,
         formId: parsed.data.formId,
-        liveId: parsed.data.liveId ?? null,
+        liveId: submittedLiveId,
         name,
         email,
         phone,
-        source: parsed.data.liveId ? "live" : "form",
+        source: submittedLiveId ? "live" : "form",
         answers: normalizedAnswers as Prisma.InputJsonValue,
         verificationStatus: "UNVERIFIED",
         verificationVersion: 1,

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { buildFormSubmissionRequestBody, formSubmissionErrorMessage, LeadForm } from "./lead-form";
+
+import { buildFormSubmissionRequestBody, formSubmissionErrorMessage, getSubmittedLiveId, LeadForm } from "./lead-form";
 
 describe("LeadForm", () => {
   it("renders supported field types with mobile keyboards and accessible async state", () => {
@@ -26,6 +27,36 @@ describe("LeadForm", () => {
     expect(html).toContain('inputMode="url"');
     expect(html).toContain('aria-busy="false"');
     expect(html).toContain('role="status"');
+  });
+
+  it("renders required public sessions without a hidden live id", () => {
+    const html = renderToStaticMarkup(
+      <LeadForm
+        formId="form-1"
+        fields={[{ key: "name", label: "姓名", required: true }]}
+        sessions={[
+          { id: "live-1", title: "第一場", description: "說明", scheduledAt: "2026-08-20T01:00:00.000Z", status: "scheduled" },
+          { id: "live-2", title: "回放場", description: null, scheduledAt: "2026-08-19T01:00:00.000Z", status: "ended" },
+        ]}
+        submitLabel="送出報名"
+        successMessage="完成"
+      />,
+    );
+
+    expect((html.match(/name="liveId"/g) ?? []).length).toBe(2);
+    expect(html).toContain('value="live-1"');
+    expect(html).toContain('value="live-2"');
+    expect(html).not.toContain('type="hidden" name="liveId"');
+    expect(html).toContain("回放場");
+  });
+
+  it("takes a selected live id from FormData and falls back to direct live links", () => {
+    const selected = new FormData();
+    selected.set("liveId", "selected-live");
+    expect(getSubmittedLiveId(selected, "direct-live")).toBe("selected-live");
+
+    const direct = new FormData();
+    expect(getSubmittedLiveId(direct, "direct-live")).toBe("direct-live");
   });
 
   it("maps server and network failures to actionable messages without exposing internals", () => {
