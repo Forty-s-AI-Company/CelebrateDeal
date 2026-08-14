@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "c6fa0b7a5a7861ed",
+  "startedAt": "2026-08-08T04:42:50.472Z",
+  "finishedAt": "2026-08-08T04:45:03.624Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 1,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toHaveAttribute(expected) failed",
+          "Locator: locator('meta[name=\"robots\"]')",
+          "Expected pattern: /noindex/u",
+          "Error: strict mode violation: locator('meta[name=\"robots\"]') resolved to 2 elements:",
+          "1) <meta name=\"robots\" content=\"noindex\"/> aka locator('meta[name=\"robots\"]').first()",
+          "2) <meta name=\"robots\" content=\"noindex\"/> aka locator('meta[name=\"robots\"]').nth(1)",
+          "Call log:",
+          "- Expect \"toHaveAttribute\" with timeout 15000ms",
+          "- waiting for locator('meta[name=\"robots\"]')",
+          "Error: expect(locator).toHaveAttribute(expected) failed",
+          "Locator: locator('meta[name=\"robots\"]')",
+          "Expected pattern: /noindex/u"
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

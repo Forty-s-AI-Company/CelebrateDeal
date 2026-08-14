@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "5e5cd7bb0629caa3",
+  "startedAt": "2026-08-08T04:46:11.336Z",
+  "finishedAt": "2026-08-08T04:48:25.171Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 1,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toHaveText(expected) failed",
+          "Locator: getByRole('status')",
+          "Expected: \"履約狀態已更新。\"",
+          "Error: strict mode violation: getByRole('status') resolved to 2 elements:",
+          "1) <p role=\"status\" class=\"rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800\">履約狀態已更新。</p> aka getByText('履約狀態已更新。')",
+          "2) <span role=\"status\" class=\"sr-only\" aria-live=\"polite\"></span> aka getByRole('region', { name: '商品與履約' }).getByRole('status')",
+          "Call log:",
+          "- Expect \"toHaveText\" with timeout 15000ms",
+          "- waiting for getByRole('status')",
+          "Error: expect(locator).toHaveText(expected) failed",
+          "Locator: getByRole('status')",
+          "Expected: \"履約狀態已更新。\""
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

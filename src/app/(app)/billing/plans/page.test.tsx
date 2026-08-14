@@ -6,16 +6,22 @@ const mocks = vi.hoisted(() => ({
   subscriptionFindFirst: vi.fn(),
   requireVendorFinance: vi.fn(),
   getCsrfToken: vi.fn(),
+  paymentTransactionFindFirst: vi.fn(),
+  platformReferralClickFindUnique: vi.fn(),
+  cookies: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     billingPlan: { findMany: mocks.findMany },
     vendorSubscription: { findFirst: mocks.subscriptionFindFirst },
+    paymentTransaction: { findFirst: mocks.paymentTransactionFindFirst },
+    platformReferralClick: { findUnique: mocks.platformReferralClickFindUnique },
   }),
 }));
 vi.mock("@/lib/auth", () => ({ requireVendorFinance: mocks.requireVendorFinance }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
+vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 
 import BillingPlansPage from "./page";
 
@@ -37,6 +43,7 @@ const plans = [
     overflowWatchHourPriceCents: 500,
     overflowEventUnitPriceCents: 1000,
     overflowAffiliateUnitPriceCents: 200,
+    overflowStorageMinutePriceCents: 3,
   },
   {
     id: "plan-retired",
@@ -55,6 +62,7 @@ const plans = [
     overflowWatchHourPriceCents: 300,
     overflowEventUnitPriceCents: 800,
     overflowAffiliateUnitPriceCents: 100,
+    overflowStorageMinutePriceCents: 2,
   },
 ];
 
@@ -64,6 +72,9 @@ beforeEach(() => {
     plans.filter((plan) => !query.where?.isActive || plan.isActive),
   );
   mocks.subscriptionFindFirst.mockResolvedValue(null);
+  mocks.paymentTransactionFindFirst.mockResolvedValue(null);
+  mocks.platformReferralClickFindUnique.mockResolvedValue(null);
+  mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.getCsrfToken.mockResolvedValue("csrf-test-token");
   mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-current" },
@@ -73,7 +84,7 @@ beforeEach(() => {
 
 describe("/billing/plans route", () => {
   it("queries only active billing plans", async () => {
-    await BillingPlansPage();
+    await BillingPlansPage({});
 
     expect(mocks.findMany).toHaveBeenCalledWith({
       where: { isActive: true },
@@ -87,7 +98,7 @@ describe("/billing/plans route", () => {
   });
 
   it("renders active plans while preserving their prices and quotas", async () => {
-    const html = renderToStaticMarkup(await BillingPlansPage());
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
 
     expect(html).toContain("可用方案");
     expect(html).toContain("仍可購買的方案");
@@ -101,7 +112,10 @@ describe("/billing/plans route", () => {
     expect(html).toContain("選擇方案");
     expect(html).toContain('name="planId" value="plan-active"');
     expect(html).toContain('name="_csrf" value="csrf-test-token"');
-    expect(html).toContain("月底月結後付");
+    expect(html).toContain("pending 交易");
+    expect(html).toContain("Stream 包含額度用完後會暫停新播放");
+    expect(html).toContain("未啟用自動超額扣款");
+    expect(html).toContain("儲存每 100 分鐘 $3");
   });
 
   it("marks the active subscription and does not render another purchase action", async () => {
@@ -111,7 +125,7 @@ describe("/billing/plans route", () => {
       plan: plans[0],
     });
 
-    const html = renderToStaticMarkup(await BillingPlansPage());
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
 
     expect(html).toContain("目前方案");
     expect(html).not.toContain("變更方案");
@@ -123,7 +137,7 @@ describe("/billing/plans route", () => {
       member: { id: "member-accountant", role: "accountant", status: "active" },
     });
 
-    const html = renderToStaticMarkup(await BillingPlansPage());
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
 
     expect(html).toContain("可用方案");
     expect(html).toContain("僅限商店擁有者異動");
@@ -138,8 +152,31 @@ describe("/billing/plans route", () => {
     const errorHtml = renderToStaticMarkup(await BillingPlansPage({
       searchParams: Promise.resolve({ error: "unavailable" }),
     }));
+    const providerHtml = renderToStaticMarkup(await BillingPlansPage({
+      searchParams: Promise.resolve({ error: "provider_not_configured" }),
+    }));
 
     expect(successHtml).toContain("方案已更新");
     expect(errorHtml).toContain("方案不存在或已停止銷售");
+    expect(providerHtml).toContain("平台付款服務尚未完成設定");
+  });
+
+  it("shows a server-validated readonly platform referrer and carries it into checkout", async () => {
+    mocks.cookies.mockResolvedValue({ get: () => ({ value: "click-platform-1" }) });
+    mocks.platformReferralClickFindUnique.mockResolvedValue({
+      id: "click-platform-1",
+      expiresAt: new Date(Date.now() + 60_000),
+      referralCode: { code: "AFF-A001", isActive: true, owner: { name: "王小明" } },
+    });
+
+    const html = renderToStaticMarkup(await BillingPlansPage({
+      searchParams: Promise.resolve({ referral: "1" }),
+    }));
+
+    expect(html).toContain("推薦人 ID");
+    expect(html).toContain("AFF-A001");
+    expect(html).toContain("王小明");
+    expect(html).toContain("已記錄");
+    expect(html).toContain('name="platformReferralClickId" value="click-platform-1"');
   });
 });

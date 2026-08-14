@@ -191,8 +191,8 @@ function buildEnvironment(tempRoot) {
     SENTRY_DISABLE_AUTO_UPLOAD: "true",
     NPM_CONFIG_OFFLINE: "true",
     NPM_CONFIG_UPDATE_NOTIFIER: "false",
-    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp137_typegen",
-    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp137_typegen",
+    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp137_test",
+    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp137_test",
     NEXT_PUBLIC_APP_URL: "http://127.0.0.1:32137",
     PAYMENT_PROVIDER: "demo",
     RATE_LIMIT_PROVIDER: "memory",
@@ -296,6 +296,8 @@ export function classifySyntheticLineage(input) {
 export function isAllowedOutcome(classification) {
   return allowedOutcomeSet.has(classification);
 }
+
+export { cleanupTemp, copyTree, digestFile, isForbiddenMirrorPath, normalizeRelativePath, pathSegments, sanitizeInventory };
 
 export function runAudit() {
   const startedAt = new Date().toISOString();

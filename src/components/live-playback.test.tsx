@@ -38,9 +38,11 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("@/lib/client-analytics", () => ({ trackClientAnalytics: vi.fn() }));
+vi.mock("@/lib/stream-usage-client", () => ({ postStreamUsageHeartbeat: vi.fn() }));
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
-import { getLiveStatusLabel, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, submitCheckout } from "./live-playback";
+import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
+import { affiliateClickEndpoint, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -103,7 +105,27 @@ function checkoutErrors(tree: unknown) {
 }
 
 describe("LivePlayback checkout", () => {
+  it("removes the bearer Live share from the browser URL while preserving safe navigation state", () => {
+    expect(stripLiveShareFromUrl("https://app.example.test/live/webinar?share=tls1.fixture&ref=ignored#form"))
+      .toBe("/live/webinar?ref=ignored#form");
+  });
+  it("builds a source-page-aware affiliate click endpoint", () => {
+    expect(affiliateClickEndpoint("partner b")).toBe("/api/affiliate-clicks?sourcePage=partner+b");
+    expect(affiliateClickEndpoint(null)).toBe("/api/affiliate-clicks");
+  });
+
+  it.each([
+    ["", true],
+    ["?utm_source=direct", true],
+    ["?ref=EDEN10", false],
+    ["?sourcePage=partner-page", false],
+    ["?ref=&sourcePage=", true],
+  ])("classifies %s as direct-entry attribution=%s", (search, expected) => {
+    expect(shouldResetAffiliateAttribution(search)).toBe(expected);
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -167,6 +189,211 @@ describe("LivePlayback checkout", () => {
     expect(isHlsPlaybackUrl("not-a-url")).toBe(false);
   });
 
+  it("does not expose a playable source before server admission", () => {
+    const tree = renderLive({ admissionRequired: true, videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+
+    expect(video?.props.src).toBeUndefined();
+    expect(video?.props.controls).toBe(false);
+    expect(video?.props.src).toBeUndefined();
+  });
+
+  it("flushes validated playback seconds with the shared page lineage", async () => {
+    vi.stubGlobal("window", {
+      location: { search: "?sourcePage=partner-page" },
+      localStorage: {},
+    });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000001") });
+    vi.mocked(postStreamUsageHeartbeat).mockResolvedValue("recorded");
+
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
+    for (let currentTime = 1; currentTime <= 60; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({
+        currentTarget: { currentTime },
+      });
+    }
+
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledWith(
+      {
+        vendorId: live.vendorId,
+        liveId: live.id,
+        sourcePageSlug: "partner-page",
+        eventId: "00000000-0000-4000-8000-000000000001",
+        watchSeconds: 60,
+      },
+      fetch,
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("stops controls and exposes an accessible recovery message when Stream quota is exhausted", async () => {
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+    });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000002") });
+    vi.mocked(postStreamUsageHeartbeat).mockResolvedValue("quota_exhausted");
+
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    let video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+
+    const pause = vi.fn();
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number; pause: () => void } }) => void)({
+      currentTarget: { currentTime: 0, pause },
+    });
+    for (let currentTime = 1; currentTime <= 60; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number; pause: () => void } }) => void)({
+        currentTarget: { currentTime, pause },
+      });
+    }
+    await vi.waitFor(() => expect(postStreamUsageHeartbeat).toHaveBeenCalledOnce());
+    await Promise.resolve();
+
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    video = findElements(tree, (element) => element.type === "video")[0];
+    const quotaAlertComponent = findElements(tree, (element) => (
+      typeof element.type === "function" && element.type.name === "StreamQuotaAlert"
+    ))[0];
+    if (!quotaAlertComponent || typeof quotaAlertComponent.type !== "function") {
+      throw new Error("Expected Stream quota alert component");
+    }
+    const alerts = findElements(quotaAlertComponent.type({}), (element) => element.props.role === "alert");
+
+    expect(video).toBeUndefined();
+    expect(alerts.map((alert) => textContent(alert))).toContain(
+      "直播播放額度已用完播放已暫停。請聯絡主辦人調整直播額度，完成後再重新整理頁面。",
+    );
+
+  });
+
+  it("retries one ambiguous usage batch with the same event identity and does not show the quota alert", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+    });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000003") });
+    vi.mocked(postStreamUsageHeartbeat)
+      .mockResolvedValueOnce("retryable_failure")
+      .mockResolvedValueOnce("retryable_failure")
+      .mockResolvedValueOnce("recorded");
+
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
+    for (let currentTime = 1; currentTime <= 60; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({
+        currentTarget: { currentTime },
+      });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000003", 0) ?? 0);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000003", 1) ?? 0);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(3);
+
+    const payloads = vi.mocked(postStreamUsageHeartbeat).mock.calls.map(([payload]) => payload);
+    expect(payloads).toEqual([
+      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000003", watchSeconds: 60 }),
+      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000003", watchSeconds: 60 }),
+      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000003", watchSeconds: 60 }),
+    ]);
+    expect(crypto.randomUUID).toHaveBeenCalledOnce();
+
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    expect(findElements(tree, (element) => element.props.role === "alert")).toHaveLength(0);
+    expect(findElements(tree, (element) => element.type === "video")[0]?.props.controls).toBe(true);
+  });
+
+  it("bounds automatic retries and does not turn progress events into a request storm", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+    });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000004") });
+    vi.mocked(postStreamUsageHeartbeat).mockResolvedValue("retryable_failure");
+
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
+    for (let currentTime = 1; currentTime <= 60; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime } });
+    }
+
+    await vi.runAllTimersAsync();
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(1 + STREAM_USAGE_RETRY_DELAYS_MS.length);
+    for (let currentTime = 61; currentTime <= 120; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime } });
+    }
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(1 + STREAM_USAGE_RETRY_DELAYS_MS.length);
+    expect(crypto.randomUUID).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the retry schedule when a later attempt confirms quota exhaustion", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+    });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000005") });
+    vi.mocked(postStreamUsageHeartbeat)
+      .mockResolvedValueOnce("retryable_failure")
+      .mockResolvedValueOnce("quota_exhausted");
+
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
+    for (let currentTime = 1; currentTime <= 60; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime } });
+    }
+
+    await vi.advanceTimersByTimeAsync(getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000005", 0) ?? 0);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledTimes(2);
+    expect(crypto.randomUUID).toHaveBeenCalledOnce();
+
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    expect(findElements(tree, (element) => (
+      typeof element.type === "function" && element.type.name === "StreamQuotaAlert"
+    ))).toHaveLength(1);
+    expect(findElements(tree, (element) => element.type === "video")).toHaveLength(0);
+  });
+
+  it("adds stable event-derived jitter while keeping every retry within its bounded window", () => {
+    const firstViewer = STREAM_USAGE_RETRY_DELAYS_MS.map((_delay, attempt) => (
+      getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000006", attempt)
+    ));
+    const secondViewer = STREAM_USAGE_RETRY_DELAYS_MS.map((_delay, attempt) => (
+      getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000007", attempt)
+    ));
+
+    expect(firstViewer).toEqual(STREAM_USAGE_RETRY_DELAYS_MS.map((base, attempt) => (
+      getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000006", attempt)
+    )));
+    firstViewer.forEach((delay, attempt) => {
+      const base = STREAM_USAGE_RETRY_DELAYS_MS[attempt];
+      expect(delay).not.toBeNull();
+      expect(delay).toBeGreaterThanOrEqual(base);
+      expect(delay).toBeLessThanOrEqual(base + Math.floor(base * 0.25));
+    });
+    expect(firstViewer).not.toEqual(secondViewer);
+    expect(getStreamUsageRetryDelayMs("00000000-0000-4000-8000-000000000006", 3)).toBeNull();
+  });
+
   it.each([
     ["scheduled", "即將直播"],
     ["live", "直播中"],
@@ -187,6 +414,18 @@ describe("LivePlayback checkout", () => {
     ))[0];
 
     expect(productButton?.props["aria-controls"]).toBe("live-playback-panel");
+  });
+
+  it("shows a non-submittable recovery state for an invalid registration schema", () => {
+    let tree = renderLive({ form: null, formConfigurationUnavailable: true });
+    const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    expect(navigation).toBeDefined();
+    (navigation!.props.onPanelChange as (panel: "form") => void)("form");
+
+    tree = renderLive({ form: null, formConfigurationUnavailable: true });
+    const alerts = findElements(tree, (element) => element.props.role === "alert");
+
+    expect(alerts.map((alert) => textContent(alert))).toContain("報名表欄位需要商家重新確認，目前暫停接收資料。");
   });
 
   it.each(["javascript:alert(1)", "data:text/html,unsafe", "//attacker.example.test/path"])(
@@ -239,7 +478,7 @@ describe("LivePlayback checkout", () => {
     let tree = renderLive({ interactionEvents });
     const ctaButton = findElements(
       tree,
-      (element) => element.type === "button" && textContent(element.props.children) === "立即了解",
+      (element) => element.type === "button" && element.props["aria-label"] === "商家預設腳本導購：立即了解",
     )[0];
     if (!ctaButton) throw new Error("Expected timed CTA button");
     await (ctaButton.props.onClick as () => Promise<void>)();
@@ -249,99 +488,133 @@ describe("LivePlayback checkout", () => {
     expect(textContent(checkoutErrors(tree)[0]?.props.children)).toBe("目前無法開啟這個連結，請稍後再試。");
   });
 
-  it("does not navigate to the external product checkout URL when the checkout API fails", async () => {
-    const productCheckoutUrl = "https://shop.example.test/external-product-checkout";
+  it("labels merchant-configured interaction roles, product spotlights, and CTAs truthfully", () => {
+    const interactionEvents = [
+      {
+        id: "test-fixture-chat",
+        eventType: "chat_message",
+        triggerSec: 0,
+        title: "歡迎",
+        message: "歡迎來到直播",
+        productId: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        role: { name: "直播小編", avatarUrl: null, label: "官方角色", roleType: "official" },
+      },
+      {
+        id: "test-fixture-product",
+        eventType: "product_spotlight",
+        triggerSec: 0,
+        title: "商品聚焦",
+        message: null,
+        productId: "test-fixture-product-2",
+        ctaLabel: null,
+        ctaUrl: null,
+        role: null,
+      },
+      {
+        id: "test-fixture-cta",
+        eventType: "cta_switch",
+        triggerSec: 0,
+        title: "看活動",
+        message: null,
+        productId: null,
+        ctaLabel: "查看活動",
+        ctaUrl: "https://shop.example.test/deal",
+        role: null,
+      },
+    ];
+
+    const tree = renderLive({ interactionEvents });
+    const pageCopy = textContent(tree);
+    const scriptedLog = findElements(tree, (element) => element.props.role === "log")[0];
+
+    expect(pageCopy).toContain("官方互動為商家預先設定的腳本");
+    expect(pageCopy).toContain("不代表即時真人留言、真實購買或觀看人數");
+    expect(pageCopy).toContain("腳本推薦");
+    expect(pageCopy).toContain("預設腳本");
+    expect(pageCopy).toContain("商家腳本");
+    expect(scriptedLog?.props["aria-label"]).toBe("商家預設互動腳本");
+    expect(scriptedLog?.props["aria-live"]).toBe("polite");
+  });
+
+  it("does not label a different live product as a scripted recommendation when the spotlight target is stale", () => {
+    const interactionEvents = [{
+      id: "test-fixture-stale-product",
+      eventType: "product_spotlight",
+      triggerSec: 0,
+      title: "失效商品聚焦",
+      message: null,
+      productId: "product-not-in-live",
+      ctaLabel: null,
+      ctaUrl: null,
+      role: null,
+    }];
+
+    const pageCopy = textContent(renderLive({ interactionEvents }));
+
+    expect(pageCopy).toContain("主打商品");
+    expect(pageCopy).toContain("測試商品一");
+    expect(pageCopy).not.toContain("腳本推薦");
+  });
+
+  it("does not imply that a script will appear when the live has no interaction events", () => {
+    const pageCopy = textContent(renderLive({ interactionEvents: [] }));
+
+    expect(pageCopy).toContain("目前沒有商家預設互動腳本");
+    expect(pageCopy).toContain("這場直播目前沒有設定互動腳本");
+    expect(pageCopy).not.toContain("播放到指定秒數後，商家預先設定的互動腳本會出現在這裡");
+  });
+
+  it("builds an encoded same-origin checkout route and rejects missing identities", () => {
+    expect(checkoutPagePath("vendor 123", "product/123")).toBe("/checkout/vendor%20123/product%2F123");
+    expect(checkoutPagePath("", "product-123")).toBeNull();
+    expect(checkoutPagePath("vendor-123", "   ")).toBeNull();
+  });
+
+  it("routes purchase intent to the local buyer-details page without calling the payment API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
 
     await expect(requestCheckout({
       vendorId: "vendor-123",
       productId: "product-123",
-      referralCode: null,
-    })).resolves.toBe(false);
+    })).resolves.toBe(true);
 
-    expect(fetch).toHaveBeenCalledWith("/api/payments/checkout", expect.objectContaining({ method: "POST" }));
-    expect(window.location.href).toBe("https://app.example.test/live/demo");
-    expect(window.location.href).not.toBe(productCheckoutUrl);
+    expect(window.location.href).toBe("/checkout/vendor-123/product-123");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not navigate when a successful checkout API response has no provider action", async () => {
-    const productCheckoutUrl = "https://shop.example.test/external-product-checkout";
+  it("routes an external-checkout product to its validated merchant URL", async () => {
     vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({}),
-    }));
+    await expect(requestCheckout({ vendorId: "vendor-123", productId: "product-123", checkoutUrl: "https://merchant.example.test/buy" })).resolves.toBe(true);
+    expect(window.location.href).toBe("https://merchant.example.test/buy");
+  });
 
-    await expect(requestCheckout({
-      vendorId: "vendor-123",
-      productId: "product-123",
-      referralCode: null,
-    })).resolves.toBe(false);
+  it("does not navigate or call payment when a checkout identity is incomplete", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
+
+    await expect(requestCheckout({ vendorId: "vendor-123", productId: "" })).resolves.toBe(false);
 
     expect(window.location.href).toBe("https://app.example.test/live/demo");
-    expect(window.location.href).not.toBe(productCheckoutUrl);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("shows a generic Traditional Chinese error when checkout fails or has no provider redirect action", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce({ ok: false })
-      .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({}) }));
-
-    await (checkoutButtons(renderLive())[0].props.onClick as () => Promise<void>)();
-    let errors = checkoutErrors(renderLive());
-    expect(errors).toHaveLength(1);
-    expect(textContent(errors[0].props.children)).toBe("目前無法完成結帳，請稍後再試。");
-    expect(textContent(errors[0].props.children)).not.toContain("PayUni");
-    expect(textContent(errors[0].props.children)).not.toContain("Error");
-
-    await (checkoutButtons(renderLive())[0].props.onClick as () => Promise<void>)();
-    errors = checkoutErrors(renderLive());
-    expect(errors).toHaveLength(1);
-    expect(textContent(errors[0].props.children)).toBe("目前無法完成結帳，請稍後再試。");
-  });
-
-  it("clears a previous checkout error as soon as the user retries", async () => {
-    let resolveCheckout: ((response: { ok: boolean }) => void) | undefined;
-    const pendingResponse = new Promise<{ ok: boolean }>((resolve) => {
-      resolveCheckout = resolve;
+  it("disables every purchase button during local navigation and prevents a second navigation", async () => {
+    let assignedHref = "https://app.example.test/live/demo";
+    let assignmentCount = 0;
+    vi.stubGlobal("window", {
+      location: {
+        search: "",
+        pathname: "/live/demo",
+        get href() { return assignedHref; },
+        set href(value: string) { assignedHref = value; assignmentCount += 1; },
+      },
+      localStorage: {},
     });
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce({ ok: false })
-      .mockReturnValueOnce(pendingResponse));
-
-    let tree = renderLive();
-    await (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
-    expect(checkoutErrors(renderLive())).toHaveLength(1);
-
-    tree = renderLive();
-    const retry = (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
-    expect(checkoutErrors(renderLive())).toHaveLength(0);
-
-    resolveCheckout?.({ ok: false });
-    await retry;
-  });
-
-  it("does not show a checkout error when the provider redirect starts successfully", async () => {
-    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.example.test/redirect" }),
-    }));
-
-    const tree = renderLive();
-    await (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
-
-    expect(window.location.href).toBe("https://checkout.example.test/redirect");
-    expect(checkoutErrors(renderLive())).toHaveLength(0);
-  });
-
-  it("disables every checkout button while a checkout request is pending and prevents a second request", async () => {
-    let resolveCheckout: ((response: { ok: boolean }) => void) | undefined;
-    const checkoutResponse = new Promise<{ ok: boolean }>((resolve) => {
-      resolveCheckout = resolve;
-    });
-    vi.stubGlobal("fetch", vi.fn().mockReturnValue(checkoutResponse));
 
     let tree = renderLive();
     const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
@@ -353,18 +626,17 @@ describe("LivePlayback checkout", () => {
     expect(initialButtons).toHaveLength(3);
     const firstCheckout = initialButtons[0].props.onClick as () => Promise<void>;
     const secondCheckout = initialButtons[1].props.onClick as () => Promise<void>;
-    const pendingCheckout = firstCheckout();
+    const pendingNavigation = firstCheckout();
 
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(assignedHref).toBe("/checkout/test-fixture-vendor-1/test-fixture-product-1");
+    expect(assignmentCount).toBe(1);
     expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
 
     await secondCheckout();
-    expect(fetch).toHaveBeenCalledOnce();
-
-    expect(resolveCheckout).toBeDefined();
-    resolveCheckout?.({ ok: false });
-    await pendingCheckout;
+    expect(assignmentCount).toBe(1);
+    await pendingNavigation;
 
     expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === false)).toBe(true);
+    expect(checkoutErrors(renderLive())).toHaveLength(0);
   });
 });

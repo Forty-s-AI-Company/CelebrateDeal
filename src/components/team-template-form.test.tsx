@@ -175,7 +175,7 @@ describe("TeamTemplateForm", () => {
     expect(textContent(findElement(form, (candidate) => textContent(candidate.props.children).includes("發布會建立下一個不可變版本"))?.props.children)).toContain("發布會建立下一個不可變版本");
   });
 
-  it("requires confirmation for publish and lets create submissions pass through", () => {
+  it("submits create and publish without a client confirmation blocker", () => {
     const globalScope = globalThis as Record<string, unknown>;
     const previousWindow = globalScope.window;
     const confirm = vi.fn(() => false);
@@ -183,20 +183,11 @@ describe("TeamTemplateForm", () => {
 
     try {
       const publishForm = formElement(renderForm({ template: { id: "template-2", teamId: "team-1" } }));
-      const blocked = { preventDefault: vi.fn() };
-      (publishForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
-      expect(confirm).toHaveBeenCalledWith("確定要發布新的不可變版本？既有夥伴副本不會被覆寫。");
-      expect(blocked.preventDefault).toHaveBeenCalledTimes(1);
-
-      confirm.mockReturnValue(true);
-      const allowed = { preventDefault: vi.fn() };
-      (publishForm.props.onSubmit as (event: typeof allowed) => void)(allowed);
-      expect(allowed.preventDefault).not.toHaveBeenCalled();
-
       const createForm = formElement(renderForm());
-      const createSubmit = { preventDefault: vi.fn() };
-      (createForm.props.onSubmit as (event: typeof createSubmit) => void)(createSubmit);
-      expect(createSubmit.preventDefault).not.toHaveBeenCalled();
+
+      expect(publishForm.props.onSubmit).toBeUndefined();
+      expect(createForm.props.onSubmit).toBeUndefined();
+      expect(confirm).not.toHaveBeenCalled();
     } finally {
       if (previousWindow === undefined) delete globalScope.window;
       else globalScope.window = previousWindow;
@@ -212,16 +203,23 @@ describe("TeamTemplateForm", () => {
 
     hookState.actionState = { status: "error", message: "模板資料無效" };
     const errorForm = formElement(renderForm());
-    const errorStatus = findElement(errorForm, (candidate) => candidate.props.role === "status");
+    const errorStatus = findElement(errorForm, (candidate) => candidate.props.role === "alert");
     expect(textContent(errorStatus?.props.children)).toBe("模板資料無效");
     expect(errorStatus?.props.className).toContain("red");
 
     hookState.actionState = null;
     hookState.pending = true;
     const pendingForm = formElement(renderForm());
-    const submit = findElement(pendingForm, (candidate) => textContent(candidate.props.children) === "儲存中…");
+    const submit = findElement(pendingForm, (candidate) => textContent(candidate.props.children) === "建立中…");
     expect(submit?.props.disabled).toBe(true);
-    expect(textContent(submit?.props.children)).toBe("儲存中…");
+    expect(submit?.props["aria-disabled"]).toBe(true);
+    expect(submit?.props["aria-busy"]).toBe(true);
+    expect(pendingForm.props["aria-busy"]).toBe(true);
+    expect(textContent(submit?.props.children)).toBe("建立中…");
+    expect(textContent(findElement(pendingForm, (candidate) => candidate.props.role === "status" && candidate.props.className === "sr-only")?.props.children)).toContain("正在建立團隊原始頁");
+
+    const publishingForm = formElement(renderForm({ template: { id: "template-2", teamId: "team-1" } }));
+    expect(textContent(findElement(publishingForm, (candidate) => candidate.type === "button" && candidate.props.type === "submit")?.props.children)).toBe("發布中…");
   });
 
   it("inserts a dynamic field at the active selection and safely handles missing targets", () => {

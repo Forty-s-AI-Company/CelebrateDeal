@@ -66,7 +66,10 @@ describe("form submission database invariants", () => {
     const bodies = await Promise.all(responses.map((response) => response.json()));
 
     expect(responses.map((response) => response.status)).toEqual([200, 200]);
-    expect(bodies.filter((body) => body.duplicate === true)).toHaveLength(1);
+    expect(bodies).toEqual([
+      { ok: true, verificationRequired: true },
+      { ok: true, verificationRequired: true },
+    ]);
     expect(await getDb().formSubmission.count({
       where: {
         formId: form.id,

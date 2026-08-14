@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   CLASSIFICATIONS,
   ROLES,
   classifyAstRoleFixture,
   classifyReferenceMetadata,
+  cleanupTemp,
+  copyTree,
+  digestFile,
+  isForbiddenMirrorPath,
   isAllowedOutcome,
+  normalizeRelativePath,
+  pathSegments,
   resolveCanonicalSourcePath,
 } from "./wp138-generated-target-reference-resolver.mjs";
 
@@ -93,4 +103,33 @@ test("rejects reference collections with the wrong cardinality or unknown role",
     classification: CLASSIFICATIONS.UNKNOWN_FAIL_CLOSED,
     subreason: "REFERENCE_ROLE_UNKNOWN",
   });
+});
+
+test("WP138 path policy is normalized, route-relative and fail-closed", () => {
+  assert.equal(normalizeRelativePath("./src\\app//api/route.ts/"), "src/app/api/route.ts");
+  assert.deepEqual(pathSegments("SRC\\App\\Route.ts"), ["src", "app", "route.ts"]);
+  assert.equal(isForbiddenMirrorPath("src/app/api/route.ts"), false);
+  assert.equal(isForbiddenMirrorPath(".next/types/validator.ts"), true);
+  assert.equal(isForbiddenMirrorPath("node_modules/typescript/index.d.ts"), true);
+  assert.equal(isForbiddenMirrorPath("src/.env.test"), true);
+});
+
+test("WP138 copyTree and cleanup preserve only safe generated-input candidates", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp138-copy-"));
+  const source = path.join(root, "source");
+  const target = path.join(root, "target");
+  try {
+    await fsp.mkdir(path.join(source, "src", "app"), { recursive: true });
+    await fsp.mkdir(path.join(source, ".next", "types"), { recursive: true });
+    await fsp.writeFile(path.join(source, "src", "app", "route.ts"), "export const POST = () => null;", "utf8");
+    await fsp.writeFile(path.join(source, ".next", "types", "validator.ts"), "generated", "utf8");
+    const summary = copyTree(source, target);
+    assert.equal(fs.existsSync(path.join(target, "src", "app", "route.ts")), true);
+    assert.equal(fs.existsSync(path.join(target, ".next")), false);
+    assert.equal(summary.copiedFiles, 1);
+    assert.ok(summary.excludedNextEntries >= 1);
+    assert.match(digestFile(path.join(target, "src", "app", "route.ts")), /^[0-9a-f]{64}$/);
+  } finally {
+    assert.equal(cleanupTemp(root), true);
+  }
 });

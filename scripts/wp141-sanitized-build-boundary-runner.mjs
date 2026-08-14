@@ -585,10 +585,18 @@ if (isMain) await main();
 
 export {
   classifyDiagnostic,
+  collectMetadata,
+  copyTree,
   createNetworkDenialSource,
   createSanitizer,
+  ensureNoRawFields,
   extractRelativePath,
   extractSpan,
   extractSymbol,
+  inferError,
+  inferPhase,
+  markerSnapshot,
   normalizeRelativePath,
+  readJson,
+  sanitizeErrorType,
 };

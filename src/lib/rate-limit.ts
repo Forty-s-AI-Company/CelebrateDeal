@@ -53,7 +53,10 @@ export function getRateLimitProviderStatus() {
     provider,
     durable: provider !== "memory",
     externalRequired: provider !== "memory",
-    configured: provider === "upstash_redis" ? upstashConfigured : provider !== "cloudflare_waf",
+    // Cloudflare enforcement lives in front of the application and has no
+    // in-process credential to probe. Selecting the provider is the local
+    // configuration signal; external WAF evidence remains a release concern.
+    configured: provider === "upstash_redis" ? upstashConfigured : true,
   };
 }
 

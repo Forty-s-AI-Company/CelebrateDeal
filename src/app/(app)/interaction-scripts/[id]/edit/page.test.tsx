@@ -30,7 +30,7 @@ describe("/interaction-scripts/[id]/edit route", () => {
 
     expect(mocks.scriptFindFirst).toHaveBeenCalledWith({ where: { id: "script-1", vendorId: "vendor-1" }, include: { events: { orderBy: { triggerSec: "asc" } }, lives: { include: { video: true } } } });
     expect(mocks.roleFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true } });
-    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true } });
+    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true } });
     expect(html).toContain("編輯互動腳本");
     expect(html).toContain("script-1");
     expect(html).toContain("live-1");

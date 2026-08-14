@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { buildBrokerArgs, createPrimaryOutcome, initialReceipt, parseBrokerOutput, parseFreshnessJson, successEligible, validateReceipt } from "./wp174-fresh-preview-payuni-readonly-reconciliation-runner.mjs";
+import { buildBrokerArgs, canonical, cleanupTemp, createPrimaryOutcome, initialReceipt, inspectTempBoundary, parseBrokerOutput, parseFreshnessJson, sha, successEligible, validateReceipt } from "./wp174-fresh-preview-payuni-readonly-reconciliation-runner.mjs";
 
 function successfulReceipt(status = "WP174_READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED") {
   const receipt = initialReceipt();
@@ -32,8 +34,18 @@ test("freshness accepts only the exact new Ready Preview deployment", () => {
 });
 
 test("maps every child status without inventing success", () => {
-  assert.equal(createPrimaryOutcome({ status: "WP170_READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED" }).status, "WP174_READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED");
-  assert.equal(createPrimaryOutcome({ status: "WP170_CANDIDATE_EXACT_NO_GO_ZERO" }).status, "WP174_CANDIDATE_EXACT_NO_GO_ZERO");
+  const statuses = [
+    "READ_ONLY_RECONCILIATION_CONSISTENT",
+    "READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED",
+    "DATABASE_IDENTITY_EXACT_NO_GO",
+    "CANDIDATE_EXACT_NO_GO_ZERO",
+    "CANDIDATE_EXACT_NO_GO_AMBIGUOUS",
+    "CANDIDATE_EXACT_NO_GO_INVALID",
+    "PROVIDER_EXACT_NO_GO",
+    "RECEIPT_SAFETY_EXACT_NO_GO",
+    "CLEANUP_EXACT_NO_GO",
+  ];
+  for (const suffix of statuses) assert.equal(createPrimaryOutcome({ status: `WP170_${suffix}` }).status, `WP174_${suffix}`);
   assert.equal(createPrimaryOutcome({ status: "UNKNOWN" }).status, "WP174_BROKER_EXACT_NO_GO");
 });
 
@@ -122,4 +134,36 @@ test("receipt rejects sensitive persistence and readiness overclaim", () => {
   const ready = successfulReceipt();
   ready.gateImpact.PRODUCTION_READY = true;
   assert.equal(validateReceipt(ready).ok, false);
+});
+
+test("canonical, digest and temporary boundary helpers are deterministic and fail closed", async () => {
+  const value = { z: 1, nested: { b: 2, a: [true, null] }, a: "x" };
+  assert.equal(canonical(value), '{"a":"x","nested":{"a":[true,null],"b":2},"z":1}');
+  assert.equal(canonical({ a: "x", nested: { a: [true, null], b: 2 }, z: 1 }), canonical(value));
+  assert.match(sha(canonical(value)), /^sha256:[a-f0-9]{64}$/u);
+
+  const temp = await fsp.mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp174-test-"));
+  try {
+    assert.equal((await inspectTempBoundary(temp)).ok, true);
+    await fsp.writeFile(path.join(temp, ".env.synthetic"), "fixture-name-only\n", { encoding: "utf8", flag: "wx" });
+    assert.equal((await inspectTempBoundary(temp)).ok, false);
+  } finally {
+    assert.equal(await cleanupTemp(temp), true);
+    assert.equal(await cleanupTemp(temp), true);
+  }
+});
+
+test("child receipt safety, primary outcome redaction and score predicates stay fail closed", () => {
+  const safeChild = { status: "WP170_CANDIDATE_EXACT_NO_GO_ZERO", database: { candidateBucket: "zero" }, payuni: { queryAttempts: 0 }, sideEffects: { databaseWrites: 0 }, safety: { rawDatabaseRowsPersisted: false } };
+  const line = (receipt) => `WP170_CHILD_RESULT:${JSON.stringify({ schema: "wp170-child/v1", cwdMatched: true, receipt })}`;
+  assert.equal(parseBrokerOutput(line(safeChild), "", 2).ok, true);
+  assert.equal(parseBrokerOutput(line({ ...safeChild, database: { connectionAttempts: 2 } }), "", 2).ok, false);
+  assert.equal(parseBrokerOutput(line({ ...safeChild, payuni: { queryAttempts: 1 }, database: { candidateBucket: "zero" } }), "", 2).ok, false);
+  assert.equal(parseBrokerOutput(line({ ...safeChild, safety: { rawDatabaseRowsPersisted: true } }), "", 2).ok, false);
+
+  const outcome = createPrimaryOutcome({ status: "WP170_PROVIDER_EXACT_NO_GO", failure: "not-safe failure", database: { candidateBucket: "one" }, payuni: { queryAttempts: 1 }, reconciliation: { providerAhead: true } });
+  assert.equal(outcome.failure, null);
+  assert.equal(outcome.database.candidateBucket, "one");
+  assert.equal(outcome.payuni.queryAttempts, 1);
+  assert.equal(successEligible({ ...successfulReceipt(), primaryOutcome: { ...successfulReceipt().primaryOutcome, reconciliation: { classification: "WRONG", providerAhead: true } } }), false);
 });

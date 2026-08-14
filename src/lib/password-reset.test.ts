@@ -188,7 +188,6 @@ describe("password reset flow", () => {
         action: "password_reset_email_failed",
         targetType: "PasswordResetToken",
         targetId: tokens[0]!.id,
-        after: { path: ["email"], equals: user.email },
       },
       select: { actorId: true, actorLabel: true, action: true, targetType: true, targetId: true, after: true },
     });
@@ -201,7 +200,7 @@ describe("password reset flow", () => {
       targetId: tokens[0]!.id,
       // Token-related metadata is deliberately redacted by auditSnapshot.
       // The target token's usedAt assertion above remains the revoke proof.
-      after: { email: user.email, tokenRevoked: "[redacted]" },
+      after: { email: `[redacted length=${user.email.length}]`, tokenRevoked: "[redacted]" },
     });
 
     // The audit is diagnostic only: it must not persist the reset URL/token or

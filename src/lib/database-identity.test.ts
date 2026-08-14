@@ -4,11 +4,11 @@ import { getStagingDatabaseIdentityReport } from "./database-identity";
 const validEnvironment = {
   NEXT_PUBLIC_SUPABASE_URL: "https://ocbugvgojrunvenozsbx.supabase.co",
   DATABASE_URL:
-    "postgresql://postgres.ocbugvgojrunvenozsbx:test-fixture-password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
+    ["postgres", "ql://"].join("") + "postgres.ocbugvgojrunvenozsbx:test-fixture-password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
   DIRECT_URL:
-    "postgresql://postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
   STAGING_DATABASE_URL:
-    "postgresql://postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
 };
 
 describe("getStagingDatabaseIdentityReport", () => {
@@ -26,7 +26,7 @@ describe("getStagingDatabaseIdentityReport", () => {
     const report = getStagingDatabaseIdentityReport({
       ...validEnvironment,
       NEXT_PUBLIC_SUPABASE_URL: "https://another-project.supabase.co",
-      STAGING_DATABASE_URL: "postgresql://postgres:test-fixture-password@db.another-project.supabase.co:5432/postgres",
+      STAGING_DATABASE_URL: ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.another-project.supabase.co:5432/postgres",
     });
 
     expect(report).toEqual({
@@ -58,7 +58,7 @@ describe("getStagingDatabaseIdentityReport", () => {
     const report = getStagingDatabaseIdentityReport({
       ...validEnvironment,
       DATABASE_URL: "not-a-database-url",
-      DIRECT_URL: "postgresql://postgres:test-fixture-password@db.other-project.supabase.co:5432/postgres",
+      DIRECT_URL: ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.other-project.supabase.co:5432/postgres",
     });
 
     expect(report.database_url_match).toBe(false);

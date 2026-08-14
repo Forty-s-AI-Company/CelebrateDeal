@@ -35,11 +35,11 @@ const TERMINAL = new Set([
   "WP174_CLEANUP_EXACT_NO_GO",
 ]);
 
-function sha(value) {
+export function sha(value) {
   return `sha256:${crypto.createHash("sha256").update(String(value)).digest("hex")}`;
 }
 
-function canonical(value) {
+export function canonical(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
@@ -209,7 +209,7 @@ export function validateReceipt(receipt) {
   return { ok: errors.length === 0, errors };
 }
 
-async function cleanupTemp(temp) {
+export async function cleanupTemp(temp) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await fsp.rm(temp, { recursive: true, force: true }).catch(() => {});
     if (!fs.existsSync(temp)) return true;

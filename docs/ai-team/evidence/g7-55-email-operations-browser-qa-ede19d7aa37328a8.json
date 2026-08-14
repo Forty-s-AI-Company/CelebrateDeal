@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "ede19d7aa37328a8",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-09T21:42:59.372Z",
+  "finishedAt": "2026-08-09T21:44:17.595Z",
+  "sourceDigest": "e8da419077512c7528a5b276c385bb79dd97db822f0902fb8af5e81201848b36",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 53,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "FAIL",
+    "server": "NOT_RUN",
+    "browser": "NOT_RUN"
+  },
+  "browser": {
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": -1,
+    "pageSize": 0,
+    "search": "NOT_RUN",
+    "filters": "NOT_RUN",
+    "pagination": "NOT_RUN",
+    "privacy": "NOT_RUN",
+    "requeue": "NOT_RUN",
+    "providerRejected": "NOT_RUN",
+    "pending": "NOT_RUN",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "NOT_RUN"
+    }
+  },
+  "cleanup": {
+    "syntheticRows": "CLEANUP_BLOCKED",
+    "server": "PASS",
+    "container": "CLEANUP_BLOCKED",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "NEXT_COMPILE_FAILED",
+    "details": [
+      "next-build-failed:⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache ▲ Next.js 16.2.11 (webpack) - Experiments (use with caution):   · clientTraceMetadata   Creating an optimized production build ... Failed to compile. ./src/lib/audit.ts Error:   x You're importing a module that depends on \"next/headers\". This API is only available in Server Components in the App Router, but you are using it in the Pages Router.   | Learn more: <synthetic-value>   |    ,-[<temp>\\mirror\\src\\lib\\audit.ts:1:1]  1 | import { headers } from \"next/headers\";    : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  2 | import type { Prisma } from \"@prisma/client\";  3 | import { getDb } from \"@/lib/db\";  4 | import { redactedJsonSnapshot } from \"@/lib/redaction\";    `---- Import trace for requested module: ./src/lib/audit.ts ./src/lib/email-delivery.ts"
+    ]
+  }
+}

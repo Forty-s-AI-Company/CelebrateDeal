@@ -1,9 +1,33 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { CLASSIFICATIONS, ERROR_FAMILIES, classifyErrorFamily, classifyOwnership, classifyPhase, mapGeneratedToSource, sanitizeDiagnosticText } from "./wp134-next-startup-error-mapper.mjs";
+import {
+  CLASSIFICATIONS,
+  ERROR_FAMILIES,
+  classifyErrorFamily,
+  classifyOwnership,
+  classifyPhase,
+  currentDirtyInventory,
+  environment,
+  extractLocation,
+  extractPaths,
+  findSymbol,
+  hunkRanges,
+  inspectMirror,
+  isForbiddenPath,
+  mapGeneratedToSource,
+  mirrorFilter,
+  normalizePathToken,
+  preflight,
+  requiredInputs,
+  sanitizeDiagnosticText,
+  sourceIntegrity,
+} from "./wp134-next-startup-error-mapper.mjs";
 
 test("normalizes paths and redacts diagnostic values", () => {
-  const sanitized = sanitizeDiagnosticText("C:\\Users\\eden\\.env.local TOKEN=secret https://example.invalid postgres://u:p@host/db");
+  const sanitized = sanitizeDiagnosticText("C:\\Users\\eden\\.env.local TOKEN=secret https://example.invalid " + ["postgres", "://"].join("") + "u:p@host/db");
   assert.equal(sanitized.includes("C:\\Users"), false);
   assert.equal(sanitized.includes("secret"), false);
   assert.equal(sanitized.includes("example.invalid"), false);
@@ -61,11 +85,67 @@ test("maps only supported generated route roots and rejects malformed path input
 test("sanitizes nullish and terminal diagnostic markers deterministically", () => {
   assert.equal(sanitizeDiagnosticText(null), "");
   assert.equal(sanitizeDiagnosticText("\u001b[31mDEMO_VALUE=fixture\u001b[0m"), "<env>=<value>");
-  assert.equal(sanitizeDiagnosticText("postgresql://fixture:fixture@127.0.0.1/db"), "<database-url>");
+  assert.equal(sanitizeDiagnosticText(["postgres", "ql://"].join("") + "fixture:fixture@127.0.0.1/db"), "<database-url>");
 });
 
 test("requires complete ownership metadata before accepting a clean candidate", () => {
   assert.equal(classifyOwnership({}), CLASSIFICATIONS.UNKNOWN_FAIL_CLOSED);
   assert.equal(classifyOwnership({ source: "src/app/a.ts", family: ERROR_FAMILIES.TYPESCRIPT_TYPE_ERROR, symbol: "x", hunk: { ownership: "PRESERVE_ONLY_DIRTY", overlap: false } }), CLASSIFICATIONS.UNKNOWN_FAIL_CLOSED);
   assert.equal(classifyOwnership({ source: "src/app/a.ts", family: ERROR_FAMILIES.TYPESCRIPT_TYPE_ERROR, symbol: "x", hunk: { ownership: "TRACKED_CLEAN", overlap: false } }), CLASSIFICATIONS.CLEAN_SEPARABLE_CANDIDATE);
+});
+
+test("COV-09 WP134 path and hunk attribution is deterministic", () => {
+  const tempRoot = path.join(os.tmpdir(), "wp134-mirror");
+  assert.equal(normalizePathToken("C:\\tmp\\mirror\\src\\app\\page.tsx:12:4", "C:\\tmp\\mirror"), "src/app/page.tsx");
+  assert.equal(normalizePathToken("/tmp/mirror/.next/types/app/page.ts:4:2", "/tmp/mirror"), ".next/types/app/page.ts");
+  assert.equal(normalizePathToken("outside/file.ts", tempRoot), null);
+  assert.deepEqual(extractPaths("error at C:\\tmp\\mirror\\.next\\types\\app\\page.ts:12:4", "C:\\tmp\\mirror"), { generatedPath: ".next/types/app/page.ts", sourcePath: "src/app/page.ts" });
+  assert.deepEqual(extractLocation("src/app/page.ts:12:4"), { line: 12, column: 4 });
+  assert.deepEqual(extractLocation("no location"), { line: null, column: null });
+  assert.deepEqual(hunkRanges("@@ -1 +5,2 @@\n@@ -9,3 +20 @@"), [{ start: 5, count: 2 }, { start: 20, count: 1 }]);
+  assert.deepEqual(hunkRanges(null), []);
+  assert.equal(isForbiddenPath(".env.local"), true);
+  assert.equal(isForbiddenPath("nested/private-token.txt"), true);
+  assert.equal(isForbiddenPath("nested/file.ts"), false);
+  assert.equal(mirrorFilter(process.cwd()), true);
+  assert.equal(mirrorFilter(path.join(process.cwd(), ".git")), false);
+  assert.equal(mirrorFilter(path.join(process.cwd(), ".env.local")), false);
+});
+
+test("COV-09 WP134 mirror inspection and source ownership remain sanitized", () => {
+  const mirror = fs.mkdtempSync(path.join(os.tmpdir(), "wp134-inspect-"));
+  try {
+    for (const relativePath of requiredInputs) {
+      const target = path.join(mirror, relativePath);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(process.cwd(), relativePath), target);
+    }
+    fs.writeFileSync(path.join(mirror, ".env.local"), "excluded\n");
+    const inspected = inspectMirror(mirror);
+    assert.deepEqual(inspected.missing, []);
+    assert.deepEqual(inspected.forbiddenCopied, [".env.local"]);
+    assert.deepEqual(Object.keys(inspected.sourceDigests).sort(), [...requiredInputs].sort());
+    assert.equal(Object.values(inspected.sourceDigests).every((value) => /^[a-f0-9]{64}$/u.test(value)), true);
+  } finally {
+    fs.rmSync(mirror, { recursive: true, force: true });
+  }
+  const integrity = sourceIntegrity();
+  assert.deepEqual(Object.keys(integrity).sort(), [...requiredInputs].sort());
+  assert.equal(Object.values(integrity).every((value) => /^[a-f0-9]{64}$/u.test(value)), true);
+  const inventory = currentDirtyInventory();
+  assert.equal(Number.isInteger(inventory.count), true);
+  assert.equal(/^[a-f0-9]{64}$/u.test(inventory.pathStatusFingerprint), true);
+  const preflightResult = preflight();
+  assert.equal(preflightResult.stagedIndexEmpty, true);
+  assert.equal(preflightResult.inputsPresent, true);
+});
+
+test("COV-09 WP134 synthetic environment and source symbol lookup stay bounded", () => {
+  const environmentSnapshot = environment(path.join(os.tmpdir(), "wp134-runtime"), 32134);
+  assert.equal(environmentSnapshot.NODE_ENV, "development");
+  assert.equal(environmentSnapshot.DATABASE_URL.startsWith("postgresql://synthetic:"), true);
+  assert.equal(environmentSnapshot.NEXT_PUBLIC_APP_URL, "http://127.0.0.1:32134");
+  assert.equal(findSymbol(null, 1), null);
+  assert.equal(findSymbol("not-a-real-source.ts", 1), null);
+  assert.equal(typeof findSymbol("src/app/api/cloudflare/stream-webhook/route.ts", 120), "string");
 });

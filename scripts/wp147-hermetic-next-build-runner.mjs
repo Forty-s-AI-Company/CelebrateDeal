@@ -236,4 +236,6 @@ export async function runAudit() {
 
 export function isMainModule() { return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url); }
 
+export { copyTree, markerSnapshot, networkDenySource, receiptLineage, sanitizer, scoreImpact };
+
 if (isMainModule()) runAudit().then((receipt) => process.stdout.write(JSON.stringify({ workPackage: receipt.workPackage, classification: receipt.classification, buildAttempts: receipt.build.attempts }) + '\n')).catch(() => { process.stderr.write(JSON.stringify({ workPackage: 'WP-147', classification: 'WP147_RUNNER_ERROR' }) + '\n'); process.exitCode = 1; });

@@ -11,6 +11,8 @@ export type DashboardChecklistCounts = {
   interactionRoleCount: number;
   interactionScriptCount: number;
   trackingConfigured: boolean;
+  verifiedPaymentMethodCount: number;
+  onboardingComplete: boolean;
 };
 
 const MANAGER_ROLES = new Set(["owner", "admin"]);
@@ -61,6 +63,18 @@ export function dashboardChecklistForRole(
         label: "設定追蹤",
         href: "/settings/tracking",
         done: counts.trackingConfigured,
+        managerOnly: true,
+      },
+      {
+        label: "設定付款方式",
+        href: "/billing/payment-methods",
+        done: counts.verifiedPaymentMethodCount > 0,
+        managerOnly: true,
+      },
+      {
+        label: "完成商家 onboarding",
+        href: "/onboarding",
+        done: counts.onboardingComplete,
         managerOnly: true,
       },
     ],

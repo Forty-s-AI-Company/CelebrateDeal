@@ -323,14 +323,22 @@ function writeReceipt(targetPath, receipt) {
 }
 
 export {
+  attachSanitizedStream,
   buildWp151FixtureScript,
   buildWp152FixtureReceipt,
   classifyServerOutput,
   extractFixtureSlug,
   makeReceipt,
+  nextMetadataSnapshot,
   normalizeWp151FixtureScript,
+  protectedDigestSnapshot,
+  runQuiet,
+  sha256File,
+  syntheticEnvironment,
   validateWp151Receipt,
   validateWp152FixtureReceipt,
+  waitForServer,
+  writeReceipt,
 };
 
 export async function main() {

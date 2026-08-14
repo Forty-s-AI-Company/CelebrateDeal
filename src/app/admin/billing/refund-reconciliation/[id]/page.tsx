@@ -13,6 +13,8 @@ import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
 const RESULT_MESSAGES = {
   reconciled: "已完成 PayUni Sandbox 退款對帳，待處理退款保留已原子化轉為已處理。",
   already_reconciled: "此交易已完成退款對帳，系統沒有再次查詢後寫入。",
+  provider_not_refunded: "PayUni 查詢結果確認這次退款沒有成立；本機 reservation 已安全釋放，可重新確認資料後再操作。",
+  nothing_pending: "目前沒有可執行的 pending reservation；系統未查詢 PayUni，也未變更本機帳務。",
   error: "退款對帳未完成，系統未變更本機帳務。",
 } as const;
 
@@ -45,6 +47,26 @@ export default async function AdminBillingRefundReconciliationPage({
   });
   if (!transaction) notFound();
 
+  // This page owns only the PayUni Sandbox reconciliation contract. Keep
+  // unsupported providers visibly fail-closed instead of rendering a button
+  // that the server action will reject after submission.
+  if (transaction.providerName !== "payuni") {
+    return (
+      <>
+        <PageHeader
+          title="退款終態對帳不可用"
+          description="目前只有 PayUni Sandbox 交易可以在此頁執行終態對帳。"
+          action={<Link href="/admin/billing/dashboard" className="text-sm font-semibold text-primary hover:underline">返回財務總覽</Link>}
+        />
+        <Card>
+          <p className="text-sm leading-6 text-slate-600">
+            此交易使用尚未支援的付款 provider，系統不會顯示或執行 PayUni Sandbox 對帳操作。
+          </p>
+        </Card>
+      </>
+    );
+  }
+
   async function reconcileAction(formData: FormData) {
     "use server";
 
@@ -65,28 +87,29 @@ export default async function AdminBillingRefundReconciliationPage({
     }
     // A terminal local state is already authoritative for idempotency. Do not
     // call PayUni again when no pending reservation remains.
-    if (target.status === "refunded" && target.refundedAmountCents === target.grossAmountCents && target.refunds.length === 0) {
-      redirect(`/admin/billing/refund-reconciliation/${id}?status=already_reconciled`);
+    if (target.refunds.length === 0 && (target.status === "refunded" || target.status === "partially_refunded")) {
+      redirect(`/admin/billing/refund-reconciliation/${id}?status=nothing_pending`);
     }
     const provider = getPaymentProvider("payuni");
     if (!provider.queryPayment || !target.providerTradeNo) {
       redirect(`/admin/billing/refund-reconciliation/${id}?status=error`);
     }
 
+    let outcome: Awaited<ReturnType<typeof reconcilePayUniRefund>>;
     try {
       const snapshot = await provider.queryPayment({ transaction: target });
-      const outcome = await reconcilePayUniRefund({
+      outcome = await reconcilePayUniRefund({
         db,
         transactionId: target.id,
         providerSnapshot: snapshot,
         actor: { id: finance.member.id, label: finance.member.role },
       });
-      revalidatePath(`/admin/billing/refund-reconciliation/${target.id}`);
-      revalidatePath("/admin/billing/dashboard");
-      redirect(`/admin/billing/refund-reconciliation/${target.id}?status=${outcome.disposition}`);
     } catch {
       redirect(`/admin/billing/refund-reconciliation/${target.id}?status=error`);
     }
+    revalidatePath(`/admin/billing/refund-reconciliation/${target.id}`);
+    revalidatePath("/admin/billing/dashboard");
+    redirect(`/admin/billing/refund-reconciliation/${target.id}?status=${outcome.disposition}`);
   }
 
   const message = resultMessage(query?.status);
@@ -96,13 +119,19 @@ export default async function AdminBillingRefundReconciliationPage({
     <>
       <PageHeader
         title="PayUni 退款終態對帳"
-        description="只對帳已由 PayUni Sandbox 接受、但本機仍保留 pending reservation 的退款；不會重送退款。"
+        description="核對結果不明、但本機仍保留 pending reservation 的退款；只查詢 PayUni，不會重送退款。"
         action={<Link href="/admin/billing/dashboard" className="text-sm font-semibold text-primary hover:underline">返回財務總覽</Link>}
       />
 
       {message ? (
         <Card className={query?.status === "error" ? "mb-6 border-orange-200 bg-orange-50" : "mb-6 border-green-200 bg-green-50"}>
-          <p className="text-sm font-semibold text-slate-900">{message}</p>
+          <p
+            role={query?.status === "error" ? "alert" : "status"}
+            aria-live={query?.status === "error" ? "assertive" : "polite"}
+            className="text-sm font-semibold text-slate-900"
+          >
+            {message}
+          </p>
         </Card>
       ) : null}
 
@@ -126,13 +155,18 @@ export default async function AdminBillingRefundReconciliationPage({
         <Card>
           <h2 className="text-lg font-semibold text-slate-950">受控操作</h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            送出後只會對 PayUni Sandbox 做一次 provider query；只有交易序號、訂單編號、原始金額、退款終態與本機 pending 金額全部一致，才會在同一個 Serializable transaction 內完成對帳。
+            送出後只會對 PayUni Sandbox 做一次 provider query。退款已成立時完成本機帳務；PayUni 明確顯示未退款時安全釋放 reservation；任何識別或金額不一致都不寫入。
           </p>
           <form action={reconcileAction} className="mt-5 grid gap-3">
             <CsrfField />
             <input type="hidden" name="id" value={transaction.id} />
             {transaction.refunds.length > 0 && transaction.status !== "refunded" ? (
-              <SubmitButton>執行 Sandbox 終態對帳</SubmitButton>
+              <SubmitButton
+                pendingChildren="查詢並核對中…"
+                pendingMessage="正在查詢 PayUni Sandbox 並核對退款終態，請勿重複送出。"
+              >
+                執行 Sandbox 終態對帳
+              </SubmitButton>
             ) : (
               <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">目前沒有可安全對帳的 pending reservation。</p>
             )}

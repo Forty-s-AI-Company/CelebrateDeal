@@ -6,9 +6,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WP144_CONSTANTS,
+  copyTree,
+  emptySideEffects,
   exclusionReason,
   isDotenvPath,
+  makeSanitizer,
+  markerSnapshot,
+  readJson,
   safeResolveUnder,
+  scoreImpact,
+  sha256File,
   serializeWp144Receipt,
   validateWp144Receipt,
   writeWp144ReceiptAtomic
@@ -146,3 +153,68 @@ test('receipt validation fails closed for unsafe diagnostic enum and scalar shap
     assert.equal(validateWp144Receipt(receipt).ok, false);
   }
 });
+
+// COV-08 BEGIN
+test('WP144 sanitizer attributes phase, error, path, symbol and span without raw output', () => {
+  const sanitizer = makeSanitizer();
+  sanitizer.consume('Type error in src/app/page.tsx at 12:34\nconst CheckoutPage = () => null');
+  const diagnostic = sanitizer.finish();
+  assert.deepEqual(diagnostic, {
+    phase: 'typecheck',
+    errorFamily: 'TYPECHECK',
+    errorCode: 'TYPE_ERROR',
+    relativePath: 'src/app/page.tsx',
+    symbol: 'CheckoutPage',
+    span: '12:34',
+    source: 'stream_sanitizer'
+  });
+});
+
+test('WP144 copyTree excludes dotenv, generated and private files in a temp fixture', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'celebratedeal-wp144-copy-'));
+  const source = path.join(root, 'source');
+  const destination = path.join(root, 'destination');
+  await fsp.mkdir(path.join(source, 'src'), { recursive: true });
+  await fsp.mkdir(path.join(source, '.next'), { recursive: true });
+  await fsp.mkdir(path.join(source, 'certs'), { recursive: true });
+  await fsp.writeFile(path.join(source, 'src', 'page.tsx'), 'export default function Page() {}');
+  await fsp.writeFile(path.join(source, '.env.local'), 'synthetic=never-read');
+  await fsp.writeFile(path.join(source, '.next', 'BUILD_ID'), 'generated');
+  await fsp.writeFile(path.join(source, 'certs', 'service.key'), 'private');
+  const stats = { dotenvCopied: false, reparseSkipped: 0, forbiddenPathsCopied: 0, filesCopied: 0, directoriesCopied: 0 };
+  try {
+    await copyTree(source, destination, stats);
+    assert.equal(fs.existsSync(path.join(destination, 'src', 'page.tsx')), true);
+    assert.equal(fs.existsSync(path.join(destination, '.env.local')), false);
+    assert.equal(fs.existsSync(path.join(destination, '.next')), false);
+    assert.equal(fs.existsSync(path.join(destination, 'certs')), true);
+    assert.deepEqual(fs.readdirSync(path.join(destination, 'certs')), []);
+    assert.equal(stats.dotenvCopied, true);
+    assert.equal(stats.filesCopied, 1);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('WP144 marker snapshot, JSON readback and score side-effects helpers stay deterministic', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'celebratedeal-wp144-markers-'));
+  try {
+    await fsp.mkdir(path.join(root, '.next'), { recursive: true });
+    await fsp.writeFile(path.join(root, '.next', 'BUILD_ID'), 'build');
+    await fsp.writeFile(path.join(root, '.next', 'routes-manifest.json'), '{}');
+    const marker = await markerSnapshot(root);
+    assert.equal(marker.buildId, true);
+    assert.equal(marker.routesManifest, true);
+    assert.equal(marker.requiredServerFiles, false);
+    const jsonPath = path.join(root, 'receipt.json');
+    await fsp.writeFile(jsonPath, JSON.stringify({ status: 'synthetic' }));
+    assert.deepEqual(await readJson(jsonPath), { status: 'synthetic' });
+    assert.deepEqual(emptySideEffects(2), { browserRuns: 0, buildRuns: 2, databaseOperations: 0, deploymentOperations: 0, dotenvReads: 0, networkOperations: 0, productionOperations: 0, providerOperations: 0, serverRuns: 0, stagingOperations: 0, typegenRuns: 0 });
+    assert.deepEqual(scoreImpact(false), { CAT09: { before: 6.5, after: 6.5 }, total: { before: 71, after: 71 } });
+    assert.deepEqual(scoreImpact(true), { CAT09: { before: 6.5, after: 7 }, total: { before: 71, after: 71.5 } });
+    assert.match(await sha256File(jsonPath), /^sha256:[0-9a-f]{64}$/);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+// COV-08 END

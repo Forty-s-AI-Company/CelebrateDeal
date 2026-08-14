@@ -3,6 +3,9 @@ import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
 export const demoPaymentProvider: PaymentProviderAdapter = {
   id: "demo",
+  checkoutReadiness() {
+    return "local_only";
+  },
   async createCheckoutSession({ transaction }) {
     return {
       provider: "demo",

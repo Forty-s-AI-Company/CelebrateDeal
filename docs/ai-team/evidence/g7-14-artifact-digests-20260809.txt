@@ -1,0 +1,9 @@
+737b6991686e26c97abfbf99b83e971719ac0874713d80c72168b17a0bd1aefb  .ai-team/reports/g7-14-checkout-admission-20260809.json
+e01d92763e61bab398eb9935cd92f9422fca1c70d42e5dfb19dc891ca6dd1b37  .ai-team/reports/g7-14-checkout-admission-disposable-20260809.json
+da8ec6552efd269f7bd08468b96445e5b4d9ae9bc7564ab7bd61e2f3c29b6a4f  .ai-team/reports/g7-14-checkout-admission-disposable-20260809.json.sha256
+df49aec63734e9299ebf6334acff3270aff44cdb8c649a3a0105f09fedb793fe  docs/ai-team/evidence/g7-14-checkout-admission-20260809.md
+6e3e97efd282c281db653d6c229b0f98c8c063c441ccefb955ce94da983c65c9  docs/ai-team/evidence/g7-14-source-manifest-20260809.txt
+3f512e8bf6afb62606d6d8886704e3e86bf68466e924ea3000bada0ba729ce09  docs/ai-team/evidence/g7-04-browser-qa-4b0cc7184d9e6dea.json
+9c20e6f4bf6c79adbfebcf96e962980d1f86d97ef490d48aa2f25383c1b8718a  docs/ai-team/evidence/g7-04-browser-qa-4b0cc7184d9e6dea.json.sha256
+02af5578ef1861a3ae062e9ed4029f64164ebe2020ebe1f7d6b52fa5d949eb99  docs/ai-team/evidence/g7-04-browser-qa-4b0cc7184d9e6dea-screenshots/desktop.png
+3d9ae308a11d8076eb80be744a30e9778b54acee657cc70b662b8421cd8306f2  docs/ai-team/evidence/g7-04-browser-qa-4b0cc7184d9e6dea-screenshots/mobile.png

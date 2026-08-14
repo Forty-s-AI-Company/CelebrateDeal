@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "d41514a26aa30a11",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-09T22:07:03.654Z",
+  "finishedAt": "2026-08-09T22:10:32.931Z",
+  "sourceDigest": "fa51982141ebb259b93493f698b2c69c73f75d58b201742366366dafa02487e1",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 53,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 2,
+    "failed": 3,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 25,
+    "search": "PASS",
+    "filters": "NOT_RUN",
+    "pagination": "PASS",
+    "privacy": "PASS",
+    "requeue": "PASS",
+    "providerRejected": "PASS",
+    "pending": "PASS",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "PASS"
+    },
+    "tests": [
+      {
+        "title": "desktop search filters reset pagination and URL privacy",
+        "status": "failed"
+      },
+      {
+        "title": "safe requeue preserves immutable provider identity and permanent rejection stays closed",
+        "status": "passed"
+      },
+      {
+        "title": "mobile RWD keyboard and Axe",
+        "status": "failed"
+      },
+      {
+        "title": "pending disables duplicate submit and expired CSRF does not echo query",
+        "status": "failed"
+      },
+      {
+        "title": "foreign tenant exact email search leaks no identity",
+        "status": "passed"
+      }
+    ],
+    "diagnostics": [
+      "desktop search filters reset pagination and URL privacy: Error: EMAIL_OPERATIONS_UI_RESULT_MISMATCH expected=1 actual=25 freshness=current alerts= statuses=|||找到 55 筆寄送紀錄。",
+      "  16 | async function axe(page: any) { const result = await new AxeBuilder({ page }).withTags([\"wcag2a\", \"wcag2aa\", \"wcag21a\", \"wcag21aa\", \"wcag22aa\"]).analyze(); const blockers = result.violations.filter((item: any) => item.impact === \"critical\" || item.impact === \"serious\"); evidence.axeCriticalOrSerious += blockers.length; expect(blockers).toEqual([]); }",
+      "  17 | async function noOverflow(page: any, viewport: \"desktop\" | \"mobile\") { expect(await page.evaluate(() => document.documentElement.scrollWidth - <synthetic-value>); evidence.rwd[viewport] = \"PASS\"; }",
+      "> 18 | async function expectResultCount(page: any, expected: number) { try { await <synthetic-value>); } catch { const alerts = await <synthetic-value>(); const statuses = await <synthetic-value>(); const freshness = await <synthetic-value>\"); const actual = await page.locator(\"article\").count(); throw new Error(\"EMAIL_OPERATIONS_UI_RESULT_MISMATCH expected=\" + expected + \" actual=\" + actual + \" freshness=\" + freshness + \" alerts=\" + alerts.join(\"|\") + \" statuses=\" + statuses.slice(0, 4).join(\"|\")); } }",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ^",
+      "  19 |",
+      "  20 | test.beforeAll(async () => { const vendor = await db.vendor.create({ data: { name: \"G7-55 Owner\", slug: \"g7-55-owner-\" + suffix, email: \"owner-\" + suffix + \"@celebratedeal.test\", passwordHash: \"synthetic\", tracking: { create: {} } } }); const foreign = await db.vendor.create({ data: { name: \"G7-55 Foreign\", slug: \"g7-55-foreign-\" + suffix, email: \"foreign-\" + suffix + \"@celebratedeal.test\", passwordHash: \"synthetic\", tracking: { create: {} } } }); const user = await db.user.create({ data: { email: \"operator-\" + suffix + \"@celebratedeal.test\", name: \"G7-55 operator\", passwordHash: \"synthetic\", status: \"active\", memberships: { create: { vendorId: vendor.id, role: \"owner\", status: \"active\" } } } }); fixture.vendorId = vendor.id; fixture.foreignVendorId = foreign.id; fixture.token = crypto.randomBytes(32).toString(\"base64url\"); await db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash: <synthetic-value>\"), expiresAt: new Date(Date.now() + 3600000) } }); const rows = Array.from({ length: 55 }, (_, index) => ({ id: \"g755_\" + suffix + \"_\" + index, vendorId: vendor.id, sourceTemplateId: \"template-\" + suffix, trigger: index === 3 ? \"registration_confirmed\" : index % 2 ? \"live_reminder\" : \"registration_confirmed\", payloadEncryptedEnvelope: \"synthetic-envelope\", recipientHash: index === 0 ? createEmailRecipientHash(targetEmail, vendor.id) : crypto.createHash(\"sha256\").update(\"row-\" + index + suffix).digest(\"hex\"), recipientMaskedEmail: \"u***\" + index + \"@example.test\", idempotencyKey: \"g755-\" + suffix + \"-\" + index, status: index === 1 || index === 2 ? \"exhausted\" : index === 3 || index === 5 ? \"failed\" : \"sent\", attemptCount: index === 1 || index === 2 ? 5 : 1, maxAttempts: 5, lastErrorCode: index === 2 ? \"provider_rejected\" : index === 1 || index === 3 || index === 5 ? \"network\" : null, createdAt: new Date(Date.UTC(2026, 7, 10, 0, index)) })); await db.emailDelivery.createMany({ data: rows }); fixture.rejectedId = rows[2].id; fixture.failedId = rows[3].id; await db.emailDelivery.create({ data: { ...rows[0], id: \"g755_foreign_\" + suffix, vendorId: foreign.id, idempotencyKey: \"foreign-\" + suffix, recipientHash: createEmailRecipientHash(foreignEmail, foreign.id), recipientMaskedEmail: foreignCanary } }); });",
+      "  21 | test.beforeEach(async () => { evidence = freshEvidence(); });",
+      "    at expectResultCount (<<synthetic-value>)",
+      "    at <<synthetic-value>",
+      "mobile RWD keyboard and Axe: Error: KEYBOARD_FOCUS_AFTER_QUERY=null",
+      "\u001b[<synthetic-value>) // Object.is equality\u001b[22m",
+      "Expected: \u001b[32m\"status\"\u001b[39m",
+      "Received: \u001b[31mnull\u001b[39m",
+      "  27 | test(\"safe requeue preserves immutable provider identity and permanent rejection stays closed\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.failedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 1); const before = await db.emailDelivery.findUniqueOrThrow({ where: { id: fixture.failedId }, select: { idempotencyKey: true, payloadEncryptedEnvelope: true } }); page.once(\"dialog\", (dialog) => dialog.accept()); await page.getByRole(\"button\", { name: \"重新排程\" }).click(); await expect(page.getByRole(\"status\").filter({ hasText: \"重新排入寄送佇列\" })).toBeVisible(); await expect(db.emailDelivery.findUnique({ where: { id: fixture.failedId } })).resolves.toMatchObject({ status: \"queued\", manualRetryCount: 1, idempotencyKey: before.idempotencyKey, payloadEncryptedEnvelope: before.payloadEncryptedEnvelope }); evidence.requeue = \"PASS\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.rejectedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 1); const rejected = page.locator(\"article\").filter({ hasText: fixture.rejectedId }); await expect(rejected).toBeVisible(); await expect(rejected.getByRole(\"button\", { name: \"重新排程\" })).toHaveCount(0); await expect(db.emailDelivery.findUnique({ where: { id: fixture.rejectedId } })).resolves.toMatchObject({ status: \"exhausted\", lastErrorCode: \"provider_rejected\" }); evidence.providerRejected = \"PASS\"; });",
+      "  28 |",
+      "> 29 | test(\"mobile RWD keyboard and Axe\", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto(\"/messages/deliveries\"); await expectResultCount(page, 25); await noOverflow(page, \"mobile\"); await axe(page); await page.screenshot({ path: join(screenshotDir, \"mobile.png\"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel(\"完整收件 Email 或寄送編號\"); await query.focus(); await query.press(\"Tab\"); const firstFocus = await page.evaluate(() => document.activeElement?.getAttribute(\"name\")); expect(firstFocus, \"KEYBOARD_FOCUS_AFTER_QUERY=\" + firstFocus).toBe(\"status\"); await page.keyboard.press(\"Tab\"); const secondFocus = await page.evaluate(() => document.activeElement?.getAttribute(\"name\")); expect(secondFocus, \"KEYBOARD_FOCUS_AFTER_STATUS=\" + secondFocus).toBe(\"trigger\"); await page.keyboard.press(\"Tab\"); await expect(page.getByRole(\"button\", { name: \"查詢\", exact: true })).toBeFocused(); evidence.keyboard = \"PASS\"; });",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ^",
+      "  30 |",
+      "  31 | test(\"pending disables duplicate submit and expired CSRF does not echo query\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route(\"**/messages/deliveries\", async (route) => { if (route.request().method() === \"POST\" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole(\"button\", { name: \"查詢\", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole(\"button\", { name: \"查詢中…\" })).toBeDisabled(); await <synthetic-value>(); expect(intercepted).toBe(true); evidence.pending = \"PASS\"; release?.(); await click; await page.unroute(\"**/messages/deliveries\"); const privateQuery = \"private-\" + suffix + \"@example.test\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(privateQuery); await <synthetic-value>) => { (element as HTMLInputElement).value = \"invalid\"; }); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const alert = page.getByRole(\"alert\"); await expect(alert).toContainText(\"安全驗證已失效\"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = \"PASS\"; });"
+    ]
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      "browser-contract-failed:"
+    ]
+  }
+}

@@ -42,6 +42,8 @@ export const ERROR_FAMILIES = Object.freeze({
   UNKNOWN: "UNKNOWN",
 });
 
+export { requiredInputs };
+
 function run(command, args, environment, cwd = root) {
   const result = spawnSync(command, args, {
     cwd,
@@ -184,6 +186,21 @@ export function classifyOwnership({ source, family, symbol, hunk }) {
   return CLASSIFICATIONS.UNKNOWN_FAIL_CLOSED;
 }
 
+export {
+  currentDirtyInventory,
+  environment,
+  extractLocation,
+  extractPaths,
+  findSymbol,
+  hunkRanges,
+  inspectMirror,
+  isForbiddenPath,
+  mirrorFilter,
+  normalizePathToken,
+  preflight,
+  sourceIntegrity,
+};
+
 function sourceIntegrity() {
   return Object.fromEntries(requiredInputs.map((relative) => [relative, digest(path.join(root, relative))]));
 }
@@ -203,7 +220,7 @@ function preflight() {
 }
 
 function environment(tempRoot, port) {
-  const databaseUrl = "postgresql://synthetic:synthetic@127.0.0.1:54329/wp134_diagnostic";
+  const databaseUrl = "postgresql://synthetic:synthetic@127.0.0.1:54329/wp134_test";
   return {
     PATH: process.env.PATH ?? "",
     SystemRoot: process.env.SystemRoot ?? "",

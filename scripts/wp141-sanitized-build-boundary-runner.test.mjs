@@ -1,13 +1,25 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   classifyDiagnostic,
+  collectMetadata,
+  copyTree,
   createNetworkDenialSource,
   createSanitizer,
+  ensureNoRawFields,
   extractRelativePath,
   extractSpan,
   extractSymbol,
+  inferError,
+  inferPhase,
+  markerSnapshot,
   normalizeRelativePath,
+  readJson,
+  sanitizeErrorType,
 } from './wp141-sanitized-build-boundary-runner.mjs';
 
 test('normalizes Windows and POSIX repository-relative paths without absolute prefixes', () => {
@@ -91,3 +103,74 @@ test('normalization and sanitizer remain bounded for malformed and partial diagn
   assert.deepEqual(result.span, { line: 4, column: 2 });
   assert.equal(result.missingFields.length, 0);
 });
+
+test('COV-09 diagnostic attribution and error sanitization are deterministic', () => {
+  assert.equal(inferPhase('Running eslint'), 'lint');
+  assert.equal(inferPhase('Generating static pages'), 'generate-static-pages');
+  assert.equal(inferPhase('unrelated output'), null);
+  assert.deepEqual(inferError('Cannot find module'), { family: 'MODULE_RESOLUTION', code: 'MODULE_NOT_FOUND', re: inferError('Cannot find module').re });
+  assert.equal(inferError('unrelated output'), null);
+  assert.equal(sanitizeErrorType({ code: 'ETIMEDOUT' }), 'TIMEOUT');
+  assert.equal(sanitizeErrorType({ code: 'ENOENT' }), 'COMMAND_NOT_FOUND');
+  assert.equal(sanitizeErrorType({ code: 'EACCES' }), 'ACCESS_DENIED');
+  assert.equal(sanitizeErrorType(new Error('child')), 'CHILD_PROCESS_ERROR');
+  assert.equal(sanitizeErrorType({ name: 'Custom Error!' }), 'Custom_Error_');
+  assert.equal(sanitizeErrorType(null), 'UNKNOWN_ERROR');
+});
+
+test('COV-09 sanitized metadata and copy boundaries handle disposable fixtures only', async () => {
+  const source = await fsp.mkdtemp(path.join(os.tmpdir(), 'wp141-copy-source-'));
+  const destination = await fsp.mkdtemp(path.join(os.tmpdir(), 'wp141-copy-destination-'));
+  try {
+    await fsp.mkdir(path.join(source, 'src', 'nested'), { recursive: true });
+    await fsp.mkdir(path.join(source, '.next'));
+    await fsp.writeFile(path.join(source, 'src', 'nested', 'page.tsx'), 'export default null;\n');
+    await fsp.writeFile(path.join(source, '.env.local'), 'DATABASE_URL=excluded\n');
+    await fsp.writeFile(path.join(source, 'private-token.txt'), 'excluded\n');
+    await fsp.writeFile(path.join(source, 'normal.txt'), 'copied\n');
+
+    const stats = await copyTree(source, destination);
+    assert.equal(stats.filesCopied, 2);
+    assert.equal(stats.filesExcluded, 2);
+    assert.equal(stats.directoriesExcluded, 1);
+    assert.equal(stats.excludedByReason.dotenv, 1);
+    assert.equal(stats.excludedByReason.private_or_secret_like, 1);
+    assert.equal(fs.existsSync(path.join(destination, 'src', 'nested', 'page.tsx')), true);
+    assert.equal(fs.existsSync(path.join(destination, '.next')), false);
+
+    const metadata = await collectMetadata(source);
+    assert.equal(metadata.files, 4);
+    assert.equal(metadata.directories, 3);
+    assert.equal(metadata.entries, 7);
+    assert.equal(typeof metadata.digest, 'string');
+    assert.equal(metadata.digest.length, 64);
+    const missingMetadata = await collectMetadata(path.join(source, 'missing'));
+    assert.deepEqual(missingMetadata, { files: 0, directories: 0, reparse: 0, entries: 0, bytes: 0, digest: expectDigest(missingMetadata.digest) });
+
+    const markers = await markerSnapshot(source);
+    assert.equal(markers.pass, false);
+    await fsp.mkdir(path.join(source, '.next', 'server'), { recursive: true });
+    for (const relativePath of [
+      '.next/BUILD_ID',
+      '.next/build-manifest.json',
+      '.next/routes-manifest.json',
+      '.next/server/app-paths-manifest.json',
+    ]) await fsp.writeFile(path.join(source, relativePath), 'marker\n');
+    assert.equal((await markerSnapshot(source)).pass, true);
+
+    const jsonPath = path.join(source, 'receipt.json');
+    await fsp.writeFile(jsonPath, JSON.stringify({ status: 'SAFE' }));
+    assert.deepEqual(await readJson(jsonPath), { status: 'SAFE' });
+    ensureNoRawFields({ nested: [{ status: 'SAFE' }] });
+    assert.throws(() => ensureNoRawFields({ nested: { rawOutput: 'must not persist' } }), /UNSAFE_RECEIPT_FIELD/);
+  } finally {
+    await fsp.rm(source, { recursive: true, force: true });
+    await fsp.rm(destination, { recursive: true, force: true });
+  }
+});
+
+function expectDigest(value) {
+  assert.equal(typeof value, 'string');
+  assert.equal(value.length, 64);
+  return value;
+}

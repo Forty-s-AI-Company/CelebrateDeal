@@ -82,6 +82,8 @@ function renderForm() {
       videoId: null,
       formId: null,
       messageTemplateId: null,
+      liveReminderTemplateId: null,
+      liveReminderOffsetMinutes: 60,
       interactionScriptId: "test-fixture-script-1",
       teamId: null,
       seminarOwnerMembershipId: null,
@@ -91,6 +93,7 @@ function renderForm() {
       scheduledAt: new Date("2026-07-01T00:00:00.000Z"),
       status: "scheduled",
       heroImageUrl: null,
+      heroImageAssetId: null,
       accentCopy: null,
       replayEnabled: true,
       streamMode: "vod",
@@ -115,7 +118,7 @@ describe("InteractionScriptForm", () => {
     const form = renderForm();
     const boundLive = findElements(form, (candidate) => candidate.props["data-testid"] === "bound-live");
     const unbindButton = findElements(form, (candidate) => (
-      candidate.type === "button" && candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction
+      candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction
     )).at(0);
 
     expect(textContent(boundLive)).toContain("七月新品直播");
@@ -142,7 +145,7 @@ describe("InteractionScriptForm", () => {
   it("does not submit the unbind action when confirmation is declined", () => {
     const form = renderForm();
     const unbindButton = findElements(form, (candidate) => (
-      candidate.type === "button" && candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction
+      candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction
     )).at(0);
     const preventDefault = vi.fn();
     vi.stubGlobal("window", { confirm: vi.fn(() => false) });
@@ -157,7 +160,30 @@ function renderNewForm() {
   hookState.cursor = 0;
   return InteractionScriptForm({
     roles: [],
-    products: [],
+    products: [{
+      id: "test-product-1",
+      vendorId: "test-fixture-vendor-1",
+      name: "測試主打商品",
+      slug: "test-product-1",
+      description: null,
+      priceCents: 128000,
+      compareAtCents: null,
+      currency: "TWD",
+      imageUrl: null,
+      imageAssetId: null,
+      checkoutUrl: null,
+      inventory: 10,
+      isActive: true,
+      commerceDomain: "merchant",
+      fulfillmentType: "physical",
+      fulfillmentTypeConfirmed: true,
+      courseContentOwnerMembershipId: null,
+      coursePromoterShareBps: null,
+      coursePolicyVersion: 1,
+      revision: 1,
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+    }],
     csrfToken: "test-new-script-csrf-token",
   });
 }
@@ -171,7 +197,7 @@ describe("InteractionScriptForm deterministic edit states", () => {
 
   it("renders the new-script templates and applies a template without a bound live", () => {
     const form = renderNewForm();
-    expect(textContent(form)).toContain("常見留言組範本");
+    expect(textContent(form)).toContain("常見互動腳本範本");
     expect(textContent(form)).toContain("尚未綁定直播");
     const templateButton = findElements(form, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "新品快閃"

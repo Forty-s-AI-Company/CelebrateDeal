@@ -26,11 +26,11 @@ const SUCCESS_STATUSES = new Set([
   "WP171_READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED",
 ]);
 
-function digest(kind, value) {
+export function digest(kind, value) {
   return `sha256:${crypto.createHash("sha256").update(`WP171/v1/${kind}/${String(value)}`, "utf8").digest("hex")}`;
 }
 
-function canonical(value) {
+export function canonical(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
@@ -220,7 +220,7 @@ export function validateReceipt(receipt) {
   return { ok: errors.length === 0, errors };
 }
 
-function mergeChild(receipt, parsed) {
+export function mergeChild(receipt, parsed) {
   const childReceipt = parsed.child.receipt;
   receipt.status = mapChildStatus(childReceipt.status);
   receipt.broker.correctedStartupExternallyVerified = parsed.childValid;
@@ -232,7 +232,7 @@ function mergeChild(receipt, parsed) {
   receipt.failure = childReceipt.failure;
 }
 
-async function cleanupTemp(temp) {
+export async function cleanupTemp(temp) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await fsp.rm(temp, { recursive: true, force: true }).catch(() => {});
     if (!fs.existsSync(temp)) return true;

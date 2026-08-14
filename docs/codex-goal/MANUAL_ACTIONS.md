@@ -4,6 +4,21 @@
 
 > 僅列出自動化無法安全完成或需要 owner/人類感知的項目。每項完成後需附日期、環境、方法、結果與簽核角色。
 
+## Governance v2：Solo Founder classification
+
+同一位具實際權限的真人可以承擔多個 owner responsibility。這份清單不要求五位不同真人，也不把 AI／Sol acceptance 當成人工 launch approval。
+
+| Action | 目前分類 | Provenance | 說明 |
+|---|---|---|---|
+| MA-001 Supabase residual default ACL | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` / `DIRECT_PRODUCTION_RISK` | 仍需 owner／Support 處理 residual ACL；不可因 solo founder 而省略。 |
+| MA-002 PayUni Production | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` | merchant、callback、signature 與 ReturnURL／NotifyURL 需 provider-confirmed；禁止以本機 receipt 代替。 |
+| MA-003 Sentry delivery | WARNING；minimum observability required | `DIRECT_PRODUCTION_RISK` | 完整 delivery packet 可 post-launch；最低安全錯誤觀測與 escalation path 仍需具備。 |
+| MA-004 Cloudflare exact binding | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` | token／account／scope binding 需一致；不得輸出 secret。 |
+| MA-005 PostHog Production | WARNING | `DEFENSE_IN_DEPTH` | analytics dashboard 不單獨阻擋付款與服務 launch，除非另有 tracked requirement。 |
+| MA-006 Screen reader | WARNING | `DEFENSE_IN_DEPTH` | 基本 semantic、keyboard、focus 與 touch accessibility 仍是工程要求；人工 screen-reader journey 為 follow-up，除非法律另有要求。 |
+
+每個實際 hard blocker 仍必須能回答：`source`、`reason`、`risk_if_missing`、`provenance`。找不到 release-critical provenance 時，保留原始紀錄並降級為 warning／follow-up。
+
 ## MA-001 — Supabase residual default ACL
 
 - 服務：Supabase Production

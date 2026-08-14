@@ -1,5 +1,7 @@
 import { loginAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
+import { PublicResourceLinks } from "@/components/public-policy";
 
 const errorMessages: Record<string, string> = {
   "1": "帳號或密碼不正確。",
@@ -41,11 +43,21 @@ export default async function LoginPage({
             密碼
             <input name="password" type="password" autoComplete="current-password" required defaultValue={showDemoHint ? "demo1234" : ""} className="h-11 rounded-md border border-border px-3" />
           </label>
-          <button className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">登入</button>
+          <FormSubmitButton
+            pendingChildren="登入中…"
+            pendingMessage="正在驗證帳號並登入，請勿重複送出。"
+            className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+          >
+            登入
+          </FormSubmitButton>
         </form>
         <div className="mt-4 flex items-center justify-between text-sm">
           <a href="/password-reset/request" className="font-semibold text-primary hover:underline">忘記密碼</a>
           <a href="/dashboard" className="font-medium text-slate-600 hover:text-slate-800">返回首頁</a>
+        </div>
+        <div className="mt-6 border-t border-border pt-5">
+          <p className="mb-3 text-center text-xs font-semibold text-slate-500">公開資訊與客服</p>
+          <PublicResourceLinks compact />
         </div>
       </section>
     </main>

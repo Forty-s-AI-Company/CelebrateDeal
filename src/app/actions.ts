@@ -1,67 +1,86 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
-  AUTH_COOKIE,
-  LEGACY_VENDOR_COOKIE,
-  authenticateUser,
-  createUserSession,
-  markCurrentSessionMfaVerified,
-  requireAuth,
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
-  revokeCurrentSession,
-  sessionCookieOptions,
+  requireVendorManagerContext,
 } from "@/lib/auth";
-import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
-import {
-  AffiliateCommissionRateBps,
-  assertAffiliateCommissionTransition,
-} from "@/lib/affiliate-commission";
+import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
-import { calculateSettlement, invoiceNumber, payoutBatchNumber } from "@/lib/billing";
+import { monthRange, payoutBatchNumber } from "@/lib/billing";
+import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
-  decryptMfaSecret,
-  encryptMfaSecret,
-  generateRecoveryCodes,
-  generateTotpSecret,
-  hashRecoveryCodeAsync,
-  MFA_RECOVERY_COOKIE,
-  MFA_SETUP_COOKIE,
-  parsePendingMfaSetup,
-  serializePendingMfaSetup,
-  serializeRecoveryCodes,
-  verifyRecoveryCodeAsync,
-  verifyTotpCode,
-} from "@/lib/mfa";
-import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
-import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
-import { isAllowedSmokeTestRecipient } from "@/lib/email";
-import { checkRateLimit } from "@/lib/rate-limit";
+  applyPaymentRefundAccounting,
+  calculateNetReferenceAmountCents,
+} from "@/lib/payment-refund-accounting";
 import { toSlug } from "@/lib/format";
-import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
+import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
+import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import {
+  createLiveReminderReconciliationSnapshot,
+  queueLiveReminderReconciliation,
+  type LiveReminderReconciliationSnapshot,
+  type LiveReminderTemplateSnapshot,
+} from "@/lib/live-reminder-reconciliation";
+import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
+import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
+import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
+import { normalizeInteractionRoleDraft } from "@/lib/interaction-role";
+import {
+  hasUsableMessageTemplateContent,
+  LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+  normalizeMessageTemplateDraft,
+  REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+  type MessageTemplateActionError,
+  type MessageTemplateActionState,
+  type MessageTemplateFormDraft,
+} from "@/lib/message-template";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import {
+  getLivePublishReadiness,
+  requiresLivePublishReadiness,
+} from "@/lib/live-publish-readiness";
+import { resolveReadyImageAsset } from "@/lib/image-assets";
+import { isLiveVideoReady, liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
+import { CoursePayoutMutationConflict, syncCoursePayoutsForSettlement } from "@/lib/course-payout-accounting";
 import {
   createVendorMemberAction as createVendorMemberActionImpl,
   deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
+import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import {
+  confirmMfaEnrollmentAction as confirmMfaEnrollmentActionImpl,
+  confirmPasswordResetAction as confirmPasswordResetActionImpl,
+  dismissRecoveryCodesAction as dismissRecoveryCodesActionImpl,
+  loginAction as loginActionImpl,
+  logoutAction as logoutActionImpl,
+  regenerateRecoveryCodesAction as regenerateRecoveryCodesActionImpl,
+  requestPasswordResetAction as requestPasswordResetActionImpl,
+  revokeAllSessionsAction as revokeAllSessionsActionImpl,
+  revokeOtherSessionsAction as revokeOtherSessionsActionImpl,
+  sendPasswordResetSmokeAction as sendPasswordResetSmokeActionImpl,
+  startMfaEnrollmentAction as startMfaEnrollmentActionImpl,
+  updatePasswordAction as updatePasswordActionImpl,
+  verifyMfaAction as verifyMfaActionImpl,
+} from "./actions/auth-security-actions";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -108,9 +127,20 @@ class PayoutBatchClaimConflict extends Error {}
 class SettlementMutationConflict extends Error {}
 class AffiliatePayoutMutationConflict extends Error {}
 
+function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
+  return {
+    actorId: auth.user.id,
+    actorLabel: auth.member?.role ?? "vendor_manager",
+  };
+}
+
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2025" || error.code === "P2034");
+}
+
+function isRecordNotFoundError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2025";
 }
 
 function isSettlementMutationConflict(error: unknown) {
@@ -127,116 +157,16 @@ function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
-const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_SOURCE_LIMIT = 20;
-const LOGIN_SOURCE_EMAIL_LIMIT = 5;
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
-function normalizedEmail(value: string) {
-  return value.trim().toLowerCase();
-}
 
-function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
-    return fallback;
-  }
-  return value;
-}
-
+// Keep the legacy public action surface stable while the auth/security domain
+// owns its implementation in a dedicated file-level `use server` module.
 export async function loginAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const email = normalizedEmail(text(formData, "email"));
-  const password = text(formData, "password");
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimitRequest = new Request(appUrl, { headers: rateLimitHeaders });
-
-  const sourceRateLimited = await checkRateLimit(
-    rateLimitRequest,
-    "login-source",
-    LOGIN_SOURCE_LIMIT,
-    LOGIN_RATE_LIMIT_WINDOW_MS,
-  );
-  if (sourceRateLimited) {
-    redirect(`/login?error=${sourceRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const sourceEmailRateLimited = await checkRateLimit(
-    rateLimitRequest,
-    `login-source-email:${email}`,
-    LOGIN_SOURCE_EMAIL_LIMIT,
-    LOGIN_RATE_LIMIT_WINDOW_MS,
-  );
-  if (sourceEmailRateLimited) {
-    redirect(`/login?error=${sourceEmailRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const auth = await authenticateUser(email, password);
-  if (!auth) {
-    await writeAuditLog({
-      actorLabel: "anonymous",
-      action: "login_failed",
-      targetType: "Auth",
-      targetId: email,
-      after: { email },
-    });
-    redirect("/login?error=1");
-  }
-
-  if (!auth.isPlatformAdmin && !auth.vendor) {
-    await writeAuditLog({
-      actorId: auth.user.id,
-      actorLabel: "user_without_vendor",
-      action: "login_without_active_vendor",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: { email: auth.user.email },
-    });
-    redirect("/login?error=no_vendor");
-  }
-
-  const { token, expiresAt } = await createUserSession({
-    userId: auth.user.id,
-    vendorId: auth.vendor?.id ?? null,
-    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-    userAgent: headerStore.get("user-agent"),
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? "user",
-    action: "login_success",
-    targetType: "User",
-    targetId: auth.user.id,
-    after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
-  });
-
-  if (auth.isPlatformAdmin) {
-    if (!auth.user.mfaFactor) {
-      redirect("/mfa/setup");
-    }
-    redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
-  }
-
-  redirect("/dashboard");
+  return loginActionImpl(formData);
 }
 
 export async function logoutAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  await revokeCurrentSession();
-  const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-  redirect("/login");
+  return logoutActionImpl(formData);
 }
 
 export async function saveBrandSettingsAction(formData: FormData) {
@@ -284,429 +214,39 @@ export async function saveTrackingSettingsAction(formData: FormData) {
 }
 
 export async function updatePasswordAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const currentPassword = text(formData, "currentPassword");
-  const password = text(formData, "password");
-  const confirmPassword = text(formData, "confirmPassword");
-
-  if (!await verifyPasswordAsync(currentPassword, auth.user.passwordHash)) {
-    redirect("/settings/security?error=current_password");
-  }
-  if (password.length < 12) {
-    redirect("/settings/security?error=short");
-  }
-  if (password !== confirmPassword) {
-    redirect("/settings/security?error=password_mismatch");
-  }
-  if (await verifyPasswordAsync(password, auth.user.passwordHash)) {
-    redirect("/settings/security?error=password_reuse");
-  }
-
-  const db = getDb();
-  const revokedAt = new Date();
-  await db.$transaction([
-    db.user.update({
-      where: { id: auth.user.id },
-      data: { passwordHash: await hashPasswordAsync(password) },
-    }),
-    db.userSession.updateMany({
-      where: { userId: auth.user.id, revokedAt: null },
-      data: { revokedAt },
-    }),
-  ]);
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "update_password",
-    targetType: "User",
-    targetId: auth.user.id,
-    after: { email: auth.user.email },
-  });
-  const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-  redirect("/login?password_changed=1");
+  return updatePasswordActionImpl(formData);
 }
 
 export async function requestPasswordResetAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "password-reset-request",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/password-reset/request?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const email = normalizedEmail(text(formData, "email"));
-  if (!email) {
-    redirect("/password-reset/request?error=invalid");
-  }
-
-  schedulePasswordResetLink({
-    email,
-    appUrl,
-    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-    userAgent: headerStore.get("user-agent"),
-  });
-
-  redirect("/password-reset/request?updated=sent");
+  return requestPasswordResetActionImpl(formData);
 }
 
 export async function confirmPasswordResetAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const token = text(formData, "token");
-  const password = text(formData, "password");
-  const confirmPassword = text(formData, "confirmPassword");
-
-  if (password.length < 12) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=short`);
-  }
-
-  if (password !== confirmPassword) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=mismatch`);
-  }
-
-  const { consumePasswordResetToken } = await import("@/lib/password-reset");
-  const result = await consumePasswordResetToken(token, password);
-  if (!result.ok) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=expired`);
-  }
-
-  redirect("/login?reset=1");
-}
-
-function longLivedCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 15,
-  };
-}
-
-function recoveryCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 10,
-  };
+  return confirmPasswordResetActionImpl(formData);
 }
 
 export async function startMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  if (auth.user.mfaFactor) {
-    redirect(`${destination}?updated=mfa_exists`);
-  }
-
-  const cookieStore = await cookies();
-  const secret = generateTotpSecret();
-  cookieStore.set(
-    MFA_SETUP_COOKIE,
-    serializePendingMfaSetup(secret, auth.user.id),
-    longLivedCookieOptions(),
-  );
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(`${destination}?updated=mfa_started`);
+  return startMfaEnrollmentActionImpl(formData);
 }
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  const code = text(formData, "code");
-  const cookieStore = await cookies();
-  const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
-
-  if (!pending || pending.userId !== auth.user.id || !verifyTotpCode(pending.secret, code)) {
-    redirect(`${destination}?error=mfa_code`);
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
-  const secretEncrypted = encryptMfaSecret(pending.secret);
-
-  await getDb().$transaction([
-    getDb().userMfaFactor.upsert({
-      where: { userId: auth.user.id },
-      create: {
-        userId: auth.user.id,
-        factorType: "totp",
-        label: "CelebrateDeal Authenticator",
-        secretEncrypted,
-      },
-      update: {
-        factorType: "totp",
-        label: "CelebrateDeal Authenticator",
-        secretEncrypted,
-        enabledAt: new Date(),
-        lastUsedAt: new Date(),
-      },
-    }),
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue, index) => ({
-        userId: auth.user.id,
-        codeHash: recoveryCodeHashes[index]!,
-      })),
-    }),
-  ]);
-
-  await markCurrentSessionMfaVerified();
-  cookieStore.delete(MFA_SETUP_COOKIE);
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_enabled",
-    targetType: "UserMfaFactor",
-    targetId: auth.user.id,
-    after: auditSnapshot({ factorType: "totp" }),
-  });
-  redirect(`${destination}?updated=mfa_enabled`);
+  return confirmMfaEnrollmentActionImpl(formData);
 }
 
 export async function verifyMfaAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const next = safeInternalPath(text(formData, "next", "/admin/billing/dashboard"));
-  const code = text(formData, "code");
-
-  if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
-  }
-
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    `mfa-verification:${auth.user.id}`,
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
-  }
-
-  const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
-  const recoveryCodes = await getDb().userRecoveryCode.findMany({
-    where: {
-      userId: auth.user.id,
-      usedAt: null,
-    },
-  });
-
-  const recoveryCodeMatches = await Promise.all(
-    recoveryCodes.map((recoveryCode) => verifyRecoveryCodeAsync(code, recoveryCode.codeHash)),
-  );
-  const matchedRecoveryCode = recoveryCodes.find((_, index) => recoveryCodeMatches[index]);
-  if (!verifyTotpCode(secret, code) && !matchedRecoveryCode) {
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "mfa_verify_failed",
-      targetType: "UserMfaFactor",
-      targetId: auth.user.id,
-    });
-    redirect(`/mfa/verify?error=invalid&next=${encodeURIComponent(next)}`);
-  }
-
-  if (matchedRecoveryCode) {
-    const claim = await getDb().userRecoveryCode.updateMany({
-      where: {
-        id: matchedRecoveryCode.id,
-        userId: auth.user.id,
-        usedAt: null,
-      },
-      data: { usedAt: new Date() },
-    });
-    if (claim.count !== 1) {
-      await writeAuditLog({
-        vendorId: auth.vendor?.id ?? null,
-        actorId: auth.user.id,
-        actorLabel: auth.member?.role ?? auth.user.platformRole,
-        action: "mfa_verify_failed",
-        targetType: "UserMfaFactor",
-        targetId: auth.user.id,
-      });
-      redirect(`/mfa/verify?error=invalid&next=${encodeURIComponent(next)}`);
-    }
-  } else {
-    await getDb().userMfaFactor.update({
-      where: { userId: auth.user.id },
-      data: { lastUsedAt: new Date() },
-    });
-  }
-
-  await markCurrentSessionMfaVerified();
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: matchedRecoveryCode ? "mfa_verify_recovery_code" : "mfa_verify_totp",
-    targetType: "UserMfaFactor",
-    targetId: auth.user.id,
-  });
-  redirect(next);
+  return verifyMfaActionImpl(formData);
 }
 
 export async function dismissRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const cookieStore = await cookies();
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security");
+  return dismissRecoveryCodesActionImpl(formData);
 }
 
 export async function regenerateRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-
-  if (!auth.user.mfaFactor) {
-    redirect(`${destination}?error=mfa_required`);
-  }
-
-  const headerStore = await headers();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(getCanonicalAppUrl(), { headers: rateLimitHeaders }),
-    `mfa-recovery-regeneration:${auth.user.id}`,
-    3,
-    15 * 60 * 1000,
-  );
-  if (rateLimited) {
-    redirect(`${destination}?error=${rateLimited.status === 429 ? "recovery_rate_limited" : "recovery_unavailable"}`);
-  }
-
-  const code = text(formData, "code");
-  const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
-  if (!verifyTotpCode(secret, code)) {
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "mfa_recovery_codes_regeneration_failed",
-      targetType: "UserRecoveryCode",
-      targetId: auth.user.id,
-    });
-    redirect(`${destination}?error=mfa_code`);
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
-  await getDb().$transaction([
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue, index) => ({
-        userId: auth.user.id,
-        codeHash: recoveryCodeHashes[index]!,
-      })),
-    }),
-    getDb().userMfaFactor.update({
-      where: { userId: auth.user.id },
-      data: { lastUsedAt: new Date() },
-    }),
-  ]);
-
-  const cookieStore = await cookies();
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_recovery_codes_regenerated",
-    targetType: "UserRecoveryCode",
-    targetId: auth.user.id,
-    after: auditSnapshot({ codeCount: recoveryCodes.length }),
-  });
-  redirect(`${destination}?updated=recovery_regenerated`);
+  return regenerateRecoveryCodesActionImpl(formData);
 }
 
 export async function sendPasswordResetSmokeAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const headerStore = await headers();
-  const appUrl = getCanonicalAppUrl();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  let sent = false;
-
-  if (!isAllowedSmokeTestRecipient(auth.user.email)) {
-    redirect(`${destination}?error=password_reset_smoke_recipient`);
-  }
-
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    `password-reset-smoke:${auth.user.id}`,
-    3,
-    15 * 60 * 1000,
-  );
-  if (rateLimited) {
-    redirect(`${destination}?error=${rateLimited.status === 429 ? "password_reset_smoke_rate_limited" : "password_reset_smoke_unavailable"}`);
-  }
-
-  try {
-    await sendPasswordResetLink({
-      email: auth.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    });
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "password_reset_smoke_email_sent",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: auditSnapshot({ email: auth.user.email }),
-    });
-    sent = true;
-  } catch {
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "password_reset_smoke_email_failed",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: auditSnapshot({ email: auth.user.email }),
-    });
-  }
-
-  redirect(sent ? `${destination}?updated=password_reset_smoke` : `${destination}?error=password_reset_smoke`);
+  return sendPasswordResetSmokeActionImpl(formData);
 }
 
 // A file-level `use server` module must expose direct async function exports.
@@ -724,74 +264,60 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
   return resendVendorMemberInvitationActionImpl(formData);
 }
 
+export async function voidAffiliateCommissionAction(formData: FormData) {
+  return voidAffiliateCommissionActionImpl(formData);
+}
+
 export async function revokeOtherSessionsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  await getDb().userSession.updateMany({
-    where: {
-      userId: auth.user.id,
-      id: { not: auth.session.id },
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    data: { revokedAt: new Date() },
-  });
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "revoke_other_sessions",
-    targetType: "User",
-    targetId: auth.user.id,
-  });
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=sessions_revoked");
+  return revokeOtherSessionsActionImpl(formData);
 }
 
 export async function revokeAllSessionsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  await getDb().userSession.updateMany({
-    where: {
-      userId: auth.user.id,
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    data: { revokedAt: new Date() },
-  });
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "revoke_all_sessions",
-    targetType: "User",
-    targetId: auth.user.id,
-  });
-  const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-  redirect("/login?revoked=1");
+  return revokeAllSessionsActionImpl(formData);
 }
 
 export async function upsertVideoAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
+  const invalidVideoPath = id
+    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_video`
+    : "/videos/new?error=invalid_video";
+  if (id && id.length > 128) redirect("/videos/new?error=invalid_video");
+  const db = getDb();
+  const thumbnailAssetId = optionalText(formData, "thumbnailAssetId");
+  const invalidImageAssetPath = id
+    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_image_asset`
+    : "/videos/new?error=invalid_image_asset";
+  const thumbnailAsset = await resolveReadyImageAsset(db, { vendorId: vendor.id, assetId: thumbnailAssetId })
+    .catch(() => redirect(invalidImageAssetPath));
+  const thumbnailUrl = thumbnailAsset?.publicUrl
+    ?? optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址");
   const editableData = {
     title: text(formData, "title"),
     description: optionalText(formData, "description"),
-    thumbnailUrl: optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址"),
+    thumbnailUrl,
+    thumbnailAssetId: thumbnailAsset?.id ?? null,
     durationSec: intValue(formData, "durationSec"),
     estimatedMinutes: intValue(formData, "estimatedMinutes"),
   };
-  const db = getDb();
 
   if (id) {
     const existingVideo = await db.video.findFirst({
       where: { id, vendorId: vendor.id },
-      select: { id: true, sourceType: true },
+      select: {
+        id: true,
+        sourceType: true,
+        status: true,
+        cloudflareReadyToStream: true,
+        cloudflareLiveInputUid: true,
+        liveInputStatus: true,
+      },
     });
     if (!existingVideo) redirect("/videos?error=not_found");
+    if (existingVideo.sourceType !== "url" && !isLiveVideoReady(existingVideo)) {
+      redirect(`/videos/${encodeURIComponent(id)}/edit?error=video_processing`);
+    }
 
     const data = existingVideo.sourceType === "url"
       ? {
@@ -802,44 +328,20 @@ export async function upsertVideoAction(formData: FormData) {
       : editableData;
     await db.video.update({ where: { id, vendorId: vendor.id }, data });
   } else {
+    const externalVideoUrl = parseSafeExternalHttpUrl(text(formData, "videoUrl"));
+    if (!externalVideoUrl) redirect(invalidVideoPath);
     await db.video.create({
       data: {
         ...editableData,
         vendorId: vendor.id,
         sourceType: "url",
-        videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
+        videoUrl: externalVideoUrl,
         status: "ready",
       },
     });
   }
 
   redirect("/videos");
-}
-
-export async function upsertProductAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  const data = {
-    name: text(formData, "name"),
-    slug: toSlug(text(formData, "slug")),
-    description: optionalText(formData, "description"),
-    priceCents: intValue(formData, "priceCents"),
-    compareAtCents: optionalText(formData, "compareAtCents") ? intValue(formData, "compareAtCents") : null,
-    currency: text(formData, "currency", "TWD"),
-    imageUrl: optionalExternalUrl(formData, "imageUrl", "商品圖片網址"),
-    checkoutUrl: optionalExternalUrl(formData, "checkoutUrl", "商品結帳網址"),
-    inventory: intValue(formData, "inventory"),
-    isActive: formData.get("isActive") === "on",
-  };
-
-  if (id) {
-    await getDb().product.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().product.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/products");
 }
 
 export async function upsertFormAction(formData: FormData) {
@@ -877,144 +379,786 @@ export async function upsertFormAction(formData: FormData) {
   redirect("/forms");
 }
 
-export async function upsertTemplateAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  const data = {
-    name: text(formData, "name"),
-    channel: text(formData, "channel", "email"),
-    trigger: text(formData, "trigger", "registration_confirmed"),
-    subject: optionalText(formData, "subject"),
-    body: text(formData, "body"),
+function messageTemplateFormDraft(formData: FormData): MessageTemplateFormDraft {
+  const boundedValue = (key: string, maximum: number) => {
+    const value = formData.get(key);
+    return typeof value === "string" ? value.slice(0, maximum + 1) : "";
+  };
+  return {
+    name: boundedValue("name", 160),
+    channel: boundedValue("channel", 32),
+    trigger: boundedValue("trigger", 64),
+    subject: boundedValue("subject", 200),
+    body: boundedValue("body", 20_000),
     isActive: formData.get("isActive") === "on",
   };
+}
 
-  if (id) {
-    await getDb().messageTemplate.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
+function messageTemplateActionError(
+  previousState: MessageTemplateActionState,
+  error: MessageTemplateActionError,
+  draft: MessageTemplateFormDraft,
+  expectedUpdatedAt: string | null = null,
+): MessageTemplateActionState {
+  return {
+    status: "error",
+    error,
+    draft,
+    expectedUpdatedAt,
+    version: previousState.version + 1,
+  };
+}
+
+export async function upsertTemplateAction(
+  previousState: MessageTemplateActionState,
+  formData: FormData,
+): Promise<MessageTemplateActionState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
+  const id = optionalText(formData, "id");
+  const expectedUpdatedAtValue = optionalText(formData, "expectedUpdatedAt");
+  const expectedUpdatedAt = expectedUpdatedAtValue ? new Date(expectedUpdatedAtValue) : null;
+  const expectedUpdatedAtIsValid = Boolean(
+    expectedUpdatedAt
+    && !Number.isNaN(expectedUpdatedAt.getTime())
+    && expectedUpdatedAt.toISOString() === expectedUpdatedAtValue,
+  );
+  const submittedDraft = messageTemplateFormDraft(formData);
+  if (
+    id
+    && (
+      id.length > 128
+      || !expectedUpdatedAtIsValid
+    )
+  ) {
+    return messageTemplateActionError(previousState, "invalid_template", submittedDraft);
+  }
+  const normalized = normalizeMessageTemplateDraft(submittedDraft);
+  if (!normalized.success) {
+    return messageTemplateActionError(
+      previousState,
+      "invalid_template",
+      submittedDraft,
+      expectedUpdatedAtIsValid ? expectedUpdatedAtValue : null,
+    );
+  }
+  const data = normalized.data;
+
+  const db = getDb();
+  let outcome: {
+    template: Awaited<ReturnType<typeof db.messageTemplate.create>>;
+    reconciliationStatuses: string[];
+  };
+  try {
+    outcome = await db.$transaction(async (tx) => {
+      const template = id
+        ? await tx.messageTemplate.update({ where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt ?? undefined }, data })
+        : await tx.messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
+      if (!id) return { template, reconciliationStatuses: [] };
+
+      const linkedLives = await tx.live.findMany({
+        where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
+        select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+      });
+      const reconciliationStatuses: string[] = [];
+      for (const live of linkedLives) {
+        const queued = await queueLiveReminderReconciliation(tx, createLiveReminderReconciliationSnapshot({
+          vendorId: vendor.id,
+          liveId: live.id,
+          liveTitle: live.title,
+          liveStatus: live.status,
+          scheduledAt: live.scheduledAt,
+          reminderOffsetMinutes: live.liveReminderOffsetMinutes,
+          template,
+        }));
+        reconciliationStatuses.push(queued.status);
+      }
+      return { template, reconciliationStatuses };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (isRecordNotFoundError(error)) {
+      const current = id
+        ? await db.messageTemplate.findFirst({
+            where: { id, vendorId: vendor.id },
+            select: { updatedAt: true },
+          })
+        : null;
+      return messageTemplateActionError(
+        previousState,
+        current ? "conflict" : "missing_template",
+        submittedDraft,
+        current?.updatedAt.toISOString() ?? null,
+      );
+    }
+    throw error;
+  }
+  const { template, reconciliationStatuses } = outcome;
+
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: id ? "message_template_updated" : "message_template_created",
+    targetType: "MessageTemplate",
+    targetId: template.id,
+    after: auditSnapshot({
+      name: data.name,
+      channel: data.channel,
+      trigger: data.trigger,
+      isActive: data.isActive,
+      hasSubject: true,
+      bodyLength: data.body.length,
+    }),
+  });
+
+  redirect(reconciliationStatuses.length > 0
+    ? "/messages/templates?notice=reminders_reconciling"
+    : "/messages/templates");
+}
+
+async function requireLiveQuotaPaymentMethod(
+  db: PrismaClient,
+  vendorId: string,
+  quotaPolicy: Pick<LiveQuotaPolicy, "customAllocations" | "memberQuotas" | "pageQuotas" | "quotaPayerScope">,
+  id: string | null,
+  draftId: string,
+) {
+  const quotaMemberIds = [
+    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
+    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
+  ];
+  if (quotaMemberIds.length === 0 && quotaPolicy.pageQuotas.length === 0) return;
+  try {
+    await assertPaymentMethodReferenceForQuota(db, {
+      vendorId,
+      payerScope: quotaPolicy.quotaPayerScope,
+      memberIds: quotaMemberIds,
+    });
+  } catch (error) {
+    if (error instanceof PaymentMethodReferenceRequiredError) redirect(
+      id
+        ? `/lives/${encodeURIComponent(id)}/edit?error=payment_method_required`
+        : `/lives/new?error=payment_method_required&draft=${encodeURIComponent(draftId)}`,
+    );
+    throw error;
+  }
+}
+
+function hasInvalidLiveReferences(input: {
+  liveMissing: boolean;
+  productCount: number;
+  expectedProductCount: number;
+  videoMissing: boolean;
+  formMissing: boolean;
+  templateMissing: boolean;
+  reminderTemplateMissing: boolean;
+  scriptMissing: boolean;
+  affiliateMissing: boolean;
+  customMembershipMissing: boolean;
+  quotaPageCount: number;
+  expectedQuotaPageCount: number;
+}) {
+  return input.liveMissing
+    || input.productCount !== input.expectedProductCount
+    || input.videoMissing
+    || input.formMissing
+    || input.templateMissing
+    || input.reminderTemplateMissing
+    || input.scriptMissing
+    || input.affiliateMissing
+    || input.customMembershipMissing
+    || input.quotaPageCount !== input.expectedQuotaPageCount;
+}
+
+function isMissingDefaultAffiliate(
+  code: string | null,
+  affiliate: { id: string } | null,
+) {
+  return code !== null && affiliate === null;
+}
+
+function optionalDraftReference(value: string) {
+  return value ? value : null;
+}
+
+type LiveMutationData = {
+  title: string;
+  slug: string;
+  description: string | null;
+  scheduledAt: Date;
+  status: string;
+  videoId: string | null;
+  formId: string | null;
+  messageTemplateId: string | null;
+  liveReminderTemplateId: string | null;
+  liveReminderOffsetMinutes: number;
+  interactionScriptId: string | null;
+  heroImageUrl: string | null;
+  heroImageAssetId: string | null;
+  accentCopy: string | null;
+  replayEnabled: boolean;
+  streamMode: string;
+  quotaPolicy: Prisma.InputJsonValue;
+};
+
+function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
+  const draftId = optionalText(formData, "liveDraftId");
+  const revisionText = text(formData, "liveDraftRevision");
+  const revision = /^\d{1,9}$/u.test(revisionText) ? Number.parseInt(revisionText, 10) : 0;
+  const conflictPath = liveId
+    ? `/lives/${encodeURIComponent(liveId)}/edit?error=draft_conflict`
+    : `/lives/new?error=draft_conflict${draftId ? `&draft=${encodeURIComponent(draftId)}` : ""}`;
+  if (!draftId || draftId.length > 128 || revision < 1) redirect(conflictPath);
+  return { draftId, revision, conflictPath };
+}
+
+const liveStatusTransitions: Readonly<Record<string, ReadonlySet<string>>> = {
+  draft: new Set(["draft", "scheduled"]),
+  scheduled: new Set(["draft", "scheduled", "live"]),
+  live: new Set(["live", "ended"]),
+  ended: new Set(["draft", "ended", "scheduled"]),
+};
+
+function requestedLiveStatus(
+  formData: FormData,
+  liveId: string | null,
+  draftId: string,
+  currentStatus: string | null,
+) {
+  const status = text(formData, "status", "draft");
+  const transitionAllowed = liveId
+    ? Boolean(currentStatus && liveStatusTransitions[currentStatus]?.has(status))
+    : status === "draft";
+  if (!transitionAllowed) {
+    redirect(
+      liveId
+        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_status`
+        : `/lives/new?error=invalid_status&draft=${encodeURIComponent(draftId)}`,
+    );
+  }
+  return status;
+}
+
+async function commitLiveDraft(input: {
+  db: PrismaClient;
+  vendorId: string;
+  liveId: string | null;
+  draftId: string;
+  revision: number;
+  expectedDraftPayload: LiveStudioDraftPayload;
+  data: LiveMutationData;
+  productIds: string[];
+  reminderReconciliationSnapshot: LiveReminderReconciliationSnapshot | null;
+}) {
+  const transitionAt = new Date();
+  if (input.liveId) {
+    return input.db.$transaction(async (tx) => {
+      const claimedDraft = await tx.liveStudioDraft.updateMany({
+        where: {
+          id: input.draftId,
+          vendorId: input.vendorId,
+          liveId: input.liveId,
+          revision: input.revision,
+          payload: { equals: input.expectedDraftPayload as Prisma.InputJsonValue },
+          consumedAt: null,
+          expiresAt: { gt: transitionAt },
+        },
+        data: { revision: { increment: 1 } },
+      });
+      if (claimedDraft.count !== 1) return null;
+      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: input.data });
+      await tx.liveProduct.deleteMany({ where: { liveId: input.liveId! } });
+      for (const [index, productId] of input.productIds.entries()) {
+        await tx.liveProduct.create({
+          data: { vendorId: input.vendorId, liveId: input.liveId!, productId, sortOrder: index + 1, isPinned: index === 0 },
+        });
+      }
+      const reminderReconciliation = input.reminderReconciliationSnapshot
+        ? await queueLiveReminderReconciliation(tx, input.reminderReconciliationSnapshot, transitionAt)
+        : null;
+      return {
+        id: input.liveId!,
+        created: false,
+        reminderReconciliationStatus: reminderReconciliation?.status ?? null,
+      };
+    });
   }
 
-  redirect("/messages/templates");
+  return input.db.$transaction(async (tx) => {
+    const claimedDraft = await tx.liveStudioDraft.updateMany({
+      where: {
+        id: input.draftId,
+        vendorId: input.vendorId,
+        liveId: null,
+        revision: input.revision,
+        payload: { equals: input.expectedDraftPayload as Prisma.InputJsonValue },
+        consumedAt: null,
+        expiresAt: { gt: transitionAt },
+      },
+      data: { consumedAt: transitionAt },
+    });
+    if (claimedDraft.count !== 1) return null;
+    const live = await tx.live.create({
+      data: {
+        ...input.data,
+        vendorId: input.vendorId,
+        products: {
+          create: input.productIds.map((productId, index) => ({
+            vendorId: input.vendorId,
+            productId,
+            sortOrder: index + 1,
+            isPinned: index === 0,
+          })),
+        },
+      },
+    });
+    return { id: live.id, created: true, reminderReconciliationStatus: null };
+  });
+}
+
+function parseSubmittedLiveDraft(formData: FormData, liveId: string | null, draftId: string) {
+  const suffix = liveId ? "" : `&draft=${encodeURIComponent(draftId)}`;
+  const invalidDraftPath = liveId
+    ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_draft`
+    : `/lives/new?error=invalid_draft${suffix}`;
+  let payload: LiveStudioDraftPayload;
+  try {
+    payload = liveStudioDraftFromFormData(formData, 4);
+  } catch {
+    redirect(invalidDraftPath);
+  }
+  const scheduledAt = new Date(payload.scheduledAt);
+  const slug = toSlug(payload.slug);
+  if (!payload.title || !slug || !payload.scheduledAt || Number.isNaN(scheduledAt.getTime())) {
+    redirect(invalidDraftPath);
+  }
+  return { payload, scheduledAt, slug, suffix };
+}
+
+function parseSubmittedLiveQuotaPolicy(
+  payload: LiveStudioDraftPayload,
+  liveId: string | null,
+  createDraftSuffix: string,
+) {
+  try {
+    return parseLiveQuotaPolicyForm({
+      affiliateMode: payload.affiliateMode,
+      defaultAffiliateCode: payload.defaultAffiliateCode || null,
+      maxConcurrentViewers: Number.parseInt(payload.maxConcurrentViewers, 10),
+      stopWhenCreditsBelow: Number.parseInt(payload.stopWhenCreditsBelow, 10),
+      quotaPayerScope: payload.quotaPayerScope,
+      usageAttributionMode: payload.usageAttributionMode,
+      splitOwnerBps: Number.parseInt(payload.splitOwnerBps, 10),
+      splitPromoterBps: Number.parseInt(payload.splitPromoterBps, 10),
+      customAllocations: payload.customAllocations || null,
+      memberQuotas: payload.memberQuotas || null,
+      pageQuotas: payload.pageQuotas || null,
+    });
+  } catch (error) {
+    if (error instanceof LiveQuotaPolicyValidationError) redirect(
+      liveId
+        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_policy`
+        : `/lives/new?error=invalid_policy${createDraftSuffix}`,
+    );
+    throw error;
+  }
+}
+
+async function resolveSubmittedLiveReferences(input: {
+  db: PrismaClient;
+  vendorId: string;
+  liveId: string | null;
+  productIds: string[];
+  videoId: string | null;
+  formId: string | null;
+  messageTemplateId: string | null;
+  liveReminderTemplateId: string | null;
+  interactionScriptId: string | null;
+  defaultAffiliateCode: string | null;
+  heroImageAssetId: string | null;
+  quotaPageIds: string[];
+  invalidReferencePath: string;
+}) {
+  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
+    input.liveId
+      ? input.db.live.findFirst({
+          where: { id: input.liveId, vendorId: input.vendorId },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            scheduledAt: true,
+            liveReminderTemplateId: true,
+            liveReminderOffsetMinutes: true,
+          },
+        })
+      : Promise.resolve(null),
+    input.productIds.length > 0
+      ? input.db.product.findMany({ where: { vendorId: input.vendorId, id: { in: input.productIds }, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true } })
+      : Promise.resolve([]),
+    input.videoId ? input.db.video.findFirst({ where: liveReadyVideoWhere(input.vendorId, input.videoId), select: { id: true } }) : Promise.resolve(null),
+    input.formId ? input.db.registrationForm.findFirst({
+      where: { id: input.formId, vendorId: input.vendorId, isActive: true },
+      select: { id: true, fields: true },
+    }) : Promise.resolve(null),
+    input.messageTemplateId ? input.db.messageTemplate.findFirst({
+      where: {
+        id: input.messageTemplateId,
+        vendorId: input.vendorId,
+        ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+      },
+      select: { id: true, subject: true, body: true },
+    }) : Promise.resolve(null),
+    input.liveReminderTemplateId ? input.db.messageTemplate.findFirst({
+      where: {
+        id: input.liveReminderTemplateId,
+        vendorId: input.vendorId,
+        ...LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+      },
+      select: {
+        id: true,
+        vendorId: true,
+        channel: true,
+        trigger: true,
+        subject: true,
+        body: true,
+        isActive: true,
+        updatedAt: true,
+      },
+    }) : Promise.resolve(null),
+    input.interactionScriptId ? input.db.interactionScript.findFirst({ where: { id: input.interactionScriptId, vendorId: input.vendorId, status: "published" }, select: { id: true } }) : Promise.resolve(null),
+    input.defaultAffiliateCode ? input.db.affiliate.findFirst({
+      where: { vendorId: input.vendorId, code: input.defaultAffiliateCode, isActive: true },
+      select: { id: true },
+    }) : Promise.resolve(null),
+    resolveReadyImageAsset(input.db, { vendorId: input.vendorId, assetId: input.heroImageAssetId })
+      .catch(() => redirect(input.invalidReferencePath)),
+    input.quotaPageIds.length > 0
+      ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
+      : Promise.resolve([]),
+  ]);
+  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, interactionScript, defaultAffiliate, heroImageAsset, quotaPages };
+}
+
+function requireSubmittedLivePublishReadiness(input: {
+  liveId: string | null;
+  draftId: string;
+  requestedStatus: string;
+  replayEnabled: boolean;
+  productCount: number;
+  productsReady: boolean;
+  videoReady: boolean;
+  registrationFormFields: unknown;
+  registrationEmail: { subject: string | null; body: string } | null;
+  interactionScriptReady: boolean;
+}) {
+  const readiness = getLivePublishReadiness({
+    productCount: input.productCount,
+    productsReady: input.productsReady,
+    videoReady: input.videoReady,
+    formReady: parseRegistrationFormFields(input.registrationFormFields).success,
+    registrationEmailReady: Boolean(input.registrationEmail && hasUsableMessageTemplateContent(input.registrationEmail)),
+    interactionScriptReady: input.interactionScriptReady,
+  });
+  if (!requiresLivePublishReadiness(input.requestedStatus, input.replayEnabled) || readiness.ready) return;
+  redirect(
+    input.liveId
+      ? `/lives/${encodeURIComponent(input.liveId)}/edit?error=publish_not_ready`
+      : `/lives/new?error=publish_not_ready&draft=${encodeURIComponent(input.draftId)}`,
+  );
+}
+
+function liveReminderSnapshotAfterUpdate(input: {
+  vendorId: string;
+  liveId: string | null;
+  existingLive: {
+    title: string;
+    status: string;
+    scheduledAt: Date;
+    liveReminderTemplateId: string | null;
+    liveReminderOffsetMinutes: number;
+  } | null;
+  requestedTitle: string;
+  requestedStatus: string;
+  scheduledAt: Date;
+  reminderOffsetMinutes: number;
+  template: LiveReminderTemplateSnapshot | null;
+}) {
+  const existing = input.existingLive;
+  if (!input.liveId || !existing) return null;
+  const previousActive = ["scheduled", "live"].includes(existing.status);
+  const nextActive = ["scheduled", "live"].includes(input.requestedStatus);
+  const templateId = input.template?.id ?? null;
+  const changed = existing.title !== input.requestedTitle
+    || existing.scheduledAt.getTime() !== input.scheduledAt.getTime()
+    || existing.liveReminderTemplateId !== templateId
+    || existing.liveReminderOffsetMinutes !== input.reminderOffsetMinutes
+    || (previousActive !== nextActive && (existing.liveReminderTemplateId !== null || templateId !== null));
+  if (!changed) return null;
+  return createLiveReminderReconciliationSnapshot({
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    liveTitle: input.requestedTitle,
+    liveStatus: input.requestedStatus,
+    scheduledAt: input.scheduledAt,
+    reminderOffsetMinutes: input.reminderOffsetMinutes,
+    template: input.template,
+  });
+}
+
+function liveReminderReconciliationNotice(status: string | null) {
+  if (!status) return null;
+  return ["cancelled", "reused_cancelled"].includes(status)
+    ? "reminders_cancelled"
+    : "reminders_reconciling";
 }
 
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  const rawProductIds = formData.getAll("productIds").filter((value): value is string => typeof value === "string");
+  const draftClaim = parseLiveDraftClaim(formData, id);
+  const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId);
+  const submittedDraft = parsedSubmission.payload;
+  const scheduledAt = parsedSubmission.scheduledAt;
+  const createDraftSuffix = parsedSubmission.suffix;
+  const rawProductIds = submittedDraft.productIds;
   const productIds = [...new Set(rawProductIds.map((productId) => productId.trim()).filter(Boolean))];
-  const videoId = optionalText(formData, "videoId");
-  const formId = optionalText(formData, "formId");
-  const messageTemplateId = optionalText(formData, "messageTemplateId");
-  const interactionScriptId = optionalText(formData, "interactionScriptId");
+  const videoId = optionalDraftReference(submittedDraft.videoId);
+  const formId = optionalDraftReference(submittedDraft.formId);
+  const messageTemplateId = optionalDraftReference(submittedDraft.messageTemplateId);
+  const liveReminderTemplateId = optionalDraftReference(submittedDraft.liveReminderTemplateId);
+  const interactionScriptId = optionalDraftReference(submittedDraft.interactionScriptId);
+  const heroImageAssetId = optionalDraftReference(submittedDraft.heroImageAssetId);
+  const quotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
   const invalidReferencePath = id
     ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
-    : "/lives/new?error=invalid_reference";
-  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, ...productIds].filter(
+    : `/lives/new?error=invalid_reference${createDraftSuffix}`;
+  const referenceIds = [id, videoId, formId, messageTemplateId, liveReminderTemplateId, interactionScriptId, heroImageAssetId, ...productIds].filter(
     (value): value is string => value !== null,
   );
   if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
     redirect(invalidReferencePath);
   }
-  const scheduledAtValue = text(formData, "scheduledAt");
   const db = getDb();
-  const [products, video, registrationForm, messageTemplate, interactionScript] = await Promise.all([
-    productIds.length > 0
-      ? db.product.findMany({ where: { vendorId: vendor.id, id: { in: productIds } }, select: { id: true } })
-      : Promise.resolve([]),
-    videoId ? db.video.findFirst({ where: { id: videoId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
-    formId ? db.registrationForm.findFirst({ where: { id: formId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
-    messageTemplateId ? db.messageTemplate.findFirst({ where: { id: messageTemplateId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
-    interactionScriptId ? db.interactionScript.findFirst({ where: { id: interactionScriptId, vendorId: vendor.id }, select: { id: true } }) : Promise.resolve(null),
-  ]);
-  const hasInvalidReference = products.length !== productIds.length
-    || (videoId !== null && !video)
-    || (formId !== null && !registrationForm)
-    || (messageTemplateId !== null && !messageTemplate)
-    || (interactionScriptId !== null && !interactionScript);
-  if (hasInvalidReference) {
-    redirect(invalidReferencePath);
-  }
-  const data = {
-    title: text(formData, "title"),
-    slug: toSlug(text(formData, "slug")),
-    description: optionalText(formData, "description"),
-    scheduledAt: scheduledAtValue ? new Date(scheduledAtValue) : new Date(),
-    status: text(formData, "status", "scheduled"),
+  const quotaMembershipIds = [
+    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
+    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
+  ];
+  const quotaPageIds = quotaPolicy.pageQuotas.map((quota) => quota.pageId);
+  const references = await resolveSubmittedLiveReferences({
+    db,
+    vendorId: vendor.id,
+    liveId: id,
+    productIds,
     videoId,
     formId,
     messageTemplateId,
+    liveReminderTemplateId,
     interactionScriptId,
-    heroImageUrl: optionalExternalUrl(formData, "heroImageUrl", "直播主視覺網址"),
-    accentCopy: optionalText(formData, "accentCopy"),
-    replayEnabled: formData.get("replayEnabled") !== "off",
-    streamMode: text(formData, "streamMode", "vod"),
-    quotaPolicy: {
-      maxConcurrentViewers: intValue(formData, "maxConcurrentViewers", 500),
-      stopWhenCreditsBelow: intValue(formData, "stopWhenCreditsBelow", 300),
-    } as Prisma.InputJsonValue,
+    defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
+    heroImageAssetId,
+    quotaPageIds,
+    invalidReferencePath,
+  });
+  const {
+    existingLive,
+    products,
+    video,
+    registrationForm,
+    messageTemplate,
+    liveReminderTemplate,
+    interactionScript,
+    defaultAffiliate,
+    heroImageAsset,
+    quotaPages,
+  } = references;
+  const customMemberships = quotaMembershipIds.length > 0
+    ? await db.teamMembership.findMany({
+        where: {
+          vendorId: vendor.id,
+          id: { in: [...new Set(quotaMembershipIds)] },
+          status: "ACTIVE",
+          leftAt: null,
+        },
+        select: { id: true, teamId: true },
+      })
+    : [];
+  const membershipKeys = new Set(customMemberships.map((membership) => `${membership.teamId}:${membership.id}`));
+  const hasInvalidCustomMembership = quotaPolicy.customAllocations.some(
+    (allocation) => !membershipKeys.has(`${allocation.teamId}:${allocation.membershipId}`),
+  );
+  const hasInvalidMemberQuota = quotaPolicy.memberQuotas.some(
+    (quota) => !membershipKeys.has(`${quota.teamId}:${quota.membershipId}`),
+  );
+  const hasInvalidReference = hasInvalidLiveReferences({
+    liveMissing: id !== null && !existingLive,
+    productCount: products.length,
+    expectedProductCount: productIds.length,
+    videoMissing: videoId !== null && !video,
+    formMissing: formId !== null && !registrationForm,
+    templateMissing: messageTemplateId !== null && !messageTemplate,
+    reminderTemplateMissing: liveReminderTemplateId !== null && !liveReminderTemplate,
+    scriptMissing: interactionScriptId !== null && !interactionScript,
+    affiliateMissing: isMissingDefaultAffiliate(quotaPolicy.defaultAffiliateCode, defaultAffiliate),
+    customMembershipMissing: hasInvalidCustomMembership || hasInvalidMemberQuota,
+    quotaPageCount: quotaPages.length,
+    expectedQuotaPageCount: new Set(quotaPageIds).size,
+  });
+  if (hasInvalidReference) {
+    redirect(invalidReferencePath);
+  }
+  await requireLiveQuotaPaymentMethod(db, vendor.id, quotaPolicy, id, draftClaim.draftId);
+  const requestedStatus = requestedLiveStatus(formData, id, draftClaim.draftId, existingLive?.status ?? null);
+  requireSubmittedLivePublishReadiness({
+    liveId: id,
+    draftId: draftClaim.draftId,
+    requestedStatus,
+    replayEnabled: submittedDraft.replayEnabled,
+    productCount: productIds.length,
+    productsReady: products.length === productIds.length,
+    videoReady: Boolean(video),
+    registrationFormFields: registrationForm?.fields,
+    registrationEmail: messageTemplate,
+    interactionScriptReady: Boolean(interactionScript),
+  });
+  let heroImageUrl;
+  try {
+    heroImageUrl = heroImageAsset?.publicUrl ?? safeExternalUrl(submittedDraft.heroImageUrl || null, "直播主視覺網址");
+  } catch {
+    redirect(invalidReferencePath);
+  }
+  const data = {
+    title: submittedDraft.title,
+    slug: parsedSubmission.slug,
+    description: submittedDraft.description || null,
+    scheduledAt,
+    status: requestedStatus,
+    videoId,
+    formId,
+    messageTemplateId,
+    liveReminderTemplateId,
+    liveReminderOffsetMinutes: Number(submittedDraft.liveReminderOffsetMinutes),
+    interactionScriptId,
+    heroImageUrl,
+    heroImageAssetId: heroImageAsset?.id ?? null,
+    accentCopy: submittedDraft.accentCopy || null,
+    replayEnabled: submittedDraft.replayEnabled,
+    streamMode: submittedDraft.streamMode,
+    quotaPolicy: quotaPolicy as Prisma.InputJsonValue,
   };
 
-  if (id) {
-    await db.$transaction([
-      db.live.update({ where: { id, vendorId: vendor.id }, data }),
-      db.liveProduct.deleteMany({ where: { liveId: id } }),
-      ...productIds.map((productId, index) =>
-        db.liveProduct.create({
-          data: { liveId: id, productId, sortOrder: index + 1, isPinned: index === 0 },
-        }),
-      ),
-    ]);
-    redirect(`/lives/${id}/edit`);
-  }
-
-  const live = await db.live.create({
-    data: {
-      ...data,
-      vendorId: vendor.id,
-      products: {
-        create: productIds.map((productId, index) => ({
-          productId,
-          sortOrder: index + 1,
-          isPinned: index === 0,
-        })),
-      },
-    },
+  const reminderReconciliationSnapshot = liveReminderSnapshotAfterUpdate({
+    vendorId: vendor.id,
+    liveId: id,
+    existingLive,
+    requestedTitle: data.title,
+    requestedStatus,
+    scheduledAt,
+    reminderOffsetMinutes: data.liveReminderOffsetMinutes,
+    template: liveReminderTemplate,
   });
 
-  redirect(`/lives/${live.id}/preview`);
+  const committed = await commitLiveDraft({
+    db,
+    vendorId: vendor.id,
+    liveId: id,
+    draftId: draftClaim.draftId,
+    revision: draftClaim.revision,
+    expectedDraftPayload: submittedDraft,
+    data,
+    productIds,
+    reminderReconciliationSnapshot,
+  });
+  if (!committed) redirect(draftClaim.conflictPath);
+  if (committed.created) redirect(`/lives/${committed.id}/preview`);
+  const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
+  redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
 
 export async function upsertInteractionRoleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const id = optionalText(formData, "id");
-  const data = {
+  const invalidRolePath = id
+    ? `/interaction-roles/${encodeURIComponent(id)}/edit?error=invalid_role`
+    : "/interaction-roles/new?error=invalid_role";
+  if (id && id.length > 128) redirect("/interaction-roles/new?error=invalid_role");
+
+  const validation = normalizeInteractionRoleDraft({
     name: text(formData, "name"),
-    avatarUrl: optionalExternalUrl(formData, "avatarUrl", "角色頭像網址"),
-    label: text(formData, "label", "官方角色"),
+    avatarUrl: optionalText(formData, "avatarUrl"),
+    label: optionalText(formData, "label"),
     roleType: text(formData, "roleType", "official"),
     tone: optionalText(formData, "tone"),
     isActive: formData.get("isActive") === "on",
-  };
+  });
+  if (!validation.success) redirect(invalidRolePath);
+  const data = validation.data;
 
-  if (id) {
-    await getDb().interactionRole.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().interactionRole.create({ data: { ...data, vendorId: vendor.id } });
-  }
+  const role = await (async () => {
+    try {
+      return id
+        ? await getDb().interactionRole.update({ where: { id, vendorId: vendor.id }, data })
+        : await getDb().interactionRole.create({ data: { ...data, vendorId: vendor.id } });
+    } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        redirect("/interaction-roles/new?error=missing_role");
+      }
+      throw error;
+    }
+  })();
+
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: id ? "interaction_role_updated" : "interaction_role_created",
+    targetType: "InteractionRole",
+    targetId: role.id,
+    after: auditSnapshot({
+      name: data.name,
+      label: data.label,
+      roleType: data.roleType,
+      tone: data.tone,
+      isActive: data.isActive,
+      hasAvatar: Boolean(data.avatarUrl),
+    }),
+  });
 
   redirect("/interaction-roles");
 }
 
 export async function deleteInteractionRoleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const id = text(formData, "id");
-  await getDb().interactionRole.delete({
-    where: { id, vendorId: vendor.id },
+  if (!id || id.length > 128) redirect("/interaction-roles/new?error=invalid_role");
+  const role = await (async () => {
+    try {
+      return await getDb().interactionRole.delete({
+        where: { id, vendorId: vendor.id },
+      });
+    } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        redirect("/interaction-roles/new?error=missing_role");
+      }
+      throw error;
+    }
+  })();
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: "interaction_role_deleted",
+    targetType: "InteractionRole",
+    targetId: role.id,
+    before: auditSnapshot({
+      name: role.name,
+      label: role.label,
+      roleType: role.roleType,
+      isActive: role.isActive,
+    }),
   });
   redirect("/interaction-roles/new");
 }
@@ -1038,7 +1182,8 @@ const systemRoleLibrary = [
 
 export async function importSystemRolesAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const db = getDb();
   const existing = await db.interactionRole.findMany({
     where: {
@@ -1049,10 +1194,19 @@ export async function importSystemRolesAction(formData: FormData) {
   });
   const existingNames = new Set(existing.map((role) => role.name));
 
-  await db.interactionRole.createMany({
+  const imported = await db.interactionRole.createMany({
     data: systemRoleLibrary
       .filter((role) => !existingNames.has(role.name))
       .map((role) => ({ ...role, vendorId: vendor.id, isActive: true })),
+  });
+
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: "interaction_role_library_imported",
+    targetType: "InteractionRole",
+    targetId: vendor.id,
+    after: auditSnapshot({ requestedCount: systemRoleLibrary.length, importedCount: imported.count }),
   });
 
   revalidatePath("/interaction-roles");
@@ -1061,7 +1215,8 @@ export async function importSystemRolesAction(formData: FormData) {
 
 export async function upsertInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const id = optionalText(formData, "id");
   const db = getDb();
   const roleIds = formData.getAll("roleId").map(String);
@@ -1072,30 +1227,37 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   const productIds = formData.getAll("productId").map(String);
   const ctaLabels = formData.getAll("ctaLabel").map(String);
   const ctaUrls = formData.getAll("ctaUrl").map(String);
+  const invalidEventPath = id
+    ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_event`
+    : "/interaction-scripts/new?error=invalid_event";
 
   if (eventTypes.length > 200) {
-    throw new Error("每個互動腳本最多可建立 200 個事件。");
+    redirect(invalidEventPath);
+  }
+  if (eventTypes.length === 0 || [roleIds, titles, messages, productIds, ctaLabels, ctaUrls]
+    .some((column) => column.length !== eventTypes.length)) {
+    redirect(invalidEventPath);
   }
   if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
-    throw new Error(INTERACTION_TIME_FORMAT_ERROR);
+    redirect(invalidEventPath);
   }
   const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
-    if (triggerSec === null) throw new Error(INTERACTION_TIME_FORMAT_ERROR);
+    if (triggerSec === null) redirect(invalidEventPath);
     return triggerSec;
   });
 
-  const events = eventTypes
-    .map((eventType, index) => ({
+  const eventResults = eventTypes.map((eventType, index) => normalizeInteractionEventDraft({
       eventType,
       triggerSec: triggerSecs[index],
-      title: titles[index]?.trim() || `${eventType} ${index + 1}`,
-      message: messages[index]?.trim() || null,
-      productId: productIds[index]?.trim() || null,
-      ctaLabel: ctaLabels[index]?.trim() || null,
-      ctaUrl: safeExternalUrl(ctaUrls[index]?.trim() || null, `第 ${index + 1} 個 CTA 網址`),
-      roleId: roleIds[index]?.trim() || null,
-    }))
-    .filter((event) => event.eventType && event.title);
+      title: titles[index],
+      message: messages[index],
+      productId: productIds[index],
+      ctaLabel: ctaLabels[index],
+      ctaUrl: ctaUrls[index],
+      roleId: roleIds[index],
+    }, index));
+  if (eventResults.some((result) => !result.success)) redirect(invalidEventPath);
+  const events = eventResults.flatMap((result) => result.success ? [result.data] : []);
 
   const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
   const referencedProductIds = [...new Set(events.flatMap((event) => event.productId ? [event.productId] : []))];
@@ -1108,13 +1270,13 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   const [referencedRoles, referencedProducts] = await Promise.all([
     referencedRoleIds.length > 0
       ? db.interactionRole.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedRoleIds } },
+          where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true },
           select: { id: true },
         })
       : Promise.resolve([]),
     referencedProductIds.length > 0
       ? db.product.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedProductIds } },
+          where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
           select: { id: true },
         })
       : Promise.resolve([]),
@@ -1123,38 +1285,59 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     redirect(invalidReferencePath);
   }
 
-  const data = {
-    name: text(formData, "name"),
-    description: optionalText(formData, "description"),
-    status: text(formData, "status", "draft"),
-  };
+  const name = text(formData, "name");
+  const description = optionalText(formData, "description");
+  const status = text(formData, "status", "draft");
+  if (!name || name.length > 160 || (description?.length ?? 0) > 1_000 || (status !== "draft" && status !== "published")) {
+    redirect(invalidEventPath);
+  }
+  const data = { name, description, status };
 
+  let scriptId = id;
   if (id) {
-    await db.$transaction([
-      db.interactionScript.update({ where: { id, vendorId: vendor.id }, data }),
-      db.interactionEvent.deleteMany({ where: { scriptId: id } }),
-      ...events.map((event) => db.interactionEvent.create({ data: { ...event, scriptId: id } })),
-    ]);
+    try {
+      await db.$transaction([
+        db.interactionScript.update({ where: { id, vendorId: vendor.id }, data }),
+        db.interactionEvent.deleteMany({ where: { scriptId: id } }),
+        ...events.map((event) => db.interactionEvent.create({ data: { ...event, scriptId: id } })),
+      ]);
+    } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        redirect("/interaction-scripts?error=missing_script");
+      }
+      throw error;
+    }
   } else {
-    await db.interactionScript.create({
+    const script = await db.interactionScript.create({
       data: {
         ...data,
         vendorId: vendor.id,
         events: { create: events },
       },
     });
+    scriptId = script.id;
   }
+
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: id ? "interaction_script_updated" : "interaction_script_created",
+    targetType: "InteractionScript",
+    targetId: scriptId,
+    after: auditSnapshot({ name, status, eventCount: events.length }),
+  });
 
   redirect("/interaction-scripts");
 }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const scriptId = text(formData, "id");
   const liveId = text(formData, "liveId");
 
-  if (!scriptId || !liveId) {
+  if (!scriptId || !liveId || scriptId.length > 128 || liveId.length > 128) {
     throw new Error("直播不存在或未綁定此互動腳本。");
   }
 
@@ -1172,6 +1355,16 @@ export async function unbindInteractionScriptFromLiveAction(formData: FormData) 
     throw new Error("直播不存在或未綁定此互動腳本。");
   }
 
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: "interaction_script_unbound_from_live",
+    targetType: "Live",
+    targetId: liveId,
+    before: auditSnapshot({ interactionScriptId: scriptId }),
+    after: auditSnapshot({ interactionScriptId: null }),
+  });
+
   revalidatePath("/interaction-scripts");
   revalidatePath(`/interaction-scripts/${scriptId}/edit`);
   revalidatePath("/lives");
@@ -1180,9 +1373,12 @@ export async function unbindInteractionScriptFromLiveAction(formData: FormData) 
 
 export async function duplicateInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const id = text(formData, "id");
-  const script = await getDb().interactionScript.findFirst({
+  if (!id || id.length > 128) redirect("/interaction-scripts");
+  const db = getDb();
+  const script = await db.interactionScript.findFirst({
     where: { id, vendorId: vendor.id },
     include: { events: { orderBy: { triggerSec: "asc" } } },
   });
@@ -1190,14 +1386,50 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
     redirect("/interaction-scripts");
   }
 
-  await getDb().interactionScript.create({
+  const eventResults = script.events.map((event, index) => normalizeInteractionEventDraft({
+    eventType: event.eventType,
+    triggerSec: event.triggerSec,
+    title: event.title,
+    message: event.message,
+    productId: event.productId,
+    ctaLabel: event.ctaLabel,
+    ctaUrl: event.ctaUrl,
+    roleId: event.roleId,
+  }, index));
+  if (eventResults.some((result) => !result.success)) {
+    redirect("/interaction-scripts?error=invalid_event");
+  }
+  const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
+  const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
+  const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
+  const [referencedRoles, referencedProducts] = await Promise.all([
+    referencedRoleIds.length > 0
+      ? db.interactionRole.findMany({
+          where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    referencedProductIds.length > 0
+      ? db.product.findMany({
+          where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  if (referencedRoles.length !== referencedRoleIds.length || referencedProducts.length !== referencedProductIds.length) {
+    redirect("/interaction-scripts?error=invalid_reference");
+  }
+  const duplicateNameSuffix = " 複本";
+  const duplicateName = `${script.name.slice(0, 160 - duplicateNameSuffix.length)}${duplicateNameSuffix}`;
+
+  const duplicate = await db.interactionScript.create({
     data: {
       vendorId: vendor.id,
-      name: `${script.name} 複本`,
+      name: duplicateName,
       description: script.description,
       status: "draft",
       events: {
-        create: script.events.map((event) => ({
+        create: normalizedEvents.map((event, index) => ({
           eventType: event.eventType,
           triggerSec: event.triggerSec,
           title: event.title,
@@ -1206,10 +1438,19 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
           ctaLabel: event.ctaLabel,
           ctaUrl: event.ctaUrl,
           roleId: event.roleId,
-          metadata: event.metadata as Prisma.InputJsonValue,
+          metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
         })),
       },
     },
+  });
+
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: "interaction_script_duplicated",
+    targetType: "InteractionScript",
+    targetId: duplicate.id,
+    after: auditSnapshot({ sourceScriptId: script.id, name: duplicateName, status: "draft", eventCount: normalizedEvents.length }),
   });
 
   revalidatePath("/interaction-scripts");
@@ -1218,10 +1459,29 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
 
 export async function deleteInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const auditActor = managerAuditIdentity(auth);
   const id = text(formData, "id");
-  await getDb().interactionScript.delete({
-    where: { id, vendorId: vendor.id },
+  if (!id || id.length > 128) redirect("/interaction-scripts");
+  const script = await (async () => {
+    try {
+      return await getDb().interactionScript.delete({
+        where: { id, vendorId: vendor.id },
+      });
+    } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        redirect("/interaction-scripts?error=missing_script");
+      }
+      throw error;
+    }
+  })();
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...auditActor,
+    action: "interaction_script_deleted",
+    targetType: "InteractionScript",
+    targetId: script.id,
+    before: auditSnapshot({ name: script.name, status: script.status }),
   });
   revalidatePath("/interaction-scripts");
   redirect("/interaction-scripts");
@@ -1300,100 +1560,17 @@ export async function generateSettlementAction(formData: FormData) {
     redirect("/admin/billing/settlements?error=missing");
   }
 
-  const db = getDb();
-  const vendor = await db.vendor.findUnique({ where: { id: vendorId } });
-  if (!vendor) {
-    redirect("/admin/billing/settlements?error=missing");
-  }
-
-  const existing = await db.settlement.findUnique({ where: { vendorId_monthKey: { vendorId, monthKey } } });
-  if (existing?.lockedAt) {
-    redirect("/admin/billing/settlements?error=locked");
-  }
-
-  const calculation = await calculateSettlement(vendorId, monthKey);
-  const adjustmentAmountCents = existing?.adjustmentAmountCents ?? 0;
-  const adjustmentReason = existing?.adjustmentReason ?? null;
-  const finalPayoutAmountCents = calculation.payoutableAmountCents + adjustmentAmountCents;
-  if (finalPayoutAmountCents < 0) {
-    redirect("/admin/billing/settlements?error=negative_payout");
-  }
-
-  let settlement;
+  let result;
   try {
-    settlement = await db.$transaction(async (tx) => {
-      const calculatedAmounts = {
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        paymentGatewayFeeCents: calculation.paymentGatewayFeeCents,
-        grossRevenueCents: calculation.grossRevenueCents,
-        payoutableAmountCents: calculation.payoutableAmountCents,
-        finalPayoutAmountCents,
-        status: "draft",
-      };
-
-      let savedSettlement;
-      if (existing) {
-        const updated = await tx.settlement.updateMany({
-          where: { id: existing.id, lockedAt: null, updatedAt: existing.updatedAt },
-          data: calculatedAmounts,
-        });
-        if (updated.count !== 1) throw new SettlementMutationConflict();
-        savedSettlement = await tx.settlement.findUnique({ where: { id: existing.id } });
-        if (!savedSettlement) throw new SettlementMutationConflict();
-      } else {
-        savedSettlement = await tx.settlement.create({
-          data: {
-            vendorId,
-            monthKey,
-            ...calculatedAmounts,
-            adjustmentAmountCents,
-            adjustmentReason,
-          },
-        });
-      }
-
-      const subtotalCents =
-        calculation.monthlyFeeCents +
-        calculation.overflowFeeCents +
-        calculation.paymentServiceFeeCents +
-        calculation.transactionServiceFeeCents +
-        calculation.affiliateManagementFeeCents;
-
-      await tx.invoice.upsert({
-        where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId) },
-        create: {
-          vendorId,
-          monthKey,
-          invoiceNumber: invoiceNumber(vendor.slug, monthKey, vendorId),
-          invoiceType: "monthly",
-          monthlyFeeCents: calculation.monthlyFeeCents,
-          overflowFeeCents: calculation.overflowFeeCents,
-          paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-          transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-          affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-          subtotalCents,
-          totalCents: subtotalCents,
-          status: "issued",
-        },
-        update: {
-          monthlyFeeCents: calculation.monthlyFeeCents,
-          overflowFeeCents: calculation.overflowFeeCents,
-          paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-          transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-          affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-          subtotalCents,
-          totalCents: subtotalCents,
-          status: "issued",
-        },
-      });
-
-      return savedSettlement;
-    });
+    result = await generateSettlementForVendor(vendorId, monthKey);
   } catch (error) {
+    if (error instanceof BillingCycleError) {
+      if (error.code === "locked") redirect("/admin/billing/settlements?error=locked");
+      if (error.code === "negative_payout") redirect("/admin/billing/settlements?error=negative_payout");
+      if (error.code === "terminal_invoice_amount_conflict") redirect("/admin/billing/settlements?error=invoice_conflict");
+      if (error.code === "conflict") redirect("/admin/billing/settlements?error=conflict");
+      redirect("/admin/billing/settlements?error=missing");
+    }
     if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
       redirect("/admin/billing/settlements?error=conflict");
     }
@@ -1406,9 +1583,9 @@ export async function generateSettlementAction(formData: FormData) {
     actorLabel: member.role,
     action: "generate_settlement",
     targetType: "Settlement",
-    targetId: settlement.id,
-    before: auditSnapshot(existing),
-    after: auditSnapshot({ settlement, calculation }),
+    targetId: result.settlement.id,
+    before: auditSnapshot(result.existingSettlement),
+    after: auditSnapshot({ settlement: result.settlement, calculation: result.calculation, invoice: result.invoice }),
   });
 
   revalidatePath("/admin/billing/settlements");
@@ -1520,19 +1697,37 @@ export async function lockSettlementAction(formData: FormData) {
           status: "locked",
           affiliateId: { not: null },
         },
-        select: { id: true, affiliateId: true },
+        select: {
+          id: true,
+          affiliateId: true,
+          commissionBaseAmountCents: true,
+          netReferenceAmountCents: true,
+        },
       });
-      const balancesByAffiliate = new Map<string, number>();
+      const payoutSnapshotsByAffiliate = new Map<string, {
+        commissionAmountCents: number;
+        grossSalesAmountCents: number;
+        netReferenceAmountCents: number;
+      }>();
       for (const commission of lockedCommissions) {
         if (!commission.affiliateId) continue;
         const balance = await commissionLedgerBalance(tx, settlement.vendorId, commission.id);
-        const current = balancesByAffiliate.get(commission.affiliateId) ?? 0;
-        const next = current + balance;
-        if (next < 0) throw new SettlementMutationConflict();
-        balancesByAffiliate.set(commission.affiliateId, next);
+        const current = payoutSnapshotsByAffiliate.get(commission.affiliateId) ?? {
+          commissionAmountCents: 0,
+          grossSalesAmountCents: 0,
+          netReferenceAmountCents: 0,
+        };
+        const next = {
+          commissionAmountCents: current.commissionAmountCents + balance,
+          grossSalesAmountCents: current.grossSalesAmountCents + commission.commissionBaseAmountCents,
+          netReferenceAmountCents: current.netReferenceAmountCents + commission.netReferenceAmountCents,
+        };
+        if (next.commissionAmountCents < 0) throw new SettlementMutationConflict();
+        payoutSnapshotsByAffiliate.set(commission.affiliateId, next);
       }
 
-      for (const [affiliateId, commissionAmountCents] of balancesByAffiliate) {
+      for (const [affiliateId, snapshot] of payoutSnapshotsByAffiliate) {
+        const { commissionAmountCents, grossSalesAmountCents, netReferenceAmountCents } = snapshot;
         // A zero balance is a valid locked commission state but is not an
         // amount payable to a merchant's affiliate.
         if (commissionAmountCents === 0) continue;
@@ -1551,6 +1746,8 @@ export async function lockSettlementAction(formData: FormData) {
             existingPayout.commissionAmountCents !== commissionAmountCents
             || existingPayout.adjustmentAmountCents !== 0
             || existingPayout.finalAmountCents !== commissionAmountCents
+            || (typeof existingPayout.grossSalesAmountCents === "number" && existingPayout.grossSalesAmountCents !== grossSalesAmountCents)
+            || (typeof existingPayout.netReferenceAmountCents === "number" && existingPayout.netReferenceAmountCents !== netReferenceAmountCents)
           ) {
             throw new SettlementMutationConflict();
           }
@@ -1565,14 +1762,24 @@ export async function lockSettlementAction(formData: FormData) {
             commissionAmountCents,
             adjustmentAmountCents: 0,
             finalAmountCents: commissionAmountCents,
+            grossSalesAmountCents,
+            netReferenceAmountCents,
             status: "pending",
           },
         });
       }
+      // Course F/G payables are a separate merchant-owned read model. They
+      // are grouped by recipient membership and original transaction month;
+      // this never implies a bank/KYC/tax check or an external payment.
+      await syncCoursePayoutsForSettlement(tx, {
+        vendorId: settlement.vendorId,
+        monthKey: settlement.monthKey,
+        ...monthRange(settlement.monthKey),
+      });
       return locked;
     });
   } catch (error) {
-    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+    if (error instanceof SettlementMutationConflict || error instanceof CoursePayoutMutationConflict || isSettlementMutationConflict(error)) {
       redirect("/admin/billing/settlements?error=conflict");
     }
     throw error;
@@ -1600,7 +1807,15 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
   const id = text(formData, "id");
   const status = text(formData, "status");
   const reason = text(formData, "reason");
-  if (!id || id.length > 200 || (status !== "paid" && status !== "void") || reason.length < 1 || reason.length > 500) {
+  const outcomeReference = optionalText(formData, "outcomeReference");
+  if (
+    !id
+    || id.length > 200
+    || (status !== "paid" && status !== "void")
+    || reason.length < 1
+    || reason.length > 500
+    || (status === "paid" && (!outcomeReference || outcomeReference.length > 200))
+  ) {
     redirect("/affiliates/commissions?error=invalid_payout");
   }
 
@@ -1663,7 +1878,12 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
 
       const payoutClaim = await tx.affiliatePayout.updateMany({
         where: { id: payout.id, vendorId: vendor.id, status: "pending", payoutItemId: null },
-        data: { status, paidAt: status === "paid" ? transitionedAt : null },
+        data: {
+          status,
+          outcomeReference: status === "paid" ? outcomeReference : null,
+          outcomeReason: reason,
+          paidAt: status === "paid" ? transitionedAt : null,
+        },
       });
       if (payoutClaim.count !== 1) throw new AffiliatePayoutMutationConflict();
 
@@ -1690,7 +1910,7 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
           targetType: "AffiliatePayout",
           targetId: payout.id,
           before: auditSnapshot(payout),
-          after: auditSnapshot({ payout: updated, reason, transitionedAt }),
+          after: auditSnapshot({ payout: updated, reference: status === "paid" ? outcomeReference : null, reason, transitionedAt }),
           ipAddress: auditMeta.ipAddress,
           userAgent: auditMeta.userAgent,
         },
@@ -1837,7 +2057,10 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
   const id = text(formData, "id");
   const parsedStatus = PayoutItemTargetStatus.safeParse(text(formData, "status"));
   const failReason = optionalText(formData, "failReason");
-  if (!parsedStatus.success || (parsedStatus.data === "failed" && (!failReason || failReason.length > 500))) {
+  const outcomeReference = optionalText(formData, "outcomeReference");
+  if (!parsedStatus.success
+    || (parsedStatus.data === "failed" && (!failReason || failReason.length > 500))
+    || (parsedStatus.data === "paid" && (!outcomeReference || outcomeReference.length > 200))) {
     redirect("/admin/billing/payouts?error=invalid_status");
   }
   const status = parsedStatus.data;
@@ -1849,6 +2072,7 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
   const data: Prisma.PayoutItemUpdateInput = {
     status,
     failReason: status === "failed" ? failReason : null,
+    outcomeReference: status === "paid" ? outcomeReference : null,
   };
 
   if (status === "paid") {
@@ -1877,28 +2101,27 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
         });
 
         if (item.settlementId && status === "paid") {
-          const settlement = await tx.settlement.findFirst({
-            where: { id: item.settlementId, vendorId: item.vendorId },
-          });
-          if (!settlement) throw new PayoutBatchClaimConflict();
           const paidAt = new Date();
           const settlementTransition = await tx.settlement.updateMany({
-            where: { id: settlement.id, vendorId: item.vendorId, status: { not: "paid" } },
+            where: {
+              id: item.settlementId,
+              vendorId: item.vendorId,
+              payoutBatchId: item.payoutBatchId,
+              finalPayoutAmountCents: item.payoutAmountCents,
+              status: "ready_for_payout",
+            },
             data: { status: "paid", paidAt },
           });
           if (settlementTransition.count !== 1) throw new PayoutBatchClaimConflict();
-          // Lock-to-paid happens in the same serializable transaction as the
-          // payout item. Tenant and month are both part of the predicate.
-          await tx.affiliateCommission.updateMany({
-            where: { vendorId: item.vendorId, monthKey: settlement.monthKey, status: "locked" },
-            data: { status: "paid", settledAt: paidAt },
-          });
+          // This platform payout settles the vendor only. Merchant-owned
+          // affiliate commissions remain locked until the merchant records
+          // the separate AffiliatePayout outcome with its own evidence.
         }
 
         return savedItem;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
-      if (isDatabaseTransactionConflict(error)) {
+      if (error instanceof PayoutBatchClaimConflict || isDatabaseTransactionConflict(error)) {
         redirect("/admin/billing/payouts?error=invalid_transition");
       }
       throw error;
@@ -1999,6 +2222,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     }
 
     const requestId = randomBytes(16).toString("hex");
+    const requestReservationEventId = `request:${requestId}`;
+    const ambiguousReservationEventId = `ambiguous:${requestId}`;
     let reserved: { transaction: typeof providerTransaction; refundId: string };
     try {
       reserved = await db.$transaction(async (tx) => {
@@ -2036,7 +2261,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
           data: {
             vendorId: transaction.vendorId,
             paymentTransactionId: transaction.id,
-            providerEventId: `request:${requestId}`,
+            providerEventId: requestReservationEventId,
             monthKey,
             refundAmountCents,
             gatewayFeeRefundCents,
@@ -2062,15 +2287,31 @@ export async function refundPaymentTransactionAction(formData: FormData) {
         requestId,
       });
     } catch (error) {
+      const category = error instanceof RefundProviderError ? error.category : "unknown";
+      // request_contract is the only category that is known to fail before a
+      // provider request can be sent. Every other outcome may have reached
+      // PayUni, so keep the reservation pending and require a provider query
+      // before allowing another refund attempt.
+      const requiresReconciliation = category !== "request_contract";
       await db.refundRecord.update({
-        where: { id: reserved.refundId },
-        data: { status: "failed" },
+        // This conditional update is the state transition boundary between an
+        // in-flight provider call and a query-only reconciliation. It also
+        // prevents a late action from overwriting a reconciled reservation.
+        where: {
+          id: reserved.refundId,
+          status: "pending",
+          providerEventId: requestReservationEventId,
+        },
+        data: requiresReconciliation
+          ? { providerEventId: ambiguousReservationEventId }
+          : { status: "failed" },
       });
       // 僅輸出安全分類，避免 provider payload、URL 或密鑰進入 runtime log。
       console.info("payuni_refund_failed", {
-        category: error instanceof RefundProviderError ? error.category : "unknown",
+        category,
+        reservation: requiresReconciliation ? "pending_reconciliation" : "released",
       });
-      redirect("/admin/billing/dashboard?error=refund");
+      redirect(`/admin/billing/dashboard?error=${requiresReconciliation ? "refund_reconciliation_required" : "refund"}`);
     }
 
     try {
@@ -2086,9 +2327,14 @@ export async function refundPaymentTransactionAction(formData: FormData) {
               if (!currentTransaction) throw new RefundValidationError();
               const refundedAmountCents = currentTransaction.refundedAmountCents + refundAmountCents;
               if (refundedAmountCents > currentTransaction.grossAmountCents) throw new RefundValidationError();
+              const refundOccurredAt = new Date();
 
               await tx.refundRecord.update({
-                where: { id: reserved.refundId },
+                where: {
+                  id: reserved.refundId,
+                  status: "pending",
+                  providerEventId: requestReservationEventId,
+                },
                 data: {
                   status: "processed",
                   providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
@@ -2100,8 +2346,30 @@ export async function refundPaymentTransactionAction(formData: FormData) {
                   status: refundedAmountCents >= currentTransaction.grossAmountCents ? "refunded" : "partially_refunded",
                   refundedAmountCents,
                   refundReason: reason,
-                  refundedAt: new Date(),
+                  refundedAt: refundOccurredAt,
                 },
+              });
+              const refundedFeeTotals = await tx.refundRecord.aggregate({
+                where: { paymentTransactionId: completedTransaction.id, status: "processed" },
+                _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
+              });
+              await applyPaymentRefundAccounting(tx, {
+                vendorId: currentTransaction.vendorId,
+                transactionId: currentTransaction.id,
+                orderNumber: currentTransaction.orderNumber,
+                providerName: currentTransaction.providerName,
+                eventIdentity: providerResult.providerEventId ?? `request:${reserved.refundId}`,
+                refundRecordId: reserved.refundId,
+                refundAmountCents,
+                netReferenceAmountCents: calculateNetReferenceAmountCents({
+                  netAmountCents: completedTransaction.netAmountCents,
+                  refundedAmountCents: completedTransaction.refundedAmountCents,
+                  gatewayFeeRefundCents: refundedFeeTotals._sum.gatewayFeeRefundCents ?? 0,
+                  platformFeeRefundCents: refundedFeeTotals._sum.platformFeeRefundCents ?? 0,
+                }),
+                isFullRefund: refundedAmountCents >= currentTransaction.grossAmountCents,
+                transactionOccurredAt: currentTransaction.occurredAt,
+                occurredAt: refundOccurredAt,
               });
               const auditData = { vendorId: reserved.transaction.vendorId, actorId: member.id, actorLabel: member.role, action: "refund_payment_transaction", targetType: "PaymentTransaction", targetId: reserved.transaction.id, before: auditSnapshot(reserved.transaction), after: auditSnapshot(completedTransaction) };
               if (tx.auditLog && typeof tx.auditLog.create === "function") {
@@ -2164,7 +2432,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
           const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
           const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
-          await tx.refundRecord.create({
+          const refund = await tx.refundRecord.create({
             data: {
               vendorId: transaction.vendorId,
               paymentTransactionId: transaction.id,
@@ -2183,6 +2451,28 @@ export async function refundPaymentTransactionAction(formData: FormData) {
               refundReason: reason,
               refundedAt: new Date(),
             },
+          });
+          const refundedFeeTotals = await tx.refundRecord.aggregate({
+            where: { paymentTransactionId: updated.id, status: "processed" },
+            _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
+          });
+          await applyPaymentRefundAccounting(tx, {
+            vendorId: transaction.vendorId,
+            transactionId: transaction.id,
+            orderNumber: transaction.orderNumber,
+            providerName: transaction.providerName,
+            eventIdentity: `refund:${refund.id}`,
+            refundRecordId: refund.id,
+            refundAmountCents,
+            netReferenceAmountCents: calculateNetReferenceAmountCents({
+              netAmountCents: updated.netAmountCents,
+              refundedAmountCents: updated.refundedAmountCents,
+              gatewayFeeRefundCents: refundedFeeTotals._sum.gatewayFeeRefundCents ?? 0,
+              platformFeeRefundCents: refundedFeeTotals._sum.platformFeeRefundCents ?? 0,
+            }),
+            isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
+            transactionOccurredAt: transaction.occurredAt,
+            occurredAt: new Date(),
           });
 
           return { transaction, updated };
@@ -2215,60 +2505,6 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
   revalidatePath("/admin/billing/dashboard");
   revalidatePath("/admin/billing/settlements");
-  redirect("/admin/billing/dashboard");
-}
-
-export async function voidAffiliateCommissionAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { member } = await requireFinanceAdmin();
-  const id = text(formData, "id");
-  const reason = optionalText(formData, "reason");
-  const commission = await getDb().affiliateCommission.findUnique({ where: { id } });
-  if (!commission || commission.status === "void") {
-    redirect("/admin/billing/dashboard?error=commission");
-  }
-
-  if (commission.status !== "paid") assertAffiliateCommissionTransition(commission.status, "void");
-  const updated = await getDb().$transaction(async (tx) => {
-    const balance = await commissionLedgerBalance(tx, commission.vendorId, commission.id);
-    if (balance > 0) {
-      await appendCommissionLedgerEntry(tx, {
-        vendorId: commission.vendorId,
-        affiliateCommissionId: commission.id,
-        entryType: "reversal",
-        providerName: "admin",
-        // Reason is intentionally excluded from identity: repeating a request
-        // must return the original immutable reversal rather than double it.
-        eventIdentity: `admin:void:${commission.id}`,
-        amountCents: -balance,
-        occurredAt: new Date(),
-      });
-    }
-    if (commission.status === "paid") {
-      return tx.affiliateCommission.findUniqueOrThrow({ where: { id } });
-    }
-    const transition = await tx.affiliateCommission.updateMany({
-      where: { id, vendorId: commission.vendorId, status: commission.status },
-      // Never rewrite the original amount after it has entered accounting.
-      data: { status: "void", settledAt: new Date() },
-    });
-    if (transition.count !== 1) throw new PayoutBatchClaimConflict();
-    return tx.affiliateCommission.findUniqueOrThrow({ where: { id } });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-
-  await writeAuditLog({
-    vendorId: commission.vendorId,
-    actorId: member.id,
-    actorLabel: member.role,
-    action: "void_affiliate_commission",
-    targetType: "AffiliateCommission",
-    targetId: commission.id,
-    before: auditSnapshot(commission),
-    after: auditSnapshot({ commission: updated, reason }),
-  });
-
-  revalidatePath("/admin/billing/dashboard");
-  revalidatePath("/affiliates/commissions");
   redirect("/admin/billing/dashboard");
 }
 

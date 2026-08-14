@@ -437,6 +437,8 @@ export async function recordRunnerError() {
   return receipt;
 }
 
+export { copyTree, emptySideEffects, makeSanitizer, markerSnapshot, readJson, scoreImpact, sha256File };
+
 export function isMainModule() {
   return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 }

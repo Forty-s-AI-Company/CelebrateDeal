@@ -1,0 +1,17 @@
+docs/ai-team/evidence/g7-19-checkout-payment-return-checkpoint-20260809.md
+docs/codex-goal/API_CONTRACT_REGISTRY.md
+scripts/g7-commerce-browser-qa.mjs
+scripts/g7-commerce-browser-qa.test.mjs
+src/app/api/webhooks/payments/route.test.ts
+src/app/api/webhooks/payments/route.ts
+src/app/checkout/result/error.test.tsx
+src/app/checkout/result/error.tsx
+src/app/checkout/result/loading.test.tsx
+src/app/checkout/result/loading.tsx
+src/app/checkout/result/page.test.tsx
+src/app/checkout/result/page.tsx
+src/components/public-policy.test.tsx
+src/components/public-policy.tsx
+src/lib/buyer-support-access.ts
+src/lib/payment-return-outcome.ts
+tests/e2e/commerce-orders.spec.ts

@@ -28,7 +28,7 @@ export default async function EditTeamTemplatePage({ params }: { params: Promise
   });
   if (!template || !template.versions[0]) notFound();
   const [products, webinars] = await Promise.all([
-    getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
+    getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
     getDb().live.findMany({
       where: {
         vendorId: vendor.id,

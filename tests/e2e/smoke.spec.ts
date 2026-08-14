@@ -934,6 +934,10 @@ test("public JSON POST endpoints require the trusted client header before side e
       },
     },
     {
+      path: "/api/payments/checkout/admission",
+      data: { vendorId: seed.vendorId, productId: seed.productId },
+    },
+    {
       path: "/api/payments/checkout",
       data: { vendorId: seed.vendorId, productId: seed.productId },
     },
@@ -973,6 +977,10 @@ test("public JSON POST endpoints reject cross-origin requests before side effect
         visitorId: "origin-guard",
         landingPath: "/live/origin-guard",
       },
+    },
+    {
+      path: "/api/payments/checkout/admission",
+      data: { vendorId: seed.vendorId, productId: seed.productId },
     },
     {
       path: "/api/payments/checkout",
@@ -1037,6 +1045,15 @@ test.describe("memory-provider public POST rate limits", () => {
       limit: 20,
       invalidPayloadError: "Invalid checkout request",
     }, 4);
+  });
+
+  test("checkout admission returns 429 after 20 invalid trusted requests without creating transactions", async ({ request }) => {
+    await expectPublicPostRateLimit(request, {
+      name: "POST /api/payments/checkout/admission",
+      path: "/api/payments/checkout/admission",
+      limit: 20,
+      invalidPayloadError: "Invalid checkout admission request",
+    }, 6);
   });
 
   test("CSP reports return 429 after 120 accepted reports", async ({ request }) => {
@@ -1188,7 +1205,55 @@ test("public form can submit a lead", async ({ page }) => {
   await expect(page.getByText("E2E 已收到資料")).toBeVisible();
 });
 
-test("checkout ignores client amount and uses product price", async ({ request }) => {
+test("checkout rejects a client amount and uses the server product price for an admitted request", async ({ request }) => {
+  const admissionResponse = await request.post("/api/payments/checkout/admission", {
+    headers: {
+      "X-CelebrateDeal-Client": "web",
+      Origin: e2eOrigin,
+    },
+    data: {
+      vendorId: seed.vendorId,
+      productId: seed.productId,
+    },
+  });
+  expect(admissionResponse.status()).toBe(200);
+  const admission = await admissionResponse.json() as { admissionToken: string; idempotencyKey: string };
+  const buyer = { name: "E2E Buyer", email: `checkout-${stamp}@example.com`, phone: "0912345678" };
+  const shipping = {
+    recipientName: "E2E Buyer",
+    phone: "0912345678",
+    countryCode: "TW",
+    administrativeArea: "台北市",
+    locality: "中正區",
+    addressLine1: "測試路 1 號",
+  };
+
+  const forged = await request.post("/api/payments/checkout", {
+    headers: {
+      "X-CelebrateDeal-Client": "web",
+      Origin: e2eOrigin,
+    },
+    data: {
+      vendorId: seed.vendorId,
+      productId: seed.productId,
+      idempotencyKey: admission.idempotencyKey,
+      admissionToken: admission.admissionToken,
+      buyer,
+      shipping,
+      amountCents: 1,
+    },
+  });
+  expect(forged.status()).toBe(400);
+
+  const validAdmissionResponse = await request.post("/api/payments/checkout/admission", {
+    headers: {
+      "X-CelebrateDeal-Client": "web",
+      Origin: e2eOrigin,
+    },
+    data: { vendorId: seed.vendorId, productId: seed.productId },
+  });
+  expect(validAdmissionResponse.status()).toBe(200);
+  const validAdmission = await validAdmissionResponse.json() as { admissionToken: string; idempotencyKey: string };
   const response = await request.post("/api/payments/checkout", {
     headers: {
       "X-CelebrateDeal-Client": "web",
@@ -1197,8 +1262,10 @@ test("checkout ignores client amount and uses product price", async ({ request }
     data: {
       vendorId: seed.vendorId,
       productId: seed.productId,
-      amountCents: 1,
-      referralCode: "E2E",
+      idempotencyKey: validAdmission.idempotencyKey,
+      admissionToken: validAdmission.admissionToken,
+      buyer,
+      shipping,
     },
   });
   expect(response.status()).toBe(200);

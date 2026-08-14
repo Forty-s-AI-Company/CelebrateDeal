@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "PASS",
+  "runId": "1df88855fbf69f48",
+  "startedAt": "2026-08-08T20:05:29.974Z",
+  "finishedAt": "2026-08-08T20:08:07.538Z",
+  "serverMode": "PRODUCTION",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "migrations": {
+    "count": 44,
+    "applied": true
+  },
+  "browser": {
+    "expected": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "rwd": "PASS",
+    "tenantIsolation": "PASS",
+    "piiEnvelopeLeak": "PASS",
+    "productCatalog": "PASS"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "ef3e0c6e40d6be298579c2b24f67afd48e41dd7d9a485bbdc7c9b5cac6292516"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "bb12bb5216e4d9729395261339089dc9050bc39120d7b381344b5865c55ef779"
+    },
+    "productDesktop": {
+      "filename": "productDesktop.png",
+      "sha256": "42fb4467153c1ab1d25ef4f6ac96859c5387cfed517cd983acc71ce53bb0489a"
+    },
+    "productMobile": {
+      "filename": "productMobile.png",
+      "sha256": "51d55a8e3bdf03d56492dec1770f60cda1a1533037e01b9fc427446b7df9565c"
+    }
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": null,
+    "browserDetails": [],
+    "browserGlobalErrors": [],
+    "serverRuntimeDetails": []
+  },
+  "failure": null
+}

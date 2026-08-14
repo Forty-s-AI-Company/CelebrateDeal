@@ -1,4 +1,4 @@
-"""AI Team Lite v5.3 的短時間、純本機狀態 MCP。
+"""AI Team Lite v5.4 的短時間、純本機狀態 MCP。
 
 本 server 不啟動外部程序、不連網，也不代替 Codex Desktop 執行任務。
 """
@@ -108,6 +108,57 @@ ALIASES = {
     "complex_validation": "gemini_deep",
 }
 
+DIFFICULTY_LEVELS = ("trivial", "routine", "complex", "critical")
+NATIVE_REASONING_BY_DIFFICULTY = {
+    "gpt-5.6-sol": {
+        "trivial": "low",
+        "routine": "medium",
+        "complex": "high",
+        "critical": "xhigh",
+    },
+    "gpt-5.6-terra": {
+        "trivial": "low",
+        "routine": "medium",
+        "complex": "high",
+        "critical": "xhigh",
+    },
+    "gpt-5.6-luna": {
+        "trivial": "high",
+        "routine": "high",
+        "complex": "xhigh",
+        "critical": "max",
+    },
+}
+CRITICAL_TASK_TERMS = (
+    "production",
+    "release acceptance",
+    "security boundary",
+    "payment",
+    "refund",
+    "payout",
+    "migration",
+    "data loss",
+    "cross-domain",
+    "正式環境",
+    "金流",
+    "退款",
+    "撥款",
+    "資料遺失",
+    "跨域",
+)
+TRIVIAL_TASK_TERMS = (
+    "typo",
+    "format only",
+    "rename only",
+    "single-line",
+    "read-only lookup",
+    "錯字",
+    "只改格式",
+    "只改名稱",
+    "單行",
+    "唯讀查找",
+)
+
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -181,6 +232,43 @@ def normalized_task_type(task_summary: str, task_type: str) -> str:
     return "explore"
 
 
+def inferred_difficulty(task_summary: str, route: str, requested: str = "auto") -> str:
+    candidate = requested.strip().lower().replace("-", "_").replace(" ", "_")
+    if candidate in DIFFICULTY_LEVELS:
+        return candidate
+
+    summary = task_summary.lower()
+    if any(term in summary for term in CRITICAL_TASK_TERMS):
+        return "critical"
+    if any(term in summary for term in TRIVIAL_TASK_TERMS):
+        return "trivial"
+    if route in {"planning", "complex_implementation"}:
+        return "complex"
+    return "routine"
+
+
+def adaptive_reasoning_recommendation(
+    recommendation: dict[str, str],
+    task_summary: str,
+    route: str,
+    requested_difficulty: str,
+    config: dict[str, Any],
+) -> tuple[str, str, dict[str, str] | None]:
+    model = recommendation["model"]
+    difficulty = inferred_difficulty(task_summary, route, requested_difficulty)
+    effort_map = NATIVE_REASONING_BY_DIFFICULTY.get(model)
+    policy = config.get("reasoning_policy", {}).get("models", {}).get(model)
+    if effort_map is None or not isinstance(policy, dict):
+        return recommendation["reasoning_effort"], difficulty, None
+
+    return effort_map[difficulty], difficulty, {
+        "strategy": str(config.get("reasoning_policy", {}).get("strategy", "adaptive_lowest_sufficient")),
+        "minimum": str(policy.get("minimum", "")),
+        "maximum": str(policy.get("maximum", "")),
+        "default": str(policy.get("default", "")),
+    }
+
+
 @mcp.tool()
 def router_status() -> dict[str, Any]:
     """讀取 Lite router 設定；不啟動程序、不連網、不探測 Git。"""
@@ -201,6 +289,7 @@ def router_status() -> dict[str, Any]:
             "goal_finalize",
         ],
         "agents": config.get("agents", {}),
+        "reasoning_policy": config.get("reasoning_policy", {}),
         "gemini_profiles": config.get("gemini_profiles", {}),
         "codex_profiles": config.get("codex_profiles", {}),
         "fallback_chains": config.get("fallback_chains", {}),
@@ -208,17 +297,29 @@ def router_status() -> dict[str, Any]:
 
 
 @mcp.tool()
-def route_task(task_summary: str, task_type: str = "") -> dict[str, Any]:
-    """以固定規則回傳建議目標；Lite MCP 永不執行或等待任務。"""
+def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto") -> dict[str, Any]:
+    """依任務難度回傳平衡的模型與推理建議；Lite MCP 永不執行或等待任務。"""
     ensure_not_sensitive_text(task_summary)
     route = normalized_task_type(task_summary, task_type)
-    recommendation = ROUTES[route]
-    fallback_chains = read_config().get("fallback_chains", {})
+    recommendation = dict(ROUTES[route])
+    config = read_config()
+    reasoning_effort, selected_difficulty, reasoning_bounds = adaptive_reasoning_recommendation(
+        recommendation,
+        task_summary,
+        route,
+        difficulty,
+        config,
+    )
+    recommendation["reasoning_effort"] = reasoning_effort
+    fallback_chains = config.get("fallback_chains", {})
     return {
         "status": "planned",
         "execution": "recommendation_only",
         "task_type": route,
         "task_summary": task_summary[:300],
+        "difficulty": selected_difficulty,
+        "reasoning_selection": config.get("reasoning_policy", {}).get("strategy", "fixed"),
+        "reasoning_bounds": reasoning_bounds,
         "fallback_chain": fallback_chains.get(route, []),
         **recommendation,
     }

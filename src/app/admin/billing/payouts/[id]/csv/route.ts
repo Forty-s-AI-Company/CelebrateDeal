@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const header = ["批次編號", "商家", "月結月份", "銀行代碼", "銀行帳號", "戶名", "出款金額", "狀態"];
+  const header = ["批次編號", "商家", "月結月份", "銀行代碼", "銀行帳號", "戶名", "出款金額", "狀態", "出款 reference"];
   const rows = batch.items.map((item) => {
     const bankAccount = resolveStoredBankAccount({
       vendorId: item.vendorId,
@@ -40,6 +40,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       bankAccount.accountName,
       item.payoutAmountCents / 100,
       item.status,
+      item.outcomeReference,
     ];
   });
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");

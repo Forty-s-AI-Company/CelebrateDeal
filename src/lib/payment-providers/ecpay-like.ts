@@ -27,6 +27,9 @@ function verifyHmac(rawBody: string, signature: string | null) {
 
 export const ecpayLikePaymentProvider: PaymentProviderAdapter = {
   id: "ecpay-like",
+  checkoutReadiness() {
+    return "unavailable";
+  },
   async createCheckoutSession({ transaction }) {
     return {
       provider: "ecpay-like",

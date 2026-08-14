@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   requireFinanceAdmin: vi.fn(),
+  requireVendorFinance: vi.fn(),
   writeAuditLog: vi.fn(),
   payoutBatchNumber: vi.fn(),
 }));
@@ -34,14 +35,26 @@ vi.mock("@/lib/auth", () => ({
   markCurrentSessionMfaVerified: vi.fn(),
   requireAuth: vi.fn(),
   requireFinanceAdmin: mocks.requireFinanceAdmin,
+  requireVendorFinance: mocks.requireVendorFinance,
   requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
   revokeCurrentSession: vi.fn(),
   sessionCookieOptions: vi.fn(),
 }));
-vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
+vi.mock("@/lib/audit", () => ({
+  auditSnapshot: (value: unknown) => value,
+  requestAuditMeta: vi.fn(async () => ({ ipAddress: null, userAgent: null })),
+  writeAuditLog: mocks.writeAuditLog,
+}));
 vi.mock("@/lib/billing", () => ({
   calculateSettlement: vi.fn(),
   invoiceNumber: vi.fn(),
+  monthRange: (monthKey: string) => {
+    const start = new Date(`${monthKey}-01T00:00:00.000Z`);
+    const end = new Date(start);
+    end.setUTCMonth(end.getUTCMonth() + 1);
+    return { start, end };
+  },
   payoutBatchNumber: mocks.payoutBatchNumber,
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
@@ -72,12 +85,20 @@ vi.mock("@/lib/db", () => ({
       updateMany: database.settlement.updateMany.bind(database.settlement),
     },
     payoutBatch: { create: database.payoutBatch.create.bind(database.payoutBatch) },
-    payoutItem: { create: database.payoutItem.create.bind(database.payoutItem) },
+    payoutItem: {
+      create: database.payoutItem.create.bind(database.payoutItem),
+      findUnique: database.payoutItem.findUnique.bind(database.payoutItem),
+    },
     $transaction: database.$transaction.bind(database),
   }),
 }));
 
-import { createPayoutBatchAction, lockSettlementAction } from "./actions";
+import {
+  createPayoutBatchAction,
+  lockSettlementAction,
+  recordAffiliatePayoutOutcomeAction,
+  updatePayoutItemStatusAction,
+} from "./actions";
 
 function payoutFormData(settlementId: string) {
   const formData = new FormData();
@@ -88,6 +109,23 @@ function payoutFormData(settlementId: string) {
 function lockSettlementFormData(settlementId: string) {
   const formData = new FormData();
   formData.append("id", settlementId);
+  return formData;
+}
+
+function affiliatePayoutOutcomeFormData(id: string, outcomeReference = "affiliate-transfer-ref-db-2026-08") {
+  const formData = new FormData();
+  formData.set("id", id);
+  formData.set("status", "paid");
+  formData.set("outcomeReference", outcomeReference);
+  formData.set("reason", "synthetic merchant transfer confirmed");
+  return formData;
+}
+
+function platformPayoutOutcomeFormData(id: string) {
+  const formData = new FormData();
+  formData.set("id", id);
+  formData.set("status", "paid");
+  formData.set("outcomeReference", "platform-transfer-ref-db-2026-08");
   return formData;
 }
 
@@ -255,6 +293,12 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
         monthKey: settlement.monthKey,
         sourceType: "product",
         deduplicationKey: `fin04-commission-${suffix}`,
+        referralCode: `FIN04-${suffix}`,
+        orderNumber: `FIN04-ORDER-${suffix}`,
+        orderAmountCents: 10_000,
+        commissionBaseAmountCents: 10_000,
+        netReferenceAmountCents: 10_000,
+        commissionRateBps: 1000,
         commissionAmountCents: 750,
         status: "approved",
       },
@@ -303,6 +347,8 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
       commissionAmountCents: 750,
       adjustmentAmountCents: 0,
       finalAmountCents: 750,
+      grossSalesAmountCents: 10_000,
+      netReferenceAmountCents: 10_000,
       status: "pending",
       payoutItemId: null,
     });
@@ -310,9 +356,264 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
     expect(savedCommission.status).toBe("locked");
   }, 15_000);
 
-  afterEach(async () => {
+  it("persists a paid affiliate payout outcome reference in the tenant schema with its note", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const vendor = await database.vendor.create({
+      data: {
+        name: "FIN84 Synthetic Vendor",
+        slug: `fin84-${suffix}`,
+        email: `fin84-${suffix}@invalid.test`,
+        passwordHash: "synthetic-password-hash",
+      },
+    });
+    createdVendorIds.push(vendor.id);
+    const affiliate = await database.affiliate.create({
+      data: {
+        vendorId: vendor.id,
+        name: "FIN84 Synthetic Affiliate",
+        code: `FIN84-${suffix}`,
+        commissionRateBps: 1000,
+      },
+    });
+    const commission = await database.affiliateCommission.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: "2099-12",
+        sourceType: "product",
+        referralCode: `FIN84-${suffix}`,
+        orderNumber: `FIN84-ORDER-${suffix}`,
+        orderAmountCents: 10_000,
+        commissionBaseAmountCents: 10_000,
+        netReferenceAmountCents: 10_000,
+        commissionRateBps: 1000,
+        deduplicationKey: `fin84-commission-${suffix}`,
+        commissionAmountCents: 750,
+        status: "locked",
+      },
+    });
+    await database.affiliateCommissionLedgerEntry.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateCommissionId: commission.id,
+        entryType: "accrual",
+        deduplicationKey: `fin84-ledger-${suffix}`,
+        providerName: "synthetic",
+        eventIdentity: `fin84-event-${suffix}`,
+        amountCents: 750,
+        occurredAt: new Date("2099-12-15T00:00:00.000Z"),
+      },
+    });
+    const payout = await database.affiliatePayout.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: commission.monthKey,
+        commissionAmountCents: 750,
+        finalAmountCents: 750,
+        status: "pending",
+      },
+    });
+
+    mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+    mocks.requireVendorFinance.mockResolvedValue({ vendor, member: { id: "fin84-synthetic-finance", role: "owner" } });
+
+    await expect(recordAffiliatePayoutOutcomeAction(affiliatePayoutOutcomeFormData(payout.id))).rejects.toThrow(
+      "redirect:/affiliates/commissions",
+    );
+
+    await expect(database.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } })).resolves.toMatchObject({
+      status: "paid",
+      outcomeReference: "affiliate-transfer-ref-db-2026-08",
+      outcomeReason: "synthetic merchant transfer confirmed",
+    });
+    await expect(database.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } })).resolves.toMatchObject({ status: "paid" });
+  }, 15_000);
+
+  it("settles the vendor payout without marking the separate merchant affiliate payout paid", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const vendor = await database.vendor.create({
+      data: {
+        name: "G7 Synthetic Vendor",
+        slug: `g7-${suffix}`,
+        email: `g7-${suffix}@invalid.test`,
+        passwordHash: "synthetic-password-hash",
+      },
+    });
+    createdVendorIds.push(vendor.id);
+    const affiliate = await database.affiliate.create({
+      data: {
+        vendorId: vendor.id,
+        name: "G7 Synthetic Affiliate",
+        code: `G7-${suffix}`,
+        commissionRateBps: 1000,
+      },
+    });
+    const payoutBatch = await database.payoutBatch.create({
+      data: {
+        batchNumber: `PB-G7-${suffix}`,
+        batchDate: new Date("2099-10-31T00:00:00.000Z"),
+        totalAmountCents: 9_000,
+        totalCount: 1,
+        status: "exported",
+      },
+    });
+    const settlement = await database.settlement.create({
+      data: {
+        vendorId: vendor.id,
+        monthKey: "2099-10",
+        payoutableAmountCents: 9_000,
+        finalPayoutAmountCents: 9_000,
+        lockedAt: new Date("2099-10-31T00:00:00.000Z"),
+        lockedBy: "g7-synthetic-admin",
+        payoutBatchId: payoutBatch.id,
+        status: "ready_for_payout",
+      },
+    });
+    const payoutItem = await database.payoutItem.create({
+      data: {
+        payoutBatchId: payoutBatch.id,
+        vendorId: vendor.id,
+        settlementId: settlement.id,
+        bankAccountDisplayName: "Synthetic Merchant",
+        bankCodeDisplay: "000",
+        bankAccountDisplayNumber: "***7890",
+        payoutAmountCents: 9_000,
+        status: "pending",
+      },
+    });
+    const commission = await database.affiliateCommission.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: settlement.monthKey,
+        sourceType: "product",
+        referralCode: `G7-${suffix}`,
+        orderNumber: `G7-ORDER-${suffix}`,
+        orderAmountCents: 10_000,
+        commissionBaseAmountCents: 10_000,
+        netReferenceAmountCents: 10_000,
+        commissionRateBps: 1000,
+        deduplicationKey: `g7-commission-${suffix}`,
+        commissionAmountCents: 750,
+        status: "locked",
+      },
+    });
+    await database.affiliateCommissionLedgerEntry.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateCommissionId: commission.id,
+        entryType: "accrual",
+        deduplicationKey: `g7-ledger-${suffix}`,
+        providerName: "synthetic",
+        eventIdentity: `g7-event-${suffix}`,
+        amountCents: 750,
+        occurredAt: new Date("2099-10-15T00:00:00.000Z"),
+      },
+    });
+    const affiliatePayout = await database.affiliatePayout.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: settlement.monthKey,
+        commissionAmountCents: 750,
+        finalAmountCents: 750,
+        status: "pending",
+      },
+    });
+
+    mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+    mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "g7-synthetic-admin", role: "finance_admin" } });
+    mocks.writeAuditLog.mockResolvedValue(undefined);
+
+    await expect(updatePayoutItemStatusAction(platformPayoutOutcomeFormData(payoutItem.id))).rejects.toThrow(
+      "redirect:/admin/billing/payouts",
+    );
+
+    const [savedItem, savedBatch, savedSettlement, savedCommission, savedAffiliatePayout] = await Promise.all([
+      database.payoutItem.findUniqueOrThrow({ where: { id: payoutItem.id } }),
+      database.payoutBatch.findUniqueOrThrow({ where: { id: payoutBatch.id } }),
+      database.settlement.findUniqueOrThrow({ where: { id: settlement.id } }),
+      database.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } }),
+      database.affiliatePayout.findUniqueOrThrow({ where: { id: affiliatePayout.id } }),
+    ]);
+    expect(savedItem).toMatchObject({ status: "paid", outcomeReference: "platform-transfer-ref-db-2026-08" });
+    expect(savedBatch).toMatchObject({ status: "completed" });
+    expect(savedSettlement).toMatchObject({ status: "paid" });
+    expect(savedCommission).toMatchObject({ status: "locked" });
+    expect(savedAffiliatePayout).toMatchObject({ status: "pending", outcomeReference: null, paidAt: null });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "mark_payout_paid" }));
+  }, 15_000);
+
+  it("rolls back a paid item when its settlement is not eligible for that payout batch", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const vendor = await database.vendor.create({
+      data: {
+        name: "G7 Invalid Settlement Vendor",
+        slug: `g7-invalid-${suffix}`,
+        email: `g7-invalid-${suffix}@invalid.test`,
+        passwordHash: "synthetic-password-hash",
+      },
+    });
+    createdVendorIds.push(vendor.id);
+    const payoutBatch = await database.payoutBatch.create({
+      data: {
+        batchNumber: `PB-G7-INVALID-${suffix}`,
+        batchDate: new Date("2099-09-30T00:00:00.000Z"),
+        totalAmountCents: 8_000,
+        totalCount: 1,
+        status: "exported",
+      },
+    });
+    const settlement = await database.settlement.create({
+      data: {
+        vendorId: vendor.id,
+        monthKey: "2099-09",
+        payoutableAmountCents: 8_000,
+        finalPayoutAmountCents: 8_000,
+        status: "locked",
+        lockedAt: new Date("2099-09-30T00:00:00.000Z"),
+        lockedBy: "g7-synthetic-admin",
+        payoutBatchId: payoutBatch.id,
+      },
+    });
+    const payoutItem = await database.payoutItem.create({
+      data: {
+        payoutBatchId: payoutBatch.id,
+        vendorId: vendor.id,
+        settlementId: settlement.id,
+        bankAccountDisplayName: "Synthetic Merchant",
+        bankCodeDisplay: "000",
+        bankAccountDisplayNumber: "***7890",
+        payoutAmountCents: 8_000,
+        status: "pending",
+      },
+    });
+
+    mocks.assertServerActionSecurity.mockResolvedValue(undefined);
+    mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "g7-synthetic-admin", role: "finance_admin" } });
+    mocks.writeAuditLog.mockResolvedValue(undefined);
+
+    await expect(updatePayoutItemStatusAction(platformPayoutOutcomeFormData(payoutItem.id))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+
+    await expect(database.payoutItem.findUniqueOrThrow({ where: { id: payoutItem.id } })).resolves.toMatchObject({
+      status: "pending",
+      outcomeReference: null,
+      paidAt: null,
+    });
+    await expect(database.payoutBatch.findUniqueOrThrow({ where: { id: payoutBatch.id } })).resolves.toMatchObject({ status: "exported" });
+    await expect(database.settlement.findUniqueOrThrow({ where: { id: settlement.id } })).resolves.toMatchObject({ status: "locked", paidAt: null });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  }, 15_000);
+
+  afterEach(() => {
+    // AffiliateCommissionLedgerEntry is intentionally append-only. The
+    // marker-gated disposable schema is the cleanup boundary for these
+    // fixtures; do not issue DELETE against the immutable ledger trigger.
     if (createdVendorIds.length > 0) {
-      await database.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
+      createdVendorIds.splice(0);
     }
     vi.clearAllMocks();
     lockSettlementReadBarrierEnabled = false;

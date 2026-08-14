@@ -14,7 +14,7 @@ import { hashPasswordAsync } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-const MEMBER_ROLES = new Set(["owner", "admin", "accountant"]);
+const MEMBER_ROLES = new Set(["owner", "admin", "accountant", "support"]);
 
 class LastOwnerInvariantError extends Error {}
 

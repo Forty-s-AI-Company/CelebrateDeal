@@ -98,8 +98,9 @@ describe("tenant-bound financial foreign keys", () => {
         vendorId: tenantA.vendor.id,
         affiliateId: tenantA.affiliate.id,
         monthKey: "same-tenant",
+        outcomeReference: "synthetic-affiliate-transfer-ref",
       },
-    })).resolves.toMatchObject({ vendorId: tenantA.vendor.id });
+    })).resolves.toMatchObject({ vendorId: tenantA.vendor.id, outcomeReference: "synthetic-affiliate-transfer-ref" });
     await expect(db.payoutItem.create({
       data: {
         payoutBatchId: payoutBatch.id,

@@ -14,8 +14,9 @@ import {
   updatePasswordAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
-import { Badge, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
+import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
@@ -79,7 +80,7 @@ export default async function SecuritySettingsPage({
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
   const [members, sessions] = await Promise.all([
-    vendorId
+    isOwner && vendorId
       ? db.vendorMember.findMany({
           where: { vendorId },
           include: { user: true },
@@ -98,9 +99,9 @@ export default async function SecuritySettingsPage({
 
   return (
     <>
-      <PageHeader title="安全設定" description="管理登入密碼、session、商家成員與最小權限控管。" />
-      {params.updated ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
-      {params.error ? <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
+      <PageHeader title="安全設定" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
+      {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+      {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">更新密碼</h2>
@@ -193,9 +194,14 @@ export default async function SecuritySettingsPage({
                     目前 TOTP 驗證碼
                     <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                   </label>
-                  <button className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50">
+                  <FormSubmitButton
+                    pendingChildren="重新產生中…"
+                    pendingMessage="正在驗證 TOTP 並重新產生 recovery codes，請勿重複送出。"
+                    confirmMessage="重新產生後，舊 recovery codes 會立即失效。確定繼續？"
+                    className="h-10 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-700 hover:bg-orange-50"
+                  >
                     重新產生 recovery codes
-                  </button>
+                  </FormSubmitButton>
                 </form>
               ) : null}
             </div>
@@ -236,13 +242,13 @@ export default async function SecuritySettingsPage({
           </div>
         </Card>
 
-        <Card>
+        {isOwner ? <Card>
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
               <p className="mt-1 text-sm text-slate-500">Owner 可用 Email 邀請或重新啟用成員；平台管理員帳號不會出現在商家端管理名單。</p>
             </div>
-            <Badge tone={isOwner ? "green" : "gray"}>{isOwner ? "owner" : auth.member?.role ?? "member"}</Badge>
+            <Badge tone="green">owner</Badge>
           </div>
 
           {isOwner ? (
@@ -254,15 +260,14 @@ export default async function SecuritySettingsPage({
                 <option value="owner">Owner</option>
                 <option value="admin">Admin</option>
                 <option value="accountant">Accountant</option>
+                <option value="support">Support</option>
               </SelectField>
               <div className="md:col-span-2">
                 <p className="mb-3 text-sm text-blue-800">系統會寄送一次性的設定密碼連結，不會顯示或傳送初始密碼。</p>
                 <SubmitButton>寄送邀請 / 重新啟用成員</SubmitButton>
               </div>
             </form>
-          ) : (
-            <div className="mb-5 rounded-md border border-border bg-slate-50 p-4 text-sm text-slate-600">你的角色可以查看安全資訊，但只有 owner 可以新增或停用成員。</div>
-          )}
+          ) : null}
 
           <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-left text-sm">
@@ -286,12 +291,18 @@ export default async function SecuritySettingsPage({
                       <Badge tone={member.status === "active" ? "green" : "gray"}>{member.status}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {isOwner && member.status === "active" && member.userId !== auth.user.id ? (
+                      {member.status === "active" && member.userId !== auth.user.id ? (
                         <div className="flex justify-end gap-2">
                           <form action={resendVendorMemberInvitationAction}>
                             <CsrfField />
                             <input type="hidden" name="id" value={member.id} />
-                            <button className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">重寄設定密碼邀請</button>
+                            <FormSubmitButton
+                              pendingChildren="重寄中…"
+                              pendingMessage={`正在重新寄送 ${member.user.name} 的設定密碼邀請，請勿重複送出。`}
+                              className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                            >
+                              重寄設定密碼邀請
+                            </FormSubmitButton>
                           </form>
                           <VendorMemberDeactivationConfirmation
                             action={deactivateVendorMemberAction}
@@ -316,12 +327,16 @@ export default async function SecuritySettingsPage({
             </p>
             <form action={sendPasswordResetSmokeAction} className="mt-3">
               <CsrfField />
-              <button className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+              <FormSubmitButton
+                pendingChildren="寄送中…"
+                pendingMessage="正在寄送 password reset 測試信，請勿重複送出。"
+                className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
+              >
                 寄送目前帳號的 reset 測試信
-              </button>
+              </FormSubmitButton>
             </form>
           </div>
-        </Card>
+        </Card> : null}
       </div>
     </>
   );

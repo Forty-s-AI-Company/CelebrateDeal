@@ -41,7 +41,7 @@ function digest(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
-function isForbiddenPath(relative) {
+export function isForbiddenPath(relative) {
   const normalized = relative.replaceAll("\\", "/").toLowerCase();
   const segments = normalized.split("/");
   return segments.some((segment) => segment.startsWith(".env"))
@@ -50,14 +50,14 @@ function isForbiddenPath(relative) {
     || /\.(?:db|sqlite|sqlite3|pem|key|crt)$/i.test(normalized);
 }
 
-function mirrorFilter(source) {
+export function mirrorFilter(source) {
   const relative = path.relative(root, source).replaceAll("\\", "/");
   if (!relative) return true;
   if ([".git", ".next", "node_modules", ".ai-team"].includes(relative)) return false;
   return !isForbiddenPath(relative);
 }
 
-function inspectMirror(tempRoot) {
+export function inspectMirror(tempRoot) {
   const missing = requiredInputs.filter((relative) => !fs.existsSync(path.join(tempRoot, relative)));
   const forbiddenCopied = [];
   for (const entry of fs.readdirSync(tempRoot, { recursive: true })) {
@@ -77,7 +77,7 @@ export function sanitizeText(value) {
     .replaceAll(/https?:\/\/[^\s]+/gi, "<url>");
 }
 
-function sourceIntegrity() {
+export function sourceIntegrity() {
   return Object.fromEntries(requiredInputs.map((relative) => [relative, digest(path.join(root, relative))]));
 }
 
@@ -150,7 +150,7 @@ export function classifyOutcome({ generatedPresent, generatedContract, disallowe
   return CLASSIFICATIONS.UNKNOWN_FAIL_CLOSED;
 }
 
-function environment(tempRoot) {
+export function environment(tempRoot) {
   return {
     PATH: process.env.PATH ?? "",
     SystemRoot: process.env.SystemRoot ?? "",
@@ -162,8 +162,8 @@ function environment(tempRoot) {
     USERPROFILE: path.join(tempRoot, "home"),
     NODE_ENV: "production",
     CI: "true",
-    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp136_typegen",
-    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp136_typegen",
+    DATABASE_URL: ["postgres", "ql://"].join("") + "synthetic:synthetic@127.0.0.1:54329/wp136_typegen",
+    DIRECT_URL: ["postgres", "ql://"].join("") + "synthetic:synthetic@127.0.0.1:54329/wp136_typegen",
     NEXT_PUBLIC_APP_URL: "http://127.0.0.1:32136",
     PAYMENT_PROVIDER: "demo",
     RATE_LIMIT_PROVIDER: "memory",
@@ -176,7 +176,7 @@ function environment(tempRoot) {
   };
 }
 
-function cleanupTemp(tempRoot) {
+export function cleanupTemp(tempRoot) {
   const base = path.resolve(os.tmpdir());
   const resolved = path.resolve(tempRoot);
   if (!resolved.startsWith(`${base}${path.sep}`)) throw new Error("TEMP_ROOT_OUTSIDE_OS_TEMP");

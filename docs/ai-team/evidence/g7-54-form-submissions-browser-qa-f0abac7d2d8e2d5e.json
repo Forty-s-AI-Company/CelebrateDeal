@@ -1,0 +1,252 @@
+{
+  "schemaVersion": "celebratedeal-g7-54-form-submissions-browser-qa/v1",
+  "workPackage": "G7-54",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "f0abac7d2d8e2d5e",
+  "startedAt": "2026-08-09T20:31:03.654Z",
+  "finishedAt": "2026-08-09T20:33:58.285Z",
+  "sourceDigest": "e5e81f51f97a61e9075edbcb77418da3244edfe51ce7f0b751b77a0b890de564",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "docker port",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-54 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "browserTests": 5,
+    "axeCriticalOrSerious": 0,
+    "databaseRows": 55,
+    "pageSize": 25,
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "operations": [
+      "search",
+      "verification-filter",
+      "source-filter",
+      "reset",
+      "pagination",
+      "url-privacy",
+      "pending",
+      "csrf-error",
+      "tenant-404",
+      "axe",
+      "rwd",
+      "keyboard"
+    ]
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 2,
+    "failed": 3,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "NOT_RUN"
+    },
+    "search": "NOT_RUN",
+    "filters": "NOT_RUN",
+    "pagination": "NOT_RUN",
+    "privacy": "NOT_RUN",
+    "tenant": "NOT_RUN",
+    "loading": "NOT_RUN",
+    "error": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "database": {
+      "rows": 55,
+      "pageSize": 0
+    },
+    "diagnostics": [
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > desktop search, filters, reset, pagination, and URL privacy use the bounded dataset",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_LOCATOR_CONTRACT_FAILED",
+        "details": [
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status').filter({ hasText: '共' })",
+          "Expected substring: \"第 3／3 頁\"",
+          "Timeout: 15000ms",
+          "Error: element(s) not found",
+          "Call log:",
+          "- Expect \"toContainText\" with timeout 15000ms",
+          "- waiting for getByRole('status').filter({ hasText: '共' })",
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status').filter({ hasText: '共' })",
+          "Expected substring: \"第 3／3 頁\"",
+          "Timeout: 15000ms"
+        ]
+      },
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > expired CSRF fails safely without echoing submitted contact filters",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_LOCATOR_CONTRACT_FAILED",
+        "details": [
+          "Error: locator.evaluate: Error: strict mode violation: locator('input[name=\"_csrf\"]') resolved to 3 elements:",
+          "1) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.F7ZFK9W0bVbo1AuxK5vrHCQVItchXfGO.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka getByRole('complementary').locator('input[name=\"_csrf\"]')",
+          "2) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.oop0pKbSqVRSwjlg9KnzveoYx3ruj9CA.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('header input[name=\"_csrf\"]')",
+          "3) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630230.fwkFiajEA7Czyfe1C0qZDeUSVhmgJbuk.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('#main-content input[name=\"_csrf\"]')",
+          "Call log:",
+          "- waiting for locator('input[name=\"_csrf\"]')",
+          "Error: locator.evaluate: Error: strict mode violation: locator('input[name=\"_csrf\"]') resolved to 3 elements:",
+          "1) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.F7ZFK9W0bVbo1AuxK5vrHCQVItchXfGO.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka getByRole('complementary').locator('input[name=\"_csrf\"]')",
+          "2) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.oop0pKbSqVRSwjlg9KnzveoYx3ruj9CA.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('header input[name=\"_csrf\"]')",
+          "3) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630230.fwkFiajEA7Czyfe1C0qZDeUSVhmgJbuk.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('#main-content input[name=\"_csrf\"]')",
+          "Call log:",
+          "- waiting for locator('input[name=\"_csrf\"]')"
+        ]
+      },
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > cross-tenant form is a 404 and leaks no foreign form identity",
+        "status": "failed",
+        "classification": "RUNNER_FAILED_UNCLASSIFIED",
+        "details": [
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "80 |",
+          "81 |   test(\"cross-tenant form is a 404 and leaks no foreign form identity\", async ({ page }) => {",
+          "> 82 |     await installSession(page); const response = await page.goto(\"/forms/\" + fixture.foreignFormId + \"/submissions\"); expect(response?.status()).toBe(404); await expect(page.getByText(fixture.foreignCanary, { exact: true })).toHaveCount(0); expect(await page.content()).not.toContain(fixture.foreignCanary); evide",
+          "|                                                                                                                                                  ^",
+          "83 |   });",
+          "84 | });"
+        ]
+      }
+    ]
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "committedMigrationsOnly": true,
+    "userBrowserProfileRead": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "externalOperations": false,
+    "productionOperations": false,
+    "rawOutputPersisted": false
+  },
+  "diagnostics": {
+    "failureClass": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > desktop search, filters, reset, pagination, and URL privacy use the bounded dataset",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_LOCATOR_CONTRACT_FAILED",
+        "details": [
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status').filter({ hasText: '共' })",
+          "Expected substring: \"第 3／3 頁\"",
+          "Timeout: 15000ms",
+          "Error: element(s) not found",
+          "Call log:",
+          "- Expect \"toContainText\" with timeout 15000ms",
+          "- waiting for getByRole('status').filter({ hasText: '共' })",
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status').filter({ hasText: '共' })",
+          "Expected substring: \"第 3／3 頁\"",
+          "Timeout: 15000ms"
+        ]
+      },
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > expired CSRF fails safely without echoing submitted contact filters",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_LOCATOR_CONTRACT_FAILED",
+        "details": [
+          "Error: locator.evaluate: Error: strict mode violation: locator('input[name=\"_csrf\"]') resolved to 3 elements:",
+          "1) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.F7ZFK9W0bVbo1AuxK5vrHCQVItchXfGO.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka getByRole('complementary').locator('input[name=\"_csrf\"]')",
+          "2) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.oop0pKbSqVRSwjlg9KnzveoYx3ruj9CA.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('header input[name=\"_csrf\"]')",
+          "3) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630230.fwkFiajEA7Czyfe1C0qZDeUSVhmgJbuk.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('#main-content input[name=\"_csrf\"]')",
+          "Call log:",
+          "- waiting for locator('input[name=\"_csrf\"]')",
+          "Error: locator.evaluate: Error: strict mode violation: locator('input[name=\"_csrf\"]') resolved to 3 elements:",
+          "1) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.F7ZFK9W0bVbo1AuxK5vrHCQVItchXfGO.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka getByRole('complementary').locator('input[name=\"_csrf\"]')",
+          "2) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630213.oop0pKbSqVRSwjlg9KnzveoYx3ruj9CA.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('header input[name=\"_csrf\"]')",
+          "3) <input name=\"_csrf\" type=\"hidden\" value=\"1786307630230.fwkFiajEA7Czyfe1C0qZDeUSVhmgJbuk.gCeIVNstxJcUOXX4MoGdXKK7q0Ayu0bW.<redacted-long-value>\"/> aka locator('#main-content input[name=\"_csrf\"]')",
+          "Call log:",
+          "- waiting for locator('input[name=\"_csrf\"]')"
+        ]
+      },
+      {
+        "title": "g7-form-submissions-browser.spec.ts > G7-54 報名名單查找與管理 > cross-tenant form is a 404 and leaks no foreign form identity",
+        "status": "failed",
+        "classification": "RUNNER_FAILED_UNCLASSIFIED",
+        "details": [
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "80 |",
+          "81 |   test(\"cross-tenant form is a 404 and leaks no foreign form identity\", async ({ page }) => {",
+          "> 82 |     await installSession(page); const response = await page.goto(\"/forms/\" + fixture.foreignFormId + \"/submissions\"); expect(response?.status()).toBe(404); await expect(page.getByText(fixture.foreignCanary, { exact: true })).toHaveCount(0); expect(await page.content()).not.toContain(fixture.foreignCanary); evide",
+          "|                                                                                                                                                  ^",
+          "83 |   });",
+          "84 | });"
+        ]
+      },
+      "form-builder-browser-contract-failed"
+    ]
+  },
+  "failure": "form-builder-browser-contract-failed"
+}

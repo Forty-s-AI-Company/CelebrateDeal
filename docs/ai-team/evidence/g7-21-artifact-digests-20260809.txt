@@ -1,0 +1,11 @@
+ce8da0cae82f6923e3ce1111c19b3b5a94a670cbe8fa7e1936bc7d864436f447  docs/ai-team/evidence/g7-21-email-scheduler-live-reminder-20260809.md
+5a94e31293fcf125795df53ba564dc1600e121a1475a239417eca19dba831409  .ai-team/reports/g7-21-email-scheduler-live-reminder-20260809.json
+e7019a2574717612a8ff8f14a626b90ad86436b318da49f83bc0909a8e263ef0  docs/ai-team/evidence/g7-21-source-manifest-20260809.txt
+37ee7c138da7347e88ebd343e4afbc10f4ae56143356c052435c01ef26b069fa  docs/ai-team/evidence/g7-04-browser-qa-f569709aa8e496dc.json
+a2d97e1766ecdc1ff54079c51264daf1fd064a7f65ccd0a20ed97ac28dcf73ba  docs/ai-team/evidence/g7-04-browser-qa-f569709aa8e496dc.json.sha256
+1fc2e998a0e575204e6e3e16a51757fd9b632afeca5ff5c428afc8eab52a87af  .ai-team/reports/g7-21-email-disposable-20260809.json
+0c17d8d226cbedaab32c16814682a780728a675b41edeb50055a3fc7ca2d583a  .ai-team/reports/g7-21-email-disposable-20260809.json.sha256
+f5f570f8cfeefa5765132caf626ed89bd8bf67c757337b7825fbb62bcaf78db3  docs/launch/current-function-scorecard-20260809.json
+e4b7840a5d1dc4cea5c76fd23283cc0d17b7debea60f474bc0689fd64ac80248  docs/codex-goal/API_CONTRACT_REGISTRY.md
+56fd0750701be0d207a5551fcd04eaaea790a359cda1d76cf785b2600f5221f6  docs/staging-production-env-vars.md
+0d8956c91cb3270aca23787cecc50cb4ac5cf256c7643c2c0648332e03140da0  vercel.json

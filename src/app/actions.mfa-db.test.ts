@@ -38,6 +38,7 @@ vi.mock("@/lib/auth", () => ({
   requireAuth: mocks.requireAuth,
   requireFinanceAdmin: vi.fn(),
   requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
   revokeCurrentSession: vi.fn(),
   sessionCookieOptions: vi.fn(),
 }));

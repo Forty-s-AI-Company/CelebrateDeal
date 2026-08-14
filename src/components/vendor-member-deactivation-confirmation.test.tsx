@@ -34,6 +34,7 @@ describe("VendorMemberDeactivationConfirmation", () => {
     expect(html).toContain('name="id" value="member-2"');
     expect(html).toContain('name="_csrf" value="csrf-test-token"');
     expect(html).toContain("確認停用");
+    expect(html).toContain('aria-disabled="false"');
   });
 
   it("does not render a submittable deactivation action for the current user or inactive member", () => {

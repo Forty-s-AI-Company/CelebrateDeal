@@ -39,8 +39,8 @@ const syntheticEnvironment = Object.freeze({
   VERCEL_ENV: "preview",
   NEXT_TELEMETRY_DISABLED: "1",
   NEXT_PUBLIC_APP_URL: "https://celebratedeal.invalid",
-  DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp139_build",
-  DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp139_build",
+  DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp139_test",
+  DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp139_test",
   PAYMENT_PROVIDER: "demo",
   RATE_LIMIT_PROVIDER: "memory",
   JOB_SECRET: "wp139-synthetic-job-value",
@@ -437,6 +437,19 @@ export function runAudit() {
   console.log(JSON.stringify({ workPackage: "WP-139", status: receipt.status, classification: receipt.classification, buildAttempts: receipt.build.attempts, buildExitCode: receipt.build.exitCode, repositoryNextUnchanged: receipt.repositoryNext.unchanged, cleanup: receipt.cleanup.tempMirrorRemoved, workspacePreserved: receipt.preservation?.passed ?? false }));
   return receipt;
 }
+
+export {
+  baselineReceipt,
+  buildEnvironment,
+  buildStats,
+  cleanupTemp,
+  copyMirror,
+  digestDirtyPath,
+  isSensitiveName,
+  markerMetadata,
+  outputSignals,
+  statusPath,
+};
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = runAudit();

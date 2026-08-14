@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { buildWp151FixtureScript } from "./wp151-public-unavailable-browser-runner.mjs";
-import { makeReceipt, normalizeLoopbackEndpoint, readinessTransition, validateReceipt } from "./wp155-public-unavailable-browser-runner.mjs";
+import {
+  attachSanitizedStream,
+  makeReceipt,
+  nextMetadataSnapshot,
+  normalizeLoopbackEndpoint,
+  preflightDependencyBoundary,
+  protectedDigestSnapshot,
+  readinessTransition,
+  runQuiet,
+  sha256File,
+  syntheticEnvironment,
+  validateReceipt,
+  waitForServer,
+  writeReceipt,
+} from "./wp155-public-unavailable-browser-runner.mjs";
 import { READINESS_STATES } from "./wp153-public-unavailable-browser-runner.mjs";
 
 const wp153ReceiptPath = ".ai-team/reports/wp153-public-unavailable-browser-receipt.json";
@@ -139,5 +156,101 @@ test("COV-07 WP155 receipt round-trip rejects version, status and safety tamperi
   const safetyTampered = structuredClone(receipt);
   safetyTampered.sourceEnvContentsRead = true;
   assert.throws(() => validateReceipt(safetyTampered), /RECEIPT_SAFETY_INVALID/);
+});
+
+test("COV-09 WP155 environment and protected digest snapshots stay sanitized", () => {
+  const environment = syntheticEnvironment();
+  assert.equal(environment.NODE_ENV, "development");
+  assert.equal(environment.CI, "true");
+  assert.equal(environment.PAYMENT_PROVIDER, "demo");
+  assert.equal(environment.RATE_LIMIT_PROVIDER, "memory");
+  assert.equal(environment.PSQLRC, "");
+  assert.equal(environment.DATABASE_URL.includes("127.0.0.1"), true);
+  assert.equal(nextMetadataSnapshot().exists === true || nextMetadataSnapshot().exists === false, true);
+  const snapshot = protectedDigestSnapshot();
+  assert.equal(Object.keys(snapshot).length > 0, true);
+  assert.equal(Object.values(snapshot).every((value) => /^sha256:[a-f0-9]{64}$/u.test(value)), true);
+  assert.equal(/^sha256:[a-f0-9]{64}$/u.test(sha256File("package.json")), true);
+});
+
+test("COV-09 WP155 stream diagnostics classify without retaining raw output", () => {
+  const child = { stdout: new EventEmitter(), stderr: new EventEmitter() };
+  const diagnostics = { lineCount: 0, classifications: [], markerSeen: false };
+  attachSanitizedStream(child, diagnostics);
+  child.stdout.emit("data", "ready\n");
+  child.stderr.emit("data", "Cannot find module 'next'\n");
+  assert.equal(diagnostics.lineCount, 2);
+  assert.equal(diagnostics.markerSeen, true);
+  assert.deepEqual(diagnostics.classifications, ["MODULE_RESOLUTION"]);
+  assert.equal(Object.hasOwn(diagnostics, "rawOutput"), false);
+});
+
+test("COV-09 WP155 receipt writer round-trips only a sanitized disposable receipt", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "wp155-receipt-"));
+  const target = path.join(directory, "receipt.json");
+  try {
+    const receipt = makeReceipt();
+    assert.equal(writeReceipt(target, receipt), undefined);
+    const roundTrip = JSON.parse(fs.readFileSync(target, "utf8"));
+    assert.equal(roundTrip.status, "WP155_EXACT_NO_GO_NO_RETRY");
+    assert.equal(roundTrip.rawOutputPersisted, false);
+    assert.equal(fs.existsSync(`${target}.tmp-${process.pid}`), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("COV-09 WP155 preflight accepts the preserved local prerequisites without external execution", () => {
+  const receipt = makeReceipt();
+  preflightDependencyBoundary(receipt);
+  assert.equal(receipt.quality.wp152Acceptance, "ACCEPT");
+  assert.equal(receipt.quality.wp154Acceptance, "ACCEPT");
+});
+
+test("COV-11 WP155 subprocess normalization remains bounded", () => {
+  const result = runQuiet(process.execPath, ["--version"], process.env);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdoutBytes > 0, true);
+  assert.equal(result.stderrBytes, 0);
+  assert.deepEqual(Object.keys(result).sort(), ["exitCode", "stderrBytes", "stdoutBytes"]);
+});
+
+test("COV-11 WP155 readiness fails closed on child early exit without fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return { status: 204 };
+  };
+  try {
+    await assert.rejects(
+      waitForServer("http://127.0.0.1:32155", { exitCode: 1 }, { markerSeen: false, probeSeen: false }),
+      /SERVER_READINESS_EXACT_NO_GO:EARLY_EXIT/,
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("COV-11 WP155 readiness reaches READY from a sanitized loopback probe", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async (url) => {
+    fetchCalls += 1;
+    assert.equal(url, "http://127.0.0.1:32155/login");
+    return { status: 204 };
+  };
+  try {
+    const readiness = await waitForServer(
+      "http://127.0.0.1:32155",
+      { exitCode: null },
+      { markerSeen: true, probeSeen: false },
+    );
+    assert.equal(readiness.state, READINESS_STATES.READY);
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 // COV-07 END

@@ -1,0 +1,22 @@
+generated_at_utc=2026-08-08T17:59:49.999Z
+work_package=G7-13A
+algorithm=SHA-256
+98673b4be8e9a1364387ceb42331054c38542bf216ec31c0713b9a74aa1c3279  prisma/schema.prisma
+671065fe09a866d440560a4e4dff39937a83d3f340e9dd43c338ef5ae4e48935  prisma/migrations/20260809010000_g7_13_analytics_authenticity/migration.sql
+914ad278e53f1228ebc1a235ddef40303d1486b3e9f72ce3da6ce7761a771d53  src/app/api/analytics/route.ts
+bd0cbb096d82c35d50e96e3c5ed791e062e76cd23f64b6e4e7c4e87fd886c942  src/app/api/analytics/route.test.ts
+cac519ccde6d45fdfc4e8b94cf17ec1f748fb63a50da762e84f293fe93b38053  src/lib/client-analytics.ts
+c3337b7f8e7ff1eb8bccad31b84e20abb514485e994f73d73447aea1fe3788d3  src/lib/client-analytics.test.ts
+ffa562188990bd357d2308d43cd78f65f25e437e4c2a46b4d2d71361f22455fe  src/components/live-playback.tsx
+ec41efbd088c6cf4b6c87f74538faa258bbd6c51c70b528973f83ceadc556d28  src/components/live-playback.test.tsx
+6c5db9ea734e2578e46ddcfc9350925b4c8233a8aa577597c19585965516a8d2  src/app/(app)/dashboard/page.tsx
+89b612e7d816294ae18048d68b74d8f3506c585192b2b177f592730f07ac335f  src/app/(app)/dashboard/page.test.tsx
+95464856ffaa583b37e5fef89de45bc44f1526a6483bb8d14deb38c7eabbedf1  src/app/(app)/lives/[id]/analytics/page.tsx
+6728e9635909a040a0071d31f594c5ce0bc9b870992e972ff66d754ee8f5a1a2  src/app/(app)/lives/[id]/analytics/page.test.tsx
+5c02862c089f9794f6ad48872af0a12cda46d9c9d1d36538e0472ae9ce519c5f  src/app/actions.test.ts
+5be8707542ffd0eac5d6a1ebfa5f9567776ec1ec24d5d34dc5cd5f738e65d560  src/lib/analytics-authenticity.db.test.ts
+f5f98b31d9a45e241180e9ab5008cc2f0886b8dc35306e0aecc0c95783ab02b2  prisma.g7-analytics-authenticity-disposable.config.mjs
+378f7b1469c111aec737e4838d65ee1e20f6ab0203e7fa3e3692b7daeb924437  vitest.g7-analytics-authenticity-db.config.ts
+8664230cfa4727d35739cc7068bfcdbfdd31ec79e464bd977708a453cfa459e3  src/lib/live-quota-admission.ts
+85024cf91b8afc28caae2128c105e4d068617db784c47736fac6b1aa8987b734  scripts/build/controlled-production-build.mjs
+f3d67cd787d5fa727a7f8a7e47cfe3ee504afcf897db148b34c055e483ebdd65  config/build-env.controlled.json

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "celebratedeal-g7-53-form-draft-browser-qa/v1",
+  "workPackage": "G7-53",
+  "status": "PASS",
+  "runId": "b61d3d35ec8c338f",
+  "startedAt": "2026-08-09T19:46:42.739Z",
+  "finishedAt": "2026-08-09T19:49:29.886Z",
+  "sourceDigest": "815b1d9e1a01d98ea084923f64f7aab21eb54b951d4c78c9077c1a637a483147",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "docker port",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-05 chromium",
+      "exitCode": 0
+    }
+  ],
+  "expected": {
+    "browserTests": 7,
+    "axeCriticalOrSerious": 0,
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "operations": [
+      "visual-builder",
+      "preview-sync",
+      "move",
+      "remove-undo",
+      "pending",
+      "draft-autosave",
+      "draft-restore",
+      "draft-discard",
+      "draft-clear-after-save",
+      "optimistic-conflict",
+      "legacy",
+      "tenant-404"
+    ]
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "browser": {
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "rwd": {
+      "desktop": "PASS",
+      "mobile": "PASS"
+    },
+    "tenant": "PASS",
+    "legacy": {
+      "valid": "PASS",
+      "invalidFailClosed": "PASS"
+    },
+    "loading": "PASS",
+    "keyboard": "PASS",
+    "draftRecovery": {
+      "autosave": "PASS",
+      "restore": "PASS",
+      "discard": "PASS",
+      "clearAfterSave": "PASS",
+      "conflict": "PASS"
+    },
+    "diagnostics": []
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "eff307713c0d20cfed69e2276d00a94a5af23c0ed1817fc29b29edbcffef0e6a"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "25bfd68810ac4a07a7447ee42bd85fdd0b8019968eac6308acfccc4c4c5b5765"
+    }
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "committedMigrationsOnly": true,
+    "userBrowserProfileRead": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "externalOperations": false,
+    "productionOperations": false,
+    "rawOutputPersisted": false
+  },
+  "diagnostics": {
+    "failureClass": null,
+    "details": []
+  },
+  "failure": null
+}

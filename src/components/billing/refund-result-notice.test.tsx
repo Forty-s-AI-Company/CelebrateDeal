@@ -33,4 +33,15 @@ describe("RefundResultNotice", () => {
     expect(html).toContain("此交易已完成退款");
     expect(html).toContain("系統沒有再次送出退款請求");
   });
+
+  it("shows the fail-closed reconciliation handoff for an ambiguous provider result", () => {
+    searchParams.get.mockReturnValue("refund_reconciliation_required");
+
+    const html = renderToStaticMarkup(<RefundResultNotice />);
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('data-testid="billing-refund-reconciliation-required"');
+    expect(html).toContain("系統已保留退款 reservation 並停止重送");
+    expect(html).toContain("退款終態對帳");
+  });
 });

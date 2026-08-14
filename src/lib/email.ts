@@ -3,6 +3,7 @@ type SendEmailInput = {
   subject: string;
   html?: string;
   text?: string;
+  idempotencyKey?: string;
 };
 
 export type TransactionalEmailErrorCode =
@@ -51,6 +52,9 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
   if (!apiKey || !from) {
     throw new TransactionalEmailError("configuration");
   }
+  if (input.idempotencyKey && (input.idempotencyKey.length > 256 || !/^[\x21-\x7E]+$/u.test(input.idempotencyKey))) {
+    throw new TransactionalEmailError("configuration");
+  }
 
   let response: Response;
   try {
@@ -59,6 +63,7 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,

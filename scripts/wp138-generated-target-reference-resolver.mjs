@@ -193,8 +193,8 @@ function buildEnvironment(tempRoot) {
     SENTRY_DISABLE_AUTO_UPLOAD: "true",
     NPM_CONFIG_OFFLINE: "true",
     NPM_CONFIG_UPDATE_NOTIFIER: "false",
-    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp138_typegen",
-    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp138_typegen",
+    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp138_test",
+    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/wp138_test",
     NEXT_PUBLIC_APP_URL: "http://127.0.0.1:32138",
     PAYMENT_PROVIDER: "demo",
     RATE_LIMIT_PROVIDER: "memory",
@@ -327,6 +327,8 @@ export function classifyAstRoleFixture({ generatedPath, text, sourceDigest = "di
 export function isAllowedOutcome(classification) {
   return allowedTopLevelOutcomes.has(classification);
 }
+
+export { cleanupTemp, copyTree, digestFile, isForbiddenMirrorPath, normalizeRelativePath, pathSegments };
 
 export function runAudit() {
   const startedAt = new Date().toISOString();

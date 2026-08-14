@@ -9,7 +9,7 @@ export default async function NewTeamTemplatePage() {
   const [vendor, auth, csrfToken] = await Promise.all([requireVendor(), requireAuth(), getCsrfToken()]);
   const [memberships, products] = await Promise.all([
     getDb().teamMembership.findMany({ where: { vendorId: vendor.id, vendorMemberId: auth.member?.id, status: "ACTIVE", leftAt: null }, include: { team: { select: { name: true } } } }),
-    getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
+    getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
   ]);
   const teamIds = memberships.map((membership) => membership.teamId);
   const webinars = teamIds.length === 0 ? [] : await getDb().live.findMany({

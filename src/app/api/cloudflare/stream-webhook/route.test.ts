@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
-import { createCloudflareStreamWebhookHandler, POST } from "@/app/api/cloudflare/stream-webhook/route";
+import { POST } from "@/app/api/cloudflare/stream-webhook/route";
 import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
+import { createCloudflareStreamWebhookHandler } from "@/lib/cloudflare-stream-webhook-handler";
 import { buildCloudflareStreamWebhookFixture } from "@/lib/cloudflare-webhook-fixtures";
 
 const createdVendorIds: string[] = [];

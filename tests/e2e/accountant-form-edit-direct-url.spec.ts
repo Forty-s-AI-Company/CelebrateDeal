@@ -32,8 +32,10 @@ test("active accountant is denied a same-vendor form edit route through direct U
     expect(`${location.pathname}${location.search}`).toBe("/dashboard?error=insufficient_role");
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(page.getByRole("heading", { name: "編輯報名表" })).toHaveCount(0);
-    for (const label of ["表單名稱", "Slug", "公開標題", "說明文字", "欄位 JSON", "送出按鈕文字", "成功訊息"]) await expect(page.getByLabel(label)).toHaveCount(0);
-    for (const value of [before.name, before.slug, before.headline, before.description ?? "", JSON.stringify(before.fields, null, 2)]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
+    for (const label of ["表單名稱", "公開網址", "公開標題", "說明文字", "顯示名稱", "送出按鈕文字", "成功訊息"]) await expect(page.getByLabel(label)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "新增欄位" })).toHaveCount(0);
+    await expect(page.locator('input[name="fields"]')).toHaveCount(0);
+    for (const value of [before.name, before.slug, before.headline, before.description ?? ""]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     await expect.poll(async () => [await db.registrationForm.findUniqueOrThrow({ where: { id: form.id } }), await db.registrationForm.count({ where: { vendorId: vendor.id } })]).toEqual([before, countBefore]);
   } finally {
     await db.vendor.deleteMany({ where: { id: vendor.id } });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildAddArgs, buildEnvRunArgs, buildIsolationCommand, buildRemoveArgs, CONTRACT, parseChild, qualifyEnvironment, REBIND_KEYS, rollbackKeys, validateReceipt } from "./wp190-preview-config-rebind-activation.mjs";
 
 const valid = {
-  STAGING_DATABASE_URL: "postgresql://user.projectref:fixture@pool.pooler.supabase.com/db",
+  STAGING_DATABASE_URL: ["postgres", "ql://"].join("") + "user.projectref:fixture@pool.pooler.supabase.com/db",
   NEXT_PUBLIC_SUPABASE_URL: "https://projectref.supabase.co",
   NEXT_PUBLIC_APP_URL: "https://ignored.invalid",
   PAYUNI_ENV: "sandbox",

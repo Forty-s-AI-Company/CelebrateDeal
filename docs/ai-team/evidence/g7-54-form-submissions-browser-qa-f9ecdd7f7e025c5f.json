@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "celebratedeal-g7-54-form-submissions-browser-qa/v1",
+  "workPackage": "G7-54",
+  "status": "PASS",
+  "runId": "f9ecdd7f7e025c5f",
+  "startedAt": "2026-08-09T21:05:36.772Z",
+  "finishedAt": "2026-08-09T21:08:16.005Z",
+  "sourceDigest": "5370c5604f0b6eec50f0e0f9675a7486e22abc92dd5014c01c9236a64aacc4f4",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "docker port",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-54 chromium",
+      "exitCode": 0
+    }
+  ],
+  "expected": {
+    "browserTests": 5,
+    "axeCriticalOrSerious": 0,
+    "databaseRows": 55,
+    "pageSize": 25,
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "operations": [
+      "search",
+      "verification-filter",
+      "source-filter",
+      "reset",
+      "pagination",
+      "url-privacy",
+      "pending",
+      "csrf-error",
+      "tenant-not-found-noindex-no-leak",
+      "axe",
+      "rwd",
+      "keyboard"
+    ]
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "browser": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "rwd": {
+      "desktop": "PASS",
+      "mobile": "PASS"
+    },
+    "search": "PASS",
+    "filters": "PASS",
+    "pagination": "PASS",
+    "privacy": "PASS",
+    "tenant": "PASS",
+    "loading": "PASS",
+    "error": "PASS",
+    "keyboard": "PASS",
+    "database": {
+      "rows": 55,
+      "pageSize": 25
+    },
+    "diagnostics": []
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "0b5e6202ed55f9ea9c608175d26af89a4f25661ad3fdaa26efcb165851490932"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "f09b6784d3bf6634c149b0624fa18f2407f055522f9f04a9209deea6d86db597"
+    }
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "committedMigrationsOnly": true,
+    "userBrowserProfileRead": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "externalOperations": false,
+    "productionOperations": false,
+    "rawOutputPersisted": false
+  },
+  "diagnostics": {
+    "failureClass": null,
+    "details": []
+  },
+  "failure": null
+}

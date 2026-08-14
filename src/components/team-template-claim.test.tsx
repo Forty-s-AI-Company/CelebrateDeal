@@ -28,6 +28,14 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
+vi.mock("react-dom", async (importOriginal) => {
+  const reactDom = await importOriginal<typeof import("react-dom")>();
+  return {
+    ...reactDom,
+    useFormStatus: () => ({ pending: hookState.pending, data: null, method: null, action: null }),
+  };
+});
+
 import { TeamTemplateClaim, TeamTemplateClaimError } from "./team-template-claim";
 
 const action = async () => ({ status: "idle" as const, message: "" });
@@ -124,7 +132,7 @@ describe("TeamTemplateClaim", () => {
     expect((success.props.children as unknown[])).toHaveLength(2);
 
     hookState.actionState = { status: "error", message: "無法建立" };
-    const error = findElements(renderClaim(), (element) => element.props.role === "status")[0];
+    const error = findElements(renderClaim(), (element) => element.props.role === "alert")[0];
     expect(error.props.className).toContain("red");
     expect(textContent(error)).toBe("無法建立");
     expect(error.props.children).toEqual([null, "無法建立"]);
@@ -132,13 +140,14 @@ describe("TeamTemplateClaim", () => {
 
   it("disables submission while pending and preserves form safety constraints", () => {
     hookState.pending = true;
-    let tree = renderClaim();
-    const button = findElements(tree, (element) => element.type === "button")[0];
-    expect(button.props.disabled).toBe(true);
-    expect(textContent(button)).toBe("建立中…");
+    const pendingHtml = renderToStaticMarkup(<TeamTemplateClaim template={template} csrfToken="csrf-test-token" action={action} />);
+    expect(pendingHtml).toContain("disabled");
+    expect(pendingHtml).toContain('aria-busy="true"');
+    expect(pendingHtml).toContain("建立中…");
+    expect(pendingHtml).toContain("正在建立夥伴頁，請勿重複送出。");
 
     hookState.pending = false;
-    tree = renderClaim();
+    const tree = renderClaim();
     const inputs = findElements(tree, (element) => element.type === "input");
     const slug = inputs.find((element) => element.props.name === "slug");
     const confirmed = inputs.find((element) => element.props.name === "confirmed");
@@ -146,6 +155,6 @@ describe("TeamTemplateClaim", () => {
     expect(slug?.props.pattern).toBe("[a-z0-9]+(-[a-z0-9]+)*");
     expect(confirmed?.props.required).toBe(true);
     expect(confirmed?.props.value).toBe("yes");
-    expect(textContent(findElements(tree, (element) => element.type === "button")[0])).toBe("確認並建立夥伴頁");
+    expect(textContent(tree)).toContain("確認並建立夥伴頁");
   });
 });

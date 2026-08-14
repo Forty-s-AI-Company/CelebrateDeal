@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 
-const SENSITIVE_KEY_PATTERN = /(authorization|password|secret|token|hashkey|hashiv|hashinfo|encryptinfo|streamkey|apikey|api_key|private|signature|card|cvv)/i;
+const SENSITIVE_KEY_PATTERN = /(authorization|password|secret|token|hashkey|hashiv|hashinfo|encryptinfo|streamkey|apikey|api_key|private|signature|card|cvv|email|e-mail|phone|mobile|address|recipient|buyer|customer|payer)/i;
 
 function redactString(value: string) {
   return `[redacted length=${value.length}]`;

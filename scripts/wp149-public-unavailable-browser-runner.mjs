@@ -361,7 +361,26 @@ function writeReceipt(targetPath, receipt) {
   }
 }
 
-export { FIXTURE_STATES, buildFixtureLifecycleReceipt, cleanupFixtureIdempotently, classifyServerOutput, fixtureScript, fixtureTransition, makeReceipt, runPureFixtureLifecycle, validateFixtureLifecycleReceipt, validateWp149Receipt };
+export {
+  FIXTURE_STATES,
+  attachSanitizedStream,
+  buildFixtureLifecycleReceipt,
+  cleanupFixtureIdempotently,
+  classifyServerOutput,
+  fixtureScript,
+  fixtureTransition,
+  makeReceipt,
+  nextMetadataSnapshot,
+  runQuiet,
+  runPureFixtureLifecycle,
+  sha256File,
+  sourceDigestSnapshot,
+  syntheticEnvironment,
+  validateFixtureLifecycleReceipt,
+  validateWp149Receipt,
+  waitForServer,
+  writeReceipt,
+};
 
 export async function main() {
   const receipt = makeReceipt();

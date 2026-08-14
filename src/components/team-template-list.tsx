@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Copy, ExternalLink, Link2Off, Plus, Users } from "lucide-react";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState } from "@/components/ui";
 
 export type TeamTemplateListItem = {
@@ -19,16 +20,89 @@ type TeamTemplateActionState = { status: "idle" | "success" | "error"; message: 
 type TemplateAction = (state: TeamTemplateActionState, formData: FormData) => Promise<TeamTemplateActionState>;
 const initialActionState: TeamTemplateActionState = { status: "idle", message: "" };
 
-export function TeamTemplateList({ templates, csrfToken, action }: { templates: TeamTemplateListItem[]; csrfToken: string; action: TemplateAction }) {
-  const [state, formAction, pending] = useActionState(action, initialActionState);
-  const [copied, setCopied] = useState(false);
+export function TeamTemplateShareActions({
+  template,
+  sourcePage,
+  csrfToken,
+  action,
+}: {
+  template: Pick<TeamTemplateListItem, "id" | "name" | "teamId">;
+  sourcePage: NonNullable<TeamTemplateListItem["sourcePage"]>;
+  csrfToken: string;
+  action: TemplateAction;
+}) {
+  const [state, formAction] = useActionState(action, initialActionState);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const isDisableAction = sourcePage.shareEnabled;
 
   async function copyShareUrl() {
     if (!state.shareUrl) return;
-    await navigator.clipboard?.writeText(new URL(state.shareUrl, window.location.origin).toString());
-    setCopied(true);
+
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(new URL(state.shareUrl, window.location.origin).toString());
+      setCopyStatus("success");
+    } catch {
+      setCopyStatus("error");
+    }
   }
 
+  return (
+    <div className="grid gap-2">
+      <form action={formAction}>
+        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="operation" value={isDisableAction ? "disable-share" : "create-share"} />
+        <input type="hidden" name="teamId" value={template.teamId} />
+        <input type="hidden" name="pageId" value={sourcePage.id} />
+        <FormSubmitButton
+          pendingChildren={isDisableAction ? "處理中…" : "建立中…"}
+          pendingMessage={isDisableAction
+            ? `正在停用「${template.name}」的分享連結。`
+            : `正在建立「${template.name}」的分享連結。`}
+          confirmMessage={isDisableAction ? "確定要停用這個分享連結？已發出的連結會立刻失效。" : undefined}
+          onClick={() => setCopyStatus("idle")}
+          className={isDisableAction
+            ? "inline-flex h-10 items-center gap-2 rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+            : "inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-white"}
+        >
+          {isDisableAction ? <><Link2Off aria-hidden="true" size={16} />停用分享</> : <><Users aria-hidden="true" size={16} />建立分享連結</>}
+        </FormSubmitButton>
+      </form>
+
+      {state.status !== "idle" ? (
+        <div
+          role={state.status === "error" ? "alert" : "status"}
+          aria-live={state.status === "success" ? "polite" : undefined}
+          className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}
+        >
+          {state.message}
+          {state.shareUrl ? (
+            <span className="mt-2 flex flex-wrap items-center gap-2">
+              <code className="max-w-full overflow-x-auto rounded bg-white px-2 py-1 text-xs text-slate-700">{state.shareUrl}</code>
+              <button
+                type="button"
+                onClick={copyShareUrl}
+                className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-white px-2 py-1 text-xs font-semibold text-emerald-800"
+              >
+                <Copy aria-hidden="true" size={13} />
+                {copyStatus === "success" ? "已複製" : copyStatus === "error" ? "複製失敗，重試" : "複製分享連結"}
+              </button>
+              <span
+                role={copyStatus === "error" ? "alert" : "status"}
+                aria-live={copyStatus === "success" ? "polite" : undefined}
+                className="sr-only"
+              >
+                {copyStatus === "success" ? "分享連結已複製。" : copyStatus === "error" ? "無法複製分享連結，請重試或手動複製。" : ""}
+              </span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function TeamTemplateList({ templates, csrfToken, action }: { templates: TeamTemplateListItem[]; csrfToken: string; action: TemplateAction }) {
   if (templates.length === 0) {
     return (
       <EmptyState
@@ -41,19 +115,6 @@ export function TeamTemplateList({ templates, csrfToken, action }: { templates: 
 
   return (
     <div className="grid gap-4">
-      {state.status !== "idle" ? (
-        <div role="status" className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>
-          {state.message}
-          {state.shareUrl ? (
-            <span className="mt-2 flex flex-wrap items-center gap-2">
-              <code className="max-w-full overflow-x-auto rounded bg-white px-2 py-1 text-xs text-slate-700">{state.shareUrl}</code>
-              <button type="button" onClick={copyShareUrl} className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-white px-2 py-1 text-xs font-semibold text-emerald-800">
-                <Copy size={13} />{copied ? "已複製" : "複製分享連結"}
-              </button>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
       <Card>
         <div className="grid gap-3">
           {templates.map((template) => (
@@ -72,27 +133,13 @@ export function TeamTemplateList({ templates, csrfToken, action }: { templates: 
               </div>
               <div className="flex flex-wrap gap-2">
                 <ButtonLink href={`/team-templates/${template.id}/edit`} tone="secondary"><ExternalLink size={16} />編輯與發版</ButtonLink>
-                {template.sourcePage?.shareEnabled ? (
-                  <form
-                    action={formAction}
-                    onSubmit={(event) => {
-                      if (!window.confirm("確定要停用這個分享連結？已發出的連結會立刻失效。")) event.preventDefault();
-                    }}
-                  >
-                    <input type="hidden" name="_csrf" value={csrfToken} />
-                    <input type="hidden" name="operation" value="disable-share" />
-                    <input type="hidden" name="teamId" value={template.teamId} />
-                    <input type="hidden" name="pageId" value={template.sourcePage.id} />
-                    <button disabled={pending} className="inline-flex h-10 items-center gap-2 rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"><Link2Off size={16} />{pending ? "處理中…" : "停用分享"}</button>
-                  </form>
-                ) : template.sourcePage ? (
-                  <form action={formAction}>
-                    <input type="hidden" name="_csrf" value={csrfToken} />
-                    <input type="hidden" name="operation" value="create-share" />
-                    <input type="hidden" name="teamId" value={template.teamId} />
-                    <input type="hidden" name="pageId" value={template.sourcePage.id} />
-                    <button disabled={pending} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"><Users size={16} />{pending ? "建立中…" : "建立分享連結"}</button>
-                  </form>
+                {template.sourcePage ? (
+                  <TeamTemplateShareActions
+                    template={template}
+                    sourcePage={template.sourcePage}
+                    csrfToken={csrfToken}
+                    action={action}
+                  />
                 ) : null}
               </div>
             </article>

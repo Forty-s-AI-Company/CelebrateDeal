@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDirectCreatorUpload,
   createLiveInput,
+  createResumableCreatorUpload,
   getStreamVideoStatus,
 } from "./cloudflare-stream";
 
@@ -34,7 +35,7 @@ describe("Cloudflare Stream API", () => {
       success: true,
       result: {
         uid: "upload-1",
-        uploadURL: "https://upload.example.test/upload-1",
+        uploadURL: "https://upload.videodelivery.net/upload-1",
         secretProviderField: "must-not-be-returned",
       },
     }), { status: 200 }));
@@ -42,12 +43,61 @@ describe("Cloudflare Stream API", () => {
 
     await expect(createDirectCreatorUpload(120)).resolves.toEqual({
       uid: "upload-1",
-      uploadURL: "https://upload.example.test/upload-1",
+      uploadURL: "https://upload.videodelivery.net/upload-1",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.cloudflare.com/client/v4/accounts/test-fixture-account/stream/direct_upload",
       expect.objectContaining({ method: "POST", signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("creates a direct-creator tus session with bounded server-owned metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status: 201,
+      headers: {
+        location: "https://upload.videodelivery.net/tus/upload-1",
+        "stream-media-id": "upload-1",
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createResumableCreatorUpload({
+      fileName: "launch video.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    })).resolves.toEqual({
+      uid: "upload-1",
+      uploadURL: "https://upload.videodelivery.net/tus/upload-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.cloudflare.com/client/v4/accounts/test-fixture-account/stream?direct_user=true",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-fixture-token",
+          "Tus-Resumable": "1.0.0",
+          "Upload-Length": String(250 * 1024 * 1024),
+          "Upload-Metadata": expect.stringContaining("maxDurationSeconds NjAw"),
+        }),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it("rejects a tus response that omits the provider media id", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, {
+      status: 201,
+      headers: { location: "https://upload.videodelivery.net/tus/missing-id" },
+    })));
+
+    await expect(createResumableCreatorUpload({
+      fileName: "launch.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    })).rejects.toMatchObject({ code: "invalid_response", providerStatus: 201 });
   });
 
   it("does not expose provider error bodies when Cloudflare rejects a request", async () => {

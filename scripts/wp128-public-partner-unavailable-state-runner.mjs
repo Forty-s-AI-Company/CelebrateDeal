@@ -16,7 +16,7 @@ const tempRoot = path.join(os.tmpdir(), `celebratedeal-wp128-${runId}-${nonce}`)
 const port = 32128 + Number.parseInt(nonce.slice(0, 2), 16) % 100;
 const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:54329/celebratedeal_ci?schema=${schema}`;
 
-function run(command, args, environment, cwd = root) {
+export function run(command, args, environment, cwd = root) {
   const result = spawnSync(command, args, {
     cwd,
     env: environment,
@@ -32,7 +32,7 @@ function psql(container, sql, environment) {
   return run("docker", ["exec", "-e", "PGPASSWORD=postgres", container, "psql", "-U", "postgres", "-X", "-v", "ON_ERROR_STOP=1", "-A", "-t", "-q", "-d", "celebratedeal_ci", "-c", sql], environment);
 }
 
-function environment() {
+export function environment() {
   return {
     PATH: process.env.PATH ?? "",
     SystemRoot: process.env.SystemRoot ?? "",
@@ -84,7 +84,7 @@ function copyMirror() {
   fs.mkdirSync(path.join(tempRoot, "home"), { recursive: true });
 }
 
-function fixtureScript(remove = false) {
+export function fixtureScript(remove = false) {
   const operation = remove
     ? `await db.partnerFunnelPage.deleteMany({ where: { slug: ${JSON.stringify(slug)} } });
 await db.teamFunnelTemplateVersion.deleteMany({ where: { headline: "WP128 fixture headline" } });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatDateTime } from "@/lib/format";
 import type { TeamFunnelPublicPageView } from "@/lib/team-funnel-public-page";
 import { LeadForm } from "@/components/lead-form";
+import { TrackedTeamFunnelProductLink } from "@/components/tracked-team-funnel-product-link";
 
 const slotLabels: Record<string, string> = {
   main_product: "推薦商品",
@@ -13,6 +14,8 @@ const slotLabels: Record<string, string> = {
 export function TeamFunnelPublicPage({ view }: { view: TeamFunnelPublicPageView }) {
   if (view.state !== "ready" || !view.page) return <PublicPageState state={view.state as Exclude<TeamFunnelPublicPageView["state"], "ready">} />;
   const { page } = view;
+  const hasPlatformCheckout = page.productSlots.some((slot) => slot.checkoutMode === "platform");
+  const hasExternalCheckout = page.productSlots.some((slot) => slot.checkoutMode === "external");
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
@@ -39,13 +42,17 @@ export function TeamFunnelPublicPage({ view }: { view: TeamFunnelPublicPageView 
           <h2 id="registration-heading" className="text-xl font-bold text-slate-950">立即報名</h2>
           <p className="mt-1 text-sm text-slate-700">報名資料會由 {page.partner.name} 協助服務，並綁定本場研討會。</p>
           <div className="mt-4">
-            <LeadForm
-              formId={page.webinar.registration.formId}
-              liveId={page.webinar.id}
-              fields={page.webinar.registration.fields}
-              submitLabel={page.webinar.registration.submitLabel}
-              successMessage={page.webinar.registration.successMessage}
-            />
+            {page.webinar.registration ? (
+              <LeadForm
+                formId={page.webinar.registration.formId}
+                liveId={page.webinar.id}
+                fields={page.webinar.registration.fields}
+                submitLabel={page.webinar.registration.submitLabel}
+                successMessage={page.webinar.registration.successMessage}
+              />
+            ) : (
+              <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">報名表欄位需要商家重新確認，目前暫停接收資料。</p>
+            )}
           </div>
         </section>
 
@@ -67,11 +74,29 @@ export function TeamFunnelPublicPage({ view }: { view: TeamFunnelPublicPageView 
 
         <section className="mt-7" aria-labelledby="offers-heading">
           <h2 id="offers-heading" className="text-xl font-bold text-slate-950">合作夥伴推薦</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            {hasPlatformCheckout ? "平台內商品會建立可追蹤訂單，並由 CelebrateDeal 處理付款與售後紀錄。" : null}
+            {hasPlatformCheckout && hasExternalCheckout ? " " : null}
+            {hasExternalCheckout ? "外部連結只記錄推薦點擊；付款、退款與外部佣金由外部平台處理。" : null}
+          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {page.productSlots.map((slot) => (
-              <a key={slot.slotKey} href={slot.url ?? undefined} className="rounded-xl border border-slate-200 p-4 text-sm font-semibold text-blue-700 hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">
-                {slot.offerLabel || slotLabels[slot.slotKey] || "推薦連結"}
-              </a>
+              <TrackedTeamFunnelProductLink
+                key={slot.slotKey}
+                href={slot.url!}
+                vendorId={page.vendorId}
+                liveId={page.webinar.id}
+                sourcePageSlug={page.slug}
+                referralCode={page.partner.referralCode}
+                slotKey={slot.slotKey}
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span>{slot.offerLabel || slotLabels[slot.slotKey] || "推薦連結"}</span>
+                  <span className="shrink-0 text-xs font-medium text-slate-500">
+                    {slot.checkoutMode === "platform" ? "平台安全結帳" : "外部連結"}
+                  </span>
+                </span>
+              </TrackedTeamFunnelProductLink>
             ))}
           </div>
         </section>

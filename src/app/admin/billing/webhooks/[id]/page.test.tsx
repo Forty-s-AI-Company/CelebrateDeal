@@ -79,8 +79,11 @@ describe("/admin/billing/webhooks/[id] route", () => {
     });
     expect(mocks.reconcileWebhookEvent).toHaveBeenCalledExactlyOnceWith(event);
     expect(html).toContain("Webhook 詳情");
+    expect(html).toContain("匯出對帳 JSON");
     expect(html).toContain("處理失敗");
     expect(html).toContain("手動重送");
+    expect(html.match(/aria-busy="false"/gu) ?? []).toHaveLength(1);
+    expect(html).toContain('aria-disabled="false"');
     expect(html).toContain("PayUni EncryptInfo / HashInfo 診斷");
     expect(html).toContain("ORDER-SYNTHETIC");
     expect(html).toContain("Reconciliation Checks");

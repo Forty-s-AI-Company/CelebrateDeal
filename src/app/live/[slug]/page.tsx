@@ -1,35 +1,22 @@
 import { notFound } from "next/navigation";
 import { LivePlayback } from "@/components/live-playback";
 import { getDb } from "@/lib/db";
-
-function normalizeFields(fields: unknown) {
-  if (!Array.isArray(fields)) return [];
-  return fields
-    .filter((field): field is { key: string; label: string; type?: string; required?: boolean } => {
-      return Boolean(field && typeof field === "object" && "key" in field && "label" in field);
-    })
-    .map((field) => ({
-      key: String(field.key),
-      label: String(field.label),
-      type: typeof field.type === "string" ? field.type : "text",
-      required: Boolean(field.required),
-    }));
-}
+import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
+import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const live = await getDb().live.findFirst({
     where: {
       slug,
-      OR: [
-        { status: { in: ["scheduled", "live"] } },
-        { status: "ended", replayEnabled: true },
-      ],
+      ...publicLiveAvailabilityWhere(),
     },
     include: {
       vendor: true,
       video: true,
       form: true,
+      messageTemplate: true,
       interactionScript: {
         include: {
           events: {
@@ -39,7 +26,6 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         },
       },
       products: {
-        where: { product: { isActive: true } },
         orderBy: { sortOrder: "asc" },
         include: { product: true },
       },
@@ -47,6 +33,41 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
   });
 
   if (!live) notFound();
+  if (!getRuntimeLivePublishReadiness(live).ready) notFound();
+  const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
+  const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
+  const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
+  const liveProductIds = new Set(live.products.map((item) => item.product.id));
+  const interactionEvents = live.interactionScript?.vendorId === live.vendorId
+    && live.interactionScript.status === "published"
+    ? live.interactionScript.events
+      .filter((event) => (
+        event.eventType !== "chat_message"
+        && event.eventType !== "reminder"
+      ) || event.role?.isActive !== false)
+      .filter((event) => (
+        event.eventType !== "product_spotlight"
+        || Boolean(event.productId && liveProductIds.has(event.productId))
+      ))
+      .map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        triggerSec: event.triggerSec,
+        title: event.title,
+        message: event.message,
+        productId: event.productId,
+        ctaLabel: event.ctaLabel,
+        ctaUrl: event.ctaUrl,
+        role: event.role?.vendorId === live.vendorId
+          ? {
+              name: event.role.name,
+              avatarUrl: event.role.avatarUrl,
+              label: event.role.label,
+              roleType: event.role.roleType,
+            }
+          : null,
+      }))
+    : [];
 
   return (
     <LivePlayback
@@ -58,42 +79,26 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         description: live.description,
         accentCopy: live.accentCopy,
         heroImageUrl: live.heroImageUrl,
-        videoUrl: live.video?.videoUrl ?? null,
         vendorId: live.vendorId,
+        admissionRequired: true,
         brand: {
           name: live.vendor.name,
           logoUrl: live.vendor.logoUrl,
           primaryColor: live.vendor.primaryColor,
           ctaColor: live.vendor.ctaColor,
         },
-        form: live.form?.isActive
+        form: sameVendorActiveForm && live.form && parsedFormFields?.success
           ? {
               id: live.form.id,
               headline: live.form.headline,
               description: live.form.description,
-              fields: normalizeFields(live.form.fields),
+              fields: parsedFormFields.data,
               submitLabel: live.form.submitLabel,
               successMessage: live.form.successMessage,
             }
           : null,
-        interactionEvents: live.interactionScript?.events.map((event) => ({
-          id: event.id,
-          eventType: event.eventType,
-          triggerSec: event.triggerSec,
-          title: event.title,
-          message: event.message,
-          productId: event.productId,
-          ctaLabel: event.ctaLabel,
-          ctaUrl: event.ctaUrl,
-          role: event.role
-            ? {
-                name: event.role.name,
-                avatarUrl: event.role.avatarUrl,
-                label: event.role.label,
-                roleType: event.role.roleType,
-              }
-            : null,
-        })) ?? [],
+        ...(formConfigurationUnavailable ? { formConfigurationUnavailable: true } : {}),
+        interactionEvents,
         products: live.products.map((item) => ({
           id: item.product.id,
           name: item.product.name,

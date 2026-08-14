@@ -1,0 +1,175 @@
+import { createHash } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
+import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
+
+export type FormSubmissionVerificationResult =
+  | { status: "invalid" }
+  | { status: "already_verified" }
+  | {
+      status: "verified";
+      confirmation: {
+        vendorId: string;
+        vendorName: string;
+        liveId: string;
+        liveTitle: string;
+        formSubmissionId: string;
+        recipientName: string;
+        recipientEmail: string;
+        liveScheduledAt: Date;
+        liveReminderOffsetMinutes: number;
+        template: {
+          id: string;
+          vendorId: string;
+          channel: string;
+          trigger: string;
+          subject: string | null;
+          body: string;
+          isActive: boolean;
+        } | null;
+        reminderTemplate: {
+          id: string;
+          vendorId: string;
+          channel: string;
+          trigger: string;
+          subject: string | null;
+          body: string;
+          isActive: boolean;
+        } | null;
+      } | null;
+    };
+
+export async function verifyFormSubmission(
+  db: PrismaClient,
+  token: string,
+  now = new Date(),
+): Promise<FormSubmissionVerificationResult> {
+  const verifiedToken = verifyFormSubmissionVerificationToken(token, now);
+  if (!verifiedToken) return { status: "invalid" };
+
+  return db.$transaction(async (tx) => {
+    const submission = await tx.formSubmission.findUnique({
+      where: { id: verifiedToken.submissionId },
+      select: {
+        id: true,
+        formId: true,
+        liveId: true,
+        name: true,
+        email: true,
+        verificationStatus: true,
+        verificationVersion: true,
+        verificationExpiresAt: true,
+        form: { select: { vendorId: true, vendor: { select: { name: true } } } },
+        affiliateClick: {
+          select: { id: true, vendorId: true, affiliateId: true, referralCode: true },
+        },
+        live: {
+          select: {
+            id: true,
+            title: true,
+            scheduledAt: true,
+            liveReminderOffsetMinutes: true,
+            messageTemplate: {
+              select: {
+                id: true,
+                vendorId: true,
+                channel: true,
+                trigger: true,
+                subject: true,
+                body: true,
+                isActive: true,
+              },
+            },
+            liveReminderTemplate: {
+              select: {
+                id: true,
+                vendorId: true,
+                channel: true,
+                trigger: true,
+                subject: true,
+                body: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!submission) return { status: "invalid" as const };
+    if (submission.verificationStatus === "VERIFIED") return { status: "already_verified" as const };
+    if (
+      submission.verificationVersion !== verifiedToken.version
+      || !submission.verificationExpiresAt
+      || Math.floor(submission.verificationExpiresAt.getTime() / 1_000)
+        !== Math.floor(verifiedToken.expiresAt.getTime() / 1_000)
+      || submission.verificationExpiresAt <= now
+    ) return { status: "invalid" as const };
+
+    const claimed = await tx.formSubmission.updateMany({
+      where: {
+        id: submission.id,
+        verificationStatus: "UNVERIFIED",
+        verificationVersion: verifiedToken.version,
+        verificationExpiresAt: submission.verificationExpiresAt,
+      },
+      data: {
+        verificationStatus: "VERIFIED",
+        verifiedAt: now,
+      },
+    });
+    if (claimed.count !== 1) {
+      const current = await tx.formSubmission.findUnique({
+        where: { id: submission.id },
+        select: { verificationStatus: true },
+      });
+      return current?.verificationStatus === "VERIFIED"
+        ? { status: "already_verified" as const }
+        : { status: "invalid" as const };
+    }
+
+    if (submission.liveId) {
+      await tx.analyticsEvent.create({
+        data: {
+          vendorId: submission.form.vendorId,
+          liveId: submission.liveId,
+          visitorId: createHash("sha256").update(submission.id).digest("hex"),
+          eventType: "lead_submit",
+          trustLevel: "VERIFIED_FORM_SUBMISSION",
+          payload: {
+            formId: submission.formId,
+            ref: submission.affiliateClick?.referralCode ?? null,
+          },
+        },
+      });
+    }
+
+    if (submission.affiliateClick) {
+      await tx.affiliateClick.updateMany({
+        where: {
+          id: submission.affiliateClick.id,
+          vendorId: submission.form.vendorId,
+          affiliateId: submission.affiliateClick.affiliateId,
+          referralCode: submission.affiliateClick.referralCode,
+          convertedAt: null,
+        },
+        data: { convertedAt: now },
+      });
+    }
+
+    return {
+      status: "verified" as const,
+      confirmation: submission.live ? {
+        vendorId: submission.form.vendorId,
+        vendorName: submission.form.vendor.name,
+        liveId: submission.live.id,
+        liveTitle: submission.live.title,
+        formSubmissionId: submission.id,
+        recipientName: submission.name,
+        recipientEmail: submission.email,
+        liveScheduledAt: submission.live.scheduledAt,
+        liveReminderOffsetMinutes: submission.live.liveReminderOffsetMinutes,
+        template: submission.live.messageTemplate,
+        reminderTemplate: submission.live.liveReminderTemplate,
+      } : null,
+    };
+  }, { isolationLevel: "Serializable" });
+}

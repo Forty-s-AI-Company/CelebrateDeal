@@ -68,4 +68,36 @@ describe("/interaction-scripts route", () => {
     expect(html).toContain("還沒有留言組");
     expect(html).toContain("建立留言組後");
   });
+
+  it("caps unsupported page sizes and explains why an unsafe legacy script cannot be copied", async () => {
+    const html = renderToStaticMarkup(await InteractionScriptsPage({
+      searchParams: Promise.resolve({ page: "1", pageSize: "50000", error: "invalid_event" }),
+    }));
+
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 10 }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("含有無效或不安全的事件");
+    expect(html).toContain("複製");
+    expect(html).toContain("刪除");
+    expect(html).toContain('aria-busy="false"');
+  });
+
+  it("explains a cross-vendor or inactive legacy reference without copying it", async () => {
+    const html = renderToStaticMarkup(await InteractionScriptsPage({
+      searchParams: Promise.resolve({ error: "invalid_reference" }),
+    }));
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("引用了其他商店、已停用或不存在的角色／商品");
+  });
+
+  it("explains that a stale or cross-vendor script must be selected again", async () => {
+    const html = renderToStaticMarkup(await InteractionScriptsPage({
+      searchParams: Promise.resolve({ error: "missing_script" }),
+    }));
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("已不存在或不屬於目前商店");
+    expect(html).toContain("請重新選擇");
+  });
 });

@@ -9,6 +9,7 @@ CelebrateDeal 目前是尚未對外營運的專案，採長程 `PRELAUNCH_DEV_AU
 
 - 主代理負責整合、價值排序與最終判斷。
 - Terra、Sol、Worker、Reviewer、AGY Fast、AGY Deep 與 native Luna 可依工作內容協作。
+- 推理程度採 `adaptive_lowest_sufficient`：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般工作使用中間值；`low`、`xhigh`、`max` 只在任務難度真的落在該端點時使用。其他模型維持既有設定。
 - 不相交的檔案、資料資源與唯讀工作可以並行；同一檔案或資源同一時間只允許一個 writer。
 - 可自動從 Fast → Deep → Luna fallback，但每層結果必須如實記錄，不能把工具錯誤標成 PASS。
 - 可使用本機、loopback、disposable、Preview、staging、sandbox、Docker、Browser 與 PayUni Sandbox；不需要每個 WP 都執行全部測試或建立完整 handoff。

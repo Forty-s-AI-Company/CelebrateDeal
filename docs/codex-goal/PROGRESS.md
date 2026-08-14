@@ -1,8 +1,10 @@
 # CelebrateDeal Goal 進度
 
-最後更新：2026-07-25 22:21（Asia/Taipei）
+最後更新：2026-08-10 08:00（Asia/Taipei）
 
 ## 目前狀態
+
+> 下列 branch／dirty 數字是 2026-07-25 歷史快照；current canonical readiness 以 `docs/launch/current-readiness-snapshot-20260802.json` 為準。
 
 - 階段：Phase 5 — complete regression、CI hardening 與 Security validation
 - 分支：`codex/payuni-sandbox-external-qa`
@@ -11,6 +13,62 @@
 - 目前 tracked dirty：74（包含本 Goal 的 auth/payment/webhook/tenant/provider/API/Prisma/UX/monitoring 本機 patch；均未 stage／commit）
 - 目前 untracked entries：29（Goal 契約文件、既有 QA/security artifact、quality reports、local DB safety與 executable policy tests）
 - 原則：既有未追蹤檔案全部視為使用者／前序任務成果，不修改、不刪除、不 stage
+
+## 2026-08-10 current checkpoint｜G7-57
+
+Checkout response-loss recovery P1 已關閉：vendor／product scoped idempotency key會保存在sessionStorage並綁入signed admission；425／5xx／network loss保留復原身分，成功與terminal 409清除。Server只允許相同商品的pending transaction重發admission，finished／cross-product fail closed；即使第一次request已保留最後一件庫存，有有效recovery key的買家仍可恢復，新買家維持售罄。
+
+Final current-source targeted Vitest 5 files／22 tests、TypeScript、scoped ESLint與runner contracts 23/23 PASS。Fresh receipt `c3bd4bab4e7097f2` 通過53 migrations、production build、1/1 response-loss Browser、desktop／mobile、Axe 0、RWD與cleanup；receipt SHA-256 `F3075D15453540A6AD6D0A5D807555B4C21A31614FDA1C1597EF0D876C443464`，source lineage與目前component hash一致。Final reviewer `ACCEPT`，P0/P1/P2=0。
+
+Checkout／付款固定功能8.8→9.2；canonical total維持75.5，CAT04=6.0、CAT10=4.5。Goal保持active，下一lane為訊息模板validation redirect後的商家草稿保存。完整證據：`docs/ai-team/evidence/g7-57-checkout-response-loss-recovery-20260810.md`。
+
+## 2026-08-10 previous checkpoint｜G7-56
+
+PayUni ambiguous refund outcome P1 已關閉：只有 `request_contract` 會釋放 reservation；network／provider response／authentication／unknown 會原子標記 `ambiguous:<id>` 並要求 query-only reconciliation。`request:<id>` 視為可能仍在 provider call 中，no-refund query 一律 fail closed；action completion 與 reconciliation 都有 exact state ownership mutation，pending 時 dashboard 不提供第二次退款。
+
+第一輪 reviewer 找到 in-flight race 後已完成修正；第二輪 final reviewer `ACCEPT`，P0/P1=0。4 files／240 targeted tests、TypeScript、scoped ESLint、53 migrations／3/3 disposable PostgreSQL、controlled production build與cleanup全PASS。失敗的 DB marker receipt及 build receipt `EEXIST` 路徑如實保留。
+
+退款／客服固定功能8.7→9.0；canonical total維持75.5，CAT04=6.0、CAT10=4.5。Goal保持active，下一lane為 checkout commit後response-loss recovery／idempotency P1。完整證據：`docs/ai-team/evidence/g7-56-payuni-ambiguous-refund-closure-20260810.md`。
+
+## 2026-08-10 previous checkpoint｜G7-55
+
+Email 寄送營運已新增 vendor-scoped exact hash／ID 搜尋、狀態／通知類型篩選、每頁25筆分頁、安全 durable requeue、永久拒絕 fail-closed、audit 與 stale-result 明示。
+
+最新驗證：53 migrations、4/4 disposable PostgreSQL、10 files／40 targeted tests、runner contracts 6/6、TypeScript、scoped ESLint與受控 production build通過。Goal恢復後最新 Browser receipt `5e2da0dbc2398ef6` 仍為2/5；再次定位到fixture filter與expected row矛盾，runner已修且contract 6/6，但沒有第三次重跑完整Browser。
+
+Email固定功能8.2→8.6；canonical total維持75.5，CAT04=6.0、CAT10=4.5。完整報告：`docs/ai-team/evidence/g7-55-email-merchant-operations-20260810.md`。
+
+## 2026-08-10 current checkpoint｜G7-54
+
+報名名單已新增安全搜尋、驗證／來源篩選、每頁25筆分頁、清除條件、桌機表格與手機卡片；PII不進URL，route與action都重新驗證vendor。Browser抓到`name="reset"`遮蔽原生form reset的實際bug，已修成`resetFilters`。大型名單效能P2以`pg_trgm`及三個GIN indexes關閉。
+
+最新驗證：6 files／18 targeted tests、runner／index contracts 13/13、89-model／52-migration inventory、TypeScript、scoped ESLint、production build、5/5 Browser、desktop／mobile、Axe 0、keyboard、loading、CSRF error、tenant noindex／no-leak與cleanup全PASS。Final reviewer `ELIGIBLE`。
+
+報名表單固定功能8.7→9.1；canonical total維持75.5，CAT04=6.0、CAT10=4.5。Goal保持active，下一lane為Email merchant operations。
+
+## 2026-08-10 previous checkpoint｜G7-53
+
+報名表單草稿復原與版本衝突保護已完成：tenant／form scoped瀏覽器草稿支援自動保存、恢復、捨棄、成功後清除與一般server failure後復原；編輯儲存使用`updatedAt` CAS，舊分頁不會覆蓋新版，stale草稿不提供直接恢復。
+
+最新驗證：13 files／73 targeted tests、runner 11/11、TypeScript、scoped ESLint、51 migrations、production build、9/9 Browser、same-browser cross-tenant、desktop／mobile、Axe 0與cleanup全PASS。Final reviewer `ELIGIBLE_NO_P0_P1_P2`。
+
+報名表單固定功能8.2→8.7；canonical total維持75.5，CAT04=6.0、CAT10=4.5。Goal保持active，外部／真人blocker繼續跳過，下一 lane 為 Email merchant operations 產品缺口。
+
+## 2026-08-09 current checkpoint｜G7-23
+
+Live reminder durable reconciliation 已完成：既有 VERIFIED registrations 在 schedule、template、offset、status、title 改動後可安全重排；A→B→A 只恢復未寄出 revision，stale schedule／title worker 由 Serializable current-config guard 阻擋，unchanged current reminder 可正常進入 provider stub。
+
+最新驗證：6 files／242 targeted tests、46 migrations／8 disposable PostgreSQL tests、TypeScript、scoped ESLint、controlled production build與 final reviewer `NO_P0_P1_FINAL` 全 PASS。沒有執行真實 Email、Production cron、staging／PayUni Sandbox 或正式環境操作。
+
+Email 固定功能 7.8→8.2；CAT01 7.5→8.0；canonical total 73.5→74.0。CAT04=6.0、CAT10=4.5，Goal 保持 active，外部／真人 blocker 繼續跳過，下一 lane 仍為產品功能 P1 掃描。
+
+## 2026-08-08 current checkpoint｜FIN-2026-08-08-84
+
+本段落已完成 affiliate commission payout 的 paid outcome reference 閉環：paid transition 要求 1～200 字人工出款／provider reference，寫入 AffiliatePayout 與 audit snapshot，affiliate commission page 顯示 reference，void 清除 reference；歷史缺漏保留 null。
+
+最新驗證：action／affiliate page 2 files、160/160 tests；affiliate payout PostgreSQL disposable suite 3/3；34 migrations validate/deploy/status 與 marker cleanup PASS；Prisma validate/generate、scoped ESLint、TypeScript、production build 89/89 static pages、diff-check PASS。此段落的本機 runner／append-only cleanup 診斷均已如實記錄，未把失敗嘗試算入 PASS。
+
+Canonical total 維持 73.5，CAT04=6.0、CAT10=4.5、SANDBOX_READY=false、PRODUCTION_READY=false、current_goal_score_change=0。這是 local finance P1 closure，不等同 CAT04 staging／PayUni Sandbox 或 CAT10 真人／monitoring acceptance；本段落完成後停止，不自動重試 FIN-08AA、WP-196、WP-197。
 
 ## 已完成里程碑
 

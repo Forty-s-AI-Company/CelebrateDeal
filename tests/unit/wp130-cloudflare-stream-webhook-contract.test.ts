@@ -20,10 +20,8 @@ vi.mock("@/lib/monitoring", () => ({
   captureOperationalError: fakeCapture,
 }));
 
-import {
-  createCloudflareStreamWebhookHandler,
-  POST,
-} from "@/app/api/cloudflare/stream-webhook/route";
+import { POST } from "@/app/api/cloudflare/stream-webhook/route";
+import { createCloudflareStreamWebhookHandler } from "@/lib/cloudflare-stream-webhook-handler";
 
 const SECRET = "wp130-synthetic-secret";
 const UID = "wp130-synthetic-stream-uid";
@@ -75,7 +73,7 @@ afterEach(() => {
 });
 
 describe("WP-130 Cloudflare Stream webhook contract", () => {
-  it("exports the Next route and injectable handler factory", () => {
+  it("exports the Next route and keeps an injectable handler factory outside the route module", () => {
     expect(typeof POST).toBe("function");
     expect(typeof createCloudflareStreamWebhookHandler).toBe("function");
   });

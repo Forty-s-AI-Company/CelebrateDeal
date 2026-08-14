@@ -18,20 +18,35 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
   if (!live) notFound();
 
   const trackedEventTypes = ["page_view", "product_click", "cta_click", "play_progress"];
-  const [eventCounts, submissionCount, recentEvents] = await Promise.all([
-    db.analyticsEvent.groupBy({
-      by: ["eventType"],
-      where: { vendorId: vendor.id, liveId: live.id, eventType: { in: trackedEventTypes } },
-      _count: { _all: true },
-    }),
-    db.formSubmission.count({ where: { liveId: live.id } }),
+  const [verifiedAnalyticsSessions, submissionCount, recentEvents] = await Promise.all([
     db.analyticsEvent.findMany({
-      where: { vendorId: vendor.id, liveId: live.id },
+      where: {
+        vendorId: vendor.id,
+        liveId: live.id,
+        trustLevel: "ADMITTED_LIVE_SESSION",
+        eventType: { in: trackedEventTypes },
+      },
+      select: { eventType: true, visitorId: true },
+      distinct: ["eventType", "visitorId"],
+    }),
+    db.formSubmission.count({ where: { liveId: live.id, verificationStatus: "VERIFIED" } }),
+    db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendor.id,
+        liveId: live.id,
+        OR: [
+          { trustLevel: "ADMITTED_LIVE_SESSION" },
+          { trustLevel: "VERIFIED_FORM_SUBMISSION", eventType: "lead_submit" },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 30,
     }),
   ]);
-  const eventCountByType = new Map(eventCounts.map((eventCount) => [eventCount.eventType, eventCount._count._all]));
+  const eventCountByType = new Map<string, number>();
+  for (const event of verifiedAnalyticsSessions) {
+    eventCountByType.set(event.eventType, (eventCountByType.get(event.eventType) ?? 0) + 1);
+  }
   const pageViews = eventCountByType.get("page_view") ?? 0;
   const productClicks = eventCountByType.get("product_click") ?? 0;
   const ctaClicks = eventCountByType.get("cta_click") ?? 0;
@@ -45,9 +60,9 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <PageHeader title={`${live.title} 分析`} description="MVP 先收事件流、核心 KPI 與轉換漏斗，後續可加 cohorts。" />
+      <PageHeader title={`${live.title} 分析`} description="觀看與點擊只計入已通過直播 admission 的不重複播放 session；不代表不重複真人。" />
       <div className="grid gap-4 md:grid-cols-5">
-        <Card><p className="text-sm text-slate-500">觀看</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
+        <Card><p className="text-sm text-slate-500">播放 session</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
         <Card><p className="text-sm text-slate-500">名單</p><p className="mt-2 text-3xl font-semibold">{submissionCount}</p></Card>
         <Card><p className="text-sm text-slate-500">商品點擊</p><p className="mt-2 text-3xl font-semibold">{productClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">CTA 點擊</p><p className="mt-2 text-3xl font-semibold">{ctaClicks}</p></Card>
@@ -57,7 +72,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         <Card>
           <div className="mb-5">
             <h2 id="conversion-funnel-title" className="text-lg font-semibold text-slate-950">轉換漏斗</h2>
-            <p className="mt-1 text-sm text-slate-500">各階段相對於觀看數的轉換比例。</p>
+            <p className="mt-1 text-sm text-slate-500">各階段相對於已 admission 播放 session 的比例；名單只計完成 Email 驗證的報名。</p>
           </div>
           <ol className="grid gap-4 md:grid-cols-4">
             {funnel.map((step) => (
@@ -88,7 +103,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
             ) : (
               recentEvents.map((event) => (
                 <div key={event.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-                  <span className="flex items-center gap-2"><Badge tone="blue">{event.eventType}</Badge>{event.visitorId}</span>
+                  <span className="flex items-center gap-2"><Badge tone="blue">{event.eventType}</Badge>{event.trustLevel === "VERIFIED_FORM_SUBMISSION" ? "verified lead" : "session"} {event.visitorId.slice(0, 12)}…</span>
                   <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
                 </div>
               ))

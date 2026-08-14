@@ -20,7 +20,7 @@ export default async function EditPartnerPage({ params }: { params: Promise<{ id
     },
   });
   if (!page) notFound();
-  const products = await getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } });
+  const products = await getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } });
   const overrideBySlot = new Map(page.productOverrides.map((override) => [override.productSlotId, override]));
   const editorPage: PartnerPageEditorData = {
     id: page.id, teamId: page.teamId, slug: page.slug, headline: page.headline, subheadline: page.subheadline, body: page.body, ctaLabel: page.ctaLabel, ctaUrl: page.ctaUrl,

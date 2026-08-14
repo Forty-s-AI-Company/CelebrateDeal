@@ -26,7 +26,11 @@ import {
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
+  requireVendorManagerContext,
+  requireVendorManagerMfa,
   requireVendorOwnerFinance,
+  requireVendorSupportContext,
+  requireVendorSupportMfa,
 } from "@/lib/auth";
 
 function sessionFor({
@@ -154,11 +158,117 @@ describe("requireVendorManager", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
+  it("retains the authenticated actor for attributable operational audits", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "admin" }));
+
+    await expect(requireVendorManagerContext()).resolves.toMatchObject({
+      auth: { user: { id: "user-1" }, member: { id: "member-1", role: "admin" } },
+      vendor: { id: "vendor-1" },
+    });
+  });
+
   it("rejects an accountant from operational write access", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
 
     await expect(requireVendorManager()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
     expect(mocks.redirect).toHaveBeenCalledWith("/dashboard?error=insufficient_role");
+  });
+});
+
+describe("requireVendorManagerMfa", () => {
+  it.each(["owner", "admin"])(
+    "allows an MFA-verified vendor %s to cross the order PII boundary",
+    async (memberRole) => {
+      mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
+
+      await expect(requireVendorManagerMfa("/orders/order-1")).resolves.toMatchObject({
+        user: { id: "user-1" },
+        vendor: { id: "vendor-1" },
+        member: { id: "member-1", role: memberRole },
+      });
+      expect(mocks.redirect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps accountants outside the operational order boundary", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
+
+    await expect(requireVendorManagerMfa()).rejects.toThrow(
+      "redirect:/dashboard?error=insufficient_role",
+    );
+  });
+
+  it("keeps support outside the operational order boundary", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
+
+    await expect(requireVendorManagerMfa()).rejects.toThrow(
+      "redirect:/dashboard?error=insufficient_role",
+    );
+  });
+
+  it("does not let a path value turn support into a manager", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
+
+    await expect(requireVendorManagerMfa("/support-cases/case-1")).rejects.toThrow(
+      "redirect:/dashboard?error=insufficient_role",
+    );
+  });
+
+  it("requires MFA enrollment before order PII may be revealed", async () => {
+    mocks.findSession.mockResolvedValue(
+      sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null }),
+    );
+
+    await expect(requireVendorManagerMfa()).rejects.toThrow("redirect:/mfa/setup");
+  });
+
+  it("requires current-session MFA and rejects an external next path", async () => {
+    mocks.findSession.mockResolvedValue(
+      sessionFor({ platformRole: "none", memberRole: "admin", mfaVerifiedAt: null }),
+    );
+
+    await expect(requireVendorManagerMfa("/orders/order-1")).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Forders%2Forder-1",
+    );
+    await expect(requireVendorManagerMfa("//attacker.example")).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Forders",
+    );
+  });
+});
+
+describe("requireVendorSupportMfa", () => {
+  it.each(["owner", "admin", "support"])(
+    "allows an MFA-verified active vendor %s into support operations",
+    async (memberRole) => {
+      mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
+
+      await expect(requireVendorSupportMfa("/support-cases/case-1")).resolves.toMatchObject({
+        vendor: { id: "vendor-1" },
+        member: { role: memberRole },
+      });
+    },
+  );
+
+  it.each(["accountant", "member"])("rejects a non-support %s before returning support context", async (memberRole) => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
+
+    await expect(requireVendorSupportContext()).rejects.toThrow(
+      "redirect:/dashboard?error=insufficient_role",
+    );
+  });
+
+  it("requires MFA enrollment and a safe internal next path", async () => {
+    mocks.findSession.mockResolvedValue(
+      sessionFor({ platformRole: "none", memberRole: "support", mfaFactor: null }),
+    );
+    await expect(requireVendorSupportMfa()).rejects.toThrow("redirect:/mfa/setup");
+
+    mocks.findSession.mockResolvedValue(
+      sessionFor({ platformRole: "none", memberRole: "support", mfaVerifiedAt: null }),
+    );
+    await expect(requireVendorSupportMfa("//attacker.example")).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Fsupport-cases",
+    );
   });
 });
 
@@ -182,6 +292,18 @@ describe("requireVendorFinance", () => {
     await expect(requireVendorFinance("/billing/invoices")).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
+  });
+
+  it("keeps support outside tenant finance while preserving accountant access", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
+    await expect(requireVendorFinance("/billing/invoices")).rejects.toThrow(
+      "redirect:/dashboard?error=insufficient_role",
+    );
+
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
+    await expect(requireVendorFinance("/billing/invoices")).resolves.toMatchObject({
+      member: { role: "accountant" },
+    });
   });
 
   it("requires MFA enrollment for tenant finance roles", async () => {

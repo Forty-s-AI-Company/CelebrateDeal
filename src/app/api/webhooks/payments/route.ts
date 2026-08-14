@@ -11,6 +11,7 @@ import { redactedJsonSnapshot } from "@/lib/redaction";
 
 type CallbackSource = "return" | "notify" | "unknown";
 type ObservedMethod = "POST" | "HEAD" | "OTHER";
+type PayerReturnOutcome = "updated" | "pending" | "unverified";
 
 function classifyCallbackSource(searchParams: URLSearchParams): CallbackSource {
   const values = searchParams.getAll("source");
@@ -63,7 +64,30 @@ function observePaymentWebhookFailure(requestUrl: URL, code: ReturnType<typeof c
   }
 }
 
-function webhookJson(requestUrl: URL, status: number, payload: unknown) {
+function isPayUniPayerReturn(requestUrl: URL) {
+  const providerValues = requestUrl.searchParams.getAll("provider");
+  return classifyCallbackSource(requestUrl.searchParams) === "return"
+    && providerValues.length === 1
+    && providerValues[0] === "payuni";
+}
+
+function payerReturnOutcome(status: number): PayerReturnOutcome {
+  if (status >= 200 && status < 300) return "updated";
+  if (status >= 500) return "pending";
+  return "unverified";
+}
+
+function webhookResponse(requestUrl: URL, status: number, payload: unknown) {
+  if (isPayUniPayerReturn(requestUrl)) {
+    const destination = new URL("/checkout/result", requestUrl.origin);
+    destination.searchParams.set("payment", payerReturnOutcome(status));
+    observeCallbackRequest(requestUrl, "POST", 303);
+    const response = NextResponse.redirect(destination, 303);
+    response.headers.set("cache-control", "no-store");
+    response.headers.set("referrer-policy", "no-referrer");
+    return response;
+  }
+
   observeCallbackRequest(requestUrl, "POST", status);
   return NextResponse.json(payload, { status });
 }
@@ -80,11 +104,11 @@ export async function POST(request: Request) {
   try {
     adapter = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   } catch {
-    return webhookJson(requestUrl, 500, { error: "Invalid payment provider configuration" });
+    return webhookResponse(requestUrl, 500, { error: "Invalid payment provider configuration" });
   }
 
   if (process.env.NODE_ENV === "production" && adapter.id === "demo") {
-    return webhookJson(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
+    return webhookResponse(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
   }
 
   const providerIds = [
@@ -94,12 +118,12 @@ export async function POST(request: Request) {
   ].filter((providerId): providerId is string => providerId !== null);
 
   if (providerIds.length === 0 || providerIds.some((providerId) => providerId !== adapter.id)) {
-    return webhookJson(requestUrl, 400, { error: "Unsupported payment provider" });
+    return webhookResponse(requestUrl, 400, { error: "Unsupported payment provider" });
   }
 
   const rawBody = await readTextBody(request);
   if (rawBody === null) {
-    return webhookJson(requestUrl, 413, { error: "Webhook payload too large" });
+    return webhookResponse(requestUrl, 413, { error: "Webhook payload too large" });
   }
 
   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
@@ -112,7 +136,7 @@ export async function POST(request: Request) {
       targetType: "WebhookEvent",
       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
     });
-    return webhookJson(requestUrl, 401, { error: "Invalid signature" });
+    return webhookResponse(requestUrl, 401, { error: "Invalid signature" });
   }
 
   let normalized;
@@ -126,7 +150,7 @@ export async function POST(request: Request) {
       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
       after: auditSnapshot({ errorCode: "invalid_payload" }),
     });
-    return webhookJson(requestUrl, 400, { error: "Invalid payment webhook payload", code: "invalid_payload" });
+    return webhookResponse(requestUrl, 400, { error: "Invalid payment webhook payload", code: "invalid_payload" });
   }
 
   const payload = normalized.payload;
@@ -136,7 +160,7 @@ export async function POST(request: Request) {
   });
 
   if (existing?.status === "processed") {
-    return webhookJson(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
+    return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
   }
 
   const event = existing ?? await db.webhookEvent.create({
@@ -156,7 +180,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processPaymentWebhook(payload, event);
-    return webhookJson(requestUrl, 200, {
+    return webhookResponse(requestUrl, 200, {
       ok: true,
       eventId: event.id,
       vendorId: result.vendor.id,
@@ -166,7 +190,7 @@ export async function POST(request: Request) {
     try {
       const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
       if (latestEvent?.status === "processed") {
-        return webhookJson(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
+        return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
       }
     } catch {
       // Keep the original failure path when convergence cannot be confirmed.
@@ -192,6 +216,6 @@ export async function POST(request: Request) {
       before: auditSnapshot(payload),
       after: auditSnapshot({ errorCode }),
     });
-    return webhookJson(requestUrl, 500, { error: "Payment webhook processing failed", code: errorCode, eventId: event.id });
+    return webhookResponse(requestUrl, 500, { error: "Payment webhook processing failed", code: errorCode, eventId: event.id });
   }
 }

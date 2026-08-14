@@ -33,6 +33,30 @@ function LockedNotice({ label, source }: { label: string; source: string }) {
   return <p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><LockKeyhole size={13} />{label} 由 {source} 的模板版本鎖定，僅供閱讀。</p>;
 }
 
+function publishButtonLabel(publishing: boolean, isPublished: boolean) {
+  if (publishing) return "更新中…";
+  return isPublished ? "停止公開" : "發布公開頁";
+}
+
+function publishPendingMessage(publishing: boolean, isPublished: boolean) {
+  if (!publishing) return "";
+  return isPublished ? "正在停止公開夥伴頁，請勿重複送出。" : "正在發布夥伴頁，請勿重複送出。";
+}
+
+function confirmUnpublish(event: { preventDefault: () => void }, isPublished: boolean) {
+  if (isPublished && !window.confirm("確定要停止公開這個夥伴頁？公開網址會立即停止顯示。")) event.preventDefault();
+}
+
+function actionLiveMode(status: PartnerPageActionState["status"]) {
+  return status === "error" ? "assertive" as const : "polite" as const;
+}
+
+function copyButtonLabel(status: "idle" | "success" | "error") {
+  if (status === "success") return "已複製";
+  if (status === "error") return "複製失敗，重試";
+  return "複製公開 URL";
+}
+
 export function PartnerPageEditor({ page, products, csrfToken, saveAction, publishAction }: {
   page: PartnerPageEditorData;
   products: Array<{ id: string; name: string }>;
@@ -42,16 +66,21 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
 }) {
   const [saveState, saveFormAction, saving] = useActionState(saveAction, initialState);
   const [publishState, publishFormAction, publishing] = useActionState(publishAction, initialState);
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [showPreview, setShowPreview] = useState(false);
   const locked = new Set(page.lockedFields);
   const slotByKey = new Map(page.slots.map((slot) => [slot.key, slot]));
   const publicUrl = typeof window === "undefined" ? `/p/${page.slug}` : new URL(`/p/${page.slug}`, window.location.origin).toString();
 
-  useEffect(() => { if (!copied) return; const timeout = window.setTimeout(() => setCopied(false), 1800); return () => window.clearTimeout(timeout); }, [copied]);
+  useEffect(() => { if (copyStatus !== "success") return; const timeout = window.setTimeout(() => setCopyStatus("idle"), 1800); return () => window.clearTimeout(timeout); }, [copyStatus]);
   async function copyUrl() {
-    await navigator.clipboard?.writeText(publicUrl);
-    setCopied(true);
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(publicUrl);
+      setCopyStatus("success");
+    } catch {
+      setCopyStatus("error");
+    }
   }
 
   return (
@@ -65,7 +94,7 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
       </Card>
 
       <Card>
-        <form action={saveFormAction} className="grid gap-6">
+        <form action={saveFormAction} className="grid gap-6" aria-busy={saving}>
           <input type="hidden" name="_csrf" value={csrfToken} /><input type="hidden" name="teamId" value={page.teamId} /><input type="hidden" name="pageId" value={page.id} />
           <section className="grid gap-4" aria-labelledby="content-title"><h2 id="content-title" className="font-semibold text-slate-950">頁面內容</h2>
             {fields.map(([field, name, label]) => {
@@ -93,15 +122,17 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
               </div>;
             })}</div>
           </section>
-          {saveState.status !== "idle" ? <p role={saveState.status === "error" ? "alert" : "status"} aria-live="polite" className={saveState.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>{saveState.message}</p> : null}
-          <button disabled={saving} className="inline-flex h-10 w-fit items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:opacity-60"><Save size={16} />{saving ? "儲存中…" : "儲存可編輯內容"}</button>
+          {saveState.status !== "idle" ? <p role={saveState.status === "error" ? "alert" : "status"} aria-live={actionLiveMode(saveState.status)} className={saveState.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>{saveState.message}</p> : null}
+          <button type="submit" disabled={saving} aria-disabled={saving} aria-busy={saving} className="inline-flex h-10 w-fit items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"><Save size={16} aria-hidden="true" />{saving ? "儲存中…" : "儲存可編輯內容"}</button>
+          <span role="status" aria-live="polite" className="sr-only">{saving ? "正在儲存夥伴頁內容，請勿重複送出。" : ""}</span>
         </form>
       </Card>
 
-      <Card><div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-slate-950">預覽與發布</h2><p className="mt-1 text-sm text-slate-500">公開網址：<code>/p/{page.slug}</code></p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowPreview((visible) => !visible)} aria-expanded={showPreview} className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700">{showPreview ? <X size={16} /> : <Eye size={16} />}{showPreview ? "關閉預覽" : "預覽"}</button>{page.isPublished ? <a href={`/p/${page.slug}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700"><ExternalLink size={16} />開啟公開頁</a> : null}<button type="button" onClick={copyUrl} className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700"><Copy size={16} />{copied ? "已複製" : "複製公開 URL"}</button></div></div>
+      <Card><div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-slate-950">預覽與發布</h2><p className="mt-1 text-sm text-slate-500">公開網址：<code>/p/{page.slug}</code></p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowPreview((visible) => !visible)} aria-expanded={showPreview} className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700">{showPreview ? <X size={16} /> : <Eye size={16} />}{showPreview ? "關閉預覽" : "預覽"}</button>{page.isPublished ? <a href={`/p/${page.slug}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700"><ExternalLink size={16} />開啟公開頁</a> : null}<button type="button" onClick={copyUrl} className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700"><Copy size={16} aria-hidden="true" />{copyButtonLabel(copyStatus)}</button></div></div>
+        {copyStatus === "error" ? <p role="alert" aria-live="assertive" className="mt-3 text-sm font-medium text-red-700">瀏覽器無法複製公開網址，請允許剪貼簿權限後重試。</p> : null}
         {showPreview ? <section aria-label="夥伴頁預覽" className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-semibold tracking-wide text-slate-500">未發布內容預覽</p><h3 className="mt-2 text-2xl font-semibold text-slate-950">{page.headline || "尚未填寫主標題"}</h3>{page.subheadline ? <p className="mt-2 text-slate-600">{page.subheadline}</p> : null}{page.body ? <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-700">{page.body}</p> : null}<button type="button" className="mt-5 rounded-md bg-cta px-4 py-2 text-sm font-semibold text-white">{page.ctaLabel || "尚未填寫 CTA"}</button><p className="mt-4 text-xs text-slate-500">聯絡夥伴：{page.partner.name || "尚未填寫名稱"}{page.partner.email ? ` · ${page.partner.email}` : ""}</p></section> : null}
-        <form action={publishFormAction} className="mt-4 flex flex-wrap items-center gap-3"><input type="hidden" name="_csrf" value={csrfToken} /><input type="hidden" name="teamId" value={page.teamId} /><input type="hidden" name="pageId" value={page.id} /><input type="hidden" name="publish" value={page.isPublished ? "false" : "true"} />
-          <button disabled={publishing} className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:opacity-60 ${page.isPublished ? "bg-slate-700" : "bg-cta"}`}><Send size={16} />{publishing ? "更新中…" : page.isPublished ? "停止公開" : "發布公開頁"}</button>{publishState.status !== "idle" ? <p role={publishState.status === "error" ? "alert" : "status"} aria-live="polite" className={publishState.status === "success" ? "text-sm text-emerald-800" : "text-sm text-red-800"}>{publishState.message}</p> : null}
+        <form action={publishFormAction} onSubmit={(event) => confirmUnpublish(event, page.isPublished)} aria-busy={publishing} className="mt-4 flex flex-wrap items-center gap-3"><input type="hidden" name="_csrf" value={csrfToken} /><input type="hidden" name="teamId" value={page.teamId} /><input type="hidden" name="pageId" value={page.id} /><input type="hidden" name="publish" value={page.isPublished ? "false" : "true"} />
+          <button type="submit" disabled={publishing} aria-disabled={publishing} aria-busy={publishing} className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${page.isPublished ? "bg-slate-700" : "bg-cta"}`}><Send size={16} aria-hidden="true" />{publishButtonLabel(publishing, page.isPublished)}</button><span role="status" aria-live="polite" className="sr-only">{publishPendingMessage(publishing, page.isPublished)}</span>{publishState.status !== "idle" ? <p role={publishState.status === "error" ? "alert" : "status"} aria-live={actionLiveMode(publishState.status)} className={publishState.status === "success" ? "text-sm text-emerald-800" : "text-sm text-red-800"}>{publishState.message}</p> : null}
         </form>
       </Card>
     </div>

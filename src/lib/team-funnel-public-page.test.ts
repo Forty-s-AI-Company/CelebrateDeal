@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPartnerPlaybackHref,
   prepareTeamFunnelPublicPage,
   toStructuredContentBlocks,
   type PublicTeamFunnelPageRecord,
@@ -35,7 +36,10 @@ function page(overrides: Partial<PublicTeamFunnelPageRecord> = {}): PublicTeamFu
         id: "form-a",
         slug: "register-a",
         isActive: true,
-        fields: [{ key: "name", label: "姓名", type: "text", required: true }],
+        fields: [
+          { key: "name", label: "姓名", type: "text", required: true },
+          { key: "email", label: "Email", type: "email", required: true },
+        ],
         submitLabel: "送出報名",
         successMessage: "已收到資料",
       },
@@ -44,12 +48,12 @@ function page(overrides: Partial<PublicTeamFunnelPageRecord> = {}): PublicTeamFu
       contentOwnerMembershipId: "member-a",
       productSlots: [{
         id: "slot-main", slotKey: "main_product", productId: "product-a", offerLabel: "主打方案",
-        product: { id: "product-a", checkoutUrl: "https://shop.example.test/a", isActive: true },
+        product: { id: "product-a", vendorId: "vendor-1", checkoutUrl: "https://shop.example.test/a", isActive: true, fulfillmentTypeConfirmed: true },
       }],
     },
     productOverrides: [{
       productSlotId: "slot-main", productId: "product-b", overrideUrl: "https://shop.example.test/b",
-      product: { id: "product-b", checkoutUrl: "https://shop.example.test/b-product", isActive: true },
+      product: { id: "product-b", vendorId: "vendor-1", checkoutUrl: "https://shop.example.test/b-product", isActive: true, fulfillmentTypeConfirmed: true },
     }],
     ...overrides,
   };
@@ -77,16 +81,74 @@ describe("public team funnel page resolver", () => {
         webinar: {
           title: "A 的講座",
           registrationHref: "#registration-heading",
-          playbackHref: "/live/webinar-a",
         },
         cta: { href: "#registration-heading" },
       },
     });
-    expect(result.page?.productSlots).toContainEqual({ slotKey: "main_product", offerLabel: "主打方案", url: "https://shop.example.test/b" });
+    const playbackUrl = new URL(result.page?.webinar.playbackHref ?? "", "https://app.example.test");
+    expect(playbackUrl.pathname).toBe("/live/webinar-a");
+    expect(playbackUrl.searchParams.get("sourcePage")).toBe("partner-b");
+    expect(playbackUrl.searchParams.get("ref")).toBe("B-CODE");
+    expect(result.page?.productSlots).toContainEqual({ slotKey: "main_product", offerLabel: "主打方案", url: "https://shop.example.test/b", checkoutMode: "external" });
     expect(result.page?.body).toEqual([
       { type: "paragraph", text: "<script>alert('x')</script>" },
       { type: "list", items: ["第一項", "第二項"] },
     ]);
+  });
+
+  it("publishes a ready platform product as an internal checkout destination", () => {
+    const result = prepareTeamFunnelPublicPage(page({
+      productOverrides: [],
+      templateVersion: {
+        contentOwnerMembershipId: "member-a",
+        productSlots: [{
+          id: "slot-main",
+          slotKey: "main_product",
+          productId: "product-a",
+          offerLabel: "主打方案",
+          product: {
+            id: "product-a",
+            vendorId: "vendor-1",
+            checkoutUrl: null,
+            isActive: true,
+            fulfillmentTypeConfirmed: true,
+            inventory: 2,
+            priceCents: 8_800,
+          },
+        }],
+      },
+    }));
+
+    expect(result.state).toBe("ready");
+    expect(result.page?.productSlots).toContainEqual({
+      slotKey: "main_product",
+      offerLabel: "主打方案",
+      url: "/checkout/vendor-1/product-a",
+      checkoutMode: "platform",
+    });
+  });
+
+  it("encodes the shared playback slug while preserving source lineage", () => {
+    const playbackUrl = new URL(buildPartnerPlaybackHref("webinar/a", "partner-b", null), "https://app.example.test");
+
+    expect(playbackUrl.pathname).toBe("/live/webinar%2Fa");
+    expect(playbackUrl.searchParams.get("sourcePage")).toBe("partner-b");
+    expect(playbackUrl.searchParams.has("ref")).toBe(false);
+  });
+
+  it("keeps the partner page visible but disables submission for an invalid legacy form schema", () => {
+    const result = prepareTeamFunnelPublicPage(page({
+      live: {
+        ...page().live!,
+        form: {
+          ...page().live!.form!,
+          fields: [{ key: "email", label: "Email", type: "email", required: true }],
+        },
+      },
+    }));
+
+    expect(result.state).toBe("ready");
+    expect(result.page?.webinar.registration).toBeNull();
   });
 
   it.each([

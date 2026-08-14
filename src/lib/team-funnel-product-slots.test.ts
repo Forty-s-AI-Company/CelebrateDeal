@@ -63,7 +63,7 @@ function persistedPage(overrides: Record<string, unknown> = {}) {
       fieldLocks: [],
       productSlots: [{
         id: "slot-main", slotKey: "main_product", productId: "product-default", displayOrder: 0, offerLabel: "Starter",
-        product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true },
+        product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true, fulfillmentTypeConfirmed: true },
       }],
     },
     productOverrides: [],
@@ -98,7 +98,7 @@ describe("team-funnel product slot pure functions", () => {
   it("resolves B's URL first, then the template product default, then an explicit missing state", () => {
     const templateSlot = {
       id: "slot-main", slotKey: "main_product", productId: "product-default", offerLabel: "Starter",
-      product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true },
+      product: { id: "product-default", checkoutUrl: "https://shop.example.test/default", isActive: true, fulfillmentTypeConfirmed: true },
     } as const;
 
     expect(resolveTeamFunnelProductSlot({
@@ -109,15 +109,93 @@ describe("team-funnel product slot pure functions", () => {
       attribution: { promoterMembershipId: partner.id, contentOwnerMembershipId: owner.id },
     });
     expect(resolveTeamFunnelProductSlot({ slotKey: "main_product", templateSlot, attribution: attribution() }))
-      .toMatchObject({ source: "template_default", url: "https://shop.example.test/default" });
+      .toMatchObject({ source: "template_default", url: "https://shop.example.test/default", checkoutMode: "external" });
     expect(resolveTeamFunnelProductSlot({
-      slotKey: "main_product", templateSlot: { ...templateSlot, product: { id: "product-default", checkoutUrl: null } }, attribution: attribution(),
+      slotKey: "main_product", templateSlot: { ...templateSlot, product: { id: "product-default", checkoutUrl: null, fulfillmentTypeConfirmed: true } }, attribution: attribution(),
     })).toMatchObject({ status: "missing", source: "missing", url: null });
+  });
+
+  it("routes a sellable platform product into CommerceOrder checkout", () => {
+    const result = resolveTeamFunnelProductSlot({
+      slotKey: "main_product",
+      templateSlot: {
+        id: "slot-main",
+        slotKey: "main_product",
+        productId: "product/internal",
+        product: {
+          id: "product/internal",
+          vendorId: "vendor-1",
+          checkoutUrl: null,
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          inventory: 3,
+          priceCents: 12_000,
+        },
+      },
+      attribution: attribution(),
+    });
+
+    expect(result).toMatchObject({
+      status: "resolved",
+      source: "template_default",
+      url: "/checkout/vendor-1/product%2Finternal",
+      checkoutMode: "platform",
+    });
+  });
+
+  it.each([
+    ["unconfirmed fulfillment", { fulfillmentTypeConfirmed: false }],
+    ["sold out", { inventory: 0 }],
+    ["zero price", { priceCents: 0 }],
+    ["cross-tenant product", { vendorId: "vendor-2" }],
+  ])("fails closed for a platform product with %s", (_name, productOverride) => {
+    const result = resolveTeamFunnelProductSlot({
+      slotKey: "main_product",
+      templateSlot: {
+        id: "slot-main",
+        slotKey: "main_product",
+        productId: "product-internal",
+        product: {
+          id: "product-internal",
+          vendorId: "vendor-1",
+          checkoutUrl: null,
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          inventory: 3,
+          priceCents: 12_000,
+          ...productOverride,
+        },
+      },
+      attribution: attribution(),
+    });
+
+    expect(result).toMatchObject({ status: "missing", url: null, checkoutMode: null });
+  });
+
+  it("fails closed for an external product whose fulfillment type is unconfirmed", () => {
+    const result = resolveTeamFunnelProductSlot({
+      slotKey: "main_product",
+      templateSlot: {
+        id: "slot-main",
+        slotKey: "main_product",
+        productId: "legacy-product",
+        product: {
+          id: "legacy-product",
+          vendorId: "vendor-1",
+          checkoutUrl: "https://shop.example.test/legacy",
+          isActive: true,
+          fulfillmentTypeConfirmed: false,
+        },
+      },
+      attribution: attribution(),
+    });
+
+    expect(result).toMatchObject({ status: "missing", url: null, checkoutMode: null });
   });
 
   it("exposes all four approved slots and never turns an unsafe stored URL into a link", () => {
     const slots = resolveTeamFunnelProductSlots({
-      templateSlots: [{ id: "slot-main", slotKey: "main_product", productId: "product-1", product: { id: "product-1", checkoutUrl: "javascript:alert(1)", isActive: true } }],
+      templateSlots: [{ id: "slot-main", slotKey: "main_product", productId: "product-1", product: { id: "product-1", checkoutUrl: "javascript:alert(1)", isActive: true, fulfillmentTypeConfirmed: true } }],
       partnerOverrides: [], attribution: attribution(),
     });
     expect(slots.map((slot) => slot.slotKey)).toEqual(["main_product", "bundle_product", "join_member", "consultation"]);
@@ -189,6 +267,15 @@ describe("team-funnel product slot persistence", () => {
       teamId: owner.teamId, templateVersionId: "version-a", slotKey: "main_product", productId: "product-default",
     });
 
+    expect(db.product.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "product-default",
+        vendorId: owner.vendorId,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+      },
+      select: { id: true },
+    });
     expect(db.teamFunnelTemplateProductSlot.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         vendorId: owner.vendorId,
@@ -199,6 +286,34 @@ describe("team-funnel product slot persistence", () => {
     });
     expect(db.teamFunnelTemplateProductSlot.create.mock.calls[0][0].data).not.toHaveProperty("overrideUrl");
     expect(db.teamFunnelTemplateProductSlot.create.mock.calls[0][0].data).not.toHaveProperty("checkoutUrl");
+  });
+
+  it("rejects an unconfirmed product before creating a template slot", async () => {
+    requireAuth.mockResolvedValueOnce({ user: { id: owner.userId }, member: { id: owner.vendorMemberId, status: "active", deactivatedAt: null } });
+    db.teamMembership.findFirst.mockResolvedValueOnce(membershipRecord(owner));
+    db.teamFunnelTemplateVersion.findFirst.mockResolvedValue({
+      id: "version-a", vendorId: owner.vendorId, teamId: owner.teamId, contentOwnerMembershipId: owner.id,
+      fieldLocks: [],
+    });
+    db.product.findFirst.mockResolvedValue(null);
+
+    await expect(createTeamFunnelTemplateProductSlot({
+      teamId: owner.teamId,
+      templateVersionId: "version-a",
+      slotKey: "main_product",
+      productId: "unconfirmed-product",
+    })).rejects.toBeInstanceOf(TeamFunnelAccessDeniedError);
+
+    expect(db.product.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "unconfirmed-product",
+        vendorId: owner.vendorId,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+      },
+      select: { id: true },
+    });
+    expect(db.teamFunnelTemplateProductSlot.create).not.toHaveBeenCalled();
   });
 
   it("stores B's override only in B's page scope and rejects cross-tenant pages", async () => {
@@ -228,6 +343,28 @@ describe("team-funnel product slot persistence", () => {
     })).rejects.toMatchObject({ reason: "locked_field" });
     expect(db.partnerProductSlotOverride.upsert).not.toHaveBeenCalled();
   });
+
+  it("rejects an unconfirmed partner product before persisting an override", async () => {
+    db.product.findFirst.mockResolvedValue(null);
+
+    await expect(upsertTeamFunnelPartnerProductSlotOverride({
+      teamId: owner.teamId,
+      pageId: "page-b",
+      slotKey: "main_product",
+      productId: "unconfirmed-product",
+    })).rejects.toBeInstanceOf(TeamFunnelAccessDeniedError);
+
+    expect(db.product.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "unconfirmed-product",
+        vendorId: owner.vendorId,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+      },
+      select: { id: true },
+    });
+    expect(db.partnerProductSlotOverride.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe("team-funnel product slot routes", () => {
@@ -253,7 +390,7 @@ describe("team-funnel product slot routes", () => {
     db.partnerFunnelPage.findFirst.mockResolvedValueOnce(persistedPage({
       productOverrides: [{
         productSlotId: "slot-main", productId: "product-b", overrideUrl: "https://b.example.test/offer",
-        product: { id: "product-b", checkoutUrl: "https://b.example.test/product", isActive: true },
+        product: { id: "product-b", checkoutUrl: "https://b.example.test/product", isActive: true, fulfillmentTypeConfirmed: true },
       }],
     }));
 

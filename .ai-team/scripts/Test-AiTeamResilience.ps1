@@ -110,7 +110,8 @@ try {
         }
         codex_profiles = [ordered]@{
             luna = [ordered]@{
-                model = 'gpt-5.6-luna'; reasoning_effort = 'xhigh'; sandbox_mode = 'read-only'
+                model = 'gpt-5.6-luna'; reasoning_effort = 'high'; reasoning_minimum = 'high'; reasoning_maximum = 'max'
+                reasoning_selection = 'adaptive_lowest_sufficient'; sandbox_mode = 'read-only'
                 availability = 'runtime_dependent'; invocation = 'native_agent_handoff_only'
             }
         }
@@ -145,6 +146,8 @@ try {
     $fullChain = $fullChainOutput | ConvertFrom-Json
     Assert-AiTeam ($fullChain.status -eq 'FALLBACK_HANDOFF_REQUIRED') 'full fallback chain did not reach Luna handoff'
     Assert-AiTeam ($fullChain.finalModel -eq 'gpt-5.6-luna') 'full fallback chain Luna model missing'
+    Assert-AiTeam ($fullChain.handoff.reasoningEffort -eq 'high') 'Luna balanced default reasoning missing'
+    Assert-AiTeam ($fullChain.handoff.reasoningMinimum -eq 'high' -and $fullChain.handoff.reasoningMaximum -eq 'max') 'Luna reasoning bounds missing'
     Assert-AiTeam (@($fullChain.attempts).Count -eq 2) 'full fallback chain exceeded approved model attempts'
 
     $config.fallback_chains.gemini_fast.profiles = @(
@@ -155,6 +158,7 @@ try {
     $handoff = $handoffOutput | ConvertFrom-Json
     Assert-AiTeam ($handoff.status -eq 'FALLBACK_HANDOFF_REQUIRED') 'Luna handoff status missing'
     Assert-AiTeam ($handoff.finalModel -eq 'gpt-5.6-luna') 'Luna handoff model missing'
+    Assert-AiTeam ($handoff.handoff.reasoningSelection -eq 'adaptive_lowest_sufficient') 'Luna adaptive reasoning policy missing'
 } finally {
     if (Test-Path -LiteralPath $temporaryConfig) { Remove-Item -LiteralPath $temporaryConfig -Force }
 }

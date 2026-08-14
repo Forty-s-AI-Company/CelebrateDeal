@@ -7,6 +7,11 @@ const schemaPath = join(projectRoot, "prisma", "schema.prisma");
 const migrationsRoot = join(projectRoot, "prisma", "migrations");
 const migrationDir = "20260806090000_affiliate_payout_contract";
 const migrationPath = join(migrationsRoot, migrationDir, "migration.sql");
+const outcomeReasonMigrationPath = join(
+  migrationsRoot,
+  "20260809060000_g7_28_affiliate_payout_outcome_reason",
+  "migration.sql",
+);
 
 function affiliatePayoutModel(schema: string): string {
   const match = schema.match(/model AffiliatePayout \{[\s\S]*?\n\}/);
@@ -18,9 +23,9 @@ describe("AffiliatePayout FIN-03 schema contract", () => {
   it("requires vendor/affiliate/month identity and a non-null affiliate relation", () => {
     const model = affiliatePayoutModel(readFileSync(schemaPath, "utf8"));
 
-    expect(model).toContain("affiliateId           String");
-    expect(model).not.toContain("affiliateId           String?");
-    expect(model).toContain("affiliate Affiliate  @relation(fields: [vendorId, affiliateId]");
+    expect(model).toMatch(/^\s*affiliateId\s+String\s*$/m);
+    expect(model).not.toMatch(/^\s*affiliateId\s+String\?\s*$/m);
+    expect(model).toContain("affiliate Affiliate @relation(fields: [vendorId, affiliateId]");
     expect(model).toContain("@@unique([vendorId, affiliateId, monthKey])");
   });
 
@@ -39,13 +44,32 @@ describe("AffiliatePayout FIN-03 schema contract", () => {
     expect(migration).not.toMatch(/\b(TRUNCATE|DROP TABLE)\b/i);
   });
 
-  it("is the latest canonical migration and does not introduce a second payout writer", () => {
+  it("keeps later course payout read models separate from AffiliatePayout", () => {
     const migrationDirs = readdirSync(migrationsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
 
-    expect(migrationDirs.at(-1)).toBe(migrationDir);
-    expect(readFileSync(migrationPath, "utf8")).not.toMatch(/PayoutBatch|PayoutItem|bank|KYC/i);
+    expect(migrationDirs).toContain(migrationDir);
+    const laterCourseMigrations = migrationDirs.filter((name) => name > migrationDir && name.includes("course"));
+    expect(laterCourseMigrations.every((name) => {
+      const sqlPath = join(migrationsRoot, name, "migration.sql");
+      return !readFileSync(sqlPath, "utf8").match(/AffiliatePayout/i);
+    })).toBe(true);
+    expect(readFileSync(migrationPath, "utf8")).not.toMatch(/CREATE TABLE\s+"AffiliatePayout"/i);
+  });
+});
+
+describe("G7-28 AffiliatePayout outcome reason contract", () => {
+  it("keeps historical outcome notes nullable and bounds future values", () => {
+    const model = affiliatePayoutModel(readFileSync(schemaPath, "utf8"));
+    const migration = readFileSync(outcomeReasonMigrationPath, "utf8");
+
+    expect(model).toMatch(/^\s*outcomeReason\s+String\?\s*$/m);
+    expect(migration).toContain('ADD COLUMN "outcomeReason" TEXT');
+    expect(migration).toContain('"outcomeReason" IS NULL');
+    expect(migration).toContain('btrim("outcomeReason") <>');
+    expect(migration).toContain('char_length("outcomeReason") BETWEEN 1 AND 500');
+    expect(migration).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE)\b/i);
   });
 });

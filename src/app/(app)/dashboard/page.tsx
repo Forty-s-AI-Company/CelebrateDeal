@@ -1,5 +1,6 @@
 import { CheckCircle2, Plus, Radio } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Card, PageHeader, Badge, ButtonLink } from "@/components/ui";
 import { requireVendorContext } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
@@ -10,6 +11,12 @@ import {
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { formatLiveCountdown } from "@/lib/live-countdown";
+import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
+import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
+import {
+  countSellableLiveReadinessCandidates,
+  sellableLiveReadinessQuery,
+} from "@/lib/sellable-live";
 
 function getDateDaysAgo(days: number) {
   return new Date(Date.now() - 1000 * 60 * 60 * 24 * days);
@@ -17,21 +24,31 @@ function getDateDaysAgo(days: number) {
 
 export default async function DashboardPage() {
   const { auth, vendor } = await requireVendorContext();
+  if (auth.member?.role === "support") {
+    redirect("/support-cases");
+  }
   const db = getDb();
   const sevenDaysAgo = getDateDaysAgo(7);
   const now = getDateDaysAgo(0);
-  const [liveCount, productCount, leadCount, viewCount, productClicks, ctaClicks, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles] = await Promise.all([
+  const [liveCount, productCount, leadCount, verifiedAnalyticsSessions, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount, sellableLiveCandidates] = await Promise.all([
     db.live.count({ where: { vendorId: vendor.id } }),
-    db.product.count({ where: { vendorId: vendor.id, isActive: true } }),
-    db.formSubmission.count({ where: { form: { vendorId: vendor.id }, createdAt: { gte: sevenDaysAgo } } }),
-    db.analyticsEvent.count({ where: { vendorId: vendor.id, eventType: "page_view", createdAt: { gte: sevenDaysAgo } } }),
-    db.analyticsEvent.count({ where: { vendorId: vendor.id, eventType: "product_click", createdAt: { gte: sevenDaysAgo } } }),
-    db.analyticsEvent.count({ where: { vendorId: vendor.id, eventType: "cta_click", createdAt: { gte: sevenDaysAgo } } }),
+    db.product.count({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true } }),
+    db.formSubmission.count({ where: { form: { vendorId: vendor.id }, verificationStatus: "VERIFIED", createdAt: { gte: sevenDaysAgo } } }),
+    db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendor.id,
+        trustLevel: "ADMITTED_LIVE_SESSION",
+        eventType: { in: ["page_view", "product_click", "cta_click"] },
+        createdAt: { gte: sevenDaysAgo },
+      },
+      select: { eventType: true, visitorId: true },
+      distinct: ["eventType", "visitorId"],
+    }),
     db.live.findMany({
       where: { vendorId: vendor.id },
       orderBy: { scheduledAt: "desc" },
       take: 5,
-      include: { products: true, submissions: true },
+      include: { products: true, submissions: { select: { verificationStatus: true } } },
     }),
     db.live.findMany({
       where: { vendorId: vendor.id, scheduledAt: { gte: now } },
@@ -40,9 +57,32 @@ export default async function DashboardPage() {
     }),
     db.affiliate.findMany({ where: { vendorId: vendor.id }, include: { clicks: true }, take: 5 }),
     db.vendorUsageLimit.findUnique({ where: { vendorId: vendor.id }, include: { billingPlan: true } }),
-    db.interactionScript.count({ where: { vendorId: vendor.id } }),
-    db.interactionRole.count({ where: { vendorId: vendor.id } }),
+    db.interactionScript.count({ where: { vendorId: vendor.id, status: "published" } }),
+    db.interactionRole.count({ where: { vendorId: vendor.id, isActive: true } }),
+    db.paymentMethodReference.count({
+      where: {
+        vendorId: vendor.id,
+        scopeType: "VENDOR",
+        membershipId: null,
+        status: "verified",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+    }),
+    db.registrationForm.count({ where: { vendorId: vendor.id, isActive: true } }),
+    db.messageTemplate.count({ where: { vendorId: vendor.id, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } }),
+    db.live.findMany(sellableLiveReadinessQuery(vendor.id)),
   ]);
+  const verifiedAnalyticsCountByType = new Map<string, number>();
+  for (const event of verifiedAnalyticsSessions) {
+    verifiedAnalyticsCountByType.set(
+      event.eventType,
+      (verifiedAnalyticsCountByType.get(event.eventType) ?? 0) + 1,
+    );
+  }
+  const viewCount = verifiedAnalyticsCountByType.get("page_view") ?? 0;
+  const productClicks = verifiedAnalyticsCountByType.get("product_click") ?? 0;
+  const ctaClicks = verifiedAnalyticsCountByType.get("cta_click") ?? 0;
+  const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
 
   const conversionRate = viewCount > 0 ? Math.round((leadCount / viewCount) * 1000) / 10 : 0;
   const funnel = calculateAnalyticsFunnel({
@@ -54,22 +94,38 @@ export default async function DashboardPage() {
   const usagePercent = usageLimit && usageLimit.creditsLimit > 0
     ? Math.round((usageLimit.creditsUsed / usageLimit.creditsLimit) * 100)
     : 0;
+  const trackingConfigured = Boolean(
+    vendor.tracking?.googleTagManagerId
+    || vendor.tracking?.facebookPixelId
+    || vendor.tracking?.tiktokPixelId,
+  );
+  const onboarding = merchantOnboardingProgress({
+    supportEmailConfigured: Boolean(vendor.supportEmail?.trim()),
+    verifiedVendorPaymentMethodCount: verifiedPaymentMethodCount,
+    sellableProductCount: productCount,
+    activeFormCount: formCount,
+    activeInteractionRoleCount: roles,
+    publishedInteractionScriptCount: scripts,
+    registrationEmailTemplateCount,
+    sellableLiveCount,
+    trackingConfigured,
+  });
   const checklist = dashboardChecklistForRole(
     {
       productCount,
       liveCount,
       interactionRoleCount: roles,
       interactionScriptCount: scripts,
-      trackingConfigured: Boolean(
-        vendor.tracking?.googleTagManagerId || vendor.tracking?.facebookPixelId,
-      ),
+      trackingConfigured,
+      verifiedPaymentMethodCount,
+      onboardingComplete: onboarding.complete,
     },
     auth.member?.role ?? null,
   );
   const isManager = isDashboardManagerRole(auth.member?.role ?? null);
 
   const kpis = [
-    { label: "近 7 天觀看", value: viewCount, tone: "blue" },
+    { label: "近 7 天播放 session", value: viewCount, tone: "blue" },
     { label: "近 7 天報名", value: leadCount, tone: "green" },
     { label: "商品點擊", value: productClicks, tone: "orange" },
     { label: "轉換率", value: `${conversionRate}%`, tone: "gray" },
@@ -97,7 +153,7 @@ export default async function DashboardPage() {
         <Card>
           <div className="mb-5">
             <h2 id="dashboard-conversion-funnel-title" className="text-lg font-semibold text-slate-950">近 7 天轉換漏斗</h2>
-            <p className="mt-1 text-sm text-slate-500">各階段相對於觀看數的轉換比例。</p>
+            <p className="mt-1 text-sm text-slate-500">觀看與點擊只計入已通過直播 admission 的不重複播放 session；報名只計完成 Email 驗證的正式名單。</p>
           </div>
           <ol className="grid gap-4 md:grid-cols-4">
             {funnel.map((step) => (
@@ -129,6 +185,8 @@ export default async function DashboardPage() {
           {recentLives.length > 0 ? (
             <div className="grid gap-3">
               {recentLives.map((live) => {
+                const verifiedSubmissions = live.submissions.filter((submission) => submission.verificationStatus === "VERIFIED").length;
+                const pendingSubmissions = live.submissions.length - verifiedSubmissions;
                 const content = (
                   <>
                   <span className="flex items-center gap-3">
@@ -140,7 +198,8 @@ export default async function DashboardPage() {
                 </span>
                 <span className="flex gap-2">
                   <Badge tone="blue">{live.status}</Badge>
-                  <Badge tone="green">{live.submissions.length} 名單</Badge>
+                  <Badge tone="green">{verifiedSubmissions} 已驗證</Badge>
+                  {pendingSubmissions > 0 ? <Badge tone="gray">{pendingSubmissions} 待驗證</Badge> : null}
                 </span>
                   </>
                 );

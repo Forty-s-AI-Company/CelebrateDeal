@@ -16,16 +16,18 @@
 
 ### 尚不能宣稱已完成
 
-- CelebrateDeal 自己的方案聯盟行銷：目前看到的是 `BillingPlan`／`VendorSubscription` 與商家產品 `Affiliate` 領域，沒有完整的「推薦 CelebrateDeal 方案 → 訂閱付款 → 平台直接給推薦者佣金 → 退款回沖 → 平台 payout」流程。
+- CelebrateDeal 自己的方案聯盟行銷：FIN-14 已補上獨立的 platform referral code／click／subscription attribution snapshot domain；FIN-15 補上只接受 server-created pending `PaymentTransaction` trusted metadata 的 verified paid callback、獨立 commission 與 partial/full refund ledger；FIN-16 補上 owner/month payout read model、local batch 與 finance-admin outcome；FIN-17 補上 pending platform subscription checkout 與 trusted paid／failed／refunded subscription state transition。外部出款、KYC／稅務、staging／PayUni 與人工簽核仍未完成。
 - 課程 F／G 分潤：目前沒有可證明的課程 owner／實際 promoter allocation、80／20 規則、F 100% 直購規則、課程分潤 payout 與分潤退款回沖讀模型。
-- B 的 Stream 額度：目前是 vendor 層級的 Cloudflare／Stream 及用量模型，沒有把 B 的推廣頁觀看分鐘寫入 B 的內部子帳本，也沒有 owner／promoter／split／custom 設定。
+- B 的 Stream 額度：本機已新增 server-validated immutable playback usage ledger，能把 B 公開頁的有效播放 heartbeat snapshot 到 page／team／promoter／content owner／live／month，且月結會讀取 ledger；但 owner／promoter／split／custom 政策、quota enforcement 與 provider reconciliation 仍未完成。
 - 整體正式商業上線：目前 readiness snapshot 仍標示 `PRODUCTION_READY = false`，法務、隱私、客服、sandbox/staging reconciliation 等仍不能被忽略。
 
 ## 二、功能對照表
 
 | 報告 1 需求 | 目前狀態 | 目前證據 | 可否直接作為正式功能 |
 | --- | --- | --- | --- |
-| CelebrateDeal 方案推薦連結 | 尚未完成 | 有 `BillingPlan`、`VendorSubscription` 與方案選擇，但沒有方案推薦歸因與平台推薦佣金流程 | 否 |
+| CelebrateDeal 方案推薦連結 | 本機 commission／refund／payout read model／batch 完成，外部證據未完成 | `/r/[code]` 建立 server-side click；verified paid webhook 只接受 server-created transaction metadata，寫入獨立 commission／ledger；owner/month payout sync、local batch、paid reference／void reversal 與 audit 已有；與商家 `Affiliate` 分離 | 否 |
+| 方案頁推薦人 ID／名稱唯讀欄位 | 尚未完成 | 目前沒有可證明的 platform referral UI、direct-entry 狀態或唯讀推薦人顯示 | 否 |
+| 直接輸入平台網址後不沿用推薦人 | 尚未完成／需調整歸因規則 | 現有 checkout 會使用伺服器驗證的 click／cookie；若既有 A cookie 仍有效，可能仍歸 A，與報告 1 採用的 direct-entry 空白規則不同 | 否 |
 | 商家產品 affiliate click | 可用／已有基礎 | `Affiliate`、`AffiliateClick`、推薦碼與 click 歸因存在 | 可作商家產品功能使用，仍需依正式環境驗收 |
 | 商家產品 checkout 歸因 | 可用／已有基礎 | checkout 會使用伺服器驗證的 affiliate click／cookie，不信任 client referral code | 可以作為現有產品 affiliate 基礎 |
 | 商家產品 paid commission | 可用／已有基礎 | paid webhook 依直接 affiliate 與比例建立一筆 `AffiliateCommission` | 不是課程 F／G 分潤，也不是 CelebrateDeal 方案推薦 |
@@ -40,7 +42,7 @@
 | 課程不產生 H／不向上線延伸 | 規則尚未落地 | Schema 有 team relationship，但沒有課程分潤規則來限制 recipient scope | 需補規格與程式防線 |
 | 分潤按售價，旁邊顯示淨額參考 | 尚未完成 | 現有 billing settlement 有金流／退款／佣金彙整，但沒有課程設定頁的 gross commission base 與 net reference 明細 | 否 |
 | 課程退款按 F／G allocation 回沖 | 尚未完成 | 既有 direct affiliate 有退款 ledger；未見課程 allocation 回沖 | 否 |
-| B 的 Stream 用量歸屬 | 尚未完成 | `UsageRecord`、`VendorUsageLimit` 以 vendor 聚合，沒有 promoter／page／member 欄位 | 否 |
+| B 的 Stream 用量歸屬 | 本機功能閉環／外部對帳待完成 | `StreamUsageLedgerEntry` 由播放 heartbeat 經 server 驗證後保存 immutable attribution snapshot；settlement 讀取 page/member ledger，既有 `UsageRecord` 仍保留 vendor aggregate | 尚不能宣稱完整 quota／provider 對帳 |
 | 研討會 owner／promoter／split／custom 用量設定 | 尚未完成 | 目前沒有對應的研討會用量政策與 allocation 設定 | 否 |
 | 團隊成員邀請、上下線管理 | 尚未完成 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship` schema 存在，但既有稽核列為缺口 | 否 |
 | 完整團隊分潤與 payout 報表 | 尚未完成 | 目前團隊報表是 click／lead／conversion／退款成效，不是 F／G 金融分配讀模型 | 否 |
@@ -58,7 +60,7 @@
 - `AffiliateCommissionLedgerEntry` 可保存 accrual、refund、reversal、dispute 等金融事件。
 - `AffiliatePayout` 有以 affiliate／月份彙整 payout 的資料模型。
 
-這條路徑可支援「某個商家用 CelebrateDeal 賣自己的產品，給某個直接 affiliate 佣金」。但它不是報告 1 的 CelebrateDeal 方案推薦，因為方案訂閱付款目前走 `VendorSubscription`，沒有看到與平台推薦者、推薦佣金、平台 payout 串接的完整流程。
+這條路徑可支援「某個商家用 CelebrateDeal 賣自己的產品，給某個直接 affiliate 佣金」。FIN-14 另外建立 `PlatformReferralCode`、`PlatformReferralClick` 與 `PlatformReferralAttribution`，FIN-15 接上 trusted server-created payment transaction 的 paid callback 與退款回沖，FIN-16 再以獨立 `PlatformReferralPayout`／batch 做 owner/month payable read model 與人工 outcome，FIN-17 將平台方案選擇接到 server-created pending transaction、provider checkout session 與 subscription activation，不會把方案推薦誤寫入商家 `AffiliateCommission`。目前仍缺外部出款／KYC／稅務與外部環境對帳。
 
 ### 3.2 團隊漏斗：A／B 頁面與歸因基礎已存在
 
@@ -88,16 +90,15 @@
 
 ### 4.1 CelebrateDeal 方案聯盟行銷尚未閉環
 
-目前 `BillingPlan` 與 `VendorSubscription` 能處理商家選擇平台方案與用量限制，但這些欄位沒有直接表示：
+目前 `BillingPlan` 與 `VendorSubscription` 能處理商家選擇平台方案與用量限制；FIN-14／FIN-15 已把平台推薦 attribution、trusted paid callback、commission snapshot 與 refund ledger 放在獨立 domain。尚待補足的是：
 
-- 哪個 CelebrateDeal 使用者推薦了這個方案。
-- 此推薦是否仍在有效歸因期限內。
-- 方案首購與續費是否有佣金。
-- 平台推薦佣金比例與規則版本。
-- 退款／拒付後平台推薦佣金如何回沖。
-- 平台推薦者的 payout、最低付款門檻與稅務狀態。
+- 方案佣金規則已採首購 only：每個新訂閱首次成功付款才產生一筆；同一訂閱續費不再產生推薦佣金，並由 `PlatformReferralCommission.subscriptionId` unique constraint 防止競態重複。
+- cancelled／chargeback 的平台專用事件與回沖政策。
+- 平台推薦者的最低付款門檻、KYC／稅務狀態與外部出款資格。
 
-因此目前不能只因為有方案頁，就說「幫賣 CelebrateDeal 已完成」。要完成報告 1 的方案聯盟，需要一條獨立的 platform referral domain，不能把商家產品 affiliate 的資料直接套過來。
+因此目前不能只因為有方案頁、本機 callback 或 local batch，就說「幫賣 CelebrateDeal 已完成」。FIN-17 已完成本機付款 initiation 與 trusted callback state transition；要完成報告 1 的方案聯盟，仍需要外部出款／對帳、KYC／稅務與人工財務／release 授權；不能把商家產品 affiliate 的資料直接套過來。
+
+另外，報告 1 已採用「當次進入來源優先」的產品決策：客戶若後來直接輸入平台網址，推薦人欄位要空白，本次不自動歸給 A。現有 checkout 的 affiliate attribution 會讀取有效 click／cookie，因此若舊 cookie 在 direct entry 後仍被沿用，可能與新規則不一致。正式實作時要加入明確的 direct-entry 狀態／token，並讓推薦人顯示、付款歸因與佣金結果三者一致。
 
 ### 4.2 課程 F／G 分潤尚未完成
 
@@ -121,31 +122,31 @@
 
 目前有 `TeamMembershipRelationship`，不代表課程分潤已經會沿著關係發錢；反而應該明確禁止課程分潤自動遍歷 relationship。課程模型只需要 F 與實際 G，H 不屬於這筆課程訂單。
 
-### 4.3 Stream 額度還是 vendor aggregate
+### 4.3 Stream 額度：內部 attribution ledger 已建立，政策與 provider 對帳仍待完成
 
-目前 `UsageRecord` 以 `vendorId`、月份、record type 與 aggregate totals 保存用量，`VendorUsageLimit` 也以 vendor 為唯一範圍。現有 billing settlement 會用 vendor 的 `stream_minutes`／觀看分鐘計算超額與結算。
+既有 `UsageRecord` 仍以 `vendorId`、月份、record type 與 aggregate totals 保存用量，`VendorUsageLimit` 也以 vendor 為唯一範圍。這輪新增 `StreamUsageLedgerEntry` 作為內部 immutable 子帳本：播放端每累積最多 60 秒送出 bounded heartbeat，server 重新驗證 vendor／live／可播放狀態／公開 page，並把 team、template version、promoter、content owner 與月份 snapshot 寫入 ledger。billing settlement 會讀取同 vendor／month 的 ledger seconds，轉成分鐘後與既有 aggregate 取較高值，避免重複計費。
 
-因此目前可以知道「這個商家租戶用了多少 Stream」，但不能可靠回答：
+因此本機現在可以回答「某個合法 playback event 歸屬哪個 page／member／live／month」，也可以將 ledger 秒數納入本機月結；但尚不能宣稱完整的商業 quota policy。仍不能可靠回答：
 
 - 這 1,000 分鐘中，有多少來自 A？
 - 有多少是 B 的推廣頁帶來？
 - B 額度用完要阻擋、超額收費還是回到 A？
 - 一場研討會使用 `OWNER`、`PROMOTER`、`SPLIT` 還是 `CUSTOM`？
 
-所以 B 負擔自己的觀看額度目前是產品規則，尚未是可結算的系統功能。外部 Cloudflare 的實際帳單仍可能在同一個 Cloudflare account 層級發生；CelebrateDeal 需要自己建立內部 member／page usage ledger 才能做到公平分配。
+所以 B 負擔自己的觀看額度目前是「已具備可追溯內部 ledger、尚未完成政策執行與外部對帳」的本機功能。外部 Cloudflare 的實際帳單仍可能在同一個 Cloudflare account 層級發生；正式上線前還需要定義 owner／promoter／split／custom policy、quota exhaustion／overage 行為，並以 provider evidence 對帳 internal allocation。
 
 ### 4.4 B 播放路徑可能造成後續歸因遺失
 
 目前 `src/lib/team-funnel-public-page.ts` 的 B 公開頁：
 
 - 報名留在 B branded page，設計上能保留同源 Referer 與 B 頁面歸因。
-- `playbackHref` 目前指向共用 `/live/{live.slug}`。
+- `playbackHref` 指向共用 `/live/{live.slug}`，並攜帶伺服器解析的 `sourcePage` 與有效 `ref` 線索。
 
-如果客戶從 B 頁面點進共用直播頁，再在共用頁完成報名、購買或其他轉換，B 的 page／token 是否仍被保留，取決於後續流程是否把 attribution token、cookie 或 formSubmissionId 帶回去。這是目前應優先驗證的 potential bug：B 頁面的第一段歸因可能正常，但跨到共用直播 URL 後可能只剩 A／研討會 owner。
+本輪已修正原本跨頁即遺失 B page lineage 的本機功能缺口：`LivePlayback` 會把 `sourcePage` 送到 click endpoint，伺服器再以 vendor、live、公開頁與 active membership 關聯驗證，不接受 client owner 權限宣告。這仍不是完整的外部付款驗收；B 頁面 → 播放 → 報名 → 付款的 staging／PayUni end-to-end evidence 尚未取得。
 
 建議：
 
-- 播放連結加入簽名、短效 attribution token，或建立 B 專屬 playback session。
+- 若要把首次 click 提升為財務級證據，再評估簽名、短效 attribution token 或 B 專屬 playback session；目前 `sourcePage` 只作伺服器驗證前的 lookup clue。
 - 報名與付款都只接受 server-side 可驗證的 page／lead snapshot。
 - 增加「B 頁面 → 播放 → 報名 → 付款」完整流程測試，不只測 B 頁面本身。
 
@@ -153,14 +154,14 @@
 
 | 優先級 | 缺口／Bug | 目前判斷 | 實際後果 |
 | --- | --- | --- | --- |
-| P0 | 方案推薦與商家產品 affiliate 未分 domain | 尚未完成 | 平台方案佣金可能誤進商家 vendor 帳務，或根本無法找到推薦人 |
-| P0 | 課程沒有 F／G allocation 與 payout ledger | 尚未完成 | 畫面可說 80／20，但系統無法可靠付款、退款或稽核 |
-| P0 | 課程沒有 direct F 100% 規則 | 尚未完成 | F 自己分享時可能錯套用 80／20，產生不存在的 G 分潤 |
-| P0 | Stream 沒有 B／page 用量子帳本 | 尚未完成 | 平台無法實現「B 分享、B 承擔觀看額度」 |
-| P1 | B 播放跳到共用 `/live` | Potential bug | B 的報名／購買歸因可能在跨頁後消失 |
+| P0 | 方案推薦與商家產品 affiliate 未分 domain | FIN-14～FIN-16 已完成本機 domain boundary、verified callback、commission／refund ledger、owner/month payout read model、local batch 與人工 outcome；外部驗證仍待 | 平台 referral 不再依賴 vendor affiliate 表；本機可追蹤 paid／refund／payout claim，但尚不能宣稱外部出款或正式商業結算 |
+| P0 | 課程沒有 F／G allocation 與 payout ledger | FIN-11 已完成本機 allocation／append-only refund-dispute ledger；merchant-owned payout、KYC、稅務與人工出款仍待 | 本機已能可靠 snapshot、退款與稽核；外部付款與真人出款證據仍不可宣稱 |
+| P0 | 課程沒有 direct F 100% 規則 | FIN-11 本機已修正 | F 直購只建立 F 100%，不產生不存在的 G 分潤；外部 staging／PayUni 尚待 |
+| P0 | Stream 沒有 B／page 用量子帳本 | 本機 ledger 已完成；quota policy／provider reconciliation 待完成 | 平台已有可追溯 page/member attribution 與 settlement input，但尚不能宣稱 B quota enforcement 或 provider bill reconciliation |
+| P1 | B 播放跳到共用 `/live` | 已修正本機 lineage；外部完整流程待驗收 | 來源頁現在會隨播放 URL 傳遞並由伺服器驗證；尚未取得 staging／PayUni 的報名／購買閉環證據 |
 | P1 | 外部付款沒有可信 callback | 設計邊界 | 只能報 click／lead，不能報外部已成交或外部退款 |
 | P1 | 團隊關係 schema 有，但邀請／轉組 UI 不完整 | 已列為既有 gap | 無法穩定管理誰是 F 的 G，也難以撤銷推廣權 |
-| P1 | 退款回沖只覆蓋既有 direct affiliate | 尚未擴充至課程 | F／G 可能在退款後仍保留可提款金額 |
+| P1 | 退款回沖只覆蓋既有 direct affiliate | FIN-11 已擴充本機課程 allocation ledger | F／G 本機退款會依原 snapshot 回沖；外部 payment reconciliation 與出款仍待 |
 | P1 | gross 與 net 參考值沒有分離 | 尚未完成 | F 以為按售價分潤，實際卻被金流費／稅額暗扣 |
 | P2 | first-touch／last-touch 沒有正式商業規則 | 需要產品決策 | A、B 之間會爭議同一客戶到底算誰的 |
 | P2 | 自購、重複 webhook、跨租戶與離隊規則需逐一驗證 | 部分已有基礎、課程未覆蓋 | 可產生重複佣金、無效佣金或錯誤歸因 |
@@ -199,14 +200,14 @@
 - 方案頁產生平台推薦連結，而不是把商家產品 referral code 塞進方案購買流程。
 - 訂閱首購與續費規則明確。
 - platform referral click 綁定 user／visitor、有效期限與推薦條款版本。
-- 訂閱 paid／cancelled／refunded／chargeback 事件有專用 ledger。
-- 平台推薦 payout 與商家產品 payout 分開。
+- FIN-14～FIN-17 已完成 click／attribution snapshot、server-created payment metadata gate、pending platform subscription checkout、trusted paid／failed／refunded state transition、paid commission／partial-full refund 專用 ledger、owner/month payout read model、local batch 與 finance-admin paid／void controls；續費已採首購 only，cancelled／chargeback 仍需完整外部對帳與人工財務規則。
+- 下一段需完成外部出款資格／KYC／稅務、staging／PayUni reconciliation 與人工 owner／legal／finance／release approval，並與商家產品 payout 分開。
 
 ### Phase 4：完成 B 的 Stream 內部用量
 
-- B 頁面建立播放 session 時生成可驗證的 attribution。
-- 播放時以 owner／promoter／split／custom 決定內部用量 recipient。
-- 每次觀看寫入 member／page／live／month 的 usage record；可批次彙總，但不能只保留 vendor total。
+- B 頁面播放 heartbeat 已生成 server 可驗證的 attribution，並以 immutable `eventId` 防止同一事件重複入帳。
+- 目前 ledger snapshot 已保存 owner／promoter 的可追溯欄位；owner／promoter／split／custom 的政策選擇與 enforcement 仍待產品設定。
+- 每次有效 heartbeat 寫入 member／page／live／month ledger，並由 settlement 讀取；不能只保留 vendor total。
 - 明確定義額度用完、超額、回退與通知。
 - 對帳時顯示「Cloudflare provider usage」與「CelebrateDeal internal allocation」兩個層級。
 
@@ -239,9 +240,9 @@
 
 ### 目前不建議宣稱已可用的範圍
 
-- 「推薦 CelebrateDeal 方案可以拿平台佣金」：尚未證明完整閉環。
+- 「推薦 CelebrateDeal 方案可以拿平台佣金」：本機 callback／退款 ledger／payout read model／batch 已存在，但實際付款 initiation、外部出款、KYC／稅務、外部對帳與人工簽核尚未形成完整閉環。
 - 「課程可以設定 F 80%、G 20% 並自動結算」：尚未完成。
-- 「B 分享 A 的研討會，Stream 額度自動算到 B」：尚未完成 per-member usage allocation。
+- 「B 分享 A 的研討會，Stream 額度自動算到 B」：本機已有 per-page／per-member ledger attribution 與 settlement input，但 quota policy、provider reconciliation 與外部 evidence 尚未完成。
 - 「外部產品已成交、退款與外部組織獎金都可在 CelebrateDeal 對帳」：目前不成立。
 - 「整個平台已達正式商業上線」：目前 readiness snapshot 仍是 production not ready。
 
@@ -252,8 +253,8 @@
 | Demo 團隊漏斗、B 推廣頁、研討會報名與 click 追蹤 | Go，需依既有範圍與測試證據使用 |
 | 外部產品導流工具 | Conditional Go，必須清楚標示外部付款與外部佣金不由 CelebrateDeal 計算 |
 | 商家自己的 direct affiliate | Conditional Go，限於現有 affiliate payment／refund／payout domain，仍需環境驗證 |
-| CelebrateDeal 方案聯盟行銷 | No-Go，缺平台推薦、訂閱歸因、平台佣金與 payout 閉環 |
-| F／G 課程分潤 | No-Go，缺 allocation、退款回沖、payout 與規則 snapshot |
+| CelebrateDeal 方案聯盟行銷 | Partial local closure；平台推薦、pending subscription checkout、trusted subscription activation、verified commission／refund ledger、payout read model／local batch 已完成，外部出款、staging／PayUni 與人工 sign-off 仍 No-Go |
+| F／G 課程分潤 | Partial local closure；allocation、規則 snapshot、退款／dispute ledger 已完成，merchant-owned payout、KYC、人工 owner 與 staging／PayUni 仍 No-Go |
 | B 的 Stream 額度歸屬 | No-Go，缺 member／page 用量子帳本與超額規則 |
 | 正式商業全面上線 | No-Go，仍有 readiness、法務、隱私、客服與環境驗證缺口 |
 
@@ -269,6 +270,9 @@
 - `prisma/schema.prisma:1094-1260`：`PartnerFunnelPage`、team click／lead／conversion attribution。
 - `src/app/api/payments/checkout/route.ts`：checkout 使用伺服器驗證 affiliate click／cookie 與 form submission attribution。
 - `src/lib/payment-webhooks.ts:147-290`：直接 affiliate paid commission、去重與退款／ledger 處理。
+- `src/lib/platform-referral-commission.ts`、`src/lib/payment-webhooks.ts`：FIN-15 平台推薦 verified paid callback、獨立 commission 與 partial/full refund ledger。
+- `src/lib/platform-referral-payout.ts`、`src/app/actions/platform-referral-payout-actions.ts`、`src/app/admin/billing/platform-referral-payouts/page.tsx`：FIN-16 owner/month payout read model、local batch、manual paid／void outcome 與 audit boundary。
+- `src/lib/course-commission.ts`、`src/lib/course-commission-accounting.ts`、`src/lib/payment-webhooks.ts`：FIN-11 課程 F/G allocation、policy snapshot 與退款／dispute ledger。
 - `src/lib/team-funnel-sharing.ts`：B 建立自己的 PartnerFunnelPage，A 保留 content／webinar owner。
 - `src/lib/team-funnel-public-page.ts:147-214`：B partner profile、商品槽、報名 anchor 與共用 playback URL。
 - `src/lib/billing.ts`：vendor aggregate usage、月結、金流費、退款與既有 affiliate commission 彙整。

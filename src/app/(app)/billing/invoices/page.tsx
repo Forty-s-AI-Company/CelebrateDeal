@@ -14,7 +14,9 @@ export default async function BillingInvoicesPage() {
   });
 
   const issuedTotal = invoices.reduce((sum, invoice) => sum + invoice.totalCents, 0);
-  const unpaidTotal = invoices.filter((invoice) => invoice.status !== "paid").reduce((sum, invoice) => sum + invoice.totalCents, 0);
+  const unpaidTotal = invoices
+    .filter((invoice) => ["issued", "overdue"].includes(invoice.status))
+    .reduce((sum, invoice) => sum + invoice.totalCents, 0);
 
   return (
     <>

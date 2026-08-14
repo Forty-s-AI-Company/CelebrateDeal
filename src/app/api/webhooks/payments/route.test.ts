@@ -140,7 +140,8 @@ describe("payment webhook provider selection", () => {
     const oversized = await POST(webhookRequest("?provider=payuni&source=return", {
       "content-length": String(MAX_JSON_BODY_BYTES + 1),
     }));
-    expect(oversized.status).toBe(413);
+    expect(oversized.status).toBe(303);
+    expect(oversized.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=unverified");
 
     mocks.payUniVerifySignature.mockResolvedValue(true);
     mocks.payUniNormalizePayload.mockResolvedValue({
@@ -149,21 +150,83 @@ describe("payment webhook provider selection", () => {
     });
     mocks.webhookEventFindUnique.mockResolvedValue({ id: "event-safe", status: "processed" });
     const duplicate = await POST(webhookRequest("?provider=payuni&source=return"));
-    expect(duplicate.status).toBe(200);
+    expect(duplicate.status).toBe(303);
+    expect(duplicate.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
 
     expect(consoleInfo).toHaveBeenCalledTimes(4);
     const records = consoleInfo.mock.calls.map(([value]) => JSON.parse(value as string));
     expect(records.map((record) => [record.method, record.source, record.status])).toEqual([
       ["POST", "return", 400],
       ["POST", "notify", 401],
-      ["POST", "return", 413],
-      ["POST", "return", 200],
+      ["POST", "return", 303],
+      ["POST", "return", 303],
     ]);
     for (const record of records) {
       expect(Object.keys(record).sort()).toEqual(["event", "method", "path", "source", "status", "timestamp"]);
       expect(JSON.stringify(record)).not.toContain("event-safe");
       expect(JSON.stringify(record)).not.toContain("CD-SAFE");
     }
+  });
+
+  it("redirects an exact PayUni payer return to a bounded same-origin result without identifiers", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-event-private", eventType: "paid", orderNumber: "CD-PRIVATE" },
+      rawPayload: {},
+    });
+    mocks.webhookEventFindUnique.mockResolvedValue(null);
+    mocks.webhookEventCreate.mockResolvedValue({ id: "webhook-event-private", status: "received" });
+    mocks.processPaymentWebhook.mockResolvedValue({ vendor: { id: "vendor-private" }, transaction: { id: "transaction-private" } });
+
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    const serialized = JSON.stringify({ location: response.headers.get("location"), body: await response.text() });
+    for (const marker of ["provider-event-private", "CD-PRIVATE", "webhook-event-private", "vendor-private", "transaction-private"]) {
+      expect(serialized).not.toContain(marker);
+    }
+  });
+
+  it("keeps PayUni NotifyURL as a provider JSON acknowledgement", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-event-notify", eventType: "paid", orderNumber: "CD-NOTIFY" },
+      rawPayload: {},
+    });
+    mocks.webhookEventFindUnique.mockResolvedValue({ id: "webhook-event-notify", status: "processed" });
+
+    const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true, eventId: "webhook-event-notify" });
+  });
+
+  it("sends an unresolved PayUni payer return to a neutral pending result", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-event-pending", eventType: "paid", orderNumber: "CD-PENDING" },
+      rawPayload: {},
+    });
+    const event = { id: "webhook-event-pending", status: "received" };
+    mocks.webhookEventFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(event);
+    mocks.webhookEventCreate.mockResolvedValue(event);
+    mocks.processPaymentWebhook.mockRejectedValue(new Error("temporary processing failure"));
+
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=pending");
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
   });
 
   it("does not serialize raw query, body, header, identifier, or secret markers", async () => {

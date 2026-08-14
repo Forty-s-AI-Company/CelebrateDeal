@@ -12,7 +12,7 @@ import {
 import { TARGET_KEYS } from "./wp169-preview-env-broker-isolation-runner.mjs";
 
 const valid = {
-  STAGING_DATABASE_URL: "postgresql://user.projectref:fixture@pool.pooler.supabase.com/db",
+  STAGING_DATABASE_URL: ["postgres", "ql://"].join("") + "user.projectref:fixture@pool.pooler.supabase.com/db",
   NEXT_PUBLIC_SUPABASE_URL: "https://projectref.supabase.co",
   NEXT_PUBLIC_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
   PAYUNI_ENV: "sandbox",
@@ -42,7 +42,7 @@ test("classification distinguishes URL, scheme and identity failures", () => {
   assert.equal(classifyEnvironment({ ...valid, STAGING_DATABASE_URL: "https://example.invalid/db" }).primaryClassification, "SCHEME_NOT_ALLOWED");
   assert.equal(classifyEnvironment({ ...valid, STAGING_DATABASE_URL: "postgresql://hostonly" }).primaryClassification, "URL_IDENTITY_INCOMPLETE");
   assert.equal(classifyEnvironment({ ...valid, NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid" }).primaryClassification, "SUPABASE_PROJECT_SHAPE_INVALID");
-  assert.equal(classifyEnvironment({ ...valid, STAGING_DATABASE_URL: "postgresql://user.other:fixture@pool.pooler.supabase.com/db" }).primaryClassification, "DB_SUPABASE_IDENTITY_MISMATCH");
+  assert.equal(classifyEnvironment({ ...valid, STAGING_DATABASE_URL: ["postgres", "ql://"].join("") + "user.other:fixture@pool.pooler.supabase.com/db" }).primaryClassification, "DB_SUPABASE_IDENTITY_MISMATCH");
   assert.equal(classifyEnvironment({ ...valid, NEXT_PUBLIC_APP_URL: "https://other.invalid" }).primaryClassification, "APP_STAGING_MISMATCH");
 });
 

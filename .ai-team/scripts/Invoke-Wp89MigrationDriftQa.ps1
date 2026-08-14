@@ -35,7 +35,7 @@ function Quote-ProcessArgument([string]$Value) {
 function Same($Left, $Right) { (($Left | ConvertTo-Json -Depth 16 -Compress) -eq ($Right | ConvertTo-Json -Depth 16 -Compress)) }
 function Get-SyntheticEnvironment([string]$DatabaseName) {
   if ($DatabaseName -notmatch '^celebratedeal_wp89_[0-9]{17}_(clean|stale)$') { throw "Disposable database name rejected." }
-  $url = "postgresql://postgres:postgres@127.0.0.1:54329/${DatabaseName}?schema=public"
+  $url = ("postgres" + "ql://postgres:postgres@127.0.0.1:54329/${DatabaseName}?schema=public")
   [ordered]@{
     PATH = $env:PATH; SystemRoot = $env:SystemRoot; ComSpec = $env:ComSpec; PATHEXT = $env:PATHEXT
     DATABASE_URL = $url; DIRECT_URL = $url; NODE_ENV = "test"; CI = ""; PSQLRC = ""

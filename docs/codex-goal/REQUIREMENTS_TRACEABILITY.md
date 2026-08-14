@@ -1,6 +1,15 @@
 # CelebrateDeal Requirements Traceability Matrix
 
-最後更新：2026-07-25 22:21（Asia/Taipei）
+最後更新：2026-08-13（Asia/Taipei）
+
+## Governance v2：provenance 與 solo owner model
+
+- Governance decision：[ADR-2026-08-13 Solo Founder Owner Model](../decisions/ADR-2026-08-13-solo-founder-owner-model.md)。
+- 同一真人可承擔多個 responsibility；`sameHumanMultipleRoles=true`，不以 role count 或 approval count 作為 hard blocker。
+- 所有 hard blocker 必須具備 `source`、`reason`、`risk_if_missing`、`provenance`。
+- 只有 `EXTERNAL_PROVIDER`、`LEGAL_REGULATION`、`TRACKED_PROJECT_REQUIREMENT`、`ACCEPTED_SECURITY_DECISION`、`DIRECT_PRODUCTION_RISK` 可以單獨阻擋 release。
+- `AI_TEAM_BEST_PRACTICE`、`ENTERPRISE_BEST_PRACTICE`、`AUDIT_PREFERENCE`、`DEFENSE_IN_DEPTH` 預設為 warning／follow-up。
+- `ENGINEERING_READY`、`SANDBOX_READY`、`PRODUCTION_READY` 必須分開判定；score 不可覆蓋 hard blocker。
 
 ## 使用方式
 
@@ -39,7 +48,10 @@
 | R-024 | CI 必須執行 lint、typecheck、coverage、DB migration、release E2E、build、audit、secret scan | Goal DoD | `.github/workflows/ci.yml` | 本機所有 Gate 通過；coverage threshold 8/8 | workflow candidate 尚未 push／runner 執行 | 部分通過 |
 | R-025 | Repository 不得提交 credential、private key、runtime archive 或 provider payload | 安全規則 | `.gitignore`、safe scanner | scanner unit 4/4；repository scan 0 findings | Git history scan/SBOM 後續 | 部分通過 |
 | R-026 | 商家可在合理步驟內完成 onboarding、建立第一場直播並預覽／發布；公開頁不得曝光 draft／inactive content | UX audit、MVP | actionable dashboard checklist、8-step guarded live flow、preview route、public lifecycle/catalog guard、global pending feedback | onboarding/stepper/public-draft smoke、a11y、performance、112 files／880 tests | Template/import、跨步常駐 preview、time-to-first-live 仍待產品決策與真人驗收 | 部分通過 |
-| R-027 | 正式收費前需有 PayUni、Sentry、WAF、Cloudflare、Resend、PostHog 完整簽核 | go-live checklist | 外部 adapter與 ops routes | fixtures／safe ops route tests | MA-001～MA-005 與 G05 | 人工阻塞 |
+| R-027 | 正式收費前需完成適用的 PayUni、WAF、Cloudflare、Resend、Supabase 與必要 observability 設定 | go-live checklist、Solo Founder Launch Standard | 外部 adapter與 ops routes | fixtures／safe ops route tests | MA-001～MA-005；完整 analytics／monitoring packet 非預設 hard blocker | 部分通過 |
+| R-028 | 每個 release blocker 必須有可追溯 provenance，不得由企業慣例單獨阻擋 solo founder | ADR-2026-08-13、Solo Founder Launch Standard | `scripts/launch-governance.mjs` | `scripts/launch-governance.test.mjs` | owner decision record（若適用） | 自動通過 |
+| R-029 | 同一真人可承擔多個 launch responsibility，且 CAT04 可使用相同 staging／PayUni owner reference | ADR-2026-08-13、CAT04／CAT10 runbook | WP-195 v2 contract／validator | WP-195 v2 contract tests | 實際 owner responsibility receipt | 部分通過 |
+| R-030 | Launch score 與三種 readiness state 必須分離 | Solo Founder Launch Standard | `scripts/solo-founder-launch-score.mjs` | `scripts/solo-founder-launch-score.test.mjs` | CAT04／Production external evidence | 部分通過 |
 
 ## Gate 對照
 
@@ -49,13 +61,15 @@
 | Integration／DB | R-003、R-004、R-010、R-013～R-017、R-020 | loopback-only PostgreSQL；DB concurrency、tenant FK negative、provider state regression |
 | Release browser | R-001、R-002、R-006、R-008～R-012、R-021、R-022、R-026 | 39/39：28 smoke＋8 a11y＋3 performance |
 | Supply chain／secret | R-024、R-025 | production audit=0；safe repository scan=0 |
-| External／manual | R-008、R-012～R-014、R-017～R-023、R-027 | `MANUAL_ACTIONS.md` |
+| External／manual | R-008、R-012～R-014、R-017～R-023、R-027～R-030 | `MANUAL_ACTIONS.md`、`manual-blockers.md` |
 | Product decisions | R-011、R-026 | `DECISIONS_NEEDED.md` |
 
 ## 未封閉的追溯缺口
 
 1. R-026 需要產品方決定 onboarding template、常駐 preview 與 first-live acceptance，不能由 code review 自行定義。
-2. R-027 需要各外部平台含日期、Production、結果、方法與簽核角色的非敏感證據。
+2. R-027 需要各適用外部平台含日期、環境、結果、方法與 owner reference 的非敏感證據；不預設要求五位不同真人或完整 analytics dashboard。
 3. R-019 的 residual platform-owner default ACL 需要 Supabase owner/support 權限。
 4. R-021 仍需要人工 screen-reader journey。
 5. R-024 的 workflow candidate 需要明確 push 授權後取得 GitHub-hosted runner 證據。
+
+6. R-029 的 solo owner model 已通過 local contract tests；實際 owner／provider 權限仍需在使用時以最小化、sanitized receipt 驗證。

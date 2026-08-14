@@ -7,11 +7,13 @@ import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   attributionCookieFromRequest,
+  liveShareCodeFromRequest,
   recordLeadAttribution,
   referralCodeFromRequest,
   resolveReferral,
   resolveTeamFunnelAttribution,
   sourcePageSlugFromRequest,
+  visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
 import {
   parseRegistrationFormFields,
@@ -19,6 +21,11 @@ import {
   REGISTRATION_FORM_RESERVED_FIELDS,
 } from "@/lib/registration-form-fields";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
+import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers";
+import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
+import { captureOperationalError } from "@/lib/monitoring";
+import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -32,6 +39,7 @@ const SubmissionPayload = z.object({
   liveId: z.string().min(1).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
+  shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
   redirectTo: z.string().max(2_048).optional(),
 });
 
@@ -47,9 +55,205 @@ function isUniqueConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 
+function submissionContactError({
+  name,
+  email,
+  submittedPhone,
+  phone,
+}: {
+  name: string;
+  email: string;
+  submittedPhone: string | null;
+  phone: string | null;
+}) {
+  if (!z.string().min(1).max(160).safeParse(name).success || !z.string().email().max(320).safeParse(email).success) {
+    return "Name and email are required";
+  }
+  if (submittedPhone && !phone) return "Invalid phone";
+  return null;
+}
+
+async function resolveSubmissionAttribution({
+  request,
+  vendorId,
+  liveId,
+  referralCode,
+  liveShareCode,
+  liveQuotaPolicy,
+}: {
+  request: Request;
+  vendorId: string;
+  liveId: string | null;
+  referralCode: string | null | undefined;
+  liveShareCode: string | null | undefined;
+  liveQuotaPolicy: unknown;
+}) {
+  const parsedAttributionCookie = attributionCookieFromRequest(request);
+  const attributionCookie = parsedAttributionCookie && parsedAttributionCookie.visitorId === visitorIdFromRequest(request)
+    ? parsedAttributionCookie
+    : null;
+  const sourcePageSlug = sourcePageSlugFromRequest(request);
+  const resolvedLiveShareCode = liveShareCode ?? liveShareCodeFromRequest(request);
+  const legacyAffiliateEnabled = !liveId || allowsLegacyAffiliateAttribution(liveQuotaPolicy);
+  const defaultReferralCode = legacyAffiliateEnabled && !sourcePageSlug && !resolvedLiveShareCode
+    ? defaultAffiliateCode(liveQuotaPolicy)
+    : null;
+  const referral = await resolveReferral({
+    vendorId,
+    queryCode: legacyAffiliateEnabled && !resolvedLiveShareCode ? referralCodeFromRequest(request) : null,
+    legacyCode: legacyAffiliateEnabled && !resolvedLiveShareCode ? referralCode ?? defaultReferralCode : null,
+    cookie: legacyAffiliateEnabled ? attributionCookie : null,
+  });
+  const attribution = await resolveTeamFunnelAttribution({
+    vendorId,
+    liveId,
+    sourcePageSlug: resolvedLiveShareCode ? null : sourcePageSlug,
+    referral,
+    liveShareCode: resolvedLiveShareCode,
+  });
+  return { referral, attribution, liveShareCode: resolvedLiveShareCode };
+}
+
+async function loadFormLiveQuotaPolicy({
+  formId,
+  vendorId,
+  liveId,
+}: {
+  formId: string;
+  vendorId: string;
+  liveId: string | null;
+}) {
+  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null };
+
+  const live = await getDb().live.findFirst({
+    where: {
+      id: liveId,
+      vendorId,
+      formId,
+      OR: [
+        { status: { in: ["scheduled", "live"] } },
+        { status: "ended", replayEnabled: true },
+      ],
+    },
+    select: {
+      id: true,
+      title: true,
+      quotaPolicy: true,
+      vendor: { select: { name: true } },
+      messageTemplate: {
+        select: {
+          id: true,
+          vendorId: true,
+          channel: true,
+          trigger: true,
+          subject: true,
+          body: true,
+          isActive: true,
+        },
+      },
+    },
+  });
+  return live ? {
+    found: true,
+    quotaPolicy: live.quotaPolicy,
+    notification: {
+      liveId: live.id,
+      liveTitle: live.title,
+      vendorName: live.vendor.name,
+      template: live.messageTemplate,
+    },
+  } : { found: false, quotaPolicy: null as unknown, notification: null };
+}
+
+type VerifiableSubmission = {
+  id: string;
+  name: string;
+  email: string;
+  liveId: string | null;
+  verificationStatus: "UNVERIFIED" | "VERIFIED";
+  verificationVersion: number;
+  verificationExpiresAt: Date | null;
+};
+
+async function refreshExpiredVerification(submission: VerifiableSubmission, now = new Date()) {
+  if (
+    submission.verificationStatus === "VERIFIED"
+    || (submission.verificationExpiresAt && submission.verificationExpiresAt > now)
+  ) return submission;
+
+  const verificationExpiresAt = new Date(now.getTime() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
+  await getDb().formSubmission.updateMany({
+    where: {
+      id: submission.id,
+      verificationStatus: "UNVERIFIED",
+      verificationVersion: submission.verificationVersion,
+      OR: [
+        { verificationExpiresAt: null },
+        { verificationExpiresAt: { lte: now } },
+      ],
+    },
+    data: {
+      verificationVersion: { increment: 1 },
+      verificationExpiresAt,
+    },
+  });
+  return getDb().formSubmission.findUniqueOrThrow({
+    where: { id: submission.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      liveId: true,
+      verificationStatus: true,
+      verificationVersion: true,
+      verificationExpiresAt: true,
+    },
+  });
+}
+
+async function enqueueSubmissionVerificationSafely({
+  vendorId,
+  vendorName,
+  submission,
+}: {
+  vendorId: string;
+  vendorName: string;
+  submission: VerifiableSubmission;
+}) {
+  if (submission.verificationStatus === "VERIFIED") return true;
+  if (!submission.verificationExpiresAt) return false;
+  try {
+    const delivery = await ensureFormSubmissionVerificationDelivery({
+      vendorId,
+      vendorName,
+      liveId: submission.liveId,
+      formSubmissionId: submission.id,
+      recipientName: submission.name,
+      recipientEmail: submission.email,
+      verificationVersion: submission.verificationVersion,
+      verificationExpiresAt: submission.verificationExpiresAt,
+    });
+    return delivery.status !== "suppressed";
+  } catch (error) {
+    try {
+      captureOperationalError(error, {
+        source: "form_submission",
+        operation: "verification_email_enqueue",
+        status: "failed",
+      });
+    } catch {
+      // Monitoring must not expose contact data or change the durable state.
+    }
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
+  if (isNativeFormPost && !request.headers.get("origin")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: !isNativeFormPost });
   if (sameOrigin) return sameOrigin;
 
@@ -69,14 +273,15 @@ export async function POST(request: Request) {
   const submittedPhone = parsed.data.payload.phone?.trim() || null;
   const phone = submittedPhone ? normalizeBlacklistIdentifier("phone", submittedPhone) : null;
 
-  if (!z.string().min(1).max(160).safeParse(name).success || !z.string().email().max(320).safeParse(email).success) {
-    return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
-  }
-  if (submittedPhone && !phone) {
-    return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
+  const contactError = submissionContactError({ name, email, submittedPhone, phone });
+  if (contactError) {
+    return NextResponse.json({ error: contactError }, { status: 400 });
   }
 
-  const form = await getDb().registrationForm.findUnique({ where: { id: parsed.data.formId } });
+  const form = await getDb().registrationForm.findUnique({
+    where: { id: parsed.data.formId },
+    include: { vendor: { select: { name: true } } },
+  });
   if (!form || !form.isActive) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
   }
@@ -85,31 +290,18 @@ export async function POST(request: Request) {
   if (!fieldSpecs.success) {
     return NextResponse.json({ error: "Form configuration unavailable" }, { status: 503 });
   }
-  const allowedFields = new Set(fieldSpecs.data.map((field) => field.key));
-  const hasUnexpectedField = Object.keys(parsed.data.payload).some((key) => !allowedFields.has(key));
-  const missingRequiredField = fieldSpecs.data.some(
-    (field) => field.required && !parsed.data.payload[field.key]?.trim(),
-  );
-  if (hasUnexpectedField || missingRequiredField || !allowedFields.has("name") || !allowedFields.has("email")) {
+  const normalizedFieldAnswers = validateRegistrationFormAnswers(fieldSpecs.data, parsed.data.payload);
+  if (!normalizedFieldAnswers.success) {
     return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
   }
 
-  if (parsed.data.liveId) {
-    const live = await getDb().live.findFirst({
-      where: {
-        id: parsed.data.liveId,
-        vendorId: form.vendorId,
-        formId: form.id,
-        OR: [
-          { status: { in: ["scheduled", "live"] } },
-          { status: "ended", replayEnabled: true },
-        ],
-      },
-      select: { id: true },
-    });
-    if (!live) {
-      return NextResponse.json({ error: "Live not found" }, { status: 404 });
-    }
+  const liveContext = await loadFormLiveQuotaPolicy({
+    formId: form.id,
+    vendorId: form.vendorId,
+    liveId: parsed.data.liveId ?? null,
+  });
+  if (!liveContext.found) {
+    return NextResponse.json({ error: "Live not found" }, { status: 404 });
   }
 
   const blocked = await getDb().blacklist.findFirst({
@@ -129,34 +321,50 @@ export async function POST(request: Request) {
 
   const duplicate = await getDb().formSubmission.findFirst({
     where: { formId: form.id, liveId: parsed.data.liveId ?? null, email },
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      liveId: true,
+      verificationStatus: true,
+      verificationVersion: true,
+      verificationExpiresAt: true,
+    },
   });
 
-  const attributionCookie = attributionCookieFromRequest(request);
-  const referral = await resolveReferral({
-    vendorId: form.vendorId,
-    queryCode: referralCodeFromRequest(request),
-    legacyCode: parsed.data.referralCode,
-    cookie: attributionCookie,
-  });
-  const attribution = await resolveTeamFunnelAttribution({
+  const { referral, attribution, liveShareCode } = await resolveSubmissionAttribution({
+    request,
     vendorId: form.vendorId,
     liveId: parsed.data.liveId ?? null,
-    sourcePageSlug: sourcePageSlugFromRequest(request),
-    referral,
+    referralCode: parsed.data.referralCode,
+    liveShareCode: parsed.data.shareCode,
+    liveQuotaPolicy: liveContext.quotaPolicy,
   });
+  if (liveShareCode && !attribution) {
+    return NextResponse.json({ error: "Live share unavailable" }, { status: 400 });
+  }
   if (duplicate) {
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, duplicate.id);
+    const refreshed = await refreshExpiredVerification(duplicate);
+    const verificationQueued = await enqueueSubmissionVerificationSafely({
+      vendorId: form.vendorId,
+      vendorName: form.vendor.name,
+      submission: refreshed,
+    });
+    if (!verificationQueued) {
+      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+    }
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
   }
 
   const submissionId = stableSubmissionId(parsed.data.formId, parsed.data.liveId ?? null, email);
   const normalizedAnswers = {
-    ...parsed.data.payload,
+    ...normalizedFieldAnswers.data,
     name,
     email,
-    ...(allowedFields.has("phone") ? { phone: phone ?? "" } : {}),
+    ...(fieldSpecs.data.some((field) => field.key === "phone") ? { phone: phone ?? "" } : {}),
   };
-  let submission: { id: string };
+  const verificationExpiresAt = new Date(Date.now() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
+  let submission: VerifiableSubmission;
   try {
     submission = await getDb().formSubmission.create({
       data: {
@@ -168,56 +376,68 @@ export async function POST(request: Request) {
         phone,
         source: parsed.data.liveId ? "live" : "form",
         answers: normalizedAnswers as Prisma.InputJsonValue,
+        verificationStatus: "UNVERIFIED",
+        verificationVersion: 1,
+        verificationExpiresAt,
+        affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        liveId: true,
+        verificationStatus: true,
+        verificationVersion: true,
+        verificationExpiresAt: true,
+      },
     });
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
     const concurrentSubmission = await getDb().formSubmission.findUnique({
       where: { id: submissionId },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        liveId: true,
+        verificationStatus: true,
+        verificationVersion: true,
+        verificationExpiresAt: true,
+      },
     });
     if (!concurrentSubmission) throw error;
-    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, true, concurrentSubmission.id);
+    const verificationQueued = await enqueueSubmissionVerificationSafely({
+      vendorId: form.vendorId,
+      vendorName: form.vendor.name,
+      submission: concurrentSubmission,
+    });
+    if (!verificationQueued) {
+      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+    }
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
   }
   await recordLeadAttribution(submission.id, attribution);
-
-  if (parsed.data.liveId) {
-    await getDb().analyticsEvent.create({
-      data: {
-        vendorId: form.vendorId,
-        liveId: parsed.data.liveId,
-        visitorId: attributionCookie?.visitorId ?? submission.id,
-        eventType: "lead_submit",
-        payload: { formId: parsed.data.formId, ref: referral?.code ?? null },
-      },
-    });
+  const verificationQueued = await enqueueSubmissionVerificationSafely({
+    vendorId: form.vendorId,
+    vendorName: form.vendor.name,
+    submission,
+  });
+  if (!verificationQueued) {
+    return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
   }
 
-  if (referral) {
-    await getDb().affiliateClick.updateMany({
-      where: {
-        vendorId: form.vendorId,
-        referralCode: referral.code,
-        convertedAt: null,
-      },
-      data: { convertedAt: new Date() },
-    });
-  }
-
-  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, false, submission.id);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id);
 }
 
 function submissionResponse(
   request: Request,
   redirectTo: string | undefined,
   isNativeFormPost: boolean,
-  duplicate: boolean,
   formSubmissionId: string,
 ) {
   const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
     ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
-    : NextResponse.json({ ok: true, ...(duplicate ? { duplicate: true } : {}) });
+    : NextResponse.json({ ok: true, verificationRequired: true });
 
   response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
     httpOnly: true,
@@ -231,7 +451,7 @@ function submissionResponse(
 
 function withSubmittedSearchParam(redirectTo: string, requestUrl: string) {
   const redirectUrl = new URL(redirectTo, requestUrl);
-  redirectUrl.searchParams.set("submitted", "1");
+  redirectUrl.searchParams.set("submitted", "verification_required");
   return redirectUrl;
 }
 
@@ -257,12 +477,14 @@ function nativeFormPayload(formData: FormData | null) {
 
   const liveId = formData.get("liveId");
   const referralCode = formData.get("referralCode");
+  const shareCode = formData.get("shareCode");
   const redirectTo = formData.get("redirectTo");
   return {
     formId: String(formData.get("formId") ?? ""),
     liveId: typeof liveId === "string" && liveId ? liveId : null,
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
+    shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,
     redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
   };
 }

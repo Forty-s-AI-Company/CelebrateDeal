@@ -2,14 +2,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
+import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
+import { calculateSettlement } from "@/lib/billing";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
+import { createPlatformReferralPayoutBatch, syncPlatformReferralPayoutsForMonth } from "@/lib/platform-referral-payout";
 import { reconcileWebhookEvent } from "@/lib/reconciliation";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
+import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/lib/product-delivery";
 
 const createdVendorIds: string[] = [];
 const createdBillingPlanIds: string[] = [];
 const createdWebhookEventIds: string[] = [];
 const createdUserIds: string[] = [];
+const createdPlatformReferralPayoutIds: string[] = [];
+const createdPlatformReferralPayoutBatchIds: string[] = [];
 
 function webhookPayloadJson(payload: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify({ normalized: payload })) as Prisma.InputJsonValue;
@@ -137,6 +143,8 @@ afterEach(async () => {
   const vendorIds = createdVendorIds.splice(0);
   const billingPlanIds = createdBillingPlanIds.splice(0);
   const userIds = createdUserIds.splice(0);
+  await db.platformReferralPayout.deleteMany({ where: { id: { in: createdPlatformReferralPayoutIds.splice(0) } } });
+  await db.platformReferralPayoutBatch.deleteMany({ where: { id: { in: createdPlatformReferralPayoutBatchIds.splice(0) } } });
   await db.webhookEvent.deleteMany({ where: { id: { in: createdWebhookEventIds.splice(0) } } });
   await db.teamConversionAttribution.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.teamLeadAttribution.deleteMany({ where: { vendorId: { in: vendorIds } } });
@@ -157,6 +165,12 @@ afterEach(async () => {
     retainedAccountingFixture = true;
   }
   if (retainedAccountingFixture) return;
+  // Platform referral fixtures are owned by synthetic users rather than a
+  // vendor. Remove the non-accounting rows before deleting those users so a
+  // failed-payment test cannot leak a referral code into the next test.
+  await db.platformReferralAttribution.deleteMany({ where: { ownerUserId: { in: userIds } } });
+  await db.platformReferralClick.deleteMany({ where: { referralCode: { ownerUserId: { in: userIds } } } });
+  await db.platformReferralCode.deleteMany({ where: { ownerUserId: { in: userIds } } });
   await db.billingPlan.deleteMany({ where: { id: { in: billingPlanIds } } });
   await db.user.deleteMany({ where: { id: { in: userIds } } });
 });
@@ -292,6 +306,164 @@ describe("payment webhook processing", () => {
     expect(await db.affiliateCommission.count({
       where: { vendorId: vendor.id, orderNumber, referralCode: affiliate.code },
     })).toBe(1);
+  });
+
+  it("snapshots gross commission base separately from the provider-net reference", async () => {
+    const suffix = `${Date.now()}-gross-net-reference`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-GROSS-NET-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-gross-net-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      gatewayFeeCents: 2000,
+      platformFeeCents: 1000,
+      referralCode: affiliate.code,
+    }));
+
+    await expect(db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "webhook" },
+    })).resolves.toMatchObject({
+      orderAmountCents: 100000,
+      commissionBaseAmountCents: 100000,
+      netReferenceAmountCents: 97000,
+      commissionAmountCents: 8000,
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-gross-net-refund-${suffix}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+      gatewayFeeRefundCents: 400,
+      platformFeeRefundCents: 200,
+    }));
+
+    await expect(db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "webhook" },
+    })).resolves.toMatchObject({
+      commissionBaseAmountCents: 100000,
+      netReferenceAmountCents: 77600,
+      commissionAmountCents: 8000,
+    });
+  });
+
+  it("reconciles an invoice payment through paid, partial-refund, and full-refund webhooks", async () => {
+    const suffix = `${Date.now()}-invoice-payment-lifecycle`;
+    const { db, vendor } = await createFixture(suffix);
+    const invoice = await db.invoice.create({
+      data: {
+        vendorId: vendor.id,
+        monthKey: "2026-07",
+        invoiceNumber: `INV-${suffix}`,
+        monthlyFeeCents: 100000,
+        subtotalCents: 100000,
+        totalCents: 100000,
+        status: "issued",
+      },
+    });
+    const orderNumber = `ORDER-INVOICE-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: invoice.totalCents,
+        netAmountCents: invoice.totalCents,
+        currency: "TWD",
+        status: "pending",
+        metadata: {
+          billingPurpose: "invoice_payment",
+          invoiceId: invoice.id,
+          invoiceTotalCents: invoice.totalCents,
+        },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-invoice-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: invoice.totalCents,
+      currency: "TWD",
+    }));
+    await expect(db.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({
+      status: "paid",
+      paidAt: expect.any(Date),
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-invoice-partial-${suffix}`,
+      eventType: "partially_refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 20000,
+      currency: "TWD",
+    }));
+    await expect(db.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({ status: "partially_refunded" });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-invoice-refunded-${suffix}`,
+      eventType: "refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 80000,
+      currency: "TWD",
+    }));
+    await expect(db.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({ status: "refunded" });
+  });
+
+  it("rejects an invoice webhook when the trusted transaction amount differs from the invoice", async () => {
+    const suffix = `${Date.now()}-invoice-amount-mismatch`;
+    const { db, vendor } = await createFixture(suffix);
+    const invoice = await db.invoice.create({
+      data: {
+        vendorId: vendor.id,
+        monthKey: "2026-07",
+        invoiceNumber: `INV-${suffix}`,
+        monthlyFeeCents: 100000,
+        subtotalCents: 100000,
+        totalCents: 100000,
+        status: "issued",
+      },
+    });
+    const orderNumber = `ORDER-INVOICE-MISMATCH-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 99999,
+        netAmountCents: 99999,
+        currency: "TWD",
+        status: "pending",
+        metadata: { billingPurpose: "invoice_payment", invoiceId: invoice.id },
+      },
+    });
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-invoice-mismatch-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 99999,
+      currency: "TWD",
+    }))).rejects.toThrow("帳單付款金額與帳單總額不一致");
+
+    await expect(db.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({ status: "issued", paidAt: null });
   });
 
   it("commits reserved inventory once and restocks only after a full refund", async () => {
@@ -436,6 +608,157 @@ describe("payment webhook processing", () => {
     }))).rejects.toThrow("找不到既存付款交易");
 
     expect(await db.teamConversionAttribution.count({ where: { vendorId: { in: [leadVendor.id, paymentVendor.id] } } })).toBe(0);
+    const paymentTransaction = await db.paymentTransaction.findFirstOrThrow({
+      where: { vendorId: paymentVendor.id, orderNumber: `ORDER-CROSS-VENDOR-${suffix}` },
+    });
+    expect(paymentTransaction.metadata).toEqual({});
+  });
+
+  it("never persists provider callback metadata or lets it replace checkout-owned identity", async () => {
+    const suffix = `${Date.now()}-provider-metadata-boundary`;
+    const { db, vendor } = await createFixture(suffix);
+    const product = await db.product.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Trusted Checkout Product ${suffix}`,
+        slug: `trusted-checkout-product-${suffix}`,
+        priceCents: 100000,
+        inventory: 1,
+      },
+    });
+    const orderNumber = `ORDER-PROVIDER-METADATA-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 100000,
+        netAmountCents: 100000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { productId: product.id, checkoutIdentityHash: "trusted-hash" },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-provider-metadata-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 100000,
+      metadata: {
+        productId: "forged-product",
+        checkoutIdentityHash: "forged-hash",
+        buyerEmail: "private-buyer@example.test",
+        formSubmissionId: "forged-submission",
+      },
+    }));
+
+    const transaction = await db.paymentTransaction.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber },
+    });
+    expect(transaction.metadata).toEqual({
+      productId: product.id,
+      checkoutIdentityHash: "trusted-hash",
+    });
+    expect(JSON.stringify(transaction.metadata)).not.toContain("private-buyer@example.test");
+  });
+
+  it("retains a canonical commerce checkout key after payment for safe browser retries", async () => {
+    const suffix = `${Date.now()}-commerce-idempotency-retention`;
+    const { db, vendor } = await createFixture(suffix);
+    const product = await db.product.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Commerce Retry Product ${suffix}`,
+        slug: `commerce-retry-product-${suffix}`,
+        priceCents: 100000,
+        inventory: 1,
+        fulfillmentType: "digital",
+      },
+    });
+    const delivery = validateProductDeliveryDraft({
+      fulfillmentType: "digital",
+      isActive: true,
+      title: "Webhook 測試交付",
+      destinationUrl: "https://delivery.example.com/webhook/content",
+      instructions: "付款後開放。",
+      hostConfirmed: true,
+    })!;
+    const allowlist = await db.vendorDeliveryUrlAllowlist.create({
+      data: {
+        vendorId: vendor.id,
+        hostname: delivery.destinationHostname!,
+        pathPrefix: delivery.destinationPathPrefix!,
+      },
+    });
+    const deliveryConfigId = `delivery-config-${suffix}`;
+    await db.productDeliveryConfig.create({
+      data: {
+        id: deliveryConfigId,
+        vendorId: vendor.id,
+        productId: product.id,
+        allowlistId: allowlist.id,
+        status: "active",
+        fulfillmentType: "digital",
+        deliveryKind: delivery.deliveryKind,
+        title: delivery.title,
+        ...protectProductDeliveryConfig(delivery, {
+          vendorId: vendor.id,
+          productId: product.id,
+          configId: deliveryConfigId,
+          revision: 1,
+        }),
+        activatedAt: new Date(),
+      },
+    });
+    const checkoutIdempotencyKey = `commerce-retry-${suffix}`;
+    const orderNumber = `ORDER-COMMERCE-RETRY-${suffix}`;
+    const transaction = await createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      checkoutIdempotencyKey,
+      transactionData: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: product.priceCents,
+        netAmountCents: product.priceCents,
+        currency: "TWD",
+        status: "pending",
+        checkoutIdempotencyKey,
+        metadata: { productId: product.id },
+      },
+      createCommerceOrder: (tx, payment) => createCommerceOrderForCheckout(tx, {
+        vendorId: vendor.id,
+        productId: product.id,
+        orderNumber,
+        checkoutIdempotencyKey,
+        paymentTransactionId: payment.id,
+        totalAmountCents: product.priceCents,
+        currency: "TWD",
+        buyer: { name: "合成買家", email: `commerce-retry-${suffix}@example.test` },
+        shipping: null,
+      }).then(() => undefined),
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-commerce-retry-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: product.priceCents,
+    }));
+
+    await expect(db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } }))
+      .resolves.toMatchObject({ status: "paid", checkoutIdempotencyKey });
+    await expect(db.commerceOrder.findUniqueOrThrow({
+      where: { vendorId_checkoutIdempotencyKey: { vendorId: vendor.id, checkoutIdempotencyKey } },
+    })).resolves.toMatchObject({ status: "paid", primaryPaymentTransactionId: transaction.id });
   });
 
   it("processes a webhook identified by vendorId", async () => {
@@ -748,6 +1071,7 @@ describe("payment webhook processing", () => {
     }));
 
     const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    const commissionAfterRefunds = await db.affiliateCommission.findUniqueOrThrow({ where: { id: original.id } });
     const refunds = await db.affiliateCommissionLedgerEntry.findMany({
       where: { vendorId: vendor.id, affiliateCommissionId: original.id, entryType: "refund" },
       orderBy: { createdAt: "asc" },
@@ -764,6 +1088,95 @@ describe("payment webhook processing", () => {
     expect(refunds.map((entry) => entry.amountCents).sort((a, b) => a - b)).toEqual([-2400, -1600]);
     expect(transaction.refundedAmountCents).toBe(50000);
     expect(ledgerNet).toBe(4000);
+    expect(commissionAfterRefunds.netReferenceAmountCents).toBe(50000);
+  });
+
+  it("keeps a partially refunded commission eligible and charges the settlement from its ledger balance", async () => {
+    const suffix = `${Date.now()}-partial-refund-settlement`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    const occurredAt = new Date();
+    const monthKey = occurredAt.toISOString().slice(0, 7);
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+      occurredAt: occurredAt.toISOString(),
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-partial-${suffix}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+      occurredAt: occurredAt.toISOString(),
+    }));
+
+    const commission = await db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
+    });
+    const settlement = await calculateSettlement(vendor.id, monthKey);
+
+    expect(commission.status).toBe("pending");
+    expect(await db.affiliateCommissionLedgerEntry.aggregate({
+      where: { vendorId: vendor.id, affiliateCommissionId: commission.id },
+      _sum: { amountCents: true },
+    })).toEqual({ _sum: { amountCents: 6400 } });
+    expect(settlement.payoutableAmountCents).toBe(73600);
+  });
+
+  it("reduces an unpaid locked affiliate payout when a later partial refund lowers the ledger balance", async () => {
+    const suffix = `${Date.now()}-locked-partial-refund`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+    const commission = await db.affiliateCommission.findFirstOrThrow({
+      where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
+    });
+    await db.affiliateCommission.update({ where: { id: commission.id }, data: { status: "locked" } });
+    const payout = await db.affiliatePayout.create({
+      data: {
+        vendorId: vendor.id,
+        affiliateId: affiliate.id,
+        monthKey: commission.monthKey,
+        commissionAmountCents: 8000,
+        finalAmountCents: 8000,
+        status: "pending",
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-partial-${suffix}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 20000,
+    }));
+
+    await expect(db.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } })).resolves.toMatchObject({
+      commissionAmountCents: 6400,
+      adjustmentAmountCents: 0,
+      finalAmountCents: 6400,
+      status: "pending",
+      payoutItemId: null,
+    });
+    await expect(db.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } })).resolves.toMatchObject({ status: "locked" });
   });
 
   it("keeps source commission immutable and brings ledger net to zero after a full refund", async () => {
@@ -893,6 +1306,115 @@ describe("payment webhook processing", () => {
     expect(entries.map((entry) => entry.entryType)).toEqual(["accrual", "dispute_opened", "dispute_lost"]);
     expect(entries.filter((entry) => entry.entryType === "dispute_opened")).toHaveLength(1);
     expect(entries.reduce((total, entry) => total + entry.amountCents, 0)).toBe(0);
+  });
+
+  it("binds a dispute to the provider transaction instead of a colliding order number", async () => {
+    const suffix = `${Date.now()}-affiliate-dispute-provider-scope`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    const paidPayload = (provider: string) => PaymentWebhookPayload.parse({
+      provider,
+      eventId: `evt-paid-${provider}-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100_000,
+      referralCode: affiliate.code,
+    });
+
+    await processPaymentWebhook(paidPayload("provider-a"));
+    await processPaymentWebhook(paidPayload("provider-b"));
+
+    const transactions = await db.paymentTransaction.findMany({
+      where: { vendorId: vendor.id, orderNumber },
+      orderBy: { providerName: "asc" },
+    });
+    const commissions = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "webhook" },
+    });
+    expect(transactions).toHaveLength(2);
+    expect(commissions).toHaveLength(2);
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "provider-b",
+      eventId: `evt-dispute-opened-provider-b-${suffix}`,
+      eventType: "dispute_opened",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      disputeCaseId: `case-${suffix}`,
+    }));
+
+    const entries = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id },
+      orderBy: { createdAt: "asc" },
+    });
+    const targetedCommission = commissions.find((commission) => commission.sourceId === transactions.find((transaction) => transaction.providerName === "provider-b")?.id);
+    const untouchedCommission = commissions.find((commission) => commission.sourceId === transactions.find((transaction) => transaction.providerName === "provider-a")?.id);
+    expect(targetedCommission).toBeDefined();
+    expect(untouchedCommission).toBeDefined();
+    expect(entries.filter((entry) => entry.affiliateCommissionId === targetedCommission!.id).map((entry) => entry.entryType)).toEqual([
+      "accrual",
+      "dispute_opened",
+    ]);
+    expect(entries.filter((entry) => entry.affiliateCommissionId === untouchedCommission!.id).map((entry) => entry.entryType)).toEqual([
+      "accrual",
+    ]);
+  });
+
+  it("binds a partial refund to the provider transaction instead of a colliding order number", async () => {
+    const suffix = `${Date.now()}-affiliate-refund-provider-scope`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    const paidPayload = (provider: string) => PaymentWebhookPayload.parse({
+      provider,
+      eventId: `evt-paid-${provider}-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100_000,
+      referralCode: affiliate.code,
+    });
+
+    await processPaymentWebhook(paidPayload("provider-a"));
+    await processPaymentWebhook(paidPayload("provider-b"));
+
+    const transactions = await db.paymentTransaction.findMany({
+      where: { vendorId: vendor.id, orderNumber },
+      orderBy: { providerName: "asc" },
+    });
+    const commissions = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, orderNumber, sourceType: "webhook" },
+    });
+    const targetTransaction = transactions.find((transaction) => transaction.providerName === "provider-b");
+    const targetedCommission = commissions.find((commission) => commission.sourceId === targetTransaction?.id);
+    const untouchedCommission = commissions.find((commission) => commission.sourceId !== targetTransaction?.id);
+    expect(targetTransaction).toBeDefined();
+    expect(targetedCommission).toBeDefined();
+    expect(untouchedCommission).toBeDefined();
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "provider-b",
+      eventId: `evt-refund-provider-b-${suffix}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 50_000,
+    }));
+
+    const entries = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(entries.filter((entry) => entry.affiliateCommissionId === targetedCommission!.id).map((entry) => ({
+      type: entry.entryType,
+      amountCents: entry.amountCents,
+    }))).toEqual([
+      { type: "accrual", amountCents: 8_000 },
+      { type: "refund", amountCents: -4_000 },
+    ]);
+    expect(entries.filter((entry) => entry.affiliateCommissionId === untouchedCommission!.id).map((entry) => entry.entryType)).toEqual([
+      "accrual",
+    ]);
   });
 
   it("does not restore commission or transaction state when a paid webhook arrives after a full refund", async () => {
@@ -1238,6 +1760,540 @@ describe("payment webhook processing", () => {
     expect(updated.retryCount).toBe(1);
   });
 
+  it("accrues and reconciles platform referral commission only from a server-created subscription transaction", async () => {
+    const suffix = `${Date.now()}-platform-referral`;
+    const { db, vendor } = await createFixture(suffix);
+    const subscription = await db.vendorSubscription.findFirstOrThrow({ where: { vendorId: vendor.id } });
+    const owner = await db.user.create({
+      data: {
+        name: `Platform Referral Owner ${suffix}`,
+        email: `platform-referral-owner-${suffix}@example.com`,
+        passwordHash: "test",
+      },
+    });
+    createdUserIds.push(owner.id);
+    const referralCode = await db.platformReferralCode.create({
+      data: { ownerUserId: owner.id, code: `PLAT${suffix}`.toUpperCase(), commissionRateBps: 1000 },
+    });
+    const click = await db.platformReferralClick.create({
+      data: {
+        referralCodeId: referralCode.id,
+        visitorId: `visitor-${suffix}`,
+        landingPath: "/billing/plans",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    await db.platformReferralAttribution.create({
+      data: {
+        referralCodeId: referralCode.id,
+        clickId: click.id,
+        subscriptionId: subscription.id,
+        ownerUserId: owner.id,
+        codeSnapshot: referralCode.code,
+        commissionRateBpsSnapshot: referralCode.commissionRateBps,
+      },
+    });
+    const orderNumber = `PLATFORM-SUB-${suffix}`;
+    const transaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 10_000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { platformSubscriptionId: subscription.id },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 10_000,
+      currency: "TWD",
+    }));
+
+    const accrued = await db.platformReferralCommission.findUniqueOrThrow({
+      where: { paymentTransactionId: transaction.id },
+      include: { ledgerEntries: true },
+    });
+    expect(accrued).toMatchObject({
+      ownerUserId: owner.id,
+      subscriptionId: subscription.id,
+      grossAmountCents: 10_000,
+      commissionAmountCents: 1_000,
+      status: "pending",
+    });
+    expect(accrued.ledgerEntries).toHaveLength(1);
+    expect(accrued.ledgerEntries[0]).toMatchObject({ entryType: "accrual", amountCents: 1_000 });
+
+    const renewalOrderNumber = `PLATFORM-SUB-RENEWAL-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber: renewalOrderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 10_000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { platformSubscriptionId: subscription.id },
+      },
+    });
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-renewal-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber: renewalOrderNumber,
+      grossAmountCents: 10_000,
+      currency: "TWD",
+    }));
+    expect(await db.platformReferralCommission.count({ where: { subscriptionId: subscription.id } })).toBe(1);
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-refund-${suffix}`,
+      eventType: "partially_refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 5_000,
+      currency: "TWD",
+    }));
+    const partial = await db.platformReferralCommission.findUniqueOrThrow({
+      where: { paymentTransactionId: transaction.id },
+      include: { ledgerEntries: true },
+    });
+    expect(partial.ledgerEntries.reduce((sum, entry) => sum + entry.amountCents, 0)).toBe(500);
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-refund-full-${suffix}`,
+      eventType: "refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: 5_000,
+      currency: "TWD",
+    }));
+    const refunded = await db.platformReferralCommission.findUniqueOrThrow({
+      where: { paymentTransactionId: transaction.id },
+      include: { ledgerEntries: true },
+    });
+    expect(refunded.status).toBe("void");
+    expect(refunded.ledgerEntries.reduce((sum, entry) => sum + entry.amountCents, 0)).toBe(0);
+  });
+
+  it("closes the platform referral commission to owner payout batch with PostgreSQL-backed idempotency", async () => {
+    const suffix = `${Date.now()}-platform-referral-payout-batch`;
+    const payoutSeed = Date.now();
+    const payoutMonthKey = `${String(8000 + (payoutSeed % 1000)).padStart(4, "0")}-${String((Math.floor(payoutSeed / 1000) % 12) + 1).padStart(2, "0")}`;
+    const { db, vendor } = await createFixture(suffix);
+    const subscription = await db.vendorSubscription.findFirstOrThrow({ where: { vendorId: vendor.id } });
+    const owner = await db.user.create({
+      data: {
+        name: `Platform Payout Owner ${suffix}`,
+        email: `platform-payout-owner-${suffix}@example.com`,
+        passwordHash: "test",
+      },
+    });
+    createdUserIds.push(owner.id);
+    const referralCode = await db.platformReferralCode.create({
+      data: { ownerUserId: owner.id, code: `PAYOUT${suffix}`.toUpperCase(), commissionRateBps: 1000 },
+    });
+    const click = await db.platformReferralClick.create({
+      data: {
+        referralCodeId: referralCode.id,
+        visitorId: `visitor-${suffix}`,
+        landingPath: "/billing/plans",
+        expiresAt: new Date("2099-07-31T23:59:59.000Z"),
+      },
+    });
+    await db.platformReferralAttribution.create({
+      data: {
+        referralCodeId: referralCode.id,
+        clickId: click.id,
+        subscriptionId: subscription.id,
+        ownerUserId: owner.id,
+        codeSnapshot: referralCode.code,
+        commissionRateBpsSnapshot: referralCode.commissionRateBps,
+      },
+    });
+
+    const orderNumber = `PLATFORM-PAYOUT-${suffix}`;
+    const transaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 10_000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { platformSubscriptionId: subscription.id },
+      },
+    });
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-payout-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 10_000,
+      currency: "TWD",
+      occurredAt: `${payoutMonthKey}-20T12:00:00.000Z`,
+    }));
+
+    const batchNumber = `PRP-${payoutMonthKey.replace("-", "")}-${suffix}`;
+    const result = await db.$transaction(async (tx) => {
+      const synced = await syncPlatformReferralPayoutsForMonth(tx, { monthKey: payoutMonthKey });
+      const batch = await createPlatformReferralPayoutBatch(tx, {
+        monthKey: payoutMonthKey,
+        batchNumber,
+        batchDate: new Date("2099-08-01T00:00:00.000Z"),
+      });
+      return { synced, batch };
+    });
+
+    if (result.batch) createdPlatformReferralPayoutBatchIds.push(result.batch.id);
+    const payout = await db.platformReferralPayout.findUnique({
+      where: { ownerUserId_monthKey: { ownerUserId: owner.id, monthKey: payoutMonthKey } },
+    });
+    if (payout) createdPlatformReferralPayoutIds.push(payout.id);
+
+    expect(result.synced).toHaveLength(1);
+    expect(result.batch).toMatchObject({
+      batchNumber,
+      monthKey: payoutMonthKey,
+      totalAmountCents: 1_000,
+      totalCount: 1,
+      status: "draft",
+    });
+    expect(result.batch).not.toBeNull();
+
+    expect(payout).not.toBeNull();
+    expect(payout).toMatchObject({
+      ownerUserId: owner.id,
+      commissionAmountCents: 1_000,
+      finalAmountCents: 1_000,
+      payoutBatchId: result.batch!.id,
+      status: "batched",
+    });
+
+    const replayed = await createPlatformReferralPayoutBatch(db, {
+      monthKey: payoutMonthKey,
+      batchNumber,
+      batchDate: new Date("2099-08-02T00:00:00.000Z"),
+    });
+    expect(replayed).toMatchObject({ id: result.batch!.id, batchNumber, totalCount: 1 });
+    expect(await db.platformReferralPayoutBatch.count({ where: { batchNumber } })).toBe(1);
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).toMatchObject({ status: "paid" });
+  });
+
+  it("reverses a platform referral commission on a lost chargeback and ignores a retry", async () => {
+    const suffix = `${Date.now()}-platform-referral-dispute`;
+    const { db, vendor } = await createFixture(suffix);
+    const subscription = await db.vendorSubscription.findFirstOrThrow({ where: { vendorId: vendor.id } });
+    const owner = await db.user.create({
+      data: {
+        name: `Platform Referral Dispute Owner ${suffix}`,
+        email: `platform-referral-dispute-owner-${suffix}@example.com`,
+        passwordHash: "test",
+      },
+    });
+    createdUserIds.push(owner.id);
+    const referralCode = await db.platformReferralCode.create({
+      data: { ownerUserId: owner.id, code: `DISPUTE${suffix}`.toUpperCase(), commissionRateBps: 1000 },
+    });
+    const click = await db.platformReferralClick.create({
+      data: {
+        referralCodeId: referralCode.id,
+        visitorId: `visitor-${suffix}`,
+        landingPath: "/billing/plans",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    await db.platformReferralAttribution.create({
+      data: {
+        referralCodeId: referralCode.id,
+        clickId: click.id,
+        subscriptionId: subscription.id,
+        ownerUserId: owner.id,
+        codeSnapshot: referralCode.code,
+        commissionRateBpsSnapshot: referralCode.commissionRateBps,
+      },
+    });
+    const orderNumber = `PLATFORM-DISPUTE-${suffix}`;
+    const transaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: 10_000,
+        currency: "TWD",
+        status: "pending",
+        metadata: { platformSubscriptionId: subscription.id },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-dispute-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 10_000,
+      currency: "TWD",
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-dispute-opened-${suffix}`,
+      eventType: "dispute_opened",
+      vendorId: vendor.id,
+      orderNumber,
+      disputeCaseId: `case-${suffix}`,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-dispute-lost-${suffix}`,
+      eventType: "dispute_lost",
+      vendorId: vendor.id,
+      orderNumber,
+      disputeCaseId: `case-${suffix}`,
+    }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-dispute-lost-retry-${suffix}`,
+      eventType: "dispute_lost",
+      vendorId: vendor.id,
+      orderNumber,
+      disputeCaseId: `case-${suffix}`,
+    }));
+
+    const disputed = await db.platformReferralCommission.findUniqueOrThrow({
+      where: { paymentTransactionId: transaction.id },
+      include: { ledgerEntries: true },
+    });
+    expect(disputed.status).toBe("void");
+    expect(disputed.ledgerEntries).toHaveLength(3);
+    expect(disputed.ledgerEntries.map((entry) => entry.entryType)).toEqual(expect.arrayContaining([
+      "accrual",
+      "dispute_opened",
+      "dispute_lost",
+    ]));
+    expect(disputed.ledgerEntries.find((entry) => entry.entryType === "accrual")).toMatchObject({ amountCents: 1_000 });
+    expect(disputed.ledgerEntries.find((entry) => entry.entryType === "dispute_lost")).toMatchObject({ amountCents: -1_000 });
+    expect(disputed.ledgerEntries.reduce((sum, entry) => sum + entry.amountCents, 0)).toBe(0);
+  });
+
+  it("activates a pending platform plan only from its trusted checkout transaction", async () => {
+    const suffix = `${Date.now()}-platform-plan-checkout`;
+    const { db, vendor } = await createFixture(suffix);
+    const previous = await db.vendorSubscription.findFirstOrThrow({ where: { vendorId: vendor.id, status: "active" } });
+    const pending = await db.vendorSubscription.create({
+      data: {
+        vendorId: vendor.id,
+        planId: previous.planId,
+        paymentMode: "platform",
+        status: "pending_payment",
+      },
+      include: { plan: true },
+    });
+    const orderNumber = `PLATFORM-PLAN-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: pending.plan.monthlyPriceCents,
+        netAmountCents: pending.plan.monthlyPriceCents,
+        currency: "TWD",
+        status: "pending",
+        metadata: {
+          billingPurpose: "platform_subscription_checkout",
+          platformSubscriptionId: pending.id,
+          billingPlanId: pending.planId,
+          billingPlanCode: pending.plan.code,
+        },
+      },
+    });
+
+    const paid = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-plan-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: pending.plan.monthlyPriceCents,
+      currency: "TWD",
+    });
+    await processPaymentWebhook(paid);
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      ...paid,
+      eventId: `evt-platform-plan-paid-retry-${suffix}`,
+    }));
+
+    const activated = await db.vendorSubscription.findUniqueOrThrow({ where: { id: pending.id } });
+    const endedPrevious = await db.vendorSubscription.findUniqueOrThrow({ where: { id: previous.id } });
+    const usageLimit = await db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: vendor.id } });
+    expect(activated.status).toBe("active");
+    expect(endedPrevious.status).toBe("ended");
+    expect(usageLimit).toMatchObject({
+      billingPlanId: pending.planId,
+      streamMinutesLimit: pending.plan.includedStreamMinutes,
+      storageMinutesLimit: pending.plan.includedStorageMinutes,
+      creditsLimit: pending.plan.includedCredits,
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-plan-refund-${suffix}`,
+      eventType: "refunded",
+      vendorId: vendor.id,
+      orderNumber,
+      refundAmountCents: pending.plan.monthlyPriceCents,
+      currency: "TWD",
+    }));
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: pending.id } })).resolves.toMatchObject({
+      status: "payment_refunded",
+    });
+  });
+
+  it("marks a pending platform plan payment failed without enabling it", async () => {
+    const suffix = `${Date.now()}-platform-plan-failed`;
+    const { db, vendor } = await createFixture(suffix);
+    const plan = await db.billingPlan.findFirstOrThrow({ where: { subscriptions: { some: { vendorId: vendor.id, status: "active" } } } });
+    const referralOwner = await db.user.create({
+      data: {
+        name: `Platform Failure Referral Owner ${suffix}`,
+        email: `platform-failure-referral-${suffix}@example.com`,
+        passwordHash: "test",
+      },
+    });
+    createdUserIds.push(referralOwner.id);
+    const referralCode = await db.platformReferralCode.create({
+      data: {
+        ownerUserId: referralOwner.id,
+        code: `FAIL${suffix}`.toUpperCase(),
+        commissionRateBps: 1_000,
+      },
+    });
+    const pending = await db.vendorSubscription.create({
+      data: { vendorId: vendor.id, planId: plan.id, paymentMode: "platform", status: "pending_payment" },
+    });
+    const click = await db.platformReferralClick.create({
+      data: {
+        referralCodeId: referralCode.id,
+        visitorId: `visitor-${suffix}`,
+        landingPath: "/billing/plans",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await db.platformReferralAttribution.create({
+      data: {
+        referralCodeId: referralCode.id,
+        clickId: click.id,
+        subscriptionId: pending.id,
+        ownerUserId: referralOwner.id,
+        codeSnapshot: referralCode.code,
+        commissionRateBpsSnapshot: referralCode.commissionRateBps,
+      },
+    });
+    const orderNumber = `PLATFORM-FAIL-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber,
+        paymentMode: "platform",
+        grossAmountCents: plan.monthlyPriceCents,
+        currency: "TWD",
+        status: "pending",
+        metadata: {
+          billingPurpose: "platform_subscription_checkout",
+          platformSubscriptionId: pending.id,
+          billingPlanId: plan.id,
+        },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-plan-failed-${suffix}`,
+      eventType: "failed",
+      vendorId: vendor.id,
+      orderNumber,
+      currency: "TWD",
+    }));
+
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: pending.id } })).resolves.toMatchObject({
+      status: "payment_failed",
+    });
+    await expect(db.platformReferralAttribution.findUnique({ where: { subscriptionId: pending.id } })).resolves.toBeNull();
+  });
+
+  it("supersedes an older pending plan so a late paid callback cannot replace the newer checkout", async () => {
+    const suffix = `${Date.now()}-platform-plan-stale-paid`;
+    const { db, vendor } = await createFixture(suffix);
+    const previous = await db.vendorSubscription.findFirstOrThrow({ where: { vendorId: vendor.id, status: "active" } });
+    const olderCreatedAt = new Date("2026-08-07T00:00:00.000Z");
+    const newerCreatedAt = new Date("2026-08-07T00:05:00.000Z");
+    const [older, newer] = await Promise.all([
+      db.vendorSubscription.create({
+        data: { vendorId: vendor.id, planId: previous.planId, paymentMode: "platform", status: "pending_payment", createdAt: olderCreatedAt },
+        include: { plan: true },
+      }),
+      db.vendorSubscription.create({
+        data: { vendorId: vendor.id, planId: previous.planId, paymentMode: "platform", status: "pending_payment", createdAt: newerCreatedAt },
+        include: { plan: true },
+      }),
+    ]);
+    const staleOrder = `PLATFORM-STALE-${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id,
+        providerName: "demo",
+        orderNumber: staleOrder,
+        paymentMode: "platform",
+        grossAmountCents: older.plan.monthlyPriceCents,
+        netAmountCents: older.plan.monthlyPriceCents,
+        currency: "TWD",
+        status: "pending",
+        checkoutIdempotencyKey: `platform-plan:v1:${vendor.id}:stale`,
+        metadata: {
+          billingPurpose: "platform_subscription_checkout",
+          platformSubscriptionId: older.id,
+          billingPlanId: older.planId,
+          billingPlanCode: older.plan.code,
+        },
+      },
+    });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-platform-stale-paid-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber: staleOrder,
+      grossAmountCents: older.plan.monthlyPriceCents,
+      currency: "TWD",
+    }));
+
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: older.id } })).resolves.toMatchObject({ status: "payment_superseded" });
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: newer.id } })).resolves.toMatchObject({ status: "pending_payment" });
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: previous.id } })).resolves.toMatchObject({ status: "active" });
+    await expect(db.vendorUsageLimit.findUnique({ where: { vendorId: vendor.id } })).resolves.toBeNull();
+    await expect(db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber: staleOrder } })).resolves.toMatchObject({
+      status: "paid",
+      checkoutIdempotencyKey: null,
+    });
+  });
+
   it("reconciliation detects refund amount mismatch", async () => {
     const suffix = `${Date.now()}f`;
     const { db, vendor } = await createFixture(suffix);
@@ -1266,5 +2322,49 @@ describe("payment webhook processing", () => {
 
     const checks = await reconcileWebhookEvent(event);
     expect(checks.find((check) => check.key === "refund_total")?.status).toBe("fail");
+  });
+
+  it("reconciliation binds the transaction and commission to the webhook provider", async () => {
+    const suffix = `${Date.now()}f-provider-scope`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-RECON-PROVIDER-${suffix}`;
+    const paidPayload = (provider: string, grossAmountCents: number) => PaymentWebhookPayload.parse({
+      provider,
+      eventId: `evt-reconcile-paid-${provider}-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents,
+      referralCode: affiliate.code,
+    });
+
+    await processPaymentWebhook(paidPayload("provider-a", 100_000));
+    await processPaymentWebhook(paidPayload("provider-b", 120_000));
+
+    const payload = PaymentWebhookPayload.parse({
+      provider: "provider-b",
+      eventId: `evt-reconcile-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 120_000,
+      referralCode: affiliate.code,
+    });
+    const event = await db.webhookEvent.create({
+      data: {
+        vendorId: vendor.id,
+        provider: payload.provider,
+        eventId: payload.eventId,
+        eventType: payload.eventType,
+        status: "processed",
+        payload: webhookPayloadJson(payload),
+      },
+    });
+    createdWebhookEventIds.push(event.id);
+
+    const checks = await reconcileWebhookEvent(event);
+    expect(checks.find((check) => check.key === "transaction_exists")?.status).toBe("pass");
+    expect(checks.find((check) => check.key === "transaction_amount")?.status).toBe("pass");
+    expect(checks.find((check) => check.key === "affiliate_commission")?.status).toBe("pass");
   });
 });

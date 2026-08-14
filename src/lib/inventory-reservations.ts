@@ -1,4 +1,8 @@
 import { Prisma, type PaymentTransaction } from "@prisma/client";
+import {
+  expireCommerceOrderForPayment,
+  reconcileCommerceOrderPaymentTransition,
+} from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 
 export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
@@ -12,8 +16,26 @@ export class InventoryUnavailableError extends Error {
   }
 }
 
+export class ProductChangedError extends Error {
+  constructor() {
+    super("Product changed while checkout was starting.");
+    this.name = "ProductChangedError";
+  }
+}
+
+export class CheckoutIdempotencyConflictError extends Error {
+  constructor(public readonly transactionId: string) {
+    super("Checkout idempotency key is already in use.");
+    this.name = "CheckoutIdempotencyConflictError";
+  }
+}
+
 function isSerializableConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+}
+
+function isUniqueConstraintConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
@@ -39,34 +61,83 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
 export async function createReservedPaymentTransaction({
   vendorId,
   productId,
+  expectedProductRevision,
+  checkoutIdempotencyKey,
   transactionData,
+  createCommerceOrder,
   now = new Date(),
 }: {
   vendorId: string;
   productId: string;
+  expectedProductRevision?: number;
+  checkoutIdempotencyKey?: string;
   transactionData: Prisma.PaymentTransactionUncheckedCreateInput;
+  /**
+   * Optional canonical-order writer. It runs in the same serializable
+   * transaction as stock reservation and payment creation, so none of the
+   * three records can commit alone.
+   */
+  createCommerceOrder?: (
+    tx: Prisma.TransactionClient,
+    transaction: PaymentTransaction,
+  ) => Promise<void>;
   now?: Date;
 }) {
-  return runSerializable(async (tx) => {
-    const reserved = await tx.product.updateMany({
-      where: { id: productId, vendorId, isActive: true, inventory: { gte: 1 } },
-      data: { inventory: { decrement: 1 } },
-    });
-    if (reserved.count !== 1) throw new InventoryUnavailableError();
+  try {
+    return await runSerializable(async (tx) => {
+      if (checkoutIdempotencyKey) {
+        const existing = await tx.paymentTransaction.findUnique({
+          where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey } },
+          select: { id: true },
+        });
+        if (existing) throw new CheckoutIdempotencyConflictError(existing.id);
+      }
 
-    const transaction = await tx.paymentTransaction.create({ data: transactionData });
-    await tx.inventoryReservation.create({
-      data: {
-        vendorId,
-        productId,
-        paymentTransactionId: transaction.id,
-        quantity: 1,
-        status: "reserved",
-        expiresAt: new Date(now.getTime() + INVENTORY_RESERVATION_TTL_MS),
-      },
+      const reserved = await tx.product.updateMany({
+        where: {
+          id: productId,
+          vendorId,
+          isActive: true,
+          inventory: { gte: 1 },
+          ...(expectedProductRevision ? { revision: expectedProductRevision } : {}),
+        },
+        data: { inventory: { decrement: 1 }, revision: { increment: 1 } },
+      });
+      if (reserved.count !== 1) {
+        if (expectedProductRevision) {
+          const current = await tx.product.findFirst({ where: { id: productId, vendorId, isActive: true, inventory: { gte: 1 } }, select: { revision: true } });
+          if (current && current.revision !== expectedProductRevision) throw new ProductChangedError();
+        }
+        throw new InventoryUnavailableError();
+      }
+
+      const transaction = await tx.paymentTransaction.create({ data: transactionData });
+      if (createCommerceOrder) await createCommerceOrder(tx, transaction);
+      await tx.inventoryReservation.create({
+        data: {
+          vendorId,
+          productId,
+          paymentTransactionId: transaction.id,
+          quantity: 1,
+          status: "reserved",
+          expiresAt: new Date(now.getTime() + INVENTORY_RESERVATION_TTL_MS),
+        },
+      });
+      return transaction;
     });
-    return transaction;
-  });
+  } catch (error) {
+    // The unique index is the authoritative race barrier. The failed
+    // serializable transaction has already rolled back its stock decrement;
+    // resolve the winner only after Prisma has closed that failed transaction.
+    if (checkoutIdempotencyKey && isUniqueConstraintConflict(error)) {
+      const existing = await getDb().paymentTransaction.findUnique({
+        where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey } },
+        select: { id: true },
+      });
+      if (existing) throw new CheckoutIdempotencyConflictError(existing.id);
+    }
+    throw error;
+  }
 }
 
 async function releaseReservation(
@@ -95,7 +166,7 @@ async function releaseReservation(
 
   await tx.product.updateMany({
     where: { id: reservation.productId, vendorId: reservation.vendorId },
-    data: { inventory: { increment: reservation.quantity } },
+    data: { inventory: { increment: reservation.quantity }, revision: { increment: 1 } },
   });
   return true;
 }
@@ -117,6 +188,14 @@ export async function failPendingCheckoutAndReleaseInventory({
       data: { status: "failed" },
     });
     if (failed.count !== 1) return false;
+
+    await reconcileCommerceOrderPaymentTransition(tx, {
+      vendorId,
+      paymentTransactionId: transactionId,
+      eventIdentity: reason,
+      transition: "failed",
+      occurredAt: now,
+    });
 
     const reservation = await tx.inventoryReservation.findUnique({
       where: { paymentTransactionId: transactionId },
@@ -182,7 +261,7 @@ export async function applyPaymentInventoryTransition(
         isActive: true,
         inventory: { gte: 1 },
       },
-      data: { inventory: { decrement: 1 } },
+      data: { inventory: { decrement: 1 }, revision: { increment: 1 } },
     });
     if (reacquired.count !== 1) throw new InventoryUnavailableError();
 
@@ -259,15 +338,32 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
           where: { id: reservation.id, status: "reserved" },
           data: { status: "committed", committedAt: now },
         });
+        if (updated.count === 1) {
+          await reconcileCommerceOrderPaymentTransition(tx, {
+            vendorId: reservation.vendorId,
+            paymentTransactionId: reservation.paymentTransactionId,
+            eventIdentity: `inventory-expiry-reconcile:${reservation.id}`,
+            transition: "paid",
+            occurredAt: now,
+          });
+        }
         return updated.count === 1 ? "committed" : "unchanged";
       }
 
       const didRelease = await releaseReservation(tx, reservation, "expired", now);
       if (!didRelease) return "unchanged";
-      await tx.paymentTransaction.updateMany({
+      const expired = await tx.paymentTransaction.updateMany({
         where: { id: reservation.paymentTransactionId, vendorId: reservation.vendorId, status: "pending" },
         data: { status: "expired" },
       });
+      if (expired.count === 1) {
+        await expireCommerceOrderForPayment(tx, {
+          vendorId: reservation.vendorId,
+          paymentTransactionId: reservation.paymentTransactionId,
+          eventIdentity: `inventory-reservation:${reservation.id}`,
+          occurredAt: now,
+        });
+      }
       return "released";
     });
 

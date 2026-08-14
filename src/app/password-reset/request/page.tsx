@@ -1,5 +1,6 @@
 import { requestPasswordResetAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 
 const errorMessages: Record<string, string> = {
   invalid: "請輸入有效的 Email。",
@@ -30,7 +31,13 @@ export default async function PasswordResetRequestPage({
             Email
             <input name="email" type="email" autoComplete="email" spellCheck={false} required className="h-11 rounded-md border border-border px-3" placeholder="you@example.com" />
           </label>
-          <button className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark">寄送重設信</button>
+          <FormSubmitButton
+            pendingChildren="申請中…"
+            pendingMessage="正在申請密碼重設信，請勿重複送出。"
+            className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+          >
+            寄送重設信
+          </FormSubmitButton>
         </form>
         <div className="mt-4 text-sm">
           <a href="/login" className="font-semibold text-primary hover:underline">返回登入</a>

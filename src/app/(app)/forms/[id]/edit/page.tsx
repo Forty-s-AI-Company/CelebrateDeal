@@ -19,7 +19,7 @@ export default async function EditFormPage({
   return (
     <>
       <PageHeader title="編輯報名表" description="調整表單文案、欄位與送出後訊息。" />
-      <FormBuilder form={form} error={error} />
+      <FormBuilder form={form} error={error} draftScope={vendor.id} />
     </>
   );
 }

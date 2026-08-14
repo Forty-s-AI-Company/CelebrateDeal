@@ -8,8 +8,8 @@
 |---|---:|
 | Production source files | 187 |
 | `src/lib` source files | 61 |
-| `src/app/api` route handlers | 25 |
-| 全 route contract registry | 27/27 |
+| `src/app/api` route handlers | 26 |
+| 全 route contract registry | 31/31 |
 | `src/app/actions.ts` | 2,272 lines／42 exports |
 | Domain lib → app/components runtime imports | 0 |
 | API route → browser component runtime imports | 0 |

@@ -1,35 +1,81 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
-type FormSubmitButtonProps = {
+type FormSubmitButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "className"> & {
   children: ReactNode;
   pendingChildren: ReactNode;
   pendingMessage: string;
+  confirmMessage?: string;
   className?: string;
 };
 
 /**
  * 讓所有 Server Action 表單在送出期間提供一致、可存取的回饋，並避免重複送出。
  */
-export function FormSubmitButton({ children, pendingChildren, pendingMessage, className }: FormSubmitButtonProps) {
-  const { pending } = useFormStatus();
+export function FormSubmitButton({
+  children,
+  pendingChildren,
+  pendingMessage,
+  confirmMessage,
+  className,
+  disabled = false,
+  type = "submit",
+  onClick,
+  name,
+  value,
+  formAction,
+  ...buttonProps
+}: FormSubmitButtonProps) {
+  const { pending, data, action } = useFormStatus();
+  const hasSubmitterName = typeof name === "string" && name.length > 0;
+  const submittedByName = hasSubmitterName && data
+    ? data.getAll(name).some((submittedValue) => (
+        typeof submittedValue === "string" && submittedValue === String(value ?? "")
+      ))
+    : null;
+  const submittedByAction = !hasSubmitterName && formAction && action
+    ? formAction === action
+    : null;
+  const isActivePending = pending && (submittedByName ?? submittedByAction ?? true);
+  const isDisabled = pending || disabled;
 
   return (
-    <div className="grid gap-1.5">
+    <>
       <button
-        type="submit"
-        disabled={pending}
-        aria-disabled={pending}
-        aria-busy={pending}
+        {...buttonProps}
+        type={type}
+        name={name}
+        value={value}
+        formAction={formAction}
+        disabled={isDisabled}
+        aria-disabled={isDisabled}
+        aria-busy={isActivePending}
+        onClick={(event) => {
+          const formIsValid = event.currentTarget.form?.checkValidity() ?? true;
+          if (confirmMessage && (event.currentTarget.formNoValidate || formIsValid) && !window.confirm(confirmMessage)) {
+            event.preventDefault();
+            return;
+          }
+          onClick?.(event);
+        }}
         className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
       >
-        {pending ? pendingChildren : children}
+        {isActivePending ? (
+          <span className="inline-flex items-center justify-center gap-2">
+            <span
+              aria-hidden="true"
+              data-loading-indicator="true"
+              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent"
+            />
+            {pendingChildren}
+          </span>
+        ) : children}
       </button>
-      <p role="status" aria-live="polite" className="min-h-4 text-xs text-slate-500">
-        {pending ? pendingMessage : ""}
-      </p>
-    </div>
+      <span role="status" aria-live="polite" className="sr-only">
+        {isActivePending ? pendingMessage : ""}
+      </span>
+    </>
   );
 }

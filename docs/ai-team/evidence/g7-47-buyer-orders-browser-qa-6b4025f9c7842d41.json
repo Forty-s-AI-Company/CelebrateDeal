@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-47",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "6b4025f9c7842d41",
+  "startedAt": "2026-08-09T14:40:40.891Z",
+  "finishedAt": "2026-08-09T14:43:32.719Z",
+  "serverMode": "PRODUCTION",
+  "sourceLineage": {
+    "algorithm": "sha256",
+    "files": {
+      "scripts/g7-commerce-browser-qa.mjs": "78aaf02b9f4a7e5a421d1426911cb395da873223e83dcce9f453d5c24d61a5d2",
+      "playwright.g7-commerce.config.ts": "cf0a290ea39ff48783ad4e9f903ac7e4d37b2d516e5ec19cc1f7f151860a8501",
+      "tests/e2e/commerce-orders.spec.ts": "c94f545e58884e92f08fc0e84f3e30b925cb2691cb4464665289a76e5cbbf09b",
+      "src/lib/product-action-state.ts": "abb77058354d3d30aa5678bd2aee1476e8b782d7a2c6085432c65c3737c498a0",
+      "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+      "src/app/actions/product-actions.ts": "a322f1fc3d900b9b4a9dcc77ea5693588277deaa3c0ab7c08c4da2759afb3bd0",
+      "src/components/product-form-client.tsx": "1258b02cc6b1f8cd35613a7e58b12680eeee16b743dd573178cf3c5400fd5ab7",
+      "src/components/media-upload-field.tsx": "3f2c10991ca5f236852b81a137e35fd4bc846f396d9ff44a916a430b6a20d729",
+      "src/app/(app)/products/page.tsx": "74bd4875552933bd74e949402a7099ee3390ac1e111290e9871055433e6415ea",
+      "src/app/(app)/products/new/page.tsx": "2f6def1af7eda843341385c9f91be852c619822b483b9778ab813fa6548c9863",
+      "src/app/(app)/products/[id]/edit/page.tsx": "7689b7359e96ce45079c3079701d74b2cb89bb32011be8cc9f31f21f272196ee",
+      "src/app/(app)/products/[id]/preview/page.tsx": "13847c7d2b3634fd236877836697dc8cdf6f511d74af3ddc9a7d624998583ef8",
+      "src/app/checkout/[vendorId]/[productId]/page.tsx": "311378bdd8a0ed524e5479cada4946685c2e81fc1a1b9a237253ed14b31c2265",
+      "src/app/api/webhooks/payments/route.ts": "e054aba9a7c8a5d303b2e92e05648cbe21b404f40d4523b8d73c9993408af493",
+      "src/app/checkout/result/page.tsx": "f4039218660121362d6dc2e792282b8ccc75b7740e5b5d3b7b22b2a96db35029",
+      "src/app/checkout/result/loading.tsx": "3c6477c893fea5bb3c2a4ba9a5e8b0b0618bce61a624be27b15adde99e24233d",
+      "src/app/checkout/result/error.tsx": "103b53f03eb2993b845f65e7f7998c88a1b556cf9314071b4f1a869e1d4c536d",
+      "src/components/public-policy.tsx": "c40a78a228eafb499d4707b0ab239431395c382e8dec81e60120d2f34231aed4",
+      "src/components/form-submit-button.tsx": "bb3d6fa48022022dbea8c09c557ca7a3469b59784f18dea03ec3faab7e0b58e9",
+      "src/app/admin/billing/loading.tsx": "175ce5f75f181dac45d9ccd3671fcaade9afbd114fa0c761e81b7664da69db33",
+      "src/app/admin/billing/error.tsx": "b57dcc9702af463a99c0a617092cdc346e384e7177f0becc667303611ef090b2",
+      "src/app/(app)/billing/loading.tsx": "36b30aa6ad0ae06834a5ee107c2831e5e1b3e111377ab6382d4b6441881a7b66",
+      "src/app/(app)/billing/error.tsx": "a0944aac6298f1316c484cd247f3acb8d9b3f7b05fc983447dd160bf0f3b3fe8",
+      "src/app/admin/billing/course-payouts/page.tsx": "fa46c45556c9eef6d5d8bf3e9c194538d08fed04e1e799b8a973d3ed45228478",
+      "src/app/admin/billing/platform-referral-payouts/page.tsx": "da0d5d8e7f7668a63401a407c21219f05fe7ea9419d346cc11d86ea5fd1a2b3a",
+      "src/app/(app)/billing/payment-methods/page.tsx": "70ecb2b582e1f53b84ba6626345c9da8cc36e0c131e16ee24ca9ab181e2fe268",
+      "src/app/admin/billing/webhooks/page.tsx": "8106508d2326ea0a63634ee191d22f485456d557caf42636fa8e131899fb871d",
+      "src/app/admin/billing/webhooks/[id]/page.tsx": "0a69bfcd27eaed8d909903aceffdf10b040736a1e607203e84371f3f5203969c",
+      "src/app/admin/billing/dashboard/page.tsx": "1a2207f6f00dc783a135deadfa995b4a149ab2b8d2e49409456eff8aeac88149",
+      "src/lib/buyer-support-access.ts": "2026c64a1be02f807ea4ff4409fcc32b2bf1b127cdee75fcbde798b5ad51e7a9",
+      "src/app/support/page.tsx": "568c408c455428a36552978f2b96814f6e48a480e0ebf1ae1fcb7d16e61e9288",
+      "src/app/support/orders/page.tsx": "5263507f132427e0300daee082dbcb2476a3be0d3f027c741b7bfdbddcf324b2",
+      "src/app/support/orders/loading.tsx": "32255d529b9f6bda23521de820dab954298247c6a4b40d96d92dedc890d7f291",
+      "src/app/support/orders/[grantId]/page.tsx": "5b1a86e2a374a91e194a399c701eed17bd6030d9c35502482a054d9d913f82a6",
+      "src/lib/payment-return-outcome.ts": "0bd7542477dc5900d85c881b4816d7e219f55fb196800f5dc7b2f13c1eb0f67d",
+      "vercel.json": "0d8956c91cb3270aca23787cecc50cb4ac5cf256c7643c2c0648332e03140da0",
+      "prisma/migrations/20260809030000_g7_21_live_reminder_email/migration.sql": "9af5626356988fdb745749698cb4287165968a78bef10f753ad6ec71d64ac21d",
+      "src/lib/message-template.ts": "1b6b935ddf72ee685689d96ef1d73bc1ea84d4844ca773381b9b101b01279757",
+      "src/lib/email-delivery.ts": "9fb27e0e6ef18a33024281d4b2f3b57408b16428c4080e4e82f6f8918e2adebd",
+      "src/app/api/jobs/email-deliveries/route.ts": "936ee407ef2b4ec50ecd8d7b592e2e9b62486c70f0a3a82e8c543f33d5e61295",
+      "src/components/message-template-form.tsx": "e37c0e0d91cb5ea50d9b22b7d7bc9a618e9cb8c71c358065fe2d204322716dee",
+      "src/components/live-stepper-form.tsx": "fd7f37955b93dad71c633066174e4dc84e57d40fb88d8afe85e431676288808d",
+      "src/components/use-live-studio-draft.ts": "ba7a37401204ce9df51f39a6658d4056881641653ac09c973856b9605955e46c",
+      "src/lib/live-studio-draft.ts": "65c30370c5ab10e59f1511fad54374430524a0249d48e400b1329b6f09ff3167",
+      "src/lib/live-studio-draft-client.ts": "2f6533a049fe43987f879094b20ac79f98da7d17bbe268764085c7f1c8ad31b8",
+      "src/app/(app)/messages/templates/page.tsx": "89b992cac12607e014c0db952e57f4a47def2ce862cb9602f792f09f56359bb5",
+      "src/app/(app)/messages/deliveries/page.tsx": "c13bd5b688bec18fe2e4224a77c7129a0c9641def6ddc0cb8e7fc8a58c79b2b4",
+      "src/app/(app)/lives/new/page.tsx": "3a975ffff0ee30d73473ee5661d34bce389570c3265c97bdc3ba5568b139af86"
+    }
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 50,
+    "applied": true
+  },
+  "browser": {
+    "expected": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "contracts": {
+      "buyer order capability shows only exact safe fulfillment projection on desktop and mobile": "FAILED"
+    },
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED",
+    "productCatalog": "NOT_VERIFIED",
+    "emailReminder": "NOT_VERIFIED",
+    "liveStudio": "NOT_VERIFIED",
+    "buyerOrders": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null,
+    "productDesktop": null,
+    "productMobile": null,
+    "paymentResult": null,
+    "financePending": null,
+    "emailTemplates": null,
+    "buyerOrdersDesktop": null,
+    "buyerOrdersMobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "loopbackTlsCookieBridge": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > buyer order capability shows only exact safe fulfillment projection on desktop and mobile",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toBeVisible() failed",
+          "Locator: getByText('<redacted-long-value>', { exact: true })",
+          "Expected: visible",
+          "Timeout: 15000ms",
+          "Error: element(s) not found",
+          "Call log:",
+          "- Expect \"toBeVisible\" with timeout 15000ms",
+          "- waiting for getByText('<redacted-long-value>', { exact: true })",
+          "Error: expect(locator).toBeVisible() failed",
+          "Locator: getByText('<redacted-long-value>', { exact: true })",
+          "Expected: visible",
+          "Timeout: 15000ms"
+        ]
+      }
+    ],
+    "browserGlobalErrors": [],
+    "serverRuntimeDetails": [
+      "▲ Next.js 16.2.11",
+      "- Local:         http://127.0.0.1:55479",
+      "- Network:       http://127.0.0.1:55479",
+      "✓ Ready in 435ms"
+    ]
+  },
+  "failure": "commerce-browser-contract-failed"
+}

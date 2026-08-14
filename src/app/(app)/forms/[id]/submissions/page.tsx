@@ -1,47 +1,33 @@
 import { notFound } from "next/navigation";
-import { Card, PageHeader } from "@/components/ui";
+import type { FormSubmissionSearchActionState } from "@/app/actions/form-submission-search-actions";
+import { CsrfField } from "@/components/csrf-field";
+import { FormSubmissionsWorkbench } from "@/components/form-submissions-workbench";
+import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
-import { getDb } from "@/lib/db";
-import { formatDateTime } from "@/lib/format";
+import { loadFormSubmissionSearchResult } from "@/lib/form-submission-search";
 
 export default async function FormSubmissionsPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
-  const form = await getDb().registrationForm.findFirst({
-    where: { id, vendorId: vendor.id },
-    include: { submissions: { orderBy: { createdAt: "desc" }, include: { live: true } } },
+  const result = await loadFormSubmissionSearchResult(vendor.id, {
+    formId: id,
+    query: "",
+    verification: "ALL",
+    source: "ALL",
+    page: 1,
   });
-  if (!form) notFound();
+  if (!result) notFound();
+
+  const initialState: FormSubmissionSearchActionState = {
+    status: "idle",
+    message: "",
+    result,
+  };
 
   return (
     <>
-      <PageHeader title={`${form.name} 名單`} description="查看表單與直播頁收集到的 lead 資料。" />
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-slate-500">
-              <tr>
-                <th className="py-2">姓名</th>
-                <th>Email</th>
-                <th>手機</th>
-                <th>來源</th>
-                <th>時間</th>
-              </tr>
-            </thead>
-            <tbody>
-              {form.submissions.map((submission) => (
-                <tr key={submission.id} className="border-t border-border">
-                  <td className="py-3 font-medium text-slate-950">{submission.name}</td>
-                  <td>{submission.email}</td>
-                  <td>{submission.phone}</td>
-                  <td>{submission.live?.title ?? submission.source}</td>
-                  <td>{formatDateTime(submission.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <PageHeader title={`${result.form.name} 名單`} description="查找、篩選並分頁管理報名資料；只有完成 Email 驗證的報名會進入正式 KPI。" />
+      <FormSubmissionsWorkbench initialState={initialState} csrfField={<CsrfField />} />
     </>
   );
 }

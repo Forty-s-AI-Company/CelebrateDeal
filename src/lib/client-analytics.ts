@@ -1,7 +1,6 @@
 type ClientAnalyticsBase = {
   liveId: string;
   vendorId: string;
-  visitorId: string;
 };
 
 export type ClientAnalyticsEvent = ClientAnalyticsBase & (

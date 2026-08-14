@@ -27,7 +27,7 @@ const affiliate = {
     { id: "click-2", landingPath: "/live/demo", createdAt: new Date("2026-08-03T00:00:00.000Z"), convertedAt: null },
   ],
   commissions: [
-    { id: "commission-1", orderNumber: "ORDER-SYNTHETIC", attributedAt: new Date("2026-08-02T00:00:00.000Z"), orderAmountCents: 10000, commissionAmountCents: 1250, status: "approved" },
+    { id: "commission-1", orderNumber: "ORDER-SYNTHETIC", attributedAt: new Date("2026-08-02T00:00:00.000Z"), orderAmountCents: 10000, commissionBaseAmountCents: 10000, netReferenceAmountCents: 8600, commissionAmountCents: 1250, status: "approved" },
   ],
   payouts: [],
 };
@@ -54,6 +54,8 @@ describe("/affiliates/[id] route", () => {
     expect(html).toContain("合作夥伴");
     expect(html).toContain("50%");
     expect(html).toContain("累計佣金");
+    expect(html).toContain("Gross 分潤基礎");
+    expect(html).toContain("Net reference");
     expect(html).toContain("$13");
     expect(html).toContain("ORDER-SYNTHETIC");
     expect(html).toContain("已轉換");

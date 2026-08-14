@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   GET,
   HEAD,
-  LINEAGE_PAYLOAD,
-  validatePreviewLineagePayload,
 } from "./route";
+import { LINEAGE_PAYLOAD, validatePreviewLineagePayload } from "@/lib/preview-lineage";
 
 const EXPECTED_KEYS = [
   "baseSourceDigest",

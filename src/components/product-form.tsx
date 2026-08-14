@@ -1,31 +1,72 @@
 import type { Product } from "@prisma/client";
-import { upsertProductAction } from "@/app/actions";
-import { CsrfField } from "@/components/csrf-field";
-import { Card, Field, SubmitButton, TextArea } from "@/components/ui";
+import { ProductFormClient, type CourseMembershipOption, type ProductFormProduct } from "@/components/product-form-client";
+import { Card } from "@/components/ui";
+import { getCsrfToken } from "@/lib/csrf";
+import { revealProductDeliveryConfig } from "@/lib/product-delivery";
 
-export function ProductForm({ product }: { product?: Product }) {
+type ProductWithDeliveryConfig = Product & {
+  imageAssetId?: string | null;
+  deliveryConfig?: {
+    id: string;
+    productId: string;
+    revision: number;
+    title: string;
+    destinationEncryptedEnvelope: string | null;
+    instructionsEncryptedEnvelope: string | null;
+  } | null;
+};
+
+export async function ProductForm({
+  product,
+  memberships = [],
+  error,
+}: {
+  product?: ProductWithDeliveryConfig;
+  memberships?: CourseMembershipOption[];
+  error?: string;
+}) {
+  const csrfToken = await getCsrfToken();
+  const revealedDelivery = product?.deliveryConfig
+    ? revealProductDeliveryConfig(product.deliveryConfig, {
+        vendorId: product.vendorId,
+        productId: product.id,
+        configId: product.deliveryConfig.id,
+        revision: product.deliveryConfig.revision,
+      })
+    : { destinationUrl: null, instructions: null };
+  const serializedProduct: ProductFormProduct | undefined = product ? {
+    id: product.id,
+    revision: product.revision,
+    name: product.name,
+    slug: product.slug,
+    description: product.description,
+    priceCents: product.priceCents,
+    compareAtCents: product.compareAtCents,
+    currency: product.currency,
+    imageUrl: product.imageUrl,
+    imageAssetId: product.imageAssetId,
+    checkoutUrl: product.checkoutUrl,
+    inventory: product.inventory,
+    isActive: product.isActive,
+    commerceDomain: product.commerceDomain,
+    fulfillmentType: product.fulfillmentType,
+    fulfillmentTypeConfirmed: product.fulfillmentTypeConfirmed,
+    courseContentOwnerMembershipId: product.courseContentOwnerMembershipId,
+    coursePromoterShareBps: product.coursePromoterShareBps,
+    deliveryTitle: product.deliveryConfig?.title ?? "",
+    deliveryUrl: revealedDelivery.destinationUrl ?? "",
+    deliveryInstructions: revealedDelivery.instructions ?? "",
+    deliveryHostConfirmed: Boolean(revealedDelivery.destinationUrl),
+  } : undefined;
+
   return (
     <Card>
-      <form action={upsertProductAction} className="grid gap-4">
-        <CsrfField />
-        {product ? <input type="hidden" name="id" value={product.id} /> : null}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="商品名稱" name="name" required defaultValue={product?.name} />
-          <Field label="Slug" name="slug" required defaultValue={product?.slug} />
-          <Field label="售價（分）" name="priceCents" type="number" required defaultValue={product?.priceCents ?? 0} />
-          <Field label="原價（分）" name="compareAtCents" type="number" defaultValue={product?.compareAtCents} />
-          <Field label="幣別" name="currency" defaultValue={product?.currency ?? "TWD"} />
-          <Field label="庫存" name="inventory" type="number" defaultValue={product?.inventory ?? 0} />
-        </div>
-        <TextArea label="商品描述" name="description" defaultValue={product?.description} />
-        <Field label="圖片 URL" name="imageUrl" defaultValue={product?.imageUrl} placeholder="https://..." />
-        <Field label="結帳 URL" name="checkoutUrl" defaultValue={product?.checkoutUrl} placeholder="https://..." />
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input name="isActive" type="checkbox" defaultChecked={product?.isActive ?? true} className="h-4 w-4 accent-blue-600" />
-          上架商品
-        </label>
-        <SubmitButton />
-      </form>
+      <ProductFormClient
+        csrfToken={csrfToken}
+        product={serializedProduct}
+        memberships={memberships}
+        initialError={error as Parameters<typeof ProductFormClient>[0]["initialError"]}
+      />
     </Card>
   );
 }

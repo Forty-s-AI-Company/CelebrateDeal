@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 
 describe("getCanonicalAppUrl", () => {
   it("returns only the trusted origin from the configured URL", () => {
@@ -14,12 +14,14 @@ describe("getCanonicalAppUrl", () => {
   });
 
   it("allows HTTP only for an explicit local E2E production-server process", () => {
-    expect(getCanonicalAppUrl({
+    const localEvidenceEnv: NodeJS.ProcessEnv = {
       NODE_ENV: "production",
       E2E_TEST_MODE: "true",
       E2E_BASE_URL: "http://127.0.0.1:31023",
       NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31023",
-    })).toBe("http://127.0.0.1:31023");
+    };
+    expect(getCanonicalAppUrl(localEvidenceEnv)).toBe("http://127.0.0.1:31023");
+    expect(isExplicitLocalE2eRuntime(localEvidenceEnv)).toBe(true);
 
     expect(() => getCanonicalAppUrl({
       NODE_ENV: "production",
@@ -27,6 +29,22 @@ describe("getCanonicalAppUrl", () => {
       E2E_BASE_URL: "http://localhost:31023",
       NEXT_PUBLIC_APP_URL: "http://example.test",
     })).toThrow("HTTPS in production");
+  });
+
+  it("does not treat a flag alone, a mismatched origin, or a non-loopback URL as local E2E", () => {
+    expect(isExplicitLocalE2eRuntime({ NODE_ENV: "production", E2E_TEST_MODE: "true" })).toBe(false);
+    expect(isExplicitLocalE2eRuntime({
+      NODE_ENV: "production",
+      E2E_TEST_MODE: "true",
+      E2E_BASE_URL: "http://127.0.0.1:31024",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31023",
+    })).toBe(false);
+    expect(isExplicitLocalE2eRuntime({
+      NODE_ENV: "production",
+      E2E_TEST_MODE: "true",
+      E2E_BASE_URL: "http://example.test",
+      NEXT_PUBLIC_APP_URL: "http://example.test",
+    })).toBe(false);
   });
 
   const unsafeProductionEnvironments: Array<[NodeJS.ProcessEnv, string]> = [

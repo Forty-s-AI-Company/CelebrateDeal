@@ -16,7 +16,7 @@ export function digest(kind, value) {
   return `sha256:${crypto.createHash("sha256").update(`WP168/v1/${kind}/${String(value)}`, "utf8").digest("hex")}`;
 }
 
-function canonical(value) {
+export function canonical(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;

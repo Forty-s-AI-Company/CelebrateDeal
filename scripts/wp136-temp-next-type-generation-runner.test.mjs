@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { CLASSIFICATIONS, classifyOutcome, detectDisallowedExports, extractAllowedRouteExports, sanitizeText } from "./wp136-temp-next-type-generation-runner.mjs";
+import {
+  CLASSIFICATIONS,
+  cleanupTemp,
+  classifyOutcome,
+  detectDisallowedExports,
+  environment,
+  extractAllowedRouteExports,
+  inspectMirror,
+  isForbiddenPath,
+  mirrorFilter,
+  sanitizeText,
+  sourceIntegrity,
+} from "./wp136-temp-next-type-generation-runner.mjs";
 
 const validator = `type RouteHandlerConfig = {\n  GET?: unknown\n  POST?: unknown\n  DELETE?: unknown\n}\n// Validate src/app/api/cloudflare/stream-webhook/route.ts\n{ const handler = {} as typeof import("../../src/app/api/cloudflare/stream-webhook/route.js")\n handler satisfies RouteHandlerConfig<"/api/cloudflare/stream-webhook">\n}`;
 
@@ -30,4 +45,41 @@ test("sanitizes output without retaining paths or hidden values", () => {
   assert.equal(safe.includes("C:\\Users"), false);
   assert.equal(safe.includes("secret"), false);
   assert.equal(safe.includes("example.invalid"), false);
+});
+
+test("WP136 mirror policy rejects generated, dotenv and sensitive paths", () => {
+  assert.equal(isForbiddenPath("src/app/page.tsx"), false);
+  assert.equal(isForbiddenPath(".next/types/routes.d.ts"), true);
+  assert.equal(isForbiddenPath(".env.local"), true);
+  assert.equal(isForbiddenPath("certs/service.key"), true);
+  assert.equal(mirrorFilter(path.join(process.cwd(), "src", "app", "page.tsx")), true);
+  assert.equal(mirrorFilter(path.join(process.cwd(), ".next", "types", "routes.d.ts")), false);
+});
+
+test("WP136 mirror inspection and cleanup remain bounded to OS temp", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp136-cov10-"));
+  try {
+    fs.mkdirSync(path.join(tempRoot, ".next", "types"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, ".env.local"), "synthetic-only");
+    const inspection = inspectMirror(tempRoot);
+    assert.ok(inspection.missing.includes("package.json"));
+    assert.ok(inspection.forbiddenCopied.includes(".env.local"));
+    assert.ok(inspection.forbiddenCopied.some((entry) => entry.startsWith(".next/")));
+  } finally {
+    assert.equal(cleanupTemp(tempRoot), true);
+    assert.equal(fs.existsSync(tempRoot), false);
+  }
+});
+
+test("WP136 synthetic environment and source integrity stay disposable", () => {
+  const tempRoot = path.join(os.tmpdir(), "wp136-cov10-env");
+  const env = environment(tempRoot);
+  assert.equal(env.NODE_ENV, "production");
+  assert.equal(env.CI, "true");
+  assert.equal(env.NPM_CONFIG_OFFLINE, "true");
+  assert.match(env.DATABASE_URL, /127\.0\.0\.1:54329\/wp136_typegen/);
+  assert.equal(env.TEMP, path.join(tempRoot, "tmp"));
+  const integrity = sourceIntegrity();
+  assert.ok(integrity["package.json"].match(/^[a-f0-9]{64}$/));
+  assert.ok(integrity["src/app/api/cloudflare/stream-webhook/route.ts"].match(/^[a-f0-9]{64}$/));
 });

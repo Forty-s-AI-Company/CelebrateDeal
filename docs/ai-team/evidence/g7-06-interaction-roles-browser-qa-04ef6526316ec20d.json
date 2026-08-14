@@ -1,0 +1,318 @@
+{
+  "schemaVersion": "celebratedeal-g7-06-interaction-roles-browser-qa/v1",
+  "workPackage": "G7-06",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "04ef6526316ec20d",
+  "startedAt": "2026-08-08T06:20:27.506Z",
+  "finishedAt": "2026-08-08T06:23:17.600Z",
+  "sourceDigest": "5c9a98ce420439d48daf10b9ac029ad31a7fdf083fc3980701ec49eccc7a5b5b",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0,
+      "stdout": [
+        "\"Layers\": [",
+        "\"sha256:34884abbe92863fce933ed7c39c0e045631af0ed86d5cc0dfbdf9fdca426ce3c\",",
+        "\"sha256:231c02c91f2285a1fef628d27ceb02a91e921bdfa16103e9c1105241b8030642\",",
+        "\"sha256:e2a8fa6021696efdcc18ca582330c84a76b7325b601f1206cfed20f6e98748a7\",",
+        "\"sha256:9794f6247f9c9b36571a1d7e0f92322b1734d2b66f7a3c55384619fcd7c55d26\",",
+        "\"sha256:14fb7039a80c9e7d8243950e45adcfce35f3216cacd5ac4cd4c111a9abe9fa32\",",
+        "\"sha256:ee0e728fcad6f71cd94714721578ced0310bfb6b502e8eadeb60e439a0ac747e\",",
+        "\"sha256:41cb066ebb68901a2aa950650706bc221bd40a33f6e4676d9d0c03323ae76370\",",
+        "\"sha256:3eae40ad6fdbcaf9b5a5a7352b255d318b055181a899979620088de7bf938632\",",
+        "\"sha256:e6b4db70130d979021458a797bb724921d77d0a24d192827ba26292fea63a273\",",
+        "\"sha256:2701a6b963e294f0f255f36bce0f6195ea848dc9dcffa0905857cea52f6b6da9\",",
+        "\"sha256:d3dd47b8ca0026cc6b35071e71ece7767ce5f20d55c7a2b91dfdf0689d521e31\"",
+        "]",
+        "},",
+        "\"Metadata\": {",
+        "\"LastTagTime\": \"2026-06-25T17:24:00.772466157Z\"",
+        "},",
+        "\"Descriptor\": {",
+        "\"mediaType\": \"application/vnd.oci.image.index.v1+json\",",
+        "\"digest\": \"sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb\",",
+        "\"size\": 10301",
+        "}",
+        "}",
+        "]"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "docker run disposable postgres tmpfs",
+      "exitCode": 0,
+      "stdout": [
+        "a2e78c5c7a71ed7fcbf4f8173eb83476948832795461218fae9a0ce64d42039c"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "docker port",
+      "exitCode": 0,
+      "stdout": [
+        "127.0.0.1:51400"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0,
+      "stdout": [
+        "Prisma schema loaded from prisma\\schema.prisma",
+        "✔ Generated Prisma Client (v6.19.3) to .\\node_modules\\@prisma\\client in 959ms",
+        "Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)",
+        "Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints"
+      ],
+      "stderr": [
+        "Loaded Prisma config from prisma.g7-interaction-roles.config.mjs.",
+        "Prisma config detected, skipping environment variable loading."
+      ]
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0,
+      "stdout": [
+        "Prisma schema loaded from prisma\\schema.prisma",
+        "The schema at prisma\\schema.prisma is valid 🚀"
+      ],
+      "stderr": [
+        "Loaded Prisma config from prisma.g7-interaction-roles.config.mjs.",
+        "Prisma config detected, skipping environment variable loading."
+      ]
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0,
+      "stdout": [
+        "└─ migration.sql",
+        "└─ 20260808010000_live_product_tenant_binding/",
+        "└─ migration.sql",
+        "└─ 20260808020000_live_resource_tenant_binding/",
+        "└─ migration.sql",
+        "└─ 20260808030000_stream_usage_attribution_allocation/",
+        "└─ migration.sql",
+        "└─ 20260808040000_partner_live_share/",
+        "└─ migration.sql",
+        "└─ 20260808050000_platform_referral_dispute_ledger/",
+        "└─ migration.sql",
+        "└─ 20260808060000_payment_method_reference/",
+        "└─ migration.sql",
+        "└─ 20260808070000_merchant_payout_outcome_reference/",
+        "└─ migration.sql",
+        "└─ 20260808073000_affiliate_payout_outcome_reference/",
+        "└─ migration.sql",
+        "└─ 20260808080000_g7_03_media_assets/",
+        "└─ migration.sql",
+        "└─ 20260808094500_g7_03_live_studio_drafts/",
+        "└─ migration.sql",
+        "└─ 20260808110000_g7_04_commerce_orders/",
+        "└─ migration.sql",
+        "All migrations have been successfully applied."
+      ],
+      "stderr": [
+        "Loaded Prisma config from prisma.g7-interaction-roles.config.mjs.",
+        "Prisma config detected, skipping environment variable loading."
+      ]
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0,
+      "stdout": [
+        "Prisma schema loaded from prisma\\schema.prisma",
+        "Datasource \"db\": PostgreSQL database \"celebratedeal_test\", schema \"g7_06_browser_04ef6526316ec20d\" at \"127.0.0.1:51400\"",
+        "37 migrations found in prisma/migrations",
+        "Database schema is up to date!"
+      ],
+      "stderr": [
+        "Loaded Prisma config from prisma.g7-interaction-roles.config.mjs.",
+        "Prisma config detected, skipping environment variable loading."
+      ]
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0,
+      "stdout": [
+        "├ ● /policies/[slug]",
+        "│ ├ /policies/terms",
+        "│ ├ /policies/privacy",
+        "│ └ /policies/refunds",
+        "├ ƒ /products",
+        "├ ƒ /products/[id]/edit",
+        "├ ƒ /products/new",
+        "├ ƒ /r/[code]",
+        "├ ƒ /settings/brand",
+        "├ ƒ /settings/security",
+        "├ ƒ /settings/team",
+        "├ ƒ /settings/tracking",
+        "├ ○ /support",
+        "├ ƒ /team-performance",
+        "├ ƒ /team-template",
+        "├ ƒ /team-templates",
+        "├ ƒ /team-templates/[id]/edit",
+        "├ ƒ /team-templates/new",
+        "├ ƒ /videos",
+        "├ ƒ /videos/[id]/edit",
+        "└ ƒ /videos/new",
+        "○  (Static)   prerendered as static content",
+        "●  (SSG)      prerendered as static HTML (uses generateStaticParams)",
+        "ƒ  (Dynamic)  server-rendered on demand"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0,
+      "stdout": [],
+      "stderr": []
+    },
+    {
+      "name": "playwright chromium",
+      "exitCode": 1,
+      "stdout": [
+        "\"attachments\": []",
+        "}",
+        "],",
+        "\"status\": \"expected\"",
+        "}",
+        "],",
+        "\"id\": \"cfb5a4d8d976397e3973-ea953db443ddefe14563\",",
+        "\"file\": \"g7-interaction-roles-browser.spec.ts\",",
+        "\"line\": 72,",
+        "\"column\": 5",
+        "}",
+        "]",
+        "}",
+        "],",
+        "\"errors\": [],",
+        "\"stats\": {",
+        "\"startTime\": \"2026-08-08T06:22:32.638Z\",",
+        "\"duration\": 40070.318,",
+        "\"expected\": 2,",
+        "\"skipped\": 0,",
+        "\"unexpected\": 2,",
+        "\"flaky\": 0",
+        "}",
+        "}"
+      ],
+      "stderr": []
+    }
+  ],
+  "expected": {
+    "browserTests": 4,
+    "axeCriticalOrSerious": 0,
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "contracts": [
+      "roles",
+      "create-edit-toggle",
+      "pending-dedup",
+      "timeline-four-event-types",
+      "draft-publish",
+      "preview",
+      "public-disclosure",
+      "tenant-404"
+    ]
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 2,
+    "failed": 2,
+    "skipped": 0,
+    "axeCriticalOrSerious": -1,
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "NOT_RUN"
+    },
+    "keyboard": "NOT_RUN",
+    "roles": "NOT_RUN",
+    "script": "NOT_RUN",
+    "publicLive": "NOT_RUN",
+    "tenant": "PASS",
+    "pending": "NOT_RUN",
+    "axe": {
+      "criticalOrSerious": -1
+    }
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "d844581a94a68c1c4753d155c3dea7d9bd1e8282c04712a4deea1737b21452dc"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "f5c604dd937387019999b2cb1d2ef2ac9b89f31d1f29d64a6d9a6b118c539181"
+    }
+  },
+  "diagnostics": {
+    "failureClass": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      {
+        "title": "g7-interaction-roles-browser.spec.ts > 角色可編輯、啟停，且 pending 按鈕防止重送",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: element(s) not found",
+          "Call log:",
+          "- Expect \"toHaveText\" with timeout 15000ms",
+          "- waiting for getByRole('button', { name: '儲存', exact: true })",
+          "- locator resolved to <button type=\"submit\" aria-busy=\"false\" aria-disabled=\"false\" class=\"inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60\">…</button>",
+          "- unexpected value \"儲存\"",
+          "Error: expect(locator).toHaveText(expected) failed",
+          "Locator: getByRole('button', { name: '儲存', exact: true })",
+          "Expected: \"儲存中…\"",
+          "Timeout: 15000ms",
+          "Error: element(s) not found",
+          "Call log:"
+        ]
+      },
+      {
+        "title": "g7-interaction-roles-browser.spec.ts > 草稿與發布分離，四種事件時間軸可見，preview 與公開透明標示",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toBeVisible() failed",
+          "Locator: getByText('G7-06 公開腳本', { exact: true })",
+          "Expected: visible",
+          "Timeout: 15000ms",
+          "Error: element(s) not found",
+          "Call log:",
+          "- Expect \"toBeVisible\" with timeout 15000ms",
+          "- waiting for getByText('G7-06 公開腳本', { exact: true })",
+          "Error: expect(locator).toBeVisible() failed",
+          "Locator: getByText('G7-06 公開腳本', { exact: true })",
+          "Expected: visible",
+          "Timeout: 15000ms"
+        ]
+      },
+      "interaction-roles-browser-contract-failed"
+    ]
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "committedMigrationsOnly": true,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "failure": "interaction-roles-browser-contract-failed"
+}

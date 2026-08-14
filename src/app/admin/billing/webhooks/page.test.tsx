@@ -69,6 +69,8 @@ describe("/admin/billing/webhooks route", () => {
     expect(html).toContain("payuni");
     expect(html).toContain("synthetic validation failure");
     expect(html).toContain("Retry");
+    expect(html.match(/aria-busy="false"/gu) ?? []).toHaveLength(1);
+    expect(html).toContain('aria-disabled="false"');
     expect(html).toContain("查看");
     expect(html).toContain("事件列表");
   });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   affiliate: { findFirst: vi.fn() },
@@ -17,6 +17,7 @@ import {
   ATTRIBUTION_TTL_SECONDS,
   attributionCookieFromRequest,
   encodeAttributionCookie,
+  liveShareCodeFromRequest,
   resolveReferral,
   resolveTeamFunnelAttribution,
   sourcePageSlugFromRequest,
@@ -24,7 +25,12 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("CSRF_SECRET", "team-funnel-attribution-test-secret-over-32-bytes");
   db.affiliate.findFirst.mockResolvedValue({ id: "affiliate-b" });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("team funnel attribution", () => {
@@ -61,13 +67,19 @@ describe("team funnel attribution", () => {
       now,
     });
 
-    expect(referral).toEqual({ code: "B-CODE", affiliateId: "affiliate-b", visitorId: "visitor-1", source: "cookie" });
+    expect(referral).toEqual({
+      code: "B-CODE",
+      affiliateId: "affiliate-b",
+      visitorId: "visitor-1",
+      clickId: "click-1",
+      source: "cookie",
+    });
     expect(db.affiliateClick.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "click-1", visitorId: "visitor-1" }),
     }));
 
     const expired = new Request("https://app.example.test/form", {
-      headers: { cookie: `celebratedeal_attribution=${encodeAttributionCookie({ clickId: "old", visitorId: "visitor", issuedAt: now.getTime() - (ATTRIBUTION_TTL_SECONDS + 1) * 1000 })}` },
+      headers: { cookie: `celebratedeal_attribution=${encodeAttributionCookie({ clickId: "old", visitorId: "visitor-12345678901234567890", issuedAt: now.getTime() - (ATTRIBUTION_TTL_SECONDS + 1) * 1000 })}` },
     });
     expect(attributionCookieFromRequest(expired, now.getTime())).toBeNull();
   });
@@ -120,7 +132,8 @@ describe("team funnel attribution", () => {
     expect(db.live.findFirst).not.toHaveBeenCalled();
   });
 
-  it("only derives a source page from the API origin", () => {
+  it("uses a same-origin playback query before the browser Referer", () => {
+    const playbackQuery = new Request("https://app.example.test/api/form-submissions?sourcePage=B-page");
     const sameOrigin = new Request("https://app.example.test/api/form-submissions", {
       headers: { referer: "https://app.example.test/funnel/b-page?ref=B-CODE" },
     });
@@ -128,8 +141,20 @@ describe("team funnel attribution", () => {
       headers: { referer: "https://attacker.example.test/funnel/b-page?ref=B-CODE" },
     });
 
+    expect(sourcePageSlugFromRequest(playbackQuery)).toBe("b-page");
     expect(sourcePageSlugFromRequest(sameOrigin)).toBe("b-page");
     expect(sourcePageSlugFromRequest(foreignOrigin)).toBeNull();
+  });
+
+  it("accepts a Live share token only from the request or a trusted same-origin Referer", () => {
+    const share = "tls1.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012";
+    expect(liveShareCodeFromRequest(new Request(`https://app.example.test/live/webinar?share=${share}`))).toBe(share);
+    expect(liveShareCodeFromRequest(new Request("https://app.example.test/api/affiliate-clicks", {
+      headers: { referer: `https://app.example.test/live/webinar?share=${share}` },
+    }))).toBe(share);
+    expect(liveShareCodeFromRequest(new Request("https://app.example.test/api/affiliate-clicks", {
+      headers: { referer: `https://attacker.example.test/live/webinar?share=${share}` },
+    }))).toBeNull();
   });
 
   it("requires the source page to be bound to the submitted webinar", async () => {

@@ -129,7 +129,13 @@ test("active accountant is denied the lives index before live relationships are 
       where: { vendorId_userId: { vendorId: vendor.id, userId: user.id } },
     }),
     db.liveProduct.findUniqueOrThrow({
-      where: { liveId_productId: { liveId: live.id, productId: product.id } },
+      where: {
+        vendorId_liveId_productId: {
+          vendorId: vendor.id,
+          liveId: live.id,
+          productId: product.id,
+        },
+      },
     }),
   ]);
 

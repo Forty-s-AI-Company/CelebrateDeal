@@ -3,6 +3,11 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import {
+  hasActiveLiveViewerSession,
+  hashLiveViewerToken,
+  liveViewerTokenFromRequest,
+} from "@/lib/live-quota-admission";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -12,7 +17,6 @@ const ReferralCode = z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/).nullabl
 const analyticsBase = {
   vendorId: AnalyticsId,
   liveId: AnalyticsId,
-  visitorId: AnalyticsId,
 };
 
 const AnalyticsPayload = z.discriminatedUnion("eventType", [
@@ -58,7 +62,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const live = await getDb().live.findFirst({
+  const token = liveViewerTokenFromRequest(request);
+  if (!token) {
+    return NextResponse.json(
+      { error: "Verified playback session required" },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
+
+  const db = getDb();
+  const admitted = await hasActiveLiveViewerSession(db, {
+    vendorId: parsed.data.vendorId,
+    liveId: parsed.data.liveId,
+    token,
+  });
+  if (!admitted) {
+    return NextResponse.json(
+      { error: "Verified playback session required" },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
+  const verifiedSessionId = hashLiveViewerToken(token);
+
+  const live = await db.live.findFirst({
     where: {
       id: parsed.data.liveId,
       vendorId: parsed.data.vendorId,
@@ -74,7 +100,7 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.eventType === "product_click") {
-    const liveProduct = await getDb().liveProduct.findFirst({
+    const liveProduct = await db.liveProduct.findFirst({
       where: {
         liveId: parsed.data.liveId,
         productId: parsed.data.payload.productId,
@@ -90,25 +116,27 @@ export async function POST(request: Request) {
     }
   }
 
-  await getDb().analyticsEvent.create({
+  await db.analyticsEvent.create({
     data: {
       vendorId: parsed.data.vendorId,
       liveId: parsed.data.liveId,
-      visitorId: parsed.data.visitorId,
+      visitorId: verifiedSessionId,
       eventType: parsed.data.eventType,
+      trustLevel: "ADMITTED_LIVE_SESSION",
       payload: parsed.data.payload as Prisma.InputJsonValue,
     },
   });
 
   await captureProductEvent({
-    distinctId: parsed.data.visitorId,
+    distinctId: verifiedSessionId,
     event: parsed.data.eventType,
     properties: {
       vendorId: parsed.data.vendorId,
       liveId: parsed.data.liveId,
+      sourceTrust: "admitted_live_session",
       ...parsed.data.payload,
     },
   }).catch(() => null);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, verified: true });
 }

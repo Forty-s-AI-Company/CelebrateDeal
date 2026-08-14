@@ -1,6 +1,10 @@
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WP147_CONSTANTS, exclusionReason, serializeWp147Receipt, validateWp147Receipt } from './wp147-hermetic-next-build-runner.mjs';
+import { WP147_CONSTANTS, copyTree, exclusionReason, markerSnapshot, networkDenySource, receiptLineage, sanitizer, scoreImpact, serializeWp147Receipt, validateWp147Receipt } from './wp147-hermetic-next-build-runner.mjs';
 
 const sha = `sha256:${'c'.repeat(64)}`;
 function fixture() {
@@ -25,3 +29,58 @@ test('sanitized failure fixture validates and serializes', () => { const receipt
 test('raw output and absolute paths are rejected', () => { const receipt = fixture(); receipt.rawOutput = 'forbidden'; receipt.diagnostic.relativePath = 'C:\\bad.txt'; const result = validateWp147Receipt(receipt); assert.equal(result.ok, false); assert.ok(result.errors.includes('root:UNKNOWN_FIELD')); assert.ok(result.errors.includes('diagnostic.relativePath:INVALID')); });
 test('WP144 attempt cannot be represented as a WP147 retry', () => { const receipt = fixture(); receipt.build.attempts = 2; assert.equal(validateWp147Receipt(receipt).ok, false); });
 test('serializer import is side-effect free', () => { assert.equal(typeof serializeWp147Receipt, 'function'); });
+
+// COV-08 BEGIN
+test('WP147 sanitizer keeps bounded diagnostic attribution', () => {
+  const output = sanitizer();
+  output.consume('webpack Error: Cannot find module in src/app/page.tsx at 12:34\nconst CheckoutPage');
+  assert.deepEqual(output.finish(), {
+    phase: 'webpack',
+    errorFamily: 'MODULE_RESOLUTION',
+    errorCode: 'MODULE_NOT_FOUND',
+    relativePath: 'src/app/page.tsx',
+    symbol: 'CheckoutPage',
+    span: '12:34',
+    source: 'stream_sanitizer'
+  });
+});
+
+test('WP147 network deny source and score helper encode fail-closed policy', () => {
+  const deny = networkDenySource();
+  assert.match(deny, /WP147_NETWORK_DENIED/);
+  assert.match(deny, /global\.fetch=deny/);
+  assert.deepEqual(scoreImpact(false), { CAT09: { before: 6.5, after: 6.5 }, total: { before: 71, after: 71 } });
+  assert.deepEqual(scoreImpact(true), { CAT09: { before: 6.5, after: 7 }, total: { before: 71, after: 71.5 } });
+});
+
+test('WP147 copyTree and marker snapshot use a disposable mirror and exclude unsafe paths', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'celebratedeal-wp147-copy-'));
+  const source = path.join(root, 'source');
+  const destination = path.join(root, 'destination');
+  await fsp.mkdir(path.join(source, 'src'), { recursive: true });
+  await fsp.mkdir(path.join(source, '.next'), { recursive: true });
+  await fsp.writeFile(path.join(source, 'src', 'page.tsx'), 'export default function Page() {}');
+  await fsp.writeFile(path.join(source, '.env.local'), 'synthetic=never-read');
+  await fsp.writeFile(path.join(source, '.next', 'BUILD_ID'), 'generated');
+  const stats = { dotenvCopied: false, reparseSkipped: 0, forbiddenPathsCopied: 0, filesCopied: 0, directoriesCopied: 0 };
+  try {
+    await copyTree(source, destination, stats);
+    assert.equal(fs.existsSync(path.join(destination, 'src', 'page.tsx')), true);
+    assert.equal(fs.existsSync(path.join(destination, '.env.local')), false);
+    assert.equal(stats.filesCopied, 1);
+    await fsp.mkdir(path.join(destination, '.next'), { recursive: true });
+    await fsp.writeFile(path.join(destination, '.next', 'BUILD_ID'), 'build');
+    const marker = await markerSnapshot(destination);
+    assert.equal(marker.buildId, true);
+    assert.equal(marker.routesManifest, false);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('WP147 receipt lineage hashes only the fixed source/config inputs', async () => {
+  const lineage = await receiptLineage(sha);
+  assert.equal(lineage.wp144Receipt, sha);
+  assert.match(lineage.sourceConfigPackageLockfile, /^sha256:[0-9a-f]{64}$/);
+});
+// COV-08 END

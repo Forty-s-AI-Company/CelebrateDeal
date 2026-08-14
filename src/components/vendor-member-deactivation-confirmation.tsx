@@ -1,4 +1,5 @@
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 
 type VendorMemberDeactivationAction = (formData: FormData) => void | Promise<void>;
 
@@ -44,7 +45,13 @@ export function VendorMemberDeactivationConfirmation({
           required
         />
       </label>
-      <button className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">確認停用</button>
+      <FormSubmitButton
+        pendingChildren="停用中…"
+        pendingMessage={`正在停用 ${member.user.name} 的商家權限並撤銷 session，請勿重複送出。`}
+        className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+      >
+        確認停用
+      </FormSubmitButton>
     </form>
   );
 }

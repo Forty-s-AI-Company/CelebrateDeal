@@ -4,30 +4,73 @@ const db = {
   product: { findFirst: vi.fn() },
   affiliateClick: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
-  paymentTransaction: { create: vi.fn(), update: vi.fn() },
+  paymentTransaction: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
 };
 
 const inventoryMocks = vi.hoisted(() => {
   class InventoryUnavailableError extends Error {}
+  class ProductChangedError extends Error {}
+  class CheckoutIdempotencyConflictError extends Error {
+    constructor(public readonly transactionId: string) {
+      super("Checkout idempotency key is already in use.");
+    }
+  }
   return {
     InventoryUnavailableError,
+    ProductChangedError,
+    CheckoutIdempotencyConflictError,
     createReservedPaymentTransaction: vi.fn(),
     failPendingCheckoutAndReleaseInventory: vi.fn(),
   };
 });
 
 const createCheckoutSession = vi.fn();
+const checkoutReadiness = vi.fn();
+const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }));
+const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
+const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
+const admissionMocks = vi.hoisted(() => ({
+  checkoutSessionTokenFromRequest: vi.fn(),
+  verifyCheckoutAdmission: vi.fn(),
+}));
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 vi.mock("@/lib/payment-providers", () => ({
-  getPaymentProvider: () => ({ id: "demo", createCheckoutSession }),
+  getPaymentProvider: paymentProviderMocks.getPaymentProvider,
 }));
 vi.mock("@/lib/inventory-reservations", () => inventoryMocks);
+vi.mock("@/lib/commerce-orders", () => commerceOrderMocks);
+vi.mock("@/lib/buyer-support-access", () => ({
+  issueBuyerSupportGrant: buyerSupportMocks.issueBuyerSupportGrant,
+  buyerSupportCookieOptions: ({ expiresAt, secure }: { expiresAt: Date; secure: boolean }) => ({
+    httpOnly: true, sameSite: "lax", secure, path: "/", expires: expiresAt,
+  }),
+}));
+vi.mock("@/lib/checkout-admission", () => admissionMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
+import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
+import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
 
-function checkoutRequest(cookie?: string, body: Record<string, unknown> = { vendorId: "vendor-1", productId: "product-1" }) {
+const idempotencyKey = "123e4567-e89b-12d3-a456-426614174000";
+const admissionToken = `ca1.${"a".repeat(64)}.${"b".repeat(43)}`;
+const buyer = { name: "王小明", email: "buyer@example.test", phone: "0912345678" };
+const shipping = {
+  recipientName: "王小明",
+  phone: "0912345678",
+  countryCode: "TW",
+  postalCode: "100",
+  administrativeArea: "台北市",
+  locality: "中正區",
+  addressLine1: "測試路 1 號",
+};
+
+function identityHash(input = { buyer, shipping }) {
+  return createCommerceOrderIdentityHash(input, "vendor-1");
+}
+
+function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}) {
   return new Request("https://app.example.test/api/payments/checkout", {
     method: "POST",
     headers: {
@@ -37,12 +80,21 @@ function checkoutRequest(cookie?: string, body: Record<string, unknown> = { vend
       "x-celebratedeal-client": "web",
       ...(cookie ? { cookie } : {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      vendorId: "vendor-1",
+      productId: "product-1",
+      idempotencyKey,
+      admissionToken,
+      buyer,
+      shipping,
+      ...body,
+    }),
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("CSRF_SECRET", "checkout-route-test-secret-that-is-at-least-32-bytes");
   db.product.findFirst.mockResolvedValue({
     id: "product-1",
     name: "Test product",
@@ -50,15 +102,47 @@ beforeEach(() => {
     inventory: 3,
     priceCents: 1200,
     currency: "TWD",
+    fulfillmentType: "physical",
+    commerceDomain: "merchant",
+    courseContentOwnerMembershipId: null,
+    coursePromoterShareBps: null,
+    coursePolicyVersion: 1,
+    revision: 4,
+    checkoutUrl: null,
+    deliveryConfig: null,
     vendor: { id: "vendor-1" },
   });
   db.affiliateClick.findFirst.mockResolvedValue(null);
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1" });
-  db.paymentTransaction.create.mockResolvedValue({ id: "transaction-1" });
+  db.paymentTransaction.findUnique.mockResolvedValue(null);
+  db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
-  inventoryMocks.createReservedPaymentTransaction.mockImplementation(
-    ({ transactionData }: { transactionData: unknown }) => db.paymentTransaction.create({ data: transactionData }),
-  );
+  checkoutReadiness.mockReturnValue("local_only");
+  paymentProviderMocks.getPaymentProvider.mockReturnValue({ id: "demo", checkoutReadiness, createCheckoutSession });
+  commerceOrderMocks.createCommerceOrderForCheckout.mockResolvedValue({ id: "order-1" });
+  buyerSupportMocks.issueBuyerSupportGrant.mockResolvedValue({
+    name: `celebrate_support_${"a".repeat(32)}`,
+    value: "b".repeat(43),
+    expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+  });
+  admissionMocks.checkoutSessionTokenFromRequest.mockReturnValue("s".repeat(43));
+  admissionMocks.verifyCheckoutAdmission.mockReturnValue({
+    vendorId: "vendor-1",
+    productId: "product-1",
+    productRevision: 4,
+    idempotencyKey,
+    expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+  });
+  inventoryMocks.createReservedPaymentTransaction.mockImplementation(async (
+    { transactionData, createCommerceOrder }: {
+      transactionData: unknown;
+      createCommerceOrder?: (tx: unknown, transaction: Record<string, unknown>) => Promise<void>;
+    },
+  ) => {
+    const transaction = await db.paymentTransaction.create({ data: transactionData });
+    if (createCommerceOrder) await createCommerceOrder({ transaction: true }, transaction);
+    return transaction;
+  });
   inventoryMocks.failPendingCheckoutAndReleaseInventory.mockImplementation(
     ({ transactionId }: { transactionId: string }) => db.paymentTransaction.update({
       where: { id: transactionId },
@@ -78,7 +162,7 @@ afterEach(() => {
 });
 
 function attributionCookie(value: { clickId: string; visitorId: string; issuedAt: number }) {
-  return `celebratedeal_attribution=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
+  return `celebratedeal_attribution=${encodeAttributionCookie(value)}`;
 }
 
 function expectNoAffiliateAttribution() {
@@ -91,6 +175,120 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("requires a bounded caller idempotency key", async () => {
+    const response = await POST(checkoutRequest(undefined, { idempotencyKey: undefined }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid checkout request" });
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects a direct checkout without a server-issued admission before reading products", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValueOnce(null);
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout admission expired or invalid" });
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an admission rebound to another product, vendor, or idempotency key", async () => {
+    for (const binding of [
+      { vendorId: "vendor-2", productId: "product-1", idempotencyKey },
+      { vendorId: "vendor-1", productId: "product-2", idempotencyKey },
+      { vendorId: "vendor-1", productId: "product-1", idempotencyKey: "223e4567-e89b-12d3-a456-426614174000" },
+    ]) {
+      admissionMocks.verifyCheckoutAdmission.mockReturnValueOnce({
+        ...binding,
+        productRevision: 4,
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      });
+      const response = await POST(checkoutRequest());
+      expect(response.status).toBe(409);
+    }
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a new checkout when the product revision changed after admission", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValueOnce({
+      vendorId: "vendor-1",
+      productId: "product-1",
+      productRevision: 3,
+      idempotencyKey,
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Product changed; reload checkout" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("fails before creating an order or reserving stock when the provider is unavailable", async () => {
+    checkoutReadiness.mockReturnValueOnce("unavailable");
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout is temporarily unavailable" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded response without writes when the configured provider is unsupported", async () => {
+    paymentProviderMocks.getPaymentProvider.mockImplementationOnce(() => {
+      throw new Error("unsupported provider: synthetic-config-detail");
+    });
+
+    const response = await POST(checkoutRequest());
+    const serializedResponse = await response.text();
+
+    expect(response.status).toBe(503);
+    expect(serializedResponse).toBe('{"error":"Checkout is temporarily unavailable"}');
+    expect(serializedResponse).not.toContain("synthetic-config-detail");
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("does not allow the synthetic demo checkout to create production orders", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(503);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("fails and releases the reservation when a ready provider returns no payment destination", async () => {
+    checkoutReadiness.mockReturnValueOnce("ready");
+    createCheckoutSession.mockResolvedValueOnce({
+      provider: "payuni",
+      mode: "manual",
+      checkoutUrl: null,
+      nextAction: "provider_checkout_adapter_pending",
+      externalRequired: true,
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "Unable to start checkout" });
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+    expect(inventoryMocks.failPendingCheckoutAndReleaseInventory).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      transactionId: "transaction-1",
+      reason: "provider_checkout_failed",
+    });
+    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects a client-marked checkout with no same-origin evidence before reading products", async () => {
     const response = await POST(new Request("https://app.example.test/api/payments/checkout", {
       method: "POST",
@@ -110,7 +308,7 @@ describe("successful checkout response", () => {
   it("prevents caching while preserving the checkout payload", async () => {
     createCheckoutSession.mockResolvedValue({
       provider: "demo",
-      mode: "form",
+      mode: "form_post",
       checkoutUrl: "https://provider.example.test/checkout/fake-provider-session-token",
       formAction: "https://provider.example.test/submit",
       formMethod: "POST",
@@ -123,6 +321,11 @@ describe("successful checkout response", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("set-cookie")).toContain(`celebrate_support_${"a".repeat(32)}`);
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(buyerSupportMocks.issueBuyerSupportGrant).toHaveBeenCalledWith(db, expect.objectContaining({
+      vendorId: "vendor-1", orderId: "order-1",
+    }));
     await expect(response.json()).resolves.toStrictEqual({
       ok: true,
       provider: "demo",
@@ -148,9 +351,314 @@ describe("successful checkout response", () => {
         id: "product-1",
         vendorId: "vendor-1",
         isActive: true,
+        fulfillmentTypeConfirmed: true,
+        priceCents: { gt: 0 },
       },
-      include: { vendor: true },
+      include: {
+        vendor: true,
+        deliveryConfig: { select: { id: true, status: true, fulfillmentType: true } },
+      },
     });
+  });
+
+  it("fails closed when an external-checkout product calls the internal payment API", async () => {
+    db.product.findFirst.mockResolvedValueOnce({ ...(await db.product.findFirst()), checkoutUrl: "https://external.example.test/buy" });
+    const response = await POST(checkoutRequest());
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "External checkout required" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("fails before stock reservation when a non-physical product has no active delivery config", async () => {
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      fulfillmentType: "digital",
+      deliveryConfig: null,
+    });
+
+    const response = await POST(checkoutRequest(undefined, { shipping: null }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Product delivery is not ready" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("asks the buyer to reload when the product changes before stock reservation", async () => {
+    inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(new inventoryMocks.ProductChangedError());
+    const response = await POST(checkoutRequest());
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Product changed; reload checkout" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("validates fulfillment-specific PII before reserving stock", async () => {
+    const missingShipping = await POST(checkoutRequest(undefined, { shipping: null }));
+    expect(missingShipping.status).toBe(400);
+
+    const malformedBuyer = await POST(checkoutRequest(undefined, {
+      buyer: { name: "王小明", email: "not-an-email", phone: "0912345678" },
+    }));
+    expect(malformedBuyer.status).toBe(400);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("creates the canonical order inside the stock/payment transaction without plaintext PII metadata", async () => {
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        vendorId: "vendor-1",
+        productId: "product-1",
+        paymentTransactionId: "transaction-1",
+        buyer,
+        shipping,
+      }),
+    );
+    const metadata = db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata;
+    expect(JSON.stringify(metadata)).not.toContain(buyer.email);
+    expect(JSON.stringify(metadata)).not.toContain(shipping.addressLine1);
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ expectedProductRevision: 4 }));
+  });
+
+  it("locks a course policy snapshot into trusted checkout metadata", async () => {
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      fulfillmentType: "course",
+      commerceDomain: "course",
+      courseContentOwnerMembershipId: "membership-f",
+      coursePromoterShareBps: 2_500,
+      coursePolicyVersion: 6,
+      deliveryConfig: { id: "delivery-config-1", status: "active", fulfillmentType: "course" },
+    });
+    const response = await POST(checkoutRequest(undefined, { shipping: null }));
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
+      coursePolicySnapshot: { productId: "product-1", contentOwnerMembershipId: "membership-f", promoterShareBps: 2_500, policyVersion: 6 },
+    });
+  });
+
+  it("replays the persisted checkout session without creating a second transaction or provider session", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: {
+        productId: "product-1",
+        checkoutSession: {
+          provider: "demo",
+          mode: "manual",
+          formPayload: { orderNumber: "CD-20260807120000-ABC123", transactionId: "transaction-existing" },
+          nextAction: "demo_checkout_transaction_created",
+          externalRequired: false,
+        },
+      },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      transactionId: "transaction-existing",
+      orderNumber: "CD-20260807120000-ABC123",
+      formPayload: { transactionId: "transaction-existing" },
+    });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded finished response when a paid checkout is retried", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-paid",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-PAID01",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "paid",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: { productId: "product-1" },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout request already finished" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("replays an existing checkout without resolving the current provider", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: {
+        productId: "product-1",
+        checkoutSession: {
+          provider: "demo",
+          mode: "manual",
+          formPayload: { orderNumber: "CD-20260807120000-ABC123", transactionId: "transaction-existing" },
+          nextAction: "demo_checkout_transaction_created",
+          externalRequired: false,
+        },
+      },
+    });
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ transactionId: "transaction-existing" });
+    expect(paymentProviderMocks.getPaymentProvider).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an idempotency key is bound to another product", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: { productId: "another-product" },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Idempotency key already used for another checkout" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an idempotency replay when buyer or shipping identity changes", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: { productId: "product-1" },
+    });
+
+    const response = await POST(checkoutRequest(undefined, {
+      buyer: { ...buyer, email: "different@example.test" },
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Idempotency key already used for another checkout" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded in-progress response when a concurrent winner has not persisted provider metadata yet", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      metadata: { productId: "product-1" },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(425);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout already in progress" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps the same checkout identity while the concurrent canonical order is not visible yet", async () => {
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: null,
+      metadata: {
+        productId: "product-1",
+        checkoutSession: {
+          provider: "demo",
+          mode: "manual",
+          nextAction: "demo_checkout_transaction_created",
+          externalRequired: false,
+        },
+      },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(425);
+    await expect(response.json()).resolves.toEqual({ error: "Checkout already in progress" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(buyerSupportMocks.issueBuyerSupportGrant).not.toHaveBeenCalled();
+  });
+
+  it("replays the same checkout after buyer support access briefly fails", async () => {
+    db.paymentTransaction.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "transaction-1",
+        vendorId: "vendor-1",
+        providerName: "demo",
+        checkoutIdempotencyKey: idempotencyKey,
+        orderNumber: "CD-20260807120000-ABC123",
+        grossAmountCents: 1200,
+        currency: "TWD",
+        status: "pending",
+        primaryCommerceOrder: { id: "order-1", checkoutIdentityHash: identityHash() },
+        metadata: {
+          productId: "product-1",
+          checkoutSession: {
+            provider: "demo",
+            mode: "manual",
+            nextAction: "demo_checkout_transaction_created",
+            externalRequired: false,
+          },
+        },
+      });
+    buyerSupportMocks.issueBuyerSupportGrant.mockRejectedValueOnce(new Error("synthetic support grant outage"));
+
+    const first = await POST(checkoutRequest());
+    expect(first.status).toBe(503);
+    await expect(first.json()).resolves.toEqual({ error: "Checkout support access unavailable" });
+
+    const retry = await POST(checkoutRequest());
+    expect(retry.status).toBe(200);
+    await expect(retry.json()).resolves.toMatchObject({ transactionId: "transaction-1" });
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(buyerSupportMocks.issueBuyerSupportGrant).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -162,7 +670,7 @@ describe("checkout affiliate click attribution", () => {
       id: "click-1",
       affiliateId: "affiliate-1",
       referralCode: "VALIDCODE",
-      affiliate: { code: "VALIDCODE" },
+      affiliate: { code: "VALIDCODE", vendorId: "vendor-1", isActive: true },
     });
 
     const response = await POST(checkoutRequest(
@@ -180,6 +688,62 @@ describe("checkout affiliate click attribution", () => {
       }),
     }));
     expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({ referralCode: "VALIDCODE" }));
+  });
+
+  it("stores a server-owned team click for conversion attribution without inventing affiliate commission", async () => {
+    db.affiliateClick.findFirst.mockResolvedValue({
+      id: "click-team-1",
+      affiliateId: null,
+      referralCode: null,
+      affiliate: null,
+      live: { quotaPolicy: { affiliateMode: "disabled" } },
+      teamAttribution: { id: "team-click-1" },
+    });
+
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "click-team-1", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1" },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: "click-team-1",
+        vendorId: "vendor-1",
+        visitorId,
+        OR: [
+          { affiliate: { is: { vendorId: "vendor-1", isActive: true } } },
+          { teamAttribution: { is: { vendorId: "vendor-1" } } },
+        ],
+      }),
+      select: expect.objectContaining({ teamAttribution: { select: { id: true } } }),
+    }));
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({ affiliateClickId: "click-team-1" }),
+      }),
+    }));
+    const metadata = db.paymentTransaction.create.mock.calls[0]?.[0].data.metadata;
+    expect(metadata).not.toHaveProperty("referralCode");
+    expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({ referralCode: undefined }));
+  });
+
+  it("fails closed when a live policy disables legacy affiliate attribution", async () => {
+    db.affiliateClick.findFirst.mockResolvedValue({
+      id: "click-1",
+      affiliateId: "affiliate-1",
+      referralCode: "VALIDCODE",
+      affiliate: { code: "VALIDCODE", vendorId: "vendor-1", isActive: true },
+      live: { quotaPolicy: { affiliateMode: "disabled" } },
+    });
+
+    const response = await POST(checkoutRequest(
+      `${attributionCookie({ clickId: "click-1", visitorId, issuedAt: Date.now() })}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1" },
+    ));
+
+    expect(response.status).toBe(200);
+    expectNoAffiliateAttribution();
   });
 
   it("does not use an attribution cookie for a different visitor", async () => {
@@ -225,6 +789,18 @@ describe("checkout affiliate click attribution", () => {
     expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
     expectNoAffiliateAttribution();
   });
+
+  it("ignores an unsigned legacy attribution cookie and still completes checkout", async () => {
+    const legacyValue = Buffer.from(JSON.stringify({ clickId: "click-1", visitorId, issuedAt: Date.now() })).toString("base64url");
+    const response = await POST(checkoutRequest(
+      `celebratedeal_attribution=${legacyValue}; celebratedeal_visitor=${visitorId}`,
+      { vendorId: "vendor-1", productId: "product-1" },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(db.affiliateClick.findFirst).not.toHaveBeenCalled();
+    expectNoAffiliateAttribution();
+  });
 });
 
 describe("checkout form submission attribution", () => {
@@ -254,7 +830,8 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
-    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+    expect(response.headers.getSetCookie()[0]).toContain("celebrate_support_");
   });
 
   it("checks out normally when the attribution cookie is missing", async () => {
@@ -265,7 +842,8 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
-    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+    expect(response.headers.getSetCookie()[0]).toContain("celebrate_support_");
   });
 
   it("ignores a malformed attribution cookie without blocking checkout", async () => {
@@ -276,7 +854,8 @@ describe("checkout form submission attribution", () => {
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything() }) }),
     }));
-    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+    expect(response.headers.getSetCookie()[0]).toContain("celebrate_support_");
   });
 });
 
@@ -296,6 +875,7 @@ describe("checkout provider failures", () => {
   it("fails the transaction without trusting the request Host when the production app URL is missing", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    checkoutReadiness.mockReturnValueOnce("ready");
 
     const response = await POST(checkoutRequest());
 

@@ -42,10 +42,14 @@ describe("sendTransactionalEmail", () => {
       to: "recipient@example.test",
       subject: "Test",
       text: "Safe body",
+      idempotencyKey: "registration-confirmed/delivery-1",
     })).resolves.toEqual({ id: "email-1" });
 
     expect(fetchMock).toHaveBeenCalledWith("https://api.resend.com/emails", expect.objectContaining({
       method: "POST",
+      headers: expect.objectContaining({
+        "Idempotency-Key": "registration-confirmed/delivery-1",
+      }),
       signal: expect.any(AbortSignal),
     }));
   });
@@ -80,5 +84,18 @@ describe("sendTransactionalEmail", () => {
       code: "network",
       providerStatus: null,
     });
+  });
+
+  it("rejects an invalid provider idempotency key before making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(sendTransactionalEmail({
+      to: "recipient@example.test",
+      subject: "Test",
+      text: "Safe body",
+      idempotencyKey: "x".repeat(257),
+    })).rejects.toMatchObject({ code: "configuration" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

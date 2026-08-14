@@ -36,7 +36,7 @@ const protectedPaths = [
   "package-lock.json",
 ];
 
-function runQuiet(command, args, environment, cwd = root) {
+export function runQuiet(command, args, environment, cwd = root) {
   const result = spawnSync(command, args, {
     cwd,
     env: environment,
@@ -48,7 +48,7 @@ function runQuiet(command, args, environment, cwd = root) {
   return { exitCode: result.status ?? 1, stdoutBytes: Buffer.byteLength(result.stdout ?? ""), stderrBytes: Buffer.byteLength(result.stderr ?? "") };
 }
 
-function syntheticEnvironment() {
+export function syntheticEnvironment() {
   return {
     PATH: process.env.PATH ?? "",
     SystemRoot: process.env.SystemRoot ?? "",
@@ -109,7 +109,7 @@ function protectedDigestSnapshot(base = root) {
   return Object.fromEntries(protectedPaths.filter((relativePath) => fs.existsSync(path.join(base, relativePath))).map((relativePath) => [relativePath, sha256File(relativePath, base)]));
 }
 
-function nextMetadataSnapshot() {
+export function nextMetadataSnapshot() {
   const target = path.join(root, ".next");
   if (!fs.existsSync(target)) return { exists: false, size: 0, mtimeMs: null };
   const stat = fs.statSync(target);
@@ -178,7 +178,7 @@ function diagnosticTransition(state, event, details = {}) {
   }
 }
 
-async function probeLoopbackBind(host, targetPort, netAdapter = net) {
+export async function probeLoopbackBind(host, targetPort, netAdapter = net) {
   return new Promise((resolve) => {
     const socket = netAdapter.createConnection({ host, port: targetPort });
     let settled = false;
@@ -254,7 +254,7 @@ function makeReceipt() {
   };
 }
 
-function writeReceipt(targetPath, receipt) {
+export function writeReceipt(targetPath, receipt) {
   validateReceipt(receipt);
   const tempPath = `${targetPath}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
@@ -349,7 +349,7 @@ function createCleanupCoordinator(options) {
   };
 }
 
-function preflight(receipt) {
+export function preflight(receipt) {
   if (runQuiet("git", ["diff", "--cached", "--name-only"], process.env).stdoutBytes > 0) throw new Error("PREFLIGHT_STAGED_INDEX_NOT_EMPTY");
   const wp155 = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp155-public-unavailable-browser-receipt.json"), "utf8"));
   if (wp155.status !== "WP155_EXACT_NO_GO_NO_RETRY" || wp155.attempt !== 1 || wp155.server?.ready !== false || wp155.browser?.desktop?.passed !== 0 || wp155.browser?.mobile390?.passed !== 0) throw new Error("PREFLIGHT_WP155_TERMINAL_INVALID");

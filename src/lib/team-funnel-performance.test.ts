@@ -85,10 +85,17 @@ describe("team funnel performance", () => {
 
     expect(db.partnerFunnelPage.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
     expect(db.teamClickAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
-    expect(db.teamLeadAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
+    expect(db.teamLeadAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      vendorId: "vendor-1",
+      teamId: "team-1",
+      formSubmission: expect.objectContaining({ verificationStatus: "VERIFIED" }),
+    }) }));
     expect(db.teamConversionAttribution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", teamId: "team-1" }) }));
     expect(db.refundRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
-    expect(db.analyticsEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
+    expect(db.analyticsEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      vendorId: "vendor-1",
+      trustLevel: "ADMITTED_LIVE_SESSION",
+    }) }));
   });
 
   it("does not invent views, keeps zero clicks and submissions, and leaves zero-denominator conversion unavailable", async () => {

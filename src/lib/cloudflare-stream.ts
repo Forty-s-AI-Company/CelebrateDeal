@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const CloudflareVideoDetails = z.object({
   uid: z.string(),
+  status: z.object({ state: z.string().optional() }).optional(),
   thumbnail: z.string().optional(),
   duration: z.number().optional(),
   readyToStream: z.boolean().optional(),
@@ -11,9 +12,19 @@ const CloudflareVideoDetails = z.object({
   }).optional(),
 });
 
+const CloudflareUploadUrl = z.string().url().refine((value) => {
+  const url = new URL(value);
+  return url.protocol === "https:" && url.hostname.toLowerCase() === "upload.videodelivery.net";
+});
+
 const CloudflareDirectUpload = z.object({
   uid: z.string().min(1),
-  uploadURL: z.string().url(),
+  uploadURL: CloudflareUploadUrl,
+});
+
+const CloudflareResumableUpload = z.object({
+  uid: z.string().trim().min(1).max(128),
+  uploadURL: CloudflareUploadUrl,
 });
 
 const CloudflareLiveInput = z.object({
@@ -88,6 +99,54 @@ export async function createDirectCreatorUpload(maxDurationSeconds = 60 * 60) {
   const parsed = CloudflareDirectUpload.safeParse(result);
   if (!parsed.success) {
     throw new CloudflareStreamError("invalid_response", 200);
+  }
+  return parsed.data;
+}
+
+function encodeTusMetadata(value: string) {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+export async function createResumableCreatorUpload(input: {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  maxDurationSeconds: number;
+}) {
+  const { accountId, token } = cloudflareEnv();
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/stream?direct_user=true`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Tus-Resumable": "1.0.0",
+          "Upload-Length": String(input.sizeBytes),
+          "Upload-Metadata": [
+            `name ${encodeTusMetadata(input.fileName)}`,
+            `filetype ${encodeTusMetadata(input.mimeType)}`,
+            `maxDurationSeconds ${encodeTusMetadata(String(input.maxDurationSeconds))}`,
+          ].join(","),
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+  } catch {
+    throw new CloudflareStreamError("network");
+  }
+
+  if (!response.ok) {
+    throw new CloudflareStreamError("provider_rejected", response.status);
+  }
+
+  const parsed = CloudflareResumableUpload.safeParse({
+    uid: response.headers.get("stream-media-id"),
+    uploadURL: response.headers.get("location"),
+  });
+  if (!parsed.success) {
+    throw new CloudflareStreamError("invalid_response", response.status);
   }
   return parsed.data;
 }

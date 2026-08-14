@@ -8,6 +8,7 @@
 - Goal 建立後，主代理可依 value-ranked roadmap 自動選擇、實作、驗證並接續下一項。
 - Planner 不再受「一次、30～90 分鐘、完成後停止」限制；只有 scope、風險、授權或架構改變時才重新規劃。
 - Terra、Sol、AGY Fast、AGY Deep、Luna 可依工作內容並行或串接，不要求固定 canonical 階段。
+- 推理程度依任務難度動態選擇，採最低足夠成本：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`；其他模型設定不變。一般任務使用中間值，只有真正簡單或 critical 工作才使用端點。
 - 只要同一檔案、資料資源或外部資源沒有 writer 衝突，不同 scope 可以並行。
 - 每個 checkpoint 只需保存精確結果、證據、回滾方式與下一步；不因 checkpoint 自動停止 Goal。
 

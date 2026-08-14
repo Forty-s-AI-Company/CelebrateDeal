@@ -12,6 +12,8 @@ const counts: DashboardChecklistCounts = {
   interactionRoleCount: 1,
   interactionScriptCount: 0,
   trackingConfigured: true,
+  verifiedPaymentMethodCount: 0,
+  onboardingComplete: false,
 };
 
 describe("dashboardChecklistForRole", () => {
@@ -33,7 +35,16 @@ describe("dashboardChecklistForRole", () => {
       "/interaction-roles/new",
       "/interaction-scripts/new",
       "/settings/tracking",
+      "/billing/payment-methods",
+      "/onboarding",
     ]);
+  });
+
+  it("reflects real onboarding completion instead of a permanently false item", () => {
+    const item = dashboardChecklistForRole({ ...counts, onboardingComplete: true }, "owner")
+      .find((candidate) => candidate.href === "/onboarding");
+
+    expect(item).toMatchObject({ label: "完成商家 onboarding", done: true });
   });
 
   it.each(["accountant", "member", null])(

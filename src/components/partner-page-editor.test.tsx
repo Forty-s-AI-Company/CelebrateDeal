@@ -209,7 +209,16 @@ describe("PartnerPageEditor", () => {
     installBrowserStubs();
     tree = renderEditor();
     await (findElements(tree, (element) => element.type === "button" && textContent(element).includes("複製公開 URL"))[0].props.onClick as () => Promise<void>)();
-    expect(() => renderEditor()).not.toThrow();
+    tree = renderEditor();
+    expect(textContent(findElements(tree, (element) => element.type === "button" && textContent(element).includes("複製失敗"))[0])).toBe("複製失敗，重試");
+    expect(textContent(findElements(tree, (element) => element.props.role === "alert")[0])).toContain("瀏覽器無法複製公開網址");
+
+    restoreBrowserStubs();
+    installBrowserStubs({ clipboard: { writeText: vi.fn(async () => { throw new Error("synthetic clipboard denial"); }) } });
+    tree = renderEditor();
+    await (findElements(tree, (element) => element.type === "button" && textContent(element).includes("複製"))[0].props.onClick as () => Promise<void>)();
+    tree = renderEditor();
+    expect(textContent(findElements(tree, (element) => element.props.role === "alert")[0])).toContain("允許剪貼簿權限後重試");
   });
 
   it("renders action success/error semantics and pending labels without weakening boundaries", () => {
@@ -222,8 +231,35 @@ describe("PartnerPageEditor", () => {
     tree = renderEditor();
     expect(findElements(tree, (element) => element.props.role === "alert")).toHaveLength(2);
     expect(findElements(tree, (element) => element.props.role === "alert")[0].props.className).toContain("red");
+    expect(findElements(tree, (element) => element.props.role === "alert")[0].props["aria-live"]).toBe("assertive");
     const publishButton = findElements(tree, (element) => element.type === "button" && textContent(element).includes("更新中"))[0];
     expect(publishButton.props.disabled).toBe(true);
+    expect(publishButton.props["aria-disabled"]).toBe(true);
+    expect(publishButton.props["aria-busy"]).toBe(true);
     expect(textContent(publishButton)).toBe("更新中…");
+    const busyForms = findElements(tree, (element) => element.type === "form" && element.props["aria-busy"] === true);
+    expect(busyForms).toHaveLength(1);
+    expect(findElements(tree, (element) => element.props.role === "status" && element.props.className === "sr-only").map(textContent).join(" ")).toContain("正在發布夥伴頁");
+  });
+
+  it("requires confirmation before a published page is taken offline", () => {
+    installBrowserStubs();
+    const confirm = vi.fn(() => false);
+    (globalRecord.window as { confirm?: typeof confirm }).confirm = confirm;
+    const tree = renderEditor({ isPublished: true });
+    const publishForm = findElements(tree, (element) => (
+      element.type === "form" && findElements(element, (child) => child.props.name === "publish").length > 0
+    ))[0];
+    const blocked = { preventDefault: vi.fn() };
+
+    (publishForm.props.onSubmit as (event: typeof blocked) => void)(blocked);
+
+    expect(confirm).toHaveBeenCalledWith("確定要停止公開這個夥伴頁？公開網址會立即停止顯示。");
+    expect(blocked.preventDefault).toHaveBeenCalledOnce();
+
+    confirm.mockReturnValue(true);
+    const allowed = { preventDefault: vi.fn() };
+    (publishForm.props.onSubmit as (event: typeof allowed) => void)(allowed);
+    expect(allowed.preventDefault).not.toHaveBeenCalled();
   });
 });

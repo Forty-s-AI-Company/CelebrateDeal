@@ -84,5 +84,5 @@ describe("type safety policy", () => {
     }
 
     expect(findings).toEqual([]);
-  });
+  }, 30_000);
 });

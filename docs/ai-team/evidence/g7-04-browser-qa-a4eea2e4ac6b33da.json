@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "a4eea2e4ac6b33da",
+  "startedAt": "2026-08-08T19:38:01.839Z",
+  "finishedAt": "2026-08-08T19:40:52.914Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 44,
+    "applied": true
+  },
+  "browser": {
+    "expected": 5,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 4,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED",
+    "productCatalog": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null,
+    "productDesktop": null,
+    "productMobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop merchant can recover upload and validation errors, then publish and preview one product",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toHaveCount(expected) failed",
+          "Locator:  locator('form [role=\"alert\"]')",
+          "Expected: 1",
+          "Received: 0",
+          "Timeout:  15000ms",
+          "Call log:",
+          "- Expect \"toHaveCount\" with timeout 15000ms",
+          "- waiting for locator('form [role=\"alert\"]')",
+          "34 × locator resolved to 0 elements",
+          "- unexpected value \"0\"",
+          "Error: expect(locator).toHaveCount(expected) failed",
+          "Locator:  locator('form [role=\"alert\"]')"
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

@@ -25,7 +25,7 @@ describe("/interaction-scripts/new route", () => {
 
     expect(mocks.requireVendorManager).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.roleFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true } });
-    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true } });
+    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true } });
     expect(mocks.getCsrfToken).toHaveBeenCalledExactlyOnceWith();
     expect(html).toContain("新增互動腳本");
     expect(html).toContain("invalid_event");

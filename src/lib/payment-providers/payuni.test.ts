@@ -44,6 +44,21 @@ afterEach(() => {
 });
 
 describe("PayUni provider", () => {
+  it("reports checkout readiness only when all required runtime configuration is valid", () => {
+    vi.stubEnv("PAYUNI_MERCHANT_ID", "");
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+
+    stubPayUniEnv();
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("ready");
+
+    vi.stubEnv("PAYUNI_HASH_KEY", "too-short");
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+
+    stubPayUniEnv();
+    vi.stubEnv("PAYUNI_ENV", "invalid");
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+  });
+
   it("builds a server-side checkout form payload with PayUni fields", async () => {
     stubPayUniEnv();
     const transaction = {
@@ -160,6 +175,45 @@ describe("PayUni provider", () => {
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "trade-direct-123" });
+  });
+
+  it("submits the documented token cancellation envelope", async () => {
+    stubPayUniEnv();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      BindVal: "bind-token-001",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.revokePaymentMethodReference?.({
+      providerPaymentMethodRef: "bind-token-001",
+    })).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sandbox-api.payuni.com.tw/api/credit_bind/cancel",
+      expect.objectContaining({ method: "POST", redirect: "error" }),
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const form = request.body as URLSearchParams;
+    expect(form.get("Version")).toBe("1.0");
+    expect(decryptCheckoutPayload(form.get("EncryptInfo") ?? "")).toMatchObject({
+      MerID: "TESTMER",
+      UseTokenType: "1",
+      BindVal: "bind-token-001",
+    });
+    expect(JSON.stringify(request)).not.toContain(hashKey);
+    expect(JSON.stringify(request)).not.toContain(hashIv);
+  });
+
+  it("fails closed when the token cancellation response is not successful", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "ERROR",
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.revokePaymentMethodReference?.({
+      providerPaymentMethodRef: "bind-token-002",
+    })).rejects.toThrow("PayUni payment method revocation failed.");
   });
 
   it("queries the allowlisted Sandbox endpoint and normalizes a terminal refund", async () => {
@@ -305,7 +359,39 @@ describe("PayUni provider", () => {
     expect(normalized.payload.eventType).toBe("paid");
     expect(normalized.payload.orderNumber).toBe("CD-SANDBOX-PAID-001");
     expect(normalized.payload.referralCode).toBe("DEMOREF");
+    expect(normalized.payload.metadata).toBeUndefined();
     expect(duplicate.payload.eventId).toBe(normalized.payload.eventId);
+  });
+
+  it("keeps decrypted callback fields out of durable transaction metadata", async () => {
+    stubPayUniEnv();
+    const privateEmail = "buyer-private@example.test";
+    const body = payUniEnvelope({
+      MerID: "TESTMER",
+      EventId: "payuni-private-fields-001",
+      EventType: "paid",
+      MerTradeNo: "CD-PRIVATE-001",
+      TradeNo: "trade-private-001",
+      TradeAmt: 1990,
+      BuyerEmail: privateEmail,
+      CardLastFour: "4242",
+      Metadata: JSON.stringify({ formSubmissionId: "forged-submission" }),
+    });
+
+    const normalized = await payUniPaymentProvider.normalizePayload(body);
+
+    expect(normalized.payload.metadata).toBeUndefined();
+    expect(JSON.stringify(normalized.payload)).not.toContain(privateEmail);
+    expect(normalized.rawPayload).toMatchObject({
+      EventId: "payuni-private-fields-001",
+      MerTradeNo: "CD-PRIVATE-001",
+      TradeNo: "trade-private-001",
+      omittedFieldCount: 3,
+    });
+    expect(JSON.stringify(normalized.rawPayload)).not.toContain(privateEmail);
+    expect(normalized.rawPayload).not.toHaveProperty("BuyerEmail");
+    expect(normalized.rawPayload).not.toHaveProperty("CardLastFour");
+    expect(normalized.rawPayload).not.toHaveProperty("Metadata");
   });
 
   it.each([

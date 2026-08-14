@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import {
   applyPaymentInventoryTransition,
+  CheckoutIdempotencyConflictError,
   createReservedPaymentTransaction,
   failPendingCheckoutAndReleaseInventory,
   INVENTORY_RESERVATION_TTL_MS,
   InventoryUnavailableError,
+  ProductChangedError,
   releaseExpiredInventoryReservations,
 } from "@/lib/inventory-reservations";
 
@@ -35,7 +37,7 @@ async function createFixture(inventory = 2) {
   return { db, vendor, product, suffix };
 }
 
-function transactionData(vendorId: string, productId: string, suffix: string) {
+function transactionData(vendorId: string, productId: string, suffix: string, checkoutIdempotencyKey?: string) {
   return {
     vendorId,
     providerName: "demo",
@@ -45,6 +47,7 @@ function transactionData(vendorId: string, productId: string, suffix: string) {
     currency: "TWD",
     status: "pending",
     metadata: { productId },
+    ...(checkoutIdempotencyKey ? { checkoutIdempotencyKey } : {}),
   };
 }
 
@@ -53,6 +56,19 @@ afterEach(async () => {
 });
 
 describe("inventory reservations", () => {
+  it("rejects a stale checkout snapshot without reserving stock", async () => {
+    const { db, vendor, product, suffix } = await createFixture(2);
+    await db.product.update({ where: { id: product.id }, data: { priceCents: 1_500, revision: { increment: 1 } } });
+    await expect(createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      expectedProductRevision: product.revision,
+      transactionData: transactionData(vendor.id, product.id, suffix),
+    })).rejects.toBeInstanceOf(ProductChangedError);
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: 2, priceCents: 1_500 });
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(0);
+  });
+
   it("reserves stock atomically and commits a paid transaction only once", async () => {
     const { db, vendor, product, suffix } = await createFixture();
     const transaction = await createReservedPaymentTransaction({
@@ -70,7 +86,7 @@ describe("inventory reservations", () => {
     await applyPaid();
     await applyPaid();
 
-    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1, revision: 2 });
     expect(await db.inventoryReservation.findUniqueOrThrow({
       where: { paymentTransactionId: transaction.id },
     })).toMatchObject({ status: "committed", quantity: 1 });
@@ -94,7 +110,36 @@ describe("inventory reservations", () => {
     expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
     const rejected = attempts.find((attempt) => attempt.status === "rejected");
     expect(rejected).toMatchObject({ status: "rejected", reason: expect.any(InventoryUnavailableError) });
-    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 0 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 0, revision: 2 });
+    expect(await db.inventoryReservation.count({ where: { productId: product.id } })).toBe(1);
+  });
+
+  it("allows only one concurrent transaction for the same checkout idempotency key", async () => {
+    const { db, vendor, product, suffix } = await createFixture(2);
+    const checkoutIdempotencyKey = `same-checkout-${suffix}`;
+    const attempts = await Promise.allSettled([
+      createReservedPaymentTransaction({
+        vendorId: vendor.id,
+        productId: product.id,
+        checkoutIdempotencyKey,
+        transactionData: transactionData(vendor.id, product.id, `${suffix}-a`, checkoutIdempotencyKey),
+      }),
+      createReservedPaymentTransaction({
+        vendorId: vendor.id,
+        productId: product.id,
+        checkoutIdempotencyKey,
+        transactionData: transactionData(vendor.id, product.id, `${suffix}-b`, checkoutIdempotencyKey),
+      }),
+    ]);
+
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    const rejected = attempts.find((attempt) => attempt.status === "rejected");
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: expect.any(CheckoutIdempotencyConflictError),
+    });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1, revision: 2 });
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, checkoutIdempotencyKey } })).toBe(1);
     expect(await db.inventoryReservation.count({ where: { productId: product.id } })).toBe(1);
   });
 
@@ -117,7 +162,7 @@ describe("inventory reservations", () => {
       reason: "provider_checkout_failed",
     });
 
-    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: 3 });
     expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).toMatchObject({ status: "failed" });
     expect(await db.inventoryReservation.findUniqueOrThrow({
       where: { paymentTransactionId: transaction.id },
@@ -157,7 +202,7 @@ describe("inventory reservations", () => {
       now: new Date(),
     }));
 
-    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: 3 });
     expect(await db.inventoryReservation.findUniqueOrThrow({
       where: { paymentTransactionId: transaction.id },
     })).toMatchObject({ status: "released", releaseReason: "full_refund" });
@@ -179,7 +224,7 @@ describe("inventory reservations", () => {
     );
 
     expect(result.released).toBeGreaterThanOrEqual(1);
-    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: 3 });
     expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).toMatchObject({ status: "expired" });
     expect(await db.inventoryReservation.findUniqueOrThrow({
       where: { paymentTransactionId: transaction.id },

@@ -2,12 +2,13 @@ import { VideoForm } from "@/components/video-form";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 
-export default async function NewVideoPage() {
+export default async function NewVideoPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   await requireVendorManager();
+  const query = await searchParams;
   return (
     <>
-      <PageHeader title="新增影片" description="支援外部影片 URL，MVP 先用 URL 管理，正式版可再接物件儲存與轉檔佇列。" />
-      <VideoForm />
+      <PageHeader title="新增影片" description="直接拖拉影片上傳到 Cloudflare Stream，可查看進度、取消與重試；外部 URL 僅保留為進階相容選項。" />
+      <VideoForm error={query.error} />
     </>
   );
 }

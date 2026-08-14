@@ -67,7 +67,7 @@ describe("/partner-pages/[id]/edit route", () => {
     expect(mocks.pageFindFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "page-1", vendorId: "vendor-1", promoterMembershipId: { in: ["membership-1"] } },
     }));
-    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } });
+    expect(mocks.productFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } });
     expect(html).toContain("編輯夥伴頁");
     expect(html).toContain("summer-offer");
     expect(html).toContain("csrf-token");

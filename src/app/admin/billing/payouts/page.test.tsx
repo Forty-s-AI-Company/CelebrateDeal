@@ -38,6 +38,7 @@ const batch = {
       status: "pending",
       retryCount: 0,
       failReason: null,
+      outcomeReference: null,
       createdAt: new Date("2026-07-02T00:00:00.000Z"),
       vendor: { name: "目前商家" },
       settlement: { monthKey: "2026-07" },
@@ -51,6 +52,7 @@ const batch = {
       status: "failed",
       retryCount: 2,
       failReason: "銀行拒絕",
+      outcomeReference: null,
       createdAt: new Date("2026-07-03T00:00:00.000Z"),
       vendor: { name: "另一商家" },
       settlement: null,
@@ -82,6 +84,7 @@ describe("/admin/billing/payouts route", () => {
     });
     expect(html).toContain("標記已匯出");
     expect(html).toContain("標記 paid");
+    expect(html).toContain("人工出款 reference");
     expect(html).toContain("標記 failed");
     expect(html).toContain("標記 retry");
     expect(html).toContain("****3210");

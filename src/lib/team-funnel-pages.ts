@@ -14,6 +14,11 @@ import {
   type TeamFunnelTemplateRenderResult,
 } from "@/lib/team-funnel-template-renderer";
 import type { TeamFunnelDynamicFieldContext } from "@/lib/team-funnel-dynamic-fields";
+import {
+  assertApprovedTeamFunnelProductSlot,
+  teamFunnelProductSlotKeys,
+  type TeamFunnelProductSlotKey,
+} from "@/lib/team-funnel-product-slots";
 
 export const teamFunnelFields = ["HEADLINE", "SUBHEADLINE", "BODY", "CTA_LABEL", "CTA_URL", "PRODUCT_SLOTS"] as const;
 export type TeamFunnelPageField = (typeof teamFunnelFields)[number];
@@ -32,6 +37,8 @@ export type CreateTeamFunnelOriginalPageInput = {
   slug: string;
   content: TeamFunnelPageContent;
   lockedFields?: readonly TeamFunnelPageField[];
+  productSlots?: readonly TeamFunnelTemplateProductSelection[];
+  webinarId?: string | null;
 };
 
 export type PublishTeamFunnelTemplateVersionInput = {
@@ -39,6 +46,20 @@ export type PublishTeamFunnelTemplateVersionInput = {
   templateId: string;
   content: TeamFunnelPageContent;
   lockedFields?: readonly TeamFunnelPageField[];
+  productSlots?: readonly TeamFunnelTemplateProductSelection[];
+  sourcePage?: TeamFunnelSourcePageUpdate;
+};
+
+export type TeamFunnelTemplateProductSelection = {
+  slotKey: TeamFunnelProductSlotKey;
+  productId: string;
+  offerLabel?: string | null;
+};
+
+export type TeamFunnelSourcePageUpdate = {
+  pageId: string;
+  slug: string;
+  webinarId?: string | null;
 };
 
 export type CopyTeamFunnelTemplateVersionInput = {
@@ -65,6 +86,8 @@ export class TeamFunnelConflictError extends Error {
     this.name = "TeamFunnelConflictError";
   }
 }
+
+const TEAM_FUNNEL_PUBLISH_MAX_ATTEMPTS = 3;
 
 /**
  * Produces the lock contract for a version. Versions are immutable, so changing
@@ -98,9 +121,12 @@ export async function createTeamFunnelOriginalPage(input: CreateTeamFunnelOrigin
   await assertCreateAccess(actor);
   const db = getDb();
   const lockedFields = normalizedLockedFields(input.lockedFields);
+  const productSlots = normalizedProductSlots(input.productSlots);
 
   try {
     return await db.$transaction(async (tx) => {
+      await assertSellableProducts(tx, actor, productSlots);
+      const webinarId = await validateWebinar(tx, actor, input.webinarId);
       const template = await tx.teamFunnelTemplate.create({
         data: { vendorId: actor.vendorId, teamId: actor.teamId, name: input.name, status: "ACTIVE" },
       });
@@ -111,11 +137,12 @@ export async function createTeamFunnelOriginalPage(input: CreateTeamFunnelOrigin
           version: 1,
           content: input.content,
           lockedFields,
+          productSlots,
         }),
         include: { fieldLocks: { select: { field: true } } },
       });
       const page = await tx.partnerFunnelPage.create({
-        data: pageData({ actor, templateVersionId: version.id, slug: input.slug, content: input.content }),
+        data: pageData({ actor, templateVersionId: version.id, slug: input.slug, content: input.content, webinarId }),
       });
 
       return { template, version, page, fieldModes: getTeamFunnelFieldModes(lockedFields) };
@@ -144,33 +171,81 @@ export async function publishTeamFunnelTemplateVersion(input: PublishTeamFunnelT
 
   await assertResourceAccess(actor, "edit", templateVersionResource(current));
   const lockedFields = normalizedLockedFields(input.lockedFields);
+  const productSlots = normalizedProductSlots(input.productSlots);
 
-  try {
-    return await db.$transaction(async (tx) => {
-      const latest = await tx.teamFunnelTemplateVersion.findFirst({
-        where: { templateId: template.id, vendorId: actor.vendorId, teamId: actor.teamId },
-        orderBy: { version: "desc" },
-        select: { version: true },
-      });
-      if (!latest) throw new TeamFunnelAccessDeniedError("missing_resource");
+  for (let attempt = 1; attempt <= TEAM_FUNNEL_PUBLISH_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await db.$transaction(async (tx) => {
+        const latest = await tx.teamFunnelTemplateVersion.findFirst({
+          where: { templateId: template.id, vendorId: actor.vendorId, teamId: actor.teamId },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        if (!latest) throw new TeamFunnelAccessDeniedError("missing_resource");
 
-      const version = await tx.teamFunnelTemplateVersion.create({
-        data: versionData({
-          actor,
-          templateId: template.id,
-          version: latest.version + 1,
-          content: input.content,
-          lockedFields,
-        }),
-        include: { fieldLocks: { select: { field: true } } },
-      });
-      await tx.teamFunnelTemplate.update({ where: { id: template.id }, data: { status: "ACTIVE" } });
+        await assertSellableProducts(tx, actor, productSlots);
+        const webinarId = await validateWebinar(tx, actor, input.sourcePage?.webinarId);
+        if (input.sourcePage) {
+          const sourcePage = await tx.partnerFunnelPage.findFirst({
+            where: {
+              id: input.sourcePage.pageId,
+              vendorId: actor.vendorId,
+              teamId: actor.teamId,
+              promoterMembershipId: actor.id,
+              contentOwnerMembershipId: actor.id,
+              templateVersion: { templateId: template.id },
+            },
+            select: { id: true },
+          });
+          if (!sourcePage) throw new TeamFunnelAccessDeniedError("missing_resource");
+        }
 
-      return { templateId: template.id, version, fieldModes: getTeamFunnelFieldModes(lockedFields) };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    throw normalizeWriteError(error);
+        const version = await tx.teamFunnelTemplateVersion.create({
+          data: versionData({
+            actor,
+            templateId: template.id,
+            version: latest.version + 1,
+            content: input.content,
+            lockedFields,
+            productSlots,
+          }),
+          include: { fieldLocks: { select: { field: true } } },
+        });
+        await tx.teamFunnelTemplate.update({ where: { id: template.id }, data: { status: "ACTIVE" } });
+
+        if (input.sourcePage) {
+          const sourcePage = await tx.partnerFunnelPage.updateMany({
+            where: {
+              id: input.sourcePage.pageId,
+              vendorId: actor.vendorId,
+              teamId: actor.teamId,
+              promoterMembershipId: actor.id,
+              contentOwnerMembershipId: actor.id,
+              templateVersion: { templateId: template.id },
+            },
+            data: {
+              templateVersionId: version.id,
+              slug: input.sourcePage.slug,
+              liveId: webinarId,
+              headline: input.content.headline,
+              subheadline: input.content.subheadline ?? null,
+              body: input.content.body ?? null,
+              ctaLabel: input.content.ctaLabel,
+              ctaUrl: input.content.ctaUrl ?? null,
+            },
+          });
+          if (sourcePage.count !== 1) throw new TeamFunnelAccessDeniedError("missing_resource");
+        }
+
+        return { templateId: template.id, version, fieldModes: getTeamFunnelFieldModes(lockedFields) };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (isRetriablePublishConflict(error) && attempt < TEAM_FUNNEL_PUBLISH_MAX_ATTEMPTS) continue;
+      throw normalizeWriteError(error);
+    }
   }
+
+  throw new TeamFunnelConflictError();
 }
 
 /**
@@ -287,12 +362,14 @@ function versionData({
   version,
   content,
   lockedFields,
+  productSlots,
 }: {
   actor: TeamFunnelMembership;
   templateId: string;
   version: number;
   content: TeamFunnelPageContent;
   lockedFields: readonly TeamFunnelPageField[];
+  productSlots: readonly TeamFunnelTemplateProductSelection[];
 }) {
   return {
     vendorId: actor.vendorId,
@@ -307,6 +384,14 @@ function versionData({
       // composite key; nested create input must not repeat `vendorId`.
       create: lockedFields.map((field) => ({ field, lockedByMemberId: actor.vendorMemberId })),
     },
+    productSlots: {
+      create: productSlots.map((slot) => ({
+        productId: slot.productId,
+        slotKey: slot.slotKey,
+        displayOrder: teamFunnelProductSlotKeys.indexOf(slot.slotKey),
+        offerLabel: slot.offerLabel ?? null,
+      })),
+    },
   };
 }
 
@@ -316,12 +401,14 @@ function pageData({
   slug,
   content,
   contentOwnerMembershipId = actor.id,
+  webinarId = null,
 }: {
   actor: TeamFunnelMembership;
   templateVersionId: string;
   slug: string;
   content: TeamFunnelPageContent;
   contentOwnerMembershipId?: string;
+  webinarId?: string | null;
 }) {
   return {
     vendorId: actor.vendorId,
@@ -329,6 +416,7 @@ function pageData({
     templateVersionId,
     promoterMembershipId: actor.id,
     contentOwnerMembershipId,
+    liveId: webinarId,
     slug,
     headline: content.headline,
     subheadline: content.subheadline ?? null,
@@ -363,8 +451,71 @@ function normalizedLockedFields(fields: readonly TeamFunnelPageField[] | undefin
   return [...new Set(fields ?? [])];
 }
 
+function normalizedProductSlots(slots: readonly TeamFunnelTemplateProductSelection[] | undefined) {
+  const normalized = [...(slots ?? [])];
+  const seen = new Set<TeamFunnelProductSlotKey>();
+
+  for (const slot of normalized) {
+    assertApprovedTeamFunnelProductSlot(slot.slotKey);
+    if (!slot.productId || seen.has(slot.slotKey)) throw new TeamFunnelConflictError();
+    seen.add(slot.slotKey);
+  }
+
+  return normalized;
+}
+
+async function assertSellableProducts(
+  tx: Prisma.TransactionClient,
+  actor: TeamFunnelMembership,
+  slots: readonly TeamFunnelTemplateProductSelection[],
+) {
+  const productIds = [...new Set(slots.map((slot) => slot.productId))];
+  if (productIds.length === 0) return;
+
+  const products = await tx.product.findMany({
+    where: {
+      id: { in: productIds },
+      vendorId: actor.vendorId,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+    },
+    select: { id: true },
+  });
+  if (products.length !== productIds.length) throw new TeamFunnelAccessDeniedError("missing_resource");
+}
+
+async function validateWebinar(
+  tx: Prisma.TransactionClient,
+  actor: TeamFunnelMembership,
+  webinarId: string | null | undefined,
+) {
+  if (!webinarId) return null;
+
+  const webinar = await tx.live.findFirst({
+    where: {
+      id: webinarId,
+      vendorId: actor.vendorId,
+      teamId: actor.teamId,
+      seminarOwnerMembershipId: actor.id,
+    },
+    select: { id: true },
+  });
+  if (!webinar) throw new TeamFunnelAccessDeniedError("missing_resource");
+  return webinar.id;
+}
+
 function isUniqueConstraint(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2002" || error.code === "P2034");
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2034");
+}
+
+function isRetriablePublishConflict(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  if (error.code === "P2034") return true;
+  if (error.code !== "P2002" || !("meta" in error)) return false;
+
+  const target = JSON.stringify(error.meta ?? "");
+  return target.includes("templateId") && target.includes("version");
 }
 
 function normalizeWriteError(error: unknown): Error {

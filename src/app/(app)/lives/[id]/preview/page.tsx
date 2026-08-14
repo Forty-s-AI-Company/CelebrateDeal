@@ -7,7 +7,7 @@ import { getDb } from "@/lib/db";
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
-  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, interactionScript: true } });
+  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: true } });
   if (!live) notFound();
 
   return (
@@ -29,7 +29,9 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
               <li>串流模式：{live.streamMode}</li>
               <li>Cloudflare Live Input：{live.cloudflareLiveInputUid ?? live.video?.cloudflareLiveInputUid ?? "未設定"}</li>
               <li>表單：{live.form?.name ?? "未綁定"}</li>
-              <li>通知模板：{live.messageTemplate?.name ?? "未綁定"}</li>
+              <li>報名成功 Email：{live.messageTemplate?.name ?? "未綁定"}</li>
+              <li>開播提醒 Email：{live.liveReminderTemplate?.name ?? "未綁定"}</li>
+              <li>提醒時間：{live.liveReminderTemplate ? `提前 ${live.liveReminderOffsetMinutes} 分鐘` : "未啟用"}</li>
               <li>互動腳本：{live.interactionScript?.name ?? "未綁定"}</li>
               <li>商品：{live.products.map((item) => item.product.name).join("、") || "未綁定"}</li>
             </ul>

@@ -11,6 +11,10 @@ function signedRequest(rawBody: string, header = "x-ecpay-signature") {
 }
 
 describe("ECPay-like payment provider", () => {
+  it("does not advertise checkout while the handoff adapter is pending", () => {
+    expect(ecpayLikePaymentProvider.checkoutReadiness()).toBe("unavailable");
+  });
+
   it("creates a manual checkout handoff with a stable order number", async () => {
     const result = await ecpayLikePaymentProvider.createCheckoutSession!({
       transaction,

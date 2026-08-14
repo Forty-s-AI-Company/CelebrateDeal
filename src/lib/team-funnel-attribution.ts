@@ -1,9 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { resolveTeamFunnelLiveShare } from "@/lib/team-funnel-live-sharing";
 
 export const ATTRIBUTION_COOKIE = "celebratedeal_attribution";
 export const VISITOR_COOKIE = "celebratedeal_visitor";
 export const ATTRIBUTION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const ATTRIBUTION_COOKIE_VERSION = "ta1";
+const ATTRIBUTION_COOKIE_KEY_PURPOSE = "team-funnel-attribution-cookie";
+const MAX_ATTRIBUTION_COOKIE_LENGTH = 700;
+const ATTRIBUTION_PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,512}$/u;
+const ATTRIBUTION_SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
+const ATTRIBUTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
+const ATTRIBUTION_VISITOR_PATTERN = /^[A-Za-z0-9_-]{20,100}$/u;
 
 type AttributionCookie = {
   clickId: string;
@@ -29,6 +38,7 @@ export type ReferralResolution = {
   code: string;
   affiliateId: string;
   visitorId: string | null;
+  clickId?: string | null;
   source: "query" | "cookie" | "legacy";
 };
 
@@ -50,8 +60,21 @@ export function referralCodeFromRequest(request: Request) {
   return null;
 }
 
-/** The page is derived from the browser's same-origin Referer, never request JSON/form fields. */
+/**
+ * The page can be carried in the shared playback URL. It is only a lookup
+ * clue: resolveTeamFunnelAttribution still binds it to the vendor and live,
+ * then re-validates public sharing and active membership server-side.
+ */
 export function sourcePageSlugFromRequest(request: Request) {
+  try {
+    const requestedSourcePage = new URL(request.url).searchParams.get("sourcePage");
+    if (requestedSourcePage && /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(requestedSourcePage)) {
+      return requestedSourcePage.toLowerCase();
+    }
+  } catch {
+    // A malformed request URL must not affect attribution.
+  }
+
   const referer = request.headers.get("referer");
   if (!referer) return null;
   try {
@@ -59,6 +82,27 @@ export function sourcePageSlugFromRequest(request: Request) {
     if (!trustedRequestOrigins(request).has(sourceUrl.origin)) return null;
     const path = sourceUrl.pathname.split("/").filter(Boolean).at(-1);
     return path && /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(path) ? path.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Reads the opaque Live share clue without trusting it; the resolver rebinds it to vendor/live/team. */
+export function liveShareCodeFromRequest(request: Request) {
+  try {
+    const direct = new URL(request.url).searchParams.get("share");
+    if (direct && /^tls1\.[A-Za-z0-9_-]{32,155}$/u.test(direct)) return direct;
+  } catch {
+    // A malformed request URL must not affect attribution.
+  }
+
+  const referer = request.headers.get("referer");
+  if (!referer) return null;
+  try {
+    const refererUrl = new URL(referer);
+    if (!trustedRequestOrigins(request).has(refererUrl.origin)) return null;
+    const code = refererUrl.searchParams.get("share");
+    return code && /^tls1\.[A-Za-z0-9_-]{32,155}$/u.test(code) ? code : null;
   } catch {
     return null;
   }
@@ -86,24 +130,59 @@ export function visitorIdFromRequest(request: Request) {
 
 export function attributionCookieFromRequest(request: Request, now = Date.now()): AttributionCookie | null {
   const raw = readCookie(request.headers.get("cookie"), ATTRIBUTION_COOKIE);
-  if (!raw) return null;
+  if (!raw || raw.length > MAX_ATTRIBUTION_COOKIE_LENGTH) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Partial<AttributionCookie>;
+    const [version, payload, suppliedSignature, extra] = raw.split(".");
     if (
-      typeof parsed.clickId !== "string" ||
-      typeof parsed.visitorId !== "string" ||
-      typeof parsed.issuedAt !== "number" ||
-      parsed.issuedAt > now ||
-      now - parsed.issuedAt > ATTRIBUTION_TTL_SECONDS * 1000
+      version !== ATTRIBUTION_COOKIE_VERSION ||
+      !payload ||
+      !ATTRIBUTION_PAYLOAD_PATTERN.test(payload) ||
+      !suppliedSignature ||
+      !ATTRIBUTION_SIGNATURE_PATTERN.test(suppliedSignature) ||
+      extra !== undefined
     ) return null;
+
+    const expectedSignature = signAttributionPayload(payload);
+    const supplied = Buffer.from(suppliedSignature, "base64url");
+    const expected = Buffer.from(expectedSignature, "base64url");
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
+    if (!isAttributionCookie(parsed)) return null;
+    if (parsed.issuedAt > now || now - parsed.issuedAt > ATTRIBUTION_TTL_SECONDS * 1000) return null;
     return { clickId: parsed.clickId, visitorId: parsed.visitorId, issuedAt: parsed.issuedAt };
   } catch {
+    // Missing signing configuration, malformed encoding and invalid JSON all
+    // fail closed. Checkout and lead capture can continue without attribution.
     return null;
   }
 }
 
 export function encodeAttributionCookie(value: AttributionCookie) {
-  return Buffer.from(JSON.stringify(value)).toString("base64url");
+  if (!isAttributionCookie(value)) throw new Error("Invalid attribution cookie payload.");
+  const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${ATTRIBUTION_COOKIE_VERSION}.${payload}.${signAttributionPayload(payload)}`;
+}
+
+function signAttributionPayload(payload: string) {
+  return createHmac("sha256", deriveSensitiveDataKey(ATTRIBUTION_COOKIE_KEY_PURPOSE))
+    .update(`${ATTRIBUTION_COOKIE_VERSION}.${payload}`)
+    .digest("base64url");
+}
+
+function isAttributionCookie(value: unknown): value is AttributionCookie {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<AttributionCookie>;
+  return (
+    Object.keys(value).length === 3 &&
+    typeof candidate.clickId === "string" &&
+    ATTRIBUTION_ID_PATTERN.test(candidate.clickId) &&
+    typeof candidate.visitorId === "string" &&
+    ATTRIBUTION_VISITOR_PATTERN.test(candidate.visitorId) &&
+    typeof candidate.issuedAt === "number" &&
+    Number.isSafeInteger(candidate.issuedAt) &&
+    candidate.issuedAt >= 0
+  );
 }
 
 export function attributionCookieOptions(request: Request) {
@@ -142,7 +221,13 @@ export async function resolveReferral(input: {
       select: { referralCode: true, affiliateId: true },
     });
     if (click?.referralCode && click.affiliateId) {
-      return { code: click.referralCode, affiliateId: click.affiliateId, visitorId: input.cookie.visitorId, source: "cookie" };
+      return {
+        code: click.referralCode,
+        affiliateId: click.affiliateId,
+        visitorId: input.cookie.visitorId,
+        clickId: input.cookie.clickId,
+        source: "cookie",
+      };
     }
   }
 
@@ -159,9 +244,19 @@ export async function resolveTeamFunnelAttribution(input: {
   liveId: string | null;
   sourcePageSlug: string | null;
   referral: ReferralResolution | null;
+  liveShareCode?: string | null;
   now?: Date;
 }): Promise<TeamFunnelAttribution | null> {
-  if (!input.liveId || !input.sourcePageSlug) return null;
+  if (!input.liveId) return null;
+  if (input.liveShareCode !== undefined && input.liveShareCode !== null) {
+    return resolveTeamFunnelLiveShare({
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      shareCode: input.liveShareCode,
+      now: input.now,
+    });
+  }
+  if (!input.sourcePageSlug) return null;
 
   const db = getDb();
   const page = await db.partnerFunnelPage.findFirst({
@@ -296,7 +391,7 @@ async function findActiveAffiliate(vendorId: string, code: string, source: Refer
     where: { vendorId, code, isActive: true },
     select: { id: true },
   });
-  return affiliate ? { code, affiliateId: affiliate.id, source, visitorId } : null;
+  return affiliate ? { code, affiliateId: affiliate.id, source, visitorId, clickId: null } : null;
 }
 
 function resolveLeader(promoterId: string, relationships: readonly { uplineMembershipId: string; downlineMembershipId: string }[]) {
@@ -314,5 +409,10 @@ function readCookie(cookieHeader: string | null, name: string) {
   if (!cookieHeader) return null;
   const prefix = `${name}=`;
   const part = cookieHeader.split(";").map((item) => item.trim()).find((item) => item.startsWith(prefix));
-  return part ? decodeURIComponent(part.slice(prefix.length)) : null;
+  if (!part) return null;
+  try {
+    return decodeURIComponent(part.slice(prefix.length));
+  } catch {
+    return null;
+  }
 }

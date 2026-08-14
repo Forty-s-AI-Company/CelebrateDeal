@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "79bbf99701871b23",
+  "startedAt": "2026-08-08T04:33:46.778Z",
+  "finishedAt": "2026-08-08T04:35:58.506Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 1,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TEST_FAILED",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TEST_FAILED",
+        "details": [
+          "Error: browserType.launch: Executable doesn't exist at <temp>\\home\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1228\\chrome-headless-shell-win64\\chrome-headless-shell.exe",
+          "╔════════════════════════════════════════════════════════════╗",
+          "║ Looks like Playwright was just installed or updated.       ║",
+          "║ Please run the following command to download new browsers: ║",
+          "║                                                            ║",
+          "║     npx playwright install                                 ║",
+          "║                                                            ║",
+          "║ <3 Playwright Team                                         ║",
+          "╚════════════════════════════════════════════════════════════╝",
+          "Error: browserType.launch: Executable doesn't exist at <temp>\\home\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1228\\chrome-headless-shell-win64\\chrome-headless-shell.exe",
+          "╔════════════════════════════════════════════════════════════╗",
+          "║ Looks like Playwright was just installed or updated.       ║"
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

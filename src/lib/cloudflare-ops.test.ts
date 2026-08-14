@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createDirectCreatorUpload: vi.fn(),
+  createResumableCreatorUpload: vi.fn(),
+  getStreamVideoStatus: vi.fn(),
   createLiveInput: vi.fn(),
   liveFindFirst: vi.fn(),
   liveUpdateMany: vi.fn(),
@@ -16,6 +18,8 @@ vi.mock("@/lib/cloudflare-stream", async (importOriginal) => {
   return {
     ...actual,
     createDirectCreatorUpload: mocks.createDirectCreatorUpload,
+    createResumableCreatorUpload: mocks.createResumableCreatorUpload,
+    getStreamVideoStatus: mocks.getStreamVideoStatus,
     createLiveInput: mocks.createLiveInput,
   };
 });
@@ -35,7 +39,12 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 
-import { createDirectUploadMapping, createLiveInputMapping } from "./cloudflare-ops";
+import {
+  completeResumableUploadMapping,
+  createDirectUploadMapping,
+  createLiveInputMapping,
+  createResumableUploadSession,
+} from "./cloudflare-ops";
 import { decryptSensitiveValue } from "./sensitive-data";
 
 beforeEach(() => {
@@ -48,7 +57,16 @@ beforeEach(() => {
     uid: "upload-1",
     uploadURL: "https://upload.example.test/upload-1",
   });
+  mocks.createResumableCreatorUpload.mockResolvedValue({
+    uid: "resumable-1",
+    uploadURL: "https://upload.videodelivery.net/tus/resumable-1",
+  });
   mocks.createLiveInput.mockResolvedValue({ uid: "live-input-1" });
+  mocks.getStreamVideoStatus.mockResolvedValue({
+    uid: "resumable-1",
+    readyToStream: false,
+    status: { state: "queued" },
+  });
   mocks.videoCreate.mockResolvedValue({ id: "video-new" });
   mocks.videoUpdate.mockResolvedValue({ id: "video-1" });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
@@ -115,6 +133,129 @@ describe("Cloudflare tenant resource preflight", () => {
       where: { id: "video-1", vendorId: "vendor-1" },
     }));
     expect(mocks.videoCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not replace an existing video until tus completion is provider-verified", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
+
+    const session = await createResumableUploadSession({
+      vendorId: "vendor-1",
+      videoId: "video-1",
+      title: "Large launch video",
+      fileName: "launch.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+
+    expect(mocks.createResumableCreatorUpload).toHaveBeenCalledWith({
+      fileName: "launch.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+    expect(session).toMatchObject({
+      videoId: "video-1",
+      uploadURL: "https://upload.videodelivery.net/tus/resumable-1",
+    });
+    expect(session.uploadTicket).not.toContain("resumable-1");
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
+    expect(mocks.videoCreate).not.toHaveBeenCalled();
+
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", cloudflareStreamUid: "old-upload" });
+    await expect(completeResumableUploadMapping({
+      vendorId: "vendor-1",
+      uploadTicket: session.uploadTicket,
+    })).resolves.toMatchObject({ video: { id: "video-1" } });
+
+    expect(mocks.getStreamVideoStatus).toHaveBeenCalledWith("resumable-1");
+    expect(mocks.videoUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        cloudflareStreamUid: "resumable-1",
+        status: "processing",
+      }),
+    }));
+  });
+
+  it("creates a deterministic local video id only after tus completion and is replay-safe", async () => {
+    const session = await createResumableUploadSession({
+      vendorId: "vendor-1",
+      title: "New large video",
+      fileName: "new.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+    expect(session.videoId).toMatch(/^upload_[0-9a-f-]+$/);
+    expect(mocks.videoCreate).not.toHaveBeenCalled();
+
+    mocks.videoCreate.mockResolvedValue({ id: session.videoId });
+    await completeResumableUploadMapping({ vendorId: "vendor-1", uploadTicket: session.uploadTicket });
+    expect(mocks.videoCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ id: session.videoId, cloudflareStreamUid: "resumable-1" }),
+    }));
+
+    vi.clearAllMocks();
+    mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1" });
+    mocks.videoFindFirst.mockResolvedValue({ id: session.videoId, cloudflareStreamUid: "resumable-1" });
+    mocks.getStreamVideoStatus.mockResolvedValue({
+      uid: "resumable-1",
+      readyToStream: false,
+      status: { state: "queued" },
+    });
+    await completeResumableUploadMapping({ vendorId: "vendor-1", uploadTicket: session.uploadTicket });
+    expect(mocks.videoCreate).not.toHaveBeenCalled();
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not create or replace a Video while Cloudflare still reports pendingupload", async () => {
+    const session = await createResumableUploadSession({
+      vendorId: "vendor-1",
+      title: "Pending large video",
+      fileName: "pending.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+    mocks.getStreamVideoStatus.mockResolvedValue({
+      uid: "resumable-1",
+      readyToStream: false,
+      status: { state: "pendingupload" },
+    });
+
+    await expect(completeResumableUploadMapping({
+      vendorId: "vendor-1",
+      uploadTicket: session.uploadTicket,
+    })).rejects.toMatchObject({ name: "CloudflareUploadNotCompleteError" });
+    expect(mocks.videoCreate).not.toHaveBeenCalled();
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
+  });
+
+  it("preserves the previous Video when Cloudflare reports a failed asset", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
+    const session = await createResumableUploadSession({
+      vendorId: "vendor-1",
+      videoId: "video-1",
+      title: "Broken replacement",
+      fileName: "broken.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", cloudflareStreamUid: "old-working-upload" });
+    mocks.getStreamVideoStatus.mockResolvedValue({
+      uid: "resumable-1",
+      readyToStream: false,
+      status: { state: "error" },
+    });
+
+    await expect(completeResumableUploadMapping({
+      vendorId: "vendor-1",
+      uploadTicket: session.uploadTicket,
+    })).rejects.toMatchObject({ name: "CloudflareUploadFailedError" });
+    expect(mocks.videoCreate).not.toHaveBeenCalled();
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
   });
 
   it("encrypts a returned live stream key before database persistence", async () => {

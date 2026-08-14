@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -9,11 +12,19 @@ import {
   PHASES,
   TIMEOUT_BOUNDARIES,
   classifyExit,
+  createCleanupCoordinator,
   diagnosticTransition,
   initialDiagnosticState,
+  nextMetadataSnapshot,
+  preflight,
+  probeLoopbackBind,
   makeReceipt,
+  runQuiet,
+  runCleanupReceiptContract,
   runDiagnostic,
+  syntheticEnvironment,
   validateReceipt,
+  writeReceipt,
 } from "./wp156-local-server-readiness-diagnostic.mjs";
 
 const wp155ReceiptPath = ".ai-team/reports/wp155-public-unavailable-browser-receipt.json";
@@ -139,4 +150,129 @@ test("diagnostic transition preserves terminal events and rejects invalid phase 
   assert.equal(late.phase, "TERMINAL");
   assert.equal(late.events.at(-1), "IGNORED:READY");
   assert.throws(() => diagnosticTransition({ ...state, phase: "INVALID" }, "READY"), /DIAGNOSTIC_STATE_INVALID/);
+});
+
+test("cleanup contract records EBUSY recovery and coordinator is idempotent", () => {
+  const snapshot = { diagnostic: { phase: "PREFLIGHT", exitSignalFamily: "NOT_OBSERVED", loopbackBindClass: "LOOPBACK_NOT_OBSERVED", timeoutBoundary: "NO_TIMEOUT", ready: false } };
+  let removeAttempts = 0;
+  let committed;
+  const result = runCleanupReceiptContract({
+    snapshot,
+    atomicCommit: () => undefined,
+    readback: () => structuredClone(snapshot),
+    quiesceProcess: () => undefined,
+    closeStreams: () => undefined,
+    releaseHandles: () => undefined,
+    removeRuntime: () => {
+      removeAttempts += 1;
+      if (removeAttempts === 1) {
+        const error = new Error("busy");
+        error.code = "EBUSY";
+        throw error;
+      }
+    },
+    writeFinalEnvelope: (envelope) => { committed = envelope; },
+  });
+  assert.equal(result.classification, "WINDOWS_EBUSY_RECOVERED");
+  assert.equal(result.cleanupAttempts, 2);
+  assert.equal(committed.classification, "WINDOWS_EBUSY_RECOVERED");
+
+  let coordinatorCalls = 0;
+  const coordinator = createCleanupCoordinator({
+    snapshot,
+    atomicCommit: () => undefined,
+    readback: () => structuredClone(snapshot),
+    quiesceProcess: () => undefined,
+    closeStreams: () => undefined,
+    releaseHandles: () => undefined,
+    removeRuntime: () => { coordinatorCalls += 1; },
+    writeFinalEnvelope: () => undefined,
+  });
+  const first = coordinator.run();
+  const second = coordinator.run();
+  assert.equal(first, second);
+  assert.equal(coordinatorCalls, 1);
+});
+
+test("cleanup contract preserves strict terminal classifications", () => {
+  const snapshot = { diagnostic: { phase: "PREFLIGHT", exitSignalFamily: "NOT_OBSERVED", loopbackBindClass: "LOOPBACK_NOT_OBSERVED", timeoutBoundary: "NO_TIMEOUT", ready: false } };
+  const exhausted = runCleanupReceiptContract({
+    snapshot,
+    atomicCommit: () => undefined,
+    readback: () => structuredClone(snapshot),
+    quiesceProcess: () => undefined,
+    closeStreams: () => undefined,
+    releaseHandles: () => undefined,
+    removeRuntime: () => { const error = new Error("busy"); error.code = "EBUSY"; throw error; },
+    writeFinalEnvelope: () => undefined,
+    maxAttempts: 2,
+  });
+  assert.equal(exhausted.classification, "WINDOWS_EBUSY_RETRY_EXHAUSTED");
+  assert.equal(exhausted.cleanupAttempts, 2);
+
+  const envelopeFailure = runCleanupReceiptContract({
+    snapshot,
+    atomicCommit: () => undefined,
+    readback: () => structuredClone(snapshot),
+    quiesceProcess: () => undefined,
+    closeStreams: () => undefined,
+    releaseHandles: () => undefined,
+    removeRuntime: () => undefined,
+    writeFinalEnvelope: () => { throw new Error("write failed"); },
+  });
+  assert.equal(envelopeFailure.classification, "FINAL_ENVELOPE_WRITE_FAILED");
+  assert.equal(envelopeFailure.idempotent, true);
+});
+
+test("sanitized process, loopback and receipt helpers preserve bounded evidence", async () => {
+  const environment = syntheticEnvironment();
+  assert.equal(environment.CI, "true");
+  assert.equal(environment.E2E_TEST_MODE, "true");
+  const quiet = runQuiet(process.execPath, ["-e", "process.stdout.write('synthetic')"], environment);
+  assert.equal(quiet.exitCode, 0);
+  assert.equal(quiet.stdoutBytes, 9);
+  assert.equal(typeof nextMetadataSnapshot().exists, "boolean");
+
+  const server = net.createServer((socket) => socket.end());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const accepting = await probeLoopbackBind("127.0.0.1", address.port);
+  assert.deepEqual(accepting, { accepting: true, class: "LOOPBACK_ACCEPTING" });
+  await new Promise((resolve) => server.close(resolve));
+  const closed = await probeLoopbackBind("127.0.0.1", address.port);
+  assert.deepEqual(closed, { accepting: false, class: "LOOPBACK_NOT_OBSERVED" });
+
+  const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-wp156-test-")), "receipt.json");
+  try {
+    const receipt = makeReceipt();
+    writeReceipt(target, receipt);
+    assert.equal(validateReceipt(JSON.parse(fs.readFileSync(target, "utf8"))), true);
+  } finally {
+    fs.rmSync(path.dirname(target), { recursive: true, force: true });
+  }
+});
+
+test("diagnostic transition and preflight cover spawn failure, timeout and bounded acceptance", async () => {
+  const spawnFailure = await runDiagnostic({
+    processAdapter: { spawn: async () => { throw new Error("synthetic spawn failure"); } },
+    bindProbe: async () => ({ accepting: false, class: "LOOPBACK_NOT_OBSERVED" }),
+    readinessProbe: async () => false,
+    clock: { now: () => 0, sleep: async () => undefined },
+  });
+  assert.equal(spawnFailure.exitSignalFamily, "SPAWN_FAILED");
+  assert.equal(spawnFailure.timeoutBoundary, "BEFORE_PROCESS_RUNNING");
+
+  let state = diagnosticTransition(initialDiagnosticState(), "PREFLIGHT_PASS");
+  state = diagnosticTransition(state, "SPAWN_REQUEST");
+  state = diagnosticTransition(state, "LOOPBACK_BOUND", { loopbackBindClass: "LOOPBACK_ACCEPTING" });
+  state = diagnosticTransition(state, "READINESS_PROBE", { ready: false });
+  const timeout = diagnosticTransition(state, "TIMEOUT");
+  assert.equal(timeout.timeoutBoundary, "AFTER_BIND_BEFORE_READY");
+  assert.equal(diagnosticTransition(timeout, "INVALID_EVENT").events.at(-1), "IGNORED:INVALID_EVENT");
+
+  const receipt = makeReceipt();
+  preflight(receipt);
+  assert.equal(receipt.quality.wp155Terminal, "PRESERVE_ONLY_TERMINAL");
+  assert.equal(receipt.quality.wp154Acceptance, "ACCEPT");
 });

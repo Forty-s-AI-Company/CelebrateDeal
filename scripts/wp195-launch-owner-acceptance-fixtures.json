@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "wp195-launch-owner-fixtures/v1",
+  "schemaVersion": "wp195-launch-owner-fixtures/v2",
   "fixedTimestamp": "2026-08-04T08:30:00Z",
   "scenarios": [
     { "id": "baseline_complete", "mutation": "NONE", "expected": "HOLD_NOT_READY" },
@@ -11,6 +11,8 @@
     { "id": "owner_rejected", "mutation": "REJECT_MERCHANT", "expected": "HOLD_NOT_READY" },
     { "id": "owner_blocked", "mutation": "BLOCK_FINANCE", "expected": "HOLD_NOT_READY" },
     { "id": "owner_pending", "mutation": "PENDING_LEGAL", "expected": "HOLD_NOT_READY" },
+    { "id": "unknown_release_decision", "mutation": "UNKNOWN_RELEASE_DECISION", "expected": "HOLD_NOT_READY" },
+    { "id": "missing_holder_reference", "mutation": "REMOVE_HOLDER_REF", "expected": "HOLD_NOT_READY" },
     { "id": "production_claim", "mutation": "CLAIM_PRODUCTION_READY", "expected": "REJECTED_INPUT" },
     { "id": "sensitive_text", "mutation": "ADD_SENSITIVE_TEXT", "expected": "REJECTED_INPUT" },
     { "id": "unstable_order", "mutation": "REVERSE_OWNER_ORDER", "expected": "HOLD_NOT_READY" }

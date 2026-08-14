@@ -1,15 +1,30 @@
 import { z } from "zod";
-import { CloudflareStreamError, createDirectCreatorUpload, createLiveInput } from "@/lib/cloudflare-stream";
+import { randomUUID } from "node:crypto";
+import {
+  CloudflareStreamError,
+  createDirectCreatorUpload,
+  createLiveInput,
+  createResumableCreatorUpload,
+  getStreamVideoStatus,
+} from "@/lib/cloudflare-stream";
 import { getDb } from "@/lib/db";
-import { encryptSensitiveValue } from "@/lib/sensitive-data";
+import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
+const CLOUDFLARE_UPLOAD_TICKET_PURPOSE = "cloudflare-resumable-upload-ticket";
+const RESUMABLE_UPLOAD_TICKET_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const DirectUploadRequest = z.object({
   vendorId: z.string().min(1),
   videoId: z.string().min(1).optional(),
   title: z.string().min(1).max(160).default("Cloudflare Stream 上傳"),
   maxDurationSeconds: z.number().int().positive().max(60 * 60 * 6).default(60 * 60),
+});
+
+export const ResumableUploadRequest = DirectUploadRequest.extend({
+  fileName: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(100),
+  sizeBytes: z.number().int().positive(),
 });
 
 export const LiveInputRequest = z.object({
@@ -27,6 +42,38 @@ export class CloudflareResourceError extends Error {
     this.name = "CloudflareResourceError";
   }
 }
+
+export class CloudflareUploadTicketError extends Error {
+  constructor() {
+    super("Cloudflare resumable upload ticket is invalid.");
+    this.name = "CloudflareUploadTicketError";
+  }
+}
+
+export class CloudflareUploadNotCompleteError extends Error {
+  constructor() {
+    super("Cloudflare resumable upload has not finished receiving bytes.");
+    this.name = "CloudflareUploadNotCompleteError";
+  }
+}
+
+export class CloudflareUploadFailedError extends Error {
+  constructor() {
+    super("Cloudflare rejected or failed the uploaded media.");
+    this.name = "CloudflareUploadFailedError";
+  }
+}
+
+const ResumableUploadTicket = z.object({
+  version: z.literal(1),
+  vendorId: z.string().min(1).max(100),
+  videoId: z.string().min(1).max(100),
+  mode: z.enum(["create", "replace"]),
+  title: z.string().min(1).max(160),
+  maxDurationSeconds: z.number().int().positive().max(60 * 60 * 6),
+  uid: z.string().min(1).max(128),
+  expiresAt: z.number().int().positive(),
+}).strict();
 
 export function classifyCloudflareOperationError(error: unknown) {
   if (error instanceof CloudflareResourceError) {
@@ -71,7 +118,110 @@ async function requireCloudflareMappingResources({
 export async function createDirectUploadMapping(input: z.infer<typeof DirectUploadRequest>) {
   const { db, video: existingVideo } = await requireCloudflareMappingResources(input);
   const upload = await createDirectCreatorUpload(input.maxDurationSeconds);
-  const videoUrl = `https://videodelivery.net/${upload.uid}/manifest/video.m3u8`;
+  const video = await persistStreamVideo({ db, existingVideo, input, uid: upload.uid });
+  return { video, upload, videoUrl: video.videoUrl };
+}
+
+export async function createResumableUploadSession(input: z.infer<typeof ResumableUploadRequest>) {
+  const { video: existingVideo } = await requireCloudflareMappingResources(input);
+  const upload = await createResumableCreatorUpload({
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    maxDurationSeconds: input.maxDurationSeconds,
+  });
+  const videoId = existingVideo?.id ?? `upload_${randomUUID()}`;
+  const uploadTicket = encryptSensitiveValue(JSON.stringify({
+    version: 1,
+    vendorId: input.vendorId,
+    videoId,
+    mode: existingVideo ? "replace" : "create",
+    title: input.title,
+    maxDurationSeconds: input.maxDurationSeconds,
+    uid: upload.uid,
+    expiresAt: Date.now() + RESUMABLE_UPLOAD_TICKET_LIFETIME_MS,
+  }), CLOUDFLARE_UPLOAD_TICKET_PURPOSE);
+
+  // Provisioning must not mutate Video. The opaque ticket is completed only after tus succeeds.
+  return { videoId, uploadURL: upload.uploadURL, uploadTicket };
+}
+
+export async function completeResumableUploadMapping({
+  vendorId,
+  uploadTicket,
+}: {
+  vendorId: string;
+  uploadTicket: string;
+}) {
+  let ticket: z.infer<typeof ResumableUploadTicket>;
+  try {
+    ticket = ResumableUploadTicket.parse(JSON.parse(
+      decryptSensitiveValue(uploadTicket, CLOUDFLARE_UPLOAD_TICKET_PURPOSE),
+    ));
+  } catch {
+    throw new CloudflareUploadTicketError();
+  }
+  if (ticket.vendorId !== vendorId || ticket.expiresAt <= Date.now()) {
+    throw new CloudflareUploadTicketError();
+  }
+
+  const db = getDb();
+  const [vendor, existingVideo] = await Promise.all([
+    db.vendor.findUnique({ where: { id: vendorId }, select: { id: true } }),
+    db.video.findFirst({
+      where: { id: ticket.videoId, vendorId },
+      select: { id: true, cloudflareStreamUid: true },
+    }),
+  ]);
+  if (!vendor) throw new CloudflareResourceError("vendor_not_found");
+  if (ticket.mode === "replace" && !existingVideo) {
+    throw new CloudflareResourceError("video_not_found");
+  }
+  if (ticket.mode === "create" && existingVideo && existingVideo.cloudflareStreamUid !== ticket.uid) {
+    throw new CloudflareUploadTicketError();
+  }
+
+  // HEAD/PATCH success is checked against Cloudflare before local mapping becomes visible.
+  const providerVideo = await getStreamVideoStatus(ticket.uid);
+  const providerState = providerVideo.status?.state?.trim().toLowerCase();
+  if (providerVideo.readyToStream !== true && (!providerState || providerState === "pendingupload")) {
+    throw new CloudflareUploadNotCompleteError();
+  }
+  if (providerState === "error") throw new CloudflareUploadFailedError();
+  if (
+    providerVideo.readyToStream !== true
+    && !["queued", "downloading", "inprogress", "processing", "ready"].includes(providerState ?? "")
+  ) {
+    throw new CloudflareStreamError("invalid_response");
+  }
+  if (existingVideo?.cloudflareStreamUid === ticket.uid) return { video: existingVideo };
+
+  const input = {
+    vendorId,
+    videoId: ticket.videoId,
+    title: ticket.title,
+    maxDurationSeconds: ticket.maxDurationSeconds,
+  };
+  const video = ticket.mode === "replace"
+    ? await persistStreamVideo({ db, existingVideo, input, uid: ticket.uid })
+    : await persistStreamVideo({ db, existingVideo: null, input, uid: ticket.uid, createId: ticket.videoId });
+  return { video };
+}
+
+async function persistStreamVideo({
+  db,
+  existingVideo,
+  input,
+  uid,
+  createId,
+}: {
+  db: ReturnType<typeof getDb>;
+  existingVideo: { id: string } | null;
+  input: z.infer<typeof DirectUploadRequest>;
+  uid: string;
+  createId?: string;
+}) {
+  const videoUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
   const video = existingVideo
     ? await db.video.update({
         where: { id: existingVideo.id, vendorId: input.vendorId },
@@ -80,27 +230,28 @@ export async function createDirectUploadMapping(input: z.infer<typeof DirectUplo
           sourceType: "cloudflare_stream",
           videoUrl,
           status: "processing",
-          cloudflareStreamUid: upload.uid,
-          cloudflarePlaybackId: upload.uid,
+          cloudflareStreamUid: uid,
+          cloudflarePlaybackId: uid,
           cloudflareReadyToStream: false,
           estimatedMinutes: Math.ceil(input.maxDurationSeconds / 60),
         },
       })
     : await db.video.create({
         data: {
+          ...(createId ? { id: createId } : {}),
           vendorId: input.vendorId,
           title: input.title,
           sourceType: "cloudflare_stream",
           videoUrl,
           status: "processing",
-          cloudflareStreamUid: upload.uid,
-          cloudflarePlaybackId: upload.uid,
+          cloudflareStreamUid: uid,
+          cloudflarePlaybackId: uid,
           cloudflareReadyToStream: false,
           estimatedMinutes: Math.ceil(input.maxDurationSeconds / 60),
         },
       });
 
-  return { video, upload, videoUrl };
+  return video;
 }
 
 export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequest>) {

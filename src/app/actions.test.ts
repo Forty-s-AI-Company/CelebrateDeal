@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   affiliateCreate: vi.fn(),
+  affiliateFindFirst: vi.fn(),
   affiliateUpdate: vi.fn(),
+  affiliateCommissionFindFirst: vi.fn(),
   affiliateCommissionFindMany: vi.fn(),
+  affiliateCommissionFindUnique: vi.fn(),
   affiliateCommissionUpdateMany: vi.fn(),
   affiliateCommissionLedgerEntryAggregate: vi.fn(),
   affiliateCommissionLedgerEntryFindUnique: vi.fn(),
@@ -13,32 +16,63 @@ const mocks = vi.hoisted(() => ({
   affiliatePayoutFindUnique: vi.fn(),
   affiliatePayoutCreate: vi.fn(),
   affiliatePayoutUpdateMany: vi.fn(),
+  courseCommissionAllocationFindMany: vi.fn(),
+  courseCommissionAllocationFindUnique: vi.fn(),
+  courseCommissionLedgerEntryAggregate: vi.fn(),
+  courseCommissionLedgerEntryFindUnique: vi.fn(),
+  courseCommissionLedgerEntryCreate: vi.fn(),
+  coursePayoutFindUnique: vi.fn(),
+  coursePayoutFindUniqueOrThrow: vi.fn(),
+  coursePayoutCreate: vi.fn(),
+  coursePayoutUpdateMany: vi.fn(),
+  reconcileCommerceOrderRefundForPayment: vi.fn(async () => null),
   authenticateUser: vi.fn(),
   calculateSettlement: vi.fn(),
+  upsertUsageSnapshot: vi.fn(),
   cookies: vi.fn(),
   createUserSession: vi.fn(),
   findUnique: vi.fn(),
+  generateSettlementForVendor: vi.fn(),
   generateRecoveryCodes: vi.fn(),
   headers: vi.fn(),
+  invoiceFindUnique: vi.fn(),
   invoiceUpsert: vi.fn(),
+  invoiceUpdate: vi.fn(),
   isAllowedSmokeTestRecipient: vi.fn(),
   interactionEventCreate: vi.fn(),
   interactionEventDeleteMany: vi.fn(),
+  interactionRoleCreate: vi.fn(),
   interactionRoleCreateMany: vi.fn(),
+  interactionRoleDelete: vi.fn(),
   interactionRoleFindMany: vi.fn(),
+  interactionRoleUpdate: vi.fn(),
   interactionScriptCreate: vi.fn(),
+  interactionScriptDelete: vi.fn(),
   interactionScriptUpdate: vi.fn(),
+  imageAssetFindFirst: vi.fn(),
+  liveFindFirst: vi.fn(),
+  liveFindMany: vi.fn(),
   liveUpdateMany: vi.fn(),
+  liveUpdate: vi.fn(),
   liveCreate: vi.fn(),
+  liveStudioDraftUpdateMany: vi.fn(),
+  liveProductDeleteMany: vi.fn(),
+  liveProductCreate: vi.fn(),
+  createLiveReminderReconciliationSnapshot: vi.fn(),
+  queueLiveReminderReconciliation: vi.fn(),
   productFindMany: vi.fn(),
   videoFindFirst: vi.fn(),
   videoCreate: vi.fn(),
   videoUpdate: vi.fn(),
   registrationFormFindFirst: vi.fn(),
   messageTemplateFindFirst: vi.fn(),
+  messageTemplateCreate: vi.fn(),
+  messageTemplateUpdate: vi.fn(),
   interactionScriptFindFirst: vi.fn(),
   markCurrentSessionMfaVerified: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
+  paymentMethodReferenceFindFirst: vi.fn(),
+  paymentMethodReferenceFindMany: vi.fn(),
   payoutItemFindUnique: vi.fn(),
   payoutItemFindMany: vi.fn(),
   payoutItemCreate: vi.fn(),
@@ -55,6 +89,7 @@ const mocks = vi.hoisted(() => ({
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
   requireVendor: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
   requireVendorFinance: vi.fn(),
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
@@ -62,7 +97,6 @@ const mocks = vi.hoisted(() => ({
   sendPasswordResetLink: vi.fn(),
   schedulePasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
-  settlementFindFirst: vi.fn(),
   settlementFindMany: vi.fn(),
   settlementUpdateMany: vi.fn(),
   settlementCreate: vi.fn(),
@@ -121,13 +155,32 @@ vi.mock("@/lib/auth", () => ({
   requireVendor: mocks.requireVendor,
   requireVendorFinance: mocks.requireVendorFinance,
   requireVendorManager: mocks.requireVendor,
+  requireVendorManagerContext: mocks.requireVendorManagerContext,
   requireVendorOwner: mocks.requireVendorOwner,
   sessionCookieOptions: vi.fn(),
 }));
 vi.mock("@/lib/billing", () => ({
   calculateSettlement: mocks.calculateSettlement,
+  invoiceDueAt: (monthKey: string) => new Date(`${monthKey}-01T00:00:00.000Z`),
   invoiceNumber: (vendorSlug: string, monthKey: string, vendorId: string) => `${vendorSlug}-${monthKey}-${vendorId}`,
+  monthRange: () => ({ start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-08-01T00:00:00.000Z") }),
   payoutBatchNumber: () => "PB-20260725-00001",
+}));
+vi.mock("@/lib/billing-cycle", () => {
+  class BillingCycleError extends Error {
+    constructor(public readonly code: string) {
+      super(code);
+    }
+  }
+  return {
+    BillingCycleError,
+    generateSettlementForVendor: mocks.generateSettlementForVendor,
+  };
+});
+vi.mock("@/lib/usage-estimation", () => ({ upsertUsageSnapshot: mocks.upsertUsageSnapshot }));
+vi.mock("@/lib/live-reminder-reconciliation", () => ({
+  createLiveReminderReconciliationSnapshot: mocks.createLiveReminderReconciliationSnapshot,
+  queueLiveReminderReconciliation: mocks.queueLiveReminderReconciliation,
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({
@@ -155,6 +208,10 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.findUnique,
       update: mocks.paymentTransactionUpdate,
     },
+    paymentMethodReference: {
+      findFirst: mocks.paymentMethodReferenceFindFirst,
+      findMany: mocks.paymentMethodReferenceFindMany,
+    },
     payoutItem: {
       create: mocks.payoutItemCreate,
       findUnique: mocks.payoutItemFindUnique,
@@ -164,6 +221,10 @@ vi.mock("@/lib/db", () => ({
       findUnique: mocks.payoutBatchFindUnique,
       updateMany: mocks.payoutBatchUpdateMany,
     },
+    invoice: {
+      findUnique: mocks.invoiceFindUnique,
+      update: mocks.invoiceUpdate,
+    },
     refundRecord: { aggregate: mocks.refundRecordAggregate, update: mocks.refundRecordUpdate },
     settlement: {
       findMany: mocks.settlementFindMany,
@@ -171,20 +232,34 @@ vi.mock("@/lib/db", () => ({
       updateMany: mocks.settlementUpdateMany,
     },
     interactionEvent: { create: mocks.interactionEventCreate, deleteMany: mocks.interactionEventDeleteMany },
-    interactionRole: { createMany: mocks.interactionRoleCreateMany, findMany: mocks.interactionRoleFindMany },
+    interactionRole: {
+      create: mocks.interactionRoleCreate,
+      createMany: mocks.interactionRoleCreateMany,
+      delete: mocks.interactionRoleDelete,
+      findMany: mocks.interactionRoleFindMany,
+      update: mocks.interactionRoleUpdate,
+    },
     interactionScript: {
       create: mocks.interactionScriptCreate,
+      delete: mocks.interactionScriptDelete,
       findFirst: mocks.interactionScriptFindFirst,
       update: mocks.interactionScriptUpdate,
     },
-    live: { create: mocks.liveCreate, updateMany: mocks.liveUpdateMany },
+    imageAsset: { findFirst: mocks.imageAssetFindFirst },
+    live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, updateMany: mocks.liveUpdateMany },
+    liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
     product: { findMany: mocks.productFindMany },
     video: {
       create: mocks.videoCreate,
       findFirst: mocks.videoFindFirst,
       update: mocks.videoUpdate,
     },
-    messageTemplate: { findFirst: mocks.messageTemplateFindFirst },
+    messageTemplate: {
+      create: mocks.messageTemplateCreate,
+      findFirst: mocks.messageTemplateFindFirst,
+      update: mocks.messageTemplateUpdate,
+    },
     $transaction: mocks.transaction,
     user: { create: mocks.userCreate, findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     userMfaFactor: { update: mocks.userMfaFactorUpdate },
@@ -207,9 +282,11 @@ vi.mock("@/lib/db", () => ({
     teamMembership: { findFirst: mocks.teamMembershipFindFirst, findMany: mocks.teamMembershipFindMany },
     teamMembershipRelationship: { findMany: mocks.teamMembershipRelationshipFindMany },
     partnerFunnelPage: { findFirst: mocks.partnerFunnelPageFindFirst, updateMany: mocks.partnerFunnelPageUpdateMany },
-    affiliate: { create: mocks.affiliateCreate, update: mocks.affiliateUpdate },
+    affiliate: { create: mocks.affiliateCreate, findFirst: mocks.affiliateFindFirst, update: mocks.affiliateUpdate },
     affiliateCommission: {
+      findFirst: mocks.affiliateCommissionFindFirst,
       findMany: mocks.affiliateCommissionFindMany,
+      findUnique: mocks.affiliateCommissionFindUnique,
       updateMany: mocks.affiliateCommissionUpdateMany,
     },
     affiliateCommissionLedgerEntry: {
@@ -223,6 +300,21 @@ vi.mock("@/lib/db", () => ({
       create: mocks.affiliatePayoutCreate,
       updateMany: mocks.affiliatePayoutUpdateMany,
     },
+    courseCommissionAllocation: {
+      findMany: mocks.courseCommissionAllocationFindMany,
+      findUnique: mocks.courseCommissionAllocationFindUnique,
+    },
+    courseCommissionLedgerEntry: {
+      aggregate: mocks.courseCommissionLedgerEntryAggregate,
+      findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+      create: mocks.courseCommissionLedgerEntryCreate,
+    },
+    coursePayout: {
+      findUnique: mocks.coursePayoutFindUnique,
+      findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+      create: mocks.coursePayoutCreate,
+      updateMany: mocks.coursePayoutUpdateMany,
+    },
     auditLog: { create: mocks.auditLogCreate },
     blacklist: { create: mocks.blacklistCreate },
     registrationForm: {
@@ -234,11 +326,17 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
+vi.mock("@/lib/commerce-orders", () => ({
+  reconcileCommerceOrderRefundForPayment: mocks.reconcileCommerceOrderRefundForPayment,
+}));
 
 import {
   createVendorMemberAction,
   createPayoutBatchAction,
   deactivateVendorMemberAction,
+  deleteInteractionRoleAction,
+  deleteInteractionScriptAction,
+  duplicateInteractionScriptAction,
   generateSettlementAction,
   importSystemRolesAction,
   loginAction,
@@ -258,13 +356,19 @@ import {
   upsertAffiliateAction,
   upsertFormAction,
   upsertLiveAction,
+  upsertTemplateAction,
   upsertVideoAction,
+  upsertInteractionRoleAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
+import { RefundProviderError } from "@/lib/payment-providers/types";
 import SecuritySettingsPage from "./(app)/settings/security/page";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { hashPassword } from "@/lib/password";
+import { BillingCycleError } from "@/lib/billing-cycle";
+import { initialMessageTemplateActionState } from "@/lib/message-template";
 
 const transaction = {
   id: "payment-1",
@@ -274,6 +378,7 @@ const transaction = {
   refundedAmountCents: 6_000,
   gatewayFeeCents: 1_000,
   platformFeeCents: 400,
+  occurredAt: new Date("2026-07-15T00:00:00.000Z"),
 };
 
 function refundFormData(
@@ -362,11 +467,23 @@ function liveFormData() {
   const formData = new FormData();
   formData.set("title", "租戶限定直播");
   formData.set("slug", "tenant-live");
+  formData.set("scheduledAt", "2026-08-08T20:00");
+  formData.set("streamMode", "vod");
   formData.set("videoId", "video-1");
   formData.set("formId", "form-1");
   formData.set("messageTemplateId", "template-1");
   formData.set("interactionScriptId", "script-1");
   formData.append("productIds", "product-1");
+  formData.set("liveDraftId", "draft-1");
+  formData.set("liveDraftRevision", "3");
+  formData.set("affiliateMode", "enabled");
+  formData.set("maxConcurrentViewers", "500");
+  formData.set("stopWhenCreditsBelow", "300");
+  formData.set("usageAttributionMode", "PROMOTER");
+  formData.set("quotaPayerScope", "VENDOR");
+  formData.set("splitOwnerBps", "3000");
+  formData.set("splitPromoterBps", "7000");
+  formData.set("replayEnabled", "on");
   return formData;
 }
 
@@ -385,11 +502,12 @@ function videoFormData(id?: string) {
   return formData;
 }
 
-function payoutStatusFormData(status: string, failReason?: string) {
+function payoutStatusFormData(status: string, failReason?: string, outcomeReference?: string) {
   const formData = new FormData();
   formData.set("id", "payout-item-1");
   formData.set("status", status);
   if (failReason !== undefined) formData.set("failReason", failReason);
+  if (outcomeReference !== undefined) formData.set("outcomeReference", outcomeReference);
   return formData;
 }
 
@@ -423,11 +541,14 @@ function interactionScriptFormData(triggerSec: string, ctaUrl?: string) {
   const formData = new FormData();
   formData.set("name", "測試留言組");
   formData.set("status", "draft");
-  formData.set("eventType", "chat_message");
+  formData.set("eventType", ctaUrl === undefined ? "chat_message" : "cta_switch");
   formData.set("triggerSec", triggerSec);
   formData.set("eventTitle", "測試留言");
-  formData.set("message", "測試留言內容");
-  if (ctaUrl !== undefined) formData.set("ctaUrl", ctaUrl);
+  formData.set("message", ctaUrl === undefined ? "測試留言內容" : "");
+  formData.set("roleId", "");
+  formData.set("productId", "");
+  formData.set("ctaLabel", ctaUrl === undefined ? "" : "查看優惠");
+  formData.set("ctaUrl", ctaUrl ?? "");
   return formData;
 }
 
@@ -449,9 +570,23 @@ function formActions(node: unknown): unknown[] {
   ];
 }
 
+function elementsOfType(node: unknown, type: unknown): Array<{ props: Record<string, unknown> }> {
+  if (Array.isArray(node)) return node.flatMap((child) => elementsOfType(child, type));
+  if (!node || typeof node !== "object" || !("props" in node)) return [];
+
+  const element = node as { type?: unknown; props?: Record<string, unknown> };
+  return [
+    ...(element.type === type && element.props ? [{ props: element.props }] : []),
+    ...elementsOfType(element.props?.children, type),
+  ];
+}
+
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "test-actions-sensitive-data-secret-32-bytes");
-  vi.clearAllMocks();
+  // Reset queued one-shot implementations too. Several action tests replace
+  // transaction fixtures, so retaining an unconsumed mockResolvedValueOnce
+  // would leak one case's database shape into the next case.
+  vi.resetAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.authenticateUser.mockResolvedValue(null);
   mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
@@ -474,6 +609,14 @@ beforeEach(() => {
   mocks.requireVendorOwner.mockResolvedValue({
     user: { id: "owner-1" },
     member: { role: "owner" },
+    vendor: { id: "vendor-1" },
+  });
+  mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManagerContext.mockResolvedValue({
+    auth: {
+      user: { id: "manager-user-1" },
+      member: { role: "admin" },
+    },
     vendor: { id: "vendor-1" },
   });
   mocks.headers.mockResolvedValue({
@@ -507,7 +650,11 @@ beforeEach(() => {
   mocks.settlementFindMany.mockResolvedValue([]);
   mocks.settlementUpdateMany.mockResolvedValue({ count: 1 });
   mocks.settlementCreate.mockResolvedValue({ id: "settlement-1" });
+  mocks.invoiceFindUnique.mockResolvedValue(null);
+  mocks.invoiceUpdate.mockResolvedValue({ id: "invoice-1" });
   mocks.affiliateCommissionFindMany.mockResolvedValue([]);
+  mocks.affiliateCommissionFindFirst.mockResolvedValue(null);
+  mocks.affiliateCommissionFindUnique.mockResolvedValue(null);
   mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
   mocks.affiliateCommissionLedgerEntryFindUnique.mockResolvedValue(null);
   mocks.affiliateCommissionLedgerEntryCreate.mockResolvedValue({ id: "ledger-entry-1" });
@@ -516,6 +663,15 @@ beforeEach(() => {
   mocks.affiliatePayoutFindUnique.mockResolvedValue(null);
   mocks.affiliatePayoutCreate.mockResolvedValue({ id: "affiliate-payout-1" });
   mocks.affiliatePayoutUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.courseCommissionAllocationFindMany.mockResolvedValue([]);
+  mocks.courseCommissionAllocationFindUnique.mockResolvedValue(null);
+  mocks.courseCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+  mocks.courseCommissionLedgerEntryFindUnique.mockResolvedValue(null);
+  mocks.courseCommissionLedgerEntryCreate.mockResolvedValue({ id: "course-ledger-entry-1" });
+  mocks.coursePayoutFindUnique.mockResolvedValue(null);
+  mocks.coursePayoutFindUniqueOrThrow.mockResolvedValue({ id: "course-payout-1" });
+  mocks.coursePayoutCreate.mockResolvedValue({ id: "course-payout-1" });
+  mocks.coursePayoutUpdateMany.mockResolvedValue({ count: 1 });
   mocks.auditLogCreate.mockResolvedValue({ id: "audit-1" });
   mocks.requestAuditMeta.mockResolvedValue({ ipAddress: "203.0.113.10", userAgent: "CelebrateDeal test" });
   mocks.payoutBatchCreate.mockResolvedValue({ id: "payout-batch-1" });
@@ -531,9 +687,61 @@ beforeEach(() => {
     grossRevenueCents: 10_000,
     payoutableAmountCents: 8_000,
   });
+  mocks.generateSettlementForVendor.mockResolvedValue({
+    settlement: { id: "settlement-1" },
+    existingSettlement: null,
+    calculation: {
+      monthlyFeeCents: 1_000,
+      overflowFeeCents: 200,
+      paymentServiceFeeCents: 300,
+      transactionServiceFeeCents: 400,
+      affiliateManagementFeeCents: 500,
+      paymentGatewayFeeCents: 600,
+      grossRevenueCents: 10_000,
+      payoutableAmountCents: 8_000,
+    },
+    invoice: { id: "invoice-1" },
+  });
+  mocks.upsertUsageSnapshot.mockResolvedValue({ snapshot: {}, record: { id: "usage-snapshot-1" } });
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
   mocks.interactionRoleFindMany.mockResolvedValue([]);
+  mocks.interactionRoleCreate.mockResolvedValue({ id: "role-new" });
   mocks.interactionRoleCreateMany.mockResolvedValue({ count: 0 });
+  mocks.interactionRoleDelete.mockResolvedValue({
+    id: "role-1",
+    name: "直播小編",
+    label: "官方角色",
+    roleType: "official",
+    isActive: true,
+  });
+  mocks.interactionRoleUpdate.mockResolvedValue({ id: "role-1" });
+  mocks.interactionScriptCreate.mockResolvedValue({ id: "script-new" });
+  mocks.interactionScriptDelete.mockResolvedValue({ id: "script-1", name: "測試留言組", status: "draft" });
+  mocks.interactionScriptUpdate.mockResolvedValue({ id: "script-1" });
+  mocks.interactionEventDeleteMany.mockResolvedValue({ count: 1 });
+  mocks.interactionEventCreate.mockResolvedValue({ id: "event-1" });
+  mocks.messageTemplateCreate.mockResolvedValue({ id: "template-new" });
+  mocks.messageTemplateUpdate.mockResolvedValue({ id: "template-1" });
+  mocks.liveFindFirst.mockResolvedValue(null);
+  mocks.liveFindMany.mockResolvedValue([]);
+  mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
+  mocks.liveProductDeleteMany.mockResolvedValue({ count: 1 });
+  mocks.liveProductCreate.mockResolvedValue({ id: "live-product-1" });
+  mocks.createLiveReminderReconciliationSnapshot.mockImplementation((input: Record<string, unknown>) => ({
+    ...input,
+    templateId: (input.template as { id?: string } | null)?.id ?? null,
+    templateRevision: "test-revision",
+    configDigest: "test-config-digest",
+    isDeliverable: Boolean(
+      input.template
+      && ["scheduled", "live"].includes(String(input.liveStatus))
+    ),
+  }));
+  mocks.queueLiveReminderReconciliation.mockImplementation(async (_tx, snapshot: { isDeliverable: boolean }) => ({
+    status: snapshot.isDeliverable ? "queued" : "cancelled",
+    jobId: "reminder-job-1",
+  }));
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
@@ -546,7 +754,9 @@ beforeEach(() => {
       update: mocks.refundRecordUpdate,
     },
     affiliateCommission: {
+      findFirst: mocks.affiliateCommissionFindFirst,
       findMany: mocks.affiliateCommissionFindMany,
+      findUnique: mocks.affiliateCommissionFindUnique,
       updateMany: mocks.affiliateCommissionUpdateMany,
     },
     affiliateCommissionLedgerEntry: {
@@ -560,7 +770,26 @@ beforeEach(() => {
       create: mocks.affiliatePayoutCreate,
       updateMany: mocks.affiliatePayoutUpdateMany,
     },
+    courseCommissionAllocation: {
+      findMany: mocks.courseCommissionAllocationFindMany,
+      findUnique: mocks.courseCommissionAllocationFindUnique,
+    },
+    courseCommissionLedgerEntry: {
+      aggregate: mocks.courseCommissionLedgerEntryAggregate,
+      findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+      create: mocks.courseCommissionLedgerEntryCreate,
+    },
+    coursePayout: {
+      findUnique: mocks.coursePayoutFindUnique,
+      findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+      create: mocks.coursePayoutCreate,
+      updateMany: mocks.coursePayoutUpdateMany,
+    },
     auditLog: { create: mocks.auditLogCreate },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
+    live: { create: mocks.liveCreate, findMany: mocks.liveFindMany, update: mocks.liveUpdate },
+    messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
+    liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -751,7 +980,11 @@ describe("savePartnerPageAction", () => {
       user: { id: "user-1" },
       member: { id: "vendor-member-1", status: "active", deactivatedAt: null },
     });
-    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManagerContext.mockImplementation(async () => ({
+    auth: { user: { id: "manager-user-1" }, member: { role: "admin" } },
+    vendor: await mocks.requireVendor(),
+  }));
     mocks.teamMembershipFindFirst.mockResolvedValue(membership);
     mocks.teamMembershipFindMany.mockResolvedValue([membership]);
     mocks.teamMembershipRelationshipFindMany.mockResolvedValue([]);
@@ -909,9 +1142,41 @@ describe("upsertLiveAction", () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
     mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
-    mocks.registrationFormFindFirst.mockResolvedValue({ id: "form-1" });
-    mocks.messageTemplateFindFirst.mockResolvedValue({ id: "template-1" });
+    mocks.registrationFormFindFirst.mockResolvedValue({
+      id: "form-1",
+      fields: [
+        { key: "name", label: "姓名", type: "text", required: true },
+        { key: "email", label: "Email", type: "email", required: true },
+      ],
+    });
+    mocks.messageTemplateFindFirst.mockImplementation(async ({ where }: { where: { trigger?: string } }) => (
+      where.trigger === "live_reminder"
+        ? {
+            id: "reminder-template-1",
+            vendorId: "vendor-1",
+            channel: "email",
+            trigger: "live_reminder",
+            subject: "{{live_title}} 即將開始",
+            body: "{{name}} {{unsubscribe_url}}",
+            isActive: true,
+            updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+          }
+        : {
+            id: "template-1",
+            subject: "{{name}}，你已報名 {{live_title}}",
+            body: "由 {{vendor_name}} 寄送。取消通知：{{unsubscribe_url}}",
+          }
+    ));
     mocks.interactionScriptFindFirst.mockResolvedValue({ id: "script-1" });
+    mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1" });
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "draft",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: null,
+      liveReminderOffsetMinutes: 60,
+    });
     mocks.liveCreate.mockResolvedValue({ id: "live-1" });
   }
 
@@ -919,11 +1184,15 @@ describe("upsertLiveAction", () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("cloudflareLiveInputUid", "forged-live-input-uid");
+    formData.set("affiliateMode", "disabled");
+    formData.set("defaultAffiliateCode", "summer_partner");
+    formData.set("maxConcurrentViewers", "1200");
+    formData.set("stopWhenCreditsBelow", "450");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
 
     expect(mocks.productFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", id: { in: ["product-1"] } },
+      where: { vendorId: "vendor-1", id: { in: ["product-1"] }, isActive: true, fulfillmentTypeConfirmed: true },
       select: { id: true },
     });
     for (const lookup of [
@@ -936,17 +1205,363 @@ describe("upsertLiveAction", () => {
         where: expect.objectContaining({ vendorId: "vendor-1" }),
       }));
     }
+    expect(mocks.interactionScriptFindFirst).toHaveBeenCalledWith({
+      where: { id: "script-1", vendorId: "vendor-1", status: "published" },
+      select: { id: true },
+    });
+    expect(mocks.messageTemplateFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: "template-1",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "registration_confirmed",
+        isActive: true,
+      },
+      select: { id: true, subject: true, body: true },
+    });
     expect(mocks.liveCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         vendorId: "vendor-1",
+        status: "draft",
         videoId: "video-1",
         formId: "form-1",
         messageTemplateId: "template-1",
         interactionScriptId: "script-1",
-        products: { create: [{ productId: "product-1", sortOrder: 1, isPinned: true }] },
+        replayEnabled: true,
+        products: { create: [{ vendorId: "vendor-1", productId: "product-1", sortOrder: 1, isPinned: true }] },
       }),
     });
     expect(mocks.liveCreate.mock.calls[0]?.[0]?.data).not.toHaveProperty("cloudflareLiveInputUid");
+    expect(mocks.liveCreate.mock.calls[0]?.[0]?.data.quotaPolicy).toEqual({
+      version: 2,
+      affiliateMode: "disabled",
+      defaultAffiliateCode: "SUMMER_PARTNER",
+      maxConcurrentViewers: 1200,
+      stopWhenCreditsBelow: 450,
+      quotaPayerScope: "VENDOR",
+      usageAttributionMode: "PROMOTER",
+      splitOwnerBps: 3000,
+      splitPromoterBps: 7000,
+      customAllocations: [],
+      memberQuotas: [],
+      pageQuotas: [],
+    });
+    expect(mocks.liveStudioDraftUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "draft-1",
+        vendorId: "vendor-1",
+        liveId: null,
+        revision: 3,
+        payload: { equals: expect.objectContaining({
+          title: "租戶限定直播",
+          affiliateMode: "disabled",
+          activeStep: 4,
+        }) },
+        consumedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      data: { consumedAt: expect.any(Date) },
+    });
+  });
+
+  it("rolls back creation when another tab already advanced the draft revision", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=draft_conflict&draft=draft-1",
+    );
+
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("never lets a create request bypass preview by forging a public status", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_status&draft=draft-1",
+    );
+
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps an incomplete content setup as a private draft", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    for (const field of ["productIds", "videoId", "formId", "messageTemplateId", "interactionScriptId"]) {
+      formData.delete(field);
+    }
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: "draft",
+        videoId: null,
+        formId: null,
+        messageTemplateId: null,
+        interactionScriptId: null,
+        products: { create: [] },
+      }),
+    });
+  });
+
+  it("blocks a sales live from publishing when its conversion path is incomplete", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    formData.delete("formId");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?error=publish_not_ready",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks a sales live from publishing with malformed registration fields", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.registrationFormFindFirst.mockResolvedValue({ id: "form-1", fields: [] });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?error=publish_not_ready",
+    );
+
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("allows a content live to publish with ready media and no sales conversion resources", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    for (const field of ["productIds", "formId", "messageTemplateId", "interactionScriptId"]) {
+      formData.delete(field);
+    }
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveUpdate).toHaveBeenCalledWith({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        status: "scheduled",
+        videoId: "video-1",
+        formId: null,
+        messageTemplateId: null,
+        interactionScriptId: null,
+      }),
+    });
+  });
+
+  it("blocks a content live from publishing without playable media", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    for (const field of ["productIds", "videoId", "formId", "messageTemplateId", "interactionScriptId"]) {
+      formData.delete(field);
+    }
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?error=publish_not_ready",
+    );
+
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("allows a scheduled live to be taken down as a draft even when readiness is incomplete", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: null,
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "draft");
+    for (const field of ["productIds", "videoId", "formId", "messageTemplateId", "interactionScriptId"]) {
+      formData.delete(field);
+    }
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveUpdate).toHaveBeenCalledWith({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({ status: "draft" }),
+    });
+  });
+
+  it("updates an existing live only after atomically advancing its edit-draft revision", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveStudioDraftUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "draft-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        revision: 3,
+        payload: { equals: expect.objectContaining({
+          title: "租戶限定直播",
+          activeStep: 4,
+        }) },
+        consumedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      data: { revision: { increment: 1 } },
+    });
+    expect(mocks.liveUpdate).toHaveBeenCalledWith({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({ status: "scheduled", replayEnabled: true }),
+    });
+    expect(mocks.liveProductDeleteMany).toHaveBeenCalledWith({ where: { liveId: "live-1" } });
+    expect(mocks.liveProductCreate).toHaveBeenCalledWith({
+      data: { vendorId: "vendor-1", liveId: "live-1", productId: "product-1", sortOrder: 1, isPinned: true },
+    });
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("atomically queues reminder reconciliation when an existing live changes reminder configuration", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    formData.set("liveReminderTemplateId", "reminder-template-1");
+    formData.set("liveReminderOffsetMinutes", "30");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?notice=reminders_reconciling",
+    );
+
+    expect(mocks.createLiveReminderReconciliationSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      liveTitle: "租戶限定直播",
+      liveStatus: "scheduled",
+      reminderOffsetMinutes: 30,
+      template: expect.objectContaining({ id: "reminder-template-1", trigger: "live_reminder" }),
+    }));
+    expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({ live: expect.any(Object) }),
+      expect.objectContaining({ configDigest: "test-config-digest", isDeliverable: true }),
+      expect.any(Date),
+    );
+  });
+
+  it("queues reminder reconciliation when the live title changes", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "舊直播標題",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    formData.set("liveReminderTemplateId", "reminder-template-1");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?notice=reminders_reconciling",
+    );
+    expect(mocks.createLiveReminderReconciliationSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      liveId: "live-1",
+      liveTitle: "租戶限定直播",
+    }));
+  });
+
+  it("cancels old reminder work when a live ends", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "live",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "ended");
+    formData.set("liveReminderTemplateId", "reminder-template-1");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?notice=reminders_cancelled",
+    );
+    expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ isDeliverable: false, liveStatus: "ended" }),
+      expect.any(Date),
+    );
+  });
+
+  it("rejects a direct status jump that is not allowed from the current live state", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "ended");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/live-1/edit?error=invalid_status",
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("requires a live notification template that can actually send registration email", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.messageTemplateFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+    expect(mocks.messageTemplateFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: "template-1",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "registration_confirmed",
+        isActive: true,
+      },
+      select: { id: true, subject: true, body: true },
+    });
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects incomplete final form data before claiming the saved draft", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("title", "");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+    expect(mocks.productFindMany).not.toHaveBeenCalled();
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
   });
 
   it("rejects a product from another vendor before creating a live", async () => {
@@ -954,9 +1569,104 @@ describe("upsertLiveAction", () => {
     mocks.productFindMany.mockResolvedValue([]);
 
     await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_reference",
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
     );
 
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires verified membership payment references before enabling member quotas", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.teamMembershipFindMany.mockResolvedValue([{ id: "member-1", teamId: "team-1" }]);
+    mocks.paymentMethodReferenceFindMany.mockResolvedValue([]);
+    const formData = liveFormData();
+    formData.set("quotaPayerScope", "MEMBER");
+    formData.set("memberQuotas", JSON.stringify([
+      { teamId: "team-1", membershipId: "member-1", includedMinutes: 60 },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=payment_method_required&draft=draft-1",
+    );
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member quota whose team does not own the selected membership", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.teamMembershipFindMany.mockResolvedValue([{ id: "member-1", teamId: "team-1" }]);
+    const formData = liveFormData();
+    formData.set("quotaPayerScope", "MEMBER");
+    formData.set("memberQuotas", JSON.stringify([
+      { teamId: "wrong-team", membershipId: "member-1", includedMinutes: 60 },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+    expect(mocks.paymentMethodReferenceFindMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forged, inactive, or foreign default affiliate code before saving the live policy", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.affiliateFindFirst.mockResolvedValue(null);
+    const formData = liveFormData();
+    formData.set("defaultAffiliateCode", "foreign_code");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+
+    expect(mocks.affiliateFindFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", code: "FOREIGN_CODE", isActive: true },
+      select: { id: true },
+    });
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an inactive or departed membership from Stream allocation settings", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.teamMembershipFindMany.mockResolvedValue([]);
+    const formData = liveFormData();
+    formData.set("quotaPayerScope", "MEMBER");
+    formData.set("memberQuotas", JSON.stringify([
+      { teamId: "team-1", membershipId: "member-inactive", includedMinutes: 60 },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+
+    expect(mocks.teamMembershipFindMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        id: { in: ["member-inactive"] },
+        status: "ACTIVE",
+        leftAt: null,
+      },
+      select: { id: true, teamId: true },
+    });
+    expect(mocks.paymentMethodReferenceFindMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires verified membership payment references for custom member allocations", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.teamMembershipFindMany.mockResolvedValue([{ id: "member-1", teamId: "team-1" }]);
+    mocks.paymentMethodReferenceFindMany.mockResolvedValue([]);
+    const formData = liveFormData();
+    formData.set("quotaPayerScope", "MEMBER");
+    formData.set("usageAttributionMode", "CUSTOM");
+    formData.set("customAllocations", JSON.stringify([
+      { teamId: "team-1", membershipId: "member-1", bps: 10_000 },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=payment_method_required&draft=draft-1",
+    );
+    expect(mocks.paymentMethodReferenceFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ membershipId: { in: ["member-1"] } }),
+    }));
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
@@ -965,9 +1675,107 @@ describe("upsertLiveAction", () => {
     mocks.videoFindFirst.mockResolvedValue(null);
 
     await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_reference",
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
     );
 
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not bind a provisioned but unready Stream upload to a live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+
+    expect(mocks.videoFindFirst).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        id: "video-1",
+        OR: [
+          { sourceType: "url", status: "ready" },
+          { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
+          {
+            sourceType: "cloudflare_live",
+            status: { not: "archived" },
+            cloudflareLiveInputUid: { not: null },
+            liveInputStatus: "created",
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a draft interaction script before a live can expose it", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.interactionScriptFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+
+    expect(mocks.interactionScriptFindFirst).toHaveBeenCalledWith({
+      where: { id: "script-1", vendorId: "vendor-1", status: "published" },
+      select: { id: true },
+    });
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("binds only a ready hero image owned by the current vendor", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.imageAssetFindFirst.mockResolvedValue({ id: "asset-1", publicUrl: "https://media.example.test/vendors/hero.webp" });
+    const formData = liveFormData();
+    formData.set("heroImageAssetId", "asset-1");
+    formData.set("heroImageUrl", "https://attacker.example.test/forged.webp");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.imageAssetFindFirst).toHaveBeenCalledWith({
+      where: { id: "asset-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        heroImageAssetId: "asset-1",
+        heroImageUrl: "https://media.example.test/vendors/hero.webp",
+      }),
+    });
+  });
+
+  it("rejects a hero image from another vendor before creating a live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.imageAssetFindFirst.mockResolvedValue(null);
+    const formData = liveFormData();
+    formData.set("heroImageAssetId", "cross-tenant-asset");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/new?error=invalid_reference&draft=draft-1");
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns to the same recoverable draft when a legacy hero URL is unsafe", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("heroImageUrl", "javascript:alert(1)");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a final draft whose canonical slug would be empty", async () => {
+    const formData = liveFormData();
+    formData.set("slug", "!!!");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+    expect(mocks.productFindMany).not.toHaveBeenCalled();
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 });
@@ -1001,13 +1809,27 @@ describe("upsertVideoAction", () => {
   });
 
   it("preserves provider-owned playback URL, mapping, and state when editing a Cloudflare video", async () => {
-    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", sourceType: "cloudflare_stream" });
+    mocks.videoFindFirst.mockResolvedValue({
+      id: "video-1",
+      sourceType: "cloudflare_stream",
+      status: "ready",
+      cloudflareReadyToStream: true,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    });
 
     await expect(upsertVideoAction(videoFormData("video-1"))).rejects.toThrow("redirect:/videos");
 
     expect(mocks.videoFindFirst).toHaveBeenCalledWith({
       where: { id: "video-1", vendorId: "vendor-1" },
-      select: { id: true, sourceType: true },
+      select: {
+        id: true,
+        sourceType: true,
+        status: true,
+        cloudflareReadyToStream: true,
+        cloudflareLiveInputUid: true,
+        liveInputStatus: true,
+      },
     });
     const data = mocks.videoUpdate.mock.calls[0]?.[0]?.data;
     for (const providerOwnedField of [
@@ -1038,6 +1860,64 @@ describe("upsertVideoAction", () => {
         status: "archived",
       }),
     });
+  });
+
+  it("uses the current vendor ready image asset instead of a client supplied thumbnail URL", async () => {
+    mocks.videoFindFirst.mockResolvedValue({
+      id: "video-1",
+      sourceType: "cloudflare_stream",
+      status: "ready",
+      cloudflareReadyToStream: true,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    });
+    mocks.imageAssetFindFirst.mockResolvedValue({ id: "asset-1", publicUrl: "https://media.example.test/thumbnail.webp" });
+    const formData = videoFormData("video-1");
+    formData.set("thumbnailAssetId", "asset-1");
+    formData.set("thumbnailUrl", "https://attacker.example.test/forged.webp");
+
+    await expect(upsertVideoAction(formData)).rejects.toThrow("redirect:/videos");
+
+    expect(mocks.videoUpdate).toHaveBeenCalledWith({
+      where: { id: "video-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        thumbnailAssetId: "asset-1",
+        thumbnailUrl: "https://media.example.test/thumbnail.webp",
+      }),
+    });
+  });
+
+  it("rejects an image asset outside the current vendor", async () => {
+    mocks.videoFindFirst.mockResolvedValue({
+      id: "video-1",
+      sourceType: "cloudflare_stream",
+      status: "ready",
+      cloudflareReadyToStream: true,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    });
+    mocks.imageAssetFindFirst.mockResolvedValue(null);
+    const formData = videoFormData("video-1");
+    formData.set("thumbnailAssetId", "cross-tenant-asset");
+
+    await expect(upsertVideoAction(formData)).rejects.toThrow("redirect:/videos/video-1/edit?error=invalid_image_asset");
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a provisioned but unready Stream upload as a completed video", async () => {
+    mocks.videoFindFirst.mockResolvedValue({
+      id: "video-1",
+      sourceType: "cloudflare_stream",
+      status: "processing",
+      cloudflareReadyToStream: false,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    });
+
+    await expect(upsertVideoAction(videoFormData("video-1"))).rejects.toThrow(
+      "redirect:/videos/video-1/edit?error=video_processing",
+    );
+    expect(mocks.videoUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -1332,6 +2212,35 @@ describe("regenerateRecoveryCodesAction", () => {
 });
 
 describe("createVendorMemberAction", () => {
+  it("allows an owner to invite the least-privilege support role", async () => {
+    const newUser = { id: "user-support", email: "support@example.com", name: "客服小美", status: "active", platformRole: "none" };
+    const savedMember = { id: "member-support", userId: newUser.id, role: "support", status: "active", user: newUser };
+    mocks.userFindUnique.mockResolvedValue(null);
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      user: { create: mocks.userCreate, update: mocks.userUpdate },
+      vendorMember: { upsert: mocks.vendorMemberUpsert },
+    }));
+    mocks.userCreate.mockResolvedValue(newUser);
+    mocks.userUpdate.mockResolvedValue(newUser);
+    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
+
+    await expect(createVendorMemberAction(vendorMemberFormData({ name: newUser.name, email: newUser.email, role: "support" }))).rejects.toThrow(
+      "redirect:/settings/security?updated=member",
+    );
+
+    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ role: "support", status: "active" }),
+    }));
+  });
+
+  it("rejects roles outside the member-role allowlist", async () => {
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "platform_admin" }))).rejects.toThrow(
+      "redirect:/settings/security?error=member_invalid",
+    );
+
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+  });
+
   it("creates a member and sends a one-time password setup invitation without auditing the token or password", async () => {
     const newUser = { id: "user-2", email: "member@example.com", name: "王小明", status: "active", platformRole: "none" };
     const savedMember = { id: "member-2", userId: newUser.id, role: "accountant", status: "active", user: newUser };
@@ -1824,7 +2733,7 @@ describe("/settings/security member invitation controls", () => {
       user: { id: "user-2", email: "member@example.com", platformRole: "none" },
     };
     mocks.requireAuth.mockResolvedValueOnce({
-      user: { id: "owner-1", email: "owner@example.com", mfaFactor: null, recoveryCodes: [] },
+      user: { id: "owner-1", email: "owner@example.com", mfaFactor: { lastUsedAt: null }, recoveryCodes: [] },
       vendor: { id: "vendor-1" },
       member: { role: "owner" },
       session: { id: "session-1" },
@@ -1837,10 +2746,301 @@ describe("/settings/security member invitation controls", () => {
       { ...activeMember, id: "member-inactive", status: "inactive", user: { ...activeMember.user, name: "停用成員" } },
     ]);
 
-    const page = await SecuritySettingsPage({ searchParams: Promise.resolve({}) });
+    const page = await SecuritySettingsPage({ searchParams: Promise.resolve({ updated: "member", error: "member_invitation_resend_failed" }) });
     const resendActions = formActions(page).filter((action) => action === resendVendorMemberInvitationAction);
+    const actionButtons = elementsOfType(page, FormSubmitButton);
+    const pendingLabels = actionButtons.map((button) => button.props.pendingChildren);
+    const recoveryButton = actionButtons.find((button) => button.props.pendingChildren === "重新產生中…");
+    const paragraphs = elementsOfType(page, "p");
 
     expect(resendActions).toHaveLength(1);
+    expect(pendingLabels).toEqual(expect.arrayContaining(["重新產生中…", "重寄中…", "寄送中…"]));
+    expect(recoveryButton?.props.confirmMessage).toBe("重新產生後，舊 recovery codes 會立即失效。確定繼續？");
+    expect(elementsOfType(page, "button")).toHaveLength(0);
+    expect(paragraphs.some((paragraph) => paragraph.props.role === "status" && paragraph.props["aria-live"] === "polite")).toBe(true);
+    expect(paragraphs.some((paragraph) => paragraph.props.role === "alert")).toBe(true);
+  });
+});
+
+describe("message template actions", () => {
+  function templateFormData() {
+    const formData = new FormData();
+    formData.set("name", " 開播提醒 ");
+    formData.set("channel", "email");
+    formData.set("trigger", "live_reminder");
+    formData.set("subject", " {{live_title}} 即將開始 ");
+    formData.set("body", "嗨 {{name}}，直播即將開始。\n{{unsubscribe_url}}");
+    formData.set("isActive", "on");
+    return formData;
+  }
+
+  it("creates a normalized current-vendor email template and audits only safe metadata", async () => {
+    const formData = templateFormData();
+
+    await expect(upsertTemplateAction(initialMessageTemplateActionState, formData)).rejects.toThrow("redirect:/messages/templates");
+
+    expect(mocks.messageTemplateCreate).toHaveBeenCalledWith({
+      data: {
+        vendorId: "vendor-1",
+        name: "開播提醒",
+        channel: "email",
+        trigger: "live_reminder",
+        subject: "{{live_title}} 即將開始",
+        body: "嗨 {{name}}，直播即將開始。\n{{unsubscribe_url}}",
+        isActive: true,
+      },
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      vendorId: "vendor-1",
+      actorId: "manager-user-1",
+      actorLabel: "admin",
+      action: "message_template_created",
+      targetId: "template-new",
+      after: {
+        name: "開播提醒",
+        channel: "email",
+        trigger: "live_reminder",
+        isActive: true,
+        hasSubject: true,
+        bodyLength: 38,
+      },
+    }));
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("直播即將開始");
+  });
+
+  it.each([
+    ["an unavailable SMS channel", "channel", "sms"],
+    ["an unavailable LINE channel", "channel", "line"],
+    ["an unknown variable", "body", "{{provider_secret}}"],
+    ["a missing email subject", "subject", ""],
+  ])("rejects %s before persistence", async (_label, field, value) => {
+    const formData = templateFormData();
+    formData.set(field, value);
+
+    const result = await upsertTemplateAction(initialMessageTemplateActionState, formData);
+
+    expect(result).toEqual({
+      status: "error",
+      error: "invalid_template",
+      draft: expect.objectContaining({ [field]: value }),
+      expectedUpdatedAt: null,
+      version: 1,
+    });
+
+    expect(mocks.messageTemplateCreate).not.toHaveBeenCalled();
+    expect(mocks.messageTemplateUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("tenant-scopes template updates and recovers from a stale identifier", async () => {
+    mocks.messageTemplateUpdate.mockRejectedValueOnce(Object.assign(new Error("missing template"), { code: "P2025" }));
+    mocks.messageTemplateFindFirst.mockResolvedValueOnce(null);
+    const formData = templateFormData();
+    formData.set("id", "stale-template");
+    formData.set("expectedUpdatedAt", "2026-08-09T03:00:00.000Z");
+
+    const result = await upsertTemplateAction(initialMessageTemplateActionState, formData);
+
+    expect(result).toEqual({
+      status: "error",
+      error: "missing_template",
+      draft: expect.objectContaining({
+        name: " 開播提醒 ",
+        body: "嗨 {{name}}，直播即將開始。\n{{unsubscribe_url}}",
+      }),
+      expectedUpdatedAt: null,
+      version: 1,
+    });
+
+    expect(mocks.messageTemplateUpdate).toHaveBeenCalledWith({
+      where: { id: "stale-template", vendorId: "vendor-1", updatedAt: new Date("2026-08-09T03:00:00.000Z") },
+      data: expect.objectContaining({ channel: "email" }),
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("preserves a stale-tab draft and advances the explicit version claim before overwrite", async () => {
+    const currentUpdatedAt = new Date("2026-08-09T04:00:00.000Z");
+    mocks.messageTemplateUpdate.mockRejectedValueOnce(Object.assign(new Error("stale template"), { code: "P2025" }));
+    mocks.messageTemplateFindFirst.mockResolvedValueOnce({ updatedAt: currentUpdatedAt });
+    const formData = templateFormData();
+    formData.set("id", "template-1");
+    formData.set("expectedUpdatedAt", "2026-08-09T03:00:00.000Z");
+    formData.set("body", "舊分頁但不可消失的內容 {{unsubscribe_url}}");
+
+    const result = await upsertTemplateAction(initialMessageTemplateActionState, formData);
+
+    expect(result).toEqual({
+      status: "error",
+      error: "conflict",
+      draft: expect.objectContaining({ body: "舊分頁但不可消失的內容 {{unsubscribe_url}}" }),
+      expectedUpdatedAt: currentUpdatedAt.toISOString(),
+      version: 1,
+    });
+    expect(mocks.messageTemplateFindFirst).toHaveBeenCalledWith({
+      where: { id: "template-1", vendorId: "vendor-1" },
+      select: { updatedAt: true },
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("updates a reminder template and queues every linked live in the same transaction", async () => {
+    const updatedAt = new Date("2026-08-09T03:00:00.000Z");
+    mocks.messageTemplateUpdate.mockResolvedValue({
+      id: "template-1",
+      vendorId: "vendor-1",
+      name: "開播提醒",
+      channel: "email",
+      trigger: "live_reminder",
+      subject: "{{live_title}} 即將開始",
+      body: "嗨 {{name}}，直播即將開始。\n{{unsubscribe_url}}",
+      isActive: true,
+      updatedAt,
+    });
+    mocks.liveFindMany.mockResolvedValue([{
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-10T04:00:00.000Z"),
+      liveReminderOffsetMinutes: 60,
+    }]);
+    const formData = templateFormData();
+    formData.set("id", "template-1");
+    formData.set("expectedUpdatedAt", "2026-08-09T02:00:00.000Z");
+
+    await expect(upsertTemplateAction(initialMessageTemplateActionState, formData)).rejects.toThrow(
+      "redirect:/messages/templates?notice=reminders_reconciling",
+    );
+
+    expect(mocks.liveFindMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", liveReminderTemplateId: "template-1" },
+      select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+    });
+    expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ liveId: "live-1", liveTitle: "租戶限定直播", template: expect.objectContaining({ updatedAt }) }),
+    );
+  });
+});
+
+describe("interaction role actions", () => {
+  function interactionRoleFormData() {
+    const formData = new FormData();
+    formData.set("name", "  直播小編  ");
+    formData.set("avatarUrl", "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=editor-purple");
+    formData.set("label", "官方角色");
+    formData.set("roleType", "official");
+    formData.set("tone", "  親切、清楚  ");
+    formData.set("isActive", "on");
+    return formData;
+  }
+
+  it("normalizes, tenant-scopes, and audits a new interaction role", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = interactionRoleFormData();
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.interactionRoleCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        name: "直播小編",
+        label: "官方角色",
+        roleType: "official",
+        tone: "親切、清楚",
+        isActive: true,
+      }),
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      vendorId: "vendor-1",
+      actorId: "manager-user-1",
+      actorLabel: "admin",
+      action: "interaction_role_created",
+      targetId: "role-new",
+      after: expect.objectContaining({ hasAvatar: true }),
+    }));
+  });
+
+  it.each([
+    ["unsupported role type", "roleType", "fake_viewer"],
+    ["unsafe avatar", "avatarUrl", "javascript:alert(1)"],
+    ["empty name", "name", ""],
+  ])("rejects %s before persistence", async (_label, field, value) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = interactionRoleFormData();
+    formData.set(field, value);
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow(
+      "redirect:/interaction-roles/new?error=invalid_role",
+    );
+
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("updates only a current-vendor role and records the resulting state", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = interactionRoleFormData();
+    formData.set("id", "role-1");
+    formData.delete("isActive");
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.interactionRoleUpdate).toHaveBeenCalledWith({
+      where: { id: "role-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({ isActive: false }),
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_role_updated",
+      targetId: "role-1",
+    }));
+  });
+
+  it("recovers when an edited role disappeared or belongs to another vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleUpdate.mockRejectedValueOnce(Object.assign(new Error("missing role"), { code: "P2025" }));
+    const formData = interactionRoleFormData();
+    formData.set("id", "stale-role");
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow(
+      "redirect:/interaction-roles/new?error=missing_role",
+    );
+
+    expect(mocks.interactionRoleUpdate).toHaveBeenCalledWith({
+      where: { id: "stale-role", vendorId: "vendor-1" },
+      data: expect.anything(),
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("tenant-scopes and audits deletion without exposing avatar data", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = new FormData();
+    formData.set("id", "role-1");
+
+    await expect(deleteInteractionRoleAction(formData)).rejects.toThrow("redirect:/interaction-roles/new");
+
+    expect(mocks.interactionRoleDelete).toHaveBeenCalledWith({ where: { id: "role-1", vendorId: "vendor-1" } });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_role_deleted",
+      targetId: "role-1",
+      before: expect.not.objectContaining({ avatarUrl: expect.anything() }),
+    }));
+  });
+
+  it("recovers when a role delete target disappeared or belongs to another vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleDelete.mockRejectedValueOnce(Object.assign(new Error("missing role"), { code: "P2025" }));
+    const formData = new FormData();
+    formData.set("id", "stale-role");
+
+    await expect(deleteInteractionRoleAction(formData)).rejects.toThrow(
+      "redirect:/interaction-roles/new?error=missing_role",
+    );
+
+    expect(mocks.interactionRoleDelete).toHaveBeenCalledWith({ where: { id: "stale-role", vendorId: "vendor-1" } });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -1848,13 +3048,17 @@ describe("importSystemRolesAction", () => {
   it("validates CSRF and the vendor, then imports only system roles that do not already exist", async () => {
     const formData = new FormData();
     const existingNames = ["開場 AI 主持人", "客服 Q&A 助手"];
-    mocks.requireVendor.mockResolvedValue({ id: "vendor-9" });
+    mocks.requireVendorManagerContext.mockResolvedValue({
+      auth: { user: { id: "manager-9" }, member: { role: "admin" } },
+      vendor: { id: "vendor-9" },
+    });
     mocks.interactionRoleFindMany.mockResolvedValue(existingNames.map((name) => ({ name })));
+    mocks.interactionRoleCreateMany.mockResolvedValueOnce({ count: 8 });
 
     await expect(importSystemRolesAction(formData)).rejects.toThrow("redirect:/interaction-roles");
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
-    expect(mocks.requireVendor).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorManagerContext).toHaveBeenCalledOnce();
     expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
       where: {
         vendorId: "vendor-9",
@@ -1881,6 +3085,10 @@ describe("importSystemRolesAction", () => {
       expect.objectContaining({ name: "客服 Q&A 助手" }),
     ]));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-roles");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_role_library_imported",
+      after: { requestedCount: 10, importedCount: 8 },
+    }));
     expect(mocks.redirect).toHaveBeenCalledWith("/interaction-roles");
     expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],
@@ -1917,24 +3125,43 @@ describe("upsertInteractionScriptAction", () => {
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
     const formData = interactionScriptFormData("10");
     formData.set("roleId", "role-1");
-    formData.set("productId", "product-1");
+    formData.append("eventType", "product_spotlight");
+    formData.append("triggerSec", "20");
+    formData.append("eventTitle", "主打商品");
+    formData.append("message", "");
+    formData.append("roleId", "");
+    formData.append("productId", "product-1");
+    formData.append("ctaLabel", "");
+    formData.append("ctaUrl", "");
 
     await expect(upsertInteractionScriptAction(formData)).rejects.toThrow("redirect:/interaction-scripts");
 
     expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", id: { in: ["role-1"] } },
+      where: { vendorId: "vendor-1", id: { in: ["role-1"] }, isActive: true },
       select: { id: true },
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", id: { in: ["product-1"] } },
+      where: { vendorId: "vendor-1", id: { in: ["product-1"] }, isActive: true, fulfillmentTypeConfirmed: true },
       select: { id: true },
     });
     expect(mocks.interactionScriptCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         vendorId: "vendor-1",
-        events: { create: [expect.objectContaining({ roleId: "role-1", productId: "product-1" })] },
+        events: {
+          create: [
+            expect.objectContaining({ eventType: "chat_message", roleId: "role-1", productId: null }),
+            expect.objectContaining({ eventType: "product_spotlight", roleId: null, productId: "product-1" }),
+          ],
+        },
       }),
     });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: "manager-user-1",
+      actorLabel: "admin",
+      action: "interaction_script_created",
+      targetId: "script-new",
+      after: { name: "測試留言組", status: "draft", eventCount: 2 },
+    }));
   });
 
   it("rejects a role from another vendor before script persistence", async () => {
@@ -1960,7 +3187,7 @@ describe("upsertInteractionScriptAction", () => {
     }
 
     await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
-      "每個互動腳本最多可建立 200 個事件。",
+      "redirect:/interaction-scripts/new?error=invalid_event",
     );
     expect(mocks.interactionRoleFindMany).not.toHaveBeenCalled();
     expect(mocks.productFindMany).not.toHaveBeenCalled();
@@ -1973,7 +3200,7 @@ describe("upsertInteractionScriptAction", () => {
       mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
 
       await expect(upsertInteractionScriptAction(interactionScriptFormData("10", ctaUrl))).rejects.toThrow(
-        "第 1 個 CTA 網址必須是有效的 HTTP 或 HTTPS 完整網址。",
+        "redirect:/interaction-scripts/new?error=invalid_event",
       );
 
       expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
@@ -1981,13 +3208,30 @@ describe("upsertInteractionScriptAction", () => {
     },
   );
 
+  it.each([
+    ["unsupported type", { eventType: "fake_viewer" }],
+    ["missing product", { eventType: "product_spotlight", message: "", productId: "" }],
+    ["missing CTA label", { eventType: "cta_switch", message: "", ctaLabel: "", ctaUrl: "https://example.test/deal" }],
+    ["invalid status", { status: "published_without_review" }],
+  ])("rejects %s before persistence", async (_label, overrides) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = interactionScriptFormData("10");
+    for (const [key, value] of Object.entries(overrides)) formData.set(key, value);
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "redirect:/interaction-scripts/new?error=invalid_event",
+    );
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it.each(["-1", "60:00", "00:60", "00:00:60", "not-a-time", "00:00:00:00"])(
     "rejects the invalid interaction timestamp %s before saving the script",
     async (triggerSec) => {
       mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
 
       await expect(upsertInteractionScriptAction(interactionScriptFormData(triggerSec))).rejects.toThrow(
-        "時間必須為非負整數秒數、MM:SS 或 HH:MM:SS，且分鐘與秒數不可超過 59。",
+        "redirect:/interaction-scripts/new?error=invalid_event",
       );
 
       expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
@@ -1997,6 +3241,167 @@ describe("upsertInteractionScriptAction", () => {
       expect(mocks.transaction).not.toHaveBeenCalled();
     },
   );
+
+  it("atomically replaces an existing script timeline and audits the published state", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.transaction.mockResolvedValueOnce([]);
+    const formData = interactionScriptFormData("10");
+    formData.set("id", "script-1");
+    formData.set("status", "published");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow("redirect:/interaction-scripts");
+
+    expect(mocks.transaction).toHaveBeenCalledWith([
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    ]);
+    expect(mocks.interactionScriptUpdate).toHaveBeenCalledWith({
+      where: { id: "script-1", vendorId: "vendor-1" },
+      data: { name: "測試留言組", description: null, status: "published" },
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_script_updated",
+      targetId: "script-1",
+      after: { name: "測試留言組", status: "published", eventCount: 1 },
+    }));
+  });
+
+  it("recovers when an edited script disappeared or belongs to another vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.transaction.mockRejectedValueOnce(Object.assign(new Error("missing script"), { code: "P2025" }));
+    const formData = interactionScriptFormData("10");
+    formData.set("id", "stale-script");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "redirect:/interaction-scripts?error=missing_script",
+    );
+
+    expect(mocks.interactionScriptUpdate).toHaveBeenCalledWith({
+      where: { id: "stale-script", vendorId: "vendor-1" },
+      data: expect.anything(),
+    });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("interaction script lifecycle actions", () => {
+  function scriptIdFormData(id = "script-1") {
+    const formData = new FormData();
+    formData.set("id", id);
+    return formData;
+  }
+
+  const sourceScript = {
+    id: "script-1",
+    name: "測試留言組",
+    description: "直播導購節奏",
+    status: "published",
+    events: [{
+      id: "event-1",
+      eventType: "chat_message",
+      triggerSec: 10,
+      title: "歡迎",
+      message: "歡迎來到直播",
+      productId: null,
+      ctaLabel: null,
+      ctaUrl: null,
+      roleId: null,
+      metadata: null,
+    }],
+  };
+
+  it("duplicates only a normalized current-vendor script as a draft and audits its lineage", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue(sourceScript);
+    mocks.interactionScriptCreate.mockResolvedValueOnce({ id: "script-copy" });
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow("redirect:/interaction-scripts");
+
+    expect(mocks.interactionScriptFindFirst).toHaveBeenCalledWith({
+      where: { id: "script-1", vendorId: "vendor-1" },
+      include: { events: { orderBy: { triggerSec: "asc" } } },
+    });
+    expect(mocks.interactionScriptCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        name: "測試留言組 複本",
+        status: "draft",
+        events: { create: [expect.objectContaining({ eventType: "chat_message", message: "歡迎來到直播" })] },
+      }),
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_script_duplicated",
+      targetId: "script-copy",
+      after: expect.objectContaining({ sourceScriptId: "script-1", status: "draft", eventCount: 1 }),
+    }));
+  });
+
+  it("does not duplicate a legacy script containing an unsafe CTA", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue({
+      ...sourceScript,
+      events: [{
+        ...sourceScript.events[0],
+        eventType: "cta_switch",
+        message: null,
+        ctaLabel: "查看活動",
+        ctaUrl: "javascript:alert(1)",
+      }],
+    });
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(
+      "redirect:/interaction-scripts?error=invalid_event",
+    );
+
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a legacy script references another vendor's role", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue({
+      ...sourceScript,
+      events: [{ ...sourceScript.events[0], roleId: "foreign-role" }],
+    });
+    mocks.interactionRoleFindMany.mockResolvedValue([]);
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(
+      "redirect:/interaction-scripts?error=invalid_reference",
+    );
+
+    expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", id: { in: ["foreign-role"] }, isActive: true },
+      select: { id: true },
+    });
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("tenant-scopes script deletion and records a sanitized audit snapshot", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+
+    await expect(deleteInteractionScriptAction(scriptIdFormData())).rejects.toThrow("redirect:/interaction-scripts");
+
+    expect(mocks.interactionScriptDelete).toHaveBeenCalledWith({ where: { id: "script-1", vendorId: "vendor-1" } });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_script_deleted",
+      targetId: "script-1",
+      before: { name: "測試留言組", status: "draft" },
+    }));
+  });
+
+  it("recovers when a script delete target disappeared or belongs to another vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptDelete.mockRejectedValueOnce(Object.assign(new Error("missing script"), { code: "P2025" }));
+
+    await expect(deleteInteractionScriptAction(scriptIdFormData("stale-script"))).rejects.toThrow(
+      "redirect:/interaction-scripts?error=missing_script",
+    );
+
+    expect(mocks.interactionScriptDelete).toHaveBeenCalledWith({ where: { id: "stale-script", vendorId: "vendor-1" } });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
 });
 
 describe("createPayoutBatchAction", () => {
@@ -2092,12 +3497,21 @@ describe("updatePayoutItemStatusAction", () => {
     vendorId: "vendor-1",
     payoutBatchId: "batch-1",
     settlementId: "settlement-1",
+    payoutAmountCents: 240000,
     status: "failed",
     payoutBatch: { id: "batch-1", status: "failed", executedAt: null },
   };
 
   it("rejects an unknown status before reading or writing payout data", async () => {
     await expect(updatePayoutItemStatusAction(payoutStatusFormData("arbitrary"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_status",
+    );
+    expect(mocks.payoutItemFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a paid outcome without a human payout reference before reading or writing payout data", async () => {
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("paid"))).rejects.toThrow(
       "redirect:/admin/billing/payouts?error=invalid_status",
     );
     expect(mocks.payoutItemFindUnique).not.toHaveBeenCalled();
@@ -2136,6 +3550,7 @@ describe("updatePayoutItemStatusAction", () => {
       data: {
         status: "retrying",
         failReason: null,
+        outcomeReference: null,
         retriedAt: expect.any(Date),
         retryCount: { increment: 1 },
       },
@@ -2146,7 +3561,7 @@ describe("updatePayoutItemStatusAction", () => {
     });
   });
 
-  it("marks only the matching vendor and settlement month locked commissions paid with the payout", async () => {
+  it("settles the vendor without completing merchant-owned affiliate payouts", async () => {
     const retryingItem = {
       ...payoutItem,
       status: "retrying",
@@ -2156,36 +3571,61 @@ describe("updatePayoutItemStatusAction", () => {
     mocks.payoutItemUpdate.mockResolvedValue({ ...retryingItem, status: "paid" });
     mocks.payoutItemFindMany.mockResolvedValue([{ id: "payout-item-1", status: "retrying" }]);
     mocks.payoutBatchUpdate.mockResolvedValue({ id: "batch-1", status: "completed" });
-    mocks.settlementFindFirst.mockResolvedValue({
-      id: "settlement-1",
-      vendorId: "vendor-1",
-      monthKey: "2026-07",
-      status: "ready_for_payout",
-    });
     mocks.settlementUpdateMany.mockResolvedValue({ count: 1 });
-    mocks.affiliateCommissionUpdateMany.mockResolvedValue({ count: 2 });
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
       payoutItem: { update: mocks.payoutItemUpdate, findMany: mocks.payoutItemFindMany },
       payoutBatch: { update: mocks.payoutBatchUpdate },
-      settlement: { findFirst: mocks.settlementFindFirst, updateMany: mocks.settlementUpdateMany },
-      affiliateCommission: { updateMany: mocks.affiliateCommissionUpdateMany },
+      settlement: { updateMany: mocks.settlementUpdateMany },
     }));
 
-    await expect(updatePayoutItemStatusAction(payoutStatusFormData("paid"))).rejects.toThrow(
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("paid", undefined, "manual-bank-ref-2026-07"))).rejects.toThrow(
       "redirect:/admin/billing/payouts",
     );
 
-    expect(mocks.settlementFindFirst).toHaveBeenCalledWith({
-      where: { id: "settlement-1", vendorId: "vendor-1" },
+    expect(mocks.payoutItemUpdate).toHaveBeenCalledWith({
+      where: { id: "payout-item-1", status: "retrying" },
+      data: {
+        status: "paid",
+        failReason: null,
+        outcomeReference: "manual-bank-ref-2026-07",
+        paidAt: expect.any(Date),
+      },
     });
+
     expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
-      where: { id: "settlement-1", vendorId: "vendor-1", status: { not: "paid" } },
+      where: {
+        id: "settlement-1",
+        vendorId: "vendor-1",
+        payoutBatchId: "batch-1",
+        finalPayoutAmountCents: 240000,
+        status: "ready_for_payout",
+      },
       data: { status: "paid", paidAt: expect.any(Date) },
     });
-    expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", monthKey: "2026-07", status: "locked" },
-      data: { status: "paid", settledAt: expect.any(Date) },
-    });
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and fails closed when the payout item no longer matches an eligible settlement", async () => {
+    const retryingItem = {
+      ...payoutItem,
+      status: "retrying",
+      payoutBatch: { id: "batch-1", status: "retrying", executedAt: null },
+    };
+    mocks.payoutItemFindUnique.mockResolvedValue(retryingItem);
+    mocks.payoutItemUpdate.mockResolvedValue({ ...retryingItem, status: "paid" });
+    mocks.payoutItemFindMany.mockResolvedValue([{ id: "payout-item-1", status: "retrying" }]);
+    mocks.payoutBatchUpdate.mockResolvedValue({ id: "batch-1", status: "completed" });
+    mocks.settlementUpdateMany.mockResolvedValue({ count: 0 });
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      payoutItem: { update: mocks.payoutItemUpdate, findMany: mocks.payoutItemFindMany },
+      payoutBatch: { update: mocks.payoutBatchUpdate },
+      settlement: { updateMany: mocks.settlementUpdateMany },
+    }));
+
+    await expect(updatePayoutItemStatusAction(payoutStatusFormData("paid", undefined, "manual-bank-ref-2026-07"))).rejects.toThrow(
+      "redirect:/admin/billing/payouts?error=invalid_transition",
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
   it("fails closed when another operator changes the item concurrently", async () => {
@@ -2264,6 +3704,12 @@ describe("unbindInteractionScriptFromLiveAction", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/interaction-scripts/script-1/edit");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/lives");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/lives/live-1/edit");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "interaction_script_unbound_from_live",
+      targetId: "live-1",
+      before: { interactionScriptId: "script-1" },
+      after: { interactionScriptId: null },
+    }));
   });
 
   it("rejects a live that is not owned by the current vendor", async () => {
@@ -2311,27 +3757,35 @@ describe("generateSettlementAction", () => {
 
   it("generates a settlement and invoice for a valid settlement month", async () => {
     const settlement = { id: "settlement-1" };
-    mocks.settlementCreate.mockResolvedValue(settlement);
-    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: { create: mocks.settlementCreate },
-      invoice: { upsert: mocks.invoiceUpsert },
-    }));
+    mocks.generateSettlementForVendor.mockResolvedValueOnce({
+      settlement,
+      existingSettlement: null,
+      calculation: { payoutableAmountCents: 8_000 },
+      invoice: { id: "invoice-1", monthKey: "2026-12" },
+    });
 
     await expect(generateSettlementAction(settlementFormData("2026-12"))).rejects.toThrow(
       "redirect:/admin/billing/settlements",
     );
 
-    expect(mocks.calculateSettlement).toHaveBeenCalledWith("vendor-1", "2026-12");
-    expect(mocks.settlementCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({ monthKey: "2026-12" }),
-    });
-    expect(mocks.invoiceUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ monthKey: "2026-12" }),
-    }));
+    expect(mocks.generateSettlementForVendor).toHaveBeenCalledWith("vendor-1", "2026-12");
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: "generate_settlement",
       targetId: settlement.id,
     }));
+  });
+
+  it("fails closed instead of overwriting a paid invoice when recalculation changes its amount", async () => {
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(
+      new BillingCycleError("terminal_invoice_amount_conflict"),
+    );
+
+    await expect(generateSettlementAction(settlementFormData("2026-12"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=invoice_conflict",
+    );
+
+    expect(mocks.generateSettlementForVendor).toHaveBeenCalledWith("vendor-1", "2026-12");
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -2355,7 +3809,11 @@ describe("refundPaymentTransactionAction", () => {
       requestId: expect.stringMatching(/^[a-f0-9]{32}$/),
     }));
     expect(mocks.refundRecordUpdate).toHaveBeenCalledWith({
-      where: { id: "refund-1" },
+      where: {
+        id: "refund-1",
+        status: "pending",
+        providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/),
+      },
       data: { status: "processed", providerEventId: "refund-456" },
     });
     expect(mocks.paymentTransactionUpdate).toHaveBeenCalledWith({
@@ -2364,19 +3822,63 @@ describe("refundPaymentTransactionAction", () => {
     });
   });
 
-  it("marks the reserved PayUni refund failed when the provider call fails", async () => {
+  it("releases the reserved PayUni refund only for a pre-provider request contract failure", async () => {
     const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
     mocks.findUnique.mockResolvedValue(payUniTransaction);
-    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockRejectedValue(new Error("provider unavailable")) });
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockRejectedValue(new RefundProviderError("request_contract")) });
 
     await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",
     );
 
     expect(mocks.refundRecordUpdate).toHaveBeenCalledWith({
-      where: { id: "refund-1" },
+      where: {
+        id: "refund-1",
+        status: "pending",
+        providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/),
+      },
       data: { status: "failed" },
     });
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["network", new RefundProviderError("network")],
+    ["unverified provider response", new RefundProviderError("provider_response")],
+    ["unexpected adapter failure", new Error("synthetic provider failure")],
+  ])("keeps an ambiguous PayUni %s outcome pending for query reconciliation", async (_label, providerError) => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockRejectedValue(providerError) });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund_reconciliation_required",
+    );
+
+    expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "pending", paymentTransactionId: transaction.id }),
+    });
+    expect(mocks.refundRecordUpdate).toHaveBeenCalledWith({
+      where: {
+        id: "refund-1",
+        status: "pending",
+        providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/),
+      },
+      data: { providerEventId: expect.stringMatching(/^ambiguous:[a-f0-9]{32}$/) },
+    });
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a late provider completion no longer owns the pending reservation", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockResolvedValue({ providerEventId: "refund-456" }) });
+    mocks.refundRecordUpdate.mockRejectedValueOnce(new Error("reservation state changed"));
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+
     expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
   });
 
@@ -2397,6 +3899,38 @@ describe("refundPaymentTransactionAction", () => {
           aggregate: mocks.refundRecordAggregate,
           create: mocks.refundRecordCreate,
           update: mocks.refundRecordUpdate,
+        },
+        affiliateCommission: {
+          findFirst: mocks.affiliateCommissionFindFirst,
+          findMany: mocks.affiliateCommissionFindMany,
+          findUnique: mocks.affiliateCommissionFindUnique,
+          updateMany: mocks.affiliateCommissionUpdateMany,
+        },
+        affiliateCommissionLedgerEntry: {
+          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+          create: mocks.affiliateCommissionLedgerEntryCreate,
+        },
+        affiliatePayout: {
+          findFirst: mocks.affiliatePayoutFindFirst,
+          findUnique: mocks.affiliatePayoutFindUnique,
+          create: mocks.affiliatePayoutCreate,
+          updateMany: mocks.affiliatePayoutUpdateMany,
+        },
+        courseCommissionAllocation: {
+          findMany: mocks.courseCommissionAllocationFindMany,
+          findUnique: mocks.courseCommissionAllocationFindUnique,
+        },
+        courseCommissionLedgerEntry: {
+          aggregate: mocks.courseCommissionLedgerEntryAggregate,
+          findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+          create: mocks.courseCommissionLedgerEntryCreate,
+        },
+        coursePayout: {
+          findUnique: mocks.coursePayoutFindUnique,
+          findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+          create: mocks.coursePayoutCreate,
+          updateMany: mocks.coursePayoutUpdateMany,
         },
       });
       if (transactionAttempts === 2) throw Object.assign(new Error("serialization failure"), { code: "P2034" });
@@ -2539,6 +4073,55 @@ describe("refundPaymentTransactionAction", () => {
     expect(mocks.writeAuditLog).toHaveBeenCalled();
   });
 
+  it("reverses affiliate and course payable ledgers inside the local refund transaction", async () => {
+    const accountableTransaction = {
+      ...transaction,
+      providerName: "local",
+      orderNumber: "ORDER-REFUND-1",
+    };
+    mocks.findUnique.mockResolvedValue(accountableTransaction);
+    mocks.affiliateCommissionFindFirst.mockResolvedValue({
+      id: "commission-1",
+      vendorId: "vendor-1",
+      affiliateId: null,
+      monthKey: "2026-07",
+      status: "pending",
+      commissionRateBps: 1_000,
+    });
+    mocks.affiliateCommissionLedgerEntryAggregate
+      .mockResolvedValueOnce({ _sum: { amountCents: 1_000 } })
+      .mockResolvedValueOnce({ _sum: { amountCents: 1_000 } })
+      .mockResolvedValueOnce({ _sum: { amountCents: 0 } });
+    mocks.courseCommissionAllocationFindMany.mockResolvedValue([{
+      id: "course-allocation-1",
+      recipientRole: "content_owner",
+      shareBps: 10_000,
+    }]);
+    mocks.courseCommissionAllocationFindUnique.mockResolvedValue({ recipientMembershipId: "membership-f" });
+    mocks.courseCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 4_000 } });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.affiliateCommissionLedgerEntryCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        affiliateCommissionId: "commission-1",
+        entryType: "refund",
+        amountCents: -1_000,
+        eventIdentity: "refund:refund-1",
+      }),
+    });
+    expect(mocks.courseCommissionLedgerEntryCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        courseCommissionAllocationId: "course-allocation-1",
+        entryType: "refund",
+        amountCents: -4_000,
+        eventIdentity: "refund:refund-1",
+      }),
+    });
+  });
+
   it("rolls back all writes and returns the refund error when PostgreSQL rejects a stale serializable transaction", async () => {
     const attemptedRefundRecords: unknown[] = [];
     const attemptedPaymentTransactions: unknown[] = [];
@@ -2562,7 +4145,40 @@ describe("refundPaymentTransactionAction", () => {
           create: async (args: unknown) => {
             attemptedRefundRecords.push(args);
             stagedRefundRecords.push(args);
+            return { id: "refund-staged" };
           },
+        },
+        affiliateCommission: {
+          findFirst: mocks.affiliateCommissionFindFirst,
+          findMany: mocks.affiliateCommissionFindMany,
+          findUnique: mocks.affiliateCommissionFindUnique,
+          updateMany: mocks.affiliateCommissionUpdateMany,
+        },
+        affiliateCommissionLedgerEntry: {
+          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+          create: mocks.affiliateCommissionLedgerEntryCreate,
+        },
+        affiliatePayout: {
+          findFirst: mocks.affiliatePayoutFindFirst,
+          findUnique: mocks.affiliatePayoutFindUnique,
+          create: mocks.affiliatePayoutCreate,
+          updateMany: mocks.affiliatePayoutUpdateMany,
+        },
+        courseCommissionAllocation: {
+          findMany: mocks.courseCommissionAllocationFindMany,
+          findUnique: mocks.courseCommissionAllocationFindUnique,
+        },
+        courseCommissionLedgerEntry: {
+          aggregate: mocks.courseCommissionLedgerEntryAggregate,
+          findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+          create: mocks.courseCommissionLedgerEntryCreate,
+        },
+        coursePayout: {
+          findUnique: mocks.coursePayoutFindUnique,
+          findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+          create: mocks.coursePayoutCreate,
+          updateMany: mocks.coursePayoutUpdateMany,
         },
       });
 
@@ -2615,7 +4231,40 @@ describe("refundPaymentTransactionAction", () => {
           create: async (args: unknown) => {
             attemptedRefundRecords.push(args);
             stagedRefundRecords.push(args);
+            return { id: "refund-staged" };
           },
+        },
+        affiliateCommission: {
+          findFirst: mocks.affiliateCommissionFindFirst,
+          findMany: mocks.affiliateCommissionFindMany,
+          findUnique: mocks.affiliateCommissionFindUnique,
+          updateMany: mocks.affiliateCommissionUpdateMany,
+        },
+        affiliateCommissionLedgerEntry: {
+          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+          create: mocks.affiliateCommissionLedgerEntryCreate,
+        },
+        affiliatePayout: {
+          findFirst: mocks.affiliatePayoutFindFirst,
+          findUnique: mocks.affiliatePayoutFindUnique,
+          create: mocks.affiliatePayoutCreate,
+          updateMany: mocks.affiliatePayoutUpdateMany,
+        },
+        courseCommissionAllocation: {
+          findMany: mocks.courseCommissionAllocationFindMany,
+          findUnique: mocks.courseCommissionAllocationFindUnique,
+        },
+        courseCommissionLedgerEntry: {
+          aggregate: mocks.courseCommissionLedgerEntryAggregate,
+          findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+          create: mocks.courseCommissionLedgerEntryCreate,
+        },
+        coursePayout: {
+          findUnique: mocks.coursePayoutFindUnique,
+          findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+          create: mocks.coursePayoutCreate,
+          updateMany: mocks.coursePayoutUpdateMany,
         },
       });
 
@@ -2798,46 +4447,29 @@ describe("FIN-02 settlement mutation invariants", () => {
   }
 
   it("rejects a negative generated payout before settlement or invoice writes", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce({
-      ...settlement,
-      adjustmentAmountCents: -11_000,
-    });
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError("negative_payout"));
 
     await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
       "redirect:/admin/billing/settlements?error=negative_payout",
     );
 
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.settlementCreate).not.toHaveBeenCalled();
-    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+    expect(mocks.generateSettlementForVendor).toHaveBeenCalledWith("vendor-1", "2026-08");
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
   it("fails a settlement regeneration when its optimistic conditional write loses", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
-    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
-    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: {
-        findUnique: mocks.settlementFindUnique,
-        updateMany: mocks.settlementUpdateMany,
-      },
-      invoice: { upsert: mocks.invoiceUpsert },
-    }));
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError("conflict"));
 
     await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
       "redirect:/admin/billing/settlements?error=conflict",
     );
 
-    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
-      where: { id: settlement.id, lockedAt: null, updatedAt },
-      data: expect.objectContaining({ finalPayoutAmountCents: 8_000, status: "draft" }),
-    });
-    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+    expect(mocks.generateSettlementForVendor).toHaveBeenCalledWith("vendor-1", "2026-08");
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
   it("classifies a concurrent first-generation unique conflict without auditing success", async () => {
-    mocks.transaction.mockRejectedValueOnce({ code: "P2002" });
+    mocks.generateSettlementForVendor.mockRejectedValueOnce({ code: "P2002" });
 
     await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
       "redirect:/admin/billing/settlements?error=conflict",
@@ -2864,6 +4496,21 @@ describe("FIN-02 settlement mutation invariants", () => {
       settlement: {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
+      },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
       },
     }));
 
@@ -2892,6 +4539,21 @@ describe("FIN-02 settlement mutation invariants", () => {
       settlement: {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
+      },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
       },
     }));
 
@@ -2936,6 +4598,21 @@ describe("FIN-02 settlement mutation invariants", () => {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
       },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
+      },
     }));
 
     await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
@@ -2970,6 +4647,21 @@ describe("FIN-02 settlement mutation invariants", () => {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
       },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
+      },
     }));
 
     await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
@@ -2993,9 +4685,9 @@ describe("FIN-02 settlement mutation invariants", () => {
       .mockResolvedValueOnce(settlement)
       .mockResolvedValueOnce(lockedSettlement);
     mocks.affiliateCommissionFindMany.mockResolvedValueOnce([
-      { id: "commission-a1", affiliateId: "affiliate-a" },
-      { id: "commission-a2", affiliateId: "affiliate-a" },
-      { id: "commission-b1", affiliateId: "affiliate-b" },
+      { id: "commission-a1", affiliateId: "affiliate-a", commissionBaseAmountCents: 10_000, netReferenceAmountCents: 8_600 },
+      { id: "commission-a2", affiliateId: "affiliate-a", commissionBaseAmountCents: 5_000, netReferenceAmountCents: 4_300 },
+      { id: "commission-b1", affiliateId: "affiliate-b", commissionBaseAmountCents: 2_000, netReferenceAmountCents: 1_720 },
     ]);
     mocks.affiliateCommissionLedgerEntryAggregate
       .mockResolvedValueOnce({ _sum: { amountCents: 300 } })
@@ -3015,12 +4707,41 @@ describe("FIN-02 settlement mutation invariants", () => {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
       },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
+      },
     }));
 
     await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
       "redirect:/admin/billing/settlements",
     );
 
+    expect(mocks.affiliateCommissionFindMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        monthKey: "2026-08",
+        status: "locked",
+        affiliateId: { not: null },
+      },
+      select: {
+        id: true,
+        affiliateId: true,
+        commissionBaseAmountCents: true,
+        netReferenceAmountCents: true,
+      },
+    });
     expect(mocks.affiliatePayoutCreate).toHaveBeenCalledOnce();
     expect(mocks.affiliatePayoutCreate).toHaveBeenCalledWith({
       data: {
@@ -3030,6 +4751,8 @@ describe("FIN-02 settlement mutation invariants", () => {
         commissionAmountCents: 500,
         adjustmentAmountCents: 0,
         finalAmountCents: 500,
+        grossSalesAmountCents: 15_000,
+        netReferenceAmountCents: 12_900,
         status: "pending",
       },
     });
@@ -3073,6 +4796,21 @@ describe("FIN-02 settlement mutation invariants", () => {
         findUnique: mocks.settlementFindUnique,
         updateMany: mocks.settlementUpdateMany,
       },
+      courseCommissionAllocation: {
+        findMany: mocks.courseCommissionAllocationFindMany,
+        findUnique: mocks.courseCommissionAllocationFindUnique,
+      },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate,
+        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
+        create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique,
+        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate,
+        updateMany: mocks.coursePayoutUpdateMany,
+      },
     }));
 
     await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
@@ -3094,6 +4832,51 @@ describe("FIN-02 settlement mutation invariants", () => {
       commissionAmountCents: 400,
       adjustmentAmountCents: 0,
       finalAmountCents: 400,
+      status: "pending",
+    });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      affiliateCommission: {
+        findMany: mocks.affiliateCommissionFindMany,
+        updateMany: mocks.affiliateCommissionUpdateMany,
+      },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate },
+      affiliatePayout: {
+        findUnique: mocks.affiliatePayoutFindUnique,
+        create: mocks.affiliatePayoutCreate,
+      },
+      settlement: {
+        findUnique: mocks.settlementFindUnique,
+        updateMany: mocks.settlementUpdateMany,
+      },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=conflict",
+    );
+
+    expect(mocks.affiliatePayoutCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an existing AffiliatePayout gross or net snapshot disagrees with its locked commissions", async () => {
+    const lockedSettlement = { ...settlement, status: "locked", lockedAt: new Date("2026-08-05T08:01:00.000Z") };
+    mocks.settlementFindUnique
+      .mockResolvedValueOnce(settlement)
+      .mockResolvedValueOnce(lockedSettlement);
+    mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{
+      id: "commission-a1",
+      affiliateId: "affiliate-a",
+      commissionBaseAmountCents: 10_000,
+      netReferenceAmountCents: 8_600,
+    }]);
+    mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: 500 } });
+    mocks.affiliatePayoutFindUnique.mockResolvedValueOnce({
+      id: "affiliate-payout-1",
+      commissionAmountCents: 500,
+      adjustmentAmountCents: 0,
+      finalAmountCents: 500,
+      grossSalesAmountCents: 9_999,
+      netReferenceAmountCents: 8_600,
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
@@ -3215,16 +4998,19 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
     finalAmountCents: 500,
     status: "pending",
     payoutItemId: null,
+    outcomeReference: null,
+    outcomeReason: null,
     paidAt: null,
   };
   const commission = { id: "commission-fin-05", vendorId: "vendor-1", affiliateId: "affiliate-1", monthKey: "2026-08", status: "locked" };
   const transitionAt = new Date("2026-08-06T09:00:00.000Z");
 
-  function outcomeFormData(status = "paid", reason = "merchant transfer confirmed", id = payout.id) {
+  function outcomeFormData(status = "paid", reason = "merchant transfer confirmed", id = payout.id, outcomeReference = "affiliate-transfer-ref-2026-08") {
     const formData = new FormData();
     formData.set("id", id);
     formData.set("status", status);
     formData.set("reason", reason);
+    if (outcomeReference !== undefined) formData.set("outcomeReference", outcomeReference);
     return formData;
   }
 
@@ -3274,6 +5060,13 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("rejects a paid outcome without a human payout reference before transaction", async () => {
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData("paid", "merchant transfer confirmed", payout.id, ""))).rejects.toThrow(
+      "redirect:/affiliates/commissions?error=invalid_payout",
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("uses the merchant finance MFA boundary before accepting a valid outcome", async () => {
     mocks.requireVendorFinance.mockRejectedValueOnce(new Error("redirect:/mfa/verify"));
 
@@ -3318,8 +5111,13 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
 
       expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
       expect(mocks.affiliatePayoutUpdateMany).toHaveBeenCalledWith({
-        where: { id: payout.id, vendorId: "vendor-1", status: "pending", payoutItemId: null },
-        data: { status: "paid", paidAt: transitionAt },
+          where: { id: payout.id, vendorId: "vendor-1", status: "pending", payoutItemId: null },
+        data: {
+          status: "paid",
+          outcomeReference: "affiliate-transfer-ref-2026-08",
+          outcomeReason: "merchant transfer confirmed",
+          paidAt: transitionAt,
+        },
       });
       expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
         where: { vendorId: "vendor-1", id: { in: [commission.id] }, status: "locked" },
@@ -3334,7 +5132,7 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
           action: "mark_affiliate_payout_paid",
           targetType: "AffiliatePayout",
           targetId: payout.id,
-          after: expect.objectContaining({ reason: "merchant transfer confirmed", transitionedAt: transitionAt }),
+          after: expect.objectContaining({ reference: "affiliate-transfer-ref-2026-08", reason: "merchant transfer confirmed", transitionedAt: transitionAt }),
           ipAddress: "203.0.113.10",
           userAgent: "CelebrateDeal test",
         }),
@@ -3372,7 +5170,12 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
       });
       expect(mocks.affiliatePayoutUpdateMany).toHaveBeenCalledWith({
         where: { id: payout.id, vendorId: "vendor-1", status: "pending", payoutItemId: null },
-        data: { status: "void", paidAt: null },
+        data: {
+          status: "void",
+          outcomeReference: null,
+          outcomeReason: "merchant cancelled transfer",
+          paidAt: null,
+        },
       });
       expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledWith({
         where: { vendorId: "vendor-1", id: { in: [commission.id] }, status: "locked" },

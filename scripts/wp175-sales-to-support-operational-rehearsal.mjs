@@ -10,7 +10,7 @@ const receiptPath = resolve(root, ".ai-team/reports/wp175-sales-to-support-opera
 
 const requiredPlanSignals = [
   "平台月費", "內含播放", "內含活動", "內含推廣者", "儲存額度",
-  "平台金流月費", "交易服務費", "超額：", "月底月結後付",
+  "平台金流月費", "交易服務費", "超額：", "pending 交易",
 ];
 const forbiddenReceiptKeys = /^(?:email|name|token|cookie|secret|password|card|payload|authorization|environmentValue)$/i;
 
@@ -27,7 +27,8 @@ export function loadInputs() {
 
 export function validateContract(contract) {
   const errors = [];
-  if (contract.schemaVersion !== "wp175.v1") errors.push("schema_version");
+  if (contract.schemaVersion !== "wp175.v2") errors.push("schema_version");
+  if (contract.ownerModel?.sameHumanMultipleRoles !== true || contract.ownerModel?.distinctHumanRequired !== false) errors.push("owner_model");
   if (contract.scope !== "LOCAL_OPERATIONAL_REHEARSAL_ONLY") errors.push("scope");
   if (contract.roles?.length !== 8) errors.push("roles");
   if (contract.stages?.length !== 8) errors.push("stages");
@@ -75,7 +76,7 @@ export function buildReceipt(contract, fixtures) {
   ];
   const pass = contractErrors.length === 0 && missingPlanSignals.length === 0 && scenarioFailures.length === 0;
   const receipt = {
-    schemaVersion: "wp175.receipt.v1",
+    schemaVersion: "wp175.receipt.v2",
     workPackage: "WP-175",
     result: pass ? "PASS" : "FAIL_CLOSED",
     localOperationalRehearsal: pass ? "PASS" : "FAIL_CLOSED",

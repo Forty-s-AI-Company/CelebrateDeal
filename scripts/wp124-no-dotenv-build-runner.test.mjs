@@ -1,42 +1,69 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const runner = path.join(root, "scripts", "wp124-no-dotenv-build-runner.mjs");
+import {
+  artifactSummary,
+  classifyExcluded,
+  containsForbiddenFiles,
+  digestPath,
+  hostEnvironment,
+  isSensitivePath,
+  relative,
+  shouldExclude,
+  stableEqual,
+  statusPath,
+} from "./wp124-no-dotenv-build-runner.mjs";
 
-test("WP-124 contract exists and is fail-closed", () => {
-  const contract = JSON.parse(fs.readFileSync(path.join(root, "scripts", "wp124-no-dotenv-build-contract.json"), "utf8"));
-  assert.equal(contract.work_package, "WP-124");
-  assert.equal(contract.source_policy.dotenv, "path-only exclusion; never open, copy, hash, print, rename, or move");
-  assert.equal(contract.source_policy.dependency_install, false);
-  assert.equal(contract.source_policy.network, false);
-  assert.equal(contract.score_gate.preawarded, false);
+test("WP124 exclusion classifier is closed over dotenv, private and database files", () => {
+  assert.equal(classifyExcluded(".env.local"), "dotenv");
+  assert.equal(classifyExcluded("service-account.json"), "private_key_or_certificate");
+  assert.equal(classifyExcluded("data.sqlite"), "database_file");
+  assert.equal(classifyExcluded("page.tsx"), null);
+  assert.equal(shouldExclude("src/page.tsx", ["src"]), null);
+  assert.equal(shouldExclude(".env.local", [".env.local"]), "dotenv");
+  assert.equal(shouldExclude("src/page.tsx", ["src", "node_modules"]), "build_output");
 });
 
-test("synthetic environment contract contains no production endpoint or secret value", () => {
-  const source = fs.readFileSync(runner, "utf8");
-  assert.equal(source.includes(".env.local"), false);
-  assert.equal(source.includes("PAYUNI_HASH_KEY"), false);
-  assert.equal(source.includes("PAYUNI_HASH_IV"), false);
-  assert.equal(source.includes("https://api.payuni.com.tw"), false);
-  assert.equal(source.includes("production.payuni"), false);
-  assert.match(source, /allowlisted_names_only/);
+test("WP124 digest and status helpers never read sensitive file content", () => {
+  assert.equal(statusPath(" M src/page.tsx"), "src/page.tsx");
+  assert.equal(statusPath("R  old.ts -> src/new.ts"), "src/new.ts");
+  assert.equal(isSensitivePath(".env.local"), true);
+  assert.deepEqual(digestPath(".env.local"), { path: ".env.local", pathOnly: true });
+  const packageDigest = digestPath("package.json");
+  assert.equal(packageDigest.path, "package.json");
+  assert.match(packageDigest.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(relative(path.resolve("package.json")), "package.json");
 });
 
-test("temporary mirror policy excludes dotenv, keys, certificates and database files", () => {
-  const source = fs.readFileSync(runner, "utf8");
-  for (const fragment of ["dotenvPattern", "secretExtensions", "databaseExtensions", "node_modules", "fs.symlinkSync"]) {
-    assert.match(source, new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+test("WP124 artifact summary and forbidden-file scan are deterministic on disposable fixtures", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp124-test-"));
+  try {
+    await fsp.mkdir(path.join(root, ".next", "server"), { recursive: true });
+    await fsp.writeFile(path.join(root, ".next", "BUILD_ID"), "build");
+    await fsp.writeFile(path.join(root, ".next", "build-manifest.json"), "{}");
+    await fsp.writeFile(path.join(root, ".next", "routes-manifest.json"), "{}");
+    await fsp.writeFile(path.join(root, ".next", "server", "app-paths-manifest.json"), "{}");
+    await fsp.writeFile(path.join(root, ".env.local"), "never-read");
+    const summary = artifactSummary(root);
+    assert.equal(summary.pass, true);
+    assert.equal(summary.artifacts.length, 4);
+    const violations = containsForbiddenFiles(root);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /[\\/]\.env\.local$/);
+    assert.equal(stableEqual(summary, structuredClone(summary)), true);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
   }
 });
 
-test("workspace target receipt stays outside source mirror and temp cleanup is guarded", () => {
-  const source = fs.readFileSync(runner, "utf8");
-  assert.match(source, /OS_TEMP_ONLY/);
-  assert.match(source, /unsafe temp mirror path/);
-  assert.ok(os.tmpdir().length > 0);
+test("WP124 host environment is synthetic and allowlisted", () => {
+  const environment = hostEnvironment();
+  assert.equal(environment.NODE_ENV, "production");
+  assert.equal(environment.VERCEL_ENV, "preview");
+  assert.equal(environment.NPM_CONFIG_OFFLINE, "true");
+  assert.equal(environment.npm_config_audit, "false");
+  assert.equal(Object.keys(environment).some((key) => /^COOKIE$|TOKEN$|PASSWORD$/i.test(key)), false);
 });

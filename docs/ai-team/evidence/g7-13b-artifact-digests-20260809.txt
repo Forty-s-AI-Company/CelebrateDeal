@@ -1,0 +1,6 @@
+# G7-13B evidence artifact digests
+# UTC: 2026-08-08T18:30:39.473Z
+# Algorithm: SHA-256
+5382665b73b028dfff206f0b1e2417cd43c3f4c0cc0d1fdebf9a464ca4f38538  docs/ai-team/evidence/g7-13b-form-submission-verification-20260809.md
+7bdcb9c94f2da30431d98df0c74a50f1f0625e5de6731b72ebda944a6b598a7f  docs/ai-team/evidence/g7-13b-source-manifest-20260809.txt
+1be17db8a65679e4dfb5edccdc62c29851434978e420ac4fd95795e102ff2536  .ai-team/reports/g7-13b-form-submission-verification-20260809.json

@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "n
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import {
   PaymentQueryProviderError,
+  type PaymentMethodReferenceRevocationInput,
   RefundProviderError,
   type PaymentProviderAdapter,
   type RefundPaymentInput,
@@ -18,6 +19,30 @@ const PAYUNI_MIN_TRADE_AMOUNT = 1;
 const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
 const PAYUNI_REFUND_VERSION = "1.0";
 const PAYUNI_QUERY_VERSION = "2.0";
+const PAYUNI_BIND_CANCEL_VERSION = "1.0";
+const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
+  "MerID",
+  "EventId",
+  "EventType",
+  "Status",
+  "PayStatus",
+  "MerTradeNo",
+  "OrderNo",
+  "orderNumber",
+  "TradeNo",
+  "TsNo",
+  "VendorSlug",
+  "VendorId",
+  "Amount",
+  "TradeAmt",
+  "GatewayFee",
+  "PlatformFee",
+  "NetAmount",
+  "RefundAmount",
+  "GatewayFeeRefund",
+  "PlatformFeeRefund",
+  "OccurredAt",
+]);
 
 function cents(value: unknown) {
   const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
@@ -56,6 +81,16 @@ function optionalPayloadText(value: unknown) {
   return normalized || undefined;
 }
 
+function payUniOpaqueReference(value: string) {
+  const normalized = value.trim();
+  // Keep the provider token opaque. In particular, never accept a contiguous
+  // card-like number as a stored token or forward it to a provider endpoint.
+  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(normalized) || /\d{12,19}/.test(normalized)) {
+    throw new Error("Invalid PayUni payment method reference.");
+  }
+  return normalized;
+}
+
 function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -68,6 +103,24 @@ function parseRawPayload(rawBody: string) {
   } catch {
     return Object.fromEntries(new URLSearchParams(rawBody).entries()) as Record<string, unknown>;
   }
+}
+
+function payUniWebhookAuditSnapshot(rawPayload: Record<string, unknown>) {
+  const snapshot: Record<string, string | number | boolean> = {};
+  let omittedFieldCount = 0;
+
+  for (const [key, value] of Object.entries(rawPayload)) {
+    if (
+      PAYUNI_WEBHOOK_AUDIT_KEYS.has(key)
+      && (typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.length <= 256))
+    ) {
+      snapshot[key] = value;
+    } else {
+      omittedFieldCount += 1;
+    }
+  }
+
+  return { ...snapshot, omittedFieldCount };
 }
 
 function payUniKeyMaterial() {
@@ -399,6 +452,70 @@ async function refundPayUniTransaction({ transaction, refundAmountCents }: Refun
   };
 }
 
+async function revokePayUniPaymentMethod({ providerPaymentMethodRef }: PaymentMethodReferenceRevocationInput) {
+  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+  if (!merchantId) throw new Error("PayUni payment method revocation is not configured.");
+
+  const encrypted = encryptInfo({
+    MerID: merchantId,
+    Timestamp: Math.floor(Date.now() / 1000),
+    UseTokenType: 1,
+    BindVal: payUniOpaqueReference(providerPaymentMethodRef),
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${payUniApiBaseUrl().replace(/\/$/, "")}/credit_bind/cancel`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "payuni",
+      },
+      body: new URLSearchParams({
+        MerID: merchantId,
+        Version: PAYUNI_BIND_CANCEL_VERSION,
+        EncryptInfo: encrypted,
+        HashInfo: hashInfo(encrypted),
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new Error("PayUni payment method revocation failed.");
+  }
+
+  if (!response.ok) throw new Error("PayUni payment method revocation failed.");
+
+  let outer: Record<string, unknown>;
+  try {
+    outer = parseRawPayload(await response.text());
+  } catch {
+    throw new Error("PayUni payment method revocation failed.");
+  }
+
+  const responseEncrypted = optionalPayloadText(outer.EncryptInfo);
+  const responseHash = optionalPayloadText(outer.HashInfo);
+  if (!responseEncrypted || !responseHash || !safeEqual(hashInfo(responseEncrypted), responseHash)) {
+    throw new Error("PayUni payment method revocation failed.");
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = decryptInfo(responseEncrypted);
+  } catch {
+    throw new Error("PayUni payment method revocation failed.");
+  }
+
+  const result = payUniResultRow(payload);
+  const status = optionalPayloadText(payload.Status) ?? optionalPayloadText(result?.Status);
+  const responseMerchantId = optionalPayloadText(payload.MerID) ?? optionalPayloadText(result?.MerID);
+  if (status !== "SUCCESS" || (responseMerchantId && responseMerchantId !== merchantId)) {
+    throw new Error("PayUni payment method revocation failed.");
+  }
+
+  return {};
+}
+
 function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
   const url = new URL("/api/webhooks/payments", appUrl);
   url.searchParams.set("provider", "payuni");
@@ -443,7 +560,17 @@ function verifyPayUniSignature(rawBody: string) {
 
 export const payUniPaymentProvider: PaymentProviderAdapter = {
   id: "payuni",
-  async createCheckoutSession({ transaction, product, appUrl }) {
+  checkoutReadiness() {
+    if (!process.env.PAYUNI_MERCHANT_ID?.trim()) return "unavailable";
+    try {
+      payUniKeyMaterial();
+      payUniApiBaseUrl();
+      return "ready";
+    } catch {
+      return "unavailable";
+    }
+  },
+  async createCheckoutSession({ transaction, product, billingPlan, description, appUrl }) {
     const merchantId = process.env.PAYUNI_MERCHANT_ID;
     if (!merchantId) {
       return {
@@ -455,12 +582,17 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       };
     }
 
+    const productDescription = product?.name ?? billingPlan?.name ?? description;
+    if (!productDescription) {
+      throw new Error("PayUni checkout requires a server-selected product or billing plan.");
+    }
+
     const encrypted = encryptInfo({
       MerID: merchantId,
       MerTradeNo: payUniOrderNumber(transaction),
       TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
       Timestamp: Math.floor(Date.now() / 1000),
-      ProdDesc: product.name.slice(0, 80),
+      ProdDesc: productDescription.slice(0, 80),
       ReturnURL: payUniCallbackUrl(appUrl, "return"),
       NotifyURL: payUniCallbackUrl(appUrl, "notify"),
     });
@@ -511,13 +643,15 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,
       referralCode: rawPayload.ReferralCode ? String(rawPayload.ReferralCode) : undefined,
       occurredAt: rawPayload.OccurredAt ? new Date(String(rawPayload.OccurredAt)).toISOString() : undefined,
-      metadata: rawPayload,
     };
 
     return {
       payload: PaymentWebhookPayload.parse(normalized),
-      rawPayload,
+      rawPayload: payUniWebhookAuditSnapshot(rawPayload),
     };
+  },
+  async revokePaymentMethodReference(input) {
+    return revokePayUniPaymentMethod(input);
   },
   async refundPayment(input) {
     return refundPayUniTransaction(input);

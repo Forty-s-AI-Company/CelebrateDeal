@@ -164,7 +164,7 @@ describe("rate limit providers", () => {
       provider: "cloudflare_waf",
       durable: true,
       externalRequired: true,
-      configured: false,
+      configured: true,
     });
   });
 });

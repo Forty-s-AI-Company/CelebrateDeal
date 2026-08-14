@@ -19,14 +19,14 @@ export default async function EditInteractionScriptPage({
   const [script, roles, products, csrfToken] = await Promise.all([
     db.interactionScript.findFirst({ where: { id, vendorId: vendor.id }, include: { events: { orderBy: { triggerSec: "asc" } }, lives: { include: { video: true } } } }),
     db.interactionRole.findMany({ where: { vendorId: vendor.id, isActive: true } }),
-    db.product.findMany({ where: { vendorId: vendor.id, isActive: true } }),
+    db.product.findMany({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true } }),
     getCsrfToken(),
   ]);
   if (!script) notFound();
   return (
     <>
       <PageHeader title="編輯互動腳本" description="調整時間軸事件，讓前台依影片進度觸發官方互動。" />
-      <InteractionScriptForm script={script} roles={roles} products={products} boundLives={script.lives} csrfToken={csrfToken} error={error} />
+      <InteractionScriptForm key={script.id} script={script} roles={roles} products={products} boundLives={script.lives} csrfToken={csrfToken} error={error} />
     </>
   );
 }

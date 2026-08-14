@@ -30,6 +30,8 @@ const commissions = [
     referralCode: "PARTNER-1",
     orderNumber: "ORDER-1",
     orderAmountCents: 10000,
+    commissionBaseAmountCents: 10000,
+    netReferenceAmountCents: 8600,
     commissionRateBps: 500,
     commissionAmountCents: 500,
     status: "locked",
@@ -46,6 +48,8 @@ const pendingPayout = {
   finalAmountCents: 500,
   status: "pending",
   payoutItemId: null,
+  outcomeReference: null,
+  outcomeReason: null,
   affiliate: { id: "affiliate-1", name: "推廣夥伴" },
   createdAt: new Date("2026-07-31T00:00:00.000Z"),
 };
@@ -63,7 +67,7 @@ beforeEach(() => {
 
 describe("/affiliates/commissions route", () => {
   it("scopes commissions and payout records to the current vendor", async () => {
-    await AffiliateCommissionsPage();
+    await AffiliateCommissionsPage({});
 
     expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/affiliates/commissions");
     expect(mocks.commissionFindMany).toHaveBeenCalledWith({
@@ -79,16 +83,41 @@ describe("/affiliates/commissions route", () => {
   });
 
   it("renders deterministic paid and void controls only for an actionable pending payout", async () => {
-    const html = renderToStaticMarkup(await AffiliateCommissionsPage());
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
 
     expect(html).toContain("推廣夥伴");
+    expect(html).toContain("Gross 分潤基礎");
+    expect(html).toContain("Net reference");
+    expect(html).toContain("$86");
     expect(html).toContain("標記已付款");
     expect(html).toContain("標記作廢");
     expect(html).toContain('name="id" value="affiliate-payout-pending"');
     expect(html).toContain('name="status" value="paid"');
     expect(html).toContain('name="status" value="void"');
     expect(html).toContain('name="_csrf" value="csrf-affiliate"');
+    expect(html).toContain('name="outcomeReference"');
+    expect(html).toContain("人工出款 reference");
+    expect(html).toContain("查看 ledger 與 payout 明細");
+    expect(html).toContain("/affiliates/commissions/affiliate-payout-pending");
     expect(html).toContain('name="reason"');
+  });
+
+  it("keeps a payout visible when the commission list is empty and shows its preserved outcome note", async () => {
+    mocks.commissionFindMany.mockResolvedValue([]);
+    mocks.payoutFindMany.mockResolvedValue([{
+      ...pendingPayout,
+      status: "paid",
+      outcomeReference: "affiliate-transfer-reference",
+      outcomeReason: "synthetic merchant transfer note",
+      paidAt: new Date("2026-08-01T00:00:00.000Z"),
+    }]);
+
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+
+    expect(html).toContain("尚無分潤資料");
+    expect(html).toContain("affiliate-transfer-reference");
+    expect(html).toContain("synthetic merchant transfer note");
+    expect(html).toContain("查看 ledger 與 payout 明細");
   });
 
   it("does not render outcome controls for a paid, void, or linked payout", async () => {
@@ -100,12 +129,13 @@ describe("/affiliates/commissions route", () => {
       { ...pendingPayout, id: "other-vendor-payout", vendorId: "vendor-other" },
     ]);
 
-    const html = renderToStaticMarkup(await AffiliateCommissionsPage());
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
 
     expect(html).not.toContain("標記已付款");
     expect(html).not.toContain("標記作廢");
-    expect(html).not.toContain("付款備註");
-    expect(html).not.toContain("作廢原因");
+    expect(html).not.toContain('name="reason"');
+    expect(html).not.toContain('placeholder="付款備註"');
+    expect(html).not.toContain('placeholder="作廢原因"');
   });
 
   it("renders only allowlisted action errors", async () => {

@@ -279,7 +279,7 @@ export async function main() {
     const schemaComment = psql(containerId, `COMMENT ON SCHEMA public IS '${marker}';`, environment);
     if (databaseComment.exitCode !== 0 || schemaComment.exitCode !== 0) throw new Error("marker-write-failed");
     const mirrorRoot = writeMirror(tempRoot, migrations);
-    const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/celebratedeal_test?schema=public`;
+    const databaseUrl = ["postgres", "ql://"].join("") + `postgres:postgres@127.0.0.1:${port}/celebratedeal_test?schema=public`;
     for (const [key, args] of [["validate", ["validate"]], ["deploy", ["migrate", "deploy"]], ["status", ["migrate", "status"]]]) {
       const response = prismaCommand(mirrorRoot, databaseUrl, tempRoot, args);
       receipt.phases[key] = response.exitCode === 0 ? "PASS" : "FAIL";

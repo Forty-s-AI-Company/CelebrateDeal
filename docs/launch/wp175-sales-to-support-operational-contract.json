@@ -1,5 +1,7 @@
 {
-  "schemaVersion": "wp175.v1",
+  "schemaVersion": "wp175.v2",
+  "governanceDecision": "docs/decisions/ADR-2026-08-13-solo-founder-owner-model.md",
+  "ownerModel": { "sameHumanMultipleRoles": true, "distinctHumanRequired": false },
   "scope": "LOCAL_OPERATIONAL_REHEARSAL_ONLY",
   "sourcePaths": [
     "src/app/(app)/billing/plans/page.tsx",
@@ -19,7 +21,7 @@
     "finance_owner",
     "platform_admin",
     "release_owner",
-    "privacy_legal_owner"
+    "privacy_policy_owner"
   ],
   "stages": [
     {
@@ -101,14 +103,14 @@
     },
     {
       "id": "offboarding_data_request_routing",
-      "owner": "privacy_legal_owner",
+      "owner": "privacy_policy_owner",
       "requiredInputs": ["request_class", "sanitized_subject_reference"],
       "allowedEvidence": ["sanitized_request_projection", "process_gap"],
       "decisionState": "PROCESS_GAP_BLOCKED",
       "prohibitedActions": ["delete_data", "export_data", "promise_legal_deadline", "claim_legal_approval"],
       "nextOwner": "release_owner",
       "stopCondition": "no_approved_legal_process",
-      "sanitizedProjection": ["request_class", "process_gap", "privacy_legal_owner", "release_owner"]
+      "sanitizedProjection": ["request_class", "process_gap", "privacy_policy_owner", "release_owner"]
     }
   ],
   "boundaries": {

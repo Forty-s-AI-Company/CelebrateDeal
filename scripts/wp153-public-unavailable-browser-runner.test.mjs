@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { buildWp151FixtureScript } from "./wp151-public-unavailable-browser-runner.mjs";
-import { isAllowedLoopbackUrl, makeReceipt, validateWp153Receipt } from "./wp153-public-unavailable-browser-runner.mjs";
+import {
+  attachSanitizedStream,
+  isAllowedLoopbackUrl,
+  makeReceipt,
+  nextMetadataSnapshot,
+  protectedDigestSnapshot,
+  runQuiet,
+  sha256File,
+  syntheticEnvironment,
+  validateWp153Receipt,
+  waitForServer,
+  writeReceipt,
+} from "./wp153-public-unavailable-browser-runner.mjs";
 
 const wp151ReceiptPath = ".ai-team/reports/wp151-public-unavailable-browser-receipt.json";
 
@@ -143,5 +158,162 @@ test("COV-07 WP153 receipt round-trip rejects version, status and safety tamperi
   const safetyTampered = structuredClone(receipt);
   safetyTampered.rawOutputExposed = true;
   assert.throws(() => validateWp153Receipt(safetyTampered), /RECEIPT_SAFETY_INVALID/);
+});
+
+test("COV-09 WP153 synthetic environment and protected digests remain bounded", () => {
+  const environment = syntheticEnvironment();
+  assert.equal(environment.NODE_ENV, "development");
+  assert.equal(environment.CI, "true");
+  assert.equal(environment.PAYMENT_PROVIDER, "demo");
+  assert.equal(environment.RATE_LIMIT_PROVIDER, "memory");
+  assert.equal(environment.PSQLRC, "");
+  assert.equal(environment.DATABASE_URL.includes("127.0.0.1"), true);
+  assert.equal(nextMetadataSnapshot().exists === true || nextMetadataSnapshot().exists === false, true);
+  const snapshot = protectedDigestSnapshot();
+  assert.equal(Object.keys(snapshot).length > 0, true);
+  assert.equal(Object.values(snapshot).every((value) => /^sha256:[a-f0-9]{64}$/u.test(value)), true);
+  assert.equal(/^sha256:[a-f0-9]{64}$/u.test(sha256File("package.json")), true);
+});
+
+test("COV-09 WP153 stream diagnostics classify without retaining raw output", () => {
+  const child = { stdout: new EventEmitter(), stderr: new EventEmitter() };
+  const diagnostics = { lineCount: 0, classifications: [] };
+  attachSanitizedStream(child, diagnostics);
+  child.stdout.emit("data", "ready\n");
+  child.stderr.emit("data", "Cannot find module 'next'\n");
+  assert.equal(diagnostics.lineCount, 2);
+  assert.deepEqual(diagnostics.classifications, ["MODULE_RESOLUTION"]);
+  assert.equal(Object.hasOwn(diagnostics, "rawOutput"), false);
+});
+
+test("COV-09 WP153 receipt writer round-trips a sanitized disposable receipt", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "wp153-receipt-"));
+  const target = path.join(directory, "receipt.json");
+  try {
+    assert.equal(writeReceipt(target, makeReceipt()), undefined);
+    const roundTrip = JSON.parse(fs.readFileSync(target, "utf8"));
+    assert.equal(roundTrip.status, "WP153_EXACT_NO_GO_NO_RETRY");
+    assert.equal(roundTrip.rawOutputPersisted, false);
+    assert.equal(fs.existsSync(`${target}.tmp-${process.pid}`), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("COV-10 WP153 pure helpers cover fail-closed transport and readiness branches", async () => {
+  const { classifyServerOutput, normalizeLoopbackEndpoint, readinessTransition, READINESS_STATES, runSyntheticReadiness } = await import("./wp153-public-unavailable-browser-runner.mjs");
+
+  assert.equal(classifyServerOutput("address already in use"), "PORT_IN_USE");
+  assert.equal(classifyServerOutput("module not found"), "MODULE_RESOLUTION");
+  assert.equal(classifyServerOutput("SyntaxError while loading"), "SOURCE_OR_COMPILE_BOUNDARY");
+  assert.equal(classifyServerOutput("uncaught fatal failure"), "SERVER_START_UNKNOWN");
+  assert.equal(classifyServerOutput("ready"), null);
+
+  assert.throws(() => normalizeLoopbackEndpoint("not-a-url"), /LOOPBACK_URL_INVALID/);
+  assert.throws(() => normalizeLoopbackEndpoint("http://127.0.0.1/p/example"), /LOOPBACK_PORT_INVALID/);
+  assert.throws(() => normalizeLoopbackEndpoint("http://localhost:32153/p/example"), /LOOPBACK_URL_NOT_ALLOWED/);
+  assert.throws(() => normalizeLoopbackEndpoint("http://user:pass@127.0.0.1:32153/p/example"), /LOOPBACK_URL_NOT_ALLOWED/);
+
+  const initial = { state: READINESS_STATES.NOT_STARTED, markerSeen: false, probeSeen: false, spawnCount: 0, ignoredEvents: 0, events: [] };
+  assert.throws(() => readinessTransition(null, "SPAWN_REQUEST"), /READINESS_MACHINE_INVALID/);
+  assert.throws(() => readinessTransition(initial, "SPAWN_ACCEPTED"), /READINESS_SPAWN_STATE_INVALID/);
+  assert.equal(runSyntheticReadiness(["SPAWN_REJECTED"]).state, READINESS_STATES.EARLY_EXIT);
+  assert.equal(runSyntheticReadiness(["SPAWN_REQUEST", "EARLY_EXIT"]).state, READINESS_STATES.EARLY_EXIT);
+  assert.equal(runSyntheticReadiness(["SPAWN_REQUEST", "SPAWN_ACCEPTED", "TIMEOUT"]).state, READINESS_STATES.TIMED_OUT);
+  assert.equal(runSyntheticReadiness(["CLEANUP"]).state, READINESS_STATES.CLEANED);
+  assert.throws(() => runSyntheticReadiness(["SPAWN_REQUEST", "SPAWN_REQUEST"]), /READINESS_SPAWN_DUPLICATE/);
+  assert.throws(() => runSyntheticReadiness(["SPAWN_REQUEST", "SPAWN_ACCEPTED", "UNKNOWN"]), /READINESS_EVENT_INVALID/);
+});
+
+test("COV-10 WP153 receipt validation rejects each safety and gate family", () => {
+  const missing = makeReceipt();
+  delete missing.server;
+  assert.throws(() => validateWp153Receipt(missing), /RECEIPT_MISSING_server/);
+
+  const schema = makeReceipt();
+  schema.schemaVersion = "wrong";
+  assert.throws(() => validateWp153Receipt(schema), /RECEIPT_SCHEMA_INVALID/);
+  const status = makeReceipt();
+  status.status = "UNKNOWN";
+  assert.throws(() => validateWp153Receipt(status), /RECEIPT_STATUS_INVALID/);
+  const counter = makeReceipt();
+  counter.attempt = 2;
+  assert.throws(() => validateWp153Receipt(counter), /RECEIPT_COUNTER_INVALID/);
+  const safety = makeReceipt();
+  safety.sourceEnvContentsRead = true;
+  assert.throws(() => validateWp153Receipt(safety), /RECEIPT_SAFETY_INVALID/);
+  const sideEffects = makeReceipt();
+  sideEffects.sideEffects.database = 1;
+  assert.throws(() => validateWp153Receipt(sideEffects), /RECEIPT_SIDE_EFFECT_INVALID/);
+
+  const pass = makeReceipt();
+  pass.status = "PASS";
+  pass.attempt = 1;
+  pass.server.started = 1;
+  pass.server.ready = true;
+  pass.browser.desktop.passed = 1;
+  pass.browser.mobile390.passed = 1;
+  pass.cleanup.fixture = "PASS";
+  pass.cleanup.schema = "PASS";
+  pass.cleanup.tempRoot = true;
+  pass.cleanup.server = true;
+  assert.equal(validateWp153Receipt(pass), true);
+  pass.cleanup.tempRoot = false;
+  assert.throws(() => validateWp153Receipt(pass), /RECEIPT_PASS_GATE_INVALID/);
+});
+
+test("COV-10 WP153 digest and stream helpers stay sanitized on optional inputs", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "wp153-empty-"));
+  try {
+    assert.deepEqual(protectedDigestSnapshot(directory), {});
+    const child = {};
+    const diagnostics = { lineCount: 0, classifications: [] };
+    assert.equal(attachSanitizedStream(child, diagnostics), undefined);
+    assert.deepEqual(diagnostics, { lineCount: 0, classifications: [] });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("COV-11 WP153 subprocess normalization preserves bounded result fields", () => {
+  const result = runQuiet(process.execPath, ["--version"], process.env);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdoutBytes > 0, true);
+  assert.equal(result.stderrBytes, 0);
+  assert.deepEqual(Object.keys(result).sort(), ["exitCode", "stderrBytes", "stdoutBytes"]);
+});
+
+test("COV-11 WP153 readiness fails closed on early exit without fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return { status: 204 };
+  };
+  try {
+    await assert.rejects(
+      waitForServer("http://127.0.0.1:32153", { exitCode: 1 }),
+      /SERVER_READINESS_EXACT_NO_GO/,
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("COV-11 WP153 readiness accepts a loopback success response", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async (url) => {
+    fetchCalls += 1;
+    assert.equal(url, "http://127.0.0.1:32153/login");
+    return { status: 204 };
+  };
+  try {
+    await assert.doesNotReject(waitForServer("http://127.0.0.1:32153", { exitCode: null }));
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 // COV-07 END

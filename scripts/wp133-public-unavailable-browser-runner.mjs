@@ -118,6 +118,19 @@ export function classifyResult({ preflight, mirror, junction, resolution, port, 
   return CLASSIFICATIONS.PASS;
 }
 
+export {
+  allocatePort,
+  digest,
+  environment,
+  filterSourcePath,
+  fixtureScript,
+  inspectMirror,
+  isForbiddenPath,
+  playwrightConfig,
+  removeTempRoot,
+  sourceIntegrity,
+};
+
 function createMirror(tempRoot) {
   fs.cpSync(root, tempRoot, { recursive: true, filter: (source) => filterSourcePath(path.relative(root, source)) });
   fs.symlinkSync(path.join(root, "node_modules"), path.join(tempRoot, "node_modules"), "junction");

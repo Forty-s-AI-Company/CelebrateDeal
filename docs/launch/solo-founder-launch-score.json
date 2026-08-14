@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "celebratedeal-solo-founder-launch-score/v1",
+  "asOf": "2026-08-13",
+  "previousCanonicalScore": 75.5,
+  "soloFounderLaunchScore": 68.65,
+  "scoreAppliedToCanonical": false,
+  "governanceDecision": "docs/decisions/ADR-2026-08-13-solo-founder-owner-model.md",
+  "method": "scripts/solo-founder-launch-score.mjs",
+  "categories": {
+    "payment_correctness": { "score": 6.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT04", "docs/ai-team/evidence/wp-196-final-staging-payuni-authorization.md"] },
+    "authentication_authorization": { "score": 8.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT03"] },
+    "data_protection": { "score": 8.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT03", "docs/codex-goal/REQUIREMENTS_TRACEABILITY.md#R-019"] },
+    "production_configuration": { "score": 7.5, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT09"] },
+    "error_recovery": { "score": 8.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT08"] },
+    "refund_correctness": { "score": 6.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT04"] },
+    "security": { "score": 8.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT03"] },
+    "monitoring": { "score": 6.5, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT08", "docs/launch/manual-blockers.md#MB-06"] },
+    "backup_recovery": { "score": 6.5, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT05", "docs/launch/manual-blockers.md#MB-03"] },
+    "customer_facing_policies": { "score": 4.5, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT10"] },
+    "core_functional_qa": { "score": 9.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/categories/CAT07"] },
+    "production_readiness": { "score": 0.0, "evidence": ["docs/launch/current-readiness-snapshot-20260802.json#/readiness_labels"] }
+  },
+  "readiness": {
+    "ENGINEERING_READY": { "value": true, "reason": "Current snapshot has accepted local core, auth, migration, regression and release evidence; this state excludes external provider readiness.", "evidence": ["docs/launch/current-readiness-snapshot-20260802.json"] },
+    "PAYMENT_RECONCILIATION_READY": { "value": false, "reason": "No current evidence proves environment identity, provider account/environment identity and complete local/provider payment reconciliation; a fresh transaction is not required if equivalent current evidence exists.", "evidence": ["docs/ai-team/evidence/wp-146-payuni-sandbox-reconciliation.md", "docs/launch/manual-blockers.md#MB-09"] },
+    "SANDBOX_READY": { "value": false, "reason": "Payment reconciliation outcome is not currently proven. WP-196 and WP-197 remain historical fail-closed evidence, not mandatory retry instructions.", "evidence": ["docs/ai-team/evidence/wp-196-final-staging-payuni-authorization.md", "docs/ai-team/evidence/wp-197-staging-lineage-binding-gate.md"] },
+    "PRODUCTION_READY": { "value": false, "reason": "The current truth surface explicitly keeps production readiness false while provider, policy, recovery and release evidence remain incomplete.", "evidence": ["docs/launch/current-readiness-snapshot-20260802.json"] }
+  },
+  "remainingHardBlockers": [
+    {
+      "source": "docs/launch/manual-blockers.md#MB-09",
+      "reason": "No current, equivalent evidence proves the local order/payment/refund state matches the PayUni provider state under a verifiable environment and provider binding.",
+      "risk_if_missing": "Payment reference, amount, status and refund linkage remain unverified in the intended non-Production environment.",
+      "provenance": "EXTERNAL_PROVIDER"
+    },
+    {
+      "source": "docs/launch/manual-blockers.md#MB-05",
+      "reason": "Production merchant, callback, signature and account binding configuration is incomplete.",
+      "risk_if_missing": "A real payment could be routed, authenticated or reconciled incorrectly.",
+      "provenance": "EXTERNAL_PROVIDER"
+    },
+    {
+      "source": "docs/launch/manual-blockers.md#MB-03",
+      "reason": "Production backup, restore and rollback evidence is not complete.",
+      "risk_if_missing": "A migration or incident could cause unrecoverable production data loss or prolonged outage.",
+      "provenance": "DIRECT_PRODUCTION_RISK"
+    },
+    {
+      "source": "docs/launch/manual-blockers.md#MB-08",
+      "reason": "Applicable customer-facing privacy, terms, refund and retention policy review remains pending.",
+      "risk_if_missing": "The product may launch without required customer disclosures or an executable policy path.",
+      "provenance": "LEGAL_REGULATION"
+    },
+    {
+      "source": "docs/launch/manual-blockers.md#MB-06",
+      "reason": "Minimum production error observability and support escalation are not yet evidenced as complete.",
+      "risk_if_missing": "Payment, delivery or security incidents may remain undetected or lack a response path.",
+      "provenance": "DIRECT_PRODUCTION_RISK"
+    }
+  ],
+  "warnings": [
+    "Distinct five-owner approval is an enterprise preference, not a release blocker without provenance.",
+    "Distinct CAT04 owners are not required when responsibility and control traces are explicit.",
+    "An independent release, finance or legal person is not required without release-critical provenance.",
+    "A complete external monitoring packet is follow-up; minimum error observability remains required.",
+    "A complete screen-reader matrix is follow-up; baseline accessibility remains required.",
+    "Analytics dashboard evidence is follow-up unless a tracked project requirement says otherwise.",
+    "AGY/Sol/AI acceptance is not human approval and is not a launch blocker by itself."
+  ]
+}

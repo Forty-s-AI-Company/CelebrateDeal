@@ -177,6 +177,7 @@ export default async function MfaSetupPage({
                       className="h-11 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-800 hover:bg-orange-50"
                       pendingChildren="重新產生中…"
                       pendingMessage="正在重新產生 recovery codes。"
+                      confirmMessage="重新產生後，舊 recovery codes 會立即失效。確定繼續？"
                     >
                       重新產生 recovery codes
                     </FormSubmitButton>

@@ -33,6 +33,7 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 
 - 主代理負責整合與最終判斷，但不要求固定模型或固定角色順序。
 - Sol、Terra、AGY Fast、AGY Deep、Luna 可依可用性與風險自動選擇；fallback 只能如實記錄，不能冒充成功。
+- 推理程度依任務難度動態選擇，以最低足夠成本完成工作：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`；其他模型設定維持不變。一般任務優先採中間值，只有真正簡單或高風險困難任務才使用範圍端點。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 

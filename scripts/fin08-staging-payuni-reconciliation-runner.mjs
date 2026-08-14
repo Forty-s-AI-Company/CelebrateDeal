@@ -177,7 +177,7 @@ function initialReceipt() {
   };
 }
 
-async function querySyntheticCandidate(db) {
+export async function querySyntheticCandidate(db) {
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
     const rows = await tx.$queryRaw(Prisma.sql`
@@ -235,7 +235,7 @@ function buildProviderTransaction(row) {
   };
 }
 
-async function queryOfficialSandbox(row, paymentProvider) {
+export async function queryOfficialSandbox(row, paymentProvider) {
   const nativeFetch = globalThis.fetch;
   let attempts = 0;
   let redirects = 0;
@@ -259,7 +259,7 @@ async function queryOfficialSandbox(row, paymentProvider) {
   }
 }
 
-async function childRun(expectedCwd) {
+export async function childRun(expectedCwd) {
   const child = { schemaVersion: "fin08-child/v1", cwdMatched: path.resolve(process.cwd()) === path.resolve(expectedCwd), status: "FIN08_TERMINAL_NO_GO_BROKER", failure: null, environment: null, candidate: null, provider: null, reconciliation: null, replay: null, sideEffects: { databaseConnections: 0, databaseQueries: 0, databaseWrites: 0, auditWrites: 0, providerQueries: 0, providerWrites: 0, payments: 0, refunds: 0, callbacks: 0, production: 0 }, safety: { environmentFileRead: false, rawValuesPersisted: false, rawProviderResponsePersisted: false } };
   const env = classifyChildEnvironment(process.env);
   child.environment = { requiredPresent: env.requiredPresent, present: env.present, appHostMatched: env.appHostMatched, sandbox: env.sandbox, databaseIdentity: env.databaseIdentity, supabaseIdentity: env.supabaseIdentity, production: env.production };
@@ -333,7 +333,7 @@ async function childRun(expectedCwd) {
   if (child.status !== "FIN08_CAT04_SANDBOX_RECONCILIATION_VERIFIED") process.exitCode = 2;
 }
 
-async function cleanupTemp(temp) {
+export async function cleanupTemp(temp) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await fsp.rm(temp, { recursive: true, force: true }).catch(() => {});
     if (!fs.existsSync(temp)) return { pass: true, residualSafe: true };
@@ -455,4 +455,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   else throw new Error("FIN08_EXECUTE_ONCE_REQUIRED");
 }
 
-export { TARGET_KEYS, initialReceipt };
+export { TARGET_KEYS, buildBrokerArgs, buildProviderTransaction, canonical, digest, initialReceipt };

@@ -3,17 +3,45 @@ import { test, vi } from "vitest";
 
 import {
   PayUniQueryFailure,
+  artifactTimestamp,
   assertExactHttpsHost,
   assertSandboxExecutionEnvironment,
   assertPublicPayUniCallbackHost,
+  boundedQueryTimeout,
   buildQaArtifact,
+  callbackQueryFailure,
   callbackTimeoutDiagnostic,
+  diagnosticJsonType,
+  diagnosticLengthBucket,
+  diagnosticReference,
+  exactProviderDisposition,
   payUniRequest,
   paymentPageStructure,
+  providerMessageCategory,
+  providerMessageDiagnostic,
+  providerResultValue,
   providerResultDiagnostic,
+  providerValueDiagnostic,
+  queryDisposition,
   reconcileCallbackTimeout,
   resolvePayUniStagingAppUrl,
+  safeDiagnosticToken,
+  safeHttpsHostPath,
+  safeHttpStatus,
+  safePageHttpsHostPath,
+  safeProviderDisposition,
+  safeProviderMessageDiagnostic,
+  safeProviderValueDiagnostic,
+  safeQaArtifactFailureCategory,
+  safeQaArtifactFailureStage,
+  safeQaArtifactGate,
+  safeQaArtifactRevision,
+  safeQaArtifactSignerRole,
+  safeQaErrorClass,
+  safeReceiptHostPath,
   sandboxEnvironmentAvailability,
+  safeTradeStatus,
+  truncate,
 } from "./payuni-sandbox-external-qa.mjs";
 
 const DIAGNOSTIC_HASH_KEY = "12345678901234567890123456789012";
@@ -577,6 +605,73 @@ test("the receipt boundary removes mutated raw provider fields", async () => {
     assert.deepEqual(attempt.providerMessage, { category: "unavailable", jsonType: "string", lengthBucket: "33-128" });
   }
   assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test("COV-09 PayUni value-free helper boundaries keep closed enums and fixed paths", () => {
+  assert.equal(safeQaArtifactGate("passed"), "passed");
+  assert.equal(safeQaArtifactGate("unexpected"), "unknown");
+  assert.equal(safeQaArtifactRevision("abcdef1"), "abcdef1");
+  assert.equal(safeQaArtifactRevision("not-a-revision"), "unavailable");
+  assert.equal(safeQaArtifactSignerRole("release-manager"), "release-manager");
+  assert.equal(safeQaArtifactSignerRole("unknown"), "delivery-qa");
+  assert.equal(safeQaArtifactFailureCategory({ success: true }), "none");
+  assert.equal(safeQaArtifactFailureCategory({ checks: { financeErrorCategory: "database" } }), "database");
+  assert.equal(safeQaArtifactFailureCategory({ checks: { errorCategory: "not-allowed" } }), "unknown");
+  assert.equal(safeQaArtifactFailureStage({ checks: { browserStage: "waiting-payment-callback" } }), "waiting-payment-callback");
+  assert.equal(safeQaArtifactFailureStage({ checks: { browserStage: "not-allowed" } }), "unavailable");
+  assert.equal(artifactTimestamp("2026-07-30T00:00:00.000Z").toISOString(), "2026-07-30T00:00:00.000Z");
+  assert.equal(artifactTimestamp("invalid").constructor, Date);
+  assert.equal(truncate("short", 10), "short");
+  assert.equal(truncate("123456789", 5), "1234…");
+
+  assert.equal(safeHttpsHostPath("https://sandbox-api.payuni.com.tw/api/upp?opaque=1"), "sandbox-api.payuni.com.tw/api/upp");
+  assert.equal(safeHttpsHostPath("https://sandbox-api.payuni.com.tw/api/private"), "unavailable");
+  assert.equal(safePageHttpsHostPath({ url: () => "https://sandbox-api.payuni.com.tw/api/upp" }), "sandbox-api.payuni.com.tw/api/upp");
+  assert.equal(safePageHttpsHostPath({ url: () => { throw new Error("detached"); } }), "unavailable");
+  assert.equal(safeReceiptHostPath("sandbox-api.payuni.com.tw/api/upp"), "sandbox-api.payuni.com.tw/api/upp");
+  assert.equal(safeReceiptHostPath("other"), "unavailable");
+  assert.equal(safeDiagnosticToken("waiting-payment-callback"), "waiting-payment-callback");
+  assert.equal(safeDiagnosticToken("unknown"), "unavailable");
+  assert.equal(safeQaErrorClass(new TypeError("synthetic")), "TypeError");
+  assert.equal(safeQaErrorClass(new RangeError("synthetic")), "other-error");
+  assert.equal(safeQaErrorClass("not-an-error"), "non-error-throw");
+  assert.equal(safeTradeStatus("0"), "0");
+  assert.equal(safeTradeStatus("2"), "unavailable");
+  assert.equal(safeHttpStatus(200), 200);
+  assert.equal(safeHttpStatus("200"), null);
+});
+
+test("COV-09 PayUni diagnostic attribution is keyed, bounded and provider-table-only", () => {
+  assert.deepEqual([undefined, null, [], "x", 1, true, {}].map(diagnosticJsonType), ["absent", "null", "array", "string", "number", "boolean", "object"]);
+  assert.deepEqual([undefined, "", "12345678", "123456789", "x".repeat(33), "x".repeat(129), "x".repeat(513)].map(diagnosticLengthBucket), ["513+", "0", "1-8", "9-32", "33-128", "129-512", "513+"]);
+  assert.equal(exactProviderDisposition("QUERY01002", undefined), "terminal-authentication");
+  assert.equal(exactProviderDisposition("FAIL", "QUERY02002"), "terminal-invalid-request");
+  assert.equal(exactProviderDisposition("UNKNOWN", "UNKNOWN"), "unknown");
+  assert.equal(providerMessageCategory("QUERY03001", undefined), "transaction-not-found");
+  assert.equal(providerMessageCategory("FAIL", "UNKNOWN"), "unavailable");
+  assert.equal(providerResultValue('{"TradeStatus":"0"}').TradeStatus, "0");
+  assert.equal(providerResultValue("TradeStatus=0").TradeStatus, "0");
+  assert.equal(providerResultValue(""), null);
+  assert.equal(safeProviderDisposition("retryable-provider"), "retryable-provider");
+  assert.equal(safeProviderDisposition("forged"), "unknown");
+  assert.deepEqual(safeProviderValueDiagnostic({ valuePresent: true, code: "QUERY01002", jsonType: "string", lengthBucket: "1-8", reference: "forged" }), { valuePresent: true, code: "QUERY01002", jsonType: "string", lengthBucket: "1-8" });
+  assert.deepEqual(safeProviderValueDiagnostic({ valuePresent: false, jsonType: "absent", lengthBucket: "absent" }), { valuePresent: false, code: "unavailable", jsonType: "absent", lengthBucket: "absent" });
+  assert.deepEqual(safeProviderMessageDiagnostic({ category: "bad", jsonType: "string", lengthBucket: "absent" }), { category: "unavailable", jsonType: "absent", lengthBucket: "absent" });
+  assert.equal(boundedQueryTimeout(0), 5000);
+  assert.equal(boundedQueryTimeout(42.9), 42);
+  assert.equal(boundedQueryTimeout(6000), 5000);
+  assert.equal(queryDisposition({ TradeStatus: "0" }), "retryable-processing");
+  assert.equal(queryDisposition({ TradeStatus: "1" }), "unknown");
+
+  const diagnostic = withHashKey(DIAGNOSTIC_HASH_KEY, () => providerValueDiagnostic("QUERY01002", "provider-status"));
+  assert.match(diagnostic.reference, /^hmac-sha256:[a-f0-9]{16}$/u);
+  assert.match(withHashKey(DIAGNOSTIC_HASH_KEY, () => diagnosticReference("value", "test")), /^hmac-sha256:[a-f0-9]{16}$/u);
+  assert.equal(withHashKey("", () => diagnosticReference("value", "test")), undefined);
+  const failure = new PayUniQueryFailure("provider-result", providerResultDiagnostic({ Status: "QUERY01002", Message: "neutral" }));
+  assert.deepEqual(callbackQueryFailure(failure).providerDisposition, "terminal-authentication");
+  assert.deepEqual(callbackQueryFailure(new Error("unknown")), { failureStage: "unknown", errorCategory: "unknown" });
+  const message = providerMessageDiagnostic("neutral", "transaction-not-found");
+  assert.equal(message.category, "transaction-not-found");
 });
 
 test("callback timeout diagnostics rebuild attempts instead of retaining caller objects", () => {

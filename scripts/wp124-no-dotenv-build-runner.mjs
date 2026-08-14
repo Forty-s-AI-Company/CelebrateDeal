@@ -79,8 +79,8 @@ function hostEnvironment() {
   const synthetic = {
     NODE_ENV: "production",
     VERCEL_ENV: "preview",
-    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/synthetic",
-    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/synthetic",
+    DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/celebratedeal_test",
+    DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:54329/celebratedeal_test",
     NEXT_PUBLIC_APP_URL: "https://celebratedeal.invalid",
     JOB_SECRET: "wp124-synthetic-job-secret-32-bytes",
     CSRF_SECRET: "wp124-synthetic-csrf-secret-32-bytes",
@@ -352,4 +352,6 @@ function main() {
   if (status !== "PASS") process.exitCode = 1;
 }
 
-main();
+export { artifactSummary, classifyExcluded, containsForbiddenFiles, digestPath, hostEnvironment, isSensitivePath, relative, shouldExclude, stableEqual, statusPath };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) main();

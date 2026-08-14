@@ -2,6 +2,8 @@
 
 最後更新：2026-07-09
 
+治理補充（2026-08-13）：本 checklist 依 [Solo Founder Launch Standard](launch/solo-founder-launch-standard.md) 執行。同一真人可承擔多個 owner responsibility；不要求五位不同真人、獨立 release manager 或完整 analytics／monitoring packet。真正的 provider、法律、資料安全、付款、recovery 與最低 error observability 條件仍然保留。
+
 ## 1. 外部服務勾核
 
 - [ ] Domain registrar 已確認（External required）
@@ -91,18 +93,18 @@
 
 ## 4. Go / No-go
 
-正式收費前必須全部通過：
+正式收費前必須全部通過的 release-critical／provider-required 項目：
 
 - [ ] Staging 全部 P0 測試通過
 - [ ] Production DB backup 完成（managed snapshot 或加密自管邏輯備份）
 - [ ] Backup restore drill 完成（隔離 target、目標／實測 RTO、aggregate 一致性均已簽核）
 - [ ] PayUni checkout / paid / refunded / duplicate webhook 通過（External required）
 - [ ] Cloudflare Stream upload / live input / ready webhook 通過（External required）
-- [ ] Sentry alert 可收到測試錯誤（External required）
+- [ ] 最低 production error observability 與 support escalation path 已可執行；完整 Sentry／PostHog delivery packet 若無 provenance，列為 warning／follow-up
 - [ ] Rollback plan 已演練
 
 簽核：
 
-- Owner：
+- Release owner（可與其他 responsibility 為同一真人）：
 - Date：
 - Notes：

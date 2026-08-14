@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "ab947b3e2965e2f6",
+  "startedAt": "2026-08-08T19:20:26.321Z",
+  "finishedAt": "2026-08-08T19:22:52.255Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 44,
+    "applied": true
+  },
+  "browser": {
+    "expected": 5,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 4,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED",
+    "productCatalog": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null,
+    "productDesktop": null,
+    "productMobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop merchant can recover upload and validation errors, then publish and preview one product",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status')",
+          "Expected substring: \"新商品會先儲存為草稿\"",
+          "Error: strict mode violation: getByRole('status') resolved to 2 elements:",
+          "1) <p role=\"status\" class=\"rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900\">新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。</p> aka getByText('新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。')",
+          "2) <span role=\"status\" class=\"sr-only\" aria-live=\"polite\"></span> aka getByRole('status').filter({ hasText: /^$/ })",
+          "Call log:",
+          "- Expect \"toContainText\" with timeout 15000ms",
+          "- waiting for getByRole('status')",
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('status')",
+          "Expected substring: \"新商品會先儲存為草稿\""
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

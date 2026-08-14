@@ -48,7 +48,7 @@ describe("/team-templates/new route", () => {
       include: { team: { select: { name: true } } },
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", isActive: true },
+      where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true },
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     });

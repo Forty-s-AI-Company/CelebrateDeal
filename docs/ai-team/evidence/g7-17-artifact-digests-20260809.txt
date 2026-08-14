@@ -1,0 +1,3 @@
+a9856a5dea85c10d8aa9a309d96051ab16465a05e822a3a5a697678933dfc27c  docs/ai-team/evidence/g7-17-qual-coverage-reconciliation-20260809.md
+8fc77612968cc18aea87c0814f743b941dc80ff38e5e640d80d8694b3532efb6  .ai-team/reports/g7-17-qual-coverage-reconciliation-20260809.json
+7e4e3c06d9d4ce47833eef4a5c839e5347fa669c536a0f0250a78befa37a6bc5  docs/ai-team/evidence/g7-17-source-manifest-20260809.txt

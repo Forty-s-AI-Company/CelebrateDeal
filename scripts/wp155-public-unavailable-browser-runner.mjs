@@ -288,11 +288,20 @@ function preflightDependencyBoundary(receipt) {
 
 export {
   assertUnavailableCase,
+  attachSanitizedStream,
   buildWp151FixtureScript,
   makeReceipt,
   normalizeLoopbackEndpoint,
+  nextMetadataSnapshot,
+  preflightDependencyBoundary,
+  protectedDigestSnapshot,
   readinessTransition,
+  runQuiet,
+  sha256File,
+  syntheticEnvironment,
   validateReceipt,
+  waitForServer,
+  writeReceipt,
 };
 
 export async function main() {

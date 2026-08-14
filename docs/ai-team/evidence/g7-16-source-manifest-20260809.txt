@@ -1,0 +1,3 @@
+c42eaadf45dee47a2bbbcf475dfb15287a045e45e08f9721a079404c748c3e66  docs/launch/current-function-scorecard-20260809.json
+10a302e238e675c4c3d7965f1d8652dae394076ed5b39ea036b070d982c27c27  scripts/g7-function-scorecard-reconciliation.test.mjs
+cdfc7067a8e554558b396d8695f1d03551cb28ff22c7d5fb6da87e4ffdd47e47  docs/launch/current-readiness-snapshot-20260802.json

@@ -332,6 +332,7 @@ async function main() {
       quotaPolicy: { maxConcurrentViewers: 500, stopWhenCreditsBelow: 300 },
       products: {
         create: products.map((product, index) => ({
+          vendorId: vendor.id,
           productId: product.id,
           sortOrder: index + 1,
           offerLabel: index === 0 ? "主打組合" : "加購推薦",

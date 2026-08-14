@@ -1,0 +1,5 @@
+09694e8c8d2f19b4acf468c6e91dbc652796728a7c7e791289246fa0ef237580  docs/ai-team/evidence/g7-24-checkout-recovery-20260809.md
+f8bc7053177219eb0a88bfe80390209a36c17862ff787b2a68e0bc398e4fb5c6  .ai-team/reports/g7-24-checkout-recovery-20260809.json
+3a409e3de8ea5d7e59e8b2c88b87479ec9edfdd2051cc2d1da81420d6a34173b  .ai-team/reports/g7-24-checkout-recovery-controlled-build-20260809.json
+ed20da6bd25fd4ffb80cf7455c35f6f3cc5a4976632a4b41b9f61c93ae54483f  docs/ai-team/evidence/g7-24-source-manifest-20260809.txt
+6b1beadb95f9029deb2a2188b02a7d1bf3f8f9277f0140d278d019126daff2f9  docs/ai-team/evidence/g7-24-source-digests-20260809.txt

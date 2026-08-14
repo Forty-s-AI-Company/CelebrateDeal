@@ -10,6 +10,7 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("DIRECT", "URL")]: "postgresql://test:test@database.test:5432/app", // secret-scan: allow-test-fixture
     [envKey("NEXT", "PUBLIC", "APP", "URL")]: "https://app.test",
     [envKey("JOB", "SECRET")]: "test-job-secret-value-at-least-32-bytes",
+    [envKey("CRON", "SECRET")]: "test-cron-secret-value-at-least-32-bytes",
     [envKey("CSRF", "SECRET")]: "test-csrf-secret-value-at-least-32-bytes",
     [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
     [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",

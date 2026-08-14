@@ -4,6 +4,10 @@ import { demoPaymentProvider } from "@/lib/payment-providers/demo";
 const transaction = { id: "tx-demo", orderNumber: "ORDER-DEMO" } as never;
 
 describe("demo payment provider", () => {
+  it("is explicitly limited to non-production checkout", () => {
+    expect(demoPaymentProvider.checkoutReadiness()).toBe("local_only");
+  });
+
   it("creates a local manual checkout session", async () => {
     await expect(demoPaymentProvider.createCheckoutSession!({
       transaction,

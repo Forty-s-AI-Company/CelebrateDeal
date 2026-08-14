@@ -10,6 +10,21 @@ function isExplicitLocalE2eUrl(url: URL, env: NodeJS.ProcessEnv) {
 }
 
 /**
+ * Production-mode Browser evidence runs use a built server on loopback. Keep
+ * that exception narrow and reusable so local-only adapters cannot be enabled
+ * by a single environment flag or an untrusted request Host.
+ */
+export function isExplicitLocalE2eRuntime(env: NodeJS.ProcessEnv = process.env) {
+  const configured = env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!configured) return false;
+  try {
+    return isExplicitLocalE2eUrl(new URL(configured), env);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 取得伺服器產生郵件連結與付款回呼時唯一可信任的公開網址。
  * 正式環境刻意不接受 request Host fallback，避免 Host header 影響密碼
  * 重設連結或金流回呼位置。

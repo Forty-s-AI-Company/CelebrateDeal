@@ -43,6 +43,24 @@ export type TeamTemplateFormData = {
 export type TeamTemplateFormOption = { id: string; name: string };
 export type TeamTemplateWebinarOption = { id: string; title: string; scheduledAt: string };
 
+function actionRole(status: TemplateActionState["status"]) {
+  return status === "error" ? "alert" as const : "status" as const;
+}
+
+function actionLiveMode(status: TemplateActionState["status"]) {
+  return status === "error" ? "assertive" as const : "polite" as const;
+}
+
+function submitLabel(pending: boolean, isPublishing: boolean) {
+  if (pending) return isPublishing ? "發布中…" : "建立中…";
+  return isPublishing ? "發布新版本" : "建立原始頁";
+}
+
+function pendingMessage(pending: boolean, isPublishing: boolean) {
+  if (!pending) return "";
+  return isPublishing ? "正在發布新的不可變模板版本，請勿重複送出。" : "正在建立團隊原始頁，請勿重複送出。";
+}
+
 export function TeamTemplateForm({
   template,
   teams,
@@ -76,9 +94,7 @@ export function TeamTemplateForm({
     <Card>
       <form
         action={formAction}
-        onSubmit={(event) => {
-          if (isPublishing && !window.confirm("確定要發布新的不可變版本？既有夥伴副本不會被覆寫。")) event.preventDefault();
-        }}
+        aria-busy={pending}
         className="grid gap-6"
       >
         <input type="hidden" name="_csrf" value={csrfToken} />
@@ -86,7 +102,7 @@ export function TeamTemplateForm({
         {template?.id ? <input type="hidden" name="templateId" value={template.id} /> : null}
         {template?.sourcePageId ? <input type="hidden" name="sourcePageId" value={template.sourcePageId} /> : null}
 
-        {state.status !== "idle" ? <p role="status" className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>{state.message}</p> : null}
+        {state.status !== "idle" ? <p role={actionRole(state.status)} aria-live={actionLiveMode(state.status)} className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>{state.message}</p> : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">團隊
@@ -162,7 +178,8 @@ export function TeamTemplateForm({
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">需要權限或資料驗證時，系統不會揭露其他團隊資料。</p>
-          <button disabled={pending || teams.length === 0} className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:opacity-60">{pending ? "儲存中…" : isPublishing ? "發布新版本" : "建立原始頁"}</button>
+          <button type="submit" disabled={pending || teams.length === 0} aria-disabled={pending || teams.length === 0} aria-busy={pending} className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{submitLabel(pending, isPublishing)}</button>
+          <span role="status" aria-live="polite" className="sr-only">{pendingMessage(pending, isPublishing)}</span>
         </div>
       </form>
     </Card>

@@ -4,6 +4,15 @@
 
 > 分數由 `CELEBRATEDEAL_PLAN.md` 匯入。未取得本輪新證據前不調高。每次變更分數必須在 Score History 記錄。
 
+## Launch score governance v2
+
+CAT01～CAT10 的既有 canonical score 目前仍維持 current truth；Solo Founder launch readiness 使用獨立的 [Solo Founder Launch Score](../launch/solo-founder-launch-score.json)，不自動改寫 canonical total。
+
+- Score 不等於 Gate。
+- Hard blocker 必須符合 [Hard Blocker Provenance Rule](../launch/solo-founder-launch-standard.md#hard-blocker-provenance)。
+- 五位不同真人、AI／Sol acceptance、approval packet 數量與 analytics dashboard 不得在沒有 provenance 時單獨造成 score deduction 或 `PRODUCTION_READY=false`。
+- `ENGINEERING_READY`、`SANDBOX_READY`、`PRODUCTION_READY` 必須獨立記錄。
+
 | ID | 類型 | 項目 | 範圍 | 基準分數 | 目前分數 | 目標 | 信心 | 證據 | 扣分原因 | 未完成檢查 | 下一步 | 驗證方式 | Skill/工具 | 手動依賴 | 可自動化分數 | 人工後預期 | 狀態 | 最後驗證 |
 |---|---|---|---|---:|---:|---:|---|---|---|---|---|---|---|---|---:|---:|---|---|
 | Q01 | 品質 | 需求符合度與功能正確性 | 全專案 | 58 | 88 | 100 | High | 27 項需求到實作、unit/DB/E2E、manual/decision 的追溯矩陣 | onboarding/live product acceptance 與外部 Gate 尚未封閉 | R-026/R-027 | 收斂產品決策與外部證據 | 文件＋測試對照 | rg／QA | 是：產品/外部 | 95 | 100 | 進行中 | 2026-07-25 |

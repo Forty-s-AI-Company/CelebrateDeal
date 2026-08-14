@@ -2,6 +2,21 @@
 
 路由是建議，不是固定流程。主代理可依工作價值、風險、可用工具與當前證據選擇角色與模型。
 
+## 動態推理程度
+
+主代理先把任務分成 `trivial`、`routine`、`complex`、`critical`，再選擇足以完成工作的最低合理推理程度。預設落在中間值，避免每次都使用最高成本，也避免為省 token 固定使用最低能力。
+
+| 模型 | 最低 | 最高 | 一般預設 | 難度對應 |
+| --- | --- | --- | --- | --- |
+| Sol | `low` | `xhigh` | `high` | trivial=`low`、routine=`medium`、complex=`high`、critical=`xhigh` |
+| Terra | `low` | `xhigh` | `medium` | trivial=`low`、routine=`medium`、complex=`high`、critical=`xhigh` |
+| Luna | `high` | `max` | `high` | trivial/routine=`high`、complex=`xhigh`、critical=`max` |
+
+- `xhigh` 或 `max` 只用於高風險跨域、重大安全／金流／migration、重複失敗後的困難診斷或 release acceptance。
+- `low` 只用於真正簡單的唯讀查找、錯字、格式或單行機械修改。
+- Browser、Chrome、E2E 與 UI QA 也依實際難度選擇，不固定綁定單一模型或固定推理程度。
+- Gemini、Reviewer 與其他模型維持現有設定。
+
 | 任務類型 | 預設角色 | 可替代路徑 |
 | --- | --- | --- |
 | planning、architecture、acceptance | Sol | Terra 直接規劃；必要時由 Reviewer 複核 |

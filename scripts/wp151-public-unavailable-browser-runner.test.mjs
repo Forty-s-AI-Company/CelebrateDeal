@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { PassThrough } from "node:stream";
 
-import { classifyServerOutput, extractFixtureSlug, makeReceipt, validateWp151Receipt } from "./wp151-public-unavailable-browser-runner.mjs";
+import {
+  attachSanitizedStream,
+  classifyServerOutput,
+  extractFixtureSlug,
+  makeReceipt,
+  nextMetadataSnapshot,
+  protectedDigestSnapshot,
+  runQuiet,
+  sha256File,
+  syntheticEnvironment,
+  validateWp151Receipt,
+  waitForServer,
+  writeReceipt,
+} from "./wp151-public-unavailable-browser-runner.mjs";
 import { fixtureScript } from "./wp149-public-unavailable-browser-runner.mjs";
 
 test("WP151 preflight receipt is sanitized and no-go by default", () => {
@@ -110,4 +127,89 @@ test("COV-07 WP151 fixture receipt builder validates lifecycle and tamper branch
   stateTampered.fixtureState = "UNKNOWN";
   assert.throws(() => validateWp152FixtureReceipt(stateTampered), /WP152_RECEIPT_ATTEMPT_INVALID/);
 });
+
+// COV-08 BEGIN
+test("WP151 synthetic environment and metadata snapshot remain bounded", () => {
+  const environment = syntheticEnvironment();
+  assert.equal(environment.NODE_ENV, "development");
+  assert.equal(environment.CI, "true");
+  assert.match(environment.E2E_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal(environment.NPM_CONFIG_OFFLINE, "true");
+  const metadata = nextMetadataSnapshot();
+  assert.deepEqual(Object.keys(metadata).sort(), ["exists", "mtimeMs", "size"]);
+  assert.equal(typeof metadata.exists, "boolean");
+});
+
+test("WP151 sanitized stream keeps only normalized diagnostic categories", () => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const diagnostics = { classifications: [] };
+  attachSanitizedStream({ stdout, stderr }, diagnostics);
+  stdout.write("ready\nError: Cannot find module 'next'\n");
+  stderr.write("fatal server failure\nlisten EADDRINUSE\n");
+  assert.deepEqual(diagnostics.classifications, ["MODULE_RESOLUTION", "SERVER_START_UNKNOWN", "PORT_IN_USE"]);
+  stdout.end();
+  stderr.end();
+});
+
+test("WP151 protected digests and receipt writer preserve sanitized lineage", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-wp151-test-"));
+  try {
+    fs.writeFileSync(path.join(tempRoot, "fixture.txt"), "synthetic fixture\n", "utf8");
+    assert.match(sha256File("fixture.txt", tempRoot), /^sha256:[0-9a-f]{64}$/);
+    const snapshot = protectedDigestSnapshot();
+    assert.equal(typeof snapshot, "object");
+    assert.ok(Object.keys(snapshot).length > 0);
+
+    const target = path.join(tempRoot, "receipt.json");
+    writeReceipt(target, makeReceipt());
+    assert.equal(JSON.parse(fs.readFileSync(target, "utf8")).sanitized, true);
+    assert.equal(fs.readdirSync(tempRoot).some((entry) => entry.includes(".tmp-")), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("WP151 subprocess normalization keeps only bounded result fields", () => {
+  const result = runQuiet(process.execPath, ["--version"], process.env);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdoutBytes > 0, true);
+  assert.equal(result.stderrBytes, 0);
+  assert.deepEqual(Object.keys(result).sort(), ["exitCode", "stderrBytes", "stdoutBytes"]);
+});
+
+test("WP151 readiness fails closed on pre-readiness child exit without fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return { status: 204 };
+  };
+  try {
+    await assert.rejects(
+      waitForServer("http://127.0.0.1:32151", { exitCode: 1 }),
+      /SERVER_PRE_READINESS_EXACT_NO_GO/,
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("WP151 readiness accepts a loopback success response", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async (url) => {
+    fetchCalls += 1;
+    assert.equal(url, "http://127.0.0.1:32151/login");
+    return { status: 204 };
+  };
+  try {
+    await assert.doesNotReject(waitForServer("http://127.0.0.1:32151", { exitCode: null }));
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+// COV-08 END
 // COV-07 END

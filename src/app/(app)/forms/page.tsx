@@ -5,11 +5,30 @@ import { getDb } from "@/lib/db";
 
 export default async function FormsPage() {
   const vendor = await requireVendorManager();
-  const forms = await getDb().registrationForm.findMany({
+  const database = getDb();
+  const forms = await database.registrationForm.findMany({
     where: { vendorId: vendor.id },
     orderBy: { createdAt: "desc" },
-    include: { submissions: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      isActive: true,
+      _count: { select: { submissions: true } },
+    },
   });
+  const verifiedGroups = forms.length > 0
+    ? await database.formSubmission.groupBy({
+      by: ["formId"],
+      where: {
+        formId: { in: forms.map((form) => form.id) },
+        form: { vendorId: vendor.id },
+        verificationStatus: "VERIFIED",
+      },
+      _count: { _all: true },
+    })
+    : [];
+  const verifiedByFormId = new Map(verifiedGroups.map((group) => [group.formId, group._count._all]));
 
   return (
     <>
@@ -19,7 +38,10 @@ export default async function FormsPage() {
       ) : (
         <Card>
           <div className="grid gap-3">
-            {forms.map((form) => (
+            {forms.map((form) => {
+              const verified = verifiedByFormId.get(form.id) ?? 0;
+              const pending = form._count.submissions - verified;
+              return (
               <div key={form.id} className="grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                 <div>
                   <h2 className="font-semibold text-slate-950">{form.name}</h2>
@@ -27,11 +49,12 @@ export default async function FormsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={form.isActive ? "green" : "gray"}>{form.isActive ? "啟用" : "停用"}</Badge>
-                  <ButtonLink href={`/forms/${form.id}/submissions`} tone="secondary">{form.submissions.length} 名單</ButtonLink>
+                  <ButtonLink href={`/forms/${form.id}/submissions`} tone="secondary">{verified} 已驗證{pending > 0 ? ` / ${pending} 待驗證` : ""}</ButtonLink>
                   <ButtonLink href={`/forms/${form.id}/edit`} tone="secondary">編輯</ButtonLink>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}

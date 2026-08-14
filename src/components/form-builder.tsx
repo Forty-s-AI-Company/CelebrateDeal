@@ -1,44 +1,42 @@
 import type { RegistrationForm } from "@prisma/client";
-import { upsertFormAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
-import { Card, Field, SubmitButton, TextArea } from "@/components/ui";
+import { FormBuilderClient } from "@/components/form-builder-client";
+import { Card } from "@/components/ui";
+import { defaultRegistrationFormBuilderFields } from "@/lib/registration-form-builder";
+import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
-const defaultFields = JSON.stringify(
-  [
-    { key: "name", label: "姓名", type: "text", required: true },
-    { key: "email", label: "Email", type: "email", required: true },
-    { key: "phone", label: "手機", type: "tel", required: false },
-  ],
-  null,
-  2,
-);
+export function FormBuilder({
+  form,
+  error,
+  draftScope,
+}: {
+  form?: RegistrationForm;
+  error?: string;
+  draftScope: string;
+}) {
+  const defaultFields = defaultRegistrationFormBuilderFields();
+  const parsedFields = parseRegistrationFormFields(form?.fields ?? defaultFields);
 
-export function FormBuilder({ form, error }: { form?: RegistrationForm; error?: string }) {
   return (
     <Card>
-      {error === "invalid_fields" ? (
-        <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          欄位 JSON 格式不正確；必須包含 required 的 name（text）與 email（email），key 不可重複或使用保留名稱。
-        </p>
-      ) : null}
-      <form action={upsertFormAction} className="grid gap-4">
-        <CsrfField />
-        {form ? <input type="hidden" name="id" value={form.id} /> : null}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="表單名稱" name="name" required defaultValue={form?.name} />
-          <Field label="Slug" name="slug" required defaultValue={form?.slug} />
-        </div>
-        <Field label="公開標題" name="headline" required defaultValue={form?.headline} />
-        <TextArea label="說明文字" name="description" defaultValue={form?.description} />
-        <TextArea label="欄位 JSON" name="fields" rows={9} defaultValue={form ? JSON.stringify(form.fields, null, 2) : defaultFields} />
-        <Field label="送出按鈕文字" name="submitLabel" defaultValue={form?.submitLabel ?? "送出報名"} />
-        <TextArea label="成功訊息" name="successMessage" defaultValue={form?.successMessage} />
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input name="isActive" type="checkbox" defaultChecked={form?.isActive ?? true} className="h-4 w-4 accent-blue-600" />
-          啟用表單
-        </label>
-        <SubmitButton />
-      </form>
+      <FormBuilderClient
+        values={{
+          id: form?.id,
+          name: form?.name ?? "",
+          slug: form?.slug ?? "",
+          headline: form?.headline ?? "",
+          description: form?.description ?? "",
+          submitLabel: form?.submitLabel ?? "送出報名",
+          successMessage: form?.successMessage ?? "已收到你的資料，開播前會再提醒你。",
+          isActive: form?.isActive ?? true,
+        }}
+        initialFields={parsedFields.success ? parsedFields.data : defaultFields}
+        legacyFieldsInvalid={Boolean(form && !parsedFields.success)}
+        legacyRouteError={error}
+        draftScope={draftScope}
+        initialUpdatedAt={form?.updatedAt.toISOString() ?? null}
+        csrfField={<CsrfField />}
+      />
     </Card>
   );
 }

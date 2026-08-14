@@ -3,8 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hookState = vi.hoisted(() => ({ cursor: 0, values: [] as unknown[] }));
 const mocks = vi.hoisted(() => ({ unblock: vi.fn() }));
+const formStatuses = vi.hoisted(() => ({
+  cursor: 0,
+  values: [] as Array<{ pending: boolean; data: FormData | null; action: null; method: null }>,
+}));
 
 vi.mock("@/app/actions", () => ({ unblockBlacklistAction: mocks.unblock }));
+vi.mock("react-dom", async (importOriginal) => {
+  const reactDom = await importOriginal<typeof import("react-dom")>();
+  return {
+    ...reactDom,
+    useFormStatus: () => formStatuses.values[formStatuses.cursor++] ?? {
+      pending: false,
+      data: null,
+      action: null,
+      method: null,
+    },
+  };
+});
 vi.mock("react", async (importOriginal) => {
   const react = await importOriginal<typeof import("react")>();
   return {
@@ -55,6 +71,8 @@ function renderList(listEntries = entries) {
 beforeEach(() => {
   hookState.cursor = 0;
   hookState.values = [];
+  formStatuses.cursor = 0;
+  formStatuses.values = [];
   vi.clearAllMocks();
 });
 
@@ -77,6 +95,9 @@ describe("BlacklistSearchList", () => {
     expect(activeForm).toBeDefined();
     expect(findElements(activeForm, (element) => element.props.name === "_csrf")[0].props.value).toBe("csrf-test-token");
     expect(findElements(tree, (element) => element.type === "form").some((form) => findElements(form, (element) => element.props.value === "entry-inactive").length > 0)).toBe(false);
+    const markup = renderToStaticMarkup(tree as never);
+    expect(markup).toContain("解除封鎖");
+    expect(markup).toContain('aria-disabled="false"');
   });
 
   it("filters through identifier, reason, notes, and empty-result states via the public input handler", () => {
@@ -97,6 +118,22 @@ describe("BlacklistSearchList", () => {
     expect(textContent(findElements(tree, (element) => element.props["aria-live"] === "polite")[0])).toBe("顯示 0 筆黑名單");
     expect(findElements(tree, (element) => element.type === "form")).toHaveLength(0);
     expect(textContent(tree)).not.toContain("alice@example.test");
+  });
+
+  it("keeps pending feedback scoped to the submitted row form", () => {
+    const tree = renderList();
+    formStatuses.values = [
+      { pending: true, data: null, action: null, method: null },
+      { pending: false, data: null, action: null, method: null },
+    ];
+
+    const markup = renderToStaticMarkup(tree as never);
+
+    expect(markup.match(/解除中…/g)).toHaveLength(1);
+    expect(markup.match(/aria-busy="true"/g)).toHaveLength(1);
+    expect(markup.match(/aria-busy="false"/g)).toHaveLength(1);
+    expect(markup).toContain("正在解除 alice@example.test 的封鎖");
+    expect(markup).not.toContain("正在解除 member-42 的封鎖");
   });
 
   it("renders an empty list safely without creating an unblock form", () => {

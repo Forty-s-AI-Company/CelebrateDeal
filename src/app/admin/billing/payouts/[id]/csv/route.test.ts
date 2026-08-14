@@ -35,7 +35,8 @@ const batch = {
     bankAccountDisplayName: "王小明",
     bankAccountEncrypted: null,
     payoutAmountCents: 12345,
-    status: "pending",
+    status: "paid",
+    outcomeReference: "manual-ref-2026-07",
   }],
 };
 
@@ -65,7 +66,7 @@ describe("/admin/billing/payouts/[id]/csv route", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(csv).toBe(
-      '"批次編號","商家","月結月份","銀行代碼","銀行帳號","戶名","出款金額","狀態"\n"PAYOUT-2026-07-001","示範商家","2026-07","812","12345678901234","王小明","123.45","pending"',
+      '"批次編號","商家","月結月份","銀行代碼","銀行帳號","戶名","出款金額","狀態","出款 reference"\n"PAYOUT-2026-07-001","示範商家","2026-07","812","12345678901234","王小明","123.45","paid","manual-ref-2026-07"',
     );
     expect(mocks.payoutBatchUpdate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).toHaveBeenCalledWith({

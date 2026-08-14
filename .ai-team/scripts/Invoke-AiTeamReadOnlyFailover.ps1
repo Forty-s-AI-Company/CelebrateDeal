@@ -83,6 +83,9 @@ foreach ($entry in $profiles) {
                 profile = 'codex_luna'
                 model = $luna.model
                 reasoningEffort = $luna.reasoning_effort
+                reasoningMinimum = $luna.reasoning_minimum
+                reasoningMaximum = $luna.reasoning_maximum
+                reasoningSelection = $luna.reasoning_selection
                 sandboxMode = $luna.sandbox_mode
                 availability = $luna.availability
                 invocation = $luna.invocation

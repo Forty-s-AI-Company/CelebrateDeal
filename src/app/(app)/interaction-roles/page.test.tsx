@@ -8,7 +8,7 @@ vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ interactionRole: { findMany: mocks.roleFindMany } }) }));
 vi.mock("@/app/actions", () => ({ importSystemRolesAction: mocks.importAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrfToken" value="synthetic" /> }));
-vi.mock("@/components/interaction-roles-workbench", () => ({ InteractionRolesWorkbench: ({ roles, csrfToken }: { roles: unknown; csrfToken: string }) => <div data-testid="roles-workbench">{JSON.stringify({ roles, csrfToken })}</div> }));
+vi.mock("@/components/interaction-roles-workbench", () => ({ InteractionRolesWorkbench: ({ roles, csrfToken, error }: { roles: unknown; csrfToken: string; error?: string | null }) => <div data-testid="roles-workbench">{JSON.stringify({ roles, csrfToken, error })}</div> }));
 vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{action}</header> }));
 
 import InteractionRolesPage from "./page";
@@ -17,9 +17,14 @@ beforeEach(() => { vi.clearAllMocks(); mocks.requireVendorManager.mockResolvedVa
 
 describe("/interaction-roles route", () => {
   it("scopes roles and forwards CSRF data to the workbench", async () => {
-    const html = renderToStaticMarkup(await InteractionRolesPage());
+    const html = renderToStaticMarkup(await InteractionRolesPage({}));
     expect(mocks.requireVendorManager).toHaveBeenCalledExactlyOnceWith(); expect(mocks.roleFindMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1" }, orderBy: { createdAt: "desc" } }); expect(mocks.getCsrfToken).toHaveBeenCalledExactlyOnceWith(); expect(html).toContain("互動角色"); expect(html).toContain("匯入 10 個官方角色"); expect(html).toContain("role-1"); expect(html).toContain("csrf-token");
   });
 
-  it("renders an empty workbench without inventing roles", async () => { mocks.roleFindMany.mockResolvedValue([]); const html = renderToStaticMarkup(await InteractionRolesPage()); expect(html).toContain('&quot;roles&quot;:[]'); });
+  it("renders an empty workbench without inventing roles", async () => { mocks.roleFindMany.mockResolvedValue([]); const html = renderToStaticMarkup(await InteractionRolesPage({})); expect(html).toContain('&quot;roles&quot;:[]'); });
+
+  it("forwards only the recoverable missing-role state", async () => {
+    const html = renderToStaticMarkup(await InteractionRolesPage({ searchParams: Promise.resolve({ error: "missing_role" }) }));
+    expect(html).toContain('&quot;error&quot;:&quot;missing_role&quot;');
+  });
 });

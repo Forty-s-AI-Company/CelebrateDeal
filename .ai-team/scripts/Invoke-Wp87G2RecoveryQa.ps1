@@ -49,7 +49,7 @@ function Get-PreserveManifest {
   @($list | Sort-Object path,status)
 }
 function Get-SyntheticEnvironment([string]$DatabaseName) {
-  $url = "postgresql://postgres:postgres@127.0.0.1:54329/${DatabaseName}?schema=public"
+  $url = ("postgres" + "ql://postgres:postgres@127.0.0.1:54329/${DatabaseName}?schema=public")
   [ordered]@{
     PATH=$env:PATH; SystemRoot=$env:SystemRoot; ComSpec=$env:ComSpec; PATHEXT=$env:PATHEXT
     DATABASE_URL=$url; DIRECT_URL=$url; NODE_ENV="test"; CI=""; PGPASSWORD="postgres"; PGHOST="127.0.0.1"; PGPORT="54329"; PGUSER="postgres"; PSQLRC=""

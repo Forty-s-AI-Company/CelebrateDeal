@@ -1,0 +1,36 @@
+# G7-12 source and receipt SHA-256 manifest
+# generatedAt=2026-08-08T17:33:06.8838319Z
+# Paths are workspace-relative. This manifest intentionally excludes secrets and environment files.
+70c6924f650f371d85f7229d911b3882304cd057bcd4341a9cf03628bbc3ce4d  .ai-team/reports/g7-12-stream-reconciliation-20260809.json
+98e4656fd77432a6fdd3d889ae9da60b7e47efef9d7caab9a01d12561a6e8673  .ai-team/reports/g7-12-stream-reconciliation-20260809.json.sha256
+b44bb9ef5aaba2c70c4e699c78a8447c2d7b9784776874bbae003bacf630077c  prisma/schema.prisma
+bab8561ac3f62009e08596a757b87d700ff7bb43a86edb3dee5429a425e97b6c  prisma/migrations/20260809000000_g7_12_stream_usage_reconciliation/migration.sql
+0f914f79c7cdd281b9678309c1baf88f3d56bdd387d5c4bae70e79703b2067d9  prisma.g7-stream-reconciliation-disposable.config.mjs
+d72447c50089659ec503b6675dcc3aa27d646cb572a404460df38d16a36541ce  vitest.g7-stream-reconciliation-db.config.ts
+e6df8671ea16b4e81d348678a9e7fdb9103c2bde82dd4803418d9870d647022f  src/lib/stream-usage-reconciliation.ts
+00ded79cb9a569cd85ee2529caad4c5ec5942640c380860013355bb560211afc  src/lib/stream-usage-reconciliation.test.ts
+8547f7acd5e3aef321f52b3555e9f0e0cb273384a63bfc956fd9b43bb251da9e  src/lib/stream-usage-reconciliation.db.test.ts
+92e2b8f6d796a5f8d00ec43f2eff47fcec2ea3b3fd452fc752be21a2763eb4c4  src/lib/stream-usage.ts
+c186f1d8c911f44c663f2963afa3cb29d780f4bdd074546ba00b08724747800a  src/lib/stream-usage.test.ts
+6abe491eee21046676378ab83dc552344922d75630b0b31821231e2ac3777a42  src/lib/billing.ts
+d7c00be731ab4b6e7f17c88a94ad1aca08fe630ad45bfea08e39a0821d767c11  src/lib/billing.test.ts
+402052b9a3e9a490d1baee8ec875116d5779eff21c412f785e1a4ec3e19742e5  src/lib/billing-cycle.ts
+302d6f09c800ef3ffaedb4ba07018eef58dc92d1ce3953c1fe952bb755470452  src/lib/billing-cycle.test.ts
+799871dc12f0dbdf5a2bbb3728b9301a82ff90d424a6b728670ecdd7352e4e8f  src/lib/billing-cycle-job.ts
+3a554a55d1e304eb6d140b781d5352b1fc61b7d0459dd908c10ccc1ac15ac947  src/lib/billing-cycle-job.test.ts
+a25e2e4078df43391665adb00039c58fd65db5f93b533f5abb91ae2deb0af717  src/app/api/jobs/billing-cycle/route.ts
+80653a6fe630ceb032116591250e4264d10ff27817b490a38aa9f94f92d4abe3  src/app/api/jobs/billing-cycle/route.test.ts
+d955edb996b748eb85c56b342b03e4d05134502c9aa55394e6b8588cc1e9321f  src/app/admin/billing/stream-reconciliation/actions.ts
+3900572c22d56215967ba42daac3e160d822b46b1c9a127fa0c615c2c5fe5672  src/app/admin/billing/stream-reconciliation/actions.test.ts
+51f63b30dbd1121de4c8d0044175ef11ff9023834df1e99d095c89d10f9bd85f  src/app/admin/billing/stream-reconciliation/page.tsx
+a5e9b476bbd024b520539826b55b34bbfd8585d0d3057f567ba5d358d840ce4f  src/app/admin/billing/stream-reconciliation/page.test.tsx
+838617705e0ab5f49753dad9116920da78eb5638a487e3e80e92b79e5d907ddc  src/app/admin/billing/stream-reconciliation/loading.tsx
+3aa21836052810eac7838a480dd8648372dc68d90f4c4d80a5f93547c905f0bc  src/app/admin/billing/stream-reconciliation/error.tsx
+06fafc4387a38c09bf152fff442defae82a5af09c6722dedebe739afce1f6867  src/app/(app)/billing/usage/page.tsx
+d86a38c27ce68a15840da24e718bbc82527a12515f4ed321efc99d6795b491cf  src/app/(app)/billing/usage/page.test.tsx
+cea50834deff805e1358c46dd8bfba57faf5c5623b8b596bc452ea5041625510  src/app/(app)/billing/usage/loading.tsx
+d91ea187dbe1f0bf25046fa75cc33da3bca837398d8e7e09cc1245f23bf47bea  src/app/(app)/billing/usage/loading.test.tsx
+2755ba1c510f5d21e851301d22968abc2e98d8eac8543f8849096ebef6f1fefa  src/app/(app)/billing/usage/error.tsx
+0f2ef18b33335316aa5dc5b5a19f5a4a72e6232084d02dc520bed2deffa02e76  src/app/(app)/billing/usage/error.test.tsx
+66cec1aa69bdf49932e02be526c70f7aa9fcbc6bde26e6ec6ab53bb315fb8d72  src/components/app-shell.tsx
+17c7fc066f838e13a2ab7afeafb83ae3a8163de0df5c50c32c3d3714a1dbbb37  src/components/app-shell.test.ts

@@ -16,6 +16,7 @@ function video(overrides: Partial<Video> = {}): Video {
     sourceType: "cloudflare_stream",
     videoUrl: "https://media.example.test/provider-playback.m3u8",
     thumbnailUrl: null,
+    thumbnailAssetId: null,
     durationSec: 60,
     status: "processing",
     cloudflareStreamUid: "test-fixture-provider-uid",

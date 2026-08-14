@@ -1,0 +1,10 @@
+165395295ccd7e1e6a2f7a3e8d3b2d385f4510b243a385d9415e10243f8f0b2c  .ai-team/reports/g7-15-product-catalog-browser-20260809.json
+9b5dc9dd1c7eaf4a0207b038220b0943fc54ce5de5f427b3b64571f121b5ef71  docs/ai-team/evidence/g7-15-product-catalog-browser-20260809.md
+9e81ae2bda7a201798e653323ca480e5e75ca76811ddf786e8da98e21c585d41  docs/ai-team/evidence/g7-15-source-manifest-20260809.txt
+18e1c8f7481ed6d72000cf2acfe97925edbe1ebcb30dbf7ae160dea3e88b6177  docs/launch/evidence-index.md
+40339bf5523e285e77ce5e31c3f2e3f50c9ba6f054585373b49e0f6ad9c1bfb6  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488.json
+9205c571d0f1bc125d3f3e3443bd2002879da7adfd5455f34b5bf6dd67fa7967  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488.json.sha256
+07fa2ed77ffcc37405d1f7912e0a8a410a1d3bb44b86fd965edc36454d8d6dad  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488-screenshots/desktop.png
+95c2c77193587e2e0a02724cc52d6cea9f118ac784a3cab94874a0e08bac0fcf  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488-screenshots/mobile.png
+2ba210cb4b4e95485b3e6fc4114fee7821981e6f1d113b88280385ae39bb9e85  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488-screenshots/product-desktop.png
+1da17240ea0a9ed2153d484025af65f776f82e39b52b149b8b9815bf9a2fb4a2  docs/ai-team/evidence/g7-04-browser-qa-7602fc38597fc488-screenshots/product-mobile.png

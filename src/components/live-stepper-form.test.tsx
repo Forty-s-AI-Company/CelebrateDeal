@@ -2,11 +2,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { Product } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
 
 const hookState = vi.hoisted(() => ({
   cursor: 0,
   values: [] as unknown[],
   refs: [] as Array<{ current: unknown }>,
+}));
+const draftMocks = vi.hoisted(() => ({
+  getCurrentClaim: vi.fn(() => ({ draftId: "draft-1", revision: 2 })),
+  isCurrentFormSaved: vi.fn(() => true),
+  saveNow: vi.fn().mockResolvedValue({ draftId: "draft-1", revision: 2 }),
+  scheduleSave: vi.fn(),
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -14,9 +21,10 @@ vi.mock("react", async (importOriginal) => {
 
   return {
     ...react,
+    useEffect: (effect: () => void | (() => void)) => { effect(); },
     useState: <Value,>(initialValue: Value) => {
       const index = hookState.cursor++;
-      if (hookState.values.length === index) hookState.values.push(initialValue);
+      if (!(index in hookState.values)) hookState.values[index] = initialValue;
 
       const setValue = (nextValue: Value | ((currentValue: Value) => Value)) => {
         const currentValue = hookState.values[index] as Value;
@@ -36,6 +44,33 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("@/app/actions", () => ({ upsertLiveAction: vi.fn() }));
+vi.mock("@/components/use-live-studio-draft", () => ({
+  useLiveStudioDraft: () => ({
+    status: "saved",
+    draftId: "draft-1",
+    revision: 2,
+    updatedAt: "2026-08-08T01:00:00.000Z",
+    errorCode: "",
+    canSubmit: true,
+    message: "草稿已儲存，可安全離開後再繼續。",
+    getCurrentClaim: draftMocks.getCurrentClaim,
+    isCurrentFormSaved: draftMocks.isCurrentFormSaved,
+    saveNow: draftMocks.saveNow,
+    scheduleSave: draftMocks.scheduleSave,
+  }),
+}));
+vi.mock("@/components/stream-allocation-editor", () => ({
+  StreamAllocationEditor: ({ members, pages }: { members: Array<{ label: string }>; pages: Array<{ label: string }> }) => (
+    <section>
+      <h3>Stream 用量與額度分配</h3>
+      {members.map((member) => <span key={member.label}>{member.label}</span>)}
+      {pages.map((page) => <span key={page.label}>{page.label}</span>)}
+      <input type="hidden" name="customAllocations" value="[]" />
+      <input type="hidden" name="memberQuotas" value="[]" />
+      <input type="hidden" name="pageQuotas" value="[]" />
+    </section>
+  ),
+}));
 
 import { LiveStepperForm } from "./live-stepper-form";
 
@@ -79,9 +114,17 @@ const products: Product[] = [
     compareAtCents: null,
     currency: "TWD",
     imageUrl: null,
+    imageAssetId: null,
     checkoutUrl: null,
     inventory: 12,
     isActive: true,
+    commerceDomain: "merchant",
+    fulfillmentType: "physical",
+    fulfillmentTypeConfirmed: true,
+    courseContentOwnerMembershipId: null,
+    coursePromoterShareBps: null,
+    coursePolicyVersion: 1,
+    revision: 1,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   },
@@ -95,9 +138,17 @@ const products: Product[] = [
     compareAtCents: null,
     currency: "TWD",
     imageUrl: null,
+    imageAssetId: null,
     checkoutUrl: null,
     inventory: 8,
     isActive: true,
+    commerceDomain: "merchant",
+    fulfillmentType: "physical",
+    fulfillmentTypeConfirmed: true,
+    courseContentOwnerMembershipId: null,
+    coursePromoterShareBps: null,
+    coursePolicyVersion: 1,
+    revision: 1,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   },
@@ -111,9 +162,17 @@ const products: Product[] = [
     compareAtCents: null,
     currency: "TWD",
     imageUrl: null,
+    imageAssetId: null,
     checkoutUrl: null,
     inventory: 20,
     isActive: true,
+    commerceDomain: "merchant",
+    fulfillmentType: "physical",
+    fulfillmentTypeConfirmed: true,
+    courseContentOwnerMembershipId: null,
+    coursePromoterShareBps: null,
+    coursePolicyVersion: 1,
+    revision: 1,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   },
@@ -129,6 +188,8 @@ function renderForm(availableProducts: Product[] = products, overrides: FormOver
     templates: [],
     scripts: [],
     affiliates: [],
+    streamMembers: [],
+    streamPages: [],
     csrfToken: "test-fixture-csrf-token",
     ...overrides,
     products: availableProducts,
@@ -162,9 +223,22 @@ function productSelection(tree: unknown) {
   };
 }
 
+function submitAction(tree: unknown, label: string) {
+  const actions = findElement(tree, (candidate) => (
+    typeof candidate.type === "function" && candidate.type.name === "LiveSubmitActions"
+  ));
+  expect(actions).toBeDefined();
+  const renderedActions = (actions?.type as (props: Record<string, unknown>) => unknown)(actions?.props ?? {});
+  return findElement(renderedActions, (candidate) => (
+    typeof candidate.type === "function"
+    && candidate.type.name === "FormSubmitButton"
+    && textContent(candidate.props.children) === label
+  ));
+}
+
 function showPublishPreview(tree: unknown) {
   let currentTree = tree;
-  for (let step = 0; step < 7; step += 1) {
+  for (let step = 0; step < 4; step += 1) {
     const nextButton = findElement(currentTree, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "下一步"
     ));
@@ -174,7 +248,7 @@ function showPublishPreview(tree: unknown) {
   }
 
   const publishPanel = findElement(currentTree, (candidate) => (
-    candidate.props.active === true && textContent(candidate.props.children).includes("確認直播間設定")
+    candidate.props.active === true && candidate.props.index === 4
   ));
   expect(publishPanel).toBeDefined();
   return renderToStaticMarkup(publishPanel as unknown as ReactElement);
@@ -182,9 +256,13 @@ function showPublishPreview(tree: unknown) {
 
 describe("LiveStepperForm", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     hookState.cursor = 0;
     hookState.values = [];
     hookState.refs = [];
+    draftMocks.isCurrentFormSaved.mockReturnValue(true);
+    draftMocks.getCurrentClaim.mockReturnValue({ draftId: "draft-1", revision: 2 });
+    draftMocks.saveNow.mockResolvedValue({ draftId: "draft-1", revision: 2 });
   });
 
   it("shows stable default copy in the empty publish preview", () => {
@@ -193,6 +271,39 @@ describe("LiveStepperForm", () => {
     expect(preview).toContain("未命名直播");
     expect(preview).toContain("直播限定優惠");
     expect(preview).toContain("尚未選擇主打商品");
+  });
+
+  it("keeps an accessible live preview available while editing earlier steps", () => {
+    const markup = renderToStaticMarkup(renderForm([]) as ReactElement);
+
+    expect(markup).toContain("即時手機預覽");
+    expect(markup).toContain("查看即時手機預覽");
+    expect(markup).toContain('aria-labelledby="live-studio-preview-title"');
+    expect(markup).toContain("修改標題、促銷短句或商品時會同步更新。");
+  });
+
+  it("offers a persisted purpose starter and selects commerce without submitting the form", () => {
+    const form = renderForm([]);
+    const starter = findElement(form, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "LiveStudioPurposeStarter"
+    ));
+    expect(starter).toBeDefined();
+    const renderedStarter = (starter?.type as (props: Record<string, unknown>) => unknown)(starter?.props ?? {});
+    const commerceButton = findElement(renderedStarter, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children).includes("商品銷售直播")
+    ));
+
+    expect(commerceButton?.props.type).toBe("button");
+    expect(commerceButton?.props["aria-pressed"]).toBe(false);
+    (commerceButton?.props.onClick as () => void)();
+
+    const selectedForm = renderForm([]);
+    const selectedStarter = findElement(selectedForm, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "LiveStudioPurposeStarter"
+    ));
+    expect(selectedStarter?.props.selectedPreset).toBe("COMMERCE");
+    expect(draftMocks.scheduleSave).toHaveBeenCalledTimes(1);
+    expect(renderToStaticMarkup(renderForm([], { liveId: "live-1" }) as ReactElement)).not.toContain("先選這場直播的用途");
   });
 
   it("does not expose a writable Cloudflare Live Input UID field", () => {
@@ -217,7 +328,7 @@ describe("LiveStepperForm", () => {
   it("shows an instructive empty product state instead of a blank panel", () => {
     const form = renderForm([]);
     const productButton = findElement(form, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "商品"
+      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
     ));
     expect(productButton).toBeDefined();
 
@@ -253,16 +364,16 @@ describe("LiveStepperForm", () => {
     expect(nextButton).toBeDefined();
     (nextButton?.props.onClick as () => void)();
 
-    const mediaForm = renderForm();
-    const mediaButton = findElement(mediaForm, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "影片 / Live Input"
+    const conversionForm = renderForm();
+    const conversionButton = findElement(conversionForm, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
     ));
-    expect(mediaButton?.props["aria-current"]).toBe("step");
-    expect(mediaButton?.props["aria-controls"]).toBe("live-step-panel-1");
-    const activePanel = findElement(mediaForm, (candidate) => candidate.props.active === true);
+    expect(conversionButton?.props["aria-current"]).toBe("step");
+    expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-1");
+    const activePanel = findElement(conversionForm, (candidate) => candidate.props.active === true);
     expect(activePanel?.props.index).toBe(1);
 
-    const previousButton = findElement(mediaForm, (candidate) => (
+    const previousButton = findElement(conversionForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
     ));
     expect(previousButton).toBeDefined();
@@ -310,10 +421,10 @@ describe("LiveStepperForm", () => {
     expect(retryButton).toBeDefined();
     (retryButton?.props.onClick as () => void)();
     const advancedForm = renderForm();
-    const mediaButton = findElement(advancedForm, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "影片 / Live Input"
+    const conversionButton = findElement(advancedForm, (candidate) => (
+      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
     ));
-    expect(mediaButton?.props["aria-current"]).toBe("step");
+    expect(conversionButton?.props["aria-current"]).toBe("step");
   });
 
   it("moves to the invalid field step, focuses the field, and renders invalid-reference feedback", () => {
@@ -376,7 +487,10 @@ describe("LiveStepperForm", () => {
     const form = renderForm(products, {
       videos: [{ id: "video-1", title: "示範影片" }],
       forms: [{ id: "form-1", name: "活動報名表" }] as FormOverrides["forms"],
-      templates: [{ id: "template-1", name: "開播通知", channel: "email" }] as FormOverrides["templates"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播通知", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
       scripts: [{ id: "script-1", name: "互動腳本" }] as FormOverrides["scripts"],
       affiliates: [{ id: "affiliate-1", code: "REF-1", name: "合作推廣者" }] as FormOverrides["affiliates"],
     });
@@ -392,7 +506,7 @@ describe("LiveStepperForm", () => {
   it("renders the final confirmation step and submit action", () => {
     const form = renderForm();
     const publishButton = findElement(form, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "發布"
+      candidate.type === "button" && textContent(candidate.props.children) === "預覽發布"
     ));
     expect(publishButton).toBeDefined();
     (publishButton?.props.onClick as () => void)();
@@ -400,9 +514,134 @@ describe("LiveStepperForm", () => {
     const reviewForm = renderForm();
     const markup = renderToStaticMarkup(reviewForm as ReactElement);
     expect(markup).toContain("確認直播間設定");
-    expect(markup).toContain("建立直播間");
+    expect(markup).toContain("建立草稿並預覽");
+    expect(markup).toContain('name="liveDraftRevision"');
     expect(findElement(reviewForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
     ))?.props.disabled).toBe(false);
+  });
+
+  it("shows a complete sales-live checklist and enables scheduling", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      title: "新品銷售直播",
+      slug: "new-sales-live",
+      scheduledAt: "2026-08-10T20:00",
+      productIds: [products[0].id],
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      interactionScriptId: "script-1",
+      activeStep: 4,
+    };
+    const form = renderForm(products, {
+      liveId: "live-1",
+      currentStatus: "draft",
+      initialValues,
+      videos: [{ id: "video-1", title: "可播放影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [{ id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" }] as FormOverrides["templates"],
+      scripts: [{ id: "script-1", name: "已發布腳本" }] as FormOverrides["scripts"],
+    });
+    const markup = renderToStaticMarkup(form as ReactElement);
+    const scheduleButton = submitAction(form, "排程發布");
+
+    expect(markup).toContain("銷售型直播發布檢查");
+    expect(markup).toContain("發布條件已完成");
+    expect(markup).toContain("有效的報名表單");
+    expect(scheduleButton?.props.disabled).toBe(false);
+  });
+
+  it("keeps sales publishing disabled and links each missing requirement to its step", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      title: "待補媒體直播",
+      slug: "missing-media-live",
+      scheduledAt: "2026-08-10T20:00",
+      productIds: [products[0].id],
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      interactionScriptId: "script-1",
+      activeStep: 4,
+    };
+    const form = renderForm(products, {
+      liveId: "live-1",
+      currentStatus: "draft",
+      initialValues,
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [{ id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" }] as FormOverrides["templates"],
+      scripts: [{ id: "script-1", name: "已發布腳本" }] as FormOverrides["scripts"],
+    });
+    const markup = renderToStaticMarkup(form as ReactElement);
+    const scheduleButton = submitAction(form, "排程發布");
+
+    expect(markup).toContain("還有 1 項需要完成");
+    expect(markup).toContain("待完成 · 可播放的影片或 Live Input");
+    expect(markup).toContain("前往媒體");
+    expect(scheduleButton?.props.disabled).toBe(true);
+  });
+
+  it("keeps content-live publishing simple and offers a recoverable unpublish action", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      title: "內容講座",
+      slug: "content-webinar",
+      scheduledAt: "2026-08-10T20:00",
+      videoId: "video-1",
+      productIds: [],
+      activeStep: 4,
+    };
+    const form = renderForm(products, {
+      liveId: "live-1",
+      currentStatus: "scheduled",
+      initialValues,
+      videos: [{ id: "video-1", title: "講座影片" }],
+    });
+    const markup = renderToStaticMarkup(form as ReactElement);
+    const unpublishButton = submitAction(form, "下架為草稿");
+
+    expect(markup).toContain("內容直播發布檢查");
+    expect(markup).toContain("發布條件已完成");
+    expect(markup).not.toContain("有效的報名表單");
+    expect(unpublishButton?.props.value).toBe("draft");
+    expect(unpublishButton?.props.disabled).toBe(false);
+  });
+
+  it("flushes the newest form payload before allowing a fast final submit", async () => {
+    draftMocks.isCurrentFormSaved.mockReturnValue(false);
+    draftMocks.saveNow.mockResolvedValueOnce({ draftId: "draft-2", revision: 4 });
+    const form = renderForm();
+    const requestSubmit = vi.fn();
+    const draftIdControl = { value: "draft-1" };
+    const revisionControl = { value: "3" };
+    const formRef = hookState.refs[5];
+    formRef.current = {
+      requestSubmit,
+      elements: {
+        namedItem: (name: string) => name === "liveDraftId" ? draftIdControl : revisionControl,
+      },
+    };
+    const preventDefault = vi.fn();
+    const previousButton = (globalThis as Record<string, unknown>).HTMLButtonElement;
+    class SyntheticButton {}
+    (globalThis as Record<string, unknown>).HTMLButtonElement = SyntheticButton;
+
+    try {
+      (form.props.onSubmit as (event: unknown) => void)({
+        preventDefault,
+        nativeEvent: { submitter: new SyntheticButton() },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(preventDefault).toHaveBeenCalledOnce();
+      expect(draftMocks.saveNow).toHaveBeenCalledWith(0);
+      expect(draftIdControl.value).toBe("draft-2");
+      expect(revisionControl.value).toBe("4");
+      expect(requestSubmit).toHaveBeenCalledOnce();
+    } finally {
+      if (previousButton === undefined) delete (globalThis as Record<string, unknown>).HTMLButtonElement;
+      else (globalThis as Record<string, unknown>).HTMLButtonElement = previousButton;
+    }
   });
 });

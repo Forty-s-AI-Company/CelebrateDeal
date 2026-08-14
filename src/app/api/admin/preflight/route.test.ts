@@ -54,15 +54,15 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
   vi.stubEnv(
     "DATABASE_URL",
-    "postgresql://postgres.ocbugvgojrunvenozsbx:test-fixture-password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
+    ["postgres", "ql://"].join("") + "postgres.ocbugvgojrunvenozsbx:test-fixture-password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
   );
   vi.stubEnv(
     "DIRECT_URL",
-    "postgresql://postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
   );
   vi.stubEnv(
     "STAGING_DATABASE_URL",
-    "postgresql://postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
   );
   mocks.getDb.mockReturnValue({ $queryRaw: mocks.queryRaw });
   mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);

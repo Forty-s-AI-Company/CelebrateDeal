@@ -1,15 +1,19 @@
 # Manual Blockers
 
-| ID | 阻擋 | 原因 | 人工動作 | 完成證據 |
-|---|---|---|---|---|
-| MB-01 | AGY 登入 | CLI 回報未登入 | 在正常互動式 `agy` 完成登入，不把憑證交給 Codex | `agy models` 可在 60 秒內回傳 |
-| MB-02 | 安全測試 env／disposable DB | **已由 WP-04 解除**：temporary Windows PostgreSQL 已停止，Docker 的 `celebratedeal_ci` 可在 `127.0.0.1:54329` 安全使用 | 無需動作 | `wp-04-regression-baseline-20260727155807-8d6acbd8` 完整 receipts |
-| MB-03 | Candidate migrations | **WP-13 已完成 candidate 11 的 NULL source identity 與 status DB policy remediation**；正式資料庫仍須在人工授權後以同一 fail-closed preflight 盤點 legacy rows | 不得對正式 DB 自動套用；如遇 active NULL source 或未知 status，先人工 mapping／forward data fix | `.ai-team/reports/wp-13-commission-dedup-status-20260728030948149/final-verdict.md` |
-| MB-04 | Supabase ACL | 正式平台權限 | 平台 owner 人工驗證 | grants/RLS evidence |
-| MB-05 | PayUni | 商家、正式金流與 callback | 僅在 sandbox/人工授權後執行 | sandbox receipt；Production 另行核准 |
-| MB-06 | Observability | Sentry/PostHog/Cloudflare 外部服務 | 人工確認測試專案與 delivery | 外部 dashboard receipt |
-| MB-07 | Accessibility | 真實 screen-reader journey | NVDA/VoiceOver 人工測試 | journey checklist |
-| MB-08 | Commercial launch | DNS、法務、客服、商家 onboarding | Owner/法務/營運確認 | signed checklist |
+治理版本：`solo-founder-launch/v1`。每個仍可阻擋 release 的條件都必須符合 [Hard Blocker Provenance Rule](solo-founder-launch-standard.md#hard-blocker-provenance)。
+
+| ID | 分類 | Provenance | 阻擋／目前狀態 | 人工動作 | 完成證據 |
+|---|---|---|---|---|---|
+| MB-01 | WARNING | `AI_TEAM_BEST_PRACTICE` | AGY CLI 未登入；不阻擋產品 launch | 需要時由使用者互動式登入 | `agy models` 結果 |
+| MB-02 | CLOSED | `DIRECT_PRODUCTION_RISK` | **已由 WP-04 解除**：disposable PostgreSQL 可安全使用 | 無需動作 | WP-04 sanitized receipts |
+| MB-03 | RELEASE_CRITICAL | `DIRECT_PRODUCTION_RISK` | Candidate migration／legacy rows 必須在正式 DB 前 fail-closed 盤點 | 經授權 owner 做 mapping／forward data fix；不得自動套用未知資料 | WP-13 verdict＋production migration receipt |
+| MB-04 | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` | Supabase ACL／RLS／grants 尚需 provider owner 驗證 | 平台 owner 唯讀確認 default deny 與 residual ACL | grants／RLS receipt |
+| MB-05 | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` | PayUni merchant、callback、signature 與正式金流設定尚未完成 | 僅在 Sandbox／明確授權下執行，Production 另行核准 | sanitized provider receipt |
+| MB-06 | WARNING + MINIMUM_REQUIRED | `DIRECT_PRODUCTION_RISK` | 完整 Sentry／PostHog／Cloudflare delivery packet 非必要；最低 error observability 與 escalation 必須存在 | Owner 確認安全錯誤分類、通知路徑與 support SOP | minimum observability receipt；完整 dashboard 可作 follow-up |
+| MB-07 | WARNING | `DEFENSE_IN_DEPTH` | Screen-reader journey 尚未完成人工驗收；基本 accessibility 不得移除 | 依 QA journey 做 NVDA／VoiceOver 驗證 | journey checklist |
+| MB-08 | MIXED_SPLIT | `LEGAL_REGULATION` / `TRACKED_PROJECT_REQUIREMENT` / `DIRECT_PRODUCTION_RISK` | 法規適用政策、customer support／onboarding 與 production configuration 分開判定 | Owner 完成適用政策、客服路徑與 production domain/config | 對應 policy、support、provider receipts |
+| MB-09 | RELEASE_CRITICAL | `EXTERNAL_PROVIDER` / `DIRECT_PRODUCTION_RISK` | 目前沒有可信 evidence 證明 current environment、PayUni account／environment、order、reference、amount、payment／refund／callback state 完整一致；fresh CAT04 flow 不是唯一要求，FIN-08AA、WP-196、WP-197 不可重跑 | 先檢查可重用 transaction；若既有 binding 不足，再由 owner 選擇最小 non-Production provider verification | equivalent controlled reconciliation evidence |
+| MB-10 | MIXED_SPLIT | `LEGAL_REGULATION` / `TRACKED_PROJECT_REQUIREMENT` / `DIRECT_PRODUCTION_RISK` | CAT10 responsibility、適用政策、support／finance SOP 與 release decision 仍可能 pending；五位不同真人不是 blocker | 依 [CAT10 packet](cat10-human-owner-acceptance-packet-20260807.md) 由一人或多位真人完成 responsibility ledger | sanitized responsibility receipt＋`GO`／`HOLD`／`NO_GO` |
 
 WP-14 已由使用者完成 AGY 互動式登入並以 `agy models` 驗證；Fast／Deep 複核均已完成。MB-01 不再阻擋 WP-14，但其他工作包仍須在其執行當下重新驗證登入狀態。
 

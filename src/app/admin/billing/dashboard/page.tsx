@@ -57,7 +57,18 @@ export default async function AdminBillingDashboardPage() {
   const failedPayoutCount = await db.payoutItem.count({ where: { status: "failed" } });
   const recentTransactions = await db.paymentTransaction.findMany({
     where: { occurredAt: { gte: start } }, orderBy: { occurredAt: "desc" }, take: 10,
-    select: { id: true, orderNumber: true, providerTradeNo: true, status: true, occurredAt: true, refundedAmountCents: true, grossAmountCents: true, vendor: { select: { name: true } } },
+    select: {
+      id: true,
+      orderNumber: true,
+      providerTradeNo: true,
+      providerName: true,
+      status: true,
+      occurredAt: true,
+      refundedAmountCents: true,
+      grossAmountCents: true,
+      vendor: { select: { name: true } },
+      _count: { select: { refunds: { where: { status: "pending" } } } },
+    },
   });
   // This fixed, field-limited query intentionally compares status as text.
   // Older local development schemas predate AffiliateCommissionStatus, while
@@ -130,7 +141,12 @@ export default async function AdminBillingDashboardPage() {
             <h2 className="text-lg font-semibold text-slate-950">近 7 天金流交易</h2>
           </div>
           <div className="divide-y divide-border">
-            {recentTransactions.map((transaction) => (
+            {recentTransactions.map((transaction) => {
+              const hasPendingRefund = transaction._count.refunds > 0;
+              const canRefund = !hasPendingRefund
+                && (transaction.status === "paid" || transaction.status === "partially_refunded")
+                && transaction.refundedAmountCents < transaction.grossAmountCents;
+              return (
               <div key={transaction.id} className="grid gap-4 px-5 py-4 lg:grid-cols-[1fr_auto] lg:items-start">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -143,19 +159,27 @@ export default async function AdminBillingDashboardPage() {
                 </div>
                 <div className="min-w-[280px]">
                   <p className="text-right text-lg font-bold text-slate-950">{formatCurrency(transaction.grossAmountCents)}</p>
+                  {hasPendingRefund && transaction.providerName === "payuni" ? (
+                    <div data-testid={`billing-refund-reconciliation-${transaction.id}`} className="mt-3 grid gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+                      <p>退款結果尚未確認，系統已停止再次送出。</p>
+                      <Link href={`/admin/billing/refund-reconciliation/${transaction.id}`} className="font-semibold underline">
+                        開啟退款終態對帳
+                      </Link>
+                    </div>
+                  ) : canRefund ? (
                   <form data-testid={`billing-refund-${transaction.id}`} action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
                     <CsrfField />
                     <input type="hidden" name="id" value={transaction.id} />
-                    <input name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
+                    <input aria-label="退款月份" name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
                     <div className="grid grid-cols-3 gap-2">
                       <input aria-label="退款金額" name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <input name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <input name="platformFeeRefund" type="number" step="1" placeholder="退平台費" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退金流費" name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退平台費" name="platformFeeRefund" type="number" step="1" placeholder="退平台費" className="h-9 rounded-md border border-border px-2 text-xs" />
                     </div>
                     <div className="grid grid-cols-[1fr_auto] gap-2">
-                      <input name="reason" placeholder="退款原因" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退款原因" name="reason" placeholder="退款原因" className="h-9 rounded-md border border-border px-2 text-xs" />
                       <FormSubmitButton
-                        className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700"
+                        className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-700 px-3 text-xs font-semibold text-white hover:bg-orange-800"
                         pendingChildren="退款處理中…"
                         pendingMessage="正在建立退款，請勿重複送出。"
                       >
@@ -164,9 +188,15 @@ export default async function AdminBillingDashboardPage() {
                       </FormSubmitButton>
                     </div>
                   </form>
+                  ) : (
+                    <p data-testid={`billing-refund-unavailable-${transaction.id}`} className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                      此交易目前不可建立新退款。
+                    </p>
+                  )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
@@ -208,7 +238,7 @@ export default async function AdminBillingDashboardPage() {
                     <CsrfField />
                     <input type="hidden" name="id" value={commission.id} />
                     <input name="reason" placeholder="作廢原因" className="h-9 rounded-md border border-border px-2 text-xs" />
-                    <button className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</button>
+                    <FormSubmitButton pendingChildren="作廢中…" pendingMessage="正在作廢聯盟佣金並寫入沖回紀錄，請勿重複送出。" confirmMessage="確認作廢這筆聯盟佣金？系統會依 immutable ledger 寫入沖回紀錄。" className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</FormSubmitButton>
                   </form>
                 </div>
               ))}
@@ -255,7 +285,7 @@ export default async function AdminBillingDashboardPage() {
                       <form action={retryWebhookEventAction}>
                         <CsrfField />
                         <input type="hidden" name="id" value={event.id} />
-                        <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</button>
+                        <FormSubmitButton pendingChildren="重送中…" pendingMessage="正在重新處理 webhook，請勿重複送出。" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</FormSubmitButton>
                       </form>
                     ) : (
                       <span className="text-xs text-slate-400">-</span>

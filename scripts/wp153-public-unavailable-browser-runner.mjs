@@ -132,7 +132,10 @@ function classifyServerOutput(line) {
 function isAllowedLoopbackUrl(value) {
   try {
     const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && ["127.0.0.1", "::1", "[::1]"].includes(url.hostname);
+    return ["http:", "https:"].includes(url.protocol)
+      && !url.username
+      && !url.password
+      && ["127.0.0.1", "::1", "[::1]"].includes(url.hostname);
   } catch {
     return false;
   }
@@ -376,16 +379,24 @@ function writeReceipt(targetPath, receipt) {
 }
 
 export {
+  attachSanitizedStream,
   classifyServerOutput,
   isAllowedLoopbackUrl,
   makeReceipt,
   normalizeLoopbackEndpoint,
   normalizeWp154ReadinessReceipt,
+  nextMetadataSnapshot,
+  protectedDigestSnapshot,
   readinessTransition,
+  runQuiet,
   runSyntheticReadiness,
+  sha256File,
+  syntheticEnvironment,
+  waitForServer,
   validateWp154ReadinessReceipt,
   validateWp153Receipt,
   READINESS_STATES,
+  writeReceipt,
 };
 
 export async function main() {

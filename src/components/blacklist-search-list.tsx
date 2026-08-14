@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { unblockBlacklistAction } from "@/app/actions";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge } from "@/components/ui";
 import { filterBlacklistEntries } from "@/lib/blacklist-search";
 import { formatDateTime } from "@/lib/format";
@@ -64,7 +65,13 @@ export function BlacklistSearchList({
               <form action={unblockBlacklistAction}>
                 <input type="hidden" name="_csrf" value={csrfToken} />
                 <input type="hidden" name="id" value={entry.id} />
-                <button className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">解除封鎖</button>
+                <FormSubmitButton
+                  pendingChildren="解除中…"
+                  pendingMessage={`正在解除 ${entry.identifier} 的封鎖，請勿重複送出。`}
+                  className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  解除封鎖
+                </FormSubmitButton>
               </form>
             ) : null}
           </div>

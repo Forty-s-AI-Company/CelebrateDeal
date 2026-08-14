@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "7638c0896d6f5fb1",
+  "startedAt": "2026-08-08T04:12:50.770Z",
+  "finishedAt": "2026-08-08T04:13:58.814Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "FAIL",
+    "server": "NOT_STARTED",
+    "browser": "NOT_STARTED"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": null,
+    "rwd": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "piiEnvelopeLeak": "NOT_RUN"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": "EXTERNAL_NETWORK_DENIED",
+    "nextBuildDetails": [
+      "G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "Retrying 2/3...",
+      "G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "Retrying 2/3...",
+      "G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "Retrying 3/3...",
+      "G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "Retrying 3/3...",
+      "Error: G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "at deny (<temp>\\loopback-network-guard.cjs:8:28)",
+      "at Object.guardedRequest [as request] (<temp>\\loopback-network-guard.cjs:11:90)",
+      "at new Promise (<anonymous>)",
+      "Error: G7_COMMERCE_EXTERNAL_NETWORK_DENIED",
+      "at deny (<temp>\\loopback-network-guard.cjs:8:28)",
+      "at Object.guardedRequest [as request] (<temp>\\loopback-network-guard.cjs:11:90)",
+      "at new Promise (<anonymous>)",
+      "Failed to compile.",
+      "src\\app\\layout.tsx",
+      "`next/font` error:",
+      "Failed to fetch `Geist` from Google Fonts.",
+      "src\\app\\layout.tsx",
+      "`next/font` error:",
+      "Failed to fetch `Geist Mono` from Google Fonts.",
+      "> Build failed because of webpack errors"
+    ]
+  },
+  "failure": "next-build-failed"
+}

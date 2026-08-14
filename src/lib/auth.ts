@@ -12,6 +12,7 @@ export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
 const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
+const VENDOR_SUPPORT_ROLES = ["owner", "admin", "support"] as const;
 const PLATFORM_ROLES = ["platform_admin"] as const;
 const ACTIVE_MEMBER_STATUS = "active";
 // A fixed, valid scrypt record makes unknown-account logins perform the same
@@ -202,7 +203,7 @@ export async function requireVendor() {
   return (await requireVendorContext()).vendor;
 }
 
-export async function requireVendorManager() {
+export async function requireVendorManagerContext() {
   const { auth, vendor } = await requireVendorContext();
   const role = auth.member?.role;
   if (
@@ -213,7 +214,65 @@ export async function requireVendorManager() {
     redirect("/dashboard?error=insufficient_role");
   }
 
-  return vendor;
+  return { auth, vendor };
+}
+
+export async function requireVendorManager() {
+  return (await requireVendorManagerContext()).vendor;
+}
+
+export async function requireVendorSupportContext() {
+  const { auth, vendor } = await requireVendorContext();
+  const role = auth.member?.role;
+  if (
+    !auth.member
+    || auth.member.status !== ACTIVE_MEMBER_STATUS
+    || !VENDOR_SUPPORT_ROLES.includes(role as (typeof VENDOR_SUPPORT_ROLES)[number])
+  ) {
+    redirect("/dashboard?error=insufficient_role");
+  }
+
+  return { auth, vendor };
+}
+
+export async function requireVendorSupportMfa(nextPath = "/support-cases") {
+  const { auth, vendor } = await requireVendorSupportContext();
+
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath, "/support-cases");
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
+  }
+
+  return {
+    auth,
+    user: auth.user,
+    vendor,
+    member: auth.member!,
+  };
+}
+
+export async function requireVendorManagerMfa(nextPath = "/orders") {
+  const { auth, vendor } = await requireVendorManagerContext();
+
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath, "/orders");
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
+  }
+
+  return {
+    auth,
+    user: auth.user,
+    vendor,
+    member: auth.member!,
+  };
 }
 
 export async function requireFinanceAdmin() {

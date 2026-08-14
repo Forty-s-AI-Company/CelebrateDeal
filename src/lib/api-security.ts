@@ -31,6 +31,10 @@ export function requireJobSecret(request: Request) {
   return isAuthorizedBearer(request, process.env.JOB_SECRET);
 }
 
+export function requireCronSecret(request: Request) {
+  return isAuthorizedBearer(request, process.env.CRON_SECRET);
+}
+
 export function requireSharedSecretHeader(request: Request, headerName: string, secret: string | undefined) {
   if (!secret) return false;
   const incoming = request.headers.get(headerName);

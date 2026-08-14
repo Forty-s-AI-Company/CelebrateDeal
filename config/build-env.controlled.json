@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "environment": {
-    "DATABASE_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build?connect_timeout=1",
-    "DIRECT_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build?connect_timeout=1",
+    "DATABASE_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build_test?connect_timeout=1",
+    "DIRECT_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build_test?connect_timeout=1",
     "NEXT_PUBLIC_APP_URL": "https://build.invalid",
     "JOB_SECRET": "synthetic-build-job-material-20260730",
     "CSRF_SECRET": "synthetic-build-csrf-material-20260730-value",

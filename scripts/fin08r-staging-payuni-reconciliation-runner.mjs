@@ -39,11 +39,11 @@ const STERILE_ENV_KEYS = [
 ];
 let runtimeModules;
 
-function digest(kind, value) {
+export function digest(kind, value) {
   return `sha256:${crypto.createHash("sha256").update(`FIN08R/v1/${kind}/${String(value)}`, "utf8").digest("hex")}`;
 }
 
-function canonical(value) {
+export function canonical(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
@@ -151,13 +151,13 @@ async function getRuntimeModules() {
   return runtimeModules;
 }
 
-function buildSterileEnv() {
+export function buildSterileEnv() {
   const result = {};
   for (const key of STERILE_ENV_KEYS) if (typeof process.env[key] === "string") result[key] = process.env[key];
   return result;
 }
 
-async function inspectTemp(temp) {
+export async function inspectTemp(temp) {
   const resolved = path.resolve(temp);
   const outsideWorkspace = !resolved.startsWith(`${path.resolve(ROOT)}${path.sep}`);
   const leaf = path.basename(resolved);
@@ -167,12 +167,12 @@ async function inspectTemp(temp) {
   return { ok: safe, outsideWorkspace, markerSafe: safe && fs.existsSync(marker) };
 }
 
-async function cleanupTemp(temp) {
+export async function cleanupTemp(temp) {
   await fsp.rm(temp, { recursive: true, force: true }).catch(() => {});
   return { pass: !fs.existsSync(temp), residualSafe: !fs.existsSync(temp) };
 }
 
-async function queryCandidate(db) {
+export async function queryCandidate(db) {
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
     const rows = await tx.$queryRaw(Prisma.sql`
@@ -194,11 +194,11 @@ async function queryCandidate(db) {
   });
 }
 
-function providerTransaction(row) {
+export function providerTransaction(row) {
   return { id: row.transaction_id, vendorId: row.vendor_id, providerName: row.provider_name, providerTradeNo: row.provider_trade_no, orderNumber: row.order_number, paymentMode: "platform", grossAmountCents: Number(row.gross_amount_cents), gatewayFeeCents: 0, platformFeeCents: 0, netAmountCents: Number(row.gross_amount_cents), currency: "TWD", status: row.transaction_status, refundedAmountCents: Number(row.refunded_amount_cents), refundReason: null, refundedAt: null, occurredAt: new Date(0), metadata: { synthetic: true }, createdAt: new Date(0) };
 }
 
-async function queryProvider(row, provider) {
+export async function queryProvider(row, provider) {
   const nativeFetch = globalThis.fetch;
   let attempts = 0;
   let redirects = 0;
@@ -214,7 +214,7 @@ async function queryProvider(row, provider) {
   try { return { result: await provider.queryPayment({ transaction: providerTransaction(row) }), attempts, redirects }; } finally { globalThis.fetch = nativeFetch; }
 }
 
-async function runChild(expectedCwd) {
+export async function runChild(expectedCwd) {
   const child = { schemaVersion: "fin08r-child/v1", cwdMatched: path.resolve(process.cwd()) === path.resolve(expectedCwd), status: "FIN08R_TERMINAL_NO_GO_BROKER", failure: null, environment: null, candidate: null, provider: null, reconciliation: null, replay: null, disconnected: false, sideEffects: { databaseConnections: 0, databaseQueries: 0, databaseWrites: 0, auditWrites: 0, providerQueries: 0, providerWrites: 0, payments: 0, refunds: 0, callbacks: 0, production: 0 }, safety: { environmentFileRead: false, rawValuesPersisted: false, rawProviderResponsePersisted: false } };
   const env = classifyEnvironment(process.env);
   child.environment = { requiredPresent: env.requiredPresent, present: env.present, appHostMatched: env.appHostMatched, sandbox: env.sandbox, databaseIdentity: env.databaseIdentity, supabaseIdentity: env.supabaseIdentity, production: env.production };
