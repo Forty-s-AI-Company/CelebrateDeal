@@ -472,6 +472,7 @@ function liveFormData() {
   formData.set("videoId", "video-1");
   formData.set("formId", "form-1");
   formData.set("messageTemplateId", "template-1");
+  formData.set("liveReminderTemplateId", "reminder-template-1");
   formData.set("interactionScriptId", "script-1");
   formData.append("productIds", "product-1");
   formData.set("liveDraftId", "draft-1");
@@ -1275,16 +1276,21 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
-  it("never lets a create request bypass preview by forging a public status", async () => {
+  it("allows a new live to schedule only through the explicit scheduled submitter", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("status", "scheduled");
 
-    await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=invalid_status&draft=draft-1",
-    );
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
 
-    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: "scheduled",
+        formId: "form-1",
+        messageTemplateId: "template-1",
+        liveReminderTemplateId: "reminder-template-1",
+      }),
+    });
   });
 
   it("keeps an incomplete content setup as a private draft", async () => {
@@ -1342,7 +1348,7 @@ describe("upsertLiveAction", () => {
     const formData = liveFormData();
     formData.set("id", "live-1");
     formData.set("status", "scheduled");
-    for (const field of ["productIds", "formId", "messageTemplateId", "interactionScriptId"]) {
+    for (const field of ["productIds", "interactionScriptId"]) {
       formData.delete(field);
     }
 
@@ -1353,11 +1359,82 @@ describe("upsertLiveAction", () => {
       data: expect.objectContaining({
         status: "scheduled",
         videoId: "video-1",
-        formId: null,
-        messageTemplateId: null,
+        formId: "form-1",
+        messageTemplateId: "template-1",
+        liveReminderTemplateId: "reminder-template-1",
         interactionScriptId: null,
       }),
     });
+  });
+
+  it("schedules a complete content setup and consumes its draft atomically", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("studioPreset", "CONTENT");
+    formData.set("status", "scheduled");
+    formData.delete("productIds");
+    formData.delete("interactionScriptId");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: "scheduled",
+        formId: "form-1",
+        messageTemplateId: "template-1",
+        liveReminderTemplateId: "reminder-template-1",
+        products: { create: [] },
+      }),
+    });
+    expect(mocks.liveStudioDraftUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ liveId: null, consumedAt: null }),
+      data: { consumedAt: expect.any(Date) },
+    }));
+  });
+
+  it("requires a reminder email for a content schedule before claiming its draft", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("studioPreset", "CONTENT");
+    formData.set("status", "scheduled");
+    formData.delete("productIds");
+    formData.delete("interactionScriptId");
+    formData.delete("liveReminderTemplateId");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit commerce setup blocked when its product and script are absent", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("studioPreset", "COMMERCE");
+    formData.set("status", "scheduled");
+    formData.delete("productIds");
+    formData.delete("interactionScriptId");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("promotes a content preset with products to commerce readiness", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("studioPreset", "CONTENT");
+    formData.set("status", "scheduled");
+    formData.delete("interactionScriptId");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
   it("blocks a content live from publishing without playable media", async () => {
@@ -1365,7 +1442,7 @@ describe("upsertLiveAction", () => {
     const formData = liveFormData();
     formData.set("id", "live-1");
     formData.set("status", "scheduled");
-    for (const field of ["productIds", "videoId", "formId", "messageTemplateId", "interactionScriptId"]) {
+    for (const field of ["productIds", "videoId", "interactionScriptId"]) {
       formData.delete(field);
     }
 
@@ -1374,6 +1451,18 @@ describe("upsertLiveAction", () => {
     );
 
     expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(["live", "ended"])("rejects a new live status %s before creating a live", async (status) => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("status", status);
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      `redirect:/lives/new?error=invalid_status&draft=draft-1`,
+    );
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
   it("allows a scheduled live to be taken down as a draft even when readiness is incomplete", async () => {

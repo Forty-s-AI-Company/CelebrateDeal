@@ -17,7 +17,7 @@ import { createLivePreview } from "@/lib/live-preview";
 import {
   getLivePublishReadiness,
   requiresLivePublishReadiness,
-  type LivePublishRequirementCode,
+  type LivePublishRequirementCodeWithReminder,
 } from "@/lib/live-publish-readiness";
 import {
   emptyLiveStudioDraft,
@@ -41,6 +41,7 @@ type LiveScriptOption = Pick<InteractionScript, "id" | "name">;
 type LiveAffiliateOption = Pick<Affiliate, "id" | "name" | "code">;
 type LiveStudioPreset = LiveStudioDraftPayload["studioPreset"];
 type LiveReadinessResources = {
+  studioPreset: LiveStudioPreset;
   products: LiveProductOption[];
   productIds: string[];
   videos: Array<Pick<Video, "id" | "title">>;
@@ -49,6 +50,8 @@ type LiveReadinessResources = {
   formId: string;
   templates: LiveTemplateOption[];
   templateId: string;
+  reminderTemplates: LiveTemplateOption[];
+  reminderTemplateId: string;
   scripts: LiveScriptOption[];
   scriptId: string;
 };
@@ -189,11 +192,13 @@ function buildLivePreview(title: string, accentCopy: string, products: LiveProdu
 
 function buildLivePublishReadiness(resources: LiveReadinessResources) {
   return getLivePublishReadiness({
+    studioPreset: resources.studioPreset,
     productCount: resources.productIds.length,
     productsReady: resources.productIds.every((productId) => resources.products.some((product) => product.id === productId)),
     videoReady: resources.videos.some((video) => video.id === resources.videoId),
     formReady: resources.forms.some((form) => form.id === resources.formId),
     registrationEmailReady: resources.templates.some((template) => template.id === resources.templateId),
+    liveReminderEmailReady: resources.reminderTemplates.some((template) => template.id === resources.reminderTemplateId),
     interactionScriptReady: resources.scripts.some((script) => script.id === resources.scriptId),
   });
 }
@@ -208,11 +213,12 @@ function liveStatusAction(status: string) {
   }
 }
 
-const readinessCopy: Record<LivePublishRequirementCode, { label: string; step: number; action: string }> = {
+const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: string; step: number; action: string }> = {
   media: { label: "可播放的影片或 Live Input", step: 2, action: "前往媒體" },
   products: { label: "啟用且已確認履約類型的商品", step: 1, action: "前往商品與轉換" },
   registration_form: { label: "有效的報名表單", step: 1, action: "前往商品與轉換" },
   registration_email: { label: "可寄送的報名成功 Email", step: 1, action: "前往商品與轉換" },
+  live_reminder_email: { label: "可寄送的開播提醒 Email", step: 1, action: "前往商品與轉換" },
   interaction_script: { label: "已發布的互動腳本", step: 3, action: "前往直播與互動" },
 };
 
@@ -249,7 +255,7 @@ function LiveReviewPanel({
           <p className="mt-1 text-sm text-slate-600">
             {readiness.mode === "commerce"
               ? "已選擇商品。公開前需要完整的播放、報名、通知與互動路徑。"
-              : "目前沒有選擇商品，會以內容直播發布；公開前仍需可播放媒體。"}
+              : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與兩種通知 Email。"}
           </p>
           <p className={`mt-3 text-sm font-semibold ${readiness.ready ? "text-emerald-800" : "text-amber-900"}`}>
             {readiness.ready ? "發布條件已完成" : `還有 ${readiness.blockers.length} 項需要完成`}
@@ -495,7 +501,11 @@ function LiveSubmitActions({
       <FormSubmitButton name="status" value={liveId ? currentStatus : "draft"} disabled={saveDisabled} pendingChildren="儲存中…" pendingMessage="正在儲存直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">
         {liveId ? "儲存變更" : "建立草稿並預覽"}
       </FormSubmitButton>
-      {statusAction ? (
+      {!liveId ? (
+        <FormSubmitButton name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+          建立並排程
+        </FormSubmitButton>
+      ) : statusAction ? (
         <FormSubmitButton name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
           {statusAction.label}
         </FormSubmitButton>
@@ -556,6 +566,7 @@ export function LiveStepperForm({
   const [selectedScriptId, setSelectedScriptId] = useState(initialValues.interactionScriptId);
   const [replayEnabled, setReplayEnabled] = useState(initialValues.replayEnabled);
   const [studioPreset, setStudioPreset] = useState<LiveStudioPreset>(initialValues.studioPreset);
+  const [selectedReminderTemplateId, setSelectedReminderTemplateId] = useState(initialValues.liveReminderTemplateId);
   const draft = useLiveStudioDraft({
     activeStep,
     csrfToken,
@@ -565,10 +576,8 @@ export function LiveStepperForm({
     saveOnMount: Boolean(liveId && !initialDraft),
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
-  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds);
-  const statusAction = liveId ? liveStatusAction(currentStatus) : null;
-  const publishReadiness = buildLivePublishReadiness({ products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
-
+  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, reminderTemplates, reminderTemplateId: selectedReminderTemplateId, scripts, scriptId: selectedScriptId });
   function validateCurrentStep() {
     const panel = formRef.current?.querySelector<HTMLElement>(`[data-step-index="${activeStep}"]`);
     const invalidControl = panel?.querySelector<
@@ -710,7 +719,7 @@ export function LiveStepperForm({
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             開播提醒 Email
-            <select name="liveReminderTemplateId" defaultValue={initialValues.liveReminderTemplateId} className="h-10 rounded-md border border-border px-3">
+            <select name="liveReminderTemplateId" defaultValue={initialValues.liveReminderTemplateId} onChange={(event) => setSelectedReminderTemplateId(event.target.value)} className="h-10 rounded-md border border-border px-3">
               <option value="">不寄送開播提醒</option>
               {reminderTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
             </select>

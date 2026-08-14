@@ -34,6 +34,9 @@ const seed = {
   productId: "",
   formId: "",
   liveId: "",
+  readyVideoId: "",
+  registrationTemplateId: "",
+  reminderTemplateId: "",
 };
 
 type MfaTestUser = {
@@ -517,6 +520,39 @@ test.beforeAll(async () => {
       isActive: true,
     },
   });
+  const readyVideo = await db.video.create({
+    data: {
+      vendorId: vendor.id,
+      title: "E2E 可播放預錄研討會",
+      description: "Synthetic ready VOD for the studio scheduling path",
+      sourceType: "url",
+      videoUrl: "https://example.test/e2e-webinar.mp4",
+      durationSec: 900,
+      status: "ready",
+    },
+  });
+  const registrationTemplate = await db.messageTemplate.create({
+    data: {
+      vendorId: vendor.id,
+      name: "E2E 報名成功通知",
+      channel: "email",
+      trigger: "registration_confirmed",
+      subject: "{{name}}，你已報名 {{live_title}}",
+      body: "活動：{{live_title}}\n時間：{{live_start_at}}\n{{unsubscribe_url}}",
+      isActive: true,
+    },
+  });
+  const reminderTemplate = await db.messageTemplate.create({
+    data: {
+      vendorId: vendor.id,
+      name: "E2E 開播提醒",
+      channel: "email",
+      trigger: "live_reminder",
+      subject: "{{live_title}} 即將開始",
+      body: "{{name}}，直播將於 {{live_start_at}} 開始。\n{{unsubscribe_url}}",
+      isActive: true,
+    },
+  });
   const live = await db.live.create({
     data: {
       vendorId: vendor.id,
@@ -550,6 +586,9 @@ test.beforeAll(async () => {
   seed.productId = product.id;
   seed.formId = form.id;
   seed.liveId = live.id;
+  seed.readyVideoId = readyVideo.id;
+  seed.registrationTemplateId = registrationTemplate.id;
+  seed.reminderTemplateId = reminderTemplate.id;
 });
 
 test.afterAll(async () => {
@@ -1195,6 +1234,75 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await expect(page.getByRole("button", { name: "發布" })).toHaveAttribute("aria-current", "step");
   await expect(page.getByRole("heading", { name: "確認直播間設定" })).toBeVisible();
   await expect(page.getByRole("button", { name: "建立直播間" })).toBeEnabled();
+});
+
+test("merchant can create and schedule a prerecorded content webinar from the five-step studio", async ({ page }) => {
+  const title = `E2E 預錄研討會 ${e2eRunId}`;
+  const slug = `e2e-scheduled-webinar-${stamp}`;
+  await loginSeededOwner(page);
+  await page.goto("/lives/new");
+
+  await page.getByLabel("直播標題").fill(title);
+  await page.getByLabel("Slug").fill(slug);
+  await page.getByLabel("開播時間").fill("2026-08-20T20:00");
+  await page.getByRole("button", { name: "下一步" }).click();
+
+  await page.getByLabel("報名頁").selectOption(seed.formId);
+  await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
+  await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
+  await page.getByRole("button", { name: "下一步" }).click();
+
+  await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await page.getByRole("button", { name: "下一步" }).click();
+
+  await expect(page.getByText("內容直播發布檢查")).toBeVisible();
+  await expect(page.getByText("發布條件已完成")).toBeVisible();
+  const scheduleButton = page.getByRole("button", { name: "建立並排程" });
+  await expect(scheduleButton).toBeEnabled();
+  page.once("dialog", (dialog) => dialog.accept());
+  await scheduleButton.click();
+
+  await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/);
+  const liveId = new URL(page.url()).pathname.split("/")[2];
+  expect(liveId).toBeTruthy();
+
+  const scheduledLive = await db.live.findUnique({
+    where: { id: liveId },
+    select: {
+      vendorId: true,
+      title: true,
+      status: true,
+      videoId: true,
+      formId: true,
+      messageTemplateId: true,
+      liveReminderTemplateId: true,
+      interactionScriptId: true,
+    },
+  });
+  expect(scheduledLive).toEqual({
+    vendorId: seed.vendorId,
+    title,
+    status: "scheduled",
+    videoId: seed.readyVideoId,
+    formId: seed.formId,
+    messageTemplateId: seed.registrationTemplateId,
+    liveReminderTemplateId: seed.reminderTemplateId,
+    interactionScriptId: null,
+  });
+  expect(await db.liveProduct.count({ where: { liveId } })).toBe(0);
+
+  const consumedDrafts = await db.liveStudioDraft.findMany({
+    where: { vendorId: seed.vendorId, liveId: null, consumedAt: { not: null } },
+    select: { payload: true, consumedAt: true },
+  });
+  const consumedDraft = consumedDrafts.find((draft) => (
+    typeof draft.payload === "object"
+    && draft.payload !== null
+    && "title" in draft.payload
+    && draft.payload.title === title
+  ));
+  expect(consumedDraft?.consumedAt).toBeInstanceOf(Date);
 });
 
 test("public form can submit a lead", async ({ page }) => {

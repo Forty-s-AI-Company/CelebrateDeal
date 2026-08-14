@@ -628,7 +628,7 @@ function requestedLiveStatus(
   const status = text(formData, "status", "draft");
   const transitionAllowed = liveId
     ? Boolean(currentStatus && liveStatusTransitions[currentStatus]?.has(status))
-    : status === "draft";
+    : status === "draft" || status === "scheduled";
   if (!transitionAllowed) {
     redirect(
       liveId
@@ -845,19 +845,23 @@ function requireSubmittedLivePublishReadiness(input: {
   draftId: string;
   requestedStatus: string;
   replayEnabled: boolean;
+  studioPreset: LiveStudioDraftPayload["studioPreset"];
   productCount: number;
   productsReady: boolean;
   videoReady: boolean;
   registrationFormFields: unknown;
   registrationEmail: { subject: string | null; body: string } | null;
+  liveReminderEmail: { subject: string | null; body: string } | null;
   interactionScriptReady: boolean;
 }) {
   const readiness = getLivePublishReadiness({
+    studioPreset: input.studioPreset,
     productCount: input.productCount,
     productsReady: input.productsReady,
     videoReady: input.videoReady,
     formReady: parseRegistrationFormFields(input.registrationFormFields).success,
     registrationEmailReady: Boolean(input.registrationEmail && hasUsableMessageTemplateContent(input.registrationEmail)),
+    liveReminderEmailReady: Boolean(input.liveReminderEmail && hasUsableMessageTemplateContent(input.liveReminderEmail)),
     interactionScriptReady: input.interactionScriptReady,
   });
   if (!requiresLivePublishReadiness(input.requestedStatus, input.replayEnabled) || readiness.ready) return;
@@ -1015,11 +1019,13 @@ export async function upsertLiveAction(formData: FormData) {
     draftId: draftClaim.draftId,
     requestedStatus,
     replayEnabled: submittedDraft.replayEnabled,
+    studioPreset: submittedDraft.studioPreset,
     productCount: productIds.length,
     productsReady: products.length === productIds.length,
     videoReady: Boolean(video),
     registrationFormFields: registrationForm?.fields,
     registrationEmail: messageTemplate,
+    liveReminderEmail: liveReminderTemplate,
     interactionScriptReady: Boolean(interactionScript),
   });
   let heroImageUrl;

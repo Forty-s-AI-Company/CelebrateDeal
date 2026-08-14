@@ -211,6 +211,19 @@ function control(tree: unknown, name: string, value?: string) {
   };
 }
 
+function selectControl(tree: unknown, name: string) {
+  const element = findElement(tree, (candidate) => (
+    candidate.type === "select" && candidate.props.name === name
+  ));
+
+  expect(element).toBeDefined();
+  return element as ElementNode & {
+    props: Record<string, unknown> & {
+      onChange: (event: { target: { value: string } }) => void;
+    };
+  };
+}
+
 function productSelection(tree: unknown) {
   const element = findElement(tree, (candidate) => (
     typeof candidate.type === "function" && candidate.type.name === "ProductSelection"
@@ -521,6 +534,73 @@ describe("LiveStepperForm", () => {
     ))?.props.disabled).toBe(false);
   });
 
+  it("offers separate draft and schedule submitters for a new complete content live", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      studioPreset: "CONTENT" as const,
+      title: "內容研討會",
+      slug: "content-webinar-new",
+      scheduledAt: "2026-08-20T20:00",
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
+      activeStep: 4,
+    };
+    const form = renderForm([], {
+      initialValues,
+      videos: [{ id: "video-1", title: "預錄影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+    });
+    const draftButton = submitAction(form, "建立草稿並預覽");
+    const scheduleButton = submitAction(form, "建立並排程");
+
+    expect(draftButton?.props.name).toBe("status");
+    expect(draftButton?.props.value).toBe("draft");
+    expect(draftButton?.props.disabled).toBe(false);
+    expect(scheduleButton?.props.name).toBe("status");
+    expect(scheduleButton?.props.value).toBe("scheduled");
+    expect(scheduleButton?.props.disabled).toBe(false);
+  });
+
+  it("updates reminder readiness immediately and gates only the schedule submitter", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      studioPreset: "CONTENT" as const,
+      title: "待補提醒研討會",
+      slug: "missing-reminder-webinar",
+      scheduledAt: "2026-08-20T20:00",
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      activeStep: 4,
+    };
+    const overrides: FormOverrides = {
+      initialValues,
+      videos: [{ id: "video-1", title: "預錄影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+    };
+    const form = renderForm([], overrides);
+    const draftButton = submitAction(form, "建立草稿並預覽");
+    const blockedSchedule = submitAction(form, "建立並排程");
+    expect(draftButton?.props.disabled).toBe(false);
+    expect(blockedSchedule?.props.disabled).toBe(true);
+    expect(renderToStaticMarkup(form as ReactElement)).toContain("可寄送的開播提醒 Email");
+
+    selectControl(form, "liveReminderTemplateId").props.onChange({ target: { value: "template-2" } });
+    const completedForm = renderForm([], overrides);
+    expect(submitAction(completedForm, "建立並排程")?.props.disabled).toBe(false);
+    expect(renderToStaticMarkup(completedForm as ReactElement)).toContain("發布條件已完成");
+  });
+
   it("shows a complete sales-live checklist and enables scheduling", () => {
     const initialValues = {
       ...emptyLiveStudioDraft(),
@@ -531,6 +611,7 @@ describe("LiveStepperForm", () => {
       videoId: "video-1",
       formId: "form-1",
       messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
       activeStep: 4,
     };
@@ -540,7 +621,10 @@ describe("LiveStepperForm", () => {
       initialValues,
       videos: [{ id: "video-1", title: "可播放影片" }],
       forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
-      templates: [{ id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" }] as FormOverrides["templates"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
       scripts: [{ id: "script-1", name: "已發布腳本" }] as FormOverrides["scripts"],
     });
     const markup = renderToStaticMarkup(form as ReactElement);
@@ -561,6 +645,7 @@ describe("LiveStepperForm", () => {
       productIds: [products[0].id],
       formId: "form-1",
       messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
       activeStep: 4,
     };
@@ -569,7 +654,10 @@ describe("LiveStepperForm", () => {
       currentStatus: "draft",
       initialValues,
       forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
-      templates: [{ id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" }] as FormOverrides["templates"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
       scripts: [{ id: "script-1", name: "已發布腳本" }] as FormOverrides["scripts"],
     });
     const markup = renderToStaticMarkup(form as ReactElement);
@@ -589,6 +677,9 @@ describe("LiveStepperForm", () => {
       scheduledAt: "2026-08-10T20:00",
       videoId: "video-1",
       productIds: [],
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
       activeStep: 4,
     };
     const form = renderForm(products, {
@@ -596,13 +687,18 @@ describe("LiveStepperForm", () => {
       currentStatus: "scheduled",
       initialValues,
       videos: [{ id: "video-1", title: "講座影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
     });
     const markup = renderToStaticMarkup(form as ReactElement);
     const unpublishButton = submitAction(form, "下架為草稿");
 
     expect(markup).toContain("內容直播發布檢查");
     expect(markup).toContain("發布條件已完成");
-    expect(markup).not.toContain("有效的報名表單");
+    expect(markup).toContain("有效的報名表單");
     expect(unpublishButton?.props.value).toBe("draft");
     expect(unpublishButton?.props.disabled).toBe(false);
   });
@@ -623,13 +719,17 @@ describe("LiveStepperForm", () => {
     };
     const preventDefault = vi.fn();
     const previousButton = (globalThis as Record<string, unknown>).HTMLButtonElement;
-    class SyntheticButton {}
+    class SyntheticButton {
+      name = "status";
+      value = "scheduled";
+    }
+    const submitter = new SyntheticButton();
     (globalThis as Record<string, unknown>).HTMLButtonElement = SyntheticButton;
 
     try {
       (form.props.onSubmit as (event: unknown) => void)({
         preventDefault,
-        nativeEvent: { submitter: new SyntheticButton() },
+        nativeEvent: { submitter },
       });
       await Promise.resolve();
       await Promise.resolve();
@@ -638,7 +738,9 @@ describe("LiveStepperForm", () => {
       expect(draftMocks.saveNow).toHaveBeenCalledWith(0);
       expect(draftIdControl.value).toBe("draft-2");
       expect(revisionControl.value).toBe("4");
-      expect(requestSubmit).toHaveBeenCalledOnce();
+      expect(submitter.name).toBe("status");
+      expect(submitter.value).toBe("scheduled");
+      expect(requestSubmit).toHaveBeenCalledWith(submitter);
     } finally {
       if (previousButton === undefined) delete (globalThis as Record<string, unknown>).HTMLButtonElement;
       else (globalThis as Record<string, unknown>).HTMLButtonElement = previousButton;

@@ -11,12 +11,18 @@ describe("live publish readiness", () => {
       productCount: 0,
       productsReady: true,
       videoReady: true,
-      formReady: false,
-      registrationEmailReady: false,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
       interactionScriptReady: false,
     })).toEqual({
       mode: "content",
-      requirements: [{ code: "media", ready: true }],
+      requirements: [
+        { code: "media", ready: true },
+        { code: "registration_form", ready: true },
+        { code: "registration_email", ready: true },
+        { code: "live_reminder_email", ready: true },
+      ],
       blockers: [],
       ready: true,
     });
@@ -29,14 +35,16 @@ describe("live publish readiness", () => {
       videoReady: true,
       formReady: false,
       registrationEmailReady: true,
+      liveReminderEmailReady: true,
       interactionScriptReady: false,
     })).toEqual({
       mode: "commerce",
       requirements: [
         { code: "media", ready: true },
-        { code: "products", ready: true },
         { code: "registration_form", ready: false },
         { code: "registration_email", ready: true },
+        { code: "live_reminder_email", ready: true },
+        { code: "products", ready: true },
         { code: "interaction_script", ready: false },
       ],
       blockers: [
@@ -55,10 +63,86 @@ describe("live publish readiness", () => {
       videoReady: true,
       formReady: true,
       registrationEmailReady: true,
+      liveReminderEmailReady: true,
       interactionScriptReady: true,
     })).toMatchObject({
       mode: "commerce",
       blockers: [{ code: "products", ready: false }],
+      ready: false,
+    });
+  });
+
+  it("derives custom mode from the selected product count", () => {
+    expect(getLivePublishReadiness({
+      studioPreset: "CUSTOM",
+      productCount: 0,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
+      interactionScriptReady: false,
+    }).mode).toBe("content");
+
+    expect(getLivePublishReadiness({
+      studioPreset: "CUSTOM",
+      productCount: 1,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
+      interactionScriptReady: true,
+    }).mode).toBe("commerce");
+  });
+
+  it("requires the live reminder email for content publishing too", () => {
+    expect(getLivePublishReadiness({
+      studioPreset: "CONTENT",
+      productCount: 0,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: false,
+      interactionScriptReady: true,
+    })).toMatchObject({
+      mode: "content",
+      blockers: [{ code: "live_reminder_email", ready: false }],
+      ready: false,
+    });
+  });
+
+  it("keeps an explicit commerce preset in commerce mode before a product is selected", () => {
+    expect(getLivePublishReadiness({
+      studioPreset: "COMMERCE",
+      productCount: 0,
+      productsReady: false,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
+      interactionScriptReady: true,
+    })).toMatchObject({
+      mode: "commerce",
+      blockers: [{ code: "products", ready: false }],
+      ready: false,
+    });
+  });
+
+  it("promotes a content preset with products to commerce mode", () => {
+    expect(getLivePublishReadiness({
+      studioPreset: "CONTENT",
+      productCount: 1,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
+      interactionScriptReady: false,
+    })).toMatchObject({
+      mode: "commerce",
+      blockers: [{ code: "interaction_script", ready: false }],
       ready: false,
     });
   });
