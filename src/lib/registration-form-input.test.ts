@@ -6,6 +6,14 @@ const validFields = [
   { key: "email", label: "Email", type: "email", required: true },
 ];
 
+const mediaFields = [
+  "heroImageUrl",
+  "heroImageAssetId",
+  "backgroundImageUrl",
+  "backgroundImageAssetId",
+  "promoVideoId",
+] as const;
+
 function validFormData() {
   const formData = new FormData();
   formData.set("name", " 夏季活動報名 ");
@@ -15,6 +23,11 @@ function validFormData() {
   formData.set("fields", JSON.stringify(validFields));
   formData.set("submitLabel", " 送出報名 ");
   formData.set("successMessage", " 已收到資料 ");
+  formData.set("heroImageUrl", " https://media.example.test/hero.webp ");
+  formData.set("heroImageAssetId", " hero-asset-1 ");
+  formData.set("backgroundImageUrl", " https://media.example.test/background.webp ");
+  formData.set("backgroundImageAssetId", " background-asset-1 ");
+  formData.set("promoVideoId", " promo-video-1 ");
   formData.set("themeColor", " #12aBc9 ");
   formData.set("countdownMinutes", " 120 ");
   formData.set("stickyText", " 直播限定 ");
@@ -46,6 +59,11 @@ describe("registration form input", () => {
         ],
         submitLabel: "送出報名",
         successMessage: "已收到資料",
+        heroImageUrl: "https://media.example.test/hero.webp",
+        heroImageAssetId: "hero-asset-1",
+        backgroundImageUrl: "https://media.example.test/background.webp",
+        backgroundImageAssetId: "background-asset-1",
+        promoVideoId: "promo-video-1",
         themeColor: "#12aBc9",
         countdownMinutes: 120,
         stickyText: "直播限定",
@@ -120,6 +138,66 @@ describe("registration form input", () => {
         maxVisibleSessions: 99,
         hideExpiredSessions: false,
       });
+    }
+  });
+
+  it("normalizes empty media fields to null without applying URL protocol validation", () => {
+    const formData = validFormData();
+    for (const field of mediaFields) formData.delete(field);
+    formData.set("heroImageUrl", "not-a-url");
+    formData.set("backgroundImageUrl", " javascript:alert(1) ");
+
+    const result = parseRegistrationFormInput(formData);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        heroImageUrl: "not-a-url",
+        heroImageAssetId: null,
+        backgroundImageUrl: "javascript:alert(1)",
+        backgroundImageAssetId: null,
+        promoVideoId: null,
+      });
+    }
+  });
+
+  it("rejects media URLs over 2048 characters and IDs over 128 characters", () => {
+    const formData = validFormData();
+    formData.set("heroImageUrl", "x".repeat(2_049));
+    formData.set("heroImageAssetId", "x".repeat(129));
+    formData.set("backgroundImageUrl", "x".repeat(2_049));
+    formData.set("backgroundImageAssetId", "x".repeat(129));
+    formData.set("promoVideoId", "x".repeat(129));
+
+    const result = parseRegistrationFormInput(formData);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.errors.heroImageUrl).toContain("2048");
+    expect(result.errors.heroImageAssetId).toContain("128");
+    expect(result.errors.backgroundImageUrl).toContain("2048");
+    expect(result.errors.backgroundImageAssetId).toContain("128");
+    expect(result.errors.promoVideoId).toContain("128");
+  });
+
+  it("rejects duplicate and File values for every media field", () => {
+    for (const field of mediaFields) {
+      const duplicate = validFormData();
+      duplicate.delete(field);
+      duplicate.append(field, "first");
+      duplicate.append(field, "second");
+
+      const duplicateResult = parseRegistrationFormInput(duplicate);
+      expect(duplicateResult.success).toBe(false);
+      if (!duplicateResult.success) expect(duplicateResult.errors[field]).toContain("單一文字");
+
+      const fileValue = validFormData();
+      fileValue.delete(field);
+      fileValue.append(field, new File(["value"], `${field}.txt`));
+
+      const fileResult = parseRegistrationFormInput(fileValue);
+      expect(fileResult.success).toBe(false);
+      if (!fileResult.success) expect(fileResult.errors[field]).toContain("單一文字");
     }
   });
 

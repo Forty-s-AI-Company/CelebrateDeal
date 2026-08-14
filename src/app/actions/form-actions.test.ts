@@ -5,12 +5,20 @@ const mocks = vi.hoisted(() => ({
   requireVendorManager: vi.fn(),
   create: vi.fn(),
   updateMany: vi.fn(),
+  imageAssetFindFirst: vi.fn(),
+  videoFindFirst: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }),
+  db: {
+    registrationForm: { create: vi.fn(), updateMany: vi.fn() },
+    imageAsset: { findFirst: vi.fn() },
+    video: { findFirst: vi.fn() },
+  },
+  getDb: vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertSecurity }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { create: mocks.create, updateMany: mocks.updateMany } }) }));
+vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import { upsertFormBuilderAction, type FormBuilderActionState } from "./form-actions";
@@ -41,10 +49,22 @@ function formData(id?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getDb.mockReset();
+  mocks.imageAssetFindFirst.mockReset();
+  mocks.videoFindFirst.mockReset();
+  mocks.create.mockReset();
+  mocks.updateMany.mockReset();
+  mocks.db.registrationForm.create = mocks.create;
+  mocks.db.registrationForm.updateMany = mocks.updateMany;
+  mocks.db.imageAsset.findFirst = mocks.imageAssetFindFirst;
+  mocks.db.video.findFirst = mocks.videoFindFirst;
+  mocks.getDb.mockReturnValue(mocks.db);
   mocks.assertSecurity.mockResolvedValue(undefined);
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.create.mockResolvedValue({ id: "form-new" });
   mocks.updateMany.mockResolvedValue({ count: 1 });
+  mocks.imageAssetFindFirst.mockResolvedValue(null);
+  mocks.videoFindFirst.mockResolvedValue(null);
 });
 
 describe("upsertFormBuilderAction", () => {
@@ -56,9 +76,15 @@ describe("upsertFormBuilderAction", () => {
         vendorId: "vendor-1",
         slug: "summer-launch",
         fields,
+        heroImageUrl: null,
+        heroImageAssetId: null,
+        backgroundImageUrl: null,
+        backgroundImageAssetId: null,
+        promoVideoId: null,
         isActive: true,
       }),
     });
+    expect(mocks.getDb).toHaveBeenCalledTimes(1);
     expect(mocks.updateMany).not.toHaveBeenCalled();
   });
 
@@ -69,8 +95,133 @@ describe("upsertFormBuilderAction", () => {
       where: { id: "form-1", vendorId: "vendor-1", updatedAt: new Date("2026-08-10T01:02:03.000Z") },
       data: expect.objectContaining({ name: "活動報名", fields }),
     });
+    expect(mocks.getDb).toHaveBeenCalledTimes(1);
     expect(mocks.create).not.toHaveBeenCalled();
   });
+
+  it("uses ready tenant-owned assets and server URLs instead of client URLs", async () => {
+    mocks.imageAssetFindFirst
+      .mockResolvedValueOnce({ id: "hero-asset-1", publicUrl: "https://media.example.test/server-hero.webp" })
+      .mockResolvedValueOnce({ id: "background-asset-1", publicUrl: "https://media.example.test/server-background.webp" });
+    mocks.videoFindFirst.mockResolvedValue({ id: "promo-video-1" });
+    const data = formData();
+    data.set("heroImageAssetId", "hero-asset-1");
+    data.set("heroImageUrl", "javascript:alert(1)");
+    data.set("backgroundImageAssetId", "background-asset-1");
+    data.set("backgroundImageUrl", "not-a-url");
+    data.set("promoVideoId", "promo-video-1");
+
+    await expect(upsertFormBuilderAction(idleState, data)).rejects.toThrow("redirect:/forms");
+
+    expect(mocks.imageAssetFindFirst).toHaveBeenNthCalledWith(1, {
+      where: { id: "hero-asset-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.imageAssetFindFirst).toHaveBeenNthCalledWith(2, {
+      where: { id: "background-asset-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.videoFindFirst).toHaveBeenCalledWith({
+      where: { id: "promo-video-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true },
+    });
+    expect(mocks.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        heroImageAssetId: "hero-asset-1",
+        heroImageUrl: "https://media.example.test/server-hero.webp",
+        backgroundImageAssetId: "background-asset-1",
+        backgroundImageUrl: "https://media.example.test/server-background.webp",
+        promoVideoId: "promo-video-1",
+      }),
+    });
+  });
+
+  it("stores legacy HTTP(S) URLs when no image asset is selected", async () => {
+    const data = formData();
+    data.set("heroImageUrl", " http://legacy.example.test/hero.webp ");
+    data.set("backgroundImageUrl", "https://legacy.example.test/background.webp");
+
+    await expect(upsertFormBuilderAction(idleState, data)).rejects.toThrow("redirect:/forms");
+
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.videoFindFirst).not.toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        heroImageUrl: "http://legacy.example.test/hero.webp",
+        backgroundImageUrl: "https://legacy.example.test/background.webp",
+        heroImageAssetId: null,
+        backgroundImageAssetId: null,
+      }),
+    });
+  });
+
+  it("returns an invalid URL field error before persistence", async () => {
+    const data = formData();
+    data.set("heroImageUrl", "javascript:alert(1)");
+    data.set("backgroundImageUrl", "//attacker.example.test/background.webp");
+
+    const result = await upsertFormBuilderAction(idleState, data);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      message: expect.stringContaining("內容仍保留"),
+      fieldErrors: {
+        heroImageUrl: expect.stringContaining("HTTP(S)"),
+        backgroundImageUrl: expect.stringContaining("HTTP(S)"),
+      },
+    }));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-tenant and pending image assets before updating", async () => {
+    const data = formData("form-1");
+    data.set("heroImageAssetId", "cross-tenant-asset");
+    data.set("backgroundImageAssetId", "pending-asset");
+    mocks.imageAssetFindFirst.mockResolvedValue(null);
+
+    const result = await upsertFormBuilderAction(idleState, data);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      fieldErrors: {
+        heroImageAssetId: expect.stringContaining("無效"),
+        backgroundImageAssetId: expect.stringContaining("無效"),
+      },
+    }));
+    expect(mocks.imageAssetFindFirst).toHaveBeenNthCalledWith(1, {
+      where: { id: "cross-tenant-asset", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.imageAssetFindFirst).toHaveBeenNthCalledWith(2, {
+      where: { id: "pending-asset", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(["cross-tenant-video", "processing-video", "archived-video"])(
+    "rejects a non-ready or cross-tenant promo video (%s) before creating",
+    async (promoVideoId) => {
+      const data = formData();
+      data.set("promoVideoId", promoVideoId);
+      mocks.videoFindFirst.mockResolvedValue(null);
+
+      const result = await upsertFormBuilderAction(idleState, data);
+
+      expect(result).toEqual(expect.objectContaining({
+        status: "error",
+        fieldErrors: { promoVideoId: expect.stringContaining("不存在") },
+      }));
+      expect(mocks.videoFindFirst).toHaveBeenCalledWith({
+        where: { id: promoVideoId, vendorId: "vendor-1", status: "ready" },
+        select: { id: true },
+      });
+      expect(mocks.create).not.toHaveBeenCalled();
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns field errors without persistence when submitted data is invalid", async () => {
     const data = formData();

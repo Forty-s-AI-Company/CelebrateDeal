@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
 import {
   parseRegistrationFormInput,
+  type RegistrationFormInput,
   type RegistrationFormInputErrors,
 } from "@/lib/registration-form-input";
 
@@ -20,6 +23,59 @@ function databaseErrorCode(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
     : null;
+}
+
+type FormMediaResolution =
+  | { success: false; errors: RegistrationFormInputErrors }
+  | { success: true; heroImageUrl: string | null; backgroundImageUrl: string | null };
+
+async function resolveFormMedia(
+  db: ReturnType<typeof getDb>,
+  vendorId: string,
+  input: RegistrationFormInput,
+): Promise<FormMediaResolution> {
+  let heroImageAsset: Awaited<ReturnType<typeof resolveReadyImageAsset>> = null;
+  let backgroundImageAsset: Awaited<ReturnType<typeof resolveReadyImageAsset>> = null;
+  const errors: RegistrationFormInputErrors = {};
+
+  try {
+    heroImageAsset = await resolveReadyImageAsset(db, { vendorId, assetId: input.heroImageAssetId });
+  } catch (error) {
+    if (!(error instanceof ImageAssetReferenceError)) throw error;
+    errors.heroImageAssetId = "主視覺圖片素材無效或尚未就緒。";
+  }
+
+  try {
+    backgroundImageAsset = await resolveReadyImageAsset(db, { vendorId, assetId: input.backgroundImageAssetId });
+  } catch (error) {
+    if (!(error instanceof ImageAssetReferenceError)) throw error;
+    errors.backgroundImageAssetId = "背景圖片素材無效或尚未就緒。";
+  }
+
+  const promoVideo = input.promoVideoId
+    ? await db.video.findFirst({
+        where: { id: input.promoVideoId, vendorId, status: "ready" },
+        select: { id: true },
+      })
+    : null;
+  if (input.promoVideoId && !promoVideo) {
+    errors.promoVideoId = "宣傳影片不存在、尚未就緒或不屬於目前商家。";
+  }
+
+  const heroImageUrl = heroImageAsset?.publicUrl
+    ?? (input.heroImageUrl ? parseSafeExternalHttpUrl(input.heroImageUrl) : null);
+  if (!heroImageAsset && input.heroImageUrl && !heroImageUrl) {
+    errors.heroImageUrl = "主視覺圖片網址必須是有效的 HTTP(S) 網址。";
+  }
+
+  const backgroundImageUrl = backgroundImageAsset?.publicUrl
+    ?? (input.backgroundImageUrl ? parseSafeExternalHttpUrl(input.backgroundImageUrl) : null);
+  if (!backgroundImageAsset && input.backgroundImageUrl && !backgroundImageUrl) {
+    errors.backgroundImageUrl = "背景圖片網址必須是有效的 HTTP(S) 網址。";
+  }
+
+  if (Object.keys(errors).length > 0) return { success: false, errors };
+  return { success: true, heroImageUrl, backgroundImageUrl };
 }
 
 export async function upsertFormBuilderAction(
@@ -47,7 +103,6 @@ export async function upsertFormBuilderAction(
   }
 
   const { id, ...input } = parsed.data;
-  const data = { ...input, fields: input.fields as Prisma.InputJsonValue };
   const expectedUpdatedAtRaw = formData.get("expectedUpdatedAt");
   const expectedUpdatedAt = typeof expectedUpdatedAtRaw === "string" && expectedUpdatedAtRaw
     ? new Date(expectedUpdatedAtRaw)
@@ -60,9 +115,27 @@ export async function upsertFormBuilderAction(
     };
   }
 
+  const db = getDb();
+
   try {
+    const media = await resolveFormMedia(db, vendor.id, parsed.data);
+    if (!media.success) {
+      return {
+        status: "error",
+        message: "有幾個欄位需要調整；內容仍保留在畫面上。",
+        fieldErrors: media.errors,
+      };
+    }
+
+    const data = {
+      ...input,
+      heroImageUrl: media.heroImageUrl,
+      backgroundImageUrl: media.backgroundImageUrl,
+      fields: input.fields as Prisma.InputJsonValue,
+    };
+
     if (id) {
-      const updated = await getDb().registrationForm.updateMany({
+      const updated = await db.registrationForm.updateMany({
         where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt! },
         data,
       });
@@ -74,7 +147,7 @@ export async function upsertFormBuilderAction(
         };
       }
     } else {
-      await getDb().registrationForm.create({ data: { ...data, vendorId: vendor.id } });
+      await db.registrationForm.create({ data: { ...data, vendorId: vendor.id } });
     }
   } catch (error) {
     const code = databaseErrorCode(error);

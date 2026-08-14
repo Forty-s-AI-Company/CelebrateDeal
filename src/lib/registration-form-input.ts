@@ -13,6 +13,11 @@ export type RegistrationFormInputField =
   | "fields"
   | "submitLabel"
   | "successMessage"
+  | "heroImageUrl"
+  | "heroImageAssetId"
+  | "backgroundImageUrl"
+  | "backgroundImageAssetId"
+  | "promoVideoId"
   | "themeColor"
   | "countdownMinutes"
   | "stickyText"
@@ -35,6 +40,11 @@ export type RegistrationFormInput = {
   fields: RegistrationFormFieldSpec[];
   submitLabel: string;
   successMessage: string;
+  heroImageUrl: string | null;
+  heroImageAssetId: string | null;
+  backgroundImageUrl: string | null;
+  backgroundImageAssetId: string | null;
+  promoVideoId: string | null;
   themeColor: string | null;
   countdownMinutes: number | null;
   stickyText: string | null;
@@ -128,6 +138,41 @@ export function parseRegistrationFormInput(formData: FormData): RegistrationForm
   const description = stringValue(formData, "description", errors, "description") || null;
   const submitLabel = stringValue(formData, "submitLabel", errors, "submitLabel");
   const successMessage = stringValue(formData, "successMessage", errors, "successMessage");
+  const heroImageUrl = optionalBounded(
+    stringValue(formData, "heroImageUrl", errors, "heroImageUrl"),
+    "主視覺圖片網址",
+    2_048,
+    errors,
+    "heroImageUrl",
+  );
+  const heroImageAssetId = optionalBounded(
+    stringValue(formData, "heroImageAssetId", errors, "heroImageAssetId"),
+    "主視覺圖片素材 ID",
+    128,
+    errors,
+    "heroImageAssetId",
+  );
+  const backgroundImageUrl = optionalBounded(
+    stringValue(formData, "backgroundImageUrl", errors, "backgroundImageUrl"),
+    "背景圖片網址",
+    2_048,
+    errors,
+    "backgroundImageUrl",
+  );
+  const backgroundImageAssetId = optionalBounded(
+    stringValue(formData, "backgroundImageAssetId", errors, "backgroundImageAssetId"),
+    "背景圖片素材 ID",
+    128,
+    errors,
+    "backgroundImageAssetId",
+  );
+  const promoVideoId = optionalBounded(
+    stringValue(formData, "promoVideoId", errors, "promoVideoId"),
+    "宣傳影片 ID",
+    128,
+    errors,
+    "promoVideoId",
+  );
   const themeColor = stringValue(formData, "themeColor", errors, "themeColor") || null;
   const countdownMinutes = boundedInteger(
     stringValue(formData, "countdownMinutes", errors, "countdownMinutes"),
@@ -199,6 +244,11 @@ export function parseRegistrationFormInput(formData: FormData): RegistrationForm
       fields: parsedFields.data,
       submitLabel,
       successMessage,
+      heroImageUrl,
+      heroImageAssetId,
+      backgroundImageUrl,
+      backgroundImageAssetId,
+      promoVideoId,
       themeColor,
       countdownMinutes,
       stickyText,
