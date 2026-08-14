@@ -15,6 +15,15 @@ function validFormData() {
   formData.set("fields", JSON.stringify(validFields));
   formData.set("submitLabel", " 送出報名 ");
   formData.set("successMessage", " 已收到資料 ");
+  formData.set("themeColor", " #12aBc9 ");
+  formData.set("countdownMinutes", " 120 ");
+  formData.set("stickyText", " 直播限定 ");
+  formData.set("bodyContent", " 活動內文 ");
+  formData.set("notice", " 注意事項 ");
+  formData.set("seoTitle", " SEO 標題 ");
+  formData.set("seoDescription", " SEO 說明 ");
+  formData.set("maxVisibleSessions", " 3 ");
+  formData.set("hideExpiredSessions", "on");
   formData.set("isActive", "on");
   return formData;
 }
@@ -37,6 +46,15 @@ describe("registration form input", () => {
         ],
         submitLabel: "送出報名",
         successMessage: "已收到資料",
+        themeColor: "#12aBc9",
+        countdownMinutes: 120,
+        stickyText: "直播限定",
+        bodyContent: "活動內文",
+        notice: "注意事項",
+        seoTitle: "SEO 標題",
+        seoDescription: "SEO 說明",
+        maxVisibleSessions: 3,
+        hideExpiredSessions: true,
         isActive: true,
       },
     });
@@ -74,5 +92,118 @@ describe("registration form input", () => {
       expect(forgedResult.errors.description).toContain("5,000");
     }
   });
-});
 
+  it("accepts numeric and text boundaries, defaults omitted values, and requires an on checkbox", () => {
+    const formData = validFormData();
+    formData.set("themeColor", "");
+    formData.set("countdownMinutes", "10080");
+    formData.set("stickyText", "x".repeat(300));
+    formData.set("bodyContent", "x".repeat(10_000));
+    formData.set("notice", "x".repeat(1_000));
+    formData.set("seoTitle", "x".repeat(200));
+    formData.set("seoDescription", "x".repeat(500));
+    formData.set("maxVisibleSessions", "99");
+    formData.delete("hideExpiredSessions");
+
+    const result = parseRegistrationFormInput(formData);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        themeColor: null,
+        countdownMinutes: 10080,
+        stickyText: "x".repeat(300),
+        bodyContent: "x".repeat(10_000),
+        notice: "x".repeat(1_000),
+        seoTitle: "x".repeat(200),
+        seoDescription: "x".repeat(500),
+        maxVisibleSessions: 99,
+        hideExpiredSessions: false,
+      });
+    }
+  });
+
+  it("rejects invalid color, integer ranges, integer formats, and text lengths", () => {
+    const formData = validFormData();
+    formData.set("themeColor", "red");
+    formData.set("countdownMinutes", "10080.5");
+    formData.set("maxVisibleSessions", "100");
+    formData.set("stickyText", "x".repeat(301));
+    formData.set("bodyContent", "x".repeat(10_001));
+    formData.set("notice", "x".repeat(1_001));
+    formData.set("seoTitle", "x".repeat(201));
+    formData.set("seoDescription", "x".repeat(501));
+
+    const result = parseRegistrationFormInput(formData);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.errors.themeColor).toContain("#RRGGBB");
+      expect(result.errors.countdownMinutes).toContain("整數");
+      expect(result.errors.maxVisibleSessions).toContain("0 到 99");
+      expect(result.errors.stickyText).toContain("300");
+      expect(result.errors.bodyContent).toContain("10000");
+      expect(result.errors.notice).toContain("1000");
+      expect(result.errors.seoTitle).toContain("200");
+      expect(result.errors.seoDescription).toContain("500");
+    }
+  });
+
+  it("requires single string values for scalar fields", () => {
+    const valid = validFormData();
+    valid.set("countdownMinutes", "0");
+    const validResult = parseRegistrationFormInput(valid);
+    expect(validResult.success).toBe(true);
+    if (validResult.success) expect(validResult.data.countdownMinutes).toBe(0);
+
+    const nanDuplicate = validFormData();
+    nanDuplicate.delete("countdownMinutes");
+    nanDuplicate.append("countdownMinutes", "NaN");
+    nanDuplicate.append("countdownMinutes", "NaN");
+    const nanDuplicateResult = parseRegistrationFormInput(nanDuplicate);
+    expect(nanDuplicateResult.success).toBe(false);
+    if (!nanDuplicateResult.success) expect(nanDuplicateResult.errors.countdownMinutes).toContain("單一文字");
+
+    const huge = validFormData();
+    huge.set("countdownMinutes", "9".repeat(1_000));
+    const hugeResult = parseRegistrationFormInput(huge);
+    expect(hugeResult.success).toBe(false);
+    if (!hugeResult.success) expect(hugeResult.errors.countdownMinutes).toContain("整數");
+
+    const repeatedTheme = validFormData();
+    repeatedTheme.delete("themeColor");
+    repeatedTheme.append("themeColor", "#123456");
+    repeatedTheme.append("themeColor", "#654321");
+    const repeatedThemeResult = parseRegistrationFormInput(repeatedTheme);
+    expect(repeatedThemeResult.success).toBe(false);
+    if (!repeatedThemeResult.success) expect(repeatedThemeResult.errors.themeColor).toContain("單一文字");
+
+    const fileValue = validFormData();
+    fileValue.delete("countdownMinutes");
+    fileValue.append("countdownMinutes", new File(["0"], "countdown.txt"));
+    const fileValueResult = parseRegistrationFormInput(fileValue);
+    expect(fileValueResult.success).toBe(false);
+    if (!fileValueResult.success) expect(fileValueResult.errors.countdownMinutes).toContain("單一文字");
+  });
+
+  it("accepts only a single on value for checkboxes", () => {
+    const repeated = validFormData();
+    repeated.append("isActive", "on");
+    const repeatedResult = parseRegistrationFormInput(repeated);
+    expect(repeatedResult.success).toBe(false);
+    if (!repeatedResult.success) expect(repeatedResult.errors.isActive).toContain("單一 on");
+
+    const invalid = validFormData();
+    invalid.set("hideExpiredSessions", "true");
+    const invalidResult = parseRegistrationFormInput(invalid);
+    expect(invalidResult.success).toBe(false);
+    if (!invalidResult.success) expect(invalidResult.errors.hideExpiredSessions).toContain("單一 on");
+
+    const fileValue = validFormData();
+    fileValue.delete("hideExpiredSessions");
+    fileValue.append("hideExpiredSessions", new File(["on"], "checked.txt"));
+    const fileValueResult = parseRegistrationFormInput(fileValue);
+    expect(fileValueResult.success).toBe(false);
+    if (!fileValueResult.success) expect(fileValueResult.errors.hideExpiredSessions).toContain("單一 on");
+  });
+});
