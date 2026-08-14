@@ -57,4 +57,14 @@ describe("VideoForm", () => {
     expect(markup).not.toContain('value="processing"');
     expect(markup).not.toContain('name="cloudflareStreamUid"');
   });
+
+  it("keeps the thumbnail URL fallback explicitly opt-in inside advanced settings", () => {
+    const markup = renderToStaticMarkup(
+      <VideoForm video={video({ thumbnailUrl: "https://media.example.test/thumbnail.webp" })} />,
+    );
+
+    expect(markup).toContain("進階：使用既有圖片 URL");
+    expect(markup).toContain('name="thumbnailUrl"');
+    expect(markup).toContain('type="url"');
+  });
 });

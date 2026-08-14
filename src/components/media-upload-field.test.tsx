@@ -29,6 +29,7 @@ describe("MediaUploadField", () => {
           urlInputName="imageUrl"
           assetIdInputName="imageAssetId"
           statusInputName="imageUploadPhase"
+          allowExternalUrlFallback
         />
       </form>,
     );
@@ -40,9 +41,31 @@ describe("MediaUploadField", () => {
     expect(markup).toContain('name="imageUrl"');
     expect(markup).toContain('name="imageAssetId"');
     expect(markup).toContain('name="imageUploadPhase"');
+    expect(markup.match(/name="imageUrl"/g)).toHaveLength(1);
     expect(markup).toContain("進階：使用既有圖片 URL");
     expect(markup).toContain("開始上傳");
     expect(markup).toContain('aria-busy="false"');
+  });
+
+  it("keeps a legacy image URL preview and hidden value without showing a URL input by default", () => {
+    const markup = renderToStaticMarkup(
+      <form>
+        <MediaUploadField
+          kind="image"
+          label="商品圖片"
+          description="直接上傳商品主圖。"
+          defaultUrl="https://media.example.test/legacy.webp"
+          urlInputName="imageUrl"
+        />
+      </form>,
+    );
+
+    expect(markup).toContain('name="imageUrl"');
+    expect(markup).toContain('value="https://media.example.test/legacy.webp"');
+    expect(markup.match(/name="imageUrl"/g)).toHaveLength(1);
+    expect(markup).toContain("legacy.webp");
+    expect(markup).not.toContain("進階：使用既有圖片 URL");
+    expect(markup).not.toContain('type="url"');
   });
 
   it("renders video upload without a writable provider URL or UID", () => {
@@ -81,6 +104,22 @@ describe("mediaUploadReducer", () => {
   it("removes an image reference but preserves the server-owned video resource id", () => {
     expect(mediaUploadReducer(baseState, { type: "remove", kind: "image" })).toMatchObject({ remoteUrl: "", assetId: "" });
     expect(mediaUploadReducer({ ...baseState, resourceId: "video-1" }, { type: "remove", kind: "video" }).resourceId).toBe("video-1");
+  });
+
+  it("switches from a provider asset to one external URL without retaining stale upload state", () => {
+    const changed = mediaUploadReducer(
+      { ...baseState, phase: "error", errorCode: "network_error" },
+      { type: "external-url", value: "https://media.example.test/migrated.webp" },
+    );
+
+    expect(changed).toMatchObject({
+      phase: "idle",
+      errorCode: "",
+      remoteUrl: "https://media.example.test/migrated.webp",
+      assetId: "",
+      previewUrl: "",
+      file: null,
+    });
   });
 
   it("keeps a provisioned Stream row id available for a safe retry after upload failure", () => {

@@ -116,6 +116,7 @@ type MediaUploadFieldProps = {
   defaultUrl?: string | null;
   defaultAssetId?: string | null;
   defaultResourceId?: string | null;
+  allowExternalUrlFallback?: boolean;
   urlInputName?: string;
   assetIdInputName?: string;
   resourceIdInputName?: string;
@@ -260,10 +261,11 @@ async function uploadVideo({
   return provision;
 }
 
-function uploadErrorMessage(kind: MediaUploadKind, code: string) {
+function uploadErrorMessage(kind: MediaUploadKind, code: string, allowExternalUrlFallback: boolean) {
+  const imageStorageHint = allowExternalUrlFallback ? "可先使用進階 URL。" : "請稍後重試。";
   const messages: Record<string, string> = {
     cancelled: "已暫停上傳，檔案與續傳進度仍保留，可再次重試。",
-    configuration: kind === "image" ? "R2 圖片儲存尚未完成設定，可先使用進階 URL。" : "Cloudflare Stream 尚未完成設定。",
+    configuration: kind === "image" ? `R2 圖片儲存尚未完成設定，${imageStorageHint}` : "Cloudflare Stream 尚未完成設定。",
     empty_file: "這個檔案沒有內容，請重新選擇。",
     image_too_large: "圖片不可超過 15 MB。",
     image_object_mismatch: "R2 驗證到的圖片大小或格式不一致，請重新選擇並上傳。",
@@ -272,7 +274,7 @@ function uploadErrorMessage(kind: MediaUploadKind, code: string) {
     invalid_complete_request: "圖片完成驗證資料不完整，請重新上傳。",
     invalid_image_upload: "圖片名稱、格式或大小不符合上傳限制。",
     invalid_video_upload: "影片名稱、格式、大小或預估長度不符合限制。",
-    media_storage_unavailable: "R2 圖片儲存尚未完成設定，可先使用進階 URL。",
+    media_storage_unavailable: `R2 圖片儲存尚未完成設定，${imageStorageHint}`,
     invalid_response: "上傳服務回傳格式不完整，請稍後重試。",
     missing_csrf: "頁面驗證已失效，請重新整理後再試。",
     missing_title: "請先填寫影片名稱，再開始上傳。",
@@ -293,7 +295,7 @@ function uploadErrorMessage(kind: MediaUploadKind, code: string) {
     video_upload_failed: "Stream 無法處理這個影片；舊影片未被替換，請重新選擇檔案。",
     video_upload_not_complete: "Stream 尚在確認最後一段資料，請稍後按重試繼續確認。",
   };
-  return messages[code] ?? "上傳未完成，請重試或改用進階 URL。";
+  return messages[code] ?? (allowExternalUrlFallback ? "上傳未完成，請重試或改用進階 URL。" : "上傳未完成，請重試。");
 }
 
 function FilePreview({ kind, url, fileName }: { kind: MediaUploadKind; url: string; fileName: string }) {
@@ -306,6 +308,30 @@ function FilePreview({ kind, url, fileName }: { kind: MediaUploadKind; url: stri
         <video src={url} aria-label={`${fileName || "已選影片"}預覽`} controls className="max-h-72 w-full" />
       )}
     </div>
+  );
+}
+
+function ExternalImageUrlFallback({
+  enabled,
+  inputName,
+  value,
+  onChange,
+}: {
+  enabled: boolean;
+  inputName?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (!enabled || !inputName) return null;
+
+  return (
+    <details className="rounded-lg border border-border bg-white p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-700">進階：使用既有圖片 URL</summary>
+      <label className="mt-3 grid gap-1.5 text-sm font-medium text-slate-700">圖片 URL
+        <input type="url" inputMode="url" autoComplete="url" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="https://..." />
+      </label>
+      <p className="mt-2 text-xs text-slate-500">URL 僅保留給既有 CDN 或搬遷資料；一般使用請直接上傳。</p>
+    </details>
   );
 }
 
@@ -454,7 +480,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         </div>
       ) : null}
       {state.phase === "success" ? <p role="status" className="flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} aria-hidden="true" />上傳完成，儲存表單後即會套用。</p> : null}
-      {state.errorCode ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{uploadErrorMessage(props.kind, state.errorCode)}</p> : null}
+      {state.errorCode ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{uploadErrorMessage(props.kind, state.errorCode, props.allowExternalUrlFallback === true)}</p> : null}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={startUpload} disabled={!state.file || isBusy} className="inline-flex min-h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
           {state.phase === "error" ? <RotateCcw size={16} aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />}{state.phase === "error" ? "重試上傳" : "開始上傳"}
@@ -462,15 +488,12 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         {isBusy ? <button type="button" onClick={() => requestRef.current?.abort()} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700"><X size={16} aria-hidden="true" />暫停上傳</button> : null}
         {(state.file || (props.kind === "image" && state.remoteUrl)) ? <button type="button" onClick={removeSelection} disabled={isBusy} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"><Trash2 size={16} aria-hidden="true" />移除</button> : null}
       </div>
-      {props.kind === "image" && props.urlInputName ? (
-        <details className="rounded-lg border border-border bg-white p-3">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-700">進階：使用既有圖片 URL</summary>
-          <label className="mt-3 grid gap-1.5 text-sm font-medium text-slate-700">圖片 URL
-            <input type="url" inputMode="url" autoComplete="url" spellCheck={false} value={state.assetId ? "" : state.remoteUrl} onChange={(event) => dispatch({ type: "external-url", value: event.target.value })} className="h-11 rounded-md border border-border px-3" placeholder="https://..." />
-          </label>
-          <p className="mt-2 text-xs text-slate-500">URL 僅保留給既有 CDN 或搬遷資料；一般使用請直接上傳。</p>
-        </details>
-      ) : null}
+      <ExternalImageUrlFallback
+        enabled={props.kind === "image" && props.allowExternalUrlFallback === true}
+        inputName={props.urlInputName}
+        value={state.assetId ? "" : state.remoteUrl}
+        onChange={(value) => dispatch({ type: "external-url", value })}
+      />
     </div>
   );
 }

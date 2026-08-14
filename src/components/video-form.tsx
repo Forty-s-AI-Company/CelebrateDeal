@@ -49,6 +49,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           defaultAssetId={video?.thumbnailAssetId}
           urlInputName="thumbnailUrl"
           assetIdInputName="thumbnailAssetId"
+          allowExternalUrlFallback
         />
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="長度秒數" name="durationSec" type="number" defaultValue={video?.durationSec ?? 0} />
