@@ -93,7 +93,7 @@ test.beforeAll(async () => {
     data: {
       vendorId: vendor.id,
       title: "Accessibility Test Video",
-      sourceType: "external_url",
+      sourceType: "url",
       videoUrl: "https://example.test/video.mp4",
       status: "ready",
     },
@@ -108,6 +108,7 @@ test.beforeAll(async () => {
       currency: "TWD",
       inventory: 10,
       isActive: true,
+      fulfillmentTypeConfirmed: true,
     },
   });
   const form = await db.registrationForm.create({
@@ -136,7 +137,7 @@ test.beforeAll(async () => {
     data: {
       vendorId: vendor.id,
       name: "Accessibility Test Script",
-      status: "draft",
+      status: "published",
       events: {
         create: {
           roleId: role.id,
