@@ -54,6 +54,15 @@ describe("FormBuilder", () => {
       ],
       submitLabel: "送出",
       successMessage: "完成",
+      themeColor: "#12aBc9",
+      countdownMinutes: 90,
+      stickyText: "直播限定",
+      bodyContent: "活動內文第一行\n第二行",
+      notice: "請準時參加",
+      seoTitle: "活動 SEO 標題",
+      seoDescription: "活動 SEO 說明",
+      maxVisibleSessions: 5,
+      hideExpiredSessions: false,
       isActive: true,
       updatedAt: new Date("2026-08-10T01:02:03.000Z"),
     } as never;
@@ -66,6 +75,21 @@ describe("FormBuilder", () => {
     expect(html).toContain("真實姓名");
     expect(html).toContain("公司名稱");
     expect(html).toContain("company");
+    expect(html).toContain('name="themeColor" value="#12aBc9"');
+    expect(html).toContain('name="countdownMinutes"');
+    expect(html).toContain('name="stickyText"');
+    expect(html).toContain('name="bodyContent"');
+    expect(html).toContain('name="notice"');
+    expect(html).toContain('name="seoTitle"');
+    expect(html).toContain('name="seoDescription"');
+    expect(html).toContain('name="maxVisibleSessions" value="5"');
+    expect(html).toContain('name="hideExpiredSessions"');
+    expect(html).toContain("直播限定");
+    expect(html).toContain("活動內文第一行");
+    expect(html).toContain("請準時參加");
+    expect(html).toContain("倒數設定：90 分鐘");
+    expect(html).toContain("場次顯示：最多 5 場・顯示過期場次");
+    expect(html).toContain("border-top-color:#12aBc9");
     expect(html).not.toContain("儲存已停用");
   });
 

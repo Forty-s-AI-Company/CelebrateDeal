@@ -26,6 +26,15 @@ export type FormBuilderValues = {
   description: string;
   submitLabel: string;
   successMessage: string;
+  themeColor: string | null;
+  countdownMinutes: number | null;
+  stickyText: string | null;
+  bodyContent: string | null;
+  notice: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  maxVisibleSessions: number;
+  hideExpiredSessions: boolean;
   isActive: boolean;
 };
 
@@ -76,6 +85,124 @@ function formDraftStatusMessage(status: FormDraftState["saveStatus"]) {
   return "修改後會自動保存瀏覽器草稿。";
 }
 
+type FormBuilderErrors = NonNullable<FormBuilderActionState["fieldErrors"]>;
+type UpdateFormValue = <Key extends keyof FormBuilderValues>(key: Key, value: FormBuilderValues[Key]) => void;
+
+function normalizeFormBuilderValues(values: FormBuilderValues | Parameters<Parameters<typeof useRegistrationFormDraft>[0]["onRestore"]>[0]["values"]): FormBuilderValues {
+  return {
+    ...values,
+    themeColor: values.themeColor ?? null,
+    countdownMinutes: values.countdownMinutes ?? null,
+    stickyText: values.stickyText ?? null,
+    bodyContent: values.bodyContent ?? null,
+    notice: values.notice ?? null,
+    seoTitle: values.seoTitle ?? null,
+    seoDescription: values.seoDescription ?? null,
+    maxVisibleSessions: values.maxVisibleSessions ?? 0,
+    hideExpiredSessions: values.hideExpiredSessions ?? true,
+  };
+}
+
+function FormBuilderPublicSettings({
+  values,
+  errors,
+  updateValue,
+}: {
+  values: FormBuilderValues;
+  errors: FormBuilderErrors;
+  updateValue: UpdateFormValue;
+}) {
+  const colorPickerValue = /^#[\da-fA-F]{6}$/.test(values.themeColor ?? "")
+    ? values.themeColor!
+    : "#000000";
+
+  return (
+    <div className="mt-6 grid gap-4 border-t border-slate-200 pt-5">
+      <h3 className="text-base font-semibold text-slate-900">公開內容與顯示設定</h3>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          主題色
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={colorPickerValue}
+              onChange={(event) => updateValue("themeColor", event.target.value)}
+              aria-label="選擇主題色"
+              className="h-11 w-14 rounded-md border border-slate-200 bg-white p-1"
+            />
+            <input
+              name="themeColor"
+              value={values.themeColor ?? ""}
+              onChange={(event) => updateValue("themeColor", event.target.value || null)}
+              maxLength={7}
+              pattern="#[0-9A-Fa-f]{6}"
+              spellCheck={false}
+              placeholder="#RRGGBB"
+              className={`${inputClass} min-w-0 flex-1 font-mono uppercase`}
+            />
+          </div>
+          <span className="text-xs font-normal text-slate-500">請輸入完整的 #RRGGBB 色碼。</span>
+          <InlineError id="form-theme-color-error" message={errors.themeColor} />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          倒數分鐘
+          <input
+            name="countdownMinutes"
+            type="number"
+            min={0}
+            max={10_080}
+            step={1}
+            value={values.countdownMinutes ?? ""}
+            onChange={(event) => updateValue("countdownMinutes", event.target.value === "" ? null : Number(event.target.value))}
+            className={inputClass}
+          />
+          <span className="text-xs font-normal text-slate-500">留白代表不設定，最多 10,080 分鐘。</span>
+          <InlineError id="form-countdown-minutes-error" message={errors.countdownMinutes} />
+        </label>
+      </div>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        置頂文字
+        <input name="stickyText" maxLength={300} value={values.stickyText ?? ""} onChange={(event) => updateValue("stickyText", event.target.value || null)} className={inputClass} />
+        <InlineError id="form-sticky-text-error" message={errors.stickyText} />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        內文
+        <textarea name="bodyContent" rows={5} maxLength={10_000} value={values.bodyContent ?? ""} onChange={(event) => updateValue("bodyContent", event.target.value || null)} className={textareaClass} />
+        <InlineError id="form-body-content-error" message={errors.bodyContent} />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        注意事項
+        <textarea name="notice" rows={3} maxLength={1_000} value={values.notice ?? ""} onChange={(event) => updateValue("notice", event.target.value || null)} className={textareaClass} />
+        <InlineError id="form-notice-error" message={errors.notice} />
+      </label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          SEO 標題
+          <input name="seoTitle" maxLength={200} value={values.seoTitle ?? ""} onChange={(event) => updateValue("seoTitle", event.target.value || null)} className={inputClass} />
+          <InlineError id="form-seo-title-error" message={errors.seoTitle} />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          SEO 說明
+          <textarea name="seoDescription" rows={3} maxLength={500} value={values.seoDescription ?? ""} onChange={(event) => updateValue("seoDescription", event.target.value || null)} className={textareaClass} />
+          <InlineError id="form-seo-description-error" message={errors.seoDescription} />
+        </label>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          最多顯示場次
+          <input name="maxVisibleSessions" type="number" min={0} max={99} step={1} value={values.maxVisibleSessions} onChange={(event) => updateValue("maxVisibleSessions", event.target.value === "" ? 0 : Number(event.target.value))} className={inputClass} />
+          <span className="text-xs font-normal text-slate-500">0 代表不限制。</span>
+          <InlineError id="form-max-visible-sessions-error" message={errors.maxVisibleSessions} />
+        </label>
+        <label className="flex min-h-11 items-center gap-2 self-end rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700">
+          <input name="hideExpiredSessions" type="checkbox" checked={values.hideExpiredSessions} onChange={(event) => updateValue("hideExpiredSessions", event.target.checked)} className="h-4 w-4 accent-blue-600" />
+          隱藏已過期場次
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function FormBuilderClient({
   values: initialValues,
   initialFields,
@@ -114,7 +241,7 @@ export function FormBuilderClient({
     fields,
     pending,
     onRestore: (restored) => {
-      setValues(restored.values);
+      setValues(normalizeFormBuilderValues(restored.values));
       setFields(restored.fields);
       setRemoved(null);
       setAnnouncement("已恢復尚未儲存的表單草稿。");
@@ -231,6 +358,7 @@ export function FormBuilderClient({
                 <InlineError id="form-description-error" message={errors.description} />
               </label>
             </div>
+            <FormBuilderPublicSettings values={values} errors={errors} updateValue={updateValue} />
           </section>
 
           <section aria-labelledby="form-fields-title" className="rounded-lg border border-slate-200 bg-slate-50 p-4 sm:p-5">
@@ -292,7 +420,20 @@ export function FormBuilderClient({
           </section>
         </div>
 
-        <FormPreview headline={values.headline} description={values.description} submitLabel={values.submitLabel} fields={fields} isActive={values.isActive} />
+        <FormPreview
+          headline={values.headline}
+          description={values.description}
+          submitLabel={values.submitLabel}
+          fields={fields}
+          isActive={values.isActive}
+          themeColor={values.themeColor}
+          stickyText={values.stickyText}
+          bodyContent={values.bodyContent}
+          notice={values.notice}
+          countdownMinutes={values.countdownMinutes}
+          maxVisibleSessions={values.maxVisibleSessions}
+          hideExpiredSessions={values.hideExpiredSessions}
+        />
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">{announcement}{pending ? "正在儲存表單，請勿重複送出。" : ""}</p>
