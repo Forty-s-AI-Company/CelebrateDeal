@@ -67,7 +67,10 @@ beforeEach(() => {
   mocks.writeAuditLog.mockResolvedValue(undefined);
 });
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 function candidate(overrides: Record<string, unknown> = {}) {
   const id = "delivery-1";
@@ -381,6 +384,8 @@ describe("email delivery outbox", () => {
 
   it("keeps an unchanged current live reminder eligible for provider delivery", async () => {
     const now = new Date("2026-08-09T04:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
     const liveScheduledAt = new Date("2026-08-10T04:00:00.000Z");
     const reminderTemplate = {
       ...input.template,
