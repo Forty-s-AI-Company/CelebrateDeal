@@ -3,6 +3,7 @@
 import { useActionState, useState, type ChangeEvent, type ReactNode } from "react";
 import { saveBrandSettingsActionState, type BrandSettingsActionState, type BrandSettingsFormValues } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { MediaUploadField } from "@/components/media-upload-field";
 
 const inputClassName = "h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 
@@ -20,6 +21,7 @@ export function BrandSettingsForm({
   };
   const [state, formAction, pending] = useActionState(saveBrandSettingsActionState, initialState);
   const [editedValues, setEditedValues] = useState<Partial<BrandSettingsFormValues>>({});
+  const [logoUploadBlocked, setLogoUploadBlocked] = useState(false);
   // The Server Action state is the authoritative base after a round trip;
   // local edits overlay only the field currently being changed, so every input
   // remains controlled without an effect-driven cascading render.
@@ -68,14 +70,31 @@ export function BrandSettingsForm({
         </label>
       </div>
 
-      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        Logo URL
-        <input name="logoUrl" type="url" value={values.logoUrl} onChange={updateValue("logoUrl")} placeholder="https://..." className={inputClassName} />
-        <span className="text-xs font-normal text-slate-500">目前保留 URL 設定；圖片上傳元件會在媒體資產流程接入。</span>
-      </label>
+      <MediaUploadField
+        kind="image"
+        label="品牌 Logo"
+        description="直接上傳品牌 Logo；完成後儲存表單即可套用。"
+        defaultUrl={values.logoUrl}
+        defaultAssetId={values.logoAssetId ?? ""}
+        urlInputName="logoUrl"
+        assetIdInputName="logoAssetId"
+        statusInputName="logoUploadPhase"
+        allowExternalUrlFallback
+        onBlockingChange={setLogoUploadBlocked}
+      />
+
+      {logoUploadBlocked ? (
+        <p role="alert" aria-live="assertive" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Logo 上傳尚未完成，請完成上傳或移除未完成的檔案後再儲存。
+        </p>
+      ) : null}
 
       <div className="flex justify-end">
-        <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存品牌設定，請勿重複送出。">
+        <FormSubmitButton
+          disabled={logoUploadBlocked}
+          pendingChildren="儲存中…"
+          pendingMessage="正在儲存品牌設定，請勿重複送出。"
+        >
           儲存品牌設定
         </FormSubmitButton>
       </div>

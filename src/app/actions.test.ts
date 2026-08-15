@@ -1152,6 +1152,7 @@ describe("saveBrandSettingsAction timezone validation", () => {
     formData.set("timezone", timezone);
     formData.set("supportEmail", "support@example.test");
     formData.set("logoUrl", "https://submitted.example.test/logo.png");
+    formData.set("logoUploadPhase", "idle");
     return formData;
   }
 
@@ -1167,6 +1168,7 @@ describe("saveBrandSettingsAction timezone validation", () => {
         timezone: "Asia/Taipei",
         supportEmail: "current@example.test",
         logoUrl: "https://current.example.test/logo.png",
+        logoAssetId: "current-logo-asset",
       },
     };
   }
@@ -1201,6 +1203,7 @@ describe("saveBrandSettingsAction timezone validation", () => {
     formData.set("ctaColor", "#405060");
     formData.set("supportEmail", "unsaved@example.test");
     formData.set("logoUrl", "https://unsaved.example.test/logo.png");
+    formData.set("logoAssetId", "unsaved-logo-asset");
 
     const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
 
@@ -1215,6 +1218,7 @@ describe("saveBrandSettingsAction timezone validation", () => {
         timezone: "Mars/Olympus_Mons",
         supportEmail: "unsaved@example.test",
         logoUrl: "https://unsaved.example.test/logo.png",
+        logoAssetId: "unsaved-logo-asset",
       },
     });
     expect(result.values).not.toHaveProperty("id");
@@ -1232,6 +1236,201 @@ describe("saveBrandSettingsAction timezone validation", () => {
       where: { id: "vendor-1" },
       data: expect.objectContaining({ timezone: "America/New_York" }),
     });
+  });
+
+  it("prefers a tenant-owned ready Logo asset over a submitted URL", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+    mocks.imageAssetFindFirst.mockResolvedValue({
+      id: "logo-asset-1",
+      publicUrl: "https://media.example.test/vendors/logo-asset-1.webp",
+    });
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoAssetId", "logo-asset-1");
+    formData.set("logoUploadPhase", "success");
+    formData.set("logoUrl", "https://attacker.example.test/forged-logo.webp");
+
+    await expect(saveBrandSettingsAction(formData)).resolves.toBeUndefined();
+
+    expect(mocks.imageAssetFindFirst).toHaveBeenCalledWith({
+      where: { id: "logo-asset-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({
+        logoUrl: "https://media.example.test/vendors/logo-asset-1.webp",
+      }),
+    });
+  });
+
+  it("uses the safe external URL only when no Logo asset is submitted", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+
+    await expect(saveBrandSettingsAction(brandSettingsFormData("America/New_York"))).resolves.toBeUndefined();
+
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ logoUrl: "https://submitted.example.test/logo.png" }),
+    });
+  });
+
+  it.each(["", "idle", "success"])('accepts a Logo upload phase of "%s"', async (phase) => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoUploadPhase", phase);
+
+    await expect(saveBrandSettingsActionState(initialBrandSettingsState(), formData)).rejects.toThrow(
+      "redirect:/settings/brand",
+    );
+
+    expect(mocks.vendorUpdate).toHaveBeenCalled();
+  });
+
+  it.each(["ready", "provisioning", "uploading", "finalizing", "error"])(
+    "returns a fixable state error and does not update for blocking Logo phase %s",
+    async (phase) => {
+      const formData = brandSettingsFormData("America/New_York");
+      formData.set("logoUploadPhase", phase);
+
+      const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+      expect(result).toEqual({
+        status: "error",
+        message: "品牌 Logo 上傳尚未完成，請完成上傳或移除未完成的檔案。",
+        values: expect.objectContaining({
+          name: "測試品牌",
+          logoUrl: "https://submitted.example.test/logo.png",
+          logoAssetId: "",
+        }),
+      });
+      expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns a safe state error for an invalid Logo asset without updating", async () => {
+    mocks.imageAssetFindFirst.mockResolvedValue(null);
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoAssetId", "foreign-or-missing-asset");
+    formData.set("logoUploadPhase", "success");
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "品牌 Logo 圖片資產無效，請重新上傳。",
+      values: expect.objectContaining({ logoAssetId: "foreign-or-missing-asset" }),
+    });
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rethrows Logo asset infrastructure errors from the state action", async () => {
+    const infrastructureError = new Error("image asset database unavailable");
+    mocks.imageAssetFindFirst.mockRejectedValue(infrastructureError);
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoAssetId", "logo-asset-1");
+    formData.set("logoUploadPhase", "success");
+
+    await expect(saveBrandSettingsActionState(initialBrandSettingsState(), formData)).rejects.toBe(infrastructureError);
+
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rethrows Logo asset infrastructure errors from the direct action", async () => {
+    const infrastructureError = new Error("image asset service unavailable");
+    mocks.imageAssetFindFirst.mockRejectedValue(infrastructureError);
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoAssetId", "logo-asset-1");
+    formData.set("logoUploadPhase", "success");
+
+    await expect(saveBrandSettingsAction(formData)).rejects.toBe(infrastructureError);
+
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("bounds every public state echo and fails closed before looking up an oversized asset", async () => {
+    const formData = brandSettingsFormData("Asia/Taipei");
+    formData.set("name", "n".repeat(161));
+    formData.set("slug", "s".repeat(161));
+    formData.set("primaryColor", "p".repeat(33));
+    formData.set("ctaColor", "c".repeat(33));
+    formData.set("supportEmail", "e".repeat(321));
+    formData.set("logoUrl", "u".repeat(2049));
+    formData.set("logoAssetId", "a".repeat(129));
+    formData.set("logoUploadPhase", "success");
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "品牌 Logo 圖片資產無效，請重新上傳。",
+      values: {
+        name: "n".repeat(160),
+        slug: "s".repeat(160),
+        primaryColor: "p".repeat(32),
+        ctaColor: "c".repeat(32),
+        timezone: "Asia/Taipei",
+        supportEmail: "e".repeat(320),
+        logoUrl: "u".repeat(2048),
+        logoAssetId: "a".repeat(128),
+      },
+    });
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns a safe state error for an invalid Logo URL instead of throwing", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoUrl", "javascript:alert(1)");
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "品牌 Logo 來源無效，請完成上傳、移除未完成的檔案，或改用有效的 HTTP/HTTPS 圖片網址。",
+      values: expect.objectContaining({ logoUrl: "javascript:alert(1)", logoAssetId: "" }),
+    });
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Logo URL longer than 2048 characters before updating", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.delete("logoAssetId");
+    formData.set("logoUrl", `https://logo.example.test/${"a".repeat(2048)}`);
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "品牌 Logo 來源無效，請完成上傳、移除未完成的檔案，或改用有效的 HTTP/HTTPS 圖片網址。",
+      values: expect.objectContaining({ logoUrl: formData.get("logoUrl")?.toString().slice(0, 2048) }),
+    });
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("redirects a direct action with a safe error for an invalid Logo URL", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("logoUrl", "data:text/html,<script>alert(1)</script>");
+
+    await expect(saveBrandSettingsAction(formData)).rejects.toThrow("redirect:/settings/brand?error=invalid_logo");
+
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("clears both Logo sources when the submitted asset and URL are empty", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.delete("logoAssetId");
+    formData.set("logoUrl", "");
+    formData.set("logoUploadPhase", "idle");
+
+    await expect(saveBrandSettingsAction(formData)).resolves.toBeUndefined();
+
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ logoUrl: null }),
+    });
+    expect(mocks.vendorUpdate.mock.calls[0]?.[0]?.data).not.toHaveProperty("logoAssetId");
   });
 });
 
