@@ -26,6 +26,26 @@ export type LiveStudioDraftClaim = {
   revision: number;
 };
 
+const beforeUnloadStatuses: ReadonlySet<LiveStudioDraftSaveStatus> = new Set([
+  "dirty",
+  "saving",
+  "error",
+  "conflict",
+]);
+
+export function shouldBlockLiveStudioDraftBeforeUnload(status: LiveStudioDraftSaveStatus) {
+  return beforeUnloadStatuses.has(status);
+}
+
+export function handleLiveStudioDraftBeforeUnload(
+  event: BeforeUnloadEvent,
+  status: LiveStudioDraftSaveStatus,
+) {
+  if (!shouldBlockLiveStudioDraftBeforeUnload(status)) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
 type SaveDraft = (input: {
   draftId: string;
   liveId: string;
@@ -45,6 +65,7 @@ export class LiveStudioDraftSaveQueue {
   private draftId: string;
   private revision: number | null;
   private updatedAt: string;
+  private latestLocalPayload: LiveStudioDraftPayload | null;
   private lastSavedPayload: LiveStudioDraftPayload | null;
 
   constructor(private readonly options: {
@@ -56,28 +77,38 @@ export class LiveStudioDraftSaveQueue {
     this.draftId = options.initialDraft?.id ?? "";
     this.revision = options.initialDraft?.revision ?? null;
     this.updatedAt = options.initialDraft?.updatedAt ?? "";
+    this.latestLocalPayload = options.initialDraft?.payload ?? null;
     this.lastSavedPayload = options.initialDraft?.payload ?? null;
   }
 
-  markDirty() {
+  markDirty(payload?: LiveStudioDraftPayload) {
     if (this.conflictLocked) return;
+    if (payload !== undefined) this.latestLocalPayload = payload;
     this.transition("dirty");
+  }
+
+  setTransitionHandler(onTransition: (state: LiveStudioDraftSaveState) => void) {
+    this.options.onTransition = onTransition;
   }
 
   enqueue(payload: LiveStudioDraftPayload) {
     if (this.conflictLocked) return;
+    this.latestLocalPayload = payload;
     this.pendingPayload = payload;
     void this.ensureDrain();
   }
 
   flush(payload: LiveStudioDraftPayload) {
     if (this.conflictLocked) return Promise.resolve(false);
+    this.latestLocalPayload = payload;
     this.pendingPayload = payload;
     return this.ensureDrain();
   }
 
   matches(payload: LiveStudioDraftPayload) {
-    return this.lastSavedPayload !== null
+    return this.latestLocalPayload !== null
+      && this.lastSavedPayload !== null
+      && JSON.stringify(this.latestLocalPayload) === JSON.stringify(payload)
       && JSON.stringify(this.lastSavedPayload) === JSON.stringify(payload);
   }
 
@@ -112,7 +143,12 @@ export class LiveStudioDraftSaveQueue {
         this.revision = saved.revision;
         this.updatedAt = saved.updatedAt;
         this.lastSavedPayload = saved.payload;
-        this.transition("saved");
+        this.transition(
+          this.latestLocalPayload !== null
+            && JSON.stringify(this.latestLocalPayload) === JSON.stringify(saved.payload)
+            ? "saved"
+            : "dirty",
+        );
       } catch (error) {
         this.pendingPayload = null;
         const errorCode = error instanceof LiveStudioDraftClientError ? error.code : "draft_save_failed";
@@ -184,63 +220,83 @@ export function useLiveStudioDraft({
   saveOnMount?: boolean;
 }) {
   const [state, setState] = useState<LiveStudioDraftSaveState>(() => initialSaveState(initialDraft));
+  const statusRef = useRef(state.status);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountSaveStartedRef = useRef(false);
-  const queueRef = useRef<LiveStudioDraftSaveQueue | null>(null);
 
-  if (queueRef.current == null) {
-    queueRef.current = new LiveStudioDraftSaveQueue({
-      liveId,
-      initialDraft,
-      save: (input) => saveLiveStudioDraft({ ...input, csrfToken }),
-      onTransition: (nextState) => {
-        setState(nextState);
-        if (!liveId && nextState.status === "saved") replaceCreateDraftQuery(nextState.draftId);
-      },
+  const setDraftState = useCallback((nextState: LiveStudioDraftSaveState) => {
+    statusRef.current = nextState.status;
+    setState(nextState);
+  }, []);
+
+  const setInvalidDraftState = useCallback(() => {
+    statusRef.current = "error";
+    setState((current) => ({ ...current, status: "error", errorCode: "invalid_draft" }));
+  }, []);
+
+  const [queue] = useState(() => new LiveStudioDraftSaveQueue({
+    liveId,
+    initialDraft,
+    save: (input) => saveLiveStudioDraft({ ...input, csrfToken }),
+    onTransition: () => undefined,
+  }));
+
+  useEffect(() => {
+    queue.setTransitionHandler((nextState) => {
+      setDraftState(nextState);
+      if (!liveId && nextState.status === "saved") replaceCreateDraftQuery(nextState.draftId);
     });
-  }
+  }, [liveId, queue, setDraftState]);
 
   const payloadForStep = useCallback((step: number) => {
     if (!formRef.current) return null;
     try {
       return serializeLiveStudioDraft(formRef.current, step);
     } catch {
-      setState((current) => ({ ...current, status: "error", errorCode: "invalid_draft" }));
+      setInvalidDraftState();
       return null;
     }
-  }, [formRef]);
+  }, [formRef, setInvalidDraftState]);
 
   const scheduleSave = useCallback((step = activeStep) => {
     const payload = payloadForStep(step);
-    if (!payload || !queueRef.current) return;
-    queueRef.current.markDirty();
+    if (!payload) return;
+    queue.markDirty(payload);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      queueRef.current?.enqueue(payload);
+      queue.enqueue(payload);
     }, 700);
-  }, [activeStep, payloadForStep]);
+  }, [activeStep, payloadForStep, queue]);
 
   const saveNow = useCallback(async (step = activeStep) => {
     const payload = payloadForStep(step);
-    if (!payload || !queueRef.current) return null;
+    if (!payload) return null;
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    const saved = await queueRef.current.flush(payload);
-    return saved ? queueRef.current.currentClaim() : null;
-  }, [activeStep, payloadForStep]);
+    const saved = await queue.flush(payload);
+    return saved ? queue.currentClaim() : null;
+  }, [activeStep, payloadForStep, queue]);
 
-  const getCurrentClaim = useCallback(() => queueRef.current?.currentClaim() ?? null, []);
+  const getCurrentClaim = useCallback(() => queue.currentClaim(), [queue]);
 
   const isCurrentFormSaved = useCallback((step = activeStep) => {
     const payload = payloadForStep(step);
-    return Boolean(payload && queueRef.current?.matches(payload));
-  }, [activeStep, payloadForStep]);
+    return Boolean(payload && queue.matches(payload));
+  }, [activeStep, payloadForStep, queue]);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      handleLiveStudioDraftBeforeUnload(event, statusRef.current);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
 
   useEffect(() => {
