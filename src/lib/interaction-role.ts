@@ -2,12 +2,18 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 
 export const INTERACTION_ROLE_TYPES = [
   "official",
+  "audience",
+] as const;
+
+export type InteractionRoleType = (typeof INTERACTION_ROLE_TYPES)[number];
+export const INTERACTION_ROLE_LEGACY_TYPES = [
   "ai_host",
   "system_assistant",
   "support",
 ] as const;
 
-export type InteractionRoleType = (typeof INTERACTION_ROLE_TYPES)[number];
+export type InteractionRoleLegacyType = (typeof INTERACTION_ROLE_LEGACY_TYPES)[number];
+export type InteractionRoleStoredType = InteractionRoleType | InteractionRoleLegacyType;
 export type InteractionAvatarGender = "male" | "female";
 export const INTERACTION_ROLE_AVATAR_MODES = ["preset", "custom"] as const;
 export type InteractionRoleAvatarMode = (typeof INTERACTION_ROLE_AVATAR_MODES)[number];
@@ -56,6 +62,37 @@ export function isCanonicalInteractionRolePresetUrl(value: string | null | undef
   return typeof value === "string" && interactionRoleCanonicalPresetUrlSet.has(value);
 }
 
+/**
+ * 將資料庫既有角色映射成公開呈現角色；未知值必須顯式失敗，不能猜成官方角色。
+ */
+export function normalizePresentationRole(roleType: string): InteractionRoleType {
+  if (roleType === "official" || roleType === "audience") return roleType;
+  if ((INTERACTION_ROLE_LEGACY_TYPES as readonly string[]).includes(roleType)) return "official";
+  throw new Error("未知的互動角色類型，無法安全正規化。");
+}
+
+/**
+ * 僅接受核取方塊與明確布林文字，避免把任意非空字串當成 true。
+ */
+export function parseInteractionRoleBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return fallback;
+
+  switch (value.trim().toLowerCase()) {
+    case "on":
+    case "true":
+    case "1":
+      return true;
+    case "":
+    case "off":
+    case "false":
+    case "0":
+      return false;
+    default:
+      return fallback;
+  }
+}
+
 export function interactionRoleAvatarGender(avatarUrl: string | null | undefined): InteractionAvatarGender {
   if (avatarUrl && INTERACTION_AVATAR_SEEDS.female.some((seed) => interactionRoleAvatarUrl(seed) === avatarUrl)) {
     return "female";
@@ -67,6 +104,7 @@ export function interactionRoleTypeLabel(roleType: string) {
   if (roleType === "ai_host") return "AI 主持人";
   if (roleType === "system_assistant") return "系統助手";
   if (roleType === "support") return "客服助手";
+  if (roleType === "audience") return "一般觀眾";
   return "官方角色";
 }
 
@@ -91,6 +129,9 @@ export type InteractionRoleDraft = {
   roleType: string;
   tone?: string | null;
   isActive: boolean;
+  isScheduled?: unknown;
+  /** 只為明確表達不從模擬狀態推導排程狀態；此欄位不會被輸出或寫入。 */
+  isSimulated?: unknown;
 };
 
 export type NormalizedInteractionRole = {
@@ -100,6 +141,7 @@ export type NormalizedInteractionRole = {
   roleType: InteractionRoleType;
   tone: string | null;
   isActive: boolean;
+  isScheduled: boolean;
 };
 
 export type InteractionRoleValidation =
@@ -126,6 +168,8 @@ export function normalizeInteractionRoleDraft(input: InteractionRoleDraft): Inte
     return { success: false, error: "語氣設定最多 500 字。" };
   }
 
+  const isScheduled = parseInteractionRoleBoolean(input.isScheduled);
+
   const rawAvatarUrl = input.avatarUrl?.trim() ?? "";
   if (input.avatarMode === "preset" && !isCanonicalInteractionRolePresetUrl(rawAvatarUrl)) {
     return { success: false, error: "預設頭像不受支援。" };
@@ -137,6 +181,6 @@ export function normalizeInteractionRoleDraft(input: InteractionRoleDraft): Inte
 
   return {
     success: true,
-    data: { name, avatarUrl, label, roleType, tone, isActive: input.isActive },
+    data: { name, avatarUrl, label, roleType, tone, isActive: input.isActive, isScheduled },
   };
 }

@@ -742,6 +742,7 @@ model InteractionRole {
   tone        String?
   isActive    Boolean  @default(true)
   isSimulated Boolean  @default(true)
+  isScheduled Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

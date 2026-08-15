@@ -21,7 +21,9 @@ import {
   interactionRoleAvatarUrl,
   interactionRoleLabelAfterTypeChange,
   interactionRoleTypeLabel,
+  normalizePresentationRole,
   type InteractionRoleAvatarMode,
+  type InteractionRoleType,
   type InteractionAvatarGender,
 } from "@/lib/interaction-role";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -35,12 +37,16 @@ function InteractionRolePreview({
   label,
   tone,
   isActive,
+  presentationRole,
+  isScheduled,
 }: {
   avatarUrl: string;
   name: string;
   label: string;
   tone: string;
   isActive: boolean;
+  presentationRole: InteractionRoleType;
+  isScheduled: boolean;
 }) {
   return (
     <section aria-labelledby="interaction-role-preview-title" className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950 p-5 text-white lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]">
@@ -60,7 +66,10 @@ function InteractionRolePreview({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-bold">{name}</p>
               <span className="rounded-full bg-blue-400/20 px-2 py-0.5 text-xs font-semibold text-blue-100">{label}</span>
-              <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-white/75">預先設定角色</span>
+              <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-white/75">
+                {presentationRole === "official" ? "官方外觀" : "一般觀眾外觀"}
+              </span>
+              {isScheduled ? <span className="rounded-full bg-violet-400/20 px-2 py-0.5 text-xs font-semibold text-violet-100">排程角色</span> : null}
             </div>
             <p className="mt-2 text-sm leading-6 text-white/90">歡迎來到直播！實際訊息內容會在互動腳本的時間軸中設定。</p>
           </div>
@@ -154,6 +163,8 @@ export function InteractionRolesWorkbench({
   const selectedAvatarMode: InteractionRoleAvatarMode = isCanonicalInteractionRolePresetUrl(selectedRole?.avatarUrl)
     ? "preset"
     : "custom";
+  const selectedPresentationRole = selectedRole ? normalizePresentationRole(selectedRole.roleType) : "official";
+  const isLegacyRole = Boolean(selectedRole && selectedRole.roleType !== selectedPresentationRole);
   const initialState: InteractionRoleActionState = {
     ...initialInteractionRoleActionState,
     values: {
@@ -162,10 +173,11 @@ export function InteractionRolesWorkbench({
       name: selectedRole?.name ?? "",
       avatarUrl: selectedRole?.avatarUrl ?? "",
       avatarMode: selectedAvatarMode,
-      label: selectedRole?.label ?? interactionRoleTypeLabel(selectedRole?.roleType ?? "official"),
-      roleType: selectedRole?.roleType ?? "official",
+      label: selectedRole?.label ?? interactionRoleTypeLabel(selectedPresentationRole),
+      roleType: selectedPresentationRole,
       tone: selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
       isActive: selectedRole?.isActive ?? true,
+      isScheduled: selectedRole?.isScheduled ?? false,
     },
   };
   const [actionState, formAction, pending] = useActionState(upsertInteractionRoleActionState, initialState);
@@ -179,15 +191,16 @@ export function InteractionRolesWorkbench({
       ? actionStateValues.avatarUrl
       : selectedRole?.avatarUrl ?? interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED),
   );
-  const [roleType, setRoleType] = useState(actionStateValues?.roleType ?? selectedRole?.roleType ?? "official");
+  const [roleType, setRoleType] = useState(actionStateValues?.roleType ?? selectedPresentationRole);
   const [label, setLabel] = useState(
-    actionStateValues?.label ?? selectedRole?.label ?? interactionRoleTypeLabel(selectedRole?.roleType ?? "official"),
+    actionStateValues?.label ?? selectedRole?.label ?? interactionRoleTypeLabel(selectedPresentationRole),
   );
   const [name, setName] = useState(actionStateValues?.name ?? selectedRole?.name ?? "");
   const [tone, setTone] = useState(
     actionStateValues?.tone ?? selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
   );
   const [isActive, setIsActive] = useState(actionStateValues?.isActive ?? selectedRole?.isActive ?? true);
+  const [isScheduled, setIsScheduled] = useState(actionStateValues?.isScheduled ?? selectedRole?.isScheduled ?? false);
   const initialAvatarMode: InteractionRoleAvatarMode = actionStateValues?.avatarMode === "preset" || actionStateValues?.avatarMode === "custom"
     ? actionStateValues.avatarMode
     : selectedAvatarMode;
@@ -208,7 +221,7 @@ export function InteractionRolesWorkbench({
   const displayedSelectedAvatar = visibleActionStateValues?.avatarUrl ?? selectedAvatar;
   const displayedCustomAvatarAssetId = visibleActionStateValues?.avatarAssetId ?? customAvatarAssetId;
   const displayedName = visibleActionStateValues?.name ?? name;
-  const displayedRoleType = visibleActionStateValues?.roleType || roleType;
+  const displayedRoleType = normalizePresentationRole(visibleActionStateValues?.roleType || roleType);
   const displayedLabel = visibleActionStateValues?.label ?? label;
   const displayedTone = visibleActionStateValues?.tone ?? tone;
   const displayedIsActive = visibleActionStateValues?.isActive ?? isActive;
@@ -260,7 +273,7 @@ export function InteractionRolesWorkbench({
         <div className="flex items-center justify-between border-b border-border bg-slate-50 p-4">
           <div>
             <h2 className="font-semibold text-slate-950">互動角色清單</h2>
-            <p className="text-sm text-slate-500">{roles.length} 個官方互動角色</p>
+            <p className="text-sm text-slate-500">{roles.length} 個互動角色</p>
           </div>
           <Link
             href="/interaction-roles/new"
@@ -348,6 +361,12 @@ export function InteractionRolesWorkbench({
           {actionState.status === "error" ? (
             <p role="alert" aria-live="assertive" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {actionState.message}
+            </p>
+          ) : null}
+
+          {isLegacyRole ? (
+            <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-900">
+              這個角色原本使用舊角色類型「{interactionRoleTypeLabel(selectedRole?.roleType ?? "official")}」，目前以官方角色呈現；儲存後會轉為官方角色，不會再寫回舊類型。
             </p>
           ) : null}
 
@@ -467,9 +486,7 @@ export function InteractionRolesWorkbench({
                   角色類型
                   <select name="roleType" value={displayedRoleType} onChange={(event) => switchRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
                     <option value="official">官方角色</option>
-                    <option value="ai_host">AI 主持人</option>
-                    <option value="system_assistant">系統助手</option>
-                    <option value="support">客服助手</option>
+                    <option value="audience">一般觀眾</option>
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
@@ -485,6 +502,13 @@ export function InteractionRolesWorkbench({
                 <input name="isActive" type="checkbox" checked={displayedIsActive} onChange={(event) => { setActionStateEdited(true); setIsActive(event.target.checked); }} className="h-4 w-4 accent-blue-600" />
                 啟用角色
               </label>
+              <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
+                <input name="isScheduled" type="checkbox" value="true" checked={visibleActionStateValues?.isScheduled ?? isScheduled} onChange={(event) => { setActionStateEdited(true); setIsScheduled(event.target.checked); }} className="mt-0.5 h-4 w-4 accent-violet-600" />
+                <span>
+                  <span className="block">排程角色</span>
+                  <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">標記此角色供直播排程與後續分析辨識；前台呈現與數據排除將在直播互動流程完成後生效。</span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -494,6 +518,8 @@ export function InteractionRolesWorkbench({
             label={previewLabel}
             tone={displayedTone.trim()}
             isActive={displayedIsActive}
+            presentationRole={displayedRoleType}
+            isScheduled={visibleActionStateValues?.isScheduled ?? isScheduled}
           />
 
           {selectedRole ? <InteractionRoleUsageImpact roleUsage={roleUsage} isActive={isActive} /> : null}

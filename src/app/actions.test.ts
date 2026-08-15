@@ -3375,6 +3375,7 @@ describe("interaction role actions", () => {
         roleType: "official",
         tone: "親切、清楚",
         isActive: true,
+        isScheduled: false,
       }),
     });
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
@@ -3383,9 +3384,12 @@ describe("interaction role actions", () => {
       actorLabel: "admin",
       action: "interaction_role_created",
       targetId: "role-new",
-      after: expect.objectContaining({ hasAvatar: true }),
+      after: { roleType: "official", isActive: true, isScheduled: false, hasAvatar: true },
     }));
     const auditAfter = (mocks.writeAuditLog.mock.calls[0]?.[0] as { after?: Record<string, unknown> }).after;
+    expect(auditAfter).not.toHaveProperty("name");
+    expect(auditAfter).not.toHaveProperty("label");
+    expect(auditAfter).not.toHaveProperty("tone");
     expect(auditAfter).not.toHaveProperty("avatarUrl");
     expect(auditAfter).not.toHaveProperty("avatarAssetId");
   });
@@ -3568,6 +3572,59 @@ describe("interaction role actions", () => {
     }));
   });
 
+  it("round-trips an audience role with a scheduled marker on create", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("roleType", "audience");
+    formData.set("label", "一般觀眾");
+    formData.set("isScheduled", "on");
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.interactionRoleCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ roleType: "audience", isScheduled: true }),
+    });
+  });
+
+  it("round-trips an audience role with a scheduled marker on update", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("id", "role-1");
+    formData.set("roleType", "audience");
+    formData.set("isScheduled", "on");
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow("redirect:/interaction-roles");
+
+    expect(mocks.interactionRoleUpdate).toHaveBeenCalledWith({
+      where: { id: "role-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({ roleType: "audience", isScheduled: true }),
+    });
+  });
+
+  it.each(["ai_host", "system_assistant", "support"])("rejects legacy role type %s on a new write", async (roleType) => {
+    const formData = interactionRoleFormData();
+    formData.set("roleType", roleType);
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow(
+      "redirect:/interaction-roles/new?error=invalid_role",
+    );
+
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleUpdate).not.toHaveBeenCalled();
+  });
+
+  it("retains the scheduled checkbox value when the state action rejects a role", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("roleType", "legacy_role");
+    formData.set("isScheduled", "on");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      values: expect.objectContaining({ roleType: "legacy_role", isScheduled: true }),
+    }));
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+  });
+
   it("recovers when an edited role disappeared or belongs to another vendor", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
     mocks.interactionRoleUpdate.mockRejectedValueOnce(Object.assign(new Error("missing role"), { code: "P2025" }));
@@ -3639,14 +3696,14 @@ describe("importSystemRolesAction", () => {
     });
     expect(mocks.interactionRoleCreateMany).toHaveBeenCalledWith({
       data: expect.arrayContaining([
-        expect.objectContaining({ name: "官方商品顧問", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "優惠提醒助手", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "保養知識顧問", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "成交節奏助手", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "直播小編", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "提醒通知助手", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "售後關懷助手", vendorId: "vendor-9", isActive: true }),
-        expect.objectContaining({ name: "限時活動主持", vendorId: "vendor-9", isActive: true }),
+        expect.objectContaining({ name: "官方商品顧問", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "優惠提醒助手", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "保養知識顧問", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "成交節奏助手", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "直播小編", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "提醒通知助手", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "售後關懷助手", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
+        expect.objectContaining({ name: "限時活動主持", vendorId: "vendor-9", roleType: "official", isActive: true, isScheduled: true }),
       ]),
     });
     const [[{ data: createdRoles }]] = mocks.interactionRoleCreateMany.mock.calls;
@@ -3660,6 +3717,10 @@ describe("importSystemRolesAction", () => {
       action: "interaction_role_library_imported",
       after: { requestedCount: 10, importedCount: 8 },
     }));
+    const [[auditEntry]] = mocks.writeAuditLog.mock.calls;
+    expect(auditEntry.after).toEqual({ requestedCount: 10, importedCount: 8 });
+    expect(auditEntry.after).not.toHaveProperty("avatarUrl");
+    expect(auditEntry.after).not.toHaveProperty("tone");
     expect(mocks.redirect).toHaveBeenCalledWith("/interaction-roles");
     expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],

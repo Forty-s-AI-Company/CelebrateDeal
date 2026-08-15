@@ -12,6 +12,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const interactionRoleSemanticsMigration = readFileSync(
+  resolve(
+    workspace,
+    "prisma/migrations/20260815100000_g8_02_interaction_role_semantics/migration.sql",
+  ),
+  "utf8",
+);
 
 function requireText(source: string, text: string, label: string) {
   assert.ok(source.includes(text), `${label}: expected ${JSON.stringify(text)}`);
@@ -91,4 +98,27 @@ test("keeps the one-stop webinar schema and migration additive and executable", 
   );
   assert.ok(!schema.includes("model RegistrationFormLive {"));
   assert.ok(!schema.includes("replayUrl"));
+});
+
+test("adds only the scheduled interaction role flag", () => {
+  requirePattern(
+    schema,
+    /model InteractionRole \{[\s\S]*?isScheduled\s+Boolean\s+@default\(false\)[\s\S]*?\n\}/,
+    "InteractionRole.isScheduled default",
+  );
+
+  const statements = interactionRoleSemanticsMigration
+    .split(";")
+    .map((statement) => statement.replace(/^\s*--[^\n]*(?:\n|$)/gm, "").trim())
+    .filter(Boolean);
+  assert.equal(statements.length, 1, "G8.02 must contain exactly one SQL statement");
+  assert.match(
+    statements[0] ?? "",
+    /^ALTER TABLE "InteractionRole"\s+ADD COLUMN "isScheduled" BOOLEAN NOT NULL DEFAULT false$/,
+  );
+  assert.doesNotMatch(
+    interactionRoleSemanticsMigration,
+    /\b(?:UPDATE|DELETE|DROP|TRUNCATE|CREATE|CONSTRAINT|ENUM|BACKFILL)\b/i,
+    "G8.02 must not backfill, constrain, enum-migrate, or alter unrelated objects",
+  );
 });

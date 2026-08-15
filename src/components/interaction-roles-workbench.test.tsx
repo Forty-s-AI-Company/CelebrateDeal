@@ -59,6 +59,7 @@ vi.mock("@/app/actions", () => ({
       roleType: "official",
       tone: "",
       isActive: true,
+      isScheduled: false,
     },
   },
   upsertInteractionRoleActionState: vi.fn(),
@@ -167,6 +168,7 @@ function role(overrides: Partial<InteractionRole> = {}): InteractionRole {
     tone: "清楚、自然",
     isActive: true,
     isSimulated: true,
+    isScheduled: false,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -185,13 +187,13 @@ describe("InteractionRolesWorkbench", () => {
   it("renders an empty create state with no destructive edit control", () => {
     const html = renderHtml({ roles: [], selectedRole: null, csrfToken: "csrf-empty-token" });
 
-    expect(html).toContain("0 個官方互動角色");
+    expect(html).toContain("0 個互動角色");
     expect(html).toContain("新增互動角色");
     expect(html).toContain('aria-label="新增互動角色"');
     expect(html).toContain('name="_csrf" value="csrf-empty-token"');
     expect(html).toContain("角色即時預覽");
     expect(html).toContain("未命名角色");
-    expect(html).toContain("預先設定角色");
+    expect(html).toContain("官方外觀");
     expect(html).toContain("這個預覽不會發布訊息");
     expect(html).not.toContain("刪除");
     expect(html).not.toContain('name="id"');
@@ -204,7 +206,7 @@ describe("InteractionRolesWorkbench", () => {
     });
     const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-edit-token" });
 
-    expect(html).toContain("1 個官方互動角色");
+    expect(html).toContain("1 個互動角色");
     expect(html).toContain("編輯互動角色");
     expect(html).toContain('name="id" value="role-1"');
     expect(html).toMatch(/type="checkbox"[^>]+name="isActive"/);
@@ -224,6 +226,66 @@ describe("InteractionRolesWorkbench", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("角色資料無效");
     expect(html).toContain("不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效");
+  });
+
+  it("only offers official and audience role types and normalizes legacy roles", () => {
+    const selected = role({ roleType: "support", label: "客服助手" });
+    const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-role-type-token" });
+
+    expect(html).toContain('option value="official" selected=""');
+    expect(html).toContain('option value="audience"');
+    expect(html).not.toContain('option value="ai_host"');
+    expect(html).not.toContain('option value="system_assistant"');
+    expect(html).not.toContain('option value="support"');
+    expect(html).toContain("目前以官方角色呈現");
+    expect(html).toContain("儲存後會轉為官方角色，不會再寫回舊類型");
+  });
+
+  it("round-trips scheduled state and keeps it after an action error", () => {
+    const selected = role({ roleType: "audience", isScheduled: true });
+    const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-scheduled-token" });
+    expect(html).toMatch(/name="isScheduled"[^>]*checked=""/u);
+    expect(html).toContain("排程角色");
+    expect(html).toContain("直播排程與後續分析辨識");
+    expect(html).toContain("標記此角色供直播排程與後續分析辨識");
+    expect(html).toContain("前台呈現與數據排除將在直播互動流程完成後生效");
+    expect(html).not.toContain("會顯示在聊天室，但不計入真實觀看、留言或成效數據");
+
+    hookState.actionState = {
+      status: "error",
+      message: "角色資料無效",
+      values: {
+        id: "role-1",
+        name: "排程觀眾",
+        avatarUrl: "",
+        avatarAssetId: "",
+        avatarMode: "preset",
+        avatarUploadPhase: "",
+        label: "一般觀眾",
+        roleType: "audience",
+        tone: "保持原本語氣",
+        isActive: true,
+        isScheduled: true,
+      },
+    };
+    const errorHtml = renderHtml({ roles: [selected], selectedRole: role({ ...selected, isScheduled: false }), csrfToken: "csrf-scheduled-error-token" });
+    expect(errorHtml).toMatch(/name="isScheduled"[^>]*checked=""/u);
+    expect(errorHtml).toContain("角色資料無效");
+  });
+
+  it("uses the presentation role for preview appearance while keeping scheduled marker separate", () => {
+    const audience = role({ roleType: "audience", isScheduled: true });
+    const audienceHtml = renderHtml({ roles: [audience], selectedRole: audience, csrfToken: "csrf-audience-preview-token" });
+    expect(audienceHtml).toContain("一般觀眾外觀");
+    expect(audienceHtml).toContain("排程角色");
+    expect(audienceHtml).not.toContain("官方外觀");
+
+    hookState.stateCursor = 0;
+    hookState.stateValues = [];
+    const official = role({ roleType: "official", isScheduled: false });
+    const officialHtml = renderHtml({ roles: [official], selectedRole: official, csrfToken: "csrf-official-preview-token" });
+    expect(officialHtml).toContain("官方外觀");
+    expect(officialHtml).not.toContain("一般觀眾外觀");
   });
 
   it("shows exact script impact before an active role is disabled or deleted", () => {

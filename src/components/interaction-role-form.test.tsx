@@ -17,6 +17,7 @@ function role(overrides: Partial<InteractionRole> = {}): InteractionRole {
     tone: "溫和、清楚",
     isActive: false,
     isSimulated: true,
+    isScheduled: false,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
