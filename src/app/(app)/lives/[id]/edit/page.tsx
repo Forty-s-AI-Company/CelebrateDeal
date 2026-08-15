@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
@@ -168,7 +169,7 @@ export default async function EditLivePage({
   const basePayload = LiveStudioDraftPayloadSchema.parse({
     title: live.title,
     slug: live.slug,
-    scheduledAt: live.scheduledAt.toISOString().slice(0, 16),
+    scheduledAt: formatZonedDateTimeLocal(live.scheduledAt, vendor.timezone),
     description: live.description ?? "",
     productIds: preparedResources.productIds,
     accentCopy: live.accentCopy ?? "",
@@ -245,6 +246,7 @@ export default async function EditLivePage({
         initialValues={basePayload}
         liveId={live.id}
         currentStatus={live.status}
+        timeZone={vendor.timezone}
       />
     </>
   );

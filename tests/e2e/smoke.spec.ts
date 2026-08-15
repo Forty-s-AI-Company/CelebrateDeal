@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect, test as base, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request as PlaywrightRequest } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -462,6 +462,7 @@ test.beforeAll(async () => {
       passwordHash: hashPassword(password),
       primaryColor: "#2563eb",
       ctaColor: "#f97316",
+      timezone: "Asia/Taipei",
       tracking: { create: {} },
     },
   });
@@ -1239,70 +1240,89 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
 test("merchant can create and schedule a prerecorded content webinar from the five-step studio", async ({ page }) => {
   const title = `E2E 預錄研討會 ${e2eRunId}`;
   const slug = `e2e-scheduled-webinar-${stamp}`;
-  await loginSeededOwner(page);
-  await page.goto("/lives/new");
+  const nonLoopbackRequests: string[] = [];
+  const observeRequest = (request: PlaywrightRequest) => {
+    const hostname = new URL(request.url()).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const isLoopback = hostname === "localhost" || hostname === "::1" || hostname === "127.0.0.1" || hostname.startsWith("127.");
+    if (!isLoopback) nonLoopbackRequests.push(request.url());
+  };
+  page.on("request", observeRequest);
 
-  await page.getByLabel("直播標題").fill(title);
-  await page.getByLabel("Slug").fill(slug);
-  await page.getByLabel("開播時間").fill("2026-08-20T20:00");
-  await page.getByRole("button", { name: "下一步" }).click();
+  try {
+    await loginSeededOwner(page);
+    await page.goto("/lives/new");
 
-  await page.getByLabel("報名頁").selectOption(seed.formId);
-  await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
-  await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
-  await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByLabel("直播標題").fill(title);
+    await page.getByLabel("Slug").fill(slug);
+    await page.getByLabel("開播時間").fill("2026-08-20T20:00");
+    await page.getByRole("button", { name: "下一步" }).click();
 
-  await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);
-  await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByLabel("報名頁").selectOption(seed.formId);
+    await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
+    await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
+    await page.getByRole("button", { name: "下一步" }).click();
 
-  await expect(page.getByText("內容直播發布檢查")).toBeVisible();
-  await expect(page.getByText("發布條件已完成")).toBeVisible();
-  const scheduleButton = page.getByRole("button", { name: "建立並排程" });
-  await expect(scheduleButton).toBeEnabled();
-  page.once("dialog", (dialog) => dialog.accept());
-  await scheduleButton.click();
+    await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);
+    await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByRole("button", { name: "下一步" }).click();
 
-  await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/);
-  const liveId = new URL(page.url()).pathname.split("/")[2];
-  expect(liveId).toBeTruthy();
+    await expect(page.getByText("內容直播發布檢查")).toBeVisible();
+    await expect(page.getByText("發布條件已完成")).toBeVisible();
+    const scheduleButton = page.getByRole("button", { name: "建立並排程" });
+    await expect(scheduleButton).toBeEnabled();
+    page.once("dialog", (dialog) => dialog.accept());
+    await scheduleButton.click();
 
-  const scheduledLive = await db.live.findUnique({
-    where: { id: liveId },
-    select: {
-      vendorId: true,
-      title: true,
-      status: true,
-      videoId: true,
-      formId: true,
-      messageTemplateId: true,
-      liveReminderTemplateId: true,
-      interactionScriptId: true,
-    },
-  });
-  expect(scheduledLive).toEqual({
-    vendorId: seed.vendorId,
-    title,
-    status: "scheduled",
-    videoId: seed.readyVideoId,
-    formId: seed.formId,
-    messageTemplateId: seed.registrationTemplateId,
-    liveReminderTemplateId: seed.reminderTemplateId,
-    interactionScriptId: null,
-  });
-  expect(await db.liveProduct.count({ where: { liveId } })).toBe(0);
+    await expect(page).toHaveURL(/\/lives\/[^/]+\/preview$/);
+    const liveId = new URL(page.url()).pathname.split("/")[2];
+    expect(liveId).toBeTruthy();
 
-  const consumedDrafts = await db.liveStudioDraft.findMany({
-    where: { vendorId: seed.vendorId, liveId: null, consumedAt: { not: null } },
-    select: { payload: true, consumedAt: true },
-  });
-  const consumedDraft = consumedDrafts.find((draft) => (
-    typeof draft.payload === "object"
-    && draft.payload !== null
-    && "title" in draft.payload
-    && draft.payload.title === title
-  ));
-  expect(consumedDraft?.consumedAt).toBeInstanceOf(Date);
+    const scheduledLive = await db.live.findUnique({
+      where: { id: liveId },
+      select: {
+        vendorId: true,
+        title: true,
+        status: true,
+        scheduledAt: true,
+        videoId: true,
+        formId: true,
+        messageTemplateId: true,
+        liveReminderTemplateId: true,
+        interactionScriptId: true,
+      },
+    });
+    expect(scheduledLive).toEqual({
+      vendorId: seed.vendorId,
+      title,
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-20T12:00:00.000Z"),
+      videoId: seed.readyVideoId,
+      formId: seed.formId,
+      messageTemplateId: seed.registrationTemplateId,
+      liveReminderTemplateId: seed.reminderTemplateId,
+      interactionScriptId: null,
+    });
+    expect(await db.liveProduct.count({ where: { liveId } })).toBe(0);
+
+    await page.goto(`/lives/${liveId}/edit`);
+    await expect(page.getByLabel(/^開播時間/)).toHaveValue("2026-08-20T20:00");
+
+    const consumedDrafts = await db.liveStudioDraft.findMany({
+      where: { vendorId: seed.vendorId, liveId: null, consumedAt: { not: null } },
+      select: { payload: true, consumedAt: true },
+    });
+    const consumedDraft = consumedDrafts.find((draft) => (
+      typeof draft.payload === "object"
+      && draft.payload !== null
+      && "title" in draft.payload
+      && draft.payload.title === title
+    ));
+    expect(consumedDraft?.consumedAt).toBeInstanceOf(Date);
+  } finally {
+    page.off("request", observeRequest);
+  }
+
+  expect(nonLoopbackRequests).toEqual([]);
 });
 
 test("public form can submit a lead", async ({ page }) => {

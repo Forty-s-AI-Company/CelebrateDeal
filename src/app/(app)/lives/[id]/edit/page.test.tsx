@@ -57,6 +57,7 @@ import {
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
+import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
 
 const live = {
   id: "live-1",
@@ -84,7 +85,7 @@ const live = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
   mocks.getCsrfToken.mockResolvedValue("csrf-token");
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.videoFindMany.mockResolvedValue([]);
@@ -135,9 +136,26 @@ describe("EditLivePage unified Live Studio", () => {
       currentStatus: "scheduled",
       initialValues: expect.objectContaining({
         title: "測試直播",
+        scheduledAt: "2026-08-08T09:00",
         interactionScriptId: "",
         replayEnabled: true,
       }),
+      timeZone: "Asia/Taipei",
+    }), undefined);
+  });
+
+  it("formats the same UTC instant using another merchant timezone", async () => {
+    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+
+    const tree = await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    });
+    renderToStaticMarkup(tree);
+
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      timeZone: "America/New_York",
+      initialValues: expect.objectContaining({ scheduledAt: "2026-08-07T21:00" }),
     }), undefined);
   });
 
@@ -221,7 +239,12 @@ describe("EditLivePage unified Live Studio", () => {
     mocks.draftFindFirst.mockResolvedValue({
       id: "draft-live-1",
       revision: 7,
-      payload: { title: "草稿中的標題", replayEnabled: false },
+      payload: {
+        ...emptyLiveStudioDraft(),
+        title: "草稿中的標題",
+        scheduledAt: "2026-08-09T10:00",
+        replayEnabled: false,
+      },
       updatedAt: new Date("2026-08-08T02:00:00.000Z"),
     });
 
@@ -235,7 +258,11 @@ describe("EditLivePage unified Live Studio", () => {
       select: { id: true, revision: true, payload: true, updatedAt: true },
     });
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
-      initialDraft: expect.objectContaining({ id: "draft-live-1", revision: 7 }),
+      initialDraft: expect.objectContaining({
+        id: "draft-live-1",
+        revision: 7,
+        payload: expect.objectContaining({ scheduledAt: "2026-08-09T10:00" }),
+      }),
     }), undefined);
   });
 

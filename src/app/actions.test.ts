@@ -123,6 +123,7 @@ const mocks = vi.hoisted(() => ({
   verifyTotpCode: vi.fn(),
   decryptMfaSecret: vi.fn(),
   vendorFindUnique: vi.fn(),
+  vendorUpdate: vi.fn(),
   vendorMemberFindFirst: vi.fn(),
   vendorMemberFindMany: vi.fn(),
   vendorMemberFindUnique: vi.fn(),
@@ -270,7 +271,7 @@ vi.mock("@/lib/db", () => ({
       update: mocks.userRecoveryCodeUpdate,
       updateMany: mocks.userRecoveryCodeUpdateMany,
     },
-    vendor: { findUnique: mocks.vendorFindUnique },
+    vendor: { findUnique: mocks.vendorFindUnique, update: mocks.vendorUpdate },
     vendorMember: {
       count: mocks.vendorMemberCount,
       findFirst: mocks.vendorMemberFindFirst,
@@ -361,6 +362,9 @@ import {
   upsertInteractionRoleAction,
   upsertInteractionScriptAction,
   verifyMfaAction,
+  saveBrandSettingsAction,
+  saveBrandSettingsActionState,
+  type BrandSettingsActionState,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import { RefundProviderError } from "@/lib/payment-providers/types";
@@ -1138,9 +1142,102 @@ describe("upsertAffiliateAction", () => {
   });
 });
 
+describe("saveBrandSettingsAction timezone validation", () => {
+  function brandSettingsFormData(timezone: string) {
+    const formData = new FormData();
+    formData.set("name", "測試品牌");
+    formData.set("slug", "test-brand");
+    formData.set("primaryColor", "#2563eb");
+    formData.set("ctaColor", "#f97316");
+    formData.set("timezone", timezone);
+    formData.set("supportEmail", "support@example.test");
+    formData.set("logoUrl", "https://submitted.example.test/logo.png");
+    return formData;
+  }
+
+  function initialBrandSettingsState(): BrandSettingsActionState {
+    return {
+      status: "idle",
+      message: "",
+      values: {
+        name: "目前品牌",
+        slug: "current-brand",
+        primaryColor: "#000000",
+        ctaColor: "#ffffff",
+        timezone: "Asia/Taipei",
+        supportEmail: "current@example.test",
+        logoUrl: "https://current.example.test/logo.png",
+      },
+    };
+  }
+
+  it("rejects an invalid IANA timezone before updating the vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+
+    await expect(saveBrandSettingsAction(brandSettingsFormData("Mars/Olympus_Mons"))).rejects.toThrow(
+      "redirect:/settings/brand?error=invalid_timezone",
+    );
+
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("persists a valid tenant timezone as submitted server-side brand configuration", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+
+    await expect(saveBrandSettingsAction(brandSettingsFormData("America/New_York"))).resolves.toBeUndefined();
+
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ timezone: "America/New_York" }),
+    });
+  });
+
+  it("returns every submitted public value for an invalid timezone without writing the vendor", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+    const formData = brandSettingsFormData("Mars/Olympus_Mons");
+    formData.set("name", "尚未儲存品牌");
+    formData.set("slug", "unsaved-brand");
+    formData.set("primaryColor", "#102030");
+    formData.set("ctaColor", "#405060");
+    formData.set("supportEmail", "unsaved@example.test");
+    formData.set("logoUrl", "https://unsaved.example.test/logo.png");
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "時區格式無效，請輸入有效的 IANA 時區，例如 Asia/Taipei。",
+      values: {
+        name: "尚未儲存品牌",
+        slug: "unsaved-brand",
+        primaryColor: "#102030",
+        ctaColor: "#405060",
+        timezone: "Mars/Olympus_Mons",
+        supportEmail: "unsaved@example.test",
+        logoUrl: "https://unsaved.example.test/logo.png",
+      },
+    });
+    expect(result.values).not.toHaveProperty("id");
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("updates and redirects only after the state action accepts the timezone", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+
+    await expect(saveBrandSettingsActionState(initialBrandSettingsState(), brandSettingsFormData("America/New_York"))).rejects.toThrow(
+      "redirect:/settings/brand",
+    );
+
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ timezone: "America/New_York" }),
+    });
+  });
+});
+
 describe("upsertLiveAction", () => {
   function allowCurrentVendorLiveReferences() {
-    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
     mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
     mocks.registrationFormFindFirst.mockResolvedValue({
@@ -1263,6 +1360,45 @@ describe("upsertLiveAction", () => {
       },
       data: { consumedAt: expect.any(Date) },
     });
+  });
+
+  it("converts the tenant wall time to UTC and ignores a forged form timezone", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("timezone", "America/New_York");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate.mock.calls[0]?.[0]?.data).toEqual(expect.objectContaining({
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+    }));
+  });
+
+  it("rejects an invalid tenant timezone before reading or consuming the live draft", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Mars/Olympus_Mons" });
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+    expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a DST gap before creating or updating a live", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    const formData = liveFormData();
+    formData.set("scheduledAt", "2026-03-08T02:30");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
   });
 
   it("rolls back creation when another tab already advanced the draft revision", async () => {

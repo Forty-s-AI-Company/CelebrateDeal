@@ -191,6 +191,7 @@ function renderForm(availableProducts: Product[] = products, overrides: FormOver
     streamMembers: [],
     streamPages: [],
     csrfToken: "test-fixture-csrf-token",
+    timeZone: "Asia/Taipei",
     ...overrides,
     products: availableProducts,
   });
@@ -276,6 +277,14 @@ describe("LiveStepperForm", () => {
     draftMocks.isCurrentFormSaved.mockReturnValue(true);
     draftMocks.getCurrentClaim.mockReturnValue({ draftId: "draft-1", revision: 2 });
     draftMocks.saveNow.mockResolvedValue({ draftId: "draft-1", revision: 2 });
+  });
+
+  it("shows the tenant timezone beside the schedule input without submitting a timezone field", () => {
+    const markup = renderToStaticMarkup(renderForm([], { timeZone: "America/New_York" }) as ReactElement);
+
+    expect(markup).toContain("開播時間（America/New_York）");
+    expect(markup).toContain("請依商家時區輸入");
+    expect(markup).not.toContain('name="timezone"');
   });
 
   it("shows stable default copy in the empty publish preview", () => {

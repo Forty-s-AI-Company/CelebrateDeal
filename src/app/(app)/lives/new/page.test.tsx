@@ -53,7 +53,7 @@ import {
 describe("NewLivePage data minimization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
     mocks.getCsrfToken.mockResolvedValue("csrf-token");
     mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
     mocks.liveStudioDraftFindMany.mockResolvedValue([]);
@@ -136,6 +136,7 @@ describe("NewLivePage data minimization", () => {
       orderBy: { updatedAt: "desc" },
     });
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      timeZone: "Asia/Taipei",
       streamMembers: [{ id: "member-1", teamId: "team-1", label: "北區團隊 · 王小明" }],
       streamPages: [{ id: "page-1", label: "夏日推廣頁 · /summer" }],
     }), undefined);
@@ -224,6 +225,21 @@ describe("NewLivePage data minimization", () => {
     expect(html).toContain("/lives/new?draft=draft-latest");
     expect(html).toContain("會員回饋場");
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ initialDraft: undefined }), undefined);
+  });
+
+  it("renders resumable draft timestamps in the current merchant timezone", async () => {
+    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    mocks.liveStudioDraftFindMany.mockResolvedValue([{
+      id: "draft-timezone",
+      payload: { title: "時區草稿", activeStep: 0 },
+      updatedAt: new Date("2026-08-08T01:00:00.000Z"),
+    }]);
+
+    const html = renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("2026/8/7");
+    expect(html).toContain("21:00:00");
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ timeZone: "America/New_York" }), undefined);
   });
 
   it("does not load an unavailable draft and explains how to recover", async () => {

@@ -22,7 +22,7 @@ type ResumableLiveDraft = {
   updatedAt: Date;
 };
 
-function LiveDraftResumeNotice({ drafts }: { drafts: ResumableLiveDraft[] }) {
+function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraft[]; timeZone: string }) {
   if (drafts.length === 0) return null;
 
   return (
@@ -37,7 +37,7 @@ function LiveDraftResumeNotice({ drafts }: { drafts: ResumableLiveDraft[] }) {
               <p className="mt-1 text-xs text-slate-600">
                 第 {draft.activeStep + 1} 步：{liveStudioStepLabels[draft.activeStep]} · 上次儲存於{" "}
                 <time dateTime={draft.updatedAt.toISOString()}>
-                  {draft.updatedAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false })}
+                  {draft.updatedAt.toLocaleString("zh-TW", { timeZone, hour12: false })}
                 </time>
               </p>
             </div>
@@ -159,7 +159,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
           指定的直播草稿已失效、已完成或不屬於目前商店。系統沒有載入任何內容，你可以改選下方仍有效的草稿。
         </p>
       ) : null}
-      {!initialDraft ? <LiveDraftResumeNotice drafts={resumableDrafts} /> : null}
+      {!initialDraft ? <LiveDraftResumeNotice drafts={resumableDrafts} timeZone={vendor.timezone} /> : null}
       <LiveStepperForm
         videos={videos}
         products={products}
@@ -176,6 +176,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
         csrfToken={csrfToken}
         error={error}
         initialDraft={initialDraft}
+        timeZone={vendor.timezone}
       />
     </>
   );

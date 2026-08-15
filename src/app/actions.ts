@@ -57,6 +57,7 @@ import {
 import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { isLiveVideoReady, liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
 import { CoursePayoutMutationConflict, syncCoursePayoutsForSettlement } from "@/lib/course-payout-accounting";
@@ -169,22 +170,97 @@ export async function logoutAction(formData: FormData) {
   return logoutActionImpl(formData);
 }
 
-export async function saveBrandSettingsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+export type BrandSettingsFormValues = {
+  name: string;
+  slug: string;
+  primaryColor: string;
+  ctaColor: string;
+  timezone: string;
+  supportEmail: string;
+  logoUrl: string;
+};
+
+export type BrandSettingsActionState = {
+  status: "idle" | "error";
+  message: string;
+  values: BrandSettingsFormValues;
+};
+
+const INVALID_BRAND_TIMEZONE_MESSAGE = "時區格式無效，請輸入有效的 IANA 時區，例如 Asia/Taipei。";
+
+function submittedBrandSettingsValues(formData: FormData): BrandSettingsFormValues {
+  const value = (key: string) => {
+    const submitted = formData.get(key);
+    return typeof submitted === "string" ? submitted : "";
+  };
+
+  return {
+    name: value("name"),
+    slug: value("slug"),
+    primaryColor: value("primaryColor"),
+    ctaColor: value("ctaColor"),
+    timezone: value("timezone"),
+    supportEmail: value("supportEmail"),
+    logoUrl: value("logoUrl"),
+  };
+}
+
+async function updateBrandSettings(vendorId: string, formData: FormData, timezone: string) {
   await getDb().vendor.update({
-    where: { id: vendor.id },
+    where: { id: vendorId },
     data: {
       name: text(formData, "name"),
       slug: toSlug(text(formData, "slug")),
       logoUrl: optionalExternalUrl(formData, "logoUrl", "品牌 Logo 網址"),
       primaryColor: text(formData, "primaryColor", "#2563eb"),
       ctaColor: text(formData, "ctaColor", "#f97316"),
-      timezone: text(formData, "timezone", "Asia/Taipei"),
+      timezone,
       supportEmail: optionalText(formData, "supportEmail"),
     },
   });
+}
+
+/**
+ * 保留既有直接呼叫的 Server Action 介面；新品牌頁使用下方 state action，
+ * 讓可修正的驗證錯誤不需要把表單內容塞進 URL。
+ */
+export async function saveBrandSettingsAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  const timezone = text(formData, "timezone", "Asia/Taipei");
+  try {
+    assertIanaTimeZone(timezone);
+  } catch {
+    redirect("/settings/brand?error=invalid_timezone");
+  }
+  await updateBrandSettings(vendor.id, formData, timezone);
   revalidatePath("/settings/brand");
+}
+
+export async function saveBrandSettingsActionState(
+  _previousState: BrandSettingsActionState,
+  formData: FormData,
+): Promise<BrandSettingsActionState> {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  const values = submittedBrandSettingsValues(formData);
+  const timezone = text(formData, "timezone", "Asia/Taipei");
+
+  try {
+    // The tenant's submitted timezone is always validated on the server. The
+    // client state is only a safe echo for the fields the merchant can edit.
+    assertIanaTimeZone(timezone);
+  } catch {
+    return {
+      status: "error",
+      message: INVALID_BRAND_TIMEZONE_MESSAGE,
+      values,
+    };
+  }
+
+  await updateBrandSettings(vendor.id, formData, timezone);
+  revalidatePath("/settings/brand");
+  redirect("/settings/brand");
 }
 
 export async function saveTrackingSettingsAction(formData: FormData) {
@@ -716,7 +792,12 @@ async function commitLiveDraft(input: {
   });
 }
 
-function parseSubmittedLiveDraft(formData: FormData, liveId: string | null, draftId: string) {
+function parseSubmittedLiveDraft(
+  formData: FormData,
+  liveId: string | null,
+  draftId: string,
+  vendorTimeZone: string,
+) {
   const suffix = liveId ? "" : `&draft=${encodeURIComponent(draftId)}`;
   const invalidDraftPath = liveId
     ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_draft`
@@ -727,9 +808,14 @@ function parseSubmittedLiveDraft(formData: FormData, liveId: string | null, draf
   } catch {
     redirect(invalidDraftPath);
   }
-  const scheduledAt = new Date(payload.scheduledAt);
   const slug = toSlug(payload.slug);
-  if (!payload.title || !slug || !payload.scheduledAt || Number.isNaN(scheduledAt.getTime())) {
+  if (!payload.title || !slug || !payload.scheduledAt) {
+    redirect(invalidDraftPath);
+  }
+  let scheduledAt: Date;
+  try {
+    scheduledAt = parseZonedDateTimeLocal(payload.scheduledAt, vendorTimeZone);
+  } catch {
     redirect(invalidDraftPath);
   }
   return { payload, scheduledAt, slug, suffix };
@@ -922,7 +1008,7 @@ export async function upsertLiveAction(formData: FormData) {
   const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
   const draftClaim = parseLiveDraftClaim(formData, id);
-  const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId);
+  const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId, vendor.timezone);
   const submittedDraft = parsedSubmission.payload;
   const scheduledAt = parsedSubmission.scheduledAt;
   const createDraftSuffix = parsedSubmission.suffix;

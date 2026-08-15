@@ -145,6 +145,16 @@ function StepPanel({
   );
 }
 
+function ScheduleDateTimeField({ timeZone, defaultValue }: { timeZone: string; defaultValue: string }) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      開播時間（{timeZone}）
+      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} className="h-10 rounded-md border border-border px-3" />
+      <span className="text-xs font-normal text-slate-500">請依商家時區輸入；儲存時會轉成 UTC，提醒與公開頁會使用同一時間。</span>
+    </label>
+  );
+}
+
 function ProductSelection({
   products,
   selectedProductIds,
@@ -534,6 +544,7 @@ export function LiveStepperForm({
   initialValues: suppliedInitialValues,
   liveId = "",
   currentStatus = "draft",
+  timeZone,
 }: {
   videos: Array<Pick<Video, "id" | "title">>;
   products: LiveProductOption[];
@@ -549,6 +560,7 @@ export function LiveStepperForm({
   initialValues?: LiveStudioDraftPayload;
   liveId?: string;
   currentStatus?: string;
+  timeZone: string;
 }) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
   const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
@@ -676,10 +688,7 @@ export function LiveStepperForm({
           Slug
           <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={initialValues.slug} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          開播時間
-          <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={initialValues.scheduledAt} className="h-10 rounded-md border border-border px-3" />
-        </label>
+        <ScheduleDateTimeField timeZone={timeZone} defaultValue={initialValues.scheduledAt} />
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           直播說明
           <textarea name="description" rows={4} autoComplete="off" defaultValue={initialValues.description} className="rounded-md border border-border px-3 py-2" />
