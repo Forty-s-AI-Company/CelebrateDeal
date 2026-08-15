@@ -9,6 +9,8 @@ export const INTERACTION_ROLE_TYPES = [
 
 export type InteractionRoleType = (typeof INTERACTION_ROLE_TYPES)[number];
 export type InteractionAvatarGender = "male" | "female";
+export const INTERACTION_ROLE_AVATAR_MODES = ["preset", "custom"] as const;
+export type InteractionRoleAvatarMode = (typeof INTERACTION_ROLE_AVATAR_MODES)[number];
 
 export const INTERACTION_AVATAR_SEEDS: Record<InteractionAvatarGender, readonly string[]> = {
   male: [
@@ -43,6 +45,17 @@ export function interactionRoleAvatarUrl(seed: string) {
   return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
 }
 
+/** 只接受目前產品明確提供的完整預設頭像網址。 */
+export const INTERACTION_ROLE_CANONICAL_PRESET_URLS = Object.freeze(
+  [...INTERACTION_AVATAR_SEEDS.male, ...INTERACTION_AVATAR_SEEDS.female].map(interactionRoleAvatarUrl),
+);
+
+const interactionRoleCanonicalPresetUrlSet = new Set(INTERACTION_ROLE_CANONICAL_PRESET_URLS);
+
+export function isCanonicalInteractionRolePresetUrl(value: string | null | undefined): boolean {
+  return typeof value === "string" && interactionRoleCanonicalPresetUrlSet.has(value);
+}
+
 export function interactionRoleAvatarGender(avatarUrl: string | null | undefined): InteractionAvatarGender {
   if (avatarUrl && INTERACTION_AVATAR_SEEDS.female.some((seed) => interactionRoleAvatarUrl(seed) === avatarUrl)) {
     return "female";
@@ -73,6 +86,7 @@ export function interactionRoleLabelAfterTypeChange(
 export type InteractionRoleDraft = {
   name: string;
   avatarUrl?: string | null;
+  avatarMode?: InteractionRoleAvatarMode | null;
   label?: string | null;
   roleType: string;
   tone?: string | null;
@@ -113,6 +127,9 @@ export function normalizeInteractionRoleDraft(input: InteractionRoleDraft): Inte
   }
 
   const rawAvatarUrl = input.avatarUrl?.trim() ?? "";
+  if (input.avatarMode === "preset" && !isCanonicalInteractionRolePresetUrl(rawAvatarUrl)) {
+    return { success: false, error: "預設頭像不受支援。" };
+  }
   const avatarUrl = rawAvatarUrl ? parseSafeExternalHttpUrl(rawAvatarUrl) : null;
   if (rawAvatarUrl && (!avatarUrl || rawAvatarUrl.length > 2_048)) {
     return { success: false, error: "角色頭像必須是安全的 HTTP 或 HTTPS 完整網址。" };

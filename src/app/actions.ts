@@ -38,7 +38,13 @@ import {
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
-import { normalizeInteractionRoleDraft } from "@/lib/interaction-role";
+import {
+  INTERACTION_ROLE_AVATAR_MODES,
+  isCanonicalInteractionRolePresetUrl,
+  normalizeInteractionRoleDraft,
+  type InteractionRoleAvatarMode,
+  type NormalizedInteractionRole,
+} from "@/lib/interaction-role";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
@@ -1252,55 +1258,259 @@ export async function upsertLiveAction(formData: FormData) {
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
 
+export type InteractionRoleFormValues = {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  avatarAssetId: string;
+  avatarMode: InteractionRoleAvatarMode | "";
+  avatarUploadPhase: string;
+  label: string;
+  roleType: string;
+  tone: string;
+  isActive: boolean;
+};
+
+export type InteractionRoleActionState = {
+  status: "idle" | "error";
+  message: string;
+  values: InteractionRoleFormValues;
+};
+
+export const initialInteractionRoleActionState: InteractionRoleActionState = {
+  status: "idle",
+  message: "",
+  values: {
+    id: "",
+    name: "",
+    avatarUrl: "",
+    avatarAssetId: "",
+    avatarMode: "",
+    avatarUploadPhase: "",
+    label: "",
+    roleType: "official",
+    tone: "",
+    isActive: true,
+  },
+};
+
+class InteractionRoleInputError extends Error {}
+class InteractionRoleMissingError extends Error {}
+
+function boundedInteractionRoleValue(formData: FormData, key: string, maximum: number) {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.slice(0, maximum) : "";
+}
+
+function submittedInteractionRoleMode(formData: FormData): string {
+  const avatarMode = text(formData, "avatarMode");
+  const legacyMode = text(formData, "mode");
+  if (avatarMode && legacyMode && avatarMode !== legacyMode) {
+    throw new InteractionRoleInputError("頭像模式無效。");
+  }
+  return avatarMode || legacyMode;
+}
+
+function submittedInteractionRoleUploadPhase(formData: FormData) {
+  const value = formData.get("avatarUploadPhase");
+  return value === null ? "" : typeof value === "string" ? value.trim() : "__invalid__";
+}
+
+function submittedInteractionRoleValues(formData: FormData): InteractionRoleFormValues {
+  const rawAvatarUrl = boundedInteractionRoleValue(formData, "avatarUrl", 2_048).trim();
+  const avatarUrl = parseSafeExternalHttpUrl(rawAvatarUrl) ?? "";
+  const avatarMode = text(formData, "avatarMode");
+  const legacyMode = text(formData, "mode");
+  const mode = avatarMode && legacyMode && avatarMode !== legacyMode ? "" : avatarMode || legacyMode;
+  return {
+    id: boundedInteractionRoleValue(formData, "id", 128),
+    name: boundedInteractionRoleValue(formData, "name", 160),
+    avatarUrl,
+    avatarAssetId: boundedInteractionRoleValue(formData, "avatarAssetId", 128),
+    avatarMode: (INTERACTION_ROLE_AVATAR_MODES as readonly string[]).includes(mode)
+      ? mode as InteractionRoleAvatarMode
+      : "",
+    avatarUploadPhase: boundedInteractionRoleValue(formData, "avatarUploadPhase", 32),
+    label: boundedInteractionRoleValue(formData, "label", 80),
+    roleType: boundedInteractionRoleValue(formData, "roleType", 64),
+    tone: boundedInteractionRoleValue(formData, "tone", 500),
+    isActive: formData.get("isActive") === "on",
+  };
+}
+
+async function resolveInteractionRoleAvatar(vendorId: string, formData: FormData) {
+  const rawAvatarUrl = optionalText(formData, "avatarUrl") ?? "";
+  const avatarModeValue = submittedInteractionRoleMode(formData);
+  const avatarUploadPhase = submittedInteractionRoleUploadPhase(formData);
+  const hasExplicitMode = avatarModeValue !== "";
+  const avatarAssetIdValue = formData.get("avatarAssetId");
+  if (avatarAssetIdValue !== null && typeof avatarAssetIdValue !== "string") {
+    throw new InteractionRoleInputError("角色頭像圖片資產無效，請重新上傳。");
+  }
+  const avatarAssetId = typeof avatarAssetIdValue === "string" ? avatarAssetIdValue.trim() || null : null;
+
+  if (hasExplicitMode && !(INTERACTION_ROLE_AVATAR_MODES as readonly string[]).includes(avatarModeValue)) {
+    throw new InteractionRoleInputError("頭像模式無效。");
+  }
+  const avatarMode = hasExplicitMode ? avatarModeValue as InteractionRoleAvatarMode : null;
+
+  if (avatarMode === "preset") {
+    if (avatarAssetId || (avatarUploadPhase && avatarUploadPhase !== "idle")) {
+      throw new InteractionRoleInputError("預設頭像模式無效。");
+    }
+    if (!isCanonicalInteractionRolePresetUrl(rawAvatarUrl)) {
+      throw new InteractionRoleInputError("預設頭像不受支援。");
+    }
+    return rawAvatarUrl;
+  }
+
+  if (avatarMode === "custom" || avatarAssetId) {
+    if (!(["", "idle", "success"] as const).includes(avatarUploadPhase as "" | "idle" | "success")) {
+      throw new InteractionRoleInputError("自訂頭像上傳狀態無效。");
+    }
+    if (avatarAssetId) {
+      if (avatarUploadPhase !== "success") {
+        throw new InteractionRoleInputError("自訂頭像上傳尚未完成。");
+      }
+      let asset;
+      try {
+        asset = await resolveReadyImageAsset(getDb(), { vendorId, assetId: avatarAssetId });
+      } catch (error) {
+        if (error instanceof ImageAssetReferenceError) {
+          throw new InteractionRoleInputError("角色頭像圖片資產無效，請重新上傳。");
+        }
+        throw error;
+      }
+      return asset?.publicUrl ?? null;
+    }
+    if (avatarUploadPhase === "success") {
+      throw new InteractionRoleInputError("自訂頭像上傳尚未完成。");
+    }
+  }
+
+  const safeAvatarUrl = rawAvatarUrl ? parseSafeExternalHttpUrl(rawAvatarUrl) : null;
+  if (rawAvatarUrl && !safeAvatarUrl) throw new InteractionRoleInputError("角色頭像必須是安全的 HTTP 或 HTTPS 完整網址。");
+  return safeAvatarUrl;
+}
+
+async function persistInteractionRole(input: {
+  vendorId: string;
+  id: string | null;
+  data: NormalizedInteractionRole;
+}) {
+  try {
+    return input.id
+      ? await getDb().interactionRole.update({ where: { id: input.id, vendorId: input.vendorId }, data: input.data })
+      : await getDb().interactionRole.create({ data: { ...input.data, vendorId: input.vendorId } });
+  } catch (error) {
+    if (isRecordNotFoundError(error)) throw new InteractionRoleMissingError();
+    throw error;
+  }
+}
+
+function interactionRoleAuditData(data: {
+  name: string;
+  label: string;
+  roleType: string;
+  tone: string | null;
+  isActive: boolean;
+  avatarUrl: string | null;
+}) {
+  return auditSnapshot({
+    name: data.name,
+    label: data.label,
+    roleType: data.roleType,
+    tone: data.tone,
+    isActive: data.isActive,
+    hasAvatar: Boolean(data.avatarUrl),
+  });
+}
+
+async function persistAndAuditInteractionRole(input: {
+  vendorId: string;
+  auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"];
+  id: string | null;
+  data: NormalizedInteractionRole;
+}) {
+  const role = await persistInteractionRole(input);
+  await writeAuditLog({
+    vendorId: input.vendorId,
+    ...managerAuditIdentity(input.auth),
+    action: input.id ? "interaction_role_updated" : "interaction_role_created",
+    targetType: "InteractionRole",
+    targetId: role.id,
+    after: interactionRoleAuditData(input.data),
+  });
+  return role;
+}
+
+async function normalizedInteractionRoleData(vendorId: string, formData: FormData) {
+  const id = optionalText(formData, "id");
+  if (id && id.length > 128) throw new InteractionRoleInputError("角色識別碼無效。");
+  const avatarUrl = await resolveInteractionRoleAvatar(vendorId, formData);
+  const avatarModeValue = submittedInteractionRoleMode(formData);
+  const validation = normalizeInteractionRoleDraft({
+    name: text(formData, "name"),
+    avatarUrl,
+    avatarMode: avatarModeValue === "preset" ? "preset" : null,
+    label: optionalText(formData, "label"),
+    roleType: text(formData, "roleType", "official"),
+    tone: optionalText(formData, "tone"),
+    isActive: formData.get("isActive") === "on",
+  });
+  if (!validation.success) throw new InteractionRoleInputError(validation.error);
+  return validation.data;
+}
+
 export async function upsertInteractionRoleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
   const id = optionalText(formData, "id");
   const invalidRolePath = id
     ? `/interaction-roles/${encodeURIComponent(id)}/edit?error=invalid_role`
     : "/interaction-roles/new?error=invalid_role";
   if (id && id.length > 128) redirect("/interaction-roles/new?error=invalid_role");
 
-  const validation = normalizeInteractionRoleDraft({
-    name: text(formData, "name"),
-    avatarUrl: optionalText(formData, "avatarUrl"),
-    label: optionalText(formData, "label"),
-    roleType: text(formData, "roleType", "official"),
-    tone: optionalText(formData, "tone"),
-    isActive: formData.get("isActive") === "on",
-  });
-  if (!validation.success) redirect(invalidRolePath);
-  const data = validation.data;
+  let data;
+  try {
+    data = await normalizedInteractionRoleData(vendor.id, formData);
+    await persistAndAuditInteractionRole({ vendorId: vendor.id, auth, id, data });
+  } catch (error) {
+    if (error instanceof InteractionRoleInputError) redirect(invalidRolePath);
+    if (error instanceof ImageAssetReferenceError) redirect(invalidRolePath);
+    if (error instanceof InteractionRoleMissingError) redirect("/interaction-roles/new?error=missing_role");
+    throw error;
+  }
 
-  const role = await (async () => {
-    try {
-      return id
-        ? await getDb().interactionRole.update({ where: { id, vendorId: vendor.id }, data })
-        : await getDb().interactionRole.create({ data: { ...data, vendorId: vendor.id } });
-    } catch (error) {
-      if (isRecordNotFoundError(error)) {
-        redirect("/interaction-roles/new?error=missing_role");
-      }
-      throw error;
+  redirect("/interaction-roles");
+}
+
+export async function upsertInteractionRoleActionState(
+  _previousState: InteractionRoleActionState,
+  formData: FormData,
+): Promise<InteractionRoleActionState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const values = submittedInteractionRoleValues(formData);
+  try {
+    const data = await normalizedInteractionRoleData(vendor.id, formData);
+    await persistAndAuditInteractionRole({ vendorId: vendor.id, auth, id: optionalText(formData, "id"), data });
+  } catch (error) {
+    if (error instanceof InteractionRoleInputError) {
+      return { status: "error", message: error.message, values };
     }
-  })();
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: id ? "interaction_role_updated" : "interaction_role_created",
-    targetType: "InteractionRole",
-    targetId: role.id,
-    after: auditSnapshot({
-      name: data.name,
-      label: data.label,
-      roleType: data.roleType,
-      tone: data.tone,
-      isActive: data.isActive,
-      hasAvatar: Boolean(data.avatarUrl),
-    }),
-  });
+    if (error instanceof ImageAssetReferenceError) {
+      return {
+        status: "error",
+        message: "角色頭像圖片資產無效，請重新上傳。",
+        values,
+      };
+    }
+    if (error instanceof InteractionRoleMissingError) {
+      return { status: "error", message: "這個角色已不存在或不屬於目前商店。", values };
+    }
+    throw error;
+  }
 
   redirect("/interaction-roles");
 }

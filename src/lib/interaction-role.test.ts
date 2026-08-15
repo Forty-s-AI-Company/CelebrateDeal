@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  INTERACTION_ROLE_CANONICAL_PRESET_URLS,
   interactionRoleAvatarGender,
   interactionRoleAvatarUrl,
   interactionRoleLabelAfterTypeChange,
+  isCanonicalInteractionRolePresetUrl,
   normalizeInteractionRoleDraft,
 } from "./interaction-role";
 
@@ -10,6 +12,16 @@ describe("interaction role helpers", () => {
   it("keeps a selected female avatar in the female library", () => {
     expect(interactionRoleAvatarGender(interactionRoleAvatarUrl("editor-purple"))).toBe("female");
     expect(interactionRoleAvatarGender(interactionRoleAvatarUrl("host-blue"))).toBe("male");
+  });
+
+  it("accepts only exact canonical preset avatar URLs", () => {
+    const canonicalUrl = interactionRoleAvatarUrl("host-blue");
+
+    expect(isCanonicalInteractionRolePresetUrl(canonicalUrl)).toBe(true);
+    expect(INTERACTION_ROLE_CANONICAL_PRESET_URLS).toContain(canonicalUrl);
+    expect(isCanonicalInteractionRolePresetUrl(`${canonicalUrl}&extra=1`)).toBe(false);
+    expect(isCanonicalInteractionRolePresetUrl(interactionRoleAvatarUrl("invented-seed"))).toBe(false);
+    expect(isCanonicalInteractionRolePresetUrl(null)).toBe(false);
   });
 
   it("updates only an unchanged default label when the role type changes", () => {
@@ -46,5 +58,15 @@ describe("interaction role helpers", () => {
     ["long tone", { name: "角色", roleType: "official", tone: "字".repeat(501) }],
   ])("rejects %s", (_label, draft) => {
     expect(normalizeInteractionRoleDraft({ isActive: true, ...draft }).success).toBe(false);
+  });
+
+  it("rejects a non-canonical URL when preset mode is explicit", () => {
+    expect(normalizeInteractionRoleDraft({
+      name: "角色",
+      roleType: "official",
+      avatarMode: "preset",
+      avatarUrl: "https://cdn.example.test/avatar.svg",
+      isActive: true,
+    })).toEqual({ success: false, error: "預設頭像不受支援。" });
   });
 });

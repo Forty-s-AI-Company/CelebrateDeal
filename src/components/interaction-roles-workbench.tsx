@@ -2,20 +2,29 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import type { InteractionRole } from "@prisma/client";
 import { AlertTriangle, ChevronLeft, ChevronRight, MessageCircle, Plus, Radio, Save, Trash2 } from "lucide-react";
-import { deleteInteractionRoleAction, upsertInteractionRoleAction } from "@/app/actions";
+import {
+  deleteInteractionRoleAction,
+  initialInteractionRoleActionState,
+  type InteractionRoleActionState,
+  upsertInteractionRoleActionState,
+} from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import {
   INTERACTION_AVATAR_SEEDS,
+  isCanonicalInteractionRolePresetUrl,
   interactionRoleAvatarGender,
   interactionRoleAvatarUrl,
   interactionRoleLabelAfterTypeChange,
   interactionRoleTypeLabel,
+  type InteractionRoleAvatarMode,
   type InteractionAvatarGender,
 } from "@/lib/interaction-role";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import type { InteractionRoleUsage } from "@/lib/interaction-role-usage";
 
 const DEFAULT_INTERACTION_AVATAR_SEED = "host-blue";
@@ -125,49 +134,122 @@ function InteractionRoleUsageImpact({
   );
 }
 
+// 這個工作台同時承載清單、預覽、上傳與表單狀態；保留單一表單可避免切換角色時遺失草稿。
+// eslint-disable-next-line max-lines-per-function, complexity
 export function InteractionRolesWorkbench({
   roles,
   selectedRole,
   roleUsage = [],
   csrfToken,
   error,
+  initialAvatarAssetId,
 }: {
   roles: InteractionRole[];
   selectedRole?: InteractionRole | null;
   roleUsage?: InteractionRoleUsage[];
   csrfToken: string;
   error?: string | null;
+  initialAvatarAssetId?: string | null;
 }) {
+  const selectedAvatarMode: InteractionRoleAvatarMode = isCanonicalInteractionRolePresetUrl(selectedRole?.avatarUrl)
+    ? "preset"
+    : "custom";
+  const initialState: InteractionRoleActionState = {
+    ...initialInteractionRoleActionState,
+    values: {
+      ...initialInteractionRoleActionState.values,
+      id: selectedRole?.id ?? "",
+      name: selectedRole?.name ?? "",
+      avatarUrl: selectedRole?.avatarUrl ?? "",
+      avatarMode: selectedAvatarMode,
+      label: selectedRole?.label ?? interactionRoleTypeLabel(selectedRole?.roleType ?? "official"),
+      roleType: selectedRole?.roleType ?? "official",
+      tone: selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
+      isActive: selectedRole?.isActive ?? true,
+    },
+  };
+  const [actionState, formAction, pending] = useActionState(upsertInteractionRoleActionState, initialState);
+  const actionStateValues = actionState.status === "error" ? actionState.values : null;
+  const [actionStateEdited, setActionStateEdited] = useState(false);
+  const visibleActionStateValues = actionStateValues && !actionStateEdited ? actionStateValues : null;
   const [gender, setGender] = useState<InteractionAvatarGender>(() => interactionRoleAvatarGender(selectedRole?.avatarUrl));
   const allSeeds = useMemo(() => INTERACTION_AVATAR_SEEDS[gender], [gender]);
   const [selectedAvatar, setSelectedAvatar] = useState(
-    () => selectedRole?.avatarUrl ?? interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED),
+    () => actionStateValues?.avatarMode === "preset"
+      ? actionStateValues.avatarUrl
+      : selectedRole?.avatarUrl ?? interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED),
   );
-  const [roleType, setRoleType] = useState(selectedRole?.roleType ?? "official");
+  const [roleType, setRoleType] = useState(actionStateValues?.roleType ?? selectedRole?.roleType ?? "official");
   const [label, setLabel] = useState(
-    selectedRole?.label ?? interactionRoleTypeLabel(selectedRole?.roleType ?? "official"),
+    actionStateValues?.label ?? selectedRole?.label ?? interactionRoleTypeLabel(selectedRole?.roleType ?? "official"),
   );
-  const [name, setName] = useState(selectedRole?.name ?? "");
+  const [name, setName] = useState(actionStateValues?.name ?? selectedRole?.name ?? "");
   const [tone, setTone] = useState(
-    selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
+    actionStateValues?.tone ?? selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
   );
-  const [isActive, setIsActive] = useState(selectedRole?.isActive ?? true);
+  const [isActive, setIsActive] = useState(actionStateValues?.isActive ?? selectedRole?.isActive ?? true);
+  const initialAvatarMode: InteractionRoleAvatarMode = actionStateValues?.avatarMode === "preset" || actionStateValues?.avatarMode === "custom"
+    ? actionStateValues.avatarMode
+    : selectedAvatarMode;
+  const [avatarMode, setAvatarMode] = useState<InteractionRoleAvatarMode>(initialAvatarMode);
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(
+    initialAvatarMode === "custom" ? actionStateValues?.avatarUrl ?? selectedRole?.avatarUrl ?? "" : "",
+  );
+  const [customAvatarAssetId, setCustomAvatarAssetId] = useState(
+    initialAvatarMode === "custom" ? actionStateValues?.avatarAssetId ?? initialAvatarAssetId ?? "" : "",
+  );
+  const [avatarUploadBlocked, setAvatarUploadBlocked] = useState(false);
+  const avatarHydrationKey = 0;
   const isEditing = Boolean(selectedRole);
-  const previewName = name.trim() || "未命名角色";
-  const previewLabel = label.trim() || interactionRoleTypeLabel(roleType);
+  const displayedAvatarMode: InteractionRoleAvatarMode = visibleActionStateValues?.avatarMode === "preset" || visibleActionStateValues?.avatarMode === "custom"
+    ? visibleActionStateValues.avatarMode
+    : avatarMode;
+  const displayedAvatarUrl = visibleActionStateValues?.avatarUrl ?? customAvatarUrl;
+  const displayedSelectedAvatar = visibleActionStateValues?.avatarUrl ?? selectedAvatar;
+  const displayedCustomAvatarAssetId = visibleActionStateValues?.avatarAssetId ?? customAvatarAssetId;
+  const displayedName = visibleActionStateValues?.name ?? name;
+  const displayedRoleType = visibleActionStateValues?.roleType || roleType;
+  const displayedLabel = visibleActionStateValues?.label ?? label;
+  const displayedTone = visibleActionStateValues?.tone ?? tone;
+  const displayedIsActive = visibleActionStateValues?.isActive ?? isActive;
+  const displayedSafeCustomAvatarUrl = parseSafeExternalHttpUrl(displayedAvatarUrl) ?? "";
+  const displayedPreviewAvatarUrl = displayedAvatarMode === "custom"
+    ? displayedSafeCustomAvatarUrl || interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED)
+    : displayedSelectedAvatar;
+  const previewName = displayedName.trim() || "未命名角色";
+  const previewLabel = displayedLabel.trim() || interactionRoleTypeLabel(displayedRoleType);
 
   function shiftAvatar(direction: -1 | 1) {
+    setActionStateEdited(true);
+    setAvatarMode("preset");
     const currentIndex = allSeeds.findIndex((seed) => interactionRoleAvatarUrl(seed) === selectedAvatar);
     const nextIndex = ((currentIndex >= 0 ? currentIndex : 0) + direction + allSeeds.length) % allSeeds.length;
     setSelectedAvatar(interactionRoleAvatarUrl(allSeeds[nextIndex] ?? DEFAULT_INTERACTION_AVATAR_SEED));
   }
 
   function switchGender(nextGender: InteractionAvatarGender) {
+    setActionStateEdited(true);
+    setAvatarMode("preset");
     setGender(nextGender);
     setSelectedAvatar(interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS[nextGender][0] ?? DEFAULT_INTERACTION_AVATAR_SEED));
   }
 
+  function switchAvatarMode(nextMode: InteractionRoleAvatarMode) {
+    setActionStateEdited(true);
+    setAvatarMode(nextMode);
+    if (nextMode === "preset" && !isCanonicalInteractionRolePresetUrl(selectedAvatar)) {
+      setSelectedAvatar(interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED));
+    }
+  }
+
+  function updateCustomAvatar(value: MediaUploadPersistedValue) {
+    setActionStateEdited(true);
+    setCustomAvatarUrl(value.url);
+    setCustomAvatarAssetId(value.assetId);
+  }
+
   function switchRoleType(nextType: string) {
+    setActionStateEdited(true);
     setLabel((currentLabel) => interactionRoleLabelAfterTypeChange(currentLabel, roleType, nextType));
     setRoleType(nextType);
   }
@@ -232,10 +314,26 @@ export function InteractionRolesWorkbench({
           <p className="text-sm text-blue-50">向量插畫頭像，不使用真實人臉照。</p>
         </div>
 
-        <form action={upsertInteractionRoleAction} className="grid gap-6 p-5">
+        <form
+          action={formAction}
+          aria-busy={pending}
+          onSubmit={(event) => {
+            const submitter = event.nativeEvent.submitter;
+            const isDelete = submitter instanceof HTMLButtonElement && submitter.value === "delete";
+            if (avatarUploadBlocked && !isDelete) event.preventDefault();
+          }}
+          className="grid gap-6 p-5"
+        >
           <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
           {selectedRole ? <input type="hidden" name="id" value={selectedRole.id} /> : null}
-          <input type="hidden" name="avatarUrl" value={selectedAvatar} />
+          <input type="hidden" name="avatarMode" value={displayedAvatarMode} />
+          {displayedAvatarMode === "preset" ? (
+            <>
+              <input type="hidden" name="avatarUrl" value={displayedSelectedAvatar} />
+              <input type="hidden" name="avatarAssetId" value="" />
+              <input type="hidden" name="avatarUploadPhase" value="" />
+            </>
+          ) : null}
 
           {error === "invalid_role" ? (
             <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
@@ -247,6 +345,11 @@ export function InteractionRolesWorkbench({
               這個角色已不存在或不屬於目前商店，請從清單重新選擇或建立新角色。
             </p>
           ) : null}
+          {actionState.status === "error" ? (
+            <p role="alert" aria-live="assertive" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {actionState.message}
+            </p>
+          ) : null}
 
           <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             互動角色會以商家預先設定的腳本出現在直播中；前台會明確標示。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
@@ -254,6 +357,24 @@ export function InteractionRolesWorkbench({
 
           <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center shadow-inner">
+              <div className="mb-4 flex justify-center rounded-lg bg-white p-1 shadow-sm">
+                {(["preset", "custom"] as const).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => switchAvatarMode(item)}
+                    aria-pressed={displayedAvatarMode === item}
+                    className={`h-9 flex-1 rounded-md text-sm font-semibold transition ${
+                      displayedAvatarMode === item ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {item === "preset" ? "預設頭像" : "上傳頭像"}
+                  </button>
+                ))}
+              </div>
+
+              {displayedAvatarMode === "preset" ? (
+                <>
               <div className="mb-4 flex justify-center rounded-lg bg-white p-1 shadow-sm">
                 {(["male", "female"] as const).map((item) => (
                   <button
@@ -279,7 +400,7 @@ export function InteractionRolesWorkbench({
                 >
                   <ChevronLeft size={18} aria-hidden="true" />
                 </button>
-                <Image src={selectedAvatar} alt="目前選取頭像" width={150} height={150} unoptimized className="h-36 w-36 rounded-3xl bg-white p-3 shadow-lg" />
+                <Image src={displayedSelectedAvatar} alt="目前選取頭像" width={150} height={150} unoptimized className="h-36 w-36 rounded-3xl bg-white p-3 shadow-lg" />
                 <button
                   type="button"
                   onClick={() => shiftAvatar(1)}
@@ -297,7 +418,7 @@ export function InteractionRolesWorkbench({
                     <button
                       key={seed}
                       type="button"
-                      onClick={() => setSelectedAvatar(url)}
+                      onClick={() => { setActionStateEdited(true); setSelectedAvatar(url); }}
                       aria-label={`選擇頭像 ${index + 1}`}
                       aria-pressed={selectedAvatar === url}
                       className={`rounded-xl border bg-white p-1 transition hover:-translate-y-0.5 hover:shadow-sm ${
@@ -309,17 +430,42 @@ export function InteractionRolesWorkbench({
                   );
                 })}
               </div>
+                </>
+              ) : (
+                <div className="grid gap-3 text-left">
+                  <MediaUploadField
+                    key={avatarHydrationKey}
+                    kind="image"
+                    label="角色頭像"
+                    description="直接上傳角色頭像；完成後儲存表單即可套用。"
+                    defaultUrl={displayedSafeCustomAvatarUrl}
+                    defaultAssetId={displayedCustomAvatarAssetId}
+                    urlInputName="avatarUrl"
+                    assetIdInputName="avatarAssetId"
+                    statusInputName="avatarUploadPhase"
+                    allowExternalUrlFallback
+                    hydrationKey={avatarHydrationKey}
+                    onValueChange={updateCustomAvatar}
+                    onBlockingChange={setAvatarUploadBlocked}
+                  />
+                  {avatarUploadBlocked ? (
+                    <p role="alert" aria-live="assertive" className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      頭像上傳尚未完成，請完成上傳或移除未完成的檔案後再儲存。
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4">
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 暱稱
-                <input name="name" required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：直播小編" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                <input name="name" required maxLength={160} value={displayedName} onChange={(event) => { setActionStateEdited(true); setName(event.target.value); }} placeholder="例如：直播小編" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
               </label>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   角色類型
-                  <select name="roleType" value={roleType} onChange={(event) => switchRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
+                  <select name="roleType" value={displayedRoleType} onChange={(event) => switchRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
                     <option value="official">官方角色</option>
                     <option value="ai_host">AI 主持人</option>
                     <option value="system_assistant">系統助手</option>
@@ -328,26 +474,26 @@ export function InteractionRolesWorkbench({
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   顯示標籤
-                  <input name="label" required maxLength={80} value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                  <input name="label" required maxLength={80} value={displayedLabel} onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 語氣設定
-                <textarea name="tone" maxLength={500} value={tone} onChange={(event) => setTone(event.target.value)} rows={4} className="rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                <textarea name="tone" maxLength={500} value={displayedTone} onChange={(event) => { setActionStateEdited(true); setTone(event.target.value); }} rows={4} className="rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
               </label>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input name="isActive" type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+                <input name="isActive" type="checkbox" checked={displayedIsActive} onChange={(event) => { setActionStateEdited(true); setIsActive(event.target.checked); }} className="h-4 w-4 accent-blue-600" />
                 啟用角色
               </label>
             </div>
           </div>
 
           <InteractionRolePreview
-            avatarUrl={selectedAvatar}
+            avatarUrl={displayedPreviewAvatarUrl}
             name={previewName}
             label={previewLabel}
-            tone={tone.trim()}
-            isActive={isActive}
+            tone={displayedTone.trim()}
+            isActive={displayedIsActive}
           />
 
           {selectedRole ? <InteractionRoleUsageImpact roleUsage={roleUsage} isActive={isActive} /> : null}
@@ -356,6 +502,8 @@ export function InteractionRolesWorkbench({
             {selectedRole ? (
               <FormSubmitButton
                 formAction={deleteInteractionRoleAction}
+                name="intent"
+                value="delete"
                 formNoValidate
                 confirmMessage={`確定刪除「${selectedRole.name}」？${roleUsage.length > 0 ? `目前有 ${roleUsage.length} 個腳本引用；` : ""}既有事件中的角色會改顯示為官方系統。`}
                 pendingChildren={<>刪除中…</>}
@@ -367,7 +515,7 @@ export function InteractionRolesWorkbench({
               </FormSubmitButton>
             ) : null}
             <FormSubmitButton
-              formAction={upsertInteractionRoleAction}
+              disabled={avatarUploadBlocked}
               pendingChildren={<>儲存中…</>}
               pendingMessage={selectedRole ? "正在儲存互動角色" : "正在新增互動角色"}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark"

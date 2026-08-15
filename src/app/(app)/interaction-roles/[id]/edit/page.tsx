@@ -37,6 +37,12 @@ export default async function EditInteractionRolePage({
     searchParams,
   ]);
   if (!role) notFound();
+  const avatarAsset = role.avatarUrl
+    ? await getDb().imageAsset.findFirst({
+        where: { vendorId: vendor.id, status: "ready", publicUrl: role.avatarUrl },
+        select: { id: true },
+      })
+    : null;
 
   return (
     <>
@@ -47,6 +53,7 @@ export default async function EditInteractionRolePage({
         selectedRole={role}
         roleUsage={summarizeInteractionRoleUsage(roleReferences)}
         csrfToken={csrfToken}
+        initialAvatarAssetId={avatarAsset?.id ?? ""}
         error={query.error === "invalid_role" ? query.error : null}
       />
     </>

@@ -360,11 +360,13 @@ import {
   upsertTemplateAction,
   upsertVideoAction,
   upsertInteractionRoleAction,
+  upsertInteractionRoleActionState,
   upsertInteractionScriptAction,
   verifyMfaAction,
   saveBrandSettingsAction,
   saveBrandSettingsActionState,
   type BrandSettingsActionState,
+  type InteractionRoleActionState,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import { RefundProviderError } from "@/lib/payment-providers/types";
@@ -3383,6 +3385,151 @@ describe("interaction role actions", () => {
       targetId: "role-new",
       after: expect.objectContaining({ hasAvatar: true }),
     }));
+    const auditAfter = (mocks.writeAuditLog.mock.calls[0]?.[0] as { after?: Record<string, unknown> }).after;
+    expect(auditAfter).not.toHaveProperty("avatarUrl");
+    expect(auditAfter).not.toHaveProperty("avatarAssetId");
+  });
+
+  it("rejects a non-canonical preset without redirecting the state action", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "preset");
+    formData.set("avatarUrl", "https://cdn.example.test/not-a-preset.svg");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      values: expect.objectContaining({ avatarUrl: "https://cdn.example.test/not-a-preset.svg", avatarMode: "preset" }),
+    }));
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("rejects a legacy explicit preset with a non-canonical URL", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "preset");
+    formData.set("avatarUrl", "https://cdn.example.test/not-a-preset.svg");
+
+    await expect(upsertInteractionRoleAction(formData)).rejects.toThrow(
+      "redirect:/interaction-roles/new?error=invalid_role",
+    );
+
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported custom upload phase before resolving an asset", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarAssetId", "asset-1");
+    formData.set("avatarUploadPhase", "uploading");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result.status).toBe("error");
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns a state error for an uploading custom avatar without an asset", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarUploadPhase", "uploading");
+    formData.delete("avatarAssetId");
+    formData.delete("avatarUrl");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result.status).toBe("error");
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("returns a state error for a successful custom upload without an asset or safe fallback", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarUploadPhase", "success");
+    formData.delete("avatarAssetId");
+    formData.delete("avatarUrl");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result.status).toBe("error");
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleUpdate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("uses the tenant-ready asset publicUrl before the submitted URL", async () => {
+    mocks.imageAssetFindFirst.mockResolvedValueOnce({ id: "asset-1", publicUrl: "https://cdn.example.test/ready-avatar.svg" });
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarAssetId", "asset-1");
+    formData.set("avatarUploadPhase", "success");
+    formData.set("avatarUrl", "javascript:alert(1)");
+
+    await expect(upsertInteractionRoleActionState({} as InteractionRoleActionState, formData)).rejects.toThrow(
+      "redirect:/interaction-roles",
+    );
+
+    expect(mocks.imageAssetFindFirst).toHaveBeenCalledWith({
+      where: { id: "asset-1", vendorId: "vendor-1", status: "ready" },
+      select: { id: true, publicUrl: true },
+    });
+    expect(mocks.interactionRoleCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ avatarUrl: "https://cdn.example.test/ready-avatar.svg" }),
+    });
+  });
+
+  it("returns a safe state error for a missing tenant asset and preserves no unsafe URL", async () => {
+    mocks.imageAssetFindFirst.mockResolvedValueOnce(null);
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarAssetId", "asset-foreign");
+    formData.set("avatarUploadPhase", "success");
+    formData.set("avatarUrl", "javascript:alert(1)");
+
+    const result = await upsertInteractionRoleActionState({} as InteractionRoleActionState, formData);
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      values: expect.objectContaining({ avatarUrl: "", avatarAssetId: "asset-foreign" }),
+    }));
+    expect(mocks.interactionRoleCreate).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("rethrows infrastructure failures while resolving a custom asset", async () => {
+    mocks.imageAssetFindFirst.mockRejectedValueOnce(new Error("image asset database unavailable"));
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarAssetId", "asset-1");
+    formData.set("avatarUploadPhase", "success");
+
+    await expect(upsertInteractionRoleActionState({} as InteractionRoleActionState, formData)).rejects.toThrow(
+      "image asset database unavailable",
+    );
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("allows a safe custom URL when no asset is submitted", async () => {
+    const formData = interactionRoleFormData();
+    formData.set("avatarMode", "custom");
+    formData.set("avatarUrl", "https://cdn.example.test/custom-avatar.svg");
+
+    await expect(upsertInteractionRoleActionState({} as InteractionRoleActionState, formData)).rejects.toThrow(
+      "redirect:/interaction-roles",
+    );
+
+    expect(mocks.imageAssetFindFirst).not.toHaveBeenCalled();
+    expect(mocks.interactionRoleCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ avatarUrl: "https://cdn.example.test/custom-avatar.svg" }),
+    });
   });
 
   it.each([
