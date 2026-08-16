@@ -9,11 +9,19 @@ import {
   revealEmailDeliveryPayload,
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
+import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   createFormSubmissionVerificationToken,
   createFormSubmissionVerificationUrl,
 } from "@/lib/form-submission-verification";
+import {
+  postLiveFollowupIdempotencyPrefix,
+  resolveLiveCompletionAt,
+  resolvePostLiveDeliveryAt,
+  rotatingPostLivePageSkip,
+  stablePostLiveFollowupDeliveryId,
+} from "@/lib/post-live-followup";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -41,6 +49,21 @@ export type RegistrationConfirmationInput = {
 
 export type LiveReminderDeliveryInput = RegistrationConfirmationInput & {
   reminderOffsetMinutes: number;
+};
+
+export type PostLiveFollowupDeliveryInput = RegistrationConfirmationInput & {
+  rule: {
+    id: string;
+    vendorId: string;
+    liveId: string;
+    trigger: string;
+    offsetMinutes: number;
+    isActive: boolean;
+  };
+  streamMode: string;
+  endedAt: Date | null;
+  videoDurationSec: number | null;
+  verificationStatus: string;
 };
 
 export type LiveReminderReconciliationGuard = {
@@ -370,6 +393,237 @@ export async function ensureLiveReminderDelivery(
   }
 }
 
+/** Queues one post-live snapshot for one verified registration and rule revision. */
+export async function ensurePostLiveFollowupDelivery(
+  input: PostLiveFollowupDeliveryInput,
+  now = new Date(),
+) {
+  const template = input.template;
+  const rule = input.rule;
+  if (
+    input.verificationStatus !== "VERIFIED"
+    || !rule.isActive
+    || rule.vendorId !== input.vendorId
+    || rule.liveId !== input.liveId
+    || rule.trigger !== "post_live_followup"
+    || !template?.isActive
+    || template.vendorId !== input.vendorId
+    || template.channel !== "email"
+    || template.trigger !== "post_live_followup"
+    || !template.subject
+    || !hasOnlySupportedMessageTemplateVariables(template.subject)
+    || !hasOnlySupportedMessageTemplateVariables(template.body)
+  ) return { status: "not_configured" as const };
+
+  const completionAt = resolveLiveCompletionAt({
+    streamMode: input.streamMode,
+    scheduledAt: input.liveScheduledAt,
+    endedAt: input.endedAt,
+    videoDurationSec: input.videoDurationSec,
+  });
+  const deliveryAt = resolvePostLiveDeliveryAt({
+    streamMode: input.streamMode,
+    scheduledAt: input.liveScheduledAt,
+    endedAt: input.endedAt,
+    videoDurationSec: input.videoDurationSec,
+  }, rule.offsetMinutes);
+  if (!completionAt || !deliveryAt || deliveryAt > now) return { status: "not_due" as const };
+
+  const deliveryId = stablePostLiveFollowupDeliveryId({
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    liveTitle: input.liveTitle,
+    liveScheduledAt: input.liveScheduledAt,
+    formSubmissionId: input.formSubmissionId,
+    ruleId: rule.id,
+    offsetMinutes: rule.offsetMinutes,
+    completionAt,
+    template: { id: template.id, subject: template.subject, body: template.body },
+  });
+  const variables = {
+    name: input.recipientName,
+    live_title: input.liveTitle,
+    live_start_at: formatLiveStartAt(input.liveScheduledAt),
+    vendor_name: input.vendorName,
+    unsubscribe_url: createEmailUnsubscribeUrl(deliveryId),
+  };
+  const protectedPayload = protectEmailDeliveryPayload({
+    recipientEmail: input.recipientEmail,
+    subject: renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
+    body: renderTemplate(template.body, variables).trim(),
+  }, { vendorId: input.vendorId, deliveryId });
+  const db = getDb();
+  const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
+  const [suppression, blacklist] = await Promise.all([
+    db.emailSuppression.findUnique({
+      where: {
+        vendorId_recipientHash: {
+          vendorId: input.vendorId,
+          recipientHash: protectedPayload.recipientHash,
+        },
+      },
+      select: { id: true, resubscribedAt: true },
+    }),
+    normalizedEmail
+      ? db.blacklist.findFirst({
+          where: {
+            vendorId: input.vendorId,
+            identifierType: "email",
+            identifier: normalizedEmail,
+            isActive: true,
+            unblockedAt: null,
+          },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+  ]);
+  const isSuppressed = Boolean(suppression && !suppression.resubscribedAt);
+  const isBlacklisted = Boolean(blacklist);
+  const idempotencyPrefix = postLiveFollowupIdempotencyPrefix(rule.id);
+  const idempotencyKey = `${idempotencyPrefix}${deliveryId}`;
+  const supersedeOlder: Prisma.EmailDeliveryUpdateManyArgs = {
+    where: {
+      vendorId: input.vendorId,
+      sourceLiveId: input.liveId,
+      sourceFormSubmissionId: input.formSubmissionId,
+      trigger: "post_live_followup",
+      id: { not: deliveryId },
+      idempotencyKey: { startsWith: idempotencyPrefix },
+      status: { in: ["queued", "failed"] },
+    },
+    data: {
+      status: "superseded",
+      nextAttemptAt: null,
+      claimedAt: null,
+      lastErrorCode: "config_superseded",
+    },
+  };
+
+  try {
+    const delivery = await db.$transaction(async (tx) => {
+      const alreadySent = await tx.emailDelivery.findFirst({
+        where: {
+          vendorId: input.vendorId,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          idempotencyKey: { startsWith: idempotencyPrefix },
+          status: "sent",
+        },
+        select: { id: true },
+      });
+      if (alreadySent) return { id: alreadySent.id, status: "sent", nextAttemptAt: null };
+      await tx.emailDelivery.updateMany(supersedeOlder);
+      return tx.emailDelivery.create({
+        data: {
+          id: deliveryId,
+          vendorId: input.vendorId,
+          sourceTemplateId: template.id,
+          sourceLiveId: input.liveId,
+          sourceFormSubmissionId: input.formSubmissionId,
+          trigger: "post_live_followup",
+          ...protectedPayload,
+          idempotencyKey,
+          status: isSuppressed || isBlacklisted ? "suppressed" : "queued",
+          maxAttempts: MAX_ATTEMPTS,
+          nextAttemptAt: isSuppressed || isBlacklisted ? null : now,
+          lastErrorCode: isBlacklisted ? "recipient_blacklisted" : isSuppressed ? "recipient_suppressed" : null,
+        },
+        select: { id: true, status: true, nextAttemptAt: true },
+      });
+    }, { isolationLevel: "Serializable" });
+    return {
+      status: delivery.status === "sent"
+        ? "already_sent" as const
+        : delivery.status === "suppressed" ? "suppressed" as const : "queued" as const,
+      deliveryId: delivery.id,
+      nextAttemptAt: delivery.nextAttemptAt,
+    };
+  } catch (error) {
+    if (!isUniqueConflict(error)) throw error;
+    const existing = await db.emailDelivery.findUnique({
+      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey } },
+      select: { id: true, status: true, nextAttemptAt: true },
+    });
+    if (!existing) throw error;
+    return {
+      status: "duplicate" as const,
+      deliveryId: existing.id,
+      deliveryStatus: existing.status,
+      nextAttemptAt: existing.nextAttemptAt,
+    };
+  }
+}
+
+export async function processDuePostLiveFollowups(
+  options: { now?: Date; ruleLimit?: number; recipientLimitPerRule?: number } = {},
+) {
+  const now = options.now ?? new Date();
+  const ruleLimit = Math.min(Math.max(options.ruleLimit ?? 20, 1), 50);
+  const recipientLimit = Math.min(Math.max(options.recipientLimitPerRule ?? 100, 1), 250);
+  const db = getDb();
+  const ruleWhere = { trigger: "post_live_followup", isActive: true } as const;
+  const ruleCount = await db.liveNotificationRule.count({ where: ruleWhere });
+  const rules = await db.liveNotificationRule.findMany({
+    where: ruleWhere,
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    skip: rotatingPostLivePageSkip(ruleCount, ruleLimit, now),
+    take: ruleLimit,
+    include: {
+      messageTemplate: true,
+      live: { include: { vendor: true, video: true } },
+    },
+  });
+  const results: Array<{ status: string }> = [];
+
+  for (const rule of rules) {
+    const live = rule.live;
+    const deliveryAt = resolvePostLiveDeliveryAt({
+      streamMode: live.streamMode,
+      scheduledAt: live.scheduledAt,
+      endedAt: live.endedAt,
+      videoDurationSec: live.video?.durationSec ?? null,
+    }, rule.offsetMinutes);
+    if (!deliveryAt || deliveryAt > now) {
+      results.push({ status: "not_due" });
+      continue;
+    }
+    const submissionWhere = {
+      liveId: live.id,
+      verificationStatus: "VERIFIED" as const,
+      form: { vendorId: rule.vendorId },
+    };
+    const submissionCount = await db.formSubmission.count({ where: submissionWhere });
+    const submissions = await db.formSubmission.findMany({
+      where: submissionWhere,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      skip: rotatingPostLivePageSkip(submissionCount, recipientLimit, now),
+      take: recipientLimit,
+      select: { id: true, name: true, email: true, verificationStatus: true },
+    });
+    for (const submission of submissions) {
+      const result = await ensurePostLiveFollowupDelivery({
+        vendorId: rule.vendorId,
+        vendorName: live.vendor.name,
+        liveId: live.id,
+        liveTitle: live.title,
+        formSubmissionId: submission.id,
+        recipientName: submission.name,
+        recipientEmail: submission.email,
+        liveScheduledAt: live.scheduledAt,
+        template: rule.messageTemplate,
+        rule,
+        streamMode: live.streamMode,
+        endedAt: live.endedAt,
+        videoDurationSec: live.video?.durationSec ?? null,
+        verificationStatus: submission.verificationStatus,
+      }, now);
+      results.push({ status: result.status });
+    }
+  }
+  return results;
+}
+
 function stableVerificationDeliveryId(input: Pick<
   FormSubmissionVerificationDeliveryInput,
   "vendorId" | "formSubmissionId" | "verificationVersion"
@@ -492,7 +746,7 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "formSubmission">;
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "formSubmission" | "blacklist">;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
@@ -545,6 +799,107 @@ async function isCurrentLiveReminderDelivery(
   }) === delivery.id;
 }
 
+async function isCurrentPostLiveFollowupDelivery(
+  delivery: EmailDeliverySnapshotIdentity,
+  now: Date,
+  database: DeliverySnapshotDatabase,
+) {
+  if (delivery.trigger !== "post_live_followup") return true;
+  if (!delivery.sourceLiveId || !delivery.sourceFormSubmissionId) return false;
+  const [live, submission] = await Promise.all([
+    database.live.findFirst({
+      where: { id: delivery.sourceLiveId, vendorId: delivery.vendorId },
+      select: {
+        id: true,
+        vendorId: true,
+        title: true,
+        scheduledAt: true,
+        endedAt: true,
+        streamMode: true,
+        video: { select: { durationSec: true } },
+        notificationRules: {
+          where: { trigger: "post_live_followup", isActive: true },
+          select: {
+            id: true,
+            vendorId: true,
+            liveId: true,
+            trigger: true,
+            offsetMinutes: true,
+            isActive: true,
+            messageTemplate: {
+              select: { id: true, vendorId: true, channel: true, trigger: true, subject: true, body: true, isActive: true },
+            },
+          },
+        },
+      },
+    }),
+    database.formSubmission.findFirst({
+      where: {
+        id: delivery.sourceFormSubmissionId,
+        liveId: delivery.sourceLiveId,
+        verificationStatus: "VERIFIED",
+        form: { vendorId: delivery.vendorId },
+      },
+      select: { id: true, email: true },
+    }),
+  ]);
+  if (!live || !submission) return false;
+  const normalizedEmail = normalizeBlacklistIdentifier("email", submission.email);
+  if (!normalizedEmail) return false;
+  const blacklist = await database.blacklist.findFirst({
+    where: {
+      vendorId: delivery.vendorId,
+      identifierType: "email",
+      identifier: normalizedEmail,
+      isActive: true,
+      unblockedAt: null,
+    },
+    select: { id: true },
+  });
+  if (blacklist) return false;
+  const completionAt = resolveLiveCompletionAt({
+    streamMode: live.streamMode,
+    scheduledAt: live.scheduledAt,
+    endedAt: live.endedAt,
+    videoDurationSec: live.video?.durationSec ?? null,
+  });
+  if (!completionAt) return false;
+
+  return live.notificationRules.some((rule) => {
+    const template = rule.messageTemplate;
+    const deliveryAt = resolvePostLiveDeliveryAt({
+      streamMode: live.streamMode,
+      scheduledAt: live.scheduledAt,
+      endedAt: live.endedAt,
+      videoDurationSec: live.video?.durationSec ?? null,
+    }, rule.offsetMinutes);
+    if (
+      !deliveryAt
+      || deliveryAt > now
+      || rule.vendorId !== delivery.vendorId
+      || rule.liveId !== live.id
+      || !template.isActive
+      || template.vendorId !== delivery.vendorId
+      || template.channel !== "email"
+      || template.trigger !== "post_live_followup"
+      || !template.subject
+      || !hasOnlySupportedMessageTemplateVariables(template.subject)
+      || !hasOnlySupportedMessageTemplateVariables(template.body)
+    ) return false;
+    return stablePostLiveFollowupDeliveryId({
+      vendorId: delivery.vendorId,
+      liveId: live.id,
+      liveTitle: live.title,
+      liveScheduledAt: live.scheduledAt,
+      formSubmissionId: submission.id,
+      ruleId: rule.id,
+      offsetMinutes: rule.offsetMinutes,
+      completionAt,
+      template: { id: template.id, subject: template.subject, body: template.body },
+    }) === delivery.id;
+  });
+}
+
 async function isCurrentFormVerificationDelivery(
   delivery: EmailDeliverySnapshotIdentity,
   now: Date,
@@ -589,6 +944,7 @@ export async function isCurrentEmailDeliverySnapshot(
   database: DeliverySnapshotDatabase = getDb(),
 ) {
   return await isCurrentLiveReminderDelivery(delivery, now, database)
+    && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
     && await isCurrentFormVerificationDelivery(delivery, now, database);
 }
 

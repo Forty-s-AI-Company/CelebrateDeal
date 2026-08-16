@@ -9,13 +9,16 @@ const mocks = vi.hoisted(() => ({
     emailDelivery: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       updateMany: vi.fn(),
     },
     emailSuppression: { findUnique: vi.fn() },
+    blacklist: { findFirst: vi.fn() },
     liveReminderReconciliationJob: { findFirst: vi.fn() },
+    liveNotificationRule: { count: vi.fn(), findMany: vi.fn() },
     live: { findFirst: vi.fn() },
-    formSubmission: { findFirst: vi.fn() },
+    formSubmission: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -33,8 +36,10 @@ import {
   dispatchEmailDelivery,
   ensureFormSubmissionVerificationDelivery,
   ensureLiveReminderDelivery,
+  ensurePostLiveFollowupDelivery,
   ensureRegistrationConfirmationDelivery,
   processDueEmailDeliveries,
+  processDuePostLiveFollowups,
 } from "./email-delivery";
 
 const input = {
@@ -62,6 +67,10 @@ beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "g7-07-email-delivery-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
+  mocks.db.blacklist.findFirst.mockResolvedValue(null);
+  mocks.db.liveNotificationRule.count.mockResolvedValue(0);
+  mocks.db.formSubmission.count.mockResolvedValue(0);
+  mocks.db.emailDelivery.findFirst.mockResolvedValue(null);
   mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 1 });
   mocks.db.$transaction.mockImplementation(async (callback: (db: typeof mocks.db) => unknown) => callback(mocks.db));
   mocks.writeAuditLog.mockResolvedValue(undefined);
@@ -355,6 +364,199 @@ describe("email delivery outbox", () => {
     expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
   });
 
+  it("queues one due post-live follow-up and supersedes only older revisions of the same rule", async () => {
+    const template = {
+      ...input.template,
+      id: "followup-template-1",
+      trigger: "post_live_followup",
+      subject: "{{name}}，課後資料來了",
+    };
+    const rule = {
+      id: "rule-1",
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      trigger: "post_live_followup",
+      offsetMinutes: 30,
+      isActive: true,
+    };
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id,
+      status: data.status,
+      nextAttemptAt: data.nextAttemptAt,
+    }));
+
+    await expect(ensurePostLiveFollowupDelivery({
+      ...input,
+      template,
+      rule,
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    }, new Date("2026-08-08T06:00:00.000Z"))).resolves.toMatchObject({
+      status: "queued",
+      deliveryId: expect.stringMatching(/^email_[a-f0-9]{32}$/u),
+    });
+    const create = mocks.db.emailDelivery.create.mock.calls[0]?.[0];
+    expect(create.data).toMatchObject({
+      trigger: "post_live_followup",
+      sourceLiveId: "live-1",
+      sourceFormSubmissionId: "submission-1",
+      idempotencyKey: expect.stringMatching(/^post-live-followup\/rule-1\/email_/u),
+    });
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        vendorId: "vendor-1",
+        idempotencyKey: { startsWith: "post-live-followup/rule-1/" },
+      }),
+      data: expect.objectContaining({ status: "superseded" }),
+    }));
+  });
+
+  it("fails closed for unverified, cross-vendor, or not-yet-due post-live recipients", async () => {
+    const base = {
+      ...input,
+      template: { ...input.template, trigger: "post_live_followup" },
+      rule: {
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 30,
+        isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    };
+    await expect(ensurePostLiveFollowupDelivery({ ...base, verificationStatus: "UNVERIFIED" }, new Date("2026-08-08T06:00:00.000Z")))
+      .resolves.toEqual({ status: "not_configured" });
+    await expect(ensurePostLiveFollowupDelivery({ ...base, rule: { ...base.rule, vendorId: "vendor-2" } }, new Date("2026-08-08T06:00:00.000Z")))
+      .resolves.toEqual({ status: "not_configured" });
+    await expect(ensurePostLiveFollowupDelivery(base, new Date("2026-08-08T05:20:00.000Z")))
+      .resolves.toEqual({ status: "not_due" });
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  it("records an active vendor email blacklist as a suppressed follow-up", async () => {
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id,
+      status: data.status,
+      nextAttemptAt: data.nextAttemptAt,
+    }));
+    await expect(ensurePostLiveFollowupDelivery({
+      ...input,
+      template: { ...input.template, trigger: "post_live_followup" },
+      rule: {
+        id: "rule-1", vendorId: "vendor-1", liveId: "live-1",
+        trigger: "post_live_followup", offsetMinutes: 0, isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    }, new Date("2026-08-08T06:00:00.000Z"))).resolves.toMatchObject({ status: "suppressed" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        identifierType: "email",
+        identifier: "lead@example.test",
+        isActive: true,
+        unblockedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(mocks.db.emailDelivery.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: "suppressed",
+        nextAttemptAt: null,
+        lastErrorCode: "recipient_blacklisted",
+      }),
+    }));
+  });
+
+  it("never creates a second follow-up revision after that rule was sent", async () => {
+    mocks.db.emailDelivery.findFirst.mockResolvedValue({ id: "already-sent" });
+    await expect(ensurePostLiveFollowupDelivery({
+      ...input,
+      template: { ...input.template, trigger: "post_live_followup" },
+      rule: {
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 0,
+        isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    }, new Date("2026-08-08T06:00:00.000Z"))).resolves.toMatchObject({
+      status: "already_sent",
+      deliveryId: "already-sent",
+    });
+    expect(mocks.db.emailDelivery.create).not.toHaveBeenCalled();
+  });
+
+  it("scans only active rules and same-vendor verified registrations with bounded batches", async () => {
+    const template = { ...input.template, id: "followup-template-1", trigger: "post_live_followup" };
+    mocks.db.liveNotificationRule.findMany.mockResolvedValue([{
+      id: "rule-1",
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      trigger: "post_live_followup",
+      offsetMinutes: 0,
+      isActive: true,
+      updatedAt: new Date(0),
+      messageTemplate: template,
+      live: {
+        id: "live-1",
+        title: "新品直播",
+        scheduledAt: new Date("2026-08-08T04:00:00.000Z"),
+        endedAt: null,
+        streamMode: "vod",
+        video: { durationSec: 3_600 },
+        vendor: { name: "測試商家" },
+      },
+    }]);
+    mocks.db.liveNotificationRule.count.mockResolvedValue(21);
+    mocks.db.formSubmission.count.mockResolvedValue(11);
+    mocks.db.formSubmission.findMany.mockResolvedValue([{
+      id: "submission-1",
+      name: "王小明",
+      email: "lead@example.test",
+      verificationStatus: "VERIFIED",
+    }]);
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id,
+      status: data.status,
+      nextAttemptAt: data.nextAttemptAt,
+    }));
+
+    await expect(processDuePostLiveFollowups({
+      now: new Date("2026-08-08T06:00:00.000Z"),
+      ruleLimit: 5,
+      recipientLimitPerRule: 10,
+    })).resolves.toEqual([{ status: "queued" }]);
+    expect(mocks.db.liveNotificationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { trigger: "post_live_followup", isActive: true },
+      skip: expect.any(Number),
+      take: 5,
+    }));
+    expect(mocks.db.formSubmission.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        liveId: "live-1",
+        verificationStatus: "VERIFIED",
+        form: { vendorId: "vendor-1" },
+      },
+      skip: expect.any(Number),
+      take: 10,
+    }));
+  });
+
   it("records an already-suppressed recipient without scheduling provider work", async () => {
     mocks.db.emailSuppression.findUnique.mockResolvedValue({ id: "suppression-1", resubscribedAt: null });
     mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: data.id, status: data.status }));
@@ -464,6 +666,103 @@ describe("email delivery outbox", () => {
         lastErrorCode: "config_superseded",
       },
     });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("supersedes a stale post-live snapshot before provider send", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({
+      trigger: "post_live_followup",
+      idempotencyKey: "post-live-followup/rule-1/delivery-1",
+    }));
+    mocks.db.live.findFirst.mockResolvedValue({
+      id: "live-1",
+      vendorId: "vendor-1",
+      title: "新品直播",
+      scheduledAt: new Date("2026-08-08T04:00:00.000Z"),
+      endedAt: null,
+      streamMode: "vod",
+      video: { durationSec: 3_600 },
+      notificationRules: [{
+        id: "rule-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 0,
+        isActive: true,
+        messageTemplate: {
+          id: "template-1",
+          vendorId: "vendor-1",
+          channel: "email",
+          trigger: "post_live_followup",
+          subject: "已修改的課後主旨",
+          body: "已修改的內容",
+          isActive: true,
+        },
+      }],
+    });
+    mocks.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", email: "lead@example.test" });
+
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });
+    expect(mocks.db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: "submission-1",
+        liveId: "live-1",
+        verificationStatus: "VERIFIED",
+        form: { vendorId: "vendor-1" },
+      }),
+    }));
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("stops a current follow-up when the recipient is blacklisted after it was queued", async () => {
+    const now = new Date("2026-08-08T06:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const template = {
+      ...input.template,
+      id: "followup-template-1",
+      trigger: "post_live_followup",
+      subject: "{{name}}，課後資料",
+    };
+    const rule = {
+      id: "rule-1", vendorId: "vendor-1", liveId: "live-1",
+      trigger: "post_live_followup", offsetMinutes: 0, isActive: true,
+    };
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id,
+      status: data.status,
+      nextAttemptAt: data.nextAttemptAt,
+    }));
+    const queued = await ensurePostLiveFollowupDelivery({
+      ...input,
+      template,
+      rule,
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    }, now);
+    if (!("deliveryId" in queued)) throw new Error("Expected a queued follow-up");
+    const createData = mocks.db.emailDelivery.create.mock.calls[0]?.[0].data;
+
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ ...createData, status: "queued" }));
+    mocks.db.live.findFirst.mockResolvedValue({
+      id: "live-1",
+      vendorId: "vendor-1",
+      title: "新品直播",
+      scheduledAt: input.liveScheduledAt,
+      endedAt: null,
+      streamMode: "vod",
+      video: { durationSec: 3_600 },
+      notificationRules: [{ ...rule, messageTemplate: template }],
+    });
+    mocks.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", email: "lead@example.test" });
+    mocks.db.blacklist.findFirst.mockResolvedValue({ id: "blacklist-1" });
+
+    await expect(dispatchEmailDelivery(queued.deliveryId)).resolves.toEqual({ status: "superseded" });
+    expect(mocks.db.blacklist.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ identifier: "lead@example.test", vendorId: "vendor-1" }),
+    }));
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 

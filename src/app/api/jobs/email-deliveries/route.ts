@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { processDueEmailDeliveries } from "@/lib/email-delivery";
+import { processDueEmailDeliveries, processDuePostLiveFollowups } from "@/lib/email-delivery";
 import { processLiveReminderReconciliationJobs } from "@/lib/live-reminder-reconciliation";
 import { captureOperationalError } from "@/lib/monitoring";
 
@@ -28,12 +28,20 @@ const SAFE_RECONCILIATION_STATUSES = new Set([
 
 async function processEmailDeliveries() {
   try {
+    // Materialize due post-live follow-ups before claiming delivery rows.
+    const followups = await processDuePostLiveFollowups();
     // Reconcile current reminder revisions first so newly due snapshots can be
     // claimed by the delivery worker in the same bounded cron invocation.
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
     return NextResponse.json({
       ok: true,
+      followups: followups.length,
+      followupResults: followups.slice(0, 20).map((result) => ({
+        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "already_sent"]).has(result.status)
+          ? result.status
+          : "unknown",
+      })),
       reconciled: reconciliations.length,
       reconciliationResults: reconciliations.slice(0, 20).map((result) => ({
         status: SAFE_RECONCILIATION_STATUSES.has(result.status) ? result.status : "unknown",

@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   processDueEmailDeliveries: vi.fn(),
+  processDuePostLiveFollowups: vi.fn(),
   processLiveReminderReconciliationJobs: vi.fn(),
   captureOperationalError: vi.fn(),
 }));
 
-vi.mock("@/lib/email-delivery", () => ({ processDueEmailDeliveries: mocks.processDueEmailDeliveries }));
+vi.mock("@/lib/email-delivery", () => ({
+  processDueEmailDeliveries: mocks.processDueEmailDeliveries,
+  processDuePostLiveFollowups: mocks.processDuePostLiveFollowups,
+}));
 vi.mock("@/lib/live-reminder-reconciliation", () => ({
   processLiveReminderReconciliationJobs: mocks.processLiveReminderReconciliationJobs,
 }));
@@ -19,6 +23,7 @@ beforeEach(() => {
   vi.stubEnv("JOB_SECRET", "g7-07-job-secret");
   vi.stubEnv("CRON_SECRET", "g7-21-cron-secret");
   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
+  mocks.processDuePostLiveFollowups.mockResolvedValue([]);
   mocks.processDueEmailDeliveries.mockResolvedValue([]);
 });
 
@@ -38,6 +43,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       expect(response.status).toBe(401);
     }
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
+    expect(mocks.processDuePostLiveFollowups).not.toHaveBeenCalled();
     expect(mocks.processLiveReminderReconciliationJobs).not.toHaveBeenCalled();
   });
 
@@ -50,12 +56,18 @@ describe("POST /api/jobs/email-deliveries", () => {
       { jobId: "private-job-1", status: "completed" },
       { jobId: "private-job-2", status: "unexpected" },
     ]);
+    mocks.processDuePostLiveFollowups.mockResolvedValue([
+      { deliveryId: "private-followup-1", status: "queued" },
+      { deliveryId: "private-followup-2", status: "unexpected" },
+    ]);
     const response = await POST(request("g7-07-job-secret"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
       ok: true,
+      followups: 2,
+      followupResults: [{ status: "queued" }, { status: "unknown" }],
       reconciled: 2,
       reconciliationResults: [{ status: "completed" }, { status: "unknown" }],
       processed: 2,
@@ -63,6 +75,9 @@ describe("POST /api/jobs/email-deliveries", () => {
     });
     expect(JSON.stringify(body)).not.toContain("private-delivery");
     expect(JSON.stringify(body)).not.toContain("private-job");
+    expect(JSON.stringify(body)).not.toContain("private-followup");
+    expect(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0]);
     expect(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]);
   });
