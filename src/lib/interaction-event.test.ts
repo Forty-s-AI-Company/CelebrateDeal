@@ -84,6 +84,20 @@ describe("normalizeInteractionEventDraft", () => {
     expect(normalizeInteractionEventDraft({ eventType: "chat_message", triggerSec: -1, message: "hello" }).success).toBe(false);
   });
 
+  it("requires a role for every scheduled message event", () => {
+    expect(normalizeInteractionEventDraft({
+      eventType: "chat_message",
+      triggerSec: 10,
+      message: "請選擇角色",
+      roleId: "",
+    })).toEqual({ success: false, error: "第 1 個事件必須選擇排程角色。" });
+    expect(normalizeInteractionEventDraft({
+      eventType: "reminder",
+      triggerSec: 20,
+      message: "請記得回來看優惠",
+    })).toEqual({ success: false, error: "第 1 個事件必須選擇排程角色。" });
+  });
+
   it("uses transparent merchant-facing event labels", () => {
     expect(interactionEventTypeLabel("chat_message")).toBe("官方留言");
     expect(interactionEventTypeLabel("product_spotlight")).toBe("商品聚焦");

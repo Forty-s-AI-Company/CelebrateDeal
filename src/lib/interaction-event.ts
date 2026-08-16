@@ -171,6 +171,9 @@ export function normalizeInteractionEventDraft(
   }
 
   if (eventType === "chat_message" || eventType === "reminder") {
+    if (!roleId) {
+      return { success: false, error: `${eventLabel}必須選擇排程角色。` };
+    }
     return normalizeMessageEvent({ input, eventType, eventLabel, suppliedTitle, roleId });
   }
   if (eventType === "product_spotlight") {

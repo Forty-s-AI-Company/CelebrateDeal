@@ -38,6 +38,7 @@ import {
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
+import { isEligibleScheduledRole } from "@/lib/live-chat-contract";
 import {
   INTERACTION_ROLE_AVATAR_MODES,
   isCanonicalInteractionRolePresetUrl,
@@ -163,6 +164,16 @@ function isAffiliatePayoutMutationConflict(error: unknown) {
 
 function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
+}
+
+class InteractionScriptInvalidEventError extends Error {}
+class InteractionScriptReferenceError extends Error {}
+class InteractionScriptMissingError extends Error {}
+class InteractionScriptDuplicateSourceMissingError extends Error {}
+
+function isInteractionScriptWriteConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    && (error.code === "P2002" || error.code === "P2034");
 }
 
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
@@ -1654,23 +1665,6 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   if ([id, ...referencedRoleIds, ...referencedProductIds].some((value) => value && value.length > 128)) {
     redirect(invalidReferencePath);
   }
-  const [referencedRoles, referencedProducts] = await Promise.all([
-    referencedRoleIds.length > 0
-      ? db.interactionRole.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true },
-          select: { id: true },
-        })
-      : Promise.resolve([]),
-    referencedProductIds.length > 0
-      ? db.product.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
-          select: { id: true },
-        })
-      : Promise.resolve([]),
-  ]);
-  if (referencedRoles.length !== referencedRoleIds.length || referencedProducts.length !== referencedProductIds.length) {
-    redirect(invalidReferencePath);
-  }
 
   const name = text(formData, "name");
   const description = optionalText(formData, "description");
@@ -1680,29 +1674,82 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   }
   const data = { name, description, status };
 
-  let scriptId = id;
+  let scriptId: string;
   if (id) {
-    try {
-      await db.$transaction([
-        db.interactionScript.update({ where: { id, vendorId: vendor.id }, data }),
-        db.interactionEvent.deleteMany({ where: { scriptId: id } }),
-        ...events.map((event) => db.interactionEvent.create({ data: { ...event, scriptId: id } })),
+    scriptId = id;
+  }
+
+  try {
+    scriptId = await db.$transaction(async (tx) => {
+      // Read all tenant and lifecycle references again inside the same
+      // Serializable transaction as the script/event writes. The values read
+      // before this boundary are form-derived only and are never trusted as a
+      // reference authorization decision.
+      const [referencedRoles, referencedProducts] = await Promise.all([
+        referencedRoleIds.length > 0
+          ? tx.interactionRole.findMany({
+              where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true, isScheduled: true },
+              select: {
+                id: true,
+                vendorId: true,
+                name: true,
+                avatarUrl: true,
+                label: true,
+                roleType: true,
+                isActive: true,
+                isScheduled: true,
+              },
+            })
+          : Promise.resolve([]),
+        referencedProductIds.length > 0
+          ? tx.product.findMany({
+              where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
+              select: { id: true },
+            })
+          : Promise.resolve([]),
       ]);
-    } catch (error) {
-      if (isRecordNotFoundError(error)) {
-        redirect("/interaction-scripts?error=missing_script");
+      if (
+        referencedRoles.length !== referencedRoleIds.length
+        || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
+        || referencedProducts.length !== referencedProductIds.length
+      ) {
+        throw new InteractionScriptReferenceError();
       }
-      throw error;
+
+      if (id) {
+        try {
+          await tx.interactionScript.update({ where: { id, vendorId: vendor.id }, data });
+          await tx.interactionEvent.deleteMany({ where: { scriptId: id } });
+          for (const event of events) {
+            await tx.interactionEvent.create({ data: { ...event, scriptId: id } });
+          }
+        } catch (error) {
+          if (isRecordNotFoundError(error)) throw new InteractionScriptMissingError();
+          throw error;
+        }
+        return id;
+      }
+
+      const script = await tx.interactionScript.create({
+        data: {
+          ...data,
+          vendorId: vendor.id,
+          events: { create: events },
+        },
+      });
+      return script.id;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof InteractionScriptMissingError || isRecordNotFoundError(error)) {
+      redirect("/interaction-scripts?error=missing_script");
     }
-  } else {
-    const script = await db.interactionScript.create({
-      data: {
-        ...data,
-        vendorId: vendor.id,
-        events: { create: events },
-      },
-    });
-    scriptId = script.id;
+    if (error instanceof InteractionScriptReferenceError) {
+      redirect(invalidReferencePath);
+    }
+    if (isInteractionScriptWriteConflict(error)) {
+      redirect("/interaction-scripts?error=conflict");
+    }
+    throw error;
   }
 
   await writeAuditLog({
@@ -1765,79 +1812,126 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
   const id = text(formData, "id");
   if (!id || id.length > 128) redirect("/interaction-scripts");
   const db = getDb();
-  const script = await db.interactionScript.findFirst({
-    where: { id, vendorId: vendor.id },
-    include: { events: { orderBy: { triggerSec: "asc" } } },
-  });
-  if (!script) {
-    redirect("/interaction-scripts");
-  }
+  let duplicateResult: {
+    duplicateId: string;
+    sourceScriptId: string;
+    duplicateName: string;
+    eventCount: number;
+  };
 
-  const eventResults = script.events.map((event, index) => normalizeInteractionEventDraft({
-    eventType: event.eventType,
-    triggerSec: event.triggerSec,
-    title: event.title,
-    message: event.message,
-    productId: event.productId,
-    ctaLabel: event.ctaLabel,
-    ctaUrl: event.ctaUrl,
-    roleId: event.roleId,
-  }, index));
-  if (eventResults.some((result) => !result.success)) {
-    redirect("/interaction-scripts?error=invalid_event");
-  }
-  const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
-  const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
-  const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
-  const [referencedRoles, referencedProducts] = await Promise.all([
-    referencedRoleIds.length > 0
-      ? db.interactionRole.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true },
-          select: { id: true },
-        })
-      : Promise.resolve([]),
-    referencedProductIds.length > 0
-      ? db.product.findMany({
-          where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
-          select: { id: true },
-        })
-      : Promise.resolve([]),
-  ]);
-  if (referencedRoles.length !== referencedRoleIds.length || referencedProducts.length !== referencedProductIds.length) {
-    redirect("/interaction-scripts?error=invalid_reference");
-  }
-  const duplicateNameSuffix = " 複本";
-  const duplicateName = `${script.name.slice(0, 160 - duplicateNameSuffix.length)}${duplicateNameSuffix}`;
+  try {
+    duplicateResult = await db.$transaction(async (tx) => {
+      // The source, its events, all references, and the duplicate are read or
+      // written through this one transaction. No source snapshot from outside
+      // the transaction can authorize a duplicate.
+      const script = await tx.interactionScript.findFirst({
+        where: { id, vendorId: vendor.id },
+        include: { events: { orderBy: { triggerSec: "asc" } } },
+      });
+      if (!script) throw new InteractionScriptDuplicateSourceMissingError();
 
-  const duplicate = await db.interactionScript.create({
-    data: {
-      vendorId: vendor.id,
-      name: duplicateName,
-      description: script.description,
-      status: "draft",
-      events: {
-        create: normalizedEvents.map((event, index) => ({
-          eventType: event.eventType,
-          triggerSec: event.triggerSec,
-          title: event.title,
-          message: event.message,
-          productId: event.productId,
-          ctaLabel: event.ctaLabel,
-          ctaUrl: event.ctaUrl,
-          roleId: event.roleId,
-          metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
-        })),
-      },
-    },
-  });
+      const eventResults = script.events.map((event, index) => normalizeInteractionEventDraft({
+        eventType: event.eventType,
+        triggerSec: event.triggerSec,
+        title: event.title,
+        message: event.message,
+        productId: event.productId,
+        ctaLabel: event.ctaLabel,
+        ctaUrl: event.ctaUrl,
+        roleId: event.roleId,
+      }, index));
+      if (eventResults.some((result) => !result.success)) {
+        throw new InteractionScriptInvalidEventError();
+      }
+      const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
+      const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
+      const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
+      const [referencedRoles, referencedProducts] = await Promise.all([
+        referencedRoleIds.length > 0
+          ? tx.interactionRole.findMany({
+              where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true, isScheduled: true },
+              select: {
+                id: true,
+                vendorId: true,
+                name: true,
+                avatarUrl: true,
+                label: true,
+                roleType: true,
+                isActive: true,
+                isScheduled: true,
+              },
+            })
+          : Promise.resolve([]),
+        referencedProductIds.length > 0
+          ? tx.product.findMany({
+              where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
+              select: { id: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      if (
+        referencedRoles.length !== referencedRoleIds.length
+        || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
+        || referencedProducts.length !== referencedProductIds.length
+      ) {
+        throw new InteractionScriptReferenceError();
+      }
+      const duplicateNameSuffix = " 複本";
+      const duplicateName = `${script.name.slice(0, 160 - duplicateNameSuffix.length)}${duplicateNameSuffix}`;
+      const duplicate = await tx.interactionScript.create({
+        data: {
+          vendorId: vendor.id,
+          name: duplicateName,
+          description: script.description,
+          status: "draft",
+          events: {
+            create: normalizedEvents.map((event, index) => ({
+              eventType: event.eventType,
+              triggerSec: event.triggerSec,
+              title: event.title,
+              message: event.message,
+              productId: event.productId,
+              ctaLabel: event.ctaLabel,
+              ctaUrl: event.ctaUrl,
+              roleId: event.roleId,
+              metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
+            })),
+          },
+        },
+      });
+      return {
+        duplicateId: duplicate.id,
+        sourceScriptId: script.id,
+        duplicateName,
+        eventCount: normalizedEvents.length,
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof InteractionScriptInvalidEventError) {
+      redirect("/interaction-scripts?error=invalid_event");
+    }
+    if (error instanceof InteractionScriptDuplicateSourceMissingError) {
+      redirect("/interaction-scripts");
+    }
+    if (isRecordNotFoundError(error)) {
+      redirect("/interaction-scripts?error=missing_script");
+    }
+    if (error instanceof InteractionScriptReferenceError) {
+      redirect("/interaction-scripts?error=invalid_reference");
+    }
+    if (isInteractionScriptWriteConflict(error)) {
+      redirect("/interaction-scripts?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: vendor.id,
     ...auditActor,
     action: "interaction_script_duplicated",
     targetType: "InteractionScript",
-    targetId: duplicate.id,
-    after: auditSnapshot({ sourceScriptId: script.id, name: duplicateName, status: "draft", eventCount: normalizedEvents.length }),
+    targetId: duplicateResult.duplicateId,
+    after: auditSnapshot({ sourceScriptId: duplicateResult.sourceScriptId, name: duplicateResult.duplicateName, status: "draft", eventCount: duplicateResult.eventCount }),
   });
 
   revalidatePath("/interaction-scripts");

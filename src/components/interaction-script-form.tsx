@@ -18,6 +18,7 @@ import {
   parseInteractionTriggerSeconds,
   reorderInteractionEvents,
 } from "@/lib/interaction-timeline";
+import { normalizePresentationRole } from "@/lib/interaction-role";
 
 type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
@@ -96,9 +97,21 @@ function initialTimelineEvents(
     if (event.eventType === "product_spotlight" && !products[0]) return [];
     return [{
       ...event,
-      roleId: event.eventType === "chat_message" || event.eventType === "reminder" ? roles[0]?.id : null,
+      roleId: event.eventType === "chat_message" || event.eventType === "reminder" ? roles[0]?.id ?? null : null,
       productId: event.eventType === "product_spotlight" ? products[0]?.id : null,
     }];
+  });
+}
+
+function scheduledRolesOnly(roles: InteractionRole[]) {
+  return roles.filter((role) => {
+    if (!role.isActive || !role.isScheduled) return false;
+    try {
+      normalizePresentationRole(role.roleType);
+      return true;
+    } catch {
+      return false;
+    }
   });
 }
 
@@ -224,7 +237,8 @@ function renderInteractionEventRow({
   finishDrag: () => void;
 }) {
   const isMessageEvent = event.eventType === "chat_message" || event.eventType === "reminder";
-  const selectedRole = roles.find((role) => role.id === event.roleId) ?? roles[0];
+  const selectedRole = roles.find((role) => role.id === event.roleId);
+  const invalidRoleReference = isMessageEvent && Boolean(event.roleId) && !selectedRole;
   const selectedProduct = products.find((product) => product.id === event.productId) ?? products[0];
 
   return (
@@ -274,21 +288,24 @@ function renderInteractionEventRow({
           <>
             <div className="grid gap-2 sm:grid-cols-[minmax(150px,0.45fr)_1fr]">
               <label className="grid gap-1 text-xs font-semibold text-slate-600">
-                官方腳本角色
+                排程角色
                 <span className="flex items-center gap-2">
                   {selectedRole?.avatarUrl ? <Image src={selectedRole.avatarUrl} alt="" width={32} height={32} unoptimized className="h-8 w-8 rounded-full object-cover" /> : null}
                   <select
                     name="roleId"
-                    value={event.roleId ?? selectedRole?.id ?? ""}
+                    value={selectedRole?.id ?? ""}
                     onChange={(selectEvent) => updateEvent(index, { roleId: selectEvent.target.value || null })}
                     aria-label={`第 ${index + 1} 個事件角色`}
+                    aria-invalid={invalidRoleReference || !selectedRole}
+                    required
                     className="h-11 min-w-0 flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
                   >
-                    <option value="">官方系統</option>
+                    <option value="">{invalidRoleReference ? "原角色無效，請重新選擇" : "請選擇排程角色"}</option>
                     {roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.label}</option>)}
                   </select>
                 </span>
               </label>
+              {invalidRoleReference ? <p role="alert" className="text-xs font-medium text-amber-700">此事件原本引用的角色目前無法使用，請重新選擇排程角色。</p> : null}
               <label className="grid gap-1 text-xs font-semibold text-slate-600">
                 訊息內容
                 <textarea
@@ -303,7 +320,7 @@ function renderInteractionEventRow({
                   rows={2}
                   required
                   className="min-h-11 w-full resize-y rounded-md border border-border px-3 py-2 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
-                  placeholder="輸入會公開顯示的官方腳本訊息"
+                  placeholder="輸入會公開顯示的排程訊息"
                 />
               </label>
             </div>
@@ -409,7 +426,8 @@ export function InteractionScriptForm({
   csrfToken: string;
   error?: string;
 }) {
-  const initialEvents = useMemo(() => initialTimelineEvents(script, roles, products), [products, roles, script]);
+  const availableRoles = useMemo(() => scheduledRolesOnly(roles), [roles]);
+  const initialEvents = useMemo(() => initialTimelineEvents(script, availableRoles, products), [availableRoles, products, script]);
   const [events, setEvents] = useState<TimelineEvent[]>(initialEvents);
   const [timeInputs, setTimeInputs] = useState(() => initialEvents.map((event) => secondsToClock(event.triggerSec)));
   const [timeErrors, setTimeErrors] = useState<Record<number, string>>({});
@@ -422,7 +440,7 @@ export function InteractionScriptForm({
       if (event.eventType === "product_spotlight" && !products[0]) return [];
       return [{
         ...event,
-        roleId: event.eventType === "chat_message" || event.eventType === "reminder" ? roles[0]?.id : null,
+        roleId: event.eventType === "chat_message" || event.eventType === "reminder" ? availableRoles[0]?.id ?? null : null,
         productId: event.eventType === "product_spotlight" ? products[0]?.id : null,
       }];
     });
@@ -446,7 +464,7 @@ export function InteractionScriptForm({
       ? { eventType, triggerSec: 0, title: "商品聚焦", productId: products[0]?.id }
       : eventType === "cta_switch"
         ? { eventType, triggerSec: 0, title: "查看優惠", ctaLabel: "查看優惠", ctaUrl: "" }
-        : { eventType, triggerSec: 0, title: eventType === "reminder" ? "新提醒" : "新留言", message: "", roleId: roles[0]?.id };
+        : { eventType, triggerSec: 0, title: eventType === "reminder" ? "新提醒" : "新留言", message: "", roleId: availableRoles[0]?.id ?? null };
     setEvents((current) => [
       event,
       ...current,
@@ -466,7 +484,7 @@ export function InteractionScriptForm({
             eventType,
             title: eventType === "reminder" ? "提醒" : "官方留言",
             message: current?.message ?? "",
-            roleId: current?.roleId ?? roles[0]?.id,
+            roleId: current?.roleId ?? availableRoles[0]?.id ?? null,
             productId: null,
             ctaLabel: null,
             ctaUrl: null,
@@ -658,7 +676,7 @@ export function InteractionScriptForm({
                 event,
                 index,
                 eventCount: events.length,
-                roles,
+                roles: availableRoles,
                 products,
                 timeInput: timeInputs[index],
                 timeError: timeErrors[index],

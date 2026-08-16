@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { InteractionEvent, InteractionRole } from "@prisma/client";
 
 const hookState = vi.hoisted(() => ({
   cursor: 0,
@@ -61,7 +62,44 @@ function textContent(value: unknown): string {
   return isElementNode(value) ? textContent(value.props.children) : "";
 }
 
-function renderForm() {
+function role(overrides: Partial<InteractionRole> = {}): InteractionRole {
+  return {
+    id: "role-available",
+    vendorId: "test-fixture-vendor-1",
+    name: "可用排程角色",
+    avatarUrl: null,
+    label: "官方角色",
+    roleType: "official",
+    tone: null,
+    isActive: true,
+    isSimulated: true,
+    isScheduled: true,
+    createdAt: new Date("2026-07-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function invalidRoleEvent(): InteractionEvent {
+  return {
+    id: "event-invalid-role",
+    scriptId: "test-fixture-script-1",
+    roleId: "removed-role",
+    eventType: "chat_message",
+    triggerSec: 5,
+    title: "舊角色留言",
+    message: "這則留言仍保留，但角色已失效。",
+    productId: null,
+    ctaLabel: null,
+    ctaUrl: null,
+    metadata: null,
+    isSimulated: true,
+    createdAt: new Date("2026-07-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  };
+}
+
+function renderForm({ roles = [], events = [] }: { roles?: InteractionRole[]; events?: InteractionEvent[] } = {}) {
   hookState.cursor = 0;
   return InteractionScriptForm({
     script: {
@@ -72,9 +110,9 @@ function renderForm() {
       status: "draft",
       createdAt: new Date("2026-07-01T00:00:00.000Z"),
       updatedAt: new Date("2026-07-01T00:00:00.000Z"),
-      events: [],
+      events,
     },
-    roles: [],
+    roles,
     products: [],
     boundLives: [{
       id: "test-fixture-live-1",
@@ -159,10 +197,10 @@ describe("InteractionScriptForm", () => {
   });
 });
 
-function renderNewForm() {
+function renderNewForm(roles: InteractionRole[] = []) {
   hookState.cursor = 0;
   return InteractionScriptForm({
-    roles: [],
+    roles,
     products: [{
       id: "test-product-1",
       vendorId: "test-fixture-vendor-1",
@@ -242,5 +280,43 @@ describe("InteractionScriptForm deterministic edit states", () => {
     (deleteButton?.props.onClick as () => void)();
     const removed = renderNewForm();
     expect(findElements(removed, (candidate) => candidate.props["data-testid"] === "interaction-message-row")).toHaveLength(5);
+  });
+});
+
+describe("InteractionScriptForm scheduled role selection", () => {
+  beforeEach(() => {
+    hookState.cursor = 0;
+    hookState.values = [];
+    vi.unstubAllGlobals();
+  });
+
+  it("lists only active scheduled roles that can be normalized canonically", () => {
+    const form = renderNewForm([
+      role({ id: "role-available", name: "可用觀眾", roleType: "audience", isScheduled: true }),
+      role({ id: "role-unscheduled", name: "未排程角色", isScheduled: false }),
+      role({ id: "role-inactive", name: "停用角色", isActive: false }),
+      role({ id: "role-unknown", name: "未知角色", roleType: "legacy-invalid" }),
+      role({ id: "role-legacy", name: "已知舊主持", roleType: "ai_host" }),
+    ]);
+    const roleOptions = findElements(form, (candidate) => candidate.type === "option");
+
+    expect(textContent(roleOptions)).toContain("可用觀眾");
+    expect(textContent(roleOptions)).toContain("已知舊主持");
+    expect(textContent(roleOptions)).not.toContain("未排程角色");
+    expect(textContent(roleOptions)).not.toContain("停用角色");
+    expect(textContent(roleOptions)).not.toContain("未知角色");
+  });
+
+  it("does not fall back to an official role when an existing message role is invalid", () => {
+    const form = renderForm({
+      roles: [role({ id: "role-available", name: "目前可用角色" })],
+      events: [invalidRoleEvent()],
+    });
+    const roleSelect = findElements(form, (candidate) => candidate.type === "select" && candidate.props.name === "roleId").at(0);
+
+    expect(roleSelect?.props.value).toBe("");
+    expect(textContent(roleSelect)).toContain("原角色無效，請重新選擇");
+    expect(textContent(form)).toContain("目前無法使用，請重新選擇排程角色");
+    expect(textContent(form)).not.toContain("官方系統");
   });
 });

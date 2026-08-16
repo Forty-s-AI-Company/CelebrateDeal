@@ -552,11 +552,36 @@ function interactionScriptFormData(triggerSec: string, ctaUrl?: string) {
   formData.set("triggerSec", triggerSec);
   formData.set("eventTitle", "測試留言");
   formData.set("message", ctaUrl === undefined ? "測試留言內容" : "");
-  formData.set("roleId", "");
+  formData.set("roleId", ctaUrl === undefined ? "role-1" : "");
   formData.set("productId", "");
   formData.set("ctaLabel", ctaUrl === undefined ? "" : "查看優惠");
   formData.set("ctaUrl", ctaUrl ?? "");
   return formData;
+}
+
+function scheduledInteractionRoleRecord(
+  id = "role-1",
+  overrides: Partial<{
+    vendorId: string;
+    name: string;
+    avatarUrl: string | null;
+    label: string;
+    roleType: string;
+    isActive: boolean;
+    isScheduled: boolean;
+  }> = {},
+) {
+  return {
+    id,
+    vendorId: "vendor-1",
+    name: "直播小編",
+    avatarUrl: null,
+    label: "官方角色",
+    roleType: "official",
+    isActive: true,
+    isScheduled: true,
+    ...overrides,
+  };
 }
 
 function unbindInteractionScriptFormData(liveId = "live-1", scriptId = "script-1") {
@@ -711,7 +736,7 @@ beforeEach(() => {
   });
   mocks.upsertUsageSnapshot.mockResolvedValue({ snapshot: {}, record: { id: "usage-snapshot-1" } });
   mocks.paymentTransactionUpdate.mockResolvedValue({ ...transaction, refundedAmountCents: 10_000, status: "refunded" });
-  mocks.interactionRoleFindMany.mockResolvedValue([]);
+  mocks.interactionRoleFindMany.mockResolvedValue([scheduledInteractionRoleRecord()]);
   mocks.interactionRoleCreate.mockResolvedValue({ id: "role-new" });
   mocks.interactionRoleCreateMany.mockResolvedValue({ count: 0 });
   mocks.interactionRoleDelete.mockResolvedValue({
@@ -792,11 +817,24 @@ beforeEach(() => {
       create: mocks.coursePayoutCreate,
       updateMany: mocks.coursePayoutUpdateMany,
     },
+    interactionEvent: {
+      create: mocks.interactionEventCreate,
+      deleteMany: mocks.interactionEventDeleteMany,
+    },
+    interactionRole: {
+      findMany: mocks.interactionRoleFindMany,
+    },
+    interactionScript: {
+      create: mocks.interactionScriptCreate,
+      findFirst: mocks.interactionScriptFindFirst,
+      update: mocks.interactionScriptUpdate,
+    },
     auditLog: { create: mocks.auditLogCreate },
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
     live: { create: mocks.liveCreate, findMany: mocks.liveFindMany, update: mocks.liveUpdate },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
+    product: { findMany: mocks.productFindMany },
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -3753,7 +3791,7 @@ describe("importSystemRolesAction", () => {
 describe("upsertInteractionScriptAction", () => {
   it("stores role and product references only after current-vendor verification", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
-    mocks.interactionRoleFindMany.mockResolvedValue([{ id: "role-1" }]);
+    mocks.interactionRoleFindMany.mockResolvedValue([scheduledInteractionRoleRecord()]);
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
     const formData = interactionScriptFormData("10");
     formData.set("roleId", "role-1");
@@ -3769,8 +3807,17 @@ describe("upsertInteractionScriptAction", () => {
     await expect(upsertInteractionScriptAction(formData)).rejects.toThrow("redirect:/interaction-scripts");
 
     expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", id: { in: ["role-1"] }, isActive: true },
-      select: { id: true },
+      where: { vendorId: "vendor-1", id: { in: ["role-1"] }, isActive: true, isScheduled: true },
+      select: {
+        id: true,
+        vendorId: true,
+        name: true,
+        avatarUrl: true,
+        label: true,
+        roleType: true,
+        isActive: true,
+        isScheduled: true,
+      },
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", id: { in: ["product-1"] }, isActive: true, fulfillmentTypeConfirmed: true },
@@ -3807,7 +3854,36 @@ describe("upsertInteractionScriptAction", () => {
     );
 
     expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+  });
+
+  it("rejects a message without a role before any reference lookup", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = interactionScriptFormData("10");
+    formData.set("roleId", "");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "redirect:/interaction-scripts/new?error=invalid_event",
+    );
+    expect(mocks.interactionRoleFindMany).not.toHaveBeenCalled();
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["non-scheduled", { isScheduled: false }],
+    ["inactive", { isActive: false }],
+    ["cross-tenant", { vendorId: "vendor-2" }],
+    ["unknown legacy-invalid", { roleType: "legacy-invalid" }],
+  ])("rejects a %s role before script persistence", async (_label, overrides) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionRoleFindMany.mockResolvedValue([scheduledInteractionRoleRecord("role-1", overrides)]);
+    const formData = interactionScriptFormData("10");
+
+    await expect(upsertInteractionScriptAction(formData)).rejects.toThrow(
+      "redirect:/interaction-scripts/new?error=invalid_reference",
+    );
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
   });
 
   it("rejects an unbounded event batch before database access", async () => {
@@ -3876,18 +3952,13 @@ describe("upsertInteractionScriptAction", () => {
 
   it("atomically replaces an existing script timeline and audits the published state", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
-    mocks.transaction.mockResolvedValueOnce([]);
     const formData = interactionScriptFormData("10");
     formData.set("id", "script-1");
     formData.set("status", "published");
 
     await expect(upsertInteractionScriptAction(formData)).rejects.toThrow("redirect:/interaction-scripts");
 
-    expect(mocks.transaction).toHaveBeenCalledWith([
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-    ]);
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
     expect(mocks.interactionScriptUpdate).toHaveBeenCalledWith({
       where: { id: "script-1", vendorId: "vendor-1" },
       data: { name: "測試留言組", description: null, status: "published" },
@@ -3909,11 +3980,25 @@ describe("upsertInteractionScriptAction", () => {
       "redirect:/interaction-scripts?error=missing_script",
     );
 
-    expect(mocks.interactionScriptUpdate).toHaveBeenCalledWith({
-      where: { id: "stale-script", vendorId: "vendor-1" },
-      data: expect.anything(),
-    });
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+    expect(mocks.interactionScriptUpdate).not.toHaveBeenCalled();
+    expect(mocks.interactionEventDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.interactionEventCreate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each(["P2002", "P2034"])("fails safely on a Prisma %s transaction conflict without auditing", async (code) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.transaction.mockRejectedValueOnce(Object.assign(new Error("database conflict details"), { code }));
+
+    await expect(upsertInteractionScriptAction(interactionScriptFormData("10"))).rejects.toThrow(
+      "redirect:/interaction-scripts?error=conflict",
+    );
+
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.interactionScriptUpdate).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.redirect.mock.calls)).not.toContain("database conflict details");
   });
 });
 
@@ -3938,7 +4023,7 @@ describe("interaction script lifecycle actions", () => {
       productId: null,
       ctaLabel: null,
       ctaUrl: null,
-      roleId: null,
+      roleId: "role-1",
       metadata: null,
     }],
   };
@@ -3954,6 +4039,7 @@ describe("interaction script lifecycle actions", () => {
       where: { id: "script-1", vendorId: "vendor-1" },
       include: { events: { orderBy: { triggerSec: "asc" } } },
     });
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
     expect(mocks.interactionScriptCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         vendorId: "vendor-1",
@@ -3967,6 +4053,46 @@ describe("interaction script lifecycle actions", () => {
       targetId: "script-copy",
       after: expect.objectContaining({ sourceScriptId: "script-1", status: "draft", eventCount: 1 }),
     }));
+  });
+
+  it.each([
+    ["missing role", { roleId: null }, undefined, "invalid_event"],
+    ["inactive role", { roleId: "role-1" }, { isActive: false }, "invalid_reference"],
+    ["non-scheduled role", { roleId: "role-1" }, { isScheduled: false }, "invalid_reference"],
+    ["unknown role type", { roleId: "role-1" }, { roleType: "unknown-role" }, "invalid_reference"],
+    ["cross-tenant role", { roleId: "foreign-role" }, null, "invalid_reference"],
+  ])("fails closed when a source script has a %s", async (_label, eventOverrides, roleOverrides, expectedError) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.interactionScriptFindFirst.mockResolvedValue({
+      ...sourceScript,
+      events: [{ ...sourceScript.events[0], ...eventOverrides }],
+    });
+    if (roleOverrides === null) {
+      mocks.interactionRoleFindMany.mockResolvedValue([]);
+    } else if (roleOverrides) {
+      mocks.interactionRoleFindMany.mockResolvedValue([scheduledInteractionRoleRecord("role-1", roleOverrides)]);
+    }
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(
+      `redirect:/interaction-scripts?error=${expectedError}`,
+    );
+
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("fails safely on a Prisma serialization conflict without auditing or exposing the raw error", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.transaction.mockRejectedValueOnce(Object.assign(new Error("serialization detail"), { code: "P2034" }));
+
+    await expect(duplicateInteractionScriptAction(scriptIdFormData())).rejects.toThrow(
+      "redirect:/interaction-scripts?error=conflict",
+    );
+
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.redirect.mock.calls)).not.toContain("serialization detail");
   });
 
   it("does not duplicate a legacy script containing an unsafe CTA", async () => {
@@ -4003,8 +4129,17 @@ describe("interaction script lifecycle actions", () => {
     );
 
     expect(mocks.interactionRoleFindMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", id: { in: ["foreign-role"] }, isActive: true },
-      select: { id: true },
+      where: { vendorId: "vendor-1", id: { in: ["foreign-role"] }, isActive: true, isScheduled: true },
+      select: {
+        id: true,
+        vendorId: true,
+        name: true,
+        avatarUrl: true,
+        label: true,
+        roleType: true,
+        isActive: true,
+        isScheduled: true,
+      },
     });
     expect(mocks.interactionScriptCreate).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
