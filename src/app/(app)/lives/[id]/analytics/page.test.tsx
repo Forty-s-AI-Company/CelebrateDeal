@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   liveFindFirst: vi.fn(),
   analyticsFindMany: vi.fn(),
   formSubmissionCount: vi.fn(),
+  liveChatMessageCount: vi.fn(),
+  interactionEventCount: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
@@ -14,6 +16,8 @@ vi.mock("@/lib/db", () => ({
     live: { findFirst: mocks.liveFindFirst },
     analyticsEvent: { findMany: mocks.analyticsFindMany },
     formSubmission: { count: mocks.formSubmissionCount },
+    liveChatMessage: { count: mocks.liveChatMessageCount },
+    interactionEvent: { count: mocks.interactionEventCount },
   }),
 }));
 
@@ -22,6 +26,7 @@ import LiveAnalyticsPage from "./page";
 const live = {
   id: "live-current",
   title: "夏季直播",
+  interactionScript: { id: "script-current", vendorId: "vendor-current", status: "published" },
   affiliateClicks: [{
     id: "affiliate-click-1",
     referralCode: "summer-partner",
@@ -49,6 +54,8 @@ beforeEach(() => {
   mocks.requireVendor.mockResolvedValue({ id: "vendor-current" });
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.formSubmissionCount.mockResolvedValue(4);
+  mocks.liveChatMessageCount.mockResolvedValue(3);
+  mocks.interactionEventCount.mockResolvedValue(7);
   mocks.analyticsFindMany
     .mockResolvedValueOnce(verifiedAnalyticsSessions)
     .mockResolvedValueOnce(recentEvents);
@@ -76,6 +83,26 @@ describe("/lives/[id]/analytics route", () => {
     expect(html).toContain('aria-label="商品點擊：8，相對觀看轉換率 20%"');
     expect(html).toContain('aria-label="CTA 點擊：6，相對觀看轉換率 15%"');
     expect(html).toContain('aria-label="名單：4，相對觀看轉換率 10%"');
+    expect(mocks.liveChatMessageCount).toHaveBeenCalledWith({ where: {
+      vendorId: "vendor-current",
+      liveId: live.id,
+      source: "viewer",
+      isSimulated: false,
+      status: "visible",
+      formSubmissionId: { not: null },
+      roleId: null,
+    } });
+    expect(mocks.interactionEventCount).toHaveBeenCalledWith({ where: {
+      eventType: { in: ["chat_message", "reminder"] },
+      message: { not: null },
+      isSimulated: true,
+      script: { id: "script-current", vendorId: "vendor-current", status: "published" },
+      role: { is: { vendorId: "vendor-current", isActive: true, isScheduled: true } },
+    } });
+    expect(html).toMatch(/真實觀眾留言<\/p><p[^>]*>3<\/p>/);
+    expect(html).toMatch(/排程留言腳本<\/p><p[^>]*>7<\/p>/);
+    expect(html).toContain("設定數，不列入轉換率");
+    expect(html).toContain(`href="/lives/${live.id}/analytics/messages/export"`);
   });
 
   it("keeps the recent-event list limited to 30 live-scoped events", async () => {

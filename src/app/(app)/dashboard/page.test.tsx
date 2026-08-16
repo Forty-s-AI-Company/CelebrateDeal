@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   liveCount: vi.fn(),
   productCount: vi.fn(),
   leadCount: vi.fn(),
+  liveChatMessageCount: vi.fn(),
+  interactionEventCount: vi.fn(),
   analyticsFindMany: vi.fn(),
   liveFindMany: vi.fn(),
   affiliateFindMany: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock("@/lib/db", () => ({
     live: { count: mocks.liveCount, findMany: mocks.liveFindMany },
     product: { count: mocks.productCount },
     formSubmission: { count: mocks.leadCount },
+    liveChatMessage: { count: mocks.liveChatMessageCount },
+    interactionEvent: { count: mocks.interactionEventCount },
     analyticsEvent: { findMany: mocks.analyticsFindMany },
     affiliate: { findMany: mocks.affiliateFindMany },
     vendorUsageLimit: { findUnique: mocks.usageFindUnique },
@@ -66,6 +70,8 @@ beforeEach(() => {
   mocks.liveCount.mockResolvedValue(2);
   mocks.productCount.mockResolvedValue(3);
   mocks.leadCount.mockResolvedValue(4);
+  mocks.liveChatMessageCount.mockResolvedValue(9);
+  mocks.interactionEventCount.mockResolvedValue(12);
   mocks.analyticsFindMany.mockResolvedValue([
     ...Array.from({ length: 100 }, (_, index) => ({ eventType: "page_view", visitorId: `view-session-${index}` })),
     ...Array.from({ length: 20 }, (_, index) => ({ eventType: "product_click", visitorId: `product-session-${index}` })),
@@ -124,6 +130,22 @@ describe("/dashboard route", () => {
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     });
+    expect(mocks.liveChatMessageCount).toHaveBeenCalledWith({ where: {
+      vendorId: vendor.id,
+      source: "viewer",
+      isSimulated: false,
+      status: "visible",
+      formSubmissionId: { not: null },
+      roleId: null,
+      createdAt: { gte: expect.any(Date) },
+    } });
+    expect(mocks.interactionEventCount).toHaveBeenCalledWith({ where: {
+      eventType: { in: ["chat_message", "reminder"] },
+      message: { not: null },
+      isSimulated: true,
+      script: { vendorId: vendor.id, status: "published" },
+      role: { is: { vendorId: vendor.id, isActive: true, isScheduled: true } },
+    } });
     expect(mocks.scriptCount).toHaveBeenCalledWith({ where: { vendorId: vendor.id, status: "published" } });
     expect(mocks.roleCount).toHaveBeenCalledWith({ where: { vendorId: vendor.id, isActive: true } });
     expect(mocks.paymentMethodReferenceCount).toHaveBeenCalledWith({
@@ -148,6 +170,10 @@ describe("/dashboard route", () => {
     expect(html).toContain("夏日夥伴");
     expect(html).toContain("商家方案");
     expect(html).toContain("近 7 天播放 session");
+    expect(html).toContain("近 7 天真實留言");
+    expect(html).toContain(">9<");
+    expect(html).toContain("排程留言腳本（設定數）");
+    expect(html).toContain(">12<");
     expect(html).toContain("已通過直播 admission 的不重複播放 session");
     expect(html).toContain("1 已驗證");
     expect(html).toContain("1 待驗證");
@@ -161,6 +187,8 @@ describe("/dashboard route", () => {
     mocks.liveCount.mockResolvedValue(0);
     mocks.productCount.mockResolvedValue(0);
     mocks.leadCount.mockResolvedValue(0);
+    mocks.liveChatMessageCount.mockResolvedValue(0);
+    mocks.interactionEventCount.mockResolvedValue(0);
     mocks.analyticsFindMany.mockResolvedValue([]);
     mocks.liveFindMany.mockReset().mockResolvedValue([]);
     mocks.affiliateFindMany.mockResolvedValue([]);

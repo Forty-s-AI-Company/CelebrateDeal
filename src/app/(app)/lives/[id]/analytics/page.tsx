@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
-import { Badge, Card, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
 
 export default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
@@ -13,12 +14,16 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
     where: { id, vendorId: vendor.id },
     include: {
       affiliateClicks: true,
+      interactionScript: { select: { id: true, vendorId: true, status: true } },
     },
   });
   if (!live) notFound();
 
   const trackedEventTypes = ["page_view", "product_click", "cta_click", "play_progress"];
-  const [verifiedAnalyticsSessions, submissionCount, recentEvents] = await Promise.all([
+  const validScriptId = live.interactionScript?.vendorId === vendor.id && live.interactionScript.status === "published"
+    ? live.interactionScript.id
+    : null;
+  const [verifiedAnalyticsSessions, submissionCount, recentEvents, realViewerMessageCount, scheduledMessageCount] = await Promise.all([
     db.analyticsEvent.findMany({
       where: {
         vendorId: vendor.id,
@@ -42,6 +47,10 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
       orderBy: { createdAt: "desc" },
       take: 30,
     }),
+    db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId: vendor.id, liveId: live.id }) }),
+    validScriptId
+      ? db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendor.id, scriptId: validScriptId }) })
+      : Promise.resolve(0),
   ]);
   const eventCountByType = new Map<string, number>();
   for (const event of verifiedAnalyticsSessions) {
@@ -60,13 +69,19 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <PageHeader title={`${live.title} 分析`} description="觀看與點擊只計入已通過直播 admission 的不重複播放 session；不代表不重複真人。" />
-      <div className="grid gap-4 md:grid-cols-5">
+      <PageHeader
+        title={`${live.title} 分析`}
+        description="觀看與點擊只計入已通過直播 admission 的不重複播放 session；真實留言與排程腳本分開統計。"
+        action={<ButtonLink href={`/lives/${live.id}/analytics/messages/export`} tone="secondary">匯出留言 CSV</ButtonLink>}
+      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
         <Card><p className="text-sm text-slate-500">播放 session</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
         <Card><p className="text-sm text-slate-500">名單</p><p className="mt-2 text-3xl font-semibold">{submissionCount}</p></Card>
         <Card><p className="text-sm text-slate-500">商品點擊</p><p className="mt-2 text-3xl font-semibold">{productClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">CTA 點擊</p><p className="mt-2 text-3xl font-semibold">{ctaClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">播放進度</p><p className="mt-2 text-3xl font-semibold">{progressEvents}</p></Card>
+        <Card><p className="text-sm text-slate-500">真實觀眾留言</p><p className="mt-2 text-3xl font-semibold">{realViewerMessageCount}</p><p className="mt-1 text-xs text-slate-500">只計已驗證觀眾可見留言</p></Card>
+        <Card><p className="text-sm text-slate-500">排程留言腳本</p><p className="mt-2 text-3xl font-semibold">{scheduledMessageCount}</p><p className="mt-1 text-xs text-slate-500">設定數，不列入轉換率</p></Card>
       </div>
       <section className="mt-6" aria-labelledby="conversion-funnel-title">
         <Card>

@@ -13,6 +13,7 @@ import { formatDateTime } from "@/lib/format";
 import { formatLiveCountdown } from "@/lib/live-countdown";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
 import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
+import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
 import {
   countSellableLiveReadinessCandidates,
   sellableLiveReadinessQuery,
@@ -30,10 +31,12 @@ export default async function DashboardPage() {
   const db = getDb();
   const sevenDaysAgo = getDateDaysAgo(7);
   const now = getDateDaysAgo(0);
-  const [liveCount, productCount, leadCount, verifiedAnalyticsSessions, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount, sellableLiveCandidates] = await Promise.all([
+  const [liveCount, productCount, leadCount, realViewerMessageCount, scheduledMessageCount, verifiedAnalyticsSessions, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount, sellableLiveCandidates] = await Promise.all([
     db.live.count({ where: { vendorId: vendor.id } }),
     db.product.count({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true } }),
     db.formSubmission.count({ where: { form: { vendorId: vendor.id }, verificationStatus: "VERIFIED", createdAt: { gte: sevenDaysAgo } } }),
+    db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId: vendor.id, createdAtGte: sevenDaysAgo }) }),
+    db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendor.id }) }),
     db.analyticsEvent.findMany({
       where: {
         vendorId: vendor.id,
@@ -129,6 +132,8 @@ export default async function DashboardPage() {
     { label: "近 7 天報名", value: leadCount, tone: "green" },
     { label: "商品點擊", value: productClicks, tone: "orange" },
     { label: "轉換率", value: `${conversionRate}%`, tone: "gray" },
+    { label: "近 7 天真實留言", value: realViewerMessageCount, tone: "green" },
+    { label: "排程留言腳本（設定數）", value: scheduledMessageCount, tone: "gray" },
   ] as const;
 
   return (
@@ -139,7 +144,7 @@ export default async function DashboardPage() {
         action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
       />
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
             <p className="text-sm text-slate-500">{kpi.label}</p>
