@@ -129,6 +129,7 @@ function LiveChatSession({
   const logRef = useRef<HTMLDivElement>(null);
   const generationRef = useRef(0);
   const postControllerRef = useRef<AbortController | null>(null);
+  const admissionRefreshRequestedRef = useRef(false);
 
   const visibleScheduledMessages = useMemo(() => sortScheduledMessages(scheduledMessages), [scheduledMessages]);
   const canPost = enabled && admissionStatus === "admitted" && !paused && viewer.canPost && pending === null;
@@ -164,7 +165,10 @@ function LiveChatSession({
         if (response.status === 403) {
           setPaused(true);
           setPollMessage("直播連線或留言資格已失效，請重新進入直播或完成信件驗證。");
-          onAdmissionInvalid?.();
+          if (!admissionRefreshRequestedRef.current) {
+            admissionRefreshRequestedRef.current = true;
+            onAdmissionInvalid?.();
+          }
           return;
         }
         if (!response.ok) {
@@ -224,7 +228,10 @@ function LiveChatSession({
         setPaused(true);
         setPending(null);
         setPostMessage("直播連線或留言資格已失效，草稿已保留。");
-        onAdmissionInvalid?.();
+        if (!admissionRefreshRequestedRef.current) {
+          admissionRefreshRequestedRef.current = true;
+          onAdmissionInvalid?.();
+        }
         return;
       }
       if (!response.ok) {
