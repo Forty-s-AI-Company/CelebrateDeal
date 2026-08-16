@@ -24,10 +24,11 @@ const focusStreamRetry = process.argv.includes("--focus-stream-retry");
 const focusCheckoutRecovery = process.argv.includes("--focus-checkout-recovery");
 const focusMessageTemplateDraft = process.argv.includes("--focus-message-template-draft");
 const focusInteractionRole = process.argv.includes("--focus-interaction-role");
+const focusPersistentPlayer = process.argv.includes("--focus-persistent-player");
 const focusLiveStudioStarter = process.argv.includes("--focus-live-studio-starter");
 const focusLiveStudio = focusLiveStudioStarter || process.argv.includes("--focus-live-studio");
 const focusDelivery = focusProductDelivery || focusBuyerDelivery;
-const focusedWorkPackage = focusBuyerDelivery ? "G7-48B" : focusProductDelivery ? "G7-48A" : focusBuyerOrders ? "G7-47" : focusOnboarding ? "G7-49" : focusStreamQuota ? "G7-50" : focusStreamRetry ? "G7-51" : focusCheckoutRecovery ? "G7-57" : focusMessageTemplateDraft ? "G7-58" : focusInteractionRole ? "G7-52" : focusLiveStudioStarter ? "G7-46" : "G7-45";
+const focusedWorkPackage = focusPersistentPlayer ? "WP6" : focusBuyerDelivery ? "G7-48B" : focusProductDelivery ? "G7-48A" : focusBuyerOrders ? "G7-47" : focusOnboarding ? "G7-49" : focusStreamQuota ? "G7-50" : focusStreamRetry ? "G7-51" : focusCheckoutRecovery ? "G7-57" : focusMessageTemplateDraft ? "G7-58" : focusInteractionRole ? "G7-52" : focusLiveStudioStarter ? "G7-46" : "G7-45";
 const productDeliveryContract = "merchant configures encrypted digital delivery and checkout keeps an immutable order snapshot";
 const buyerOrdersContract = "buyer order capability shows only exact safe fulfillment projection on desktop and mobile";
 const liveStudioContract = "merchant Email templates keep live reminders scoped, then Live Studio separates registration and reminder templates";
@@ -37,6 +38,7 @@ const streamRetryContract = "public playback retries an ambiguous Stream heartbe
 const interactionRoleContract = "merchant interaction role previews transparent identity and exact script impact before disabling";
 const checkoutRecoveryContract = "public checkout recovers one committed order after response loss and page refresh";
 const messageTemplateDraftContract = "merchant message template keeps every field after server validation and can recover as a new template";
+const persistentPlayerContract = "public live keeps the same video node, playback state and controls through internal checkout";
 const expectedBrowserContracts = [
   "desktop merchant can recover upload and validation errors, then publish and preview one product",
   "mobile product catalog has no overflow, preserves keyboard entry and passes axe",
@@ -58,6 +60,7 @@ const selectedBrowserContracts = focusDelivery
   : focusCheckoutRecovery ? [checkoutRecoveryContract]
   : focusMessageTemplateDraft ? [messageTemplateDraftContract]
   : focusInteractionRole ? [interactionRoleContract]
+  : focusPersistentPlayer ? [persistentPlayerContract]
   : focusLiveStudio ? [liveStudioContract] : expectedBrowserContracts;
 const attestedSourcePaths = [
   "scripts/g7-commerce-browser-qa.mjs",
@@ -76,6 +79,13 @@ const attestedSourcePaths = [
   "src/app/(app)/products/[id]/edit/page.tsx",
   "src/app/(app)/products/[id]/preview/page.tsx",
   "src/app/checkout/[vendorId]/[productId]/page.tsx",
+  "src/app/@checkout/default.tsx",
+  "src/app/layout.tsx",
+  "src/app/live/[slug]/layout.tsx",
+  "src/app/live/[slug]/@checkout/default.tsx",
+  "src/app/live/[slug]/@checkout/(..)(..)checkout/[vendorId]/[productId]/page.tsx",
+  "src/components/checkout-overlay.tsx",
+  "src/components/live-playback.tsx",
   "src/app/api/payments/checkout/route.ts",
   "src/app/api/payments/checkout/admission/route.ts",
   "src/lib/checkout-admission.ts",
@@ -587,8 +597,9 @@ export async function main() {
     : focusCheckoutRecovery ? "g7-57-checkout-recovery-browser-qa"
     : focusMessageTemplateDraft ? "g7-58-message-template-draft-browser-qa"
     : focusInteractionRole ? "g7-52-interaction-role-browser-qa"
+    : focusPersistentPlayer ? "wp6-persistent-player-browser-qa"
     : `${focusedWorkPackage.toLowerCase()}-live-studio-browser-qa`;
-  const focused = focusDelivery || focusBuyerOrders || focusOnboarding || focusStreamQuota || focusStreamRetry || focusCheckoutRecovery || focusMessageTemplateDraft || focusInteractionRole || focusLiveStudio;
+  const focused = focusDelivery || focusBuyerOrders || focusOnboarding || focusStreamQuota || focusStreamRetry || focusCheckoutRecovery || focusMessageTemplateDraft || focusInteractionRole || focusPersistentPlayer || focusLiveStudio;
   const receiptPath = path.join(evidenceRoot, `${focused ? focusedReceiptName : "g7-04-browser-qa"}-${runId}.json`);
   const migrations = listCanonicalMigrations();
   const receipt = {
@@ -602,8 +613,8 @@ export async function main() {
     sourceLineage: { algorithm: "sha256", files: {} },
     phases: { mirror: "NOT_STARTED", prismaGenerate: "NOT_STARTED", prismaValidate: "NOT_STARTED", prismaDeploy: "NOT_STARTED", prismaStatus: "NOT_STARTED", nextBuild: "NOT_STARTED", server: "NOT_STARTED", browser: "NOT_STARTED" },
     migrations: { count: migrations.length, applied: false },
-    browser: { expected: selectedBrowserContracts.length, passed: 0, failed: 0, skipped: 0, contracts: Object.fromEntries(selectedBrowserContracts.map((name) => [name, "NOT_RUN"])), axeCriticalOrSerious: null, rwd: "NOT_RUN", tenantIsolation: "NOT_RUN", piiEnvelopeLeak: "NOT_RUN", productCatalog: "NOT_RUN", productDelivery: "NOT_RUN", buyerDelivery: "NOT_RUN", emailReminder: "NOT_RUN", liveStudio: "NOT_RUN", buyerOrders: "NOT_RUN", onboarding: "NOT_RUN", streamQuota: "NOT_RUN", streamRetry: "NOT_RUN", checkoutRecovery: "NOT_RUN", messageTemplateDraft: "NOT_RUN", interactionRole: "NOT_RUN" },
-    screenshots: { desktop: null, mobile: null, productDesktop: null, productMobile: null, productDeliveryDesktop: null, productDeliveryMobile: null, buyerDeliveryDesktop: null, buyerDeliveryMobile: null, paymentResult: null, financePending: null, emailTemplates: null, buyerOrdersDesktop: null, buyerOrdersMobile: null, onboardingDesktop: null, onboardingMobile: null, streamQuotaDesktop: null, streamQuotaMobile: null, streamRetryDesktop: null, streamRetryMobile: null, checkoutRecoveryDesktop: null, checkoutRecoveryMobile: null, messageTemplateDraftDesktop: null, messageTemplateDraftMobile: null, interactionRoleDesktop: null, interactionRoleMobile: null },
+    browser: { expected: selectedBrowserContracts.length, passed: 0, failed: 0, skipped: 0, contracts: Object.fromEntries(selectedBrowserContracts.map((name) => [name, "NOT_RUN"])), axeCriticalOrSerious: null, rwd: "NOT_RUN", tenantIsolation: "NOT_RUN", piiEnvelopeLeak: "NOT_RUN", productCatalog: "NOT_RUN", productDelivery: "NOT_RUN", buyerDelivery: "NOT_RUN", emailReminder: "NOT_RUN", liveStudio: "NOT_RUN", buyerOrders: "NOT_RUN", onboarding: "NOT_RUN", streamQuota: "NOT_RUN", streamRetry: "NOT_RUN", checkoutRecovery: "NOT_RUN", messageTemplateDraft: "NOT_RUN", interactionRole: "NOT_RUN", persistentPlayer: "NOT_RUN" },
+    screenshots: { desktop: null, mobile: null, productDesktop: null, productMobile: null, productDeliveryDesktop: null, productDeliveryMobile: null, buyerDeliveryDesktop: null, buyerDeliveryMobile: null, paymentResult: null, financePending: null, emailTemplates: null, buyerOrdersDesktop: null, buyerOrdersMobile: null, onboardingDesktop: null, onboardingMobile: null, streamQuotaDesktop: null, streamQuotaMobile: null, streamRetryDesktop: null, streamRetryMobile: null, checkoutRecoveryDesktop: null, checkoutRecoveryMobile: null, messageTemplateDraftDesktop: null, messageTemplateDraftMobile: null, interactionRoleDesktop: null, interactionRoleMobile: null, persistentPlayerDesktop: null, persistentPlayerMobile: null },
     cleanup: { server: "NOT_STARTED", container: "NOT_STARTED", tempRoot: "NOT_STARTED" },
     safety: { dotenvContentsRead: false, mirrorExcludesDotenv: true, loopbackOnly: true, loopbackTlsCookieBridge: true, postgresTmpfs: true, sourceNodeModulesWritten: false, rawOutputPersisted: false, externalOperations: false, productionOperations: false, playwrightBrowserCacheReuseOnly: true, userBrowserProfileRead: false },
     diagnostics: { nextBuild: null, nextBuildDetails: [], browser: null, browserDetails: [], browserGlobalErrors: [], serverRuntimeDetails: [] },
@@ -615,7 +626,7 @@ export async function main() {
   let serverRuntimeOutput = "";
 
   try {
-    if ([focusDelivery, focusBuyerOrders, focusOnboarding, focusStreamQuota, focusStreamRetry, focusCheckoutRecovery, focusMessageTemplateDraft, focusInteractionRole, focusLiveStudio].filter(Boolean).length > 1 || !tempNamePattern.test(name) || !containerNamePattern.test(name) || !schemaPattern.test(schema) || migrations.length === 0) throw new Error("runner-contract-invalid");
+    if ([focusDelivery, focusBuyerOrders, focusOnboarding, focusStreamQuota, focusStreamRetry, focusCheckoutRecovery, focusMessageTemplateDraft, focusInteractionRole, focusPersistentPlayer, focusLiveStudio].filter(Boolean).length > 1 || !tempNamePattern.test(name) || !containerNamePattern.test(name) || !schemaPattern.test(schema) || migrations.length === 0) throw new Error("runner-contract-invalid");
     fs.mkdirSync(tempRoot, { recursive: true });
     for (const directory of ["tmp", "home", "docker-config"]) fs.mkdirSync(path.join(tempRoot, directory), { recursive: true });
     fs.writeFileSync(path.join(tempRoot, ".marker"), marker, { encoding: "utf8", flag: "wx" });
@@ -748,6 +759,8 @@ export async function main() {
       messageTemplateDraftMobile: path.join(screenshots, "message-template-draft-mobile.png"),
       interactionRoleDesktop: path.join(screenshots, "interaction-role-desktop.png"),
       interactionRoleMobile: path.join(screenshots, "interaction-role-mobile.png"),
+      persistentPlayerDesktop: path.join(screenshots, "persistent-player-desktop.png"),
+      persistentPlayerMobile: path.join(screenshots, "persistent-player-mobile.png"),
     };
     for (const [name, screenshotPath] of Object.entries(screenshotEntries)) {
       if (fs.existsSync(screenshotPath)) receipt.screenshots[name] = { filename: path.basename(screenshotPath), sha256: hashFile(screenshotPath) };
@@ -763,6 +776,7 @@ export async function main() {
       : focusCheckoutRecovery ? ["checkoutRecoveryDesktop", "checkoutRecoveryMobile"]
       : focusMessageTemplateDraft ? ["messageTemplateDraftDesktop", "messageTemplateDraftMobile"]
       : focusInteractionRole ? ["interactionRoleDesktop", "interactionRoleMobile"]
+      : focusPersistentPlayer ? ["persistentPlayerDesktop", "persistentPlayerMobile"]
       : focusLiveStudio
         ? ["liveStudioDesktop", "liveStudioMobile"]
         : ["desktop", "mobile", "productDesktop", "productMobile", "productDeliveryDesktop", "productDeliveryMobile", "paymentResult", "financePending", "emailTemplates", "buyerOrdersDesktop", "buyerOrdersMobile"];
@@ -789,6 +803,7 @@ export async function main() {
     receipt.browser.checkoutRecovery = focusCheckoutRecovery && browserPassed ? "PASS" : "NOT_VERIFIED";
     receipt.browser.messageTemplateDraft = focusMessageTemplateDraft && browserPassed ? "PASS" : "NOT_VERIFIED";
     receipt.browser.interactionRole = focusInteractionRole && browserPassed ? "PASS" : "NOT_VERIFIED";
+    receipt.browser.persistentPlayer = focusPersistentPlayer && browserPassed ? "PASS" : "NOT_VERIFIED";
     if (!browserPassed) throw new Error("commerce-browser-contract-failed");
     if (attestedSourcePaths.some((relativePath) => hashFile(path.join(root, relativePath)) !== receipt.sourceLineage.files[relativePath])) {
       throw new Error("source-lineage-changed-during-run");

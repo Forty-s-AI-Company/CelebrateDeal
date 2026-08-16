@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Image from "next/image";
-import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { trackClientAnalytics } from "@/lib/client-analytics";
@@ -512,19 +513,37 @@ export function checkoutPagePath(vendorId: string, productId: string) {
   return `/checkout/${encodeURIComponent(normalizedVendorId)}/${encodeURIComponent(normalizedProductId)}`;
 }
 
+export function isInternalCheckoutPath(pathname: string | null) {
+  return Boolean(pathname && /^\/checkout\/[^/]+\/[^/]+\/?$/u.test(pathname));
+}
+
+export const CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS = 10_000;
+
 export async function requestCheckout({
   vendorId,
   productId,
   checkoutUrl,
+  navigateInternal,
 }: {
   vendorId: string;
   productId: string;
   checkoutUrl?: string | null;
+  navigateInternal?: (path: string) => void;
 }) {
   const externalCheckoutUrl = checkoutUrl ? parseSafeExternalHttpUrl(checkoutUrl) : null;
   if (checkoutUrl && !externalCheckoutUrl) return false;
-  const path = externalCheckoutUrl ?? checkoutPagePath(vendorId, productId);
-  if (!path || typeof window === "undefined") return false;
+  if (externalCheckoutUrl) {
+    if (typeof window === "undefined") return false;
+    window.location.href = externalCheckoutUrl;
+    return true;
+  }
+  const path = checkoutPagePath(vendorId, productId);
+  if (!path) return false;
+  if (navigateInternal) {
+    navigateInternal(path);
+    return true;
+  }
+  if (typeof window === "undefined") return false;
   window.location.href = path;
   return true;
 }
@@ -627,14 +646,130 @@ export function ScriptedInteractionOverlay({
   );
 }
 
+export function persistentPlayerShellClass(isCheckoutOverlay: boolean, isExpanded: boolean) {
+  if (!isCheckoutOverlay) return "absolute inset-0";
+  return isExpanded
+    ? "fixed inset-3 z-[70] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl"
+    : "fixed bottom-4 right-4 z-[70] h-48 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl";
+}
+
+export function PersistentMiniPlayerControls({
+  title,
+  videoRef,
+  isPaused,
+  isMuted,
+  isExpanded,
+  onBack,
+  onMutedChange,
+  onToggleExpanded,
+}: {
+  title: string;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  isPaused: boolean;
+  isMuted: boolean;
+  isExpanded: boolean;
+  onBack: () => void;
+  onMutedChange: (muted: boolean) => void;
+  onToggleExpanded: () => void;
+}) {
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+  const toggleMuted = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    onMutedChange(video.muted);
+  };
+
+  return (
+    <div className="absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 rounded-xl bg-black/75 p-2 text-white backdrop-blur-md">
+      <button type="button" onClick={onBack} aria-label="返回直播" className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+        <ArrowLeft size={18} aria-hidden="true" />
+      </button>
+      <button type="button" onClick={togglePlayback} aria-label={isPaused ? "播放直播" : "暫停直播"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+        {isPaused ? <Play size={18} aria-hidden="true" /> : <Pause size={18} aria-hidden="true" />}
+      </button>
+      <button type="button" onClick={toggleMuted} aria-label={isMuted ? "開啟直播聲音" : "將直播靜音"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+        {isMuted ? <VolumeX size={18} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
+      </button>
+      <p className="min-w-0 flex-1 truncate px-1 text-xs font-bold">{title}</p>
+      <button type="button" onClick={onToggleExpanded} aria-label={isExpanded ? "縮小直播小窗" : "展開直播小窗"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+        {isExpanded ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
+function useMiniPlayerState() {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isPaused, setIsPaused] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  return { isExpanded, setIsExpanded, isPaused, setIsPaused, isMuted, setIsMuted };
+}
+
+function useLiveAttributionParams() {
+  return {
+    referralCode: useLiveQueryParam("ref"),
+    sourcePageSlug: useLiveQueryParam("sourcePage"),
+    liveShareCode: useLiveQueryParam("share"),
+  };
+}
+
+function useCheckoutNavigationLock(isCheckoutOverlay: boolean) {
+  const [isLocked, setIsLocked] = useState(false);
+  const lockRef = useRef(false);
+  const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const release = () => {
+    lockRef.current = false;
+    setIsLocked(false);
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    unlockTimerRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!isCheckoutOverlay || !lockRef.current) return;
+    lockRef.current = false;
+    setIsLocked(false);
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    unlockTimerRef.current = null;
+  }, [isCheckoutOverlay]);
+  useEffect(() => () => {
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+  }, []);
+
+  return {
+    isLocked,
+    begin: () => {
+      if (lockRef.current) return false;
+      lockRef.current = true;
+      setIsLocked(true);
+      return true;
+    },
+    release,
+    retainUntilTimeout: (onTimeout: () => void) => {
+      unlockTimerRef.current = setTimeout(() => {
+        release();
+        onTimeout();
+      }, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS);
+    },
+  };
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
+  const router = useRouter(); const pathname = usePathname();
+  const isCheckoutOverlay = isInternalCheckoutPath(pathname);
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
-  const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [streamQuotaExhausted, setStreamQuotaExhausted] = useState(false);
   const [admissionRefreshKey, setAdmissionRefreshKey] = useState(0);
+  const { isExpanded: isMiniPlayerExpanded, setIsExpanded: setIsMiniPlayerExpanded, isPaused: isPlaybackPaused, setIsPaused: setIsPlaybackPaused, isMuted: isPlaybackMuted, setIsMuted: setIsPlaybackMuted } = useMiniPlayerState();
+  const checkoutNavigation = useCheckoutNavigationLock(isCheckoutOverlay);
   const refreshAdmission = useMemo(() => () => setAdmissionRefreshKey((current) => current + 1), []);
   // Public pages opt into admission-required SSR; direct component fixtures can
   // keep the admitted default while testing the rest of the playback contract.
@@ -647,16 +782,13 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const visiblePlaybackUrl = useLivePlaybackSource(live, admissionStatus);
   const playableSource = streamQuotaExhausted ? null : visiblePlaybackUrl;
   const videoRef = useRef<HTMLVideoElement>(null);
-  const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
     () => (typeof window === "undefined"
       ? "server"
       : getOrCreateVisitorId(live.vendorId, () => crypto.randomUUID(), () => window.localStorage)),
     [live.vendorId],
   );
-  const referralCode = useLiveQueryParam("ref");
-  const sourcePageSlug = useLiveQueryParam("sourcePage");
-  const liveShareCode = useLiveQueryParam("share");
+  const { referralCode, sourcePageSlug, liveShareCode } = useLiveAttributionParams();
   const streamUsage = useStreamUsageTracker({
     vendorId: live.vendorId,
     liveId: live.id,
@@ -703,7 +835,6 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       }),
     });
   }, [live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
-
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !isHlsPlaybackUrl(playableSource) || !playableSource) return;
@@ -711,7 +842,6 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       video.src = playableSource;
       return;
     }
-
     let disposed = false;
     let hls: { destroy: () => void } | null = null;
     void import("hls.js")
@@ -750,10 +880,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       setCheckoutError("直播目前無法提供購買，請稍後再試。");
       return;
     }
-    if (checkoutSubmissionRef.current) return;
-
-    checkoutSubmissionRef.current = true;
-    setIsSubmittingCheckout(true);
+    if (!checkoutNavigation.begin()) return;
     setCheckoutError(null);
     void trackClientAnalytics({
       liveId: live.id,
@@ -762,15 +889,20 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       payload: { productId, ref: referralCode },
     });
 
+    let keepNavigationLocked = false;
     try {
       const product = live.products.find((item) => item.id === productId);
-      const checkoutStarted = await requestCheckout({ vendorId: live.vendorId, productId, checkoutUrl: product?.checkoutUrl });
+      const checkoutStarted = await requestCheckout({ vendorId: live.vendorId, productId, checkoutUrl: product?.checkoutUrl, navigateInternal: (path) => router.push(path) });
       if (!checkoutStarted) {
         setCheckoutError("目前無法完成結帳，請稍後再試。");
+      } else if (!product?.checkoutUrl) {
+        keepNavigationLocked = true;
+        checkoutNavigation.retainUntilTimeout(() => {
+          setCheckoutError("結帳頁載入逾時，請再試一次。");
+        });
       }
     } finally {
-      checkoutSubmissionRef.current = false;
-      setIsSubmittingCheckout(false);
+      if (!keepNavigationLocked) checkoutNavigation.release();
     }
   }
 
@@ -793,11 +925,11 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950">
+    <main className="min-h-screen bg-slate-950" data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}>
       <DirectEntryAttributionReset />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
       <section className="relative mx-auto min-h-screen max-w-[430px] overflow-hidden bg-slate-950 text-white shadow-2xl">
-        <div className="absolute inset-0">
+        <div data-testid="persistent-live-player" className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}>
           {!streamQuotaExhausted && (visiblePlaybackUrl || live.videoUrl) ? (
             <video
               ref={videoRef}
@@ -819,6 +951,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   event.currentTarget.pause();
                   return;
                 }
+                setIsPlaybackPaused(false);
                 streamUsage.start(event.currentTarget.currentTime);
                 void trackClientAnalytics({
                   liveId: live.id,
@@ -827,13 +960,19 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                   payload: { slug: live.slug, ref: referralCode },
                 });
               }}
-              onPause={streamUsage.stop}
-              onEnded={streamUsage.stop}
+              onPause={() => { setIsPlaybackPaused(true); streamUsage.stop(); }}
+              onEnded={() => { setIsPlaybackPaused(true); streamUsage.stop(); }}
+              onVolumeChange={(event) => setIsPlaybackMuted(event.currentTarget.muted)}
             />
           ) : (
             <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
+          {isCheckoutOverlay ? (
+            <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}
+              isExpanded={isMiniPlayerExpanded} onBack={() => router.back()} onMutedChange={setIsPlaybackMuted}
+              onToggleExpanded={() => setIsMiniPlayerExpanded((current) => !current)} />
+          ) : null}
         </div>
 
         <LiveBrandHeader live={live} />
@@ -851,7 +990,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             latestProductEvent={latestProductEvent}
             spotlightProduct={spotlightProduct}
             hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
-            isSubmittingCheckout={isSubmittingCheckout}
+            isSubmittingCheckout={checkoutNavigation.isLocked}
             trackCta={trackCta}
             trackProduct={trackProduct}
           />
@@ -895,12 +1034,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                           <button
                             type="button"
                             onClick={() => trackProduct(product.id)}
-                            disabled={isSubmittingCheckout}
-                            aria-busy={isSubmittingCheckout}
+                            disabled={checkoutNavigation.isLocked}
+                            aria-busy={checkoutNavigation.isLocked}
                             className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-orange-700 px-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <ShoppingBag size={14} aria-hidden="true" />
-                            {isSubmittingCheckout ? "送出中…" : "購買"}
+                            {checkoutNavigation.isLocked ? "送出中…" : "購買"}
                           </button>
                         </div>
                       </div>

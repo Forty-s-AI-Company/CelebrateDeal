@@ -166,7 +166,7 @@ test("G7-45 focused mode keeps the Live Studio contract and both responsive scre
   assert.match(source, /--focus-live-studio/u);
   assert.match(source, /--focus-live-studio-starter/u);
   assert.match(source, /focusStreamRetry \? "G7-51" : focusCheckoutRecovery \? "G7-57" : focusMessageTemplateDraft \? "G7-58" : focusInteractionRole \? "G7-52" : focusLiveStudioStarter \? "G7-46" : "G7-45"/u);
-  assert.match(source, /focusStreamRetry \? \[streamRetryContract\][\s\S]*focusCheckoutRecovery \? \[checkoutRecoveryContract\][\s\S]*focusMessageTemplateDraft \? \[messageTemplateDraftContract\][\s\S]*focusInteractionRole \? \[interactionRoleContract\][\s\S]*focusLiveStudio \? \[liveStudioContract\] : expectedBrowserContracts/u);
+  assert.match(source, /focusStreamRetry \? \[streamRetryContract\][\s\S]*focusCheckoutRecovery \? \[checkoutRecoveryContract\][\s\S]*focusMessageTemplateDraft \? \[messageTemplateDraftContract\][\s\S]*focusInteractionRole \? \[interactionRoleContract\][\s\S]*focusPersistentPlayer \? \[persistentPlayerContract\][\s\S]*focusLiveStudio \? \[liveStudioContract\] : expectedBrowserContracts/u);
   for (const path of ["src/components/use-live-studio-draft.ts", "src/lib/live-studio-draft.ts", "src/lib/live-studio-draft-client.ts"]) {
     assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
   }
@@ -199,6 +199,31 @@ test("G7-50 focused mode attests exact Stream quota stop, accessibility, RWD, an
   assert.match(browserContract, /expectNoBlockingAxeViolations\(page\)/u);
   assert.match(browserContract, /stream-quota-desktop\.png/u);
   assert.match(browserContract, /stream-quota-mobile\.png/u);
+});
+
+test("WP6 focused mode proves one persistent video node through checkout on desktop and mobile", () => {
+  const source = fs.readFileSync(new URL("./g7-commerce-browser-qa.mjs", import.meta.url), "utf8");
+  const browserContract = fs.readFileSync(new URL("../tests/e2e/commerce-orders.spec.ts", import.meta.url), "utf8");
+
+  assert.match(source, /--focus-persistent-player/u);
+  assert.match(source, /persistentPlayerContract/u);
+  assert.match(source, /"wp6-persistent-player-browser-qa"/u);
+  for (const path of [
+    "src/app/live/[slug]/layout.tsx",
+    "src/app/live/[slug]/@checkout/(..)(..)checkout/[vendorId]/[productId]/page.tsx",
+    "src/components/checkout-overlay.tsx",
+    "src/components/live-playback.tsx",
+  ]) {
+    assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
+  }
+  assert.match(source, /\["persistentPlayerDesktop", "persistentPlayerMobile"\]/u);
+  assert.match(source, /receipt\.browser\.persistentPlayer = focusPersistentPlayer && browserPassed \? "PASS" : "NOT_VERIFIED"/u);
+  assert.match(browserContract, /public live keeps the same video node, playback state and controls through internal checkout/u);
+  assert.match(browserContract, /sameNode: current === browserWindow\.__persistentPlayerNode/u);
+  assert.match(browserContract, /currentTime\)\.toBeGreaterThan\(42\)/u);
+  assert.match(browserContract, /document\.querySelector\("video"\) ===/u);
+  assert.match(browserContract, /persistent-player-desktop\.png/u);
+  assert.match(browserContract, /persistent-player-mobile\.png/u);
 });
 
 test("G7-51 focused mode attests timeout recovery, bounded retry, and stable event identity", () => {

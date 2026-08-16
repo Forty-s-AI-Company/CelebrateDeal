@@ -51,6 +51,8 @@ const fixture = {
   foreignProductId: "",
   foreignLiveId: "",
   foreignLiveSlug: "",
+  sellableLiveId: "",
+  sellableLiveSlug: "",
   catalogProductId: "",
   catalogProductSlug: "",
   deliveryProductId: "",
@@ -128,7 +130,7 @@ function classifyServerActionBody(body: string) {
 
 async function captureIfRequested(
   page: Page,
-  filename: "desktop.png" | "mobile.png" | "product-desktop.png" | "product-mobile.png" | "payment-result.png" | "finance-pending.png" | "email-templates.png" | "live-studio-desktop.png" | "live-studio-mobile.png" | "buyer-orders-desktop.png" | "buyer-orders-mobile.png" | "product-delivery-desktop.png" | "product-delivery-mobile.png" | "buyer-delivery-desktop.png" | "buyer-delivery-mobile.png" | "onboarding-desktop.png" | "onboarding-mobile.png" | "stream-quota-desktop.png" | "stream-quota-mobile.png" | "stream-retry-desktop.png" | "stream-retry-mobile.png" | "checkout-recovery-desktop.png" | "checkout-recovery-mobile.png" | "message-template-draft-desktop.png" | "message-template-draft-mobile.png" | "interaction-role-desktop.png" | "interaction-role-mobile.png",
+  filename: "desktop.png" | "mobile.png" | "product-desktop.png" | "product-mobile.png" | "payment-result.png" | "finance-pending.png" | "email-templates.png" | "live-studio-desktop.png" | "live-studio-mobile.png" | "buyer-orders-desktop.png" | "buyer-orders-mobile.png" | "product-delivery-desktop.png" | "product-delivery-mobile.png" | "buyer-delivery-desktop.png" | "buyer-delivery-mobile.png" | "onboarding-desktop.png" | "onboarding-mobile.png" | "stream-quota-desktop.png" | "stream-quota-mobile.png" | "stream-retry-desktop.png" | "stream-retry-mobile.png" | "checkout-recovery-desktop.png" | "checkout-recovery-mobile.png" | "message-template-draft-desktop.png" | "message-template-draft-mobile.png" | "interaction-role-desktop.png" | "interaction-role-mobile.png" | "persistent-player-desktop.png" | "persistent-player-mobile.png",
 ) {
   const screenshotDirectory = process.env.G7_COMMERCE_SCREENSHOT_DIR;
   if (!screenshotDirectory) return;
@@ -416,6 +418,8 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       prefix: "G7-49 FOREIGN",
     });
     expect(foreignLive.live.vendorId).toBe(foreignVendor.id);
+    fixture.sellableLiveId = foreignLive.live.id;
+    fixture.sellableLiveSlug = foreignLive.live.slug;
 
     // Keep the quota-stop proof isolated from commerce publish readiness. A
     // content-only public live requires only ready media, so a future product or
@@ -1230,6 +1234,69 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(quotaAlert).toBeVisible();
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "stream-quota-mobile.png");
+  });
+
+  test("public live keeps the same video node, playback state and controls through internal checkout", async ({ page }) => {
+    await page.context().clearCookies();
+    await page.route("**/api/stream-usage", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    const liveResponse = await page.goto(`/live/${fixture.sellableLiveSlug}`);
+    expect(liveResponse?.status()).toBe(200);
+    const video = page.locator("video");
+    await expect(video).toBeVisible();
+    await video.evaluate((element) => {
+      const media = element as HTMLVideoElement;
+      const browserWindow = window as typeof window & {
+        __persistentPlayerNode?: HTMLVideoElement;
+        __persistentPlayerTimer?: number;
+      };
+      browserWindow.__persistentPlayerNode = media;
+      Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: 42 });
+      media.volume = 0.35;
+      media.muted = false;
+      browserWindow.__persistentPlayerTimer = window.setInterval(() => { media.currentTime += 0.25; }, 250);
+    });
+
+    await page.getByRole("button", { name: "立即搶購" }).click();
+    await expect(page).toHaveURL(new RegExp(`/checkout/${fixture.vendorIds[1]}/${fixture.foreignProductId}$`, "u"));
+    await expect(page.getByRole("dialog", { name: "商品結帳" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "暫停直播" })).toBeVisible();
+    await page.waitForTimeout(750);
+    const checkoutState = await page.evaluate(() => {
+      const browserWindow = window as typeof window & { __persistentPlayerNode?: HTMLVideoElement };
+      const current = document.querySelector("video");
+      return {
+        sameNode: current === browserWindow.__persistentPlayerNode,
+        currentTime: current?.currentTime ?? 0,
+        volume: current?.volume ?? 0,
+        muted: current?.muted ?? true,
+      };
+    });
+    expect(checkoutState).toMatchObject({ sameNode: true, volume: 0.35, muted: false });
+    expect(checkoutState.currentTime).toBeGreaterThan(42);
+    await expectNoBlockingAxeViolations(page);
+    await captureIfRequested(page, "persistent-player-desktop.png");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("button", { name: "暫停直播" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await expectNoBlockingAxeViolations(page);
+    await captureIfRequested(page, "persistent-player-mobile.png");
+
+    await page.getByRole("dialog", { name: "商品結帳" }).getByRole("button", { name: "返回直播", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/live/${fixture.sellableLiveSlug}$`, "u"));
+    expect(await page.evaluate(() => document.querySelector("video") === (window as typeof window & { __persistentPlayerNode?: HTMLVideoElement }).__persistentPlayerNode)).toBe(true);
+    await page.evaluate(() => {
+      const browserWindow = window as typeof window & { __persistentPlayerTimer?: number };
+      if (browserWindow.__persistentPlayerTimer) window.clearInterval(browserWindow.__persistentPlayerTimer);
+    });
+
+    const directCheckoutResponse = await page.goto(`/checkout/${fixture.vendorIds[1]}/${fixture.foreignProductId}`);
+    expect(directCheckoutResponse?.status()).toBe(200);
+    await expect(page.locator("video")).toHaveCount(0);
   });
 
   test("public playback retries an ambiguous Stream heartbeat with one stable event identity", async ({ page }) => {

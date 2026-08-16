@@ -742,7 +742,7 @@ describe("email delivery outbox", () => {
       videoDurationSec: 3_600,
       verificationStatus: "VERIFIED",
     }, now);
-    if (!("deliveryId" in queued)) throw new Error("Expected a queued follow-up");
+    if (!("deliveryId" in queued) || !queued.deliveryId) throw new Error("Expected a queued follow-up");
     const createData = mocks.db.emailDelivery.create.mock.calls[0]?.[0].data;
 
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ ...createData, status: "queued" }));

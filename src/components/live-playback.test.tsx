@@ -6,6 +6,16 @@ const hookState = vi.hoisted(() => ({
   values: [] as unknown[],
   refs: [] as Array<{ current: unknown }>,
 }));
+const navigation = vi.hoisted(() => ({
+  pathname: "/live/test-fixture-live",
+  push: vi.fn(),
+  back: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => navigation.pathname,
+  useRouter: () => ({ push: navigation.push, back: navigation.back }),
+}));
 
 vi.mock("react", async (importOriginal) => {
   const react = await importOriginal<typeof import("react")>();
@@ -44,7 +54,7 @@ vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-v
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
-import { affiliateClickEndpoint, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -61,6 +71,8 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
 
   const renderedChildren = value.type === ScriptedInteractionOverlay
     ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
+    : value.type === PersistentMiniPlayerControls
+      ? PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0])
     : value.props.children;
 
   return [
@@ -75,6 +87,8 @@ function textContent(value: unknown): string {
   if (!isElementNode(value)) return "";
   return value.type === ScriptedInteractionOverlay
     ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
+    : value.type === PersistentMiniPlayerControls
+      ? textContent(PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0]))
     : textContent(value.props.children);
 }
 
@@ -145,6 +159,7 @@ describe("LivePlayback checkout", () => {
     hookState.refCursor = 0;
     hookState.values = [];
     hookState.refs = [];
+    navigation.pathname = "/live/test-fixture-live";
     vi.clearAllMocks();
   });
 
@@ -615,6 +630,41 @@ describe("LivePlayback checkout", () => {
     expect(checkoutPagePath("vendor 123", "product/123")).toBe("/checkout/vendor%20123/product%2F123");
     expect(checkoutPagePath("", "product-123")).toBeNull();
     expect(checkoutPagePath("vendor-123", "   ")).toBeNull();
+    expect(isInternalCheckoutPath("/checkout/vendor-123/product-123")).toBe(true);
+    expect(isInternalCheckoutPath("/checkout/vendor-123")).toBe(false);
+  });
+
+  it("uses client navigation for internal checkout and preserves hard navigation for external checkout", async () => {
+    const navigateInternal = vi.fn();
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo" } });
+
+    await expect(requestCheckout({ vendorId: "vendor-123", productId: "product-123", navigateInternal })).resolves.toBe(true);
+    expect(navigateInternal).toHaveBeenCalledWith("/checkout/vendor-123/product-123");
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+
+    navigateInternal.mockClear();
+    await expect(requestCheckout({
+      vendorId: "vendor-123",
+      productId: "product-123",
+      checkoutUrl: "https://merchant.example.test/buy",
+      navigateInternal,
+    })).resolves.toBe(true);
+    expect(navigateInternal).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("https://merchant.example.test/buy");
+  });
+
+  it("keeps the video branch mounted while presenting checkout miniplayer controls", () => {
+    navigation.pathname = "/checkout/test-fixture-vendor-1/test-fixture-product-1";
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video");
+    const shell = findElements(tree, (element) => element.props["data-testid"] === "persistent-live-player")[0];
+    expect(video).toHaveLength(1);
+    expect(String(shell?.props.className)).toContain("fixed");
+    expect(textContent(tree)).toContain("測試直播");
+    expect(findElements(tree, (element) => element.props["aria-label"] === "返回直播")).toHaveLength(1);
+    expect(findElements(tree, (element) => element.props["aria-label"] === "播放直播")).toHaveLength(1);
+    expect(findElements(tree, (element) => element.props["aria-label"] === "將直播靜音")).toHaveLength(1);
+    expect(findElements(tree, (element) => element.props["aria-label"] === "展開直播小窗")).toHaveLength(1);
   });
 
   it("routes purchase intent to the local buyer-details page without calling the payment API", async () => {
@@ -648,23 +698,21 @@ describe("LivePlayback checkout", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("disables every purchase button during local navigation and prevents a second navigation", async () => {
-    let assignedHref = "https://app.example.test/live/demo";
-    let assignmentCount = 0;
+  it("keeps every purchase button locked until slow local navigation settles or times out", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("window", {
       location: {
         search: "",
         pathname: "/live/demo",
-        get href() { return assignedHref; },
-        set href(value: string) { assignedHref = value; assignmentCount += 1; },
+        href: "https://app.example.test/live/demo",
       },
       localStorage: {},
     });
 
     let tree = renderLive();
-    const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
-    if (!navigation) throw new Error("Expected playback navigation");
-    (navigation.props.onPanelChange as (panel: "products") => void)("products");
+    const playbackNavigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    if (!playbackNavigation) throw new Error("Expected playback navigation");
+    (playbackNavigation.props.onPanelChange as (panel: "products") => void)("products");
     tree = renderLive();
 
     const initialButtons = checkoutButtons(tree);
@@ -673,15 +721,18 @@ describe("LivePlayback checkout", () => {
     const secondCheckout = initialButtons[1].props.onClick as () => Promise<void>;
     const pendingNavigation = firstCheckout();
 
-    expect(assignedHref).toBe("/checkout/test-fixture-vendor-1/test-fixture-product-1");
-    expect(assignmentCount).toBe(1);
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/checkout/test-fixture-vendor-1/test-fixture-product-1");
     expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
 
     await secondCheckout();
-    expect(assignmentCount).toBe(1);
+    expect(navigation.push).toHaveBeenCalledTimes(1);
     await pendingNavigation;
 
-    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === false)).toBe(true);
+    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
     expect(checkoutErrors(renderLive())).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS);
+    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === false)).toBe(true);
+    expect(textContent(checkoutErrors(renderLive()))).toContain("結帳頁載入逾時");
   });
 });
