@@ -1987,6 +1987,12 @@ export async function upsertBlacklistAction(formData: FormData) {
       notes: optionalText(formData, "notes"),
     },
   });
+  await writeAuditLog({
+    vendorId: vendor.id,
+    action: "blacklist_created",
+    targetType: "Blacklist",
+    after: auditSnapshot({ identifierType: identifierType.data, isActive: true }),
+  });
   revalidatePath("/blacklists");
 }
 

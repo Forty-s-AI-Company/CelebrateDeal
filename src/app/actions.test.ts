@@ -1129,10 +1129,33 @@ describe("upsertBlacklistAction", () => {
     });
   });
 
+  it("normalizes a keyword and keeps the raw keyword out of the audit snapshot", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.blacklistCreate.mockResolvedValue({ id: "blacklist-keyword-1" });
+
+    await upsertBlacklistAction(blacklistFormData("keyword", "  ＦＯＯ\u200B  BAR  "));
+
+    expect(mocks.blacklistCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        identifierType: "keyword",
+        identifier: "foo bar",
+      }),
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      action: "blacklist_created",
+      targetType: "Blacklist",
+      after: { identifierType: "keyword", isActive: true },
+    });
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls[0])).not.toContain("foo bar");
+  });
+
   it.each([
     ["unknown identifier type", "token", "value"],
     ["malformed email", "email", "not-an-email"],
     ["malformed phone", "phone", "phone-number"],
+    ["keyword over 80 characters", "keyword", "a".repeat(81)],
   ])("rejects %s without persistence", async (_name, identifierType, identifier) => {
     await expect(upsertBlacklistAction(blacklistFormData(identifierType, identifier))).rejects.toThrow(
       "redirect:/blacklists?error=invalid_identifier",

@@ -100,6 +100,22 @@ describe("BlacklistSearchList", () => {
     expect(markup).toContain('aria-disabled="false"');
   });
 
+  it("renders keyword entries with the human-readable label", () => {
+    const tree = renderList([{
+      id: "entry-keyword",
+      identifier: "foo.*",
+      identifierType: "keyword",
+      reason: "禁止推廣話術",
+      notes: "",
+      isActive: true,
+      createdAt: "2026-01-05T03:04:05.000Z",
+    }]);
+    const markup = renderToStaticMarkup(tree as never);
+
+    expect(markup).toContain("禁止關鍵字");
+    expect(markup).not.toContain(">keyword<");
+  });
+
   it("filters through identifier, reason, notes, and empty-result states via the public input handler", () => {
     let tree = renderList();
     const input = findElements(tree, (element) => element.props.id === "blacklist-local-search")[0];

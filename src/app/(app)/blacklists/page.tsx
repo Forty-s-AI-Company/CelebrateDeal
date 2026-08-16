@@ -38,12 +38,12 @@ export default async function BlacklistsPage({
           <h2 className="mb-4 text-lg font-semibold text-slate-950">新增封鎖項目</h2>
           {error === "invalid_identifier" ? (
             <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              識別類型或格式不正確，請確認 Email、手機、IP 或 Visitor ID。
+              識別類型或格式不正確，請確認 Email、手機、IP、Visitor ID 或禁止關鍵字。
             </p>
           ) : null}
           <form action={upsertBlacklistAction} className="grid gap-4">
             <CsrfField />
-            <Field label="識別值" name="identifier" required placeholder="Email、手機、IP 或 visitorId" />
+            <Field label="識別值或關鍵字" name="identifier" required placeholder="Email、手機、IP、visitorId 或禁止關鍵字" />
             <label className="grid gap-1.5 text-sm font-medium text-slate-700">
               類型
               <select name="identifierType" className="h-10 rounded-md border border-border px-3 text-sm">
@@ -51,8 +51,12 @@ export default async function BlacklistsPage({
                 <option value="phone">手機</option>
                 <option value="ip">IP</option>
                 <option value="visitor_id">Visitor ID</option>
+                <option value="keyword">禁止關鍵字</option>
               </select>
             </label>
+            <p className="-mt-2 text-xs leading-5 text-slate-500">
+              禁止關鍵字會以不分大小寫的純文字片段比對；不會執行正規表示式或萬用字元。
+            </p>
             <Field label="原因" name="reason" required />
             <TextArea label="備註" name="notes" />
             <SubmitButton>加入黑名單</SubmitButton>

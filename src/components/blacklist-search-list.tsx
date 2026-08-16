@@ -18,6 +18,10 @@ type BlacklistListEntry = {
   createdAt: string;
 };
 
+const identifierTypeLabels: Record<string, string> = {
+  keyword: "禁止關鍵字",
+};
+
 export function BlacklistSearchList({
   entries,
   csrfToken,
@@ -56,7 +60,7 @@ export function BlacklistSearchList({
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-semibold text-slate-950">{entry.identifier}</h2>
                 <Badge tone={entry.isActive ? "orange" : "gray"}>{entry.isActive ? "封鎖中" : "已解除"}</Badge>
-                <Badge tone="blue">{entry.identifierType}</Badge>
+                <Badge tone="blue">{identifierTypeLabels[entry.identifierType] ?? entry.identifierType}</Badge>
               </div>
               <p className="mt-2 text-sm text-slate-600">{entry.reason}</p>
               <p className="mt-1 text-xs text-slate-400">建立：{formatDateTime(new Date(entry.createdAt))}</p>
