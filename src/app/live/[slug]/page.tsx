@@ -102,6 +102,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         heroImageUrl: live.heroImageUrl,
         vendorId: live.vendorId,
         admissionRequired: true,
+        chatEnabled: Boolean(sameVendorActiveForm && parsedFormFields?.success),
         brand: {
           name: live.vendor.name,
           logoUrl: live.vendor.logoUrl,

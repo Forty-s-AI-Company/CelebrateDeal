@@ -138,6 +138,7 @@ describe("PublicLivePage", () => {
       }),
     }));
     expect(element.props.live.form).toBeNull();
+    expect(element.props.live.chatEnabled).toBe(false);
   });
 
   it("returns not found when the lifecycle filter rejects the live", async () => {
@@ -195,6 +196,7 @@ describe("PublicLivePage", () => {
       fields,
     });
     expect(element.props.live).not.toHaveProperty("formConfigurationUnavailable");
+    expect(element.props.live.chatEnabled).toBe(true);
   });
 
   it("maps public commerce data without exposing the playback source", async () => {
@@ -227,7 +229,7 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
     expect(element.props.live).toEqual({
-      id: "live-1", title: "公開直播", slug: "public-live", status: "live", description: "直播說明", accentCopy: "限時優惠", heroImageUrl: "/hero.png", vendorId: "vendor-1", admissionRequired: true,
+      id: "live-1", title: "公開直播", slug: "public-live", status: "live", description: "直播說明", accentCopy: "限時優惠", heroImageUrl: "/hero.png", vendorId: "vendor-1", admissionRequired: true, chatEnabled: true,
       brand: { name: "品牌商店", logoUrl: "/logo.png", primaryColor: "#123456", ctaColor: "#654321" },
       form: { id: "form-1", headline: "立即登記", description: "報名說明", submitLabel: "送出資料", successMessage: "已完成", fields: validFields },
       interactionEvents: [
@@ -527,11 +529,12 @@ describe("PublicLivePage", () => {
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
     expect(element.props.live.form).toBeNull();
     expect(element.props.live.formConfigurationUnavailable).toBe(true);
+    expect(element.props.live.chatEnabled).toBe(false);
     expect(element.props.live.videoUrl).toBeUndefined();
     expect(element.props.live.interactionEvents).toEqual([]);
     expect(element.props.live.products).toEqual([]);
     expect(Object.keys(element.props.live)).toEqual([
-      "id", "title", "slug", "status", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
+      "id", "title", "slug", "status", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
   });
 });

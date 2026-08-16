@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles, UserRound } from "lucide-react";
+import { Megaphone, MessageCircle, Package, Send, ShoppingBag, Sparkles } from "lucide-react";
 import { LeadForm } from "@/components/lead-form";
+import { LiveChatPanel } from "@/components/live-chat-panel";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -77,6 +78,8 @@ type LivePageData = {
   videoUrl?: string | null;
   vendorId: string;
   admissionRequired?: boolean;
+  /** Real viewer chat stays opt-in so isolated fixtures never start polling. */
+  chatEnabled?: boolean;
   brand: {
     name: string;
     logoUrl: string | null;
@@ -140,10 +143,12 @@ function useLiveAdmission({
   vendorId,
   liveId,
   admissionRequired,
+  refreshKey,
 }: {
   vendorId: string;
   liveId: string;
   admissionRequired: boolean;
+  refreshKey: number;
 }): LiveAdmissionStatus {
   const [admissionStatus, setAdmissionStatus] = useState<LiveAdmissionStatus>(admissionRequired ? "checking" : "admitted");
 
@@ -175,7 +180,7 @@ function useLiveAdmission({
         keepalive: true,
       }).catch(() => undefined);
     };
-  }, [liveId, vendorId]);
+  }, [liveId, refreshKey, vendorId]);
 
   return admissionStatus;
 }
@@ -554,13 +559,11 @@ function prioritizeProduct<T extends { id: string }>(products: T[], spotlightPro
 type LiveInteractionEvent = LivePageData["interactionEvents"][number];
 type LiveProduct = LivePageData["products"][number];
 
-function renderScriptedInteractionOverlay({
+export function ScriptedInteractionOverlay({
   latestCtaEvent,
   latestProductEvent,
   spotlightProduct,
-  scheduledMessages,
   hasScriptedEvents,
-  chatRef,
   isSubmittingCheckout,
   trackCta,
   trackProduct,
@@ -568,9 +571,7 @@ function renderScriptedInteractionOverlay({
   latestCtaEvent: LiveInteractionEvent | undefined;
   latestProductEvent: LiveInteractionEvent | undefined;
   spotlightProduct: LiveProduct | undefined;
-  scheduledMessages: ScheduledRuntimeMessage[];
   hasScriptedEvents: boolean;
-  chatRef: RefObject<HTMLDivElement | null>;
   isSubmittingCheckout: boolean;
   trackCta: () => Promise<void>;
   trackProduct: (productId: string) => Promise<void>;
@@ -622,44 +623,6 @@ function renderScriptedInteractionOverlay({
           ? "官方互動為商家預先設定的腳本，不代表即時真人留言、真實購買或觀看人數。"
           : "目前沒有商家預設互動腳本，頁面不會模擬真人留言或購買行為。"}
       </p>
-      <div
-        ref={chatRef}
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions text"
-        aria-label="商家預設互動腳本"
-        className="max-h-56 space-y-2 overflow-hidden pr-1"
-      >
-        {scheduledMessages.length === 0 ? (
-          <div className="w-fit max-w-[88%] rounded-2xl bg-black/35 px-3 py-2 text-sm text-white/80 backdrop-blur-md">
-            {hasScriptedEvents
-              ? "播放到指定秒數後，商家預先設定的互動腳本會出現在這裡。"
-              : "這場直播目前沒有設定互動腳本。"}
-          </div>
-        ) : null}
-        {scheduledMessages.map((message) => {
-          const isOfficial = message.actor.presentationRole === "official";
-          return (
-          <div
-            key={message.id}
-            className={`w-fit max-w-[92%] animate-[fadeInUp_220ms_ease-out] rounded-2xl border px-3 py-2 text-sm shadow-lg backdrop-blur-md ${
-              isOfficial ? "border-blue-300/50 bg-blue-950/65" : "border-white/15 bg-black/40"
-            }`}
-          >
-            <div className="mb-1 flex items-center gap-2">
-              {message.actor.avatarUrl ? <Image src={message.actor.avatarUrl} alt="" width={24} height={24} unoptimized className="h-6 w-6 rounded-full object-cover" /> : <UserRound size={18} />}
-              <span className="font-bold">{message.actor.name}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${isOfficial ? "bg-blue-500/90" : "bg-white/20"}`}>
-                {message.actor.label}
-              </span>
-              {isOfficial ? <span className="rounded-full border border-blue-200/40 px-2 py-0.5 text-[11px] font-black">官方</span> : null}
-              <span className="rounded-full border border-white/20 bg-black/30 px-2 py-0.5 text-[11px] font-bold">預設腳本</span>
-            </div>
-            <p className="leading-5 text-white/90">{message.body}</p>
-          </div>
-          );
-        })}
-      </div>
     </>
   );
 }
@@ -671,16 +634,18 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [streamQuotaExhausted, setStreamQuotaExhausted] = useState(false);
+  const [admissionRefreshKey, setAdmissionRefreshKey] = useState(0);
+  const refreshAdmission = useMemo(() => () => setAdmissionRefreshKey((current) => current + 1), []);
   // Public pages opt into admission-required SSR; direct component fixtures can
   // keep the admitted default while testing the rest of the playback contract.
   const admissionStatus = useLiveAdmission({
     vendorId: live.vendorId,
     liveId: live.id,
     admissionRequired: live.admissionRequired === true,
+    refreshKey: admissionRefreshKey,
   });
   const visiblePlaybackUrl = useLivePlaybackSource(live, admissionStatus);
   const playableSource = streamQuotaExhausted ? null : visiblePlaybackUrl;
-  const chatRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const checkoutSubmissionRef = useRef(false);
   const visitorId = useMemo(
@@ -738,10 +703,6 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       }),
     });
   }, [live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
-
-  useEffect(() => {
-    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
-  }, [scheduledMessages.length]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -885,17 +846,25 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
           </div>
 
-          {renderScriptedInteractionOverlay({
-            latestCtaEvent,
-            latestProductEvent,
-            spotlightProduct,
-            scheduledMessages,
-            hasScriptedEvents: live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0,
-            chatRef,
-            isSubmittingCheckout,
-            trackCta,
-            trackProduct,
-          })}
+          <ScriptedInteractionOverlay
+            latestCtaEvent={latestCtaEvent}
+            latestProductEvent={latestProductEvent}
+            spotlightProduct={spotlightProduct}
+            hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
+            isSubmittingCheckout={isSubmittingCheckout}
+            trackCta={trackCta}
+            trackProduct={trackProduct}
+          />
+          <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+            <LiveChatPanel
+              enabled={live.chatEnabled === true}
+              admissionStatus={admissionStatus}
+              vendorId={live.vendorId}
+              liveId={live.id}
+              scheduledMessages={scheduledMessages}
+              onAdmissionInvalid={refreshAdmission}
+            />
+          </div>
         </div>
 
         <PlaybackNavigation panel={panel} onPanelChange={setPanel} />

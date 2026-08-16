@@ -43,7 +43,8 @@ vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-v
 
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
-import { affiliateClickEndpoint, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
+import { LiveChatPanel } from "./live-chat-panel";
+import { affiliateClickEndpoint, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -58,16 +59,23 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
   if (Array.isArray(value)) return value.flatMap((child) => findElements(child, predicate));
   if (!isElementNode(value)) return [];
 
+  const renderedChildren = value.type === ScriptedInteractionOverlay
+    ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
+    : value.props.children;
+
   return [
     ...(predicate(value) ? [value] : []),
-    ...findElements(value.props.children, predicate),
+    ...findElements(renderedChildren, predicate),
   ];
 }
 
 function textContent(value: unknown): string {
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map(textContent).join("");
-  return isElementNode(value) ? textContent(value.props.children) : "";
+  if (!isElementNode(value)) return "";
+  return value.type === ScriptedInteractionOverlay
+    ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
+    : textContent(value.props.children);
 }
 
 const live: Parameters<typeof LivePlayback>[0]["live"] = {
@@ -84,6 +92,7 @@ const live: Parameters<typeof LivePlayback>[0]["live"] = {
   form: null,
   interactionEvents: [],
   scheduledMessages: [],
+  chatEnabled: false,
   products: [
     { id: "test-fixture-product-1", name: "測試商品一", description: null, priceCents: 1000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
     { id: "test-fixture-product-2", name: "測試商品二", description: null, priceCents: 2000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
@@ -527,15 +536,14 @@ describe("LivePlayback checkout", () => {
       }],
     });
     const pageCopy = textContent(tree);
-    const scriptedLog = findElements(tree, (element) => element.props.role === "log")[0];
+    const chatPanel = findElements(tree, (element) => element.type === LiveChatPanel)[0];
 
     expect(pageCopy).toContain("官方互動為商家預先設定的腳本");
     expect(pageCopy).toContain("不代表即時真人留言、真實購買或觀看人數");
     expect(pageCopy).toContain("腳本推薦");
-    expect(pageCopy).toContain("預設腳本");
     expect(pageCopy).toContain("商家腳本");
-    expect(scriptedLog?.props["aria-label"]).toBe("商家預設互動腳本");
-    expect(scriptedLog?.props["aria-live"]).toBe("polite");
+    expect(chatPanel?.props.scheduledMessages).toEqual([expect.objectContaining({ id: "test-fixture-chat", source: "scheduled" })]);
+    expect(chatPanel?.props.enabled).toBe(false);
   });
 
   it("renders scheduled official and audience messages only at or after their trigger second", () => {
@@ -557,29 +565,22 @@ describe("LivePlayback checkout", () => {
     ];
 
     let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
-    expect(textContent(tree)).not.toContain("官方提醒");
-    expect(textContent(tree)).not.toContain("觀眾提醒");
+    expect(findElements(tree, (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual([]);
 
     const video = findElements(tree, (element) => element.type === "video")[0];
     if (!video) throw new Error("Expected video element");
     const onTimeUpdate = video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void;
     onTimeUpdate({ currentTarget: { currentTime: 9.99 } });
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
-    expect(textContent(tree)).not.toContain("官方提醒");
-    expect(textContent(tree)).not.toContain("觀眾提醒");
+    expect(findElements(tree, (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual([]);
 
     onTimeUpdate({ currentTarget: { currentTime: 10 } });
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
-    const pageCopy = textContent(tree);
-    expect(pageCopy).toContain("官方提醒");
-    expect(pageCopy).toContain("觀眾提醒");
-    expect(pageCopy).toContain("官方");
-    expect(pageCopy).toContain("預設腳本");
+    expect(findElements(tree, (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual(scheduledMessages);
 
     onTimeUpdate({ currentTarget: { currentTime: 9.25 } });
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
-    expect(textContent(tree)).not.toContain("官方提醒");
-    expect(textContent(tree)).not.toContain("觀眾提醒");
+    expect(findElements(tree, (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual([]);
   });
 
   it("does not label a different live product as a scripted recommendation when the spotlight target is stale", () => {
@@ -606,8 +607,8 @@ describe("LivePlayback checkout", () => {
     const pageCopy = textContent(renderLive({ interactionEvents: [] }));
 
     expect(pageCopy).toContain("目前沒有商家預設互動腳本");
-    expect(pageCopy).toContain("這場直播目前沒有設定互動腳本");
     expect(pageCopy).not.toContain("播放到指定秒數後，商家預先設定的互動腳本會出現在這裡");
+    expect(findElements(renderLive({ interactionEvents: [] }), (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual([]);
   });
 
   it("builds an encoded same-origin checkout route and rejects missing identities", () => {
