@@ -6,6 +6,11 @@ import {
   ensureLiveReminderDelivery,
   ensureRegistrationConfirmationDelivery,
 } from "@/lib/email-delivery";
+import {
+  createFormSubmissionChatSessionToken,
+  FORM_SUBMISSION_CHAT_SESSION_COOKIE,
+  formSubmissionChatSessionCookieOptions,
+} from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -14,13 +19,25 @@ const VerificationForm = z.object({
   token: z.string().min(1).max(320),
 }).strict();
 
-function redirectResult(request: Request, status: "verified" | "invalid") {
+function redirectResult(
+  request: Request,
+  status: "verified" | "invalid",
+  chatSession?: { submissionId: string },
+) {
   const url = new URL("/verify-registration", request.url);
   url.searchParams.set("status", status);
-  return NextResponse.redirect(url, {
+  const response = NextResponse.redirect(url, {
     status: 303,
     headers: { "Cache-Control": "private, no-store" },
   });
+  if (chatSession) {
+    response.cookies.set(
+      FORM_SUBMISSION_CHAT_SESSION_COOKIE,
+      createFormSubmissionChatSessionToken({ submissionId: chatSession.submissionId }),
+      formSubmissionChatSessionCookieOptions(new URL(request.url).protocol === "https:"),
+    );
+  }
+  return response;
 }
 
 export async function POST(request: Request) {
@@ -85,5 +102,5 @@ export async function POST(request: Request) {
       }
     }
   }
-  return redirectResult(request, "verified");
+  return redirectResult(request, "verified", result.chatSession);
 }

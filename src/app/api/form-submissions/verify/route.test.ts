@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   db: { marker: "verification-db" },
@@ -21,6 +21,7 @@ vi.mock("@/lib/email-delivery", () => ({
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 
 import { POST } from "./route";
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 
 const token = `fsv1.formsub_test.1780000000.1.${"a".repeat(43)}`;
 const confirmation = {
@@ -50,9 +51,12 @@ function request(value = token, origin: string | null = "https://app.example.tes
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("CSRF_SECRET", "form-chat-session-route-test-secret-longer-than-thirty-two-bytes");
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/form-submissions/verify", () => {
   it("拒絕缺少或跨網域的來源，且不執行驗證", async () => {
@@ -101,6 +105,28 @@ describe("POST /api/form-submissions/verify", () => {
     expect(mocks.captureOperationalError).not.toHaveBeenCalled();
   });
 
+  it("只在驗證成功後核發 chat session cookie，且不把 submission 或 token 放入 redirect response", async () => {
+    const chatSession = { submissionId: confirmation.formSubmissionId };
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "verified", confirmation, chatSession });
+
+    const response = await POST(request());
+    const setCookie = response.headers.getSetCookie().find((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`));
+
+    expect(setCookie).toMatch(new RegExp(
+      `^${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=fss1\\.formsub_test\\.\\d+\\.[A-Za-z0-9_-]{43};`,
+      "u",
+    ));
+    expect(setCookie).toContain("Max-Age=2592000");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toContain("SameSite=lax");
+    expect(response.headers.get("location")).not.toContain(confirmation.formSubmissionId);
+    const responseBody = await response.text();
+    expect(responseBody).not.toContain(confirmation.formSubmissionId);
+    expect(responseBody).not.toContain(token);
+  });
+
   it("已驗證的重複請求不再寄送確認信", async () => {
     mocks.verifyFormSubmission.mockResolvedValue({ status: "already_verified" });
 
@@ -110,6 +136,21 @@ describe("POST /api/form-submissions/verify", () => {
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=verified");
     expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
     expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
+  });
+
+  it("already_verified 只有 current claim 才重新核發 chat session cookie", async () => {
+    mocks.verifyFormSubmission.mockResolvedValue({
+      status: "already_verified",
+      chatSession: { submissionId: confirmation.formSubmissionId },
+    });
+
+    const response = await POST(request());
+    expect(response.headers.getSetCookie().some((value) => value.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))).toBe(true);
+    expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
+
+    mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
+    const staleResponse = await POST(request());
+    expect(staleResponse.headers.getSetCookie()).toEqual([]);
   });
 
   it("開播提醒排程失敗時保留 verified 結果並寫入去識別監控", async () => {

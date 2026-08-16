@@ -1,12 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
 
 const createdVendorIds: string[] = [];
 
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "form-verification-disposable-test-secret-longer-than-thirty-two-bytes");
+});
+
 afterEach(async () => {
   await getDb().vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
+  vi.unstubAllEnvs();
 });
 
 async function createFixture(suffix: string) {
@@ -123,8 +128,168 @@ describe("form submission verification disposable database invariants", () => {
 
     await expect(verifyFormSubmission(db, token, new Date(now.getTime() + 1_000))).resolves.toEqual({
       status: "already_verified",
+      chatSession: { submissionId: submission.id },
     });
     expect(await db.analyticsEvent.count({ where: { vendorId: vendor.id, eventType: "lead_submit" } })).toBe(1);
+  });
+
+  it("only issues a chat session for an already-verified submission when token version and expiry are still current", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const { db, form } = await createFixture(suffix);
+    const now = new Date("2026-08-17T00:00:00.000Z");
+    const expiresAt = new Date("2026-08-18T00:00:00.000Z");
+    const submission = await db.formSubmission.create({
+      data: {
+        formId: form.id,
+        name: "Already verified lead",
+        email: `already-${suffix}@example.test`,
+        source: "form",
+        verificationStatus: "VERIFIED",
+        verifiedAt: now,
+        verificationExpiresAt: expiresAt,
+        verificationVersion: 3,
+      },
+    });
+    const currentToken = createFormSubmissionVerificationToken({
+      submissionId: submission.id,
+      expiresAt,
+      version: 3,
+    });
+
+    await expect(verifyFormSubmission(db, currentToken, now)).resolves.toEqual({
+      status: "already_verified",
+      chatSession: { submissionId: submission.id },
+    });
+
+    await db.formSubmission.update({
+      where: { id: submission.id },
+      data: { verificationVersion: 4 },
+    });
+    await expect(verifyFormSubmission(db, currentToken, now)).resolves.toEqual({ status: "invalid" });
+  });
+
+  it("does not issue a chat session for an already-verified submission after its current verification link expires", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const { db, form } = await createFixture(suffix);
+    const now = new Date("2026-08-17T00:00:00.000Z");
+    const expiredAt = new Date(now.getTime() - 1_000);
+    const submission = await db.formSubmission.create({
+      data: {
+        formId: form.id,
+        name: "Expired already verified lead",
+        email: `expired-already-${suffix}@example.test`,
+        source: "form",
+        verificationStatus: "VERIFIED",
+        verifiedAt: new Date(now.getTime() - 60_000),
+        verificationExpiresAt: expiredAt,
+        verificationVersion: 7,
+      },
+    });
+    const expiredToken = createFormSubmissionVerificationToken({
+      submissionId: submission.id,
+      expiresAt: expiredAt,
+      version: submission.verificationVersion,
+    });
+
+    await expect(verifyFormSubmission(db, expiredToken, now)).resolves.toEqual({ status: "invalid" });
+  });
+
+  it("does not issue a session for an unverified submission bound to another form's live", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const { db, vendor, form } = await createFixture(suffix);
+    const wrongForm = await db.registrationForm.create({
+      data: {
+        vendorId: vendor.id,
+        name: "Wrong live form",
+        slug: `g7-13b-unverified-wrong-form-${suffix}`,
+        headline: "Wrong live",
+        fields: [
+          { key: "name", label: "Name", type: "text", required: true },
+          { key: "email", label: "Email", type: "email", required: true },
+        ],
+      },
+    });
+    const wrongLive = await db.live.create({
+      data: {
+        vendorId: vendor.id,
+        formId: wrongForm.id,
+        title: "Wrong live",
+        slug: `g7-13b-unverified-wrong-live-${suffix}`,
+        scheduledAt: new Date("2026-08-09T00:00:00.000Z"),
+        status: "live",
+      },
+    });
+    const now = new Date("2026-08-17T00:00:00.000Z");
+    const expiresAt = new Date("2026-08-18T00:00:00.000Z");
+    const submission = await db.formSubmission.create({
+      data: {
+        formId: form.id,
+        liveId: wrongLive.id,
+        name: "Unverified wrong live lead",
+        email: `unverified-wrong-live-${suffix}@example.test`,
+        source: "live",
+        verificationExpiresAt: expiresAt,
+      },
+    });
+    const token = createFormSubmissionVerificationToken({
+      submissionId: submission.id,
+      expiresAt,
+      version: submission.verificationVersion,
+    });
+
+    await expect(verifyFormSubmission(db, token, now)).resolves.toEqual({ status: "invalid" });
+    await expect(db.formSubmission.findUniqueOrThrow({ where: { id: submission.id } })).resolves.toMatchObject({
+      verificationStatus: "UNVERIFIED",
+      verifiedAt: null,
+    });
+  });
+
+  it("does not issue a session for an already-verified submission bound to the wrong live and form", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const { db, vendor, form } = await createFixture(suffix);
+    const wrongForm = await db.registrationForm.create({
+      data: {
+        vendorId: vendor.id,
+        name: "Verified wrong live form",
+        slug: `g7-13b-verified-wrong-form-${suffix}`,
+        headline: "Wrong verified live",
+        fields: [
+          { key: "name", label: "Name", type: "text", required: true },
+          { key: "email", label: "Email", type: "email", required: true },
+        ],
+      },
+    });
+    const wrongLive = await db.live.create({
+      data: {
+        vendorId: vendor.id,
+        formId: wrongForm.id,
+        title: "Verified wrong live",
+        slug: `g7-13b-verified-wrong-live-${suffix}`,
+        scheduledAt: new Date("2026-08-09T00:00:00.000Z"),
+        status: "live",
+      },
+    });
+    const now = new Date("2026-08-17T00:00:00.000Z");
+    const expiresAt = new Date("2026-08-18T00:00:00.000Z");
+    const submission = await db.formSubmission.create({
+      data: {
+        formId: form.id,
+        liveId: wrongLive.id,
+        name: "Already verified wrong live lead",
+        email: `verified-wrong-live-${suffix}@example.test`,
+        source: "live",
+        verificationStatus: "VERIFIED",
+        verifiedAt: new Date(now.getTime() - 60_000),
+        verificationExpiresAt: expiresAt,
+      },
+    });
+    const token = createFormSubmissionVerificationToken({
+      submissionId: submission.id,
+      expiresAt,
+      version: submission.verificationVersion,
+    });
+
+    await expect(verifyFormSubmission(db, token, now)).resolves.toEqual({ status: "invalid" });
   });
 
   it("rejects expired or tampered claims without changing durable state", async () => {

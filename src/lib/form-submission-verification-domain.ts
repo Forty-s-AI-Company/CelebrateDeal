@@ -4,9 +4,13 @@ import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-ver
 
 export type FormSubmissionVerificationResult =
   | { status: "invalid" }
-  | { status: "already_verified" }
+  | {
+      status: "already_verified";
+      chatSession: { submissionId: string };
+    }
   | {
       status: "verified";
+      chatSession: { submissionId: string };
       confirmation: {
         vendorId: string;
         vendorName: string;
@@ -38,6 +42,21 @@ export type FormSubmissionVerificationResult =
       } | null;
     };
 
+function matchesCurrentVerificationClaim(
+  submission: {
+    verificationVersion: number;
+    verificationExpiresAt: Date | null;
+  },
+  verifiedToken: { version: number; expiresAt: Date },
+  now: Date,
+) {
+  return submission.verificationVersion === verifiedToken.version
+    && Boolean(submission.verificationExpiresAt)
+    && Math.floor(submission.verificationExpiresAt!.getTime() / 1_000)
+      === Math.floor(verifiedToken.expiresAt.getTime() / 1_000)
+    && submission.verificationExpiresAt! > now;
+}
+
 export async function verifyFormSubmission(
   db: PrismaClient,
   token: string,
@@ -65,6 +84,8 @@ export async function verifyFormSubmission(
         live: {
           select: {
             id: true,
+            vendorId: true,
+            formId: true,
             title: true,
             scheduledAt: true,
             liveReminderOffsetMinutes: true,
@@ -95,14 +116,25 @@ export async function verifyFormSubmission(
       },
     });
     if (!submission) return { status: "invalid" as const };
-    if (submission.verificationStatus === "VERIFIED") return { status: "already_verified" as const };
     if (
-      submission.verificationVersion !== verifiedToken.version
-      || !submission.verificationExpiresAt
-      || Math.floor(submission.verificationExpiresAt.getTime() / 1_000)
-        !== Math.floor(verifiedToken.expiresAt.getTime() / 1_000)
-      || submission.verificationExpiresAt <= now
-    ) return { status: "invalid" as const };
+      submission.liveId !== null
+      && (!submission.live
+        || submission.live.vendorId !== submission.form.vendorId
+        || submission.live.formId !== submission.formId)
+    ) {
+      return { status: "invalid" as const };
+    }
+    if (submission.verificationStatus === "VERIFIED") {
+      return matchesCurrentVerificationClaim(submission, verifiedToken, now)
+        ? {
+            status: "already_verified" as const,
+            chatSession: { submissionId: submission.id },
+          }
+        : { status: "invalid" as const };
+    }
+    if (!matchesCurrentVerificationClaim(submission, verifiedToken, now)) {
+      return { status: "invalid" as const };
+    }
 
     const claimed = await tx.formSubmission.updateMany({
       where: {
@@ -119,10 +151,18 @@ export async function verifyFormSubmission(
     if (claimed.count !== 1) {
       const current = await tx.formSubmission.findUnique({
         where: { id: submission.id },
-        select: { verificationStatus: true },
+        select: {
+          verificationStatus: true,
+          verificationVersion: true,
+          verificationExpiresAt: true,
+        },
       });
       return current?.verificationStatus === "VERIFIED"
-        ? { status: "already_verified" as const }
+        && matchesCurrentVerificationClaim(current, verifiedToken, now)
+        ? {
+            status: "already_verified" as const,
+            chatSession: { submissionId: submission.id },
+          }
         : { status: "invalid" as const };
     }
 
@@ -157,6 +197,7 @@ export async function verifyFormSubmission(
 
     return {
       status: "verified" as const,
+      chatSession: { submissionId: submission.id },
       confirmation: submission.live ? {
         vendorId: submission.form.vendorId,
         vendorName: submission.form.vendor.name,
