@@ -104,6 +104,10 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 
 注意：此模式由 Cloudflare edge 擋流，app 內 `checkRateLimit()` 會直接放行，因此必須在 dashboard 完成 rule 驗收。
 
+### Live chat 的來源信任
+
+live chat 另需要 production／Preview env `LIVE_CHAT_INGRESS_SECRET`，至少 32 字元。Cloudflare／Vercel edge 必須覆寫 `x-celebratedeal-live-chat-ingress`，app 以 `timingSafeEqual` 驗證 proof 後才讀取 `cf-connecting-ip` 或 `x-real-ip`。`cf-ray` 與 `RATE_LIMIT_PROVIDER` 都不能單獨作為信任根。Edge 必須封鎖直接 origin 存取，並覆寫使用者提供的同名 header。
+
 `/login` 的 rule 必須以可信 proxy 注入的 `cf-connecting-ip`（優先）或 `x-forwarded-for` 首個位址作為來源識別，並同時涵蓋來源總量與來源＋正規化 Email；不可只依 Email 計數。登入限流回應為 429 時顯示「登入失敗次數過多」提示；限流服務不可用時，app 必須 fail closed 並顯示登入保護服務暫時無法使用的提示。
 
 ## 5. Staging / Production Env Checklist

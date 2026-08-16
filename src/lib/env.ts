@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
+import {
+  LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
+  LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
+} from "@/lib/request-client-ip";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -23,6 +27,14 @@ export const ProductionEnvSchema = z.object({
   JOB_SECRET: z.string().min(16),
   CRON_SECRET: z.string().min(16),
   CSRF_SECRET: OptionalSecret,
+  LIVE_CHAT_INGRESS_SECRET: z.string()
+    .min(LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH)
+    .max(LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH)
+    .refine(
+      (value) => Buffer.byteLength(value, "utf8") <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
+      `LIVE_CHAT_INGRESS_SECRET 的 UTF-8 bytes 不得超過 ${LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH}`,
+    )
+    .optional(),
   RATE_LIMIT_PROVIDER: z.enum(["memory", "cloudflare_waf", "upstash_redis"]).default("memory"),
   UPSTASH_REDIS_REST_URL: OptionalSecret,
   UPSTASH_REDIS_REST_TOKEN: OptionalSecret,
@@ -83,6 +95,25 @@ function csrfSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
     key: "CSRF_SECRET",
     status: csrfSecretStrong && csrfSecretIsDistinct ? "pass" : "fail",
     message,
+  };
+}
+
+function liveChatIngressSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const value = env.LIVE_CHAT_INGRESS_SECRET;
+  const strong = secretPresent(value)
+    && value!.trim() === value
+    && value!.length >= LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH
+    && value!.length <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH
+    && Buffer.byteLength(value!, "utf8") >= LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH
+    && Buffer.byteLength(value!, "utf8") <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH
+    && !/[\r\n]/.test(value!);
+
+  return {
+    key: "LIVE_CHAT_INGRESS_SECRET",
+    status: strong ? "pass" : "fail",
+    message: strong
+      ? "已設定至少 32 字元的直播入口 proof secret"
+      : "Preview／Production 必須設定至少 32 字元的 LIVE_CHAT_INGRESS_SECRET",
   };
 }
 
@@ -230,6 +261,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
 
   if (deploymentSecurityRequired) {
     checks.push(csrfSecretDeploymentCheck(env));
+    checks.push(liveChatIngressSecretDeploymentCheck(env));
   }
 
   const rateLimitProvider = env.RATE_LIMIT_PROVIDER ?? "memory";

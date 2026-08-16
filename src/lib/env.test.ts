@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getEnvCheckReport, type EnvCheck } from "@/lib/env";
+import { getEnvCheckReport, ProductionEnvSchema, type EnvCheck } from "@/lib/env";
 
 const envKey = (...parts: string[]) => parts.join("_");
 
@@ -12,6 +12,7 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("JOB", "SECRET")]: "test-job-secret-value-at-least-32-bytes",
     [envKey("CRON", "SECRET")]: "test-cron-secret-value-at-least-32-bytes",
     [envKey("CSRF", "SECRET")]: "test-csrf-secret-value-at-least-32-bytes",
+    [envKey("LIVE", "CHAT", "INGRESS", "SECRET")]: "test-live-chat-ingress-secret-value-longer-than-32",
     [envKey("CLOUDFLARE", "ACCOUNT", "ID")]: "test-account-id",
     [envKey("CLOUDFLARE", "STREAM", "TOKEN")]: "test-stream-value",
     [envKey("CLOUDFLARE", "STREAM", "WEBHOOK", "SECRET")]: "test-webhook-value",
@@ -52,6 +53,44 @@ describe("getEnvCheckReport", () => {
 
     expect(report.ok).toBe(false);
     expect(check(report, envKey("DATABASE", "URL"), "fail")?.message).toBe("缺少或仍是 placeholder");
+  });
+
+  it("fails production when the live chat ingress secret is missing", () => {
+    const env = configuredEnv();
+    delete env[envKey("LIVE", "CHAT", "INGRESS", "SECRET")];
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("LIVE", "CHAT", "INGRESS", "SECRET"), "fail")?.message).toContain(
+      "至少 32 字元",
+    );
+  });
+
+  it("fails production when the live chat ingress secret is short", () => {
+    const env = configuredEnv();
+    env[envKey("LIVE", "CHAT", "INGRESS", "SECRET")] = "short";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("LIVE", "CHAT", "INGRESS", "SECRET"), "fail")?.message).toContain(
+      "至少 32 字元",
+    );
+  });
+
+  it.each([
+    ["overlong ASCII", "x".repeat(257)],
+    ["overlong UTF-8", "測".repeat(86)],
+  ])("fails production when the live chat ingress secret is %s", (_label, secret) => {
+    const env = configuredEnv();
+    env[envKey("LIVE", "CHAT", "INGRESS", "SECRET")] = secret;
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("LIVE", "CHAT", "INGRESS", "SECRET"), "fail")).toBeDefined();
+    expect(ProductionEnvSchema.safeParse(env).success).toBe(false);
   });
 
   it("allows Cloudflare Stream to remain safely disabled when all credentials are absent", () => {
