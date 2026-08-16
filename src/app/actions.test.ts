@@ -366,7 +366,6 @@ import {
   saveBrandSettingsAction,
   saveBrandSettingsActionState,
   type BrandSettingsActionState,
-  type InteractionRoleActionState,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import { RefundProviderError } from "@/lib/payment-providers/types";
@@ -375,6 +374,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { hashPassword } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
 import { initialMessageTemplateActionState } from "@/lib/message-template";
+import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 
 const transaction = {
   id: "payment-1",

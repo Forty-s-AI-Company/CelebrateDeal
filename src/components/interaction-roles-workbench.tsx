@@ -7,10 +7,12 @@ import type { InteractionRole } from "@prisma/client";
 import { AlertTriangle, ChevronLeft, ChevronRight, MessageCircle, Plus, Radio, Save, Trash2 } from "lucide-react";
 import {
   deleteInteractionRoleAction,
-  initialInteractionRoleActionState,
-  type InteractionRoleActionState,
   upsertInteractionRoleActionState,
 } from "@/app/actions";
+import {
+  initialInteractionRoleActionState,
+  type InteractionRoleActionState,
+} from "@/lib/interaction-role-action-state";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";

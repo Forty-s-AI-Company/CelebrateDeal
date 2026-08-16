@@ -47,6 +47,7 @@ import {
   type InteractionRoleAvatarMode,
   type NormalizedInteractionRole,
 } from "@/lib/interaction-role";
+import type { InteractionRoleActionState, InteractionRoleFormValues } from "@/lib/interaction-role-action-state";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
@@ -1269,44 +1270,6 @@ export async function upsertLiveAction(formData: FormData) {
   const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
-
-export type InteractionRoleFormValues = {
-  id: string;
-  name: string;
-  avatarUrl: string;
-  avatarAssetId: string;
-  avatarMode: InteractionRoleAvatarMode | "";
-  avatarUploadPhase: string;
-  label: string;
-  roleType: string;
-  tone: string;
-  isActive: boolean;
-  isScheduled: boolean;
-};
-
-export type InteractionRoleActionState = {
-  status: "idle" | "error";
-  message: string;
-  values: InteractionRoleFormValues;
-};
-
-export const initialInteractionRoleActionState: InteractionRoleActionState = {
-  status: "idle",
-  message: "",
-  values: {
-    id: "",
-    name: "",
-    avatarUrl: "",
-    avatarAssetId: "",
-    avatarMode: "",
-    avatarUploadPhase: "",
-    label: "",
-    roleType: "official",
-    tone: "",
-    isActive: true,
-    isScheduled: false,
-  },
-};
 
 class InteractionRoleInputError extends Error {}
 class InteractionRoleMissingError extends Error {}

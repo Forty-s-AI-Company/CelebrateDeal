@@ -47,21 +47,6 @@ vi.mock("react", async (importOriginal) => {
 vi.mock("@/app/actions", () => ({
   deleteInteractionRoleAction: vi.fn(),
   upsertInteractionRoleAction: vi.fn(),
-  initialInteractionRoleActionState: {
-    status: "idle",
-    message: "",
-    values: {
-      id: "",
-      name: "",
-      avatarUrl: "",
-      avatarMode: "preset",
-      label: "官方角色",
-      roleType: "official",
-      tone: "",
-      isActive: true,
-      isScheduled: false,
-    },
-  },
   upsertInteractionRoleActionState: vi.fn(),
 }));
 
