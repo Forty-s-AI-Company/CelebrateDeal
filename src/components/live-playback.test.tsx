@@ -42,6 +42,7 @@ vi.mock("@/lib/stream-usage-client", () => ({ postStreamUsageHeartbeat: vi.fn() 
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
+import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { affiliateClickEndpoint, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, LivePlayback, openExternalUrl, PlaybackNavigation, requestCheckout, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
 
 type ElementNode = {
@@ -82,6 +83,7 @@ const live: Parameters<typeof LivePlayback>[0]["live"] = {
   brand: { name: "測試品牌", logoUrl: null, primaryColor: "#000000", ctaColor: "#f97316" },
   form: null,
   interactionEvents: [],
+  scheduledMessages: [],
   products: [
     { id: "test-fixture-product-1", name: "測試商品一", description: null, priceCents: 1000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
     { id: "test-fixture-product-2", name: "測試商品二", description: null, priceCents: 2000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
@@ -491,17 +493,6 @@ describe("LivePlayback checkout", () => {
   it("labels merchant-configured interaction roles, product spotlights, and CTAs truthfully", () => {
     const interactionEvents = [
       {
-        id: "test-fixture-chat",
-        eventType: "chat_message",
-        triggerSec: 0,
-        title: "歡迎",
-        message: "歡迎來到直播",
-        productId: null,
-        ctaLabel: null,
-        ctaUrl: null,
-        role: { name: "直播小編", avatarUrl: null, label: "官方角色", roleType: "official" },
-      },
-      {
         id: "test-fixture-product",
         eventType: "product_spotlight",
         triggerSec: 0,
@@ -525,7 +516,16 @@ describe("LivePlayback checkout", () => {
       },
     ];
 
-    const tree = renderLive({ interactionEvents });
+    const tree = renderLive({
+      interactionEvents,
+      scheduledMessages: [{
+        id: "test-fixture-chat",
+        source: "scheduled",
+        triggerSec: 0,
+        body: "歡迎來到直播",
+        actor: { name: "直播小編", avatarUrl: null, label: "官方角色", presentationRole: "official" },
+      }],
+    });
     const pageCopy = textContent(tree);
     const scriptedLog = findElements(tree, (element) => element.props.role === "log")[0];
 
@@ -536,6 +536,50 @@ describe("LivePlayback checkout", () => {
     expect(pageCopy).toContain("商家腳本");
     expect(scriptedLog?.props["aria-label"]).toBe("商家預設互動腳本");
     expect(scriptedLog?.props["aria-live"]).toBe("polite");
+  });
+
+  it("renders scheduled official and audience messages only at or after their trigger second", () => {
+    const scheduledMessages: ScheduledRuntimeMessage[] = [
+      {
+        id: "scheduled-official",
+        source: "scheduled",
+        triggerSec: 10,
+        body: "官方提醒",
+        actor: { name: "直播小編", avatarUrl: null, label: "官方角色", presentationRole: "official" },
+      },
+      {
+        id: "scheduled-audience",
+        source: "scheduled",
+        triggerSec: 10,
+        body: "觀眾提醒",
+        actor: { name: "小明", avatarUrl: null, label: "一般觀眾", presentationRole: "audience" },
+      },
+    ];
+
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
+    expect(textContent(tree)).not.toContain("官方提醒");
+    expect(textContent(tree)).not.toContain("觀眾提醒");
+
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    const onTimeUpdate = video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void;
+    onTimeUpdate({ currentTarget: { currentTime: 9.99 } });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
+    expect(textContent(tree)).not.toContain("官方提醒");
+    expect(textContent(tree)).not.toContain("觀眾提醒");
+
+    onTimeUpdate({ currentTarget: { currentTime: 10 } });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
+    const pageCopy = textContent(tree);
+    expect(pageCopy).toContain("官方提醒");
+    expect(pageCopy).toContain("觀眾提醒");
+    expect(pageCopy).toContain("官方");
+    expect(pageCopy).toContain("預設腳本");
+
+    onTimeUpdate({ currentTarget: { currentTime: 9.25 } });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", scheduledMessages });
+    expect(textContent(tree)).not.toContain("官方提醒");
+    expect(textContent(tree)).not.toContain("觀眾提醒");
   });
 
   it("does not label a different live product as a scripted recommendation when the spotlight target is stale", () => {

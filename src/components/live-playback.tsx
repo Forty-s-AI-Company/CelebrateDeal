@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
+import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -104,9 +105,9 @@ type LivePageData = {
       name: string;
       avatarUrl: string | null;
       label: string;
-      roleType: string;
     };
   }>;
+  scheduledMessages?: ScheduledRuntimeMessage[];
   products: Array<{
     id: string;
     name: string;
@@ -557,7 +558,7 @@ function renderScriptedInteractionOverlay({
   latestCtaEvent,
   latestProductEvent,
   spotlightProduct,
-  chatEvents,
+  scheduledMessages,
   hasScriptedEvents,
   chatRef,
   isSubmittingCheckout,
@@ -567,7 +568,7 @@ function renderScriptedInteractionOverlay({
   latestCtaEvent: LiveInteractionEvent | undefined;
   latestProductEvent: LiveInteractionEvent | undefined;
   spotlightProduct: LiveProduct | undefined;
-  chatEvents: LiveInteractionEvent[];
+  scheduledMessages: ScheduledRuntimeMessage[];
   hasScriptedEvents: boolean;
   chatRef: RefObject<HTMLDivElement | null>;
   isSubmittingCheckout: boolean;
@@ -629,24 +630,35 @@ function renderScriptedInteractionOverlay({
         aria-label="商家預設互動腳本"
         className="max-h-56 space-y-2 overflow-hidden pr-1"
       >
-        {chatEvents.length === 0 ? (
+        {scheduledMessages.length === 0 ? (
           <div className="w-fit max-w-[88%] rounded-2xl bg-black/35 px-3 py-2 text-sm text-white/80 backdrop-blur-md">
             {hasScriptedEvents
               ? "播放到指定秒數後，商家預先設定的互動腳本會出現在這裡。"
               : "這場直播目前沒有設定互動腳本。"}
           </div>
         ) : null}
-        {chatEvents.map((event) => (
-          <div key={event.id} className="w-fit max-w-[92%] animate-[fadeInUp_220ms_ease-out] rounded-2xl bg-black/40 px-3 py-2 text-sm shadow-lg backdrop-blur-md">
+        {scheduledMessages.map((message) => {
+          const isOfficial = message.actor.presentationRole === "official";
+          return (
+          <div
+            key={message.id}
+            className={`w-fit max-w-[92%] animate-[fadeInUp_220ms_ease-out] rounded-2xl border px-3 py-2 text-sm shadow-lg backdrop-blur-md ${
+              isOfficial ? "border-blue-300/50 bg-blue-950/65" : "border-white/15 bg-black/40"
+            }`}
+          >
             <div className="mb-1 flex items-center gap-2">
-              {event.role?.avatarUrl ? <Image src={event.role.avatarUrl} alt="" width={24} height={24} unoptimized className="h-6 w-6 rounded-full object-cover" /> : <UserRound size={18} />}
-              <span className="font-bold">{event.role?.name ?? "官方系統"}</span>
-              <span className="rounded-full bg-blue-500/90 px-2 py-0.5 text-[11px] font-black">{event.role?.label ?? "官方角色"}</span>
+              {message.actor.avatarUrl ? <Image src={message.actor.avatarUrl} alt="" width={24} height={24} unoptimized className="h-6 w-6 rounded-full object-cover" /> : <UserRound size={18} />}
+              <span className="font-bold">{message.actor.name}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${isOfficial ? "bg-blue-500/90" : "bg-white/20"}`}>
+                {message.actor.label}
+              </span>
+              {isOfficial ? <span className="rounded-full border border-blue-200/40 px-2 py-0.5 text-[11px] font-black">官方</span> : null}
               <span className="rounded-full border border-white/20 bg-black/30 px-2 py-0.5 text-[11px] font-bold">預設腳本</span>
             </div>
-            <p className="leading-5 text-white/90">{event.message}</p>
+            <p className="leading-5 text-white/90">{message.body}</p>
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
@@ -694,7 +706,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     },
   });
   const triggeredEvents = live.interactionEvents.filter((event) => event.triggerSec <= currentSeconds);
-  const chatEvents = triggeredEvents.filter((event) => event.eventType === "chat_message" || event.eventType === "reminder");
+  const scheduledMessages = (live.scheduledMessages ?? []).filter((message) => message.triggerSec <= currentSeconds);
   const latestProductEvent = [...triggeredEvents].reverse().find((event) => (
     event.eventType === "product_spotlight"
     && Boolean(event.productId && live.products.some((product) => product.id === event.productId))
@@ -729,7 +741,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
-  }, [chatEvents.length]);
+  }, [scheduledMessages.length]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -877,8 +889,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             latestCtaEvent,
             latestProductEvent,
             spotlightProduct,
-            chatEvents,
-            hasScriptedEvents: live.interactionEvents.length > 0,
+            scheduledMessages,
+            hasScriptedEvents: live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0,
             chatRef,
             isSubmittingCheckout,
             trackCta,

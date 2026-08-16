@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { LivePlayback } from "@/components/live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
+import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 
@@ -38,13 +39,35 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
   const liveProductIds = new Set(live.products.map((item) => item.product.id));
-  const interactionEvents = live.interactionScript?.vendorId === live.vendorId
+  const publishedEvents = live.interactionScript?.vendorId === live.vendorId
     && live.interactionScript.status === "published"
     ? live.interactionScript.events
-      .filter((event) => (
-        event.eventType !== "chat_message"
-        && event.eventType !== "reminder"
-      ) || event.role?.isActive !== false)
+    : [];
+  const scheduledMessages = publishedEvents
+    .filter((event) => event.eventType === "chat_message" || event.eventType === "reminder")
+    .map((event): ScheduledRuntimeMessage | null => normalizeScheduledRuntimeMessage({
+      vendorId: live.vendorId,
+      event: {
+        id: event.id,
+        eventType: event.eventType,
+        triggerSec: event.triggerSec,
+        message: event.message,
+      },
+      role: event.role
+        ? {
+            vendorId: event.role.vendorId,
+            name: event.role.name,
+            avatarUrl: event.role.avatarUrl,
+            label: event.role.label,
+            roleType: event.role.roleType,
+            isActive: event.role.isActive,
+            isScheduled: event.role.isScheduled,
+          }
+        : null,
+    }))
+    .filter((message): message is ScheduledRuntimeMessage => message !== null);
+  const interactionEvents = publishedEvents
+      .filter((event) => event.eventType !== "chat_message" && event.eventType !== "reminder")
       .filter((event) => (
         event.eventType !== "product_spotlight"
         || Boolean(event.productId && liveProductIds.has(event.productId))
@@ -63,11 +86,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
               name: event.role.name,
               avatarUrl: event.role.avatarUrl,
               label: event.role.label,
-              roleType: event.role.roleType,
             }
           : null,
       }))
-    : [];
 
   return (
     <LivePlayback
@@ -99,6 +120,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
           : null,
         ...(formConfigurationUnavailable ? { formConfigurationUnavailable: true } : {}),
         interactionEvents,
+        scheduledMessages,
         products: live.products.map((item) => ({
           id: item.product.id,
           name: item.product.name,

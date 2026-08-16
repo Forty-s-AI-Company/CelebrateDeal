@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
+  getRuntimeLivePublishReadiness: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -17,6 +18,10 @@ vi.mock("@/lib/db", () => ({
       findFirst: mocks.findFirst,
     },
   }),
+}));
+
+vi.mock("@/lib/live-runtime-readiness", () => ({
+  getRuntimeLivePublishReadiness: mocks.getRuntimeLivePublishReadiness,
 }));
 
 vi.mock("@/components/live-playback", () => ({
@@ -84,6 +89,7 @@ function runtimeReadySalesLive() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: true });
   mocks.findFirst.mockResolvedValue(publicLive);
 });
 
@@ -151,6 +157,7 @@ describe("PublicLivePage", () => {
     ["script", { interactionScript: { vendorId: "vendor-1", status: "draft", events: [] } }],
     ["product", { products: [{ vendorId: "vendor-1", offerLabel: null, product: { id: "product-1", vendorId: "vendor-1", isActive: false, fulfillmentTypeConfirmed: true } }] }],
   ])("returns not found when a published sales live has stale %s readiness", async (_label, overrides) => {
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false });
     mocks.findFirst.mockResolvedValue({ ...runtimeReadySalesLive(), ...overrides });
 
     await expect(PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) }))
@@ -208,8 +215,8 @@ describe("PublicLivePage", () => {
         vendorId: "vendor-1",
         status: "published",
         events: [
-          { id: "event-1", eventType: "CTA", triggerSec: 12, title: "第一段", message: "看看課程", productId: "product-1", ctaLabel: "查看", ctaUrl: "/products/1", role: { vendorId: "vendor-1", name: "主持人", avatarUrl: "/host.png", label: "講師", roleType: "HOST" } },
-          { id: "event-2", eventType: "MESSAGE", triggerSec: 24, title: "第二段", message: "歡迎", productId: null, ctaLabel: null, ctaUrl: null, role: null },
+          { id: "event-1", eventType: "CTA", triggerSec: 12, title: "第一段", message: "看看課程", productId: "product-1", ctaLabel: "查看", ctaUrl: "/products/1", role: { vendorId: "vendor-1", name: "主持人", avatarUrl: "/host.png", label: "講師", roleType: "HOST", isActive: true, isScheduled: false } },
+          { id: "event-2", eventType: "chat_message", triggerSec: 24, title: "第二段", message: "歡迎", productId: null, ctaLabel: null, ctaUrl: null, role: { vendorId: "vendor-1", name: "直播小編", avatarUrl: "/host.png", label: "官方角色", roleType: "official", isActive: true, isScheduled: true } },
         ],
       },
       products: [{
@@ -224,9 +231,15 @@ describe("PublicLivePage", () => {
       brand: { name: "品牌商店", logoUrl: "/logo.png", primaryColor: "#123456", ctaColor: "#654321" },
       form: { id: "form-1", headline: "立即登記", description: "報名說明", submitLabel: "送出資料", successMessage: "已完成", fields: validFields },
       interactionEvents: [
-        { id: "event-1", eventType: "CTA", triggerSec: 12, title: "第一段", message: "看看課程", productId: "product-1", ctaLabel: "查看", ctaUrl: "/products/1", role: { name: "主持人", avatarUrl: "/host.png", label: "講師", roleType: "HOST" } },
-        { id: "event-2", eventType: "MESSAGE", triggerSec: 24, title: "第二段", message: "歡迎", productId: null, ctaLabel: null, ctaUrl: null, role: null },
+        { id: "event-1", eventType: "CTA", triggerSec: 12, title: "第一段", message: "看看課程", productId: "product-1", ctaLabel: "查看", ctaUrl: "/products/1", role: { name: "主持人", avatarUrl: "/host.png", label: "講師" } },
       ],
+      scheduledMessages: [{
+        id: "event-2",
+        source: "scheduled",
+        triggerSec: 24,
+        body: "歡迎",
+        actor: { name: "直播小編", avatarUrl: null, label: "官方角色", presentationRole: "official" },
+      }],
       products: [{ id: "product-1", name: "主打課程", description: "完整課程", priceCents: 168000, compareAtCents: 198000, currency: "TWD", imageUrl: "/product.png", checkoutUrl: "/checkout/product-1", offerLabel: "直播優惠" }],
     });
   });
@@ -235,6 +248,7 @@ describe("PublicLivePage", () => {
     ["draft", "vendor-1"],
     ["published", "vendor-2"],
   ])("fails closed for a %s interaction script owned by %s", async (status, vendorId) => {
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false });
     mocks.findFirst.mockResolvedValue({
       ...publicLive,
       form: { id: "form-1", vendorId: "vendor-1", isActive: true, fields: validFields },
@@ -299,9 +313,8 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.interactionEvents).toEqual([
-      expect.objectContaining({ id: "event-legacy-role", role: null }),
-    ]);
+    expect(element.props.live.interactionEvents).toEqual([]);
+    expect(element.props.live.scheduledMessages).toEqual([]);
   });
 
   it("omits public messages assigned to a disabled role without hiding system or commerce events", async () => {
@@ -376,10 +389,84 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.interactionEvents.map((event: { id: string }) => event.id)).toEqual([
-      "event-system-chat",
-      "event-product",
+    expect(element.props.live.interactionEvents.map((event: { id: string }) => event.id)).toEqual(["event-product"]);
+    expect(element.props.live.scheduledMessages).toEqual([]);
+  });
+
+  it("projects only valid scheduled chat messages and keeps private role fields out of the client props", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      interactionScript: {
+        vendorId: "vendor-1",
+        status: "published",
+        events: [
+          {
+            id: "scheduled-official",
+            eventType: "chat_message",
+            triggerSec: 10,
+            title: "官方訊息",
+            message: "歡迎",
+            productId: null,
+            ctaLabel: null,
+            ctaUrl: null,
+            role: { vendorId: "vendor-1", name: "官方小編", avatarUrl: "https://cdn.example.test/official.png", label: "官方角色", roleType: "official", isActive: true, isScheduled: true, roleId: "secret-role" },
+          },
+          {
+            id: "scheduled-audience",
+            eventType: "reminder",
+            triggerSec: 20,
+            title: "觀眾訊息",
+            message: "記得看看商品",
+            productId: null,
+            ctaLabel: null,
+            ctaUrl: null,
+            role: { vendorId: "vendor-1", name: "小明", avatarUrl: null, label: "一般觀眾", roleType: "audience", isActive: true, isScheduled: true },
+          },
+          {
+            id: "cross-tenant",
+            eventType: "chat_message",
+            triggerSec: 30,
+            title: "跨租戶",
+            message: "不應公開",
+            productId: null,
+            ctaLabel: null,
+            ctaUrl: null,
+            role: { vendorId: "vendor-2", name: "外部角色", avatarUrl: null, label: "官方角色", roleType: "official", isActive: true, isScheduled: true },
+          },
+          {
+            id: "inactive",
+            eventType: "chat_message",
+            triggerSec: 40,
+            title: "停用",
+            message: "不應公開",
+            productId: null,
+            ctaLabel: null,
+            ctaUrl: null,
+            role: { vendorId: "vendor-1", name: "停用角色", avatarUrl: null, label: "官方角色", roleType: "official", isActive: false, isScheduled: true },
+          },
+          {
+            id: "not-scheduled",
+            eventType: "chat_message",
+            triggerSec: 50,
+            title: "未排程",
+            message: "不應公開",
+            productId: null,
+            ctaLabel: null,
+            ctaUrl: null,
+            role: { vendorId: "vendor-1", name: "一般角色", avatarUrl: null, label: "官方角色", roleType: "official", isActive: true, isScheduled: false },
+          },
+        ],
+      },
+    });
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live.scheduledMessages).toEqual([
+      expect.objectContaining({ id: "scheduled-official", source: "scheduled", triggerSec: 10, body: "歡迎", actor: expect.objectContaining({ presentationRole: "official" }) }),
+      expect.objectContaining({ id: "scheduled-audience", source: "scheduled", triggerSec: 20, body: "記得看看商品", actor: expect.objectContaining({ presentationRole: "audience" }) }),
     ]);
+    expect(element.props.live.scheduledMessages[0]).not.toHaveProperty("roleId");
+    expect(element.props.live.scheduledMessages[0]).not.toHaveProperty("roleType");
+    expect(element.props.live.interactionEvents).toEqual([]);
   });
 
   it("omits a product spotlight that is not in the live's current saleable product set", async () => {
@@ -444,7 +531,7 @@ describe("PublicLivePage", () => {
     expect(element.props.live.interactionEvents).toEqual([]);
     expect(element.props.live.products).toEqual([]);
     expect(Object.keys(element.props.live)).toEqual([
-      "id", "title", "slug", "status", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "products",
+      "id", "title", "slug", "status", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
   });
 });
