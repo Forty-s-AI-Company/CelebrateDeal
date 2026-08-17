@@ -13,6 +13,8 @@ import {
   reconcileCommerceOrderPaymentTransition,
   reconcileCommerceOrderRefund,
 } from "../../src/lib/commerce-orders";
+import { getRuntimeLivePublishReadiness } from "../../src/lib/live-runtime-readiness";
+import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
 
 const db = new PrismaClient();
 const runId = randomUUID().replace(/-/g, "");
@@ -212,12 +214,19 @@ async function createPaidPhysicalOrder(input: {
   return { order, orderNumber };
 }
 
+function fixtureUrlSafeSlugPart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+}
+
 async function createSellableLiveFixture(input: {
   vendorId: string;
   productId: string;
   prefix: string;
 }) {
-  const slugPrefix = `${input.prefix.toLowerCase()}-${runId}`;
+  const slugPrefix = `${fixtureUrlSafeSlugPart(input.prefix)}-${runId}`;
   const video = await db.video.create({
     data: {
       vendorId: input.vendorId,
@@ -297,6 +306,44 @@ async function createSellableLiveFixture(input: {
       },
     },
   });
+  expect(live.slug).not.toMatch(/[\s%]/u);
+  expect(encodeURIComponent(live.slug)).toBe(live.slug);
+  const publicRuntimeLive = await db.live.findFirst({
+    where: {
+      id: live.id,
+      slug: live.slug,
+      ...publicLiveAvailabilityWhere(),
+    },
+    include: {
+      vendor: true,
+      video: true,
+      form: true,
+      messageTemplate: true,
+      interactionScript: {
+        include: {
+          events: {
+            orderBy: { triggerSec: "asc" },
+            include: { role: true },
+          },
+        },
+      },
+      products: {
+        orderBy: { sortOrder: "asc" },
+        include: { product: true },
+      },
+    },
+  });
+  expect(
+    publicRuntimeLive,
+    `可販售直播 fixture 必須通過公開頁 availability query：${live.slug}`,
+  ).not.toBeNull();
+  if (!publicRuntimeLive) {
+    throw new Error(`公開直播 fixture 不存在或不符合 availability 條件：${live.slug}`);
+  }
+  expect(
+    getRuntimeLivePublishReadiness(publicRuntimeLive),
+    `可販售直播 fixture 必須通過公開頁 runtime readiness：${live.slug}`,
+  ).toMatchObject({ ready: true, blockers: [] });
   return { video, form, role, script, template, live };
 }
 
@@ -1237,7 +1284,26 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
   });
 
   test("public live keeps the same video node, playback state and controls through internal checkout", async ({ page }) => {
+    test.setTimeout(180_000);
     await page.context().clearCookies();
+    let admissionRequests = 0;
+    let renewalPending = false;
+    await page.route("**/api/live-admission", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      admissionRequests += 1;
+      const response = await route.fetch();
+      if (admissionRequests === 2) {
+        renewalPending = true;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        await route.fulfill({ response });
+        renewalPending = false;
+        return;
+      }
+      await route.fulfill({ response });
+    });
     await page.route("**/api/stream-usage", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
     });
@@ -1251,9 +1317,11 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       const media = element as HTMLVideoElement;
       const browserWindow = window as typeof window & {
         __persistentPlayerNode?: HTMLVideoElement;
+        __persistentPlayerSource?: string;
         __persistentPlayerTimer?: number;
       };
       browserWindow.__persistentPlayerNode = media;
+      browserWindow.__persistentPlayerSource = media.currentSrc || media.src;
       Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: 42 });
       media.volume = 0.35;
       media.muted = false;
@@ -1277,6 +1345,56 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     });
     expect(checkoutState).toMatchObject({ sameNode: true, volume: 0.35, muted: false });
     expect(checkoutState.currentTime).toBeGreaterThan(42);
+
+    await expect.poll(() => renewalPending, { timeout: 40_000 }).toBe(true);
+    const renewalState = await page.evaluate(() => {
+      const browserWindow = window as typeof window & {
+        __persistentPlayerNode?: HTMLVideoElement;
+        __persistentPlayerSource?: string;
+      };
+      const current = document.querySelector("video");
+      return {
+        sameNode: current === browserWindow.__persistentPlayerNode,
+        sameSource: (current?.currentSrc || current?.src) === browserWindow.__persistentPlayerSource,
+        currentTime: current?.currentTime ?? 0,
+        volume: current?.volume ?? 0,
+        muted: current?.muted ?? true,
+        controls: current?.controls ?? false,
+      };
+    });
+    expect(renewalState).toMatchObject({
+      sameNode: true,
+      sameSource: true,
+      volume: 0.35,
+      muted: false,
+      controls: true,
+    });
+    expect(renewalState.currentTime).toBeGreaterThan(checkoutState.currentTime);
+    await expect.poll(() => renewalPending).toBe(false);
+    expect(admissionRequests).toBe(2);
+    const renewedState = await page.evaluate(() => {
+      const browserWindow = window as typeof window & {
+        __persistentPlayerNode?: HTMLVideoElement;
+        __persistentPlayerSource?: string;
+      };
+      const current = document.querySelector("video");
+      return {
+        sameNode: current === browserWindow.__persistentPlayerNode,
+        sameSource: (current?.currentSrc || current?.src) === browserWindow.__persistentPlayerSource,
+        currentTime: current?.currentTime ?? 0,
+        volume: current?.volume ?? 0,
+        muted: current?.muted ?? true,
+        controls: current?.controls ?? false,
+      };
+    });
+    expect(renewedState).toMatchObject({
+      sameNode: true,
+      sameSource: true,
+      volume: 0.35,
+      muted: false,
+      controls: true,
+    });
+    expect(renewedState.currentTime).toBeGreaterThan(renewalState.currentTime);
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "persistent-player-desktop.png");
 

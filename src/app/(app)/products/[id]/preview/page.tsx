@@ -57,7 +57,7 @@ export default async function ProductPreviewPage({ params }: { params: Promise<{
           </dl>
           {!readyForInternalCheckout ? <p role="status" className="mt-5 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">尚不可販售：請確認已上架、售價與庫存有效、交付方式已確認，且非實體商品已有完整的付款後交付設定。</p> : null}
           {product.checkoutUrl ? <p role="status" className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">此外部結帳 URL 不會產生完整的 CelebrateDeal 訂單、退款與分潤證據。</p> : null}
-          {readyForInternalCheckout && !product.checkoutUrl ? <div className="mt-5"><ButtonLink href={`/checkout/${encodeURIComponent(product.vendorId)}/${encodeURIComponent(product.id)}`}>開啟買家結帳預覽</ButtonLink></div> : null}
+          {readyForInternalCheckout && !product.checkoutUrl ? <div className="mt-5"><a href={`/checkout/${encodeURIComponent(product.vendorId)}/${encodeURIComponent(product.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition bg-primary text-white hover:bg-primary-dark">開啟買家結帳預覽</a></div> : null}
         </Card>
       </div>
     </>

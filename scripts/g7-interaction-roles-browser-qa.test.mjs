@@ -47,7 +47,7 @@ test("G7-06 source digest inventory includes all interaction and public-live bou
     "src/components/interaction-roles-workbench.tsx",
     "src/components/interaction-script-form.tsx",
     "src/components/live-playback.tsx",
-    "src/app/live/[slug]/page.tsx",
+    "src/app/(viewer)/live/[slug]/page.tsx",
   ]) assert.ok(sourceDigestPaths.includes(required), required);
 });
 

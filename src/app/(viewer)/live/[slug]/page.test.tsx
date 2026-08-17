@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  warn: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -88,9 +89,15 @@ function runtimeReadySalesLive() {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+  vi.spyOn(console, "warn").mockImplementation(mocks.warn);
   mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: true });
   mocks.findFirst.mockResolvedValue(publicLive);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("PublicLivePage", () => {
@@ -107,6 +114,7 @@ describe("PublicLivePage", () => {
       },
     }));
     expect(mocks.notFound).not.toHaveBeenCalled();
+    expect(mocks.warn).not.toHaveBeenCalled();
   });
 
   it("loads every linked product for runtime validation and omits an optional inactive content form", async () => {
@@ -149,20 +157,25 @@ describe("PublicLivePage", () => {
     })).rejects.toThrow("NEXT_NOT_FOUND");
 
     expect(mocks.notFound).toHaveBeenCalledOnce();
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain("draft-live");
   });
 
   it.each([
-    ["media", { video: null }],
-    ["form", { form: { id: "form-1", vendorId: "vendor-1", isActive: false, fields: validFields } }],
-    ["email", { messageTemplate: { ...readyRegistrationTemplate, isActive: false } }],
-    ["script", { interactionScript: { vendorId: "vendor-1", status: "draft", events: [] } }],
-    ["product", { products: [{ vendorId: "vendor-1", offerLabel: null, product: { id: "product-1", vendorId: "vendor-1", isActive: false, fulfillmentTypeConfirmed: true } }] }],
-  ])("returns not found when a published sales live has stale %s readiness", async (_label, overrides) => {
-    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false });
+    ["media", "media", { video: null }],
+    ["form", "registration_form", { form: { id: "form-1", vendorId: "vendor-1", isActive: false, fields: validFields } }],
+    ["email", "registration_email", { messageTemplate: { ...readyRegistrationTemplate, isActive: false } }],
+    ["script", "interaction_script", { interactionScript: { vendorId: "vendor-1", status: "draft", events: [] } }],
+    ["product", "products", { products: [{ vendorId: "vendor-1", offerLabel: null, product: { id: "product-1", vendorId: "vendor-1", isActive: false, fulfillmentTypeConfirmed: true } }] }],
+  ])("returns not found when a published sales live has stale %s readiness", async (_label, blockerCode, overrides) => {
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false, blockers: [{ code: blockerCode, ready: false }] });
     mocks.findFirst.mockResolvedValue({ ...runtimeReadySalesLive(), ...overrides });
 
     await expect(PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) }))
       .rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith("PUBLIC_LIVE_NOT_FOUND_READINESS", [blockerCode]);
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain("public-live");
   });
 
   it("maps only a strictly valid registration schema into playback", async () => {
@@ -250,7 +263,10 @@ describe("PublicLivePage", () => {
     ["draft", "vendor-1"],
     ["published", "vendor-2"],
   ])("fails closed for a %s interaction script owned by %s", async (status, vendorId) => {
-    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false });
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({
+      ready: false,
+      blockers: [{ code: "interaction_script", ready: false }],
+    });
     mocks.findFirst.mockResolvedValue({
       ...publicLive,
       form: { id: "form-1", vendorId: "vendor-1", isActive: true, fields: validFields },

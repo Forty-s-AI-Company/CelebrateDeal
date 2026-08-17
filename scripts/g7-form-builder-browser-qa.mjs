@@ -28,7 +28,7 @@ const sourceDigestPaths = [
   "src/components/team-funnel-public-page.tsx",
   "src/app/api/form-submissions/route.ts",
   "src/app/form/[slug]/page.tsx",
-  "src/app/live/[slug]/page.tsx",
+  "src/app/(viewer)/live/[slug]/page.tsx",
   "src/lib/registration-form-builder.ts",
   "src/lib/registration-form-answers.ts",
   "src/lib/registration-form-fields.ts",

@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ReactNode } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), findFirst: vi.fn(), notFound: vi.fn(() => { throw new Error("not-found"); }) }));
@@ -10,6 +10,19 @@ vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager 
 vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findFirst: mocks.findFirst } }) }));
 
 import ProductPreviewPage from "./page";
+
+function findElementByHref(node: ReactNode, href: string): ReactElement<{ children?: ReactNode; href?: string }> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findElementByHref(child, href);
+      if (match) return match;
+    }
+    return null;
+  }
+  if (!isValidElement<{ children?: ReactNode; href?: string }>(node)) return null;
+  if (node.props.href === href) return node;
+  return findElementByHref(node.props.children, href);
+}
 
 const product = {
   id: "product-1", vendorId: "vendor-1", name: "精華組", description: "完整說明", priceCents: 128000,
@@ -25,13 +38,16 @@ beforeEach(() => {
 
 describe("product merchant preview", () => {
   it("is tenant-scoped and exposes an internal checkout preview only when sellable", async () => {
-    const html = renderToStaticMarkup(await ProductPreviewPage({ params: Promise.resolve({ id: "product-1" }) }));
+    const page = await ProductPreviewPage({ params: Promise.resolve({ id: "product-1" }) });
+    const checkoutCta = findElementByHref(page, "/checkout/vendor-1/product-1");
+    const html = renderToStaticMarkup(page);
     expect(mocks.findFirst).toHaveBeenCalledWith({
       where: { id: "product-1", vendorId: "vendor-1" },
       include: { deliveryConfig: { select: { status: true, fulfillmentType: true, title: true } } },
     });
     expect(html).toContain("這是商家預覽");
     expect(html).toContain('href="/checkout/vendor-1/product-1"');
+    expect(checkoutCta?.type, "checkout preview must use a native anchor for hard navigation").toBe("a");
     expect(html).not.toContain("尚不可販售");
   });
 

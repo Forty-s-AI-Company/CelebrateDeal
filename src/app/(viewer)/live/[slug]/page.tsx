@@ -33,8 +33,15 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     },
   });
 
-  if (!live) notFound();
-  if (!getRuntimeLivePublishReadiness(live).ready) notFound();
+  if (!live) {
+    console.warn("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
+    notFound();
+  }
+  const readiness = getRuntimeLivePublishReadiness(live);
+  if (!readiness.ready) {
+    console.warn("PUBLIC_LIVE_NOT_FOUND_READINESS", readiness.blockers.map(({ code }) => code));
+    notFound();
+  }
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);

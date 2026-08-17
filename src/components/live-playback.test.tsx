@@ -3,8 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const hookState = vi.hoisted(() => ({
   cursor: 0,
   refCursor: 0,
+  effectCursor: 0,
+  effectsEnabled: false,
   values: [] as unknown[],
   refs: [] as Array<{ current: unknown }>,
+  effects: [] as Array<{ dependencies?: readonly unknown[]; cleanup?: () => void }>,
+  pendingEffects: [] as Array<{
+    index: number;
+    effect: () => void | (() => void);
+    dependencies?: readonly unknown[];
+  }>,
 }));
 const navigation = vi.hoisted(() => ({
   pathname: "/live/test-fixture-live",
@@ -22,7 +30,17 @@ vi.mock("react", async (importOriginal) => {
 
   return {
     ...react,
-    useEffect: () => undefined,
+    useEffect: (effect: () => void | (() => void), dependencies?: readonly unknown[]) => {
+      if (!hookState.effectsEnabled) return;
+      const index = hookState.effectCursor++;
+      const previous = hookState.effects[index];
+      const unchanged = previous
+        && dependencies !== undefined
+        && previous.dependencies !== undefined
+        && dependencies.length === previous.dependencies.length
+        && dependencies.every((dependency, dependencyIndex) => Object.is(dependency, previous.dependencies?.[dependencyIndex]));
+      if (!unchanged) hookState.pendingEffects.push({ index, effect, dependencies });
+    },
     useMemo: <Value,>(factory: () => Value) => factory(),
     useRef: <Value,>(initialValue: Value) => {
       const index = hookState.refCursor++;
@@ -54,7 +72,7 @@ vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-v
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
-import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -119,6 +137,55 @@ function renderLive(overrides: Partial<Parameters<typeof LivePlayback>[0]["live"
   return LivePlayback({ live: { ...live, ...overrides } });
 }
 
+function AdmissionPlaybackHarness({ refreshKey }: { refreshKey: number }) {
+  const admissionStatus = useLiveAdmission({
+    vendorId: live.vendorId,
+    liveId: live.id,
+    admissionRequired: true,
+    refreshKey,
+  });
+  const playbackSource = useLivePlaybackSource({ ...live, admissionRequired: true }, admissionStatus);
+  return { admissionStatus, playbackSource };
+}
+
+function renderAdmissionPlayback(refreshKey = 0) {
+  hookState.cursor = 0;
+  hookState.refCursor = 0;
+  hookState.effectCursor = 0;
+  return AdmissionPlaybackHarness({ refreshKey });
+}
+
+async function flushHookEffects() {
+  const pendingEffects = hookState.pendingEffects.splice(0);
+  for (const pending of pendingEffects) {
+    hookState.effects[pending.index]?.cleanup?.();
+    const cleanup = pending.effect();
+    hookState.effects[pending.index] = {
+      dependencies: pending.dependencies,
+      cleanup: typeof cleanup === "function" ? cleanup : undefined,
+    };
+  }
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function cleanupHookEffects() {
+  for (const effect of hookState.effects) effect.cleanup?.();
+  hookState.effects = [];
+  hookState.pendingEffects = [];
+  hookState.effectsEnabled = false;
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function checkoutButtons(tree: unknown) {
   return findElements(tree, (element) => (
     element.type === "button" && ["立即搶購", "結帳送出中…", "購買", "送出中…"].includes(textContent(element.props.children))
@@ -150,6 +217,7 @@ describe("LivePlayback checkout", () => {
   });
 
   afterEach(() => {
+    cleanupHookEffects();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -157,8 +225,12 @@ describe("LivePlayback checkout", () => {
   beforeEach(() => {
     hookState.cursor = 0;
     hookState.refCursor = 0;
+    hookState.effectCursor = 0;
+    hookState.effectsEnabled = false;
     hookState.values = [];
     hookState.refs = [];
+    hookState.effects = [];
+    hookState.pendingEffects = [];
     navigation.pathname = "/live/test-fixture-live";
     vi.clearAllMocks();
   });
@@ -222,6 +294,114 @@ describe("LivePlayback checkout", () => {
     expect(video?.props.src).toBeUndefined();
     expect(video?.props.controls).toBe(false);
     expect(video?.props.src).toBeUndefined();
+  });
+
+  it("keeps an admitted playback source during one non-overlapping background renewal and removes it when rejected", async () => {
+    vi.useFakeTimers();
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval });
+    const initialAdmission = deferred<{ ok: boolean }>();
+    const renewal = deferred<{ ok: boolean }>();
+    const admissionResponses = [initialAdmission.promise, renewal.promise];
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (url.startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ playbackUrl: "https://video.example.test/admitted.mp4" }),
+        });
+      }
+      return admissionResponses.shift() ?? Promise.reject(new Error("unexpected admission request"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "checking", playbackSource: null });
+    await flushHookEffects();
+    initialAdmission.resolve({ ok: true });
+    await initialAdmission.promise;
+    await Promise.resolve();
+
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "admitted", playbackSource: null });
+    await flushHookEffects();
+    await Promise.resolve();
+    const admitted = renderAdmissionPlayback();
+    expect(admitted).toEqual({
+      admissionStatus: "admitted",
+      playbackSource: "https://video.example.test/admitted.mp4",
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(renderAdmissionPlayback()).toEqual(admitted);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+
+    renewal.resolve({ ok: false });
+    await renewal.promise;
+    await Promise.resolve();
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "blocked", playbackSource: null });
+    await flushHookEffects();
+  });
+
+  it("removes the admitted playback source when background renewal throws", async () => {
+    vi.useFakeTimers();
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval });
+    const renewal = deferred<{ ok: boolean }>();
+    let admissionRequests = 0;
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (url.startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ playbackUrl: "https://video.example.test/admitted.mp4" }),
+        });
+      }
+      admissionRequests += 1;
+      return admissionRequests === 1 ? Promise.resolve({ ok: true }) : renewal.promise;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAdmissionPlayback();
+    await flushHookEffects();
+    await Promise.resolve();
+    renderAdmissionPlayback();
+    await flushHookEffects();
+    await Promise.resolve();
+    expect(renderAdmissionPlayback().playbackSource).toBe("https://video.example.test/admitted.mp4");
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(renderAdmissionPlayback().admissionStatus).toBe("admitted");
+    renewal.reject(new Error("synthetic renewal failure"));
+    await expect(renewal.promise).rejects.toThrow("synthetic renewal failure");
+    await Promise.resolve();
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "blocked", playbackSource: null });
+    await flushHookEffects();
+  });
+
+  it("cleans the renewal timer and ignores a stale admission response after lifecycle disposal", async () => {
+    vi.useFakeTimers();
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval });
+    const initialAdmission = deferred<{ ok: boolean }>();
+    vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => (
+      init?.method === "DELETE" ? Promise.resolve({ ok: true }) : initialAdmission.promise
+    )));
+
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "checking", playbackSource: null });
+    await flushHookEffects();
+    expect(vi.getTimerCount()).toBe(1);
+
+    cleanupHookEffects();
+    expect(vi.getTimerCount()).toBe(0);
+    initialAdmission.resolve({ ok: true });
+    await initialAdmission.promise;
+    await Promise.resolve();
+
+    expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "checking", playbackSource: null });
   });
 
   it("flushes validated playback seconds with the shared page lineage", async () => {

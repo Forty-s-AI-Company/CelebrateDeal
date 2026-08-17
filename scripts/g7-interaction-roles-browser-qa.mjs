@@ -41,7 +41,7 @@ export const sourceDigestPaths = [
   "src/app/(app)/interaction-scripts/new/page.tsx",
   "src/app/(app)/interaction-scripts/[id]/edit/page.tsx",
   "src/app/(app)/lives/[id]/preview/page.tsx",
-  "src/app/live/[slug]/page.tsx",
+  "src/app/(viewer)/live/[slug]/page.tsx",
   "src/app/api/live-playback-source/route.ts",
 ];
 

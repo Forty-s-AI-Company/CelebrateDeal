@@ -119,9 +119,9 @@ export default async function PaymentResultPage({ searchParams }: {
                     查看商品與履約進度 →
                   </Link>
                   {retryHref ? (
-                    <Link href={retryHref} className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">
+                    <a href={retryHref} className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">
                       回到商品重新嘗試付款 →
-                    </Link>
+                    </a>
                   ) : null}
                   <Link href="/support/requests" className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">查看訂單協助與客服案件 →</Link>
                 </div>

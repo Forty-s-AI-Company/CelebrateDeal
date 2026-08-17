@@ -11,8 +11,8 @@ vi.mock("@/components/checkout-overlay", () => ({
 
 import InterceptedLiveCheckoutPage from "./page";
 
-describe("live-scoped intercepted checkout", () => {
-  it("reuses the canonical checkout inside the live-only overlay slot", async () => {
+describe("root intercepted checkout", () => {
+  it("reuses the canonical checkout inside the root overlay slot", async () => {
     const html = renderToStaticMarkup(await InterceptedLiveCheckoutPage({
       params: Promise.resolve({ vendorId: "vendor-1", productId: "product-1" }),
       searchParams: Promise.resolve({}),

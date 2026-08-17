@@ -140,7 +140,7 @@ function secondsLabel(seconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
-function useLiveAdmission({
+export function useLiveAdmission({
   vendorId,
   liveId,
   admissionRequired,
@@ -154,26 +154,45 @@ function useLiveAdmission({
   const [admissionStatus, setAdmissionStatus] = useState<LiveAdmissionStatus>(admissionRequired ? "checking" : "admitted");
 
   useEffect(() => {
+    if (!admissionRequired) return;
+
     let disposed = false;
-    const requestAdmission = async () => {
-      setAdmissionStatus("checking");
+    let requestInFlight = false;
+    let activeController: AbortController | null = null;
+    const requestAdmission = async (showChecking: boolean) => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      if (showChecking) setAdmissionStatus("checking");
+      const controller = new AbortController();
+      activeController = controller;
       try {
         const response = await fetch("/api/live-admission", {
           method: "POST",
           headers: clientHeaders,
           body: JSON.stringify({ vendorId, liveId }),
+          signal: controller.signal,
         });
         if (!disposed) setAdmissionStatus(response.ok ? "admitted" : "blocked");
       } catch {
         if (!disposed) setAdmissionStatus("blocked");
+      } finally {
+        if (activeController === controller) activeController = null;
+        requestInFlight = false;
       }
     };
 
-    void requestAdmission();
-    const interval = window.setInterval(() => void requestAdmission(), 30_000);
+    void requestAdmission(true);
+    const interval = window.setInterval(() => void requestAdmission(false), 30_000);
     return () => {
       disposed = true;
+      activeController?.abort();
       window.clearInterval(interval);
+    };
+  }, [admissionRequired, liveId, refreshKey, vendorId]);
+
+  useEffect(() => {
+    if (!admissionRequired) return;
+    return () => {
       void fetch("/api/live-admission", {
         method: "DELETE",
         headers: clientHeaders,
@@ -181,7 +200,7 @@ function useLiveAdmission({
         keepalive: true,
       }).catch(() => undefined);
     };
-  }, [liveId, refreshKey, vendorId]);
+  }, [admissionRequired, liveId, vendorId]);
 
   return admissionStatus;
 }
@@ -195,7 +214,7 @@ async function fetchLivePlaybackSource(vendorId: string, liveId: string) {
   return typeof payload.playbackUrl === "string" ? parseSafeExternalHttpUrl(payload.playbackUrl) : null;
 }
 
-function useLivePlaybackSource(live: LivePageData, admissionStatus: LiveAdmissionStatus) {
+export function useLivePlaybackSource(live: LivePageData, admissionStatus: LiveAdmissionStatus) {
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(() => live.videoUrl ?? null);
 
   useEffect(() => {

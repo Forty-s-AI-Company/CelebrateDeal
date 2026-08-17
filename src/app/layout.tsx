@@ -6,10 +6,13 @@ export const metadata: Metadata = {
   description: "Live-commerce automation MVP for branded video sales funnels.",
 };
 
-export default function RootLayout(props: LayoutProps<"/">) {
-  const { children } = props;
-  // Local generated types can lag behind a newly introduced parallel slot.
-  const checkout = (props as LayoutProps<"/"> & { checkout?: React.ReactNode }).checkout;
+export default function RootLayout({
+  children,
+  checkout,
+}: {
+  children: React.ReactNode;
+  checkout: React.ReactNode;
+}) {
   return (
     <html lang="zh-Hant" className="h-full">
       <body className="min-h-full flex flex-col">

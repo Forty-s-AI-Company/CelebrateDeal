@@ -7,17 +7,58 @@ import path from "node:path";
 import test from "node:test";
 import {
   classifyPlaywrightFailure,
+  classifyNextBuildExecution,
   classifySanitizedFailure,
+  copySourceTree,
   evaluateBrowserContracts,
   ignoredMirrorPath,
+  isDiagnosticDevFast,
   networkGuardSource,
+  normalizeSpawnSyncExecution,
   parseContainerInspection,
   removeMirror,
   sanitizePlaywrightMessage,
   sanitizedBuildDetails,
+  sanitizedServerRuntimeDetails,
   summarizePlaywrightReport,
   syntheticEnvironment,
 } from "./g7-commerce-browser-qa.mjs";
+
+test("G7-04 diagnostic-dev-fast requires both diagnostic flags and keeps fail-closed status", () => {
+  const source = fs.readFileSync(new URL("./g7-commerce-browser-qa.mjs", import.meta.url), "utf8");
+
+  assert.equal(isDiagnosticDevFast([]), false);
+  assert.equal(isDiagnosticDevFast(["--diagnostic-dev"]), false);
+  assert.equal(isDiagnosticDevFast(["--diagnostic-dev-fast"]), false);
+  assert.equal(isDiagnosticDevFast(["--diagnostic-dev", "--diagnostic-dev-fast"]), true);
+  assert.match(source, /receipt\.phases\.nextBuild = "SKIPPED_DIAGNOSTIC"/u);
+  assert.match(source, /receipt\.status = diagnosticDev \? "DIAGNOSTIC_ONLY" : "PASS"/u);
+  assert.match(source, /if \(receipt\.status !== "PASS"\) process\.exitCode = 1/u);
+  assert.match(source, /if \(diagnosticDevFast\) \{[\s\S]*?\} else \{/u);
+  assert.match(source, /const build = run\(process\.execPath, \[nextCli, "build", "--webpack"\], env, mirror\)/u);
+  const readinessFailureStart = source.indexOf("if (!server.pid || !(await waitForServer(");
+  const serverPass = source.indexOf('receipt.phases.server = "PASS";', readinessFailureStart);
+  assert.notEqual(readinessFailureStart, -1, "readiness failure branch must remain explicit");
+  assert.notEqual(serverPass, -1, "server PASS must follow the readiness branch");
+  const readinessFailureBranch = source.slice(readinessFailureStart, serverPass);
+  const serverFail = readinessFailureBranch.indexOf('receipt.phases.server = "FAIL";');
+  const sanitizedDetails = readinessFailureBranch.indexOf("receipt.diagnostics.serverRuntimeDetails = sanitizedServerRuntimeDetails(serverRuntimeOutput, tempRoot);");
+  const readinessThrow = readinessFailureBranch.indexOf('throw new Error("next-server-not-ready");');
+  assert.ok(serverFail >= 0, "readiness failure must mark the server phase FAIL");
+  assert.ok(sanitizedDetails > serverFail, "readiness failure must sanitize runtime details after marking FAIL");
+  assert.ok(readinessThrow > sanitizedDetails, "readiness failure must throw only after sanitized details are recorded");
+  const playwrightRun = source.indexOf("const result = run(process.execPath, playwrightArgs, env, mirror);");
+  const playwrightFailure = source.indexOf("if (result.exitCode !== 0) {", playwrightRun);
+  const screenshotCollection = source.indexOf("const screenshotEntries", playwrightFailure);
+  assert.notEqual(playwrightRun, -1, "Playwright synchronous run must remain explicit");
+  assert.ok(playwrightFailure > playwrightRun, "Playwright diagnostics must follow the synchronous run");
+  assert.ok(screenshotCollection > playwrightFailure, "screenshot collection must follow Playwright failure diagnostics");
+  const playwrightFailureBranch = source.slice(playwrightFailure, screenshotCollection);
+  const serverRuntimeSettle = playwrightFailureBranch.indexOf("await new Promise((resolve) => setTimeout(resolve, 250));");
+  const serverRuntimeSnapshot = playwrightFailureBranch.indexOf("receipt.diagnostics.serverRuntimeDetails = sanitizedServerRuntimeDetails(serverRuntimeOutput, tempRoot);");
+  assert.ok(serverRuntimeSettle >= 0, "failed Playwright runs must settle the event loop before diagnostics");
+  assert.ok(serverRuntimeSnapshot > serverRuntimeSettle, "sanitized server runtime snapshot must follow the settle delay");
+});
 
 test("G7 commerce network guard parses common overloads and fails closed outside loopback", () => {
   const encodedGuard = Buffer.from(networkGuardSource(), "utf8").toString("base64");
@@ -209,13 +250,19 @@ test("WP6 focused mode proves one persistent video node through checkout on desk
   assert.match(source, /persistentPlayerContract/u);
   assert.match(source, /"wp6-persistent-player-browser-qa"/u);
   for (const path of [
-    "src/app/live/[slug]/layout.tsx",
-    "src/app/live/[slug]/@checkout/(..)(..)checkout/[vendorId]/[productId]/page.tsx",
+    "src/app/layout.tsx",
+    "src/app/@checkout/default.tsx",
+    "src/app/@checkout/(.)checkout/[vendorId]/[productId]/page.tsx",
+    "src/app/checkout/[vendorId]/[productId]/page.tsx",
+    "src/app/(viewer)/live/[slug]/page.tsx",
     "src/components/checkout-overlay.tsx",
     "src/components/live-playback.tsx",
   ]) {
     assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
   }
+  assert.equal(source.includes('"src/app/(viewer)/layout.tsx"'), false, "viewer layout must not remain source-attested");
+  assert.equal(source.includes('"src/app/(viewer)/@checkout/'), false, "viewer checkout paths must not remain source-attested");
+  assert.equal(source.includes('"src/app/live/'), false, "legacy live paths must not remain source-attested");
   assert.match(source, /\["persistentPlayerDesktop", "persistentPlayerMobile"\]/u);
   assert.match(source, /receipt\.browser\.persistentPlayer = focusPersistentPlayer && browserPassed \? "PASS" : "NOT_VERIFIED"/u);
   assert.match(browserContract, /public live keeps the same video node, playback state and controls through internal checkout/u);
@@ -448,6 +495,76 @@ test("G7-04 build failure classification is deterministic and fail closed", () =
   for (const [input, expected] of cases) assert.equal(classifySanitizedFailure(input), expected);
 });
 
+test("G7-04 spawn execution metadata is allowlisted and preserves null exit status fail closed", () => {
+  const secretMessage = "spawn failed at C:\\private\\workspace with TOKEN=secret";
+  const cases = [
+    {
+      name: "status zero",
+      input: { status: 0, signal: null },
+      expected: { exitCode: 0, signal: null, spawnErrorCode: null, timedOut: false, outcome: "EXITED" },
+      pass: true,
+    },
+    {
+      name: "nonzero status",
+      input: { status: 7, signal: null },
+      expected: { exitCode: 7, signal: null, spawnErrorCode: null, timedOut: false, outcome: "EXITED" },
+      pass: false,
+    },
+    {
+      name: "safe signal",
+      input: { status: null, signal: "SIGTERM" },
+      expected: { exitCode: null, signal: "SIGTERM", spawnErrorCode: null, timedOut: false, outcome: "SIGNALED" },
+      pass: false,
+    },
+    {
+      name: "timeout",
+      input: { status: null, signal: "SIGTERM", error: { code: "ETIMEDOUT", message: secretMessage } },
+      expected: { exitCode: null, signal: "SIGTERM", spawnErrorCode: "ETIMEDOUT", timedOut: true, outcome: "SPAWN_ERROR" },
+      pass: false,
+    },
+    {
+      name: "unknown spawn error",
+      input: { status: null, signal: "SIGCUSTOM", error: { code: "EPRIVATE", message: secretMessage }, stdout: secretMessage, env: { TOKEN: "secret" } },
+      expected: { exitCode: null, signal: null, spawnErrorCode: "UNKNOWN", timedOut: false, outcome: "SPAWN_ERROR" },
+      pass: false,
+    },
+    {
+      name: "no exit status",
+      input: { status: null, signal: null },
+      expected: { exitCode: null, signal: null, spawnErrorCode: null, timedOut: false, outcome: "NO_EXIT_STATUS" },
+      pass: false,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const metadata = normalizeSpawnSyncExecution(testCase.input);
+    assert.deepEqual(metadata, testCase.expected, testCase.name);
+    assert.equal(metadata.exitCode === 0, testCase.pass, `${testCase.name} PASS contract`);
+    assert.deepEqual(Object.keys(metadata).sort(), ["exitCode", "outcome", "signal", "spawnErrorCode", "timedOut"]);
+    const serialized = JSON.stringify(metadata);
+    assert.doesNotMatch(serialized, /message|stdout|stderr|path|workspace|env|TOKEN|secret|EPRIVATE|SIGCUSTOM/iu);
+  }
+});
+
+test("G7-04 next build execution classification prioritizes non-exit outcomes over output", () => {
+  const compileOutput = "Failed to compile";
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: 0 }), compileOutput), null);
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: 2 }), compileOutput), "NEXT_COMPILE_FAILED");
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: null, signal: "SIGTERM" }), compileOutput), "NEXT_BUILD_SIGNALED");
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: null, error: { code: "ETIMEDOUT" } }), compileOutput), "NEXT_BUILD_TIMED_OUT");
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: null, error: { code: "EPRIVATE" } }), compileOutput), "NEXT_BUILD_SPAWN_ERROR");
+  assert.equal(classifyNextBuildExecution(normalizeSpawnSyncExecution({ status: null }), compileOutput), "NEXT_BUILD_NO_EXIT_STATUS");
+});
+
+test("G7-04 receipt source keeps build execution diagnostics optional, allowlisted, and fail closed", () => {
+  const source = fs.readFileSync(new URL("./g7-commerce-browser-qa.mjs", import.meta.url), "utf8");
+  assert.match(source, /nextBuildExecution: null/u);
+  assert.match(source, /receipt\.diagnostics\.nextBuildExecution = \{[\s\S]*?exitCode: build\.exitCode,[\s\S]*?signal: build\.signal,[\s\S]*?spawnErrorCode: build\.spawnErrorCode,[\s\S]*?timedOut: build\.timedOut,[\s\S]*?outcome: build\.outcome,[\s\S]*?\};/u);
+  assert.match(source, /receipt\.phases\.nextBuild = build\.exitCode === 0 \? "PASS" : "FAIL"/u);
+  assert.match(source, /removed\.exitCode === 0 && absent\.exitCode !== null && absent\.exitCode !== 0/u);
+  assert.doesNotMatch(source, /nextBuildExecution\s*=\s*\{[^}]*?(?:message|stdout|stderr|command|cwd|env|path)/su);
+});
+
 test("G7-04 playwright failure classification covers product evidence failure modes", () => {
   const cases = [
     ["AXE_BLOCKING:label", "PLAYWRIGHT_AXE_BLOCKING"],
@@ -478,12 +595,92 @@ test("G7-04 sanitizers redact local paths, credentials, identities, and long val
   assert.match(browser, /<redacted-phone>/u);
 });
 
+test("G7-04 server runtime sanitizer redacts headers, short secrets, identities, and bounded diagnostics", () => {
+  const tempRoot = path.join(os.tmpdir(), "g7-commerce-server-runtime-sanitizer-test");
+  const input = [
+    ...Array.from({ length: 30 }, (_, index) => `older diagnostic ${index}`),
+    `PrismaClientInitializationError from ${process.cwd()} and ${tempRoot}`,
+    "postgresql://postgres:database-password@127.0.0.1/test",
+    "buyer@example.test 0912-345-678",
+    "Authorization: Bearer auth-short",
+    "Bearer standalone-short",
+    "Cookie: session=cookie-short; theme=dark",
+    "Set-Cookie: session=set-cookie-short; HttpOnly",
+    "API_TOKEN=tok",
+    "SESSION_SECRET=shh",
+    "PRIVATE_KEY=key",
+    "DATABASE_PASSWORD=pw",
+    "PUBLIC_LIVE_NOT_FOUND_AVAILABILITY buyer@example.test",
+    "PUBLIC_LIVE_NOT_FOUND_READINESS media 0912-345-678",
+    `NEXT_SERVER_NOT_READY ${"x".repeat(400)}`,
+  ].join("\n");
+  const details = sanitizedServerRuntimeDetails(input, tempRoot);
+  const output = details.join("\n");
+
+  assert.equal(details.length, 24);
+  assert.equal(details.every((line) => line.length <= 300), true);
+  assert.match(output, /<workspace>/u);
+  assert.match(output, /<temp>/u);
+  assert.match(output, /postgresql:\/\/<redacted>@/u);
+  assert.match(output, /<redacted-email>/u);
+  assert.match(output, /<redacted-phone>/u);
+  assert.match(output, /Authorization: <redacted>/u);
+  assert.match(output, /Bearer <redacted>/u);
+  assert.match(output, /Cookie: <redacted>/u);
+  assert.match(output, /Set-Cookie: <redacted>/u);
+  assert.match(output, /API_TOKEN=<redacted>/u);
+  assert.match(output, /SESSION_SECRET=<redacted>/u);
+  assert.match(output, /PRIVATE_KEY=<redacted>/u);
+  assert.match(output, /DATABASE_PASSWORD=<redacted>/u);
+  assert.match(output, /PUBLIC_LIVE_NOT_FOUND_AVAILABILITY <redacted-email>/u);
+  assert.match(output, /PUBLIC_LIVE_NOT_FOUND_READINESS media <redacted-phone>/u);
+  assert.match(output, /PrismaClientInitializationError|NEXT_SERVER_NOT_READY/u);
+  assert.doesNotMatch(output, /database-password|buyer@example\.test|0912-345-678|auth-short|standalone-short|cookie-short|set-cookie-short|=tok|=shh|=key|=pw/u);
+});
+
 test("G7-04 mirror exclusion rejects generated, secret, and transient paths", () => {
   for (const relativePath of ["", ".git/config", ".next/server", "node_modules/pkg", ".ai-team/state.json", "test-results/a", "playwright-report/a", "tmp/a", ".env", "nested/.env.local"]) {
     assert.equal(ignoredMirrorPath(relativePath), true, relativePath);
   }
   assert.equal(ignoredMirrorPath("src/app/page.tsx"), false);
   assert.equal(ignoredMirrorPath("docs/environment.md"), false);
+});
+
+test("G7-04 source mirror prunes empty route trees while preserving copied files and root", () => {
+  const disposableRoot = fs.mkdtempSync(path.join(os.tmpdir(), "g7-commerce-copy-source-tree-"));
+  const source = path.join(disposableRoot, "source");
+  const mirror = path.join(disposableRoot, "mirror");
+  const viewerLivePage = path.join("src", "app", "(viewer)", "live", "[slug]", "page.tsx");
+  const rootCheckoutDefault = path.join("src", "app", "@checkout", "default.tsx");
+  const viewerLiveContents = "export default function Page() { return null; }\n";
+  const rootCheckoutContents = "export default function Default() { return null; }\n";
+
+  try {
+    fs.mkdirSync(path.join(source, "src", "app", "live", "[slug]", "@checkout", "legacy"), { recursive: true });
+    fs.mkdirSync(path.join(source, "src", "app", "(viewer)", "@checkout", "empty"), { recursive: true });
+    fs.mkdirSync(path.dirname(path.join(source, viewerLivePage)), { recursive: true });
+    fs.mkdirSync(path.dirname(path.join(source, rootCheckoutDefault)), { recursive: true });
+    fs.writeFileSync(path.join(source, viewerLivePage), viewerLiveContents, "utf8");
+    fs.writeFileSync(path.join(source, rootCheckoutDefault), rootCheckoutContents, "utf8");
+    fs.writeFileSync(path.join(source, ".env"), "SYNTHETIC_SECRET=not-a-workspace-value\n", "utf8");
+    for (const ignoredDirectory of [".next", "node_modules"]) {
+      fs.mkdirSync(path.join(source, ignoredDirectory), { recursive: true });
+      fs.writeFileSync(path.join(source, ignoredDirectory, "synthetic.txt"), "ignored\n", "utf8");
+    }
+
+    copySourceTree(source, mirror);
+
+    assert.equal(fs.existsSync(path.join(mirror, "src", "app", "live")), false);
+    assert.equal(fs.existsSync(path.join(mirror, "src", "app", "(viewer)", "@checkout")), false);
+    assert.equal(fs.readFileSync(path.join(mirror, viewerLivePage), "utf8"), viewerLiveContents);
+    assert.equal(fs.readFileSync(path.join(mirror, rootCheckoutDefault), "utf8"), rootCheckoutContents);
+    assert.equal(fs.existsSync(path.join(mirror, ".env")), false);
+    assert.equal(fs.existsSync(path.join(mirror, ".next")), false);
+    assert.equal(fs.existsSync(path.join(mirror, "node_modules")), false);
+    assert.equal(fs.existsSync(mirror), true);
+  } finally {
+    fs.rmSync(disposableRoot, { recursive: true, force: true });
+  }
 });
 
 test("G7-04 synthetic environment uses an explicit allowlist and loopback-only URLs", () => {

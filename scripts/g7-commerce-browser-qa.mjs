@@ -14,7 +14,12 @@ const tempNamePattern = /^celebratedeal-g7-commerce-browser-[a-f0-9]{16}$/u;
 const containerNamePattern = /^celebratedeal-g7-commerce-browser-[a-f0-9]{16}$/u;
 const schemaPattern = /^g7_04_browser_[a-f0-9]{16}$/u;
 const evidenceRoot = path.join(root, "docs", "ai-team", "evidence");
+export function isDiagnosticDevFast(argv) {
+  return argv.includes("--diagnostic-dev") && argv.includes("--diagnostic-dev-fast");
+}
+
 const diagnosticDev = process.argv.includes("--diagnostic-dev");
+const diagnosticDevFast = isDiagnosticDevFast(process.argv);
 const focusBuyerDelivery = process.argv.includes("--focus-buyer-delivery");
 const focusProductDelivery = process.argv.includes("--focus-product-delivery");
 const focusBuyerOrders = process.argv.includes("--focus-buyer-orders");
@@ -81,9 +86,8 @@ const attestedSourcePaths = [
   "src/app/checkout/[vendorId]/[productId]/page.tsx",
   "src/app/@checkout/default.tsx",
   "src/app/layout.tsx",
-  "src/app/live/[slug]/layout.tsx",
-  "src/app/live/[slug]/@checkout/default.tsx",
-  "src/app/live/[slug]/@checkout/(..)(..)checkout/[vendorId]/[productId]/page.tsx",
+  "src/app/@checkout/(.)checkout/[vendorId]/[productId]/page.tsx",
+  "src/app/(viewer)/live/[slug]/page.tsx",
   "src/components/checkout-overlay.tsx",
   "src/components/live-playback.tsx",
   "src/app/api/payments/checkout/route.ts",
@@ -147,6 +151,38 @@ const attestedSourcePaths = [
   "src/app/(app)/interaction-roles/[id]/edit/page.tsx",
 ];
 
+const safeSpawnSignals = new Set(["SIGABRT", "SIGINT", "SIGKILL", "SIGTERM"]);
+const safeSpawnErrorCodes = new Set(["EACCES", "EAGAIN", "EINVAL", "EMFILE", "ENFILE", "ENOENT", "ENOMEM", "ENOTDIR", "EPERM", "ETIMEDOUT"]);
+
+export function normalizeSpawnSyncExecution(result) {
+  const exitCode = Number.isInteger(result?.status) ? result.status : null;
+  const rawSignal = typeof result?.signal === "string" ? result.signal : null;
+  const signal = rawSignal && safeSpawnSignals.has(rawSignal) ? rawSignal : null;
+  const rawErrorCode = typeof result?.error?.code === "string" ? result.error.code : null;
+  const spawnErrorCode = rawErrorCode
+    ? safeSpawnErrorCodes.has(rawErrorCode) ? rawErrorCode : "UNKNOWN"
+    : null;
+  const timedOut = rawErrorCode === "ETIMEDOUT";
+  const outcome = exitCode !== null
+    ? "EXITED"
+    : rawErrorCode
+      ? "SPAWN_ERROR"
+      : rawSignal
+        ? "SIGNALED"
+        : "NO_EXIT_STATUS";
+  return { exitCode, signal, spawnErrorCode, timedOut, outcome };
+}
+
+export function classifyNextBuildExecution(execution, output) {
+  if (execution.exitCode !== null) {
+    return execution.exitCode === 0 ? null : classifySanitizedFailure(output);
+  }
+  if (execution.timedOut) return "NEXT_BUILD_TIMED_OUT";
+  if (execution.outcome === "SIGNALED") return "NEXT_BUILD_SIGNALED";
+  if (execution.outcome === "SPAWN_ERROR") return "NEXT_BUILD_SPAWN_ERROR";
+  return "NEXT_BUILD_NO_EXIT_STATUS";
+}
+
 function run(command, args, env, cwd = root) {
   const child = spawnSync(command, args, {
     cwd,
@@ -156,7 +192,7 @@ function run(command, args, env, cwd = root) {
     shell: process.platform === "win32" && command.toLowerCase().endsWith(".cmd"),
     maxBuffer: 8 * 1024 * 1024,
   });
-  return { exitCode: child.status ?? 1, stdout: child.stdout ?? "", stderr: child.stderr ?? "" };
+  return { ...normalizeSpawnSyncExecution(child), stdout: child.stdout ?? "", stderr: child.stderr ?? "" };
 }
 
 function hashFile(filePath) {
@@ -193,6 +229,20 @@ export function sanitizedBuildDetails(output, tempRoot) {
       .replace(/g7-04-local-synthetic-[A-Za-z0-9_-]+/gu, "<synthetic-secret>")
       .replace(/\b[A-Za-z0-9_-]{40,}\b/gu, "<redacted-long-value>")
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "")
+      .trim()
+      .slice(0, 300))
+    .filter(Boolean)
+    .slice(-24);
+}
+
+export function sanitizedServerRuntimeDetails(output, tempRoot) {
+  return sanitizedBuildDetails(output, tempRoot)
+    .map((line) => line
+      .replace(/\b(Authorization)\s*:.*/giu, "$1: <redacted>")
+      .replace(/\b(Set-Cookie|Cookie)\s*:.*/giu, "$1: <redacted>")
+      .replace(/\bBearer\s+[^\s,;]+/giu, "Bearer <redacted>")
+      .replace(/\b([A-Z][A-Z0-9_]*(?:_TOKEN|_SECRET|_KEY|_PASSWORD))\b\s*[:=]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/giu, "$1=<redacted>")
+      .replace(/\b09\d{2}[-\s]?\d{3}[-\s]?\d{3}\b/gu, "<redacted-phone>")
       .trim()
       .slice(0, 300))
     .filter(Boolean)
@@ -311,7 +361,7 @@ export function ignoredMirrorPath(relativePath) {
     || segments.some((segment) => segment === ".env" || segment.startsWith(".env."));
 }
 
-function copySourceTree(source, destination, relative = "") {
+export function copySourceTree(source, destination, relative = "") {
   fs.mkdirSync(destination, { recursive: true });
   for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
     const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
@@ -325,6 +375,7 @@ function copySourceTree(source, destination, relative = "") {
     if (stat.isDirectory()) copySourceTree(sourcePath, destinationPath, childRelative);
     else if (stat.isFile()) fs.copyFileSync(sourcePath, destinationPath);
   }
+  if (relative && fs.readdirSync(destination).length === 0) fs.rmdirSync(destination);
 }
 
 function linkNodeModules(mirror) {
@@ -617,7 +668,7 @@ export async function main() {
     screenshots: { desktop: null, mobile: null, productDesktop: null, productMobile: null, productDeliveryDesktop: null, productDeliveryMobile: null, buyerDeliveryDesktop: null, buyerDeliveryMobile: null, paymentResult: null, financePending: null, emailTemplates: null, buyerOrdersDesktop: null, buyerOrdersMobile: null, onboardingDesktop: null, onboardingMobile: null, streamQuotaDesktop: null, streamQuotaMobile: null, streamRetryDesktop: null, streamRetryMobile: null, checkoutRecoveryDesktop: null, checkoutRecoveryMobile: null, messageTemplateDraftDesktop: null, messageTemplateDraftMobile: null, interactionRoleDesktop: null, interactionRoleMobile: null, persistentPlayerDesktop: null, persistentPlayerMobile: null },
     cleanup: { server: "NOT_STARTED", container: "NOT_STARTED", tempRoot: "NOT_STARTED" },
     safety: { dotenvContentsRead: false, mirrorExcludesDotenv: true, loopbackOnly: true, loopbackTlsCookieBridge: true, postgresTmpfs: true, sourceNodeModulesWritten: false, rawOutputPersisted: false, externalOperations: false, productionOperations: false, playwrightBrowserCacheReuseOnly: true, userBrowserProfileRead: false },
-    diagnostics: { nextBuild: null, nextBuildDetails: [], browser: null, browserDetails: [], browserGlobalErrors: [], serverRuntimeDetails: [] },
+    diagnostics: { nextBuild: null, nextBuildExecution: null, nextBuildDetails: [], browser: null, browserDetails: [], browserGlobalErrors: [], serverRuntimeDetails: [] },
     failure: null,
   };
   let env = null;
@@ -686,13 +737,24 @@ export async function main() {
     // hermetic mirror. Turbopack intentionally rejects packages whose physical
     // path is outside its inferred root, even though the mirror never writes
     // through those links.
-    const build = run(process.execPath, [nextCli, "build", "--webpack"], env, mirror);
-    receipt.phases.nextBuild = build.exitCode === 0 ? "PASS" : "FAIL";
-    receipt.diagnostics.nextBuild = build.exitCode === 0 ? null : classifySanitizedFailure(`${build.stdout}\n${build.stderr}`);
-    receipt.diagnostics.nextBuildDetails = build.exitCode === 0
-      ? []
-      : sanitizedBuildDetails(`${build.stdout}\n${build.stderr}`, tempRoot);
-    if (build.exitCode !== 0) throw new Error("next-build-failed");
+    if (diagnosticDevFast) {
+      receipt.phases.nextBuild = "SKIPPED_DIAGNOSTIC";
+    } else {
+      const build = run(process.execPath, [nextCli, "build", "--webpack"], env, mirror);
+      receipt.diagnostics.nextBuildExecution = {
+        exitCode: build.exitCode,
+        signal: build.signal,
+        spawnErrorCode: build.spawnErrorCode,
+        timedOut: build.timedOut,
+        outcome: build.outcome,
+      };
+      receipt.phases.nextBuild = build.exitCode === 0 ? "PASS" : "FAIL";
+      receipt.diagnostics.nextBuild = classifyNextBuildExecution(build, `${build.stdout}\n${build.stderr}`);
+      receipt.diagnostics.nextBuildDetails = build.exitCode === 0
+        ? []
+        : sanitizedBuildDetails(`${build.stdout}\n${build.stderr}`, tempRoot);
+      if (build.exitCode !== 0) throw new Error("next-build-failed");
+    }
 
     const serverArgs = diagnosticDev
       ? [nextCli, "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(browserPort)]
@@ -704,7 +766,11 @@ export async function main() {
     };
     server.stdout?.on("data", collectServerRuntime);
     server.stderr?.on("data", collectServerRuntime);
-    if (!server.pid || !(await waitForServer(`http://127.0.0.1:${browserPort}`, server))) throw new Error("next-server-not-ready");
+    if (!server.pid || !(await waitForServer(`http://127.0.0.1:${browserPort}`, server))) {
+      receipt.phases.server = "FAIL";
+      receipt.diagnostics.serverRuntimeDetails = sanitizedServerRuntimeDetails(serverRuntimeOutput, tempRoot);
+      throw new Error("next-server-not-ready");
+    }
     receipt.phases.server = "PASS";
 
     const playwrightCli = path.join(mirror, "node_modules", "playwright", "cli.js");
@@ -729,7 +795,8 @@ export async function main() {
       receipt.diagnostics.browser = browserSummary.diagnostics[0]?.classification ?? "PLAYWRIGHT_FAILED_WITHOUT_DIAGNOSTIC";
     }
     if (result.exitCode !== 0) {
-      receipt.diagnostics.serverRuntimeDetails = sanitizedBuildDetails(serverRuntimeOutput, tempRoot);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      receipt.diagnostics.serverRuntimeDetails = sanitizedServerRuntimeDetails(serverRuntimeOutput, tempRoot);
     }
     const screenshotEntries = {
       desktop: path.join(screenshots, "desktop.png"),
@@ -827,7 +894,7 @@ export async function main() {
       else {
         const removed = run("docker", ["rm", "-f", container.id], env ?? {});
         const absent = run("docker", ["inspect", container.id], env ?? {});
-        receipt.cleanup.container = removed.exitCode === 0 && absent.exitCode !== 0 ? "PASS" : "FAIL";
+        receipt.cleanup.container = removed.exitCode === 0 && absent.exitCode !== null && absent.exitCode !== 0 ? "PASS" : "FAIL";
       }
     }
     receipt.cleanup.tempRoot = removeMirror(tempRoot, marker);

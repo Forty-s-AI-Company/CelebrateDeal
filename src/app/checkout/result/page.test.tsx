@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,19 @@ vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrants: mocks.
 import { paymentReturnOutcome } from "@/lib/payment-return-outcome";
 
 import PaymentResultPage from "./page";
+
+function findElementByHref(node: ReactNode, href: string): ReactElement<{ children?: ReactNode; href?: string }> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findElementByHref(child, href);
+      if (match) return match;
+    }
+    return null;
+  }
+  if (!isValidElement<{ children?: ReactNode; href?: string }>(node)) return null;
+  if (node.props.href === href) return node;
+  return findElementByHref(node.props.children, href);
+}
 
 function grant(status = "paid", createdAt = new Date("2026-08-08T00:00:00.000Z")) {
   return {
@@ -71,9 +85,14 @@ describe("payment result page", () => {
   it.each(["payment_failed", "expired"])("offers a server-derived fresh checkout path for %s without retrying the old transaction", async (status) => {
     mocks.resolveBuyerSupportGrants.mockResolvedValue([grant(status)]);
 
-    const html = renderToStaticMarkup(await PaymentResultPage({ searchParams: Promise.resolve({ payment: "updated" }) }));
+    const page = await PaymentResultPage({ searchParams: Promise.resolve({ payment: "updated" }) });
+    const retryCta = findElementByHref(page, "/checkout/vendor-1/product-1");
+    const supportLink = findElementByHref(page, "/support/requests");
+    const html = renderToStaticMarkup(page);
 
     expect(html).toContain('href="/checkout/vendor-1/product-1"');
+    expect(retryCta?.type, "payment retry must use a native anchor for hard navigation").toBe("a");
+    expect(supportLink?.type, "non-checkout navigation must remain a Next Link").not.toBe("a");
     expect(html).toContain("回到商品重新嘗試付款");
     expect(html).toContain("建立新的安全付款嘗試");
     expect(html).toContain("不會直接重送舊交易");
