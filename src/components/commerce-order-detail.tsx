@@ -10,6 +10,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 import type { CommerceOrderPii } from "@/lib/commerce-order-pii";
 import type { CommerceOrderDetailRecord } from "@/lib/commerce-order-read-model";
+import type { CustomCheckoutAnswers, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { formatCurrency } from "@/lib/format";
 
 const orderStatusLabels = {
@@ -245,9 +246,10 @@ function SupportCasesPanel({ order }: { order: CommerceOrderDetailRecord }) {
   );
 }
 
-export function CommerceOrderDetail({ order, pii, feedback }: {
+export function CommerceOrderDetail({ order, pii, customCheckoutAnswersByItemId = {}, feedback }: {
   order: CommerceOrderDetailRecord;
   pii: CommerceOrderPii | null;
+  customCheckoutAnswersByItemId?: Record<string, { fields: CustomCheckoutFields; answers: CustomCheckoutAnswers | null; unavailable: boolean }>;
   feedback?: { error?: string; updated?: string };
 }) {
   const isFulfillable = order.status === "paid" || order.status === "partially_refunded";
@@ -271,7 +273,9 @@ export function CommerceOrderDetail({ order, pii, feedback }: {
       <SupportCasesPanel order={order} />
       <section className="grid gap-4" aria-labelledby="order-items-heading">
         <h2 id="order-items-heading" className="text-lg font-semibold text-slate-950">商品與履約</h2>
-        {order.items.map((item) => (
+        {order.items.map((item) => {
+          const customCheckout = customCheckoutAnswersByItemId[item.id];
+          return (
           <Card key={item.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0"><h3 className="font-semibold [overflow-wrap:anywhere]">{item.productName}</h3><p className="break-words text-sm text-slate-500">{item.quantity} × {formatCurrency(item.unitPriceCents, order.currency)} · {item.fulfillmentType}</p></div>
@@ -281,6 +285,16 @@ export function CommerceOrderDetail({ order, pii, feedback }: {
             </div>
             {item.shippingFulfillment ? <p className="mt-3 text-sm text-slate-600">物流：{item.shippingFulfillment.carrierName ?? "尚未指定"} · 追蹤：{item.shippingFulfillment.trackingNumber ?? "—"}</p> : null}
             {item.serviceFulfillment ? <p className="mt-3 text-sm text-slate-600">服務時間：{localDate(item.serviceFulfillment.scheduledAt)}</p> : null}
+            {customCheckout ? (
+              <div className="mt-4 rounded-md border border-violet-200 bg-violet-50 p-3 text-sm">
+                <h4 className="font-semibold text-violet-950">買家自訂資料</h4>
+                {customCheckout.unavailable ? <p role="alert" className="mt-2 text-red-700">加密資料暫時無法解密，請稍後再試。</p> : (
+                  <dl className="mt-2 grid gap-2">
+                    {customCheckout.fields.map((field) => <div key={field.key} className="grid gap-1 sm:grid-cols-[180px_1fr]"><dt className="text-slate-600">{field.label}</dt><dd className="whitespace-pre-wrap font-medium text-slate-950">{String(customCheckout.answers?.[field.key] ?? "")}</dd></div>)}
+                  </dl>
+                )}
+              </div>
+            ) : null}
             {isFulfillable || (order.status === "refunded" && item.shippingFulfillment?.status === "refund_review") ? <div className="mt-4">
               {item.shippingFulfillment ? <ShippingActions orderId={order.id} fulfillment={item.shippingFulfillment} /> : null}
               {isFulfillable && item.entitlement?.status === "pending" ? (
@@ -292,7 +306,8 @@ export function CommerceOrderDetail({ order, pii, feedback }: {
               {isFulfillable && item.serviceFulfillment ? <ServiceActions orderId={order.id} fulfillment={item.serviceFulfillment} /> : null}
             </div> : null}
           </Card>
-        ))}
+          );
+        })}
       </section>
       <Card>
         <h2 className="text-base font-semibold text-slate-950">退款與事件歷史</h2>

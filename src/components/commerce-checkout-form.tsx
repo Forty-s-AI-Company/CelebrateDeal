@@ -13,6 +13,7 @@ import {
   isAllowedCheckoutDestination,
   shouldDiscardCheckoutAdmission,
 } from "@/lib/commerce-checkout";
+import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import {
   clearCheckoutIdempotencyKey,
   getOrCreateCheckoutIdempotencyKey,
@@ -26,6 +27,7 @@ type CommerceCheckoutFormProps = {
   productId: string;
   productName: string;
   fulfillmentType: CommerceCheckoutFulfillmentType;
+  customCheckoutFields?: CustomCheckoutFields;
   recoveryOnly?: boolean;
 };
 
@@ -51,11 +53,42 @@ function fieldClassName() {
   return "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 shadow-sm placeholder:text-slate-400 focus:border-blue-500";
 }
 
+function CheckoutCustomFields({ fields, disabled }: { fields: CustomCheckoutFields; disabled: boolean }) {
+  if (fields.length === 0) return null;
+  return (
+    <fieldset className="grid gap-4 rounded-xl border border-violet-200 bg-violet-50 p-4" disabled={disabled}>
+      <legend className="px-1 text-lg font-bold text-slate-950">商品自訂資料</legend>
+      <p className="text-sm leading-6 text-slate-700">這些資料只用於完成此商品；訂單成立後會以加密方式保存。</p>
+      {fields.map((field) => {
+        const name = `custom_${field.key}`;
+        if (field.type === "textarea") return <label key={field.key} className="text-sm font-semibold text-slate-800">{field.label}{field.required ? "" : "（選填）"}<textarea name={name} required={field.required} maxLength={4_000} rows={4} className={fieldClassName()} /></label>;
+        if (field.type === "select") return <label key={field.key} className="text-sm font-semibold text-slate-800">{field.label}{field.required ? "" : "（選填）"}<select name={name} required={field.required} defaultValue="" className={fieldClassName()}><option value="" disabled>請選擇</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+        if (field.type === "checkbox") return <label key={field.key} className="flex items-start gap-3 text-sm font-semibold text-slate-800"><input name={name} type="checkbox" required className="mt-1 h-4 w-4 accent-violet-700" /><span>{field.label}</span></label>;
+        return <label key={field.key} className="text-sm font-semibold text-slate-800">{field.label}{field.required ? "" : "（選填）"}<input name={name} required={field.required} maxLength={500} className={fieldClassName()} /></label>;
+      })}
+    </fieldset>
+  );
+}
+
+function CheckoutContactFields({ requiresPhone, disabled }: { requiresPhone: boolean; disabled: boolean }) {
+  return (
+    <fieldset className="grid gap-4" disabled={disabled}>
+      <legend className="text-lg font-bold text-slate-950">聯絡資料</legend>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="text-sm font-semibold text-slate-800">姓名<input name="buyerName" autoComplete="name" required maxLength={120} className={fieldClassName()} /></label>
+        <label className="text-sm font-semibold text-slate-800">Email<input name="buyerEmail" type="email" inputMode="email" autoComplete="email" required maxLength={320} className={fieldClassName()} /></label>
+      </div>
+      <label className="text-sm font-semibold text-slate-800">電話{requiresPhone ? "" : "（選填）"}<input name="buyerPhone" type="tel" inputMode="tel" autoComplete="tel" required={requiresPhone} maxLength={32} className={fieldClassName()} /></label>
+    </fieldset>
+  );
+}
+
 export function CommerceCheckoutForm({
   vendorId,
   productId,
   productName,
   fulfillmentType,
+  customCheckoutFields = [],
   recoveryOnly = false,
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
@@ -66,7 +99,6 @@ export function CommerceCheckoutForm({
   const requiresShipping = checkoutRequiresShipping(fulfillmentType);
   const requiresPhone = checkoutRequiresPhone(fulfillmentType);
   const isPending = phase === "submitting" || phase === "redirecting";
-
   function checkoutIdempotencyKey() {
     try {
       return getOrCreateCheckoutIdempotencyKey(
@@ -81,7 +113,6 @@ export function CommerceCheckoutForm({
       return window.crypto.randomUUID();
     }
   }
-
   function clearPersistedCheckoutIdentity() {
     try {
       clearCheckoutIdempotencyKey(window.sessionStorage, vendorId, productId);
@@ -89,11 +120,9 @@ export function CommerceCheckoutForm({
       // A storage cleanup failure must not block a known checkout response.
     }
   }
-
   useEffect(() => {
     if (phase === "error" || phase === "success") statusRef.current?.focus();
   }, [phase]);
-
   useEffect(() => {
     if (!recoveryOnly) return;
     let cancelled = false;
@@ -107,14 +136,12 @@ export function CommerceCheckoutForm({
     });
     return () => { cancelled = true; };
   }, [productId, recoveryOnly, vendorId]);
-
   function markInputChanged() {
     if (phase === "error") {
       setPhase("idle");
       setMessage("");
     }
   }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isPending || phase === "success") return;
@@ -137,6 +164,10 @@ export function CommerceCheckoutForm({
       addressLine1: text("addressLine1"),
       ...(text("addressLine2") ? { addressLine2: text("addressLine2") } : {}),
     } : null;
+    const customCheckoutAnswers = Object.fromEntries(customCheckoutFields.map((field) => [
+      field.key,
+      field.type === "checkbox" ? formData.get(`custom_${field.key}`) === "on" : text(`custom_${field.key}`),
+    ]));
 
     setPhase("submitting");
     setMessage("正在確認商品與安全結帳資格，接著會建立訂單並保留庫存。");
@@ -186,6 +217,7 @@ export function CommerceCheckoutForm({
           admissionToken: admission.current.admissionToken,
           buyer,
           shipping,
+          ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
         }),
         signal: controller.signal,
       });
@@ -265,23 +297,7 @@ export function CommerceCheckoutForm({
       aria-busy={isPending}
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
-      <fieldset className="grid gap-4" disabled={isPending || phase === "success"}>
-        <legend className="text-lg font-bold text-slate-950">聯絡資料</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-800">
-            姓名
-            <input name="buyerName" autoComplete="name" required maxLength={120} className={fieldClassName()} />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Email
-            <input name="buyerEmail" type="email" inputMode="email" autoComplete="email" required maxLength={320} className={fieldClassName()} />
-          </label>
-        </div>
-        <label className="text-sm font-semibold text-slate-800">
-          電話{requiresPhone ? "" : "（選填）"}
-          <input name="buyerPhone" type="tel" inputMode="tel" autoComplete="tel" required={requiresPhone} maxLength={32} className={fieldClassName()} />
-        </label>
-      </fieldset>
+      <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />
 
       {requiresShipping ? (
         <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={isPending || phase === "success"}>
@@ -326,6 +342,8 @@ export function CommerceCheckoutForm({
           </label>
         </fieldset>
       ) : null}
+
+      <CheckoutCustomFields fields={customCheckoutFields} disabled={isPending || phase === "success"} />
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
         <p id="checkout-payment-notice" className="flex items-start gap-2 font-semibold">

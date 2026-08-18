@@ -17,6 +17,11 @@ import {
   validateProductDeliveryDraft,
   type ValidatedProductDelivery,
 } from "@/lib/product-delivery";
+import {
+  CommerceCustomCheckoutValidationError,
+  parseCustomCheckoutFields,
+  safeParseCustomCheckoutFields,
+} from "@/lib/commerce-custom-checkout";
 import type { ProductActionError, ProductActionState, ProductFormDraft } from "@/lib/product-action-state";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -51,6 +56,10 @@ function boundedDraftText(formData: FormData, key: string, maximum: number) {
 }
 
 function draftFrom(formData: FormData): ProductFormDraft {
+  const customCheckoutFieldsRaw = formData.get("customCheckoutFields");
+  const customCheckoutFields = typeof customCheckoutFieldsRaw === "string"
+    ? safeParseCustomCheckoutFields(tryParseJson(customCheckoutFieldsRaw)).data ?? []
+    : [];
   return {
     name: boundedDraftText(formData, "name", 200),
     slug: boundedDraftText(formData, "slug", 200),
@@ -70,7 +79,23 @@ function draftFrom(formData: FormData): ProductFormDraft {
     imageAssetId: boundedDraftText(formData, "imageAssetId", 160),
     checkoutUrl: boundedDraftText(formData, "checkoutUrl", 2_048),
     isActive: formData.get("isActive") === "on",
+    customCheckoutFields,
   };
+}
+
+function tryParseJson(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseCustomCheckoutFieldsFromForm(formData: FormData) {
+  const value = formData.get("customCheckoutFields");
+  if (value === null) return [];
+  if (typeof value !== "string") throw new CommerceCustomCheckoutValidationError();
+  return parseCustomCheckoutFields(tryParseJson(value));
 }
 
 function productFailure(
@@ -152,6 +177,15 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
   if (!coursePolicy.success) return { success: false as const, state: productFailure(previousState, formData, "invalid_course_policy") };
   const productInput = parseProductInput(formData);
   if (!productInput) return { success: false as const, state: productFailure(previousState, formData, "invalid_product") };
+  let customCheckoutFields;
+  try {
+    customCheckoutFields = parseCustomCheckoutFieldsFromForm(formData);
+  } catch (error) {
+    if (error instanceof CommerceCustomCheckoutValidationError) {
+      return { success: false as const, state: productFailure(previousState, formData, "invalid_custom_checkout_fields") };
+    }
+    throw error;
+  }
   let delivery: ValidatedProductDelivery | null;
   try {
     delivery = validateProductDeliveryDraft({
@@ -184,6 +218,7 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
     coursePromoterShareBps: coursePolicy.coursePromoterShareBps,
     imageAssetId: optionalText(formData, "imageAssetId"),
     delivery,
+    customCheckoutFields,
   };
 }
 
@@ -390,6 +425,7 @@ export async function upsertProductAction(previousState: ProductActionState, for
     fulfillmentTypeConfirmed: true,
     courseContentOwnerMembershipId: request.commerceDomain === "course" ? request.courseContentOwnerMembershipId : null,
     coursePromoterShareBps: request.commerceDomain === "course" ? request.coursePromoterShareBps : null,
+    customCheckoutFields: request.customCheckoutFields,
     ...(existingProduct ? { coursePolicyVersion: existingProduct.coursePolicyVersion + (policyChanged ? 1 : 0) } : {}),
   };
   let persistenceError: ProductActionError | null;

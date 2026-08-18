@@ -22,6 +22,7 @@ function product(fulfillmentTypeConfirmed: boolean): Product {
     imageUrl: null,
     imageAssetId: null,
     checkoutUrl: null,
+    customCheckoutFields: null,
     inventory: 3,
     isActive: true,
     commerceDomain: "merchant",

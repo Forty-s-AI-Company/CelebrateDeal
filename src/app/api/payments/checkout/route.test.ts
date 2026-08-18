@@ -51,6 +51,7 @@ vi.mock("@/lib/checkout-admission", () => admissionMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
+import { createCustomCheckoutIdentityHash } from "@/lib/commerce-custom-checkout";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
 
 const idempotencyKey = "123e4567-e89b-12d3-a456-426614174000";
@@ -66,8 +67,18 @@ const shipping = {
   addressLine1: "測試路 1 號",
 };
 
-function identityHash(input = { buyer, shipping }) {
-  return createCommerceOrderIdentityHash(input, "vendor-1");
+function identityHash(
+  input = { buyer, shipping },
+  definitions: unknown = [],
+  answers: unknown = undefined,
+) {
+  return createCustomCheckoutIdentityHash({
+    vendorId: "vendor-1",
+    productId: "product-1",
+    basePiiHash: createCommerceOrderIdentityHash(input, "vendor-1"),
+    definitions,
+    answers,
+  });
 }
 
 function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}) {
@@ -423,6 +434,21 @@ describe("successful checkout response", () => {
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ expectedProductRevision: 4 }));
   });
 
+  it("strictly validates custom answers from the database definition and never writes them to transaction metadata", async () => {
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      customCheckoutFields: [{ key: "engraving", label: "刻字內容", type: "text", required: true }],
+    });
+    const response = await POST(checkoutRequest(undefined, { customCheckoutAnswers: { engraving: "生日快樂" } }));
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ customCheckoutAnswers: { engraving: "生日快樂" } }));
+    expect(JSON.stringify(db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata)).not.toContain("生日快樂");
+
+    const invalid = await POST(checkoutRequest(undefined, { customCheckoutAnswers: { engraving: "生日快樂", forged: "x" } }));
+    expect(invalid.status).toBe(400);
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+  });
+
   it("locks a course policy snapshot into trusted checkout metadata", async () => {
     db.product.findFirst.mockResolvedValueOnce({
       ...(await db.product.findFirst()),
@@ -570,6 +596,67 @@ describe("successful checkout response", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: "Idempotency key already used for another checkout" });
     expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a direct idempotency replay when custom answers change", async () => {
+    const customCheckoutFields = [{ key: "engraving", label: "刻字內容", type: "text", required: true }];
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      customCheckoutFields,
+    });
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: {
+        checkoutIdentityHash: identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
+      },
+      metadata: { productId: "product-1" },
+    });
+
+    const response = await POST(checkoutRequest(undefined, { customCheckoutAnswers: { engraving: "改過內容" } }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Idempotency key already used for another checkout" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a concurrent winner when custom answers differ", async () => {
+    const customCheckoutFields = [{ key: "engraving", label: "刻字內容", type: "text", required: true }];
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      customCheckoutFields,
+    });
+    inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(
+      new inventoryMocks.CheckoutIdempotencyConflictError("transaction-winner"),
+    );
+    db.paymentTransaction.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "transaction-winner",
+        vendorId: "vendor-1",
+        providerName: "demo",
+        checkoutIdempotencyKey: idempotencyKey,
+        orderNumber: "CD-20260807120000-WINNER",
+        grossAmountCents: 1200,
+        currency: "TWD",
+        status: "pending",
+        primaryCommerceOrder: {
+          checkoutIdentityHash: identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
+        },
+        metadata: { productId: "product-1" },
+      });
+
+    const response = await POST(checkoutRequest(undefined, { customCheckoutAnswers: { engraving: "改過內容" } }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Idempotency key already used for another checkout" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
   it("returns a bounded in-progress response when a concurrent winner has not persisted provider metadata yet", async () => {

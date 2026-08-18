@@ -1,3 +1,5 @@
+import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+
 export type ProductActionError =
   | "invalid_product"
   | "invalid_image_asset"
@@ -5,6 +7,7 @@ export type ProductActionError =
   | "invalid_course_owner"
   | "invalid_fulfillment"
   | "invalid_delivery"
+  | "invalid_custom_checkout_fields"
   | "media_upload_incomplete"
   | "duplicate_slug"
   | "conflict"
@@ -29,6 +32,7 @@ export type ProductFormDraft = {
   imageAssetId: string;
   checkoutUrl: string;
   isActive: boolean;
+  customCheckoutFields?: CustomCheckoutFields;
 };
 
 export type ProductActionState = {

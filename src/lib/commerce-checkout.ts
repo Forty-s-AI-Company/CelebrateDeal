@@ -14,6 +14,7 @@ export const CommerceCheckoutRequestSchema = z.object({
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
   buyer: z.unknown(),
   shipping: z.unknown().nullable().optional(),
+  customCheckoutAnswers: z.unknown().optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({

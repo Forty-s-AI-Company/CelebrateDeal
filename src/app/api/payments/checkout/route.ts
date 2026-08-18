@@ -20,6 +20,12 @@ import {
   type CommerceOrderPii,
 } from "@/lib/commerce-order-pii";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
+import {
+  CommerceCustomCheckoutValidationError,
+  createCustomCheckoutIdentityHash,
+  parseCustomCheckoutFields,
+  validateCustomCheckoutAnswers,
+} from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import {
   CheckoutIdempotencyConflictError,
@@ -144,6 +150,9 @@ function validateCheckoutIdentity(
   input: { buyer: unknown; shipping?: unknown },
   vendorId: string,
   fulfillmentType: CommerceCheckoutFulfillmentType,
+  productId: string,
+  customCheckoutFields: unknown,
+  customCheckoutAnswers: unknown,
 ): ValidatedCheckoutIdentity {
   let pii: CommerceOrderPii;
   try {
@@ -171,13 +180,30 @@ function validateCheckoutIdentity(
     return {
       ok: true,
       pii,
-      checkoutIdentityHash: createCommerceOrderIdentityHash(pii, vendorId),
+      checkoutIdentityHash: createCustomCheckoutIdentityHash({
+        vendorId,
+        productId,
+        basePiiHash: createCommerceOrderIdentityHash(pii, vendorId),
+        definitions: customCheckoutFields,
+        answers: customCheckoutAnswers,
+      }),
     };
   } catch {
     return {
       ok: false,
       response: NextResponse.json({ error: "Unable to validate checkout" }, { status: 503 }),
     };
+  }
+}
+
+function validateCustomCheckoutAnswersForProduct(definitions: unknown, input: unknown) {
+  try {
+    const fields = parseCustomCheckoutFields(definitions);
+    return { ok: true as const, fields, answers: validateCustomCheckoutAnswers(fields, input) };
+  } catch (error) {
+    return error instanceof CommerceCustomCheckoutValidationError
+      ? { ok: false as const, response: NextResponse.json({ error: "Invalid custom checkout answers" }, { status: 400 }) }
+      : { ok: false as const, response: NextResponse.json({ error: "Custom checkout fields unavailable" }, { status: 503 }) };
   }
 }
 
@@ -419,7 +445,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product delivery is not ready" }, { status: 409 });
   }
 
-  const identity = validateCheckoutIdentity(parsed.data, parsed.data.vendorId, product.fulfillmentType);
+  // Use the database definition, never a definition supplied by the browser.
+  const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
+  if (!customCheckout.ok) return customCheckout.response;
+
+  const identity = validateCheckoutIdentity(
+    parsed.data,
+    parsed.data.vendorId,
+    product.fulfillmentType,
+    product.id,
+    customCheckout.fields,
+    customCheckout.answers,
+  );
   if (!identity.ok) return identity.response;
   const { pii: checkoutPii, checkoutIdentityHash } = identity;
 
@@ -505,6 +542,7 @@ export async function POST(request: Request) {
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
+          customCheckoutAnswers: customCheckout.answers,
         });
         commerceOrderId = commerceOrder.id;
       },

@@ -17,6 +17,12 @@ import {
   protectOrderItemDeliverySnapshot,
   revealProductDeliveryConfig,
 } from "@/lib/product-delivery";
+import {
+  createCustomCheckoutIdentityHash,
+  parseCustomCheckoutFields,
+  protectCustomCheckoutAnswers,
+  validateCustomCheckoutAnswers,
+} from "@/lib/commerce-custom-checkout";
 
 /** The deliberately small transaction surface used by the commerce order domain. */
 export type CommerceOrdersTransaction = Pick<
@@ -191,6 +197,8 @@ export type CreateCommerceOrderForCheckoutInput = {
   currency: string;
   buyer: CommerceOrderBuyerContact;
   shipping: CommerceOrderShippingAddress | null;
+  /** Validated again against the product row inside this transaction. Never add to events or payment metadata. */
+  customCheckoutAnswers?: unknown;
   now?: Date;
 };
 
@@ -228,6 +236,7 @@ export async function createCommerceOrderForCheckout(
       courseContentOwnerMembershipId: true,
       coursePromoterShareBps: true,
       coursePolicyVersion: true,
+      customCheckoutFields: true,
       deliveryConfig: {
         select: {
           id: true,
@@ -259,18 +268,38 @@ export async function createCommerceOrderForCheckout(
   const orderDelivery = orderDeliveryFromProduct(product, input.vendorId);
   const orderId = randomUUID();
   const orderItemId = randomUUID();
+  // Re-read and re-validate the product definition in the same transaction so
+  // stale client fields cannot be persisted when a merchant edits the product.
+  const customCheckoutFields = parseCustomCheckoutFields(product.customCheckoutFields);
+  const customCheckoutAnswers = validateCustomCheckoutAnswers(customCheckoutFields, input.customCheckoutAnswers);
+  const customCheckoutAnswersEncryptedEnvelope = customCheckoutFields.length > 0
+    ? protectCustomCheckoutAnswers(customCheckoutFields, customCheckoutAnswers, {
+        vendorId: input.vendorId,
+        orderId,
+        orderItemId,
+      })
+    : null;
   const deliverySnapshotId = orderDelivery ? randomUUID() : null;
   // This is the only plaintext PII handling point. Nothing below receives it.
   const pii = protectCommerceOrderPii({ buyer: input.buyer, shipping: input.shipping }, {
     vendorId: input.vendorId,
     orderId,
   });
+  // Recompute from the transaction's product row so the persisted identity
+  // cannot be rebound to different custom answers by an idempotency retry.
+  const checkoutIdentityHash = createCustomCheckoutIdentityHash({
+    vendorId: input.vendorId,
+    productId: product.id,
+    basePiiHash: pii.checkoutIdentityHash,
+    definitions: customCheckoutFields,
+    answers: customCheckoutAnswers,
+  });
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
-    checkoutIdentityHash: pii.checkoutIdentityHash,
+    checkoutIdentityHash,
     primaryPaymentTransactionId: input.paymentTransactionId,
     status: "pending_payment" as const,
     currency: input.currency,
@@ -302,6 +331,7 @@ export async function createCommerceOrderForCheckout(
       quantity,
       lineTotalCents: calculatedTotal,
       imageUrl: product.imageUrl,
+      customCheckoutAnswersEncryptedEnvelope,
       nonSensitiveSnapshot: {
         productId: product.id,
         productName: product.name,
@@ -312,6 +342,8 @@ export async function createCommerceOrderForCheckout(
         quantity,
         lineTotalCents: calculatedTotal,
         imageUrl: product.imageUrl,
+        // Definition only: answers stay in the separate encrypted envelope.
+        customCheckoutFields,
         ...(coursePolicySnapshot ? { coursePolicySnapshot } : {}),
       },
       createdAt: now,

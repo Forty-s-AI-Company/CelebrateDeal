@@ -88,4 +88,22 @@ describe("CommerceOrderDetail support workflow", () => {
     expect(html).toContain('data-pending-label="結案中…"');
     expect(html).toContain("正在記錄包裹退回結果，請勿重複送出");
   });
+
+  it("renders decrypted custom answers but never an unavailable envelope", () => {
+    const html = renderToStaticMarkup(<CommerceOrderDetail order={order({
+      items: [{ id: "item-1", productName: "客製商品", quantity: 1, unitPriceCents: 100, fulfillmentType: "physical", shippingFulfillment: null, entitlement: null, serviceFulfillment: null }] as unknown as CommerceOrderDetailRecord["items"],
+    })} pii={null} customCheckoutAnswersByItemId={{
+      "item-1": { fields: [{ key: "engraving", label: "刻字內容", type: "text", required: true }], answers: { engraving: "生日快樂" }, unavailable: false },
+    }} />);
+    expect(html).toContain("買家自訂資料");
+    expect(html).toContain("生日快樂");
+
+    const unavailable = renderToStaticMarkup(<CommerceOrderDetail order={order({
+      items: [{ id: "item-1", productName: "客製商品", quantity: 1, unitPriceCents: 100, fulfillmentType: "physical", shippingFulfillment: null, entitlement: null, serviceFulfillment: null }] as unknown as CommerceOrderDetailRecord["items"],
+    })} pii={null} customCheckoutAnswersByItemId={{
+      "item-1": { fields: [], answers: null, unavailable: true },
+    }} />);
+    expect(unavailable).toContain("暫時無法解密");
+    expect(unavailable).not.toContain("v1.fake-envelope");
+  });
 });

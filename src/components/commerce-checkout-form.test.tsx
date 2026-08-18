@@ -49,4 +49,24 @@ describe("CommerceCheckoutForm", () => {
     expect(service).toMatch(/<input[^>]*required=""[^>]*name="buyerPhone"/u);
     expect(course).toContain("電話（選填）");
   });
+
+  it("renders declarative custom fields without exposing a definition editor", () => {
+    const html = renderToStaticMarkup(
+      <CommerceCheckoutForm
+        vendorId="vendor-1"
+        productId="product-1"
+        productName="客製商品"
+        fulfillmentType="physical"
+        customCheckoutFields={[
+          { key: "engraving", label: "刻字內容", type: "text", required: true },
+          { key: "size", label: "尺寸", type: "select", required: true, options: ["S", "M"] },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("商品自訂資料");
+    expect(html).toContain('name="custom_engraving"');
+    expect(html).toContain('name="custom_size"');
+    expect(html).toContain("刻字內容");
+  });
 });

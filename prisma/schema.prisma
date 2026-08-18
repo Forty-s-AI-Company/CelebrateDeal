@@ -308,6 +308,7 @@ model Product {
   imageUrl                       String?
   imageAssetId                   String?
   checkoutUrl                    String?
+  customCheckoutFields           Json?
   inventory                      Int                     @default(0)
   isActive                       Boolean                 @default(true)
   commerceDomain                 String                  @default("merchant")
@@ -1350,6 +1351,7 @@ model CommerceOrderItem {
   lineTotalCents       Int
   imageUrl             String?
   nonSensitiveSnapshot Json
+  customCheckoutAnswersEncryptedEnvelope String?
   createdAt            DateTime                @default(now())
 
   vendor              Vendor                             @relation(fields: [vendorId], references: [id], onDelete: Cascade)

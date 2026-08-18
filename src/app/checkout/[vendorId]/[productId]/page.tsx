@@ -2,6 +2,7 @@ import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
 import type { CommerceCheckoutFulfillmentType } from "@/lib/commerce-checkout";
+import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 
@@ -38,6 +39,7 @@ export default async function CommerceCheckoutPage({
       imageUrl: true,
       inventory: true,
       checkoutUrl: true,
+      customCheckoutFields: true,
       fulfillmentType: true,
       deliveryConfig: { select: { status: true, fulfillmentType: true } },
       vendor: { select: { name: true } },
@@ -61,6 +63,8 @@ export default async function CommerceCheckoutPage({
 
   const fulfillmentType = product.fulfillmentType as CommerceCheckoutFulfillmentType;
   const isAvailable = product.inventory > 0;
+  const customCheckoutFields = safeParseCustomCheckoutFields(product.customCheckoutFields);
+  if (!customCheckoutFields.success) notFound();
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 sm:py-12">
@@ -103,6 +107,7 @@ export default async function CommerceCheckoutPage({
             productId={product.id}
             productName={product.name}
             fulfillmentType={fulfillmentType}
+            customCheckoutFields={customCheckoutFields.data}
             recoveryOnly={!isAvailable}
           />
         </section>

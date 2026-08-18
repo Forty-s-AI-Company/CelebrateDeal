@@ -42,6 +42,7 @@ import {
   reconcileCommerceOrderRefund,
   reconcileCommerceOrderRefundForPayment,
 } from "./commerce-orders";
+import { createCustomCheckoutIdentityHash } from "./commerce-custom-checkout";
 
 const now = new Date("2026-08-08T08:00:00.000Z");
 
@@ -190,6 +191,30 @@ describe("commerce orders database service", () => {
       expect(persisted).not.toContain("https://delivery.example.com/buyer/content");
       expect(persisted).not.toContain("安全交付說明");
     }
+  });
+
+  it("recomputes the checkout identity from transaction-validated custom answers without persisting plaintext", async () => {
+    vi.stubEnv("CSRF_SECRET", "commerce-orders-test-secret-that-is-at-least-32-bytes");
+    const tx = transaction();
+    const customCheckoutFields = [{ key: "engraving", label: "刻字內容", type: "text" as const, required: true }];
+    tx.product.findFirst.mockResolvedValue({ ...product("physical"), customCheckoutFields });
+
+    await createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      customCheckoutAnswers: { engraving: "生日快樂" },
+    });
+
+    const orderData = tx.commerceOrder.create.mock.calls[0]?.[0]?.data;
+    expect(orderData.checkoutIdentityHash).toBe(createCustomCheckoutIdentityHash({
+      vendorId: "vendor-1",
+      productId: "product-1",
+      basePiiHash: "opaque-checkout-identity",
+      definitions: customCheckoutFields,
+      answers: { engraving: "生日快樂" },
+    }));
+    expect(orderData.checkoutIdentityHash).not.toBe("opaque-checkout-identity");
+    expect(JSON.stringify(tx.commerceOrder.create.mock.calls)).not.toContain("生日快樂");
+    vi.unstubAllEnvs();
   });
 
   it("fails before creating an order when a non-physical product lacks active delivery configuration", async () => {

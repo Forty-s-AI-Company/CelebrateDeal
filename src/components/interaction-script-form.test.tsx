@@ -234,6 +234,7 @@ function renderNewForm(roles: InteractionRole[] = []) {
       imageUrl: null,
       imageAssetId: null,
       checkoutUrl: null,
+      customCheckoutFields: null,
       inventory: 10,
       isActive: true,
       commerceDomain: "merchant",

@@ -10,6 +10,7 @@ import {
   type ProductActionState,
   type ProductFormDraft,
 } from "@/lib/product-action-state";
+import type { CustomCheckoutField, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 
 export type ProductFormProduct = {
   id: string;
@@ -23,6 +24,7 @@ export type ProductFormProduct = {
   imageUrl: string | null;
   imageAssetId: string | null;
   checkoutUrl: string | null;
+  customCheckoutFields?: CustomCheckoutFields;
   inventory: number;
   isActive: boolean;
   commerceDomain: string;
@@ -54,6 +56,7 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
       fulfillmentType: "physical", courseContentOwnerMembershipId: "", coursePromoterShareBps: "",
       deliveryTitle: "", deliveryUrl: "", deliveryInstructions: "", deliveryHostConfirmed: false,
       imageUrl: "", imageAssetId: "", checkoutUrl: "", isActive: false,
+      customCheckoutFields: [],
     };
   }
   return {
@@ -77,6 +80,7 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
     imageAssetId: product.imageAssetId ?? "",
     checkoutUrl: product.checkoutUrl ?? "",
     isActive: product.isActive,
+    customCheckoutFields: product.customCheckoutFields ?? [],
   };
 }
 
@@ -87,11 +91,109 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "invalid_course_owner") return "課程內容所有人必須是目前商家內有效的團隊成員。";
   if (error === "invalid_fulfillment") return "商品交付方式與課程設定不一致，請重新選擇。";
   if (error === "invalid_delivery") return "交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。";
+  if (error === "invalid_custom_checkout_fields") return "自訂結帳欄位格式不正確；請確認欄位 key、標題與選項後再儲存。";
   if (error === "media_upload_incomplete") return "圖片尚未完成上傳，請先完成、重試或移除檔案。";
   if (error === "duplicate_slug") return "這個 Slug 已被目前商家的另一個商品使用，請更換後再儲存。";
   if (error === "conflict") return "商品在你編輯期間已被更新（可能包含新訂單扣庫存）。請重新整理確認最新資料後再修改。";
   if (error === "not_found") return "找不到這個商品，或你沒有權限修改。";
   return null;
+}
+
+function nextFieldKey(fields: CustomCheckoutFields) {
+  let index = fields.length + 1;
+  while (fields.some((field) => field.key === `field_${index}`)) index += 1;
+  return `field_${index}`;
+}
+
+function CustomCheckoutFieldEditor({
+  fields,
+  onChange,
+}: {
+  fields: CustomCheckoutFields;
+  onChange: (fields: CustomCheckoutFields) => void;
+}) {
+  function update(index: number, patch: Partial<CustomCheckoutField>) {
+    onChange(fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } as CustomCheckoutField : field));
+  }
+
+  function changeType(index: number, type: CustomCheckoutField["type"]) {
+    const field = fields[index];
+    if (!field) return;
+    if (type === "select") {
+      update(index, { type, options: field.type === "select" ? field.options : ["選項一", "選項二"] });
+      return;
+    }
+    if (type === "checkbox") {
+      onChange(fields.map((current, currentIndex) => currentIndex === index
+        ? { key: current.key, label: current.label, type, required: true }
+        : current));
+      return;
+    }
+    onChange(fields.map((current, currentIndex) => currentIndex === index
+      ? { key: current.key, label: current.label, type, required: current.required }
+      : current));
+  }
+
+  function move(index: number, direction: -1 | 1) {
+    const destination = index + direction;
+    if (destination < 0 || destination >= fields.length) return;
+    const next = [...fields];
+    const [field] = next.splice(index, 1);
+    if (!field) return;
+    next.splice(destination, 0, field);
+    onChange(next);
+  }
+
+  return (
+    <fieldset className="grid gap-4 rounded-md border border-violet-200 bg-violet-50/50 p-4">
+      <legend className="px-1 text-sm font-semibold text-violet-950">商品自訂結帳欄位</legend>
+      <p className="text-sm leading-6 text-violet-950">例如刻字內容、尺寸或確認事項。買家答案會加密保存，商品設定最多十欄。</p>
+      <input type="hidden" name="customCheckoutFields" value={JSON.stringify(fields)} />
+      {fields.map((field, index) => (
+        <div key={field.key} className="grid gap-3 rounded-md border border-violet-200 bg-white p-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+            <label className="grid gap-1 text-sm font-medium text-slate-800">欄位標題
+              <input value={field.label} maxLength={100} onChange={(event) => update(index, { label: event.target.value })} className="rounded-md border border-slate-300 px-3 py-2" />
+            </label>
+            <label className="grid gap-1 text-sm font-medium text-slate-800">輸入類型
+              <select value={field.type} onChange={(event) => changeType(index, event.target.value as CustomCheckoutField["type"])} className="rounded-md border border-slate-300 px-3 py-2">
+                <option value="text">短文字</option><option value="textarea">長文字</option><option value="select">下拉選單</option><option value="checkbox">確認勾選</option>
+              </select>
+            </label>
+            <div className="flex items-end gap-2">
+              <button type="button" onClick={() => move(index, -1)} disabled={index === 0} className="rounded-md border px-2 py-2 text-sm disabled:opacity-40" aria-label={`上移 ${field.label}`}>↑</button>
+              <button type="button" onClick={() => move(index, 1)} disabled={index === fields.length - 1} className="rounded-md border px-2 py-2 text-sm disabled:opacity-40" aria-label={`下移 ${field.label}`}>↓</button>
+              <button type="button" onClick={() => onChange(fields.filter((_, fieldIndex) => fieldIndex !== index))} className="rounded-md border border-red-200 px-2 py-2 text-sm text-red-700">刪除</button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+            <span className="font-mono text-xs text-slate-500">固定 key：{field.key}</span>
+            {field.type === "checkbox" ? <span>確認勾選一律為必填。</span> : (
+              <label className="flex items-center gap-2"><input type="checkbox" checked={field.required} onChange={(event) => update(index, { required: event.target.checked })} />必填</label>
+            )}
+          </div>
+          {field.type === "select" ? (
+            <div className="grid gap-2">
+              <p className="text-sm font-medium text-slate-800">選項（2–20 個，不可重複）</p>
+              {field.options.map((value, optionIndex) => (
+                <div key={`${field.key}-${optionIndex}`} className="flex gap-2">
+                  <input value={value} maxLength={100} onChange={(event) => update(index, { options: field.options.map((option, currentIndex) => currentIndex === optionIndex ? event.target.value : option) })} className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2" />
+                  <button type="button" disabled={field.options.length <= 2} onClick={() => update(index, { options: field.options.filter((_, currentIndex) => currentIndex !== optionIndex) })} className="rounded-md border px-2 text-sm disabled:opacity-40">移除</button>
+                </div>
+              ))}
+              <button type="button" disabled={field.options.length >= 20} onClick={() => update(index, { options: [...field.options, `選項 ${field.options.length + 1}`] })} className="w-fit rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-800 disabled:opacity-40">新增選項</button>
+            </div>
+          ) : null}
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={fields.length >= 10}
+        onClick={() => onChange([...fields, { key: nextFieldKey(fields), label: `自訂欄位 ${fields.length + 1}`, type: "text", required: false }])}
+        className="w-fit rounded-md border border-violet-300 px-3 py-2 text-sm font-medium text-violet-800 disabled:opacity-40"
+      >新增結帳欄位</button>
+    </fieldset>
+  );
 }
 
 export function ProductFormClient({
@@ -112,6 +214,7 @@ export function ProductFormClient({
   const [mediaBlocked, setMediaBlocked] = useState(false);
   const draft = state.draft ?? initialDraft(product);
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
+  const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
   const error = errorMessage(state.error);
 
   return (
@@ -199,6 +302,7 @@ export function ProductFormClient({
           {!draft.isActive ? <p role="status" className="text-xs leading-5 text-slate-700">草稿可先保存未完成設定；勾選上架前必須補齊必要交付內容。</p> : null}
         </fieldset>
       ) : null}
+      <CustomCheckoutFieldEditor fields={customCheckoutFields} onChange={setCustomCheckoutFields} />
       <TextArea label="商品描述" name="description" maxLength={10_000} defaultValue={draft.description} />
       <MediaUploadField
         kind="image"

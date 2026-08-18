@@ -3,6 +3,7 @@ import { ProductFormClient, type CourseMembershipOption, type ProductFormProduct
 import { Card } from "@/components/ui";
 import { getCsrfToken } from "@/lib/csrf";
 import { revealProductDeliveryConfig } from "@/lib/product-delivery";
+import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 
 type ProductWithDeliveryConfig = Product & {
   imageAssetId?: string | null;
@@ -46,6 +47,7 @@ export async function ProductForm({
     imageUrl: product.imageUrl,
     imageAssetId: product.imageAssetId,
     checkoutUrl: product.checkoutUrl,
+    customCheckoutFields: safeParseCustomCheckoutFields(product.customCheckoutFields).data ?? [],
     inventory: product.inventory,
     isActive: product.isActive,
     commerceDomain: product.commerceDomain,

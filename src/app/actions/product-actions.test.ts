@@ -73,6 +73,16 @@ describe("upsertProductAction", () => {
     }) });
   });
 
+  it("stores validated custom checkout definitions and rejects malformed definitions before writing", async () => {
+    const definitions = JSON.stringify([{ key: "engraving", label: "刻字內容", type: "text", required: true }]);
+    await expect(upsertProductAction(initialProductActionState, validProduct({ customCheckoutFields: definitions }))).rejects.toThrow("redirect:/products?updated=created");
+    expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ customCheckoutFields: JSON.parse(definitions) }) });
+
+    const result = await upsertProductAction(initialProductActionState, validProduct({ customCheckoutFields: JSON.stringify([{ key: "Bad Key", label: "x", type: "text", required: false }]) }));
+    expect(result.error).toBe("invalid_custom_checkout_fields");
+    expect(mocks.productCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves entered values when validation fails instead of redirecting away", async () => {
     const result = await upsertProductAction(initialProductActionState, validProduct({ name: "我的草稿", price: "-1", description: "不能消失" }));
 
