@@ -194,6 +194,9 @@ export default async function EditLivePage({
     memberQuotas: JSON.stringify(quotaPolicy.memberQuotas),
     pageQuotas: JSON.stringify(quotaPolicy.pageQuotas),
     replayEnabled: live.replayEnabled,
+    replayAvailableUntil: live.replayAvailableUntil
+      ? formatZonedDateTimeLocal(live.replayAvailableUntil, vendor.timezone)
+      : "",
     activeStep: 0,
   });
   const savedPayload = savedDraft ? LiveStudioDraftPayloadSchema.safeParse(savedDraft.payload) : null;

@@ -648,6 +648,7 @@ type LiveMutationData = {
   heroImageAssetId: string | null;
   accentCopy: string | null;
   replayEnabled: boolean;
+  replayAvailableUntil: Date | null;
   streamMode: string;
   quotaPolicy: Prisma.InputJsonValue;
 };
@@ -788,12 +789,39 @@ function parseSubmittedLiveDraft(
     redirect(invalidDraftPath);
   }
   let scheduledAt: Date;
+  let replayAvailableUntil: Date | null = null;
   try {
     scheduledAt = parseZonedDateTimeLocal(payload.scheduledAt, vendorTimeZone);
+    if (payload.replayEnabled && payload.replayAvailableUntil) {
+      replayAvailableUntil = parseZonedDateTimeLocal(payload.replayAvailableUntil, vendorTimeZone);
+    }
   } catch {
     redirect(invalidDraftPath);
   }
-  return { payload, scheduledAt, slug, suffix };
+  return { payload, scheduledAt, replayAvailableUntil, slug, suffix, invalidDraftPath };
+}
+
+function requireValidReplayDeadline(input: {
+  replayAvailableUntil: Date | null;
+  scheduledAt: Date;
+  streamMode: LiveStudioDraftPayload["streamMode"];
+  video: { durationSec: number | null } | null;
+  invalidDraftPath: string;
+}) {
+  if (!input.replayAvailableUntil) return;
+  let earliestDeadline = input.scheduledAt;
+  if (input.streamMode === "vod") {
+    const durationSec = input.video?.durationSec;
+    if (typeof durationSec !== "number" || !Number.isSafeInteger(durationSec) || durationSec <= 0) {
+      redirect(input.invalidDraftPath);
+    }
+    const naturalCompletionMs = input.scheduledAt.getTime() + durationSec * 1_000;
+    if (!Number.isSafeInteger(naturalCompletionMs)) redirect(input.invalidDraftPath);
+    earliestDeadline = new Date(naturalCompletionMs);
+  }
+  if (input.replayAvailableUntil.getTime() <= earliestDeadline.getTime()) {
+    redirect(input.invalidDraftPath);
+  }
 }
 
 function parseSubmittedLiveQuotaPolicy(
@@ -857,7 +885,7 @@ async function resolveSubmittedLiveReferences(input: {
     input.productIds.length > 0
       ? input.db.product.findMany({ where: { vendorId: input.vendorId, id: { in: input.productIds }, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true } })
       : Promise.resolve([]),
-    input.videoId ? input.db.video.findFirst({ where: liveReadyVideoWhere(input.vendorId, input.videoId), select: { id: true } }) : Promise.resolve(null),
+    input.videoId ? input.db.video.findFirst({ where: liveReadyVideoWhere(input.vendorId, input.videoId), select: { id: true, durationSec: true } }) : Promise.resolve(null),
     input.formId ? input.db.registrationForm.findFirst({
       where: { id: input.formId, vendorId: input.vendorId, isActive: true },
       select: { id: true, fields: true },
@@ -1073,6 +1101,13 @@ export async function upsertLiveAction(formData: FormData) {
   if (hasInvalidReference) {
     redirect(invalidReferencePath);
   }
+  requireValidReplayDeadline({
+    replayAvailableUntil: parsedSubmission.replayAvailableUntil,
+    scheduledAt,
+    streamMode: submittedDraft.streamMode,
+    video,
+    invalidDraftPath: parsedSubmission.invalidDraftPath,
+  });
   await requireLiveQuotaPaymentMethod(db, vendor.id, quotaPolicy, id, draftClaim.draftId);
   const requestedStatus = requestedLiveStatus(formData, id, draftClaim.draftId, existingLive?.status ?? null);
   requireSubmittedLivePublishReadiness({
@@ -1111,6 +1146,7 @@ export async function upsertLiveAction(formData: FormData) {
     heroImageAssetId: heroImageAsset?.id ?? null,
     accentCopy: submittedDraft.accentCopy || null,
     replayEnabled: submittedDraft.replayEnabled,
+    replayAvailableUntil: parsedSubmission.replayAvailableUntil,
     streamMode: submittedDraft.streamMode,
     quotaPolicy: quotaPolicy as Prisma.InputJsonValue,
   };

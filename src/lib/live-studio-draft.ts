@@ -44,6 +44,7 @@ const liveStudioDraftFields = {
   memberQuotas: boundedJsonText,
   pageQuotas: boundedJsonText,
   replayEnabled: z.boolean().default(true),
+  replayAvailableUntil: z.string().trim().max(40).default(""),
 };
 
 const LegacyLiveStudioDraftPayloadSchema = z.object({

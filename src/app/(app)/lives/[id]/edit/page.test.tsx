@@ -79,6 +79,7 @@ const live = {
   accentCopy: null,
   cloudflareLiveInputUid: null,
   replayEnabled: true,
+  replayAvailableUntil: new Date("2026-08-09T01:00:00.000Z"),
   quotaPolicy: null,
   products: [],
 };
@@ -139,6 +140,7 @@ describe("EditLivePage unified Live Studio", () => {
         scheduledAt: "2026-08-08T09:00",
         interactionScriptId: "",
         replayEnabled: true,
+        replayAvailableUntil: "2026-08-09T09:00",
         flowVersion: 2,
         activeStep: 0,
       }),
@@ -157,7 +159,23 @@ describe("EditLivePage unified Live Studio", () => {
 
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
       timeZone: "America/New_York",
-      initialValues: expect.objectContaining({ scheduledAt: "2026-08-07T21:00" }),
+      initialValues: expect.objectContaining({
+        scheduledAt: "2026-08-07T21:00",
+        replayAvailableUntil: "2026-08-08T21:00",
+      }),
+    }), undefined);
+  });
+
+  it("maps a null replay deadline to an empty Studio value", async () => {
+    mocks.liveFindFirst.mockResolvedValue({ ...live, replayAvailableUntil: null });
+
+    renderToStaticMarkup(await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialValues: expect.objectContaining({ replayAvailableUntil: "" }),
     }), undefined);
   });
 
@@ -246,6 +264,7 @@ describe("EditLivePage unified Live Studio", () => {
         title: "草稿中的標題",
         scheduledAt: "2026-08-09T10:00",
         replayEnabled: false,
+        replayAvailableUntil: "",
       },
       updatedAt: new Date("2026-08-08T02:00:00.000Z"),
     });
@@ -263,7 +282,7 @@ describe("EditLivePage unified Live Studio", () => {
       initialDraft: expect.objectContaining({
         id: "draft-live-1",
         revision: 7,
-        payload: expect.objectContaining({ scheduledAt: "2026-08-09T10:00" }),
+        payload: expect.objectContaining({ scheduledAt: "2026-08-09T10:00", replayAvailableUntil: "" }),
       }),
     }), undefined);
   });

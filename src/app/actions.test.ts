@@ -1617,7 +1617,7 @@ describe("upsertLiveAction", () => {
   function allowCurrentVendorLiveReferences() {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
-    mocks.videoFindFirst.mockResolvedValue({ id: "video-1" });
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 600 });
     mocks.registrationFormFindFirst.mockResolvedValue({
       id: "form-1",
       fields: [
@@ -1704,6 +1704,7 @@ describe("upsertLiveAction", () => {
         messageTemplateId: "template-1",
         interactionScriptId: "script-1",
         replayEnabled: true,
+        replayAvailableUntil: null,
         products: { create: [{ vendorId: "vendor-1", productId: "product-1", sortOrder: 1, isPinned: true }] },
       }),
     });
@@ -1751,6 +1752,105 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate.mock.calls[0]?.[0]?.data).toEqual(expect.objectContaining({
       scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
     }));
+  });
+
+  it("creates a VOD replay deadline from the merchant wall time after natural completion", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("replayAvailableUntil", "2026-08-08T21:00");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+        replayAvailableUntil: new Date("2026-08-08T13:00:00.000Z"),
+      }),
+    });
+  });
+
+  it("round-trips an edited replay deadline in America/New_York without timezone drift", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("scheduledAt", "2026-08-08T20:00");
+    formData.set("replayAvailableUntil", "2026-08-08T21:00");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveUpdate).toHaveBeenCalledWith({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({
+        scheduledAt: new Date("2026-08-09T00:00:00.000Z"),
+        replayAvailableUntil: new Date("2026-08-09T01:00:00.000Z"),
+      }),
+    });
+  });
+
+  it.each([
+    ["an empty deadline", "", true],
+    ["disabled replay", "2026-08-08T21:00", false],
+  ])("clears the stored replay deadline for %s", async (_label, deadline, replayEnabled) => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("replayAvailableUntil", deadline);
+    if (!replayEnabled) formData.delete("replayEnabled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveUpdate).toHaveBeenCalledWith({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      data: expect.objectContaining({ replayEnabled, replayAvailableUntil: null }),
+    });
+  });
+
+  it.each([
+    ["invalid local date", "Asia/Taipei", "2026-08-08T20:00", "not-a-date"],
+    ["DST gap", "America/New_York", "2026-03-08T00:30", "2026-03-08T02:30"],
+    ["DST overlap", "America/New_York", "2026-11-01T00:30", "2026-11-01T01:30"],
+  ])("rejects a replay deadline in an %s", async (_label, timezone, scheduledAt, deadline) => {
+    allowCurrentVendorLiveReferences();
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone });
+    const formData = liveFormData();
+    formData.set("scheduledAt", scheduledAt);
+    formData.set("replayAvailableUntil", deadline);
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a VOD replay deadline at or before natural completion", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("replayAvailableUntil", "2026-08-08T20:10");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires a Live Input replay deadline to be later than its scheduled time", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("streamMode", "live");
+    formData.set("replayAvailableUntil", "2026-08-08T20:00");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_draft&draft=draft-1",
+    );
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid tenant timezone before reading or consuming the live draft", async () => {
@@ -2309,7 +2409,7 @@ describe("upsertLiveAction", () => {
           },
         ],
       },
-      select: { id: true },
+      select: { id: true, durationSec: true },
     });
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });

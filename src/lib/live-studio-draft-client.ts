@@ -23,6 +23,7 @@ export function serializeLiveStudioDraft(form: HTMLFormElement, activeStep: numb
 }
 
 export function liveStudioDraftFromFormData(data: FormData, activeStep: number): LiveStudioDraftPayload {
+  const replayEnabled = data.get("replayEnabled") === "on";
   return LiveStudioDraftPayloadSchema.parse({
     flowVersion: LIVE_STUDIO_FLOW_VERSION,
     studioPreset: stringValue(data, "studioPreset") || "CUSTOM",
@@ -52,7 +53,8 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     customAllocations: stringValue(data, "customAllocations"),
     memberQuotas: stringValue(data, "memberQuotas"),
     pageQuotas: stringValue(data, "pageQuotas"),
-    replayEnabled: data.get("replayEnabled") === "on",
+    replayEnabled,
+    replayAvailableUntil: replayEnabled ? stringValue(data, "replayAvailableUntil") : "",
     activeStep,
   });
 }

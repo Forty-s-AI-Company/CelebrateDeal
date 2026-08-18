@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import type { Product } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
+import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 
 const hookState = vi.hoisted(() => ({
   cursor: 0,
@@ -293,6 +294,110 @@ describe("LiveStepperForm", () => {
     expect(markup).not.toContain('name="timezone"');
   });
 
+  it("submits the optional replay deadline and clears it when replay is disabled", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      replayEnabled: true,
+      replayAvailableUntil: "2026-08-21T20:00",
+      activeStep: 4,
+    };
+    let form = renderForm([], { initialValues, timeZone: "America/New_York" });
+    let deadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "datetime-local" && candidate.props.name === "replayAvailableUntil"
+    ));
+    let clearDeadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "hidden" && candidate.props.name === "replayAvailableUntil"
+    ));
+
+    expect(renderToStaticMarkup(form as ReactElement)).toContain("回放觀看期限（America/New_York，選填）");
+    expect(deadline?.props.disabled).toBe(false);
+    expect(deadline?.props.value).toBe("2026-08-21T20:00");
+    expect(clearDeadline?.props.disabled).toBe(true);
+    expect(clearDeadline?.props.value).toBe("");
+
+    control(form, "replayEnabled").props.onChange({ target: { checked: false } });
+    form = renderForm([], { initialValues, timeZone: "America/New_York" });
+    deadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "datetime-local" && candidate.props.name === "replayAvailableUntil"
+    ));
+    clearDeadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "hidden" && candidate.props.name === "replayAvailableUntil"
+    ));
+    expect(deadline?.props.disabled).toBe(true);
+    expect(deadline?.props.value).toBe("");
+    expect(clearDeadline?.props.disabled).toBe(false);
+    expect(clearDeadline?.props.value).toBe("");
+
+    control(form, "replayEnabled").props.onChange({ target: { checked: true } });
+    form = renderForm([], { initialValues, timeZone: "America/New_York" });
+    deadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "datetime-local" && candidate.props.name === "replayAvailableUntil"
+    ));
+    expect(deadline?.props.disabled).toBe(false);
+    (deadline?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "2026-08-22T09:30" } });
+    form = renderForm([], { initialValues, timeZone: "America/New_York" });
+    expect(findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "datetime-local" && candidate.props.name === "replayAvailableUntil"
+    ))?.props.value).toBe("2026-08-22T09:30");
+  });
+
+  it("autosaves the latest replay deadline from the bubbling form change without a second render", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      replayEnabled: true,
+      replayAvailableUntil: "2026-08-21T20:00",
+      activeStep: 4,
+    };
+    const form = renderForm([], { initialValues });
+    const deadline = findElement(form, (candidate) => (
+      candidate.type === "input" && candidate.props.type === "datetime-local" && candidate.props.name === "replayAvailableUntil"
+    ));
+    const formData = new FormData();
+    formData.set("streamMode", "vod");
+    formData.set("affiliateMode", "disabled");
+    formData.set("usageAttributionMode", "OWNER");
+    formData.set("quotaPayerScope", "VENDOR");
+    formData.set("replayEnabled", "on");
+    formData.set("replayAvailableUntil", "2026-08-22T09:30");
+    const autosavedPayloads: ReturnType<typeof liveStudioDraftFromFormData>[] = [];
+    draftMocks.scheduleSave.mockImplementationOnce(() => {
+      autosavedPayloads.push(liveStudioDraftFromFormData(formData, 4));
+    });
+
+    (deadline?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "2026-08-22T09:30" } });
+    (form.props.onChange as () => void)();
+
+    expect(draftMocks.scheduleSave).toHaveBeenCalledOnce();
+    expect(autosavedPayloads[0]?.replayAvailableUntil).toBe("2026-08-22T09:30");
+  });
+
+  it("autosaves an empty replay deadline on the same change that disables replay", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      replayEnabled: true,
+      replayAvailableUntil: "2026-08-21T20:00",
+      activeStep: 4,
+    };
+    const form = renderForm([], { initialValues });
+    const formData = new FormData();
+    formData.set("streamMode", "vod");
+    formData.set("affiliateMode", "disabled");
+    formData.set("usageAttributionMode", "OWNER");
+    formData.set("quotaPayerScope", "VENDOR");
+    formData.set("replayAvailableUntil", "2026-08-21T20:00");
+    const autosavedPayloads: ReturnType<typeof liveStudioDraftFromFormData>[] = [];
+    draftMocks.scheduleSave.mockImplementationOnce(() => {
+      autosavedPayloads.push(liveStudioDraftFromFormData(formData, 4));
+    });
+
+    control(form, "replayEnabled").props.onChange({ target: { checked: false } });
+    (form.props.onChange as () => void)();
+
+    expect(draftMocks.scheduleSave).toHaveBeenCalledOnce();
+    expect(autosavedPayloads[0]?.replayEnabled).toBe(false);
+    expect(autosavedPayloads[0]?.replayAvailableUntil).toBe("");
+  });
+
   it("shows stable default copy in the empty publish preview", () => {
     const preview = showPublishPreview(renderForm([]));
 
@@ -362,7 +467,7 @@ describe("LiveStepperForm", () => {
       [1, ["streamMode", "videoId"]],
       [2, ["accentCopy"]],
       [3, ["formId"]],
-      [4, ["replayEnabled"]],
+      [4, ["replayEnabled", "replayAvailableUntil"]],
       [5, ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"]],
       [6, ["interactionScriptId"]],
     ] as const;

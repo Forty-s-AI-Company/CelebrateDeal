@@ -27,6 +27,7 @@ describe("serializeLiveStudioDraft", () => {
       ["splitOwnerBps", "3000"],
       ["splitPromoterBps", "7000"],
       ["replayEnabled", "on"],
+      ["replayAvailableUntil", "2026-08-21T20:00"],
       ["cloudflareLiveInputUid", "forged-provider-uid"],
     ]);
 
@@ -40,6 +41,7 @@ describe("serializeLiveStudioDraft", () => {
       liveReminderTemplateId: "reminder-template-1",
       liveReminderOffsetMinutes: "30",
       replayEnabled: true,
+      replayAvailableUntil: "2026-08-21T20:00",
       flowVersion: 2,
       activeStep: 7,
     });
@@ -76,12 +78,30 @@ describe("serializeLiveStudioDraft", () => {
 
     expect(draft.liveReminderTemplateId).toBe("");
     expect(draft.liveReminderOffsetMinutes).toBe("60");
+    expect(draft.replayAvailableUntil).toBe("");
+  });
+
+  it("clears the submitted replay deadline when replay is disabled", () => {
+    const draft = liveStudioDraftFromFormData(formData([
+      ["streamMode", "vod"],
+      ["affiliateMode", "enabled"],
+      ["maxConcurrentViewers", "500"],
+      ["stopWhenCreditsBelow", "300"],
+      ["usageAttributionMode", "PROMOTER"],
+      ["quotaPayerScope", "VENDOR"],
+      ["splitOwnerBps", "3000"],
+      ["splitPromoterBps", "7000"],
+      ["replayAvailableUntil", "2026-08-21T20:00"],
+    ]), 4);
+
+    expect(draft.replayEnabled).toBe(false);
+    expect(draft.replayAvailableUntil).toBe("");
   });
 });
 
 describe("saveLiveStudioDraft", () => {
   it("sends a CSRF-bound same-origin optimistic revision and validates the response", async () => {
-    const payload = emptyLiveStudioDraft();
+    const payload = { ...emptyLiveStudioDraft(), replayAvailableUntil: "2026-08-21T20:00" };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       id: "draft-1",
       revision: 2,
@@ -100,7 +120,7 @@ describe("saveLiveStudioDraft", () => {
       draftId: "draft-1",
       liveId: "live-1",
       revision: 1,
-      payload: { flowVersion: 2, activeStep: 0 },
+      payload: { flowVersion: 2, activeStep: 0, replayAvailableUntil: "2026-08-21T20:00" },
     });
   });
 

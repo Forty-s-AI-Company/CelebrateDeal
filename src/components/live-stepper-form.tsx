@@ -797,6 +797,9 @@ export function LiveStepperForm({
   const [replayEnabled, setReplayEnabled] = useState(initialValues.replayEnabled);
   const [studioPreset, setStudioPreset] = useState<LiveStudioPreset>(initialValues.studioPreset);
   const [selectedReminderTemplateId, setSelectedReminderTemplateId] = useState(initialValues.liveReminderTemplateId);
+  const [replayAvailableUntil, setReplayAvailableUntil] = useState(
+    initialValues.replayEnabled ? initialValues.replayAvailableUntil : "",
+  );
   const draft = useLiveStudioDraft({
     activeStep,
     csrfToken,
@@ -984,8 +987,27 @@ export function LiveStepperForm({
         </p>
         <ScheduleDateTimeField timeZone={timeZone} defaultValue={initialValues.scheduledAt} onChange={setScheduledAt} />
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input name="replayEnabled" type="checkbox" defaultChecked={initialValues.replayEnabled} onChange={(event) => setReplayEnabled(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+          <input name="replayEnabled" type="checkbox" checked={replayEnabled} onChange={(event) => {
+            setReplayEnabled(event.target.checked);
+            if (!event.target.checked) setReplayAvailableUntil("");
+          }} className="h-4 w-4 accent-blue-600" />
           直播結束後允許回放
+        </label>
+        <input type="hidden" name="replayAvailableUntil" value="" disabled={replayEnabled} readOnly />
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          回放觀看期限（{timeZone}，選填）
+          <input
+            name="replayAvailableUntil"
+            type="datetime-local"
+            autoComplete="off"
+            value={replayAvailableUntil}
+            disabled={!replayEnabled}
+            onChange={(event) => setReplayAvailableUntil(event.target.value)}
+            className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+          />
+          <span className="text-xs font-normal text-slate-500">
+            依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。
+          </span>
         </label>
         <MediaUploadField
           kind="image"
