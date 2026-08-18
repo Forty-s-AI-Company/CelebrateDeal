@@ -13,10 +13,10 @@ describe("announcement feed", () => {
   it("keeps the canonical feed truthful and bounded", () => {
     expect(ANNOUNCEMENT_FEED).toHaveLength(1);
     const [latest] = ANNOUNCEMENT_FEED;
-    expect(latest.id).toBe("goal-progress-2026-08-18-v4");
-    expect(latest.version).toBe("2026-08-18-v4");
-    expect(latest.summary).toContain("本階段估算 94%");
-    expect(latest.progressPercent).toBe(94);
+    expect(latest.id).toBe("goal-progress-2026-08-18-v5");
+    expect(latest.version).toBe("2026-08-18-v5");
+    expect(latest.summary).toContain("本階段估算 95%");
+    expect(latest.progressPercent).toBe(95);
     expect(latest.progressPercent).toBeGreaterThanOrEqual(0);
     expect(latest.progressPercent).toBeLessThanOrEqual(100);
     expect(latest.completed).toEqual(expect.arrayContaining([
@@ -31,9 +31,10 @@ describe("announcement feed", () => {
       "自訂欄位 migration 已在 disposable PostgreSQL 完成 57/57 套用與清理驗證。",
       "完整一條龍 production-mode E2E 已通過，包含報名、Email 驗證、直播、指定秒數互動、商品浮窗、結帳與課後信。",
       "內部結帳跨頁維持同一個播放器節點，直接開啟結帳頁則不會顯示不存在的直播。",
+      "固定 staging 已更新至本次 WP7 一條龍里程碑，登入頁、健康檢查與最新消息視窗已通過線上 smoke。",
     ]));
     expect(latest.incomplete).toEqual(expect.arrayContaining([
-      "staging 部署與使用者線上驗收尚未完成。",
+      "使用者 staging 線上驗收尚未完成。",
       "Hobby staging 尚未註冊每分鐘 Cron；endpoint 可人工觸發，尚不宣稱自動執行。",
       "正式金流仍排除於本階段驗證。",
     ]));
@@ -45,9 +46,9 @@ describe("announcement feed", () => {
       "同一防重送識別若答案不同會拒絕舊訂單重播，避免畫面與訂單資料不一致。",
       "播放器改由根 layout 持有，切到內部結帳頁時不會重建媒體節點。",
       "新增 WP7 一條龍 disposable PostgreSQL＋Playwright 驗收與可稽核 receipt。",
+      "固定 staging 最新消息更新為 95%，並列出本次完成、未完成與下一步。",
     ]));
     expect(latest.nextSteps).toEqual(expect.arrayContaining([
-      "部署目前里程碑到固定 staging。",
       "等待使用者驗證 staging 的報名、直播、浮窗與結帳體驗。",
       "go-live 前決定採用 Pro 或外部 scheduler。",
     ]));
