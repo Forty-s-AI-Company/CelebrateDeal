@@ -14,6 +14,7 @@ import {
   createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation,
 } from "@/lib/live-reminder-reconciliation";
+import { supersedeLiveNotificationDeliveriesForTemplate } from "@/lib/live-notification-delivery";
 import {
   normalizeMessageTemplateDraft,
   type MessageTemplateActionError,
@@ -246,6 +247,11 @@ export async function upsertTemplateAction(
         : await tx.messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
       if (!id) return { template, reconciliationStatuses: [] };
 
+      await supersedeLiveNotificationDeliveriesForTemplate(tx, {
+        vendorId: vendor.id,
+        templateId: template.id,
+      });
+
       const linkedLives = await tx.live.findMany({
         where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
         select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
@@ -304,4 +310,3 @@ export async function upsertTemplateAction(
     ? "/messages/templates?notice=reminders_reconciling"
     : "/messages/templates");
 }
-

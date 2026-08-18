@@ -65,6 +65,8 @@ const mocks = vi.hoisted(() => ({
   emailDeliveryUpdateMany: vi.fn(),
   createLiveReminderReconciliationSnapshot: vi.fn(),
   queueLiveReminderReconciliation: vi.fn(),
+  materializeLiveNotificationRules: vi.fn(),
+  captureOperationalError: vi.fn(),
   productFindMany: vi.fn(),
   videoFindFirst: vi.fn(),
   videoCreate: vi.fn(),
@@ -189,6 +191,11 @@ vi.mock("@/lib/live-reminder-reconciliation", () => ({
   createLiveReminderReconciliationSnapshot: mocks.createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation: mocks.queueLiveReminderReconciliation,
 }));
+vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/live-notification-delivery")>()),
+  materializeLiveNotificationRules: mocks.materializeLiveNotificationRules,
+}));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
@@ -772,6 +779,7 @@ beforeEach(() => {
   mocks.liveFindMany.mockResolvedValue([]);
   mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 1 });
   mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
+  mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
   mocks.liveProductDeleteMany.mockResolvedValue({ count: 1 });
   mocks.liveProductCreate.mockResolvedValue({ id: "live-product-1" });
   mocks.liveNotificationRuleFindMany.mockResolvedValue([]);
@@ -794,6 +802,7 @@ beforeEach(() => {
     status: snapshot.isDeliverable ? "queued" : "cancelled",
     jobId: "reminder-job-1",
   }));
+  mocks.materializeLiveNotificationRules.mockResolvedValue([]);
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
@@ -851,7 +860,7 @@ beforeEach(() => {
     },
     auditLog: { create: mocks.auditLogCreate },
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
-    live: { create: mocks.liveCreate, findMany: mocks.liveFindMany, update: mocks.liveUpdate },
+    live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
     liveNotificationRule: {
@@ -1652,8 +1661,8 @@ describe("upsertLiveAction", () => {
         { key: "email", label: "Email", type: "email", required: true },
       ],
     });
-    mocks.messageTemplateFindFirst.mockImplementation(async ({ where }: { where: { trigger?: string } }) => (
-      where.trigger === "live_reminder"
+    mocks.messageTemplateFindFirst.mockImplementation(async ({ where }: { where: { id?: string; trigger?: string } }) => (
+      where.trigger === "live_reminder" || where.id === "reminder-template-1"
         ? {
             id: "reminder-template-1",
             vendorId: "vendor-1",
@@ -1930,7 +1939,7 @@ describe("upsertLiveAction", () => {
         status: "scheduled",
         formId: "form-1",
         messageTemplateId: "template-1",
-        liveReminderTemplateId: "reminder-template-1",
+        liveReminderTemplateId: null,
       }),
     });
   });
@@ -2003,7 +2012,7 @@ describe("upsertLiveAction", () => {
         videoId: "video-1",
         formId: "form-1",
         messageTemplateId: "template-1",
-        liveReminderTemplateId: "reminder-template-1",
+        liveReminderTemplateId: null,
         interactionScriptId: null,
       }),
     });
@@ -2024,7 +2033,7 @@ describe("upsertLiveAction", () => {
         status: "scheduled",
         formId: "form-1",
         messageTemplateId: "template-1",
-        liveReminderTemplateId: "reminder-template-1",
+        liveReminderTemplateId: null,
         products: { create: [] },
       }),
     });
@@ -2078,9 +2087,14 @@ describe("upsertLiveAction", () => {
       data: expect.objectContaining({ liveReminderTemplateId: "reminder-template-1" }),
     }));
     expect(mocks.liveNotificationRuleCreate).toHaveBeenCalledTimes(2);
-    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(1, { data: expect.objectContaining({ trigger: "before_live", sortOrder: 0 }) });
-    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(2, { data: expect.objectContaining({ trigger: "post_live_followup", sortOrder: 0 }) });
+    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(1, { data: expect.objectContaining({ trigger: "before_live", sortOrder: 0 }), select: { id: true } });
+    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(2, { data: expect.objectContaining({ trigger: "post_live_followup", sortOrder: 0 }), select: { id: true } });
     expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
+    expect(mocks.materializeLiveNotificationRules).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      ruleIds: ["notification-rule-1"],
+    });
   });
 
   it.each([
@@ -2233,7 +2247,7 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
-  it("atomically queues reminder reconciliation when an existing live changes reminder configuration", async () => {
+  it("ignores forged legacy binding and offset edits and preserves the authoritative DB values", async () => {
     allowCurrentVendorLiveReferences();
     mocks.liveFindFirst.mockResolvedValue({
       id: "live-1",
@@ -2246,26 +2260,41 @@ describe("upsertLiveAction", () => {
     const formData = liveFormData();
     formData.set("id", "live-1");
     formData.set("status", "scheduled");
-    formData.set("liveReminderTemplateId", "reminder-template-1");
+    formData.set("liveReminderTemplateId", "attacker-template");
     formData.set("liveReminderOffsetMinutes", "30");
 
-    await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/live-1/edit?notice=reminders_reconciling",
-    );
-
-    expect(mocks.createLiveReminderReconciliationSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-      vendorId: "vendor-1",
-      liveId: "live-1",
-      liveTitle: "租戶限定直播",
-      liveStatus: "scheduled",
-      reminderOffsetMinutes: 30,
-      template: expect.objectContaining({ id: "reminder-template-1", trigger: "live_reminder" }),
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+    expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ liveReminderTemplateId: "reminder-template-1", liveReminderOffsetMinutes: 60 }),
     }));
-    expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
-      expect.objectContaining({ live: expect.any(Object) }),
-      expect.objectContaining({ configDigest: "test-config-digest", isDeliverable: true }),
-      expect.any(Date),
-    );
+    expect(mocks.createLiveReminderReconciliationSnapshot).not.toHaveBeenCalled();
+    expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("rolls the edit back to draft conflict when cutover clears the expected binding before commit", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    mocks.liveUpdateMany.mockResolvedValueOnce({ count: 0 });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit?error=draft_conflict");
+    expect(mocks.liveUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        liveReminderTemplateId: "reminder-template-1",
+        liveReminderOffsetMinutes: 60,
+      }),
+    }));
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+    expect(mocks.liveNotificationRuleCreate).not.toHaveBeenCalled();
   });
 
   it("queues reminder reconciliation when the live title changes", async () => {
@@ -2315,6 +2344,38 @@ describe("upsertLiveAction", () => {
       expect.objectContaining({ isDeliverable: false, liveStatus: "ended" }),
       expect.any(Date),
     );
+    expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "ended", endedAt: expect.any(Date) }),
+    }));
+    expect(mocks.emailDeliveryUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ trigger: { in: ["before_live", "during_live"] } }),
+      data: expect.objectContaining({ status: "superseded", lastErrorCode: "lifecycle_superseded" }),
+    }));
+  });
+
+  it.each(["ended", "draft"])("starts a new notification session when %s returns to scheduled", async (status) => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status,
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      startedAt: new Date("2026-08-08T12:01:00.000Z"),
+      endedAt: new Date("2026-08-08T13:00:00.000Z"),
+      liveReminderTemplateId: null,
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+    expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "scheduled", startedAt: null, endedAt: null }),
+    }));
+    expect(mocks.emailDeliveryUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ trigger: { in: ["before_live", "during_live"] } }),
+    }));
   });
 
   it("rejects a direct status jump that is not allowed from the current live state", async () => {

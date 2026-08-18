@@ -23,6 +23,10 @@ import {
   rotatingPostLivePageSkip,
   stablePostLiveFollowupDeliveryId,
 } from "@/lib/post-live-followup";
+import {
+  isCurrentLiveNotificationDeliverySnapshot,
+  materializeLiveNotificationsForSubmission,
+} from "@/lib/live-notification-delivery";
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
@@ -139,6 +143,15 @@ async function isCurrentReconciliationJob(
  * Calling this again is safe and returns the already-created ledger row.
  */
 export async function ensureRegistrationConfirmationDelivery(input: RegistrationConfirmationInput) {
+  try {
+    await materializeLiveNotificationsForSubmission({
+      vendorId: input.vendorId,
+      liveId: input.liveId,
+      submissionId: input.formSubmissionId,
+    });
+  } catch (error) {
+    reportDeliveryFailure(error, "verified_submission_materialize", "failed");
+  }
   const template = input.template;
   if (
     !template?.isActive
@@ -764,12 +777,12 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "formSubmission" | "blacklist">;
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
   "id" | "vendorId" | "sourceLiveId" | "sourceFormSubmissionId" | "trigger"
->;
+> & { idempotencyKey?: string };
 
 async function isCurrentLiveReminderDelivery(
   delivery: EmailDeliverySnapshotIdentity,
@@ -962,6 +975,7 @@ export async function isCurrentEmailDeliverySnapshot(
   database: DeliverySnapshotDatabase = getDb(),
 ) {
   return await isCurrentLiveReminderDelivery(delivery, now, database)
+    && await isCurrentLiveNotificationDeliverySnapshot(delivery, now, database)
     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
     && await isCurrentFormVerificationDelivery(delivery, now, database);
 }

@@ -41,6 +41,11 @@ import {
   type LiveReminderReconciliationSnapshot,
   type LiveReminderTemplateSnapshot,
 } from "@/lib/live-reminder-reconciliation";
+import {
+  materializeLiveNotificationRules,
+  supersedeLiveNotificationDeliveriesForLifecycle,
+} from "@/lib/live-notification-delivery";
+import { captureOperationalError } from "@/lib/monitoring";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
@@ -659,6 +664,8 @@ type LiveMutationData = {
   quotaPolicy: Prisma.InputJsonValue;
 };
 
+class LiveLegacyBindingConflict extends Error {}
+
 function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
   const draftId = optionalText(formData, "liveDraftId");
   const revisionText = text(formData, "liveDraftRevision");
@@ -708,10 +715,12 @@ async function commitLiveDraft(input: {
   productIds: string[];
   reminderReconciliationSnapshot: LiveReminderReconciliationSnapshot | null;
   notificationRules: LiveNotificationRuleInput[];
+  expectedLegacyBinding: { templateId: string | null; offsetMinutes: number } | null;
 }) {
   const transitionAt = new Date();
   if (input.liveId) {
-    return input.db.$transaction(async (tx) => {
+    try {
+      return await input.db.$transaction(async (tx) => {
       const claimedDraft = await tx.liveStudioDraft.updateMany({
         where: {
           id: input.draftId,
@@ -725,14 +734,62 @@ async function commitLiveDraft(input: {
         data: { revision: { increment: 1 } },
       });
       if (claimedDraft.count !== 1) return null;
-      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: input.data });
+      const expectedBinding = input.expectedLegacyBinding;
+      if (!expectedBinding) throw new LiveLegacyBindingConflict();
+      const bindingClaim = await tx.live.updateMany({
+        where: {
+          id: input.liveId!,
+          vendorId: input.vendorId,
+          liveReminderTemplateId: expectedBinding.templateId,
+          liveReminderOffsetMinutes: expectedBinding.offsetMinutes,
+        },
+        data: { liveReminderOffsetMinutes: expectedBinding.offsetMinutes },
+      });
+      if (bindingClaim.count !== 1) throw new LiveLegacyBindingConflict();
+      const currentLive = await tx.live.findFirst({
+        where: { id: input.liveId!, vendorId: input.vendorId },
+        select: { status: true, startedAt: true, endedAt: true },
+      });
+      if (!currentLive) return null;
+      const lifecycleData: LiveMutationData & { startedAt?: Date | null; endedAt?: Date | null } = { ...input.data };
+      if (currentLive.status === "scheduled" && input.data.status === "live" && !currentLive.startedAt) {
+        lifecycleData.startedAt = transitionAt;
+      }
+      if (currentLive.status === "live" && input.data.status === "ended" && !currentLive.endedAt) {
+        lifecycleData.endedAt = transitionAt;
+      }
+      const startsNewSession = ["ended", "draft"].includes(currentLive.status) && input.data.status === "scheduled";
+      if (startsNewSession) {
+        lifecycleData.startedAt = null;
+        lifecycleData.endedAt = null;
+      }
+      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: lifecycleData });
+      if (currentLive.status === "scheduled" && input.data.status === "live") {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live"],
+        });
+      } else if (currentLive.status === "live" && input.data.status === "ended") {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live", "during_live"],
+        });
+      } else if (startsNewSession) {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live", "during_live"],
+        });
+      }
       await tx.liveProduct.deleteMany({ where: { liveId: input.liveId! } });
       for (const [index, productId] of input.productIds.entries()) {
         await tx.liveProduct.create({
           data: { vendorId: input.vendorId, liveId: input.liveId!, productId, sortOrder: index + 1, isPinned: index === 0 },
         });
       }
-      await reconcileLiveNotificationRules(tx, {
+      const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
         vendorId: input.vendorId,
         liveId: input.liveId!,
         rules: input.notificationRules,
@@ -744,8 +801,14 @@ async function commitLiveDraft(input: {
         id: input.liveId!,
         created: false,
         reminderReconciliationStatus: reminderReconciliation?.status ?? null,
+        notificationRuleIds: notificationReconciliation.materializeRuleIds,
       };
-    });
+      });
+    } catch (error) {
+      if (error instanceof LiveLegacyBindingConflict
+        || (typeof error === "object" && error !== null && "code" in error && error.code === "P2034")) return null;
+      throw error;
+    }
   }
 
   return input.db.$transaction(async (tx) => {
@@ -776,12 +839,12 @@ async function commitLiveDraft(input: {
         },
       },
     });
-    await reconcileLiveNotificationRules(tx, {
+    const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
       vendorId: input.vendorId,
       liveId: live.id,
       rules: input.notificationRules,
     });
-    return { id: live.id, created: true, reminderReconciliationStatus: null };
+    return { id: live.id, created: true, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
   });
 }
 
@@ -1053,6 +1116,42 @@ function requireValidNotificationRuleTemplates(input: {
   }
 }
 
+async function resolveAuthoritativeLegacyReminder(input: {
+  db: PrismaClient;
+  vendorId: string;
+  existingLive: {
+    liveReminderTemplateId: string | null;
+    liveReminderOffsetMinutes: number;
+  } | null;
+  submittedOffsetMinutes: number;
+}) {
+  if (!input.existingLive) {
+    return { templateId: null, offsetMinutes: input.submittedOffsetMinutes, template: null, missing: false };
+  }
+  const templateId = input.existingLive.liveReminderTemplateId;
+  const template = templateId
+    ? await input.db.messageTemplate.findFirst({
+        where: { id: templateId, vendorId: input.vendorId },
+        select: {
+          id: true,
+          vendorId: true,
+          channel: true,
+          trigger: true,
+          subject: true,
+          body: true,
+          isActive: true,
+          updatedAt: true,
+        },
+      })
+    : null;
+  return {
+    templateId,
+    offsetMinutes: input.existingLive.liveReminderOffsetMinutes,
+    template,
+    missing: Boolean(templateId && !template),
+  };
+}
+
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
@@ -1068,14 +1167,13 @@ export async function upsertLiveAction(formData: FormData) {
   const videoId = optionalDraftReference(submittedDraft.videoId);
   const formId = optionalDraftReference(submittedDraft.formId);
   const messageTemplateId = optionalDraftReference(submittedDraft.messageTemplateId);
-  const liveReminderTemplateId = optionalDraftReference(submittedDraft.liveReminderTemplateId);
   const interactionScriptId = optionalDraftReference(submittedDraft.interactionScriptId);
   const heroImageAssetId = optionalDraftReference(submittedDraft.heroImageAssetId);
   const quotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
   const invalidReferencePath = id
     ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : `/lives/new?error=invalid_reference${createDraftSuffix}`;
-  const referenceIds = [id, videoId, formId, messageTemplateId, liveReminderTemplateId, interactionScriptId, heroImageAssetId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
+  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, heroImageAssetId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
     (value): value is string => value !== null,
   );
   if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
@@ -1095,7 +1193,7 @@ export async function upsertLiveAction(formData: FormData) {
     videoId,
     formId,
     messageTemplateId,
-    liveReminderTemplateId,
+    liveReminderTemplateId: null,
     notificationRules,
     interactionScriptId,
     defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
@@ -1109,13 +1207,21 @@ export async function upsertLiveAction(formData: FormData) {
     video,
     registrationForm,
     messageTemplate,
-    liveReminderTemplate,
+    liveReminderTemplate: ignoredSubmittedReminderTemplate,
     notificationTemplates,
     interactionScript,
     defaultAffiliate,
     heroImageAsset,
     quotaPages,
   } = references;
+  void ignoredSubmittedReminderTemplate;
+  const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
+    db,
+    vendorId: vendor.id,
+    existingLive,
+    submittedOffsetMinutes: Number(submittedDraft.liveReminderOffsetMinutes),
+  });
+  const liveReminderTemplate = authoritativeReminder.template;
   const customMemberships = quotaMembershipIds.length > 0
     ? await db.teamMembership.findMany({
         where: {
@@ -1141,7 +1247,7 @@ export async function upsertLiveAction(formData: FormData) {
     videoMissing: videoId !== null && !video,
     formMissing: formId !== null && !registrationForm,
     templateMissing: messageTemplateId !== null && !messageTemplate,
-    reminderTemplateMissing: liveReminderTemplateId !== null && !liveReminderTemplate,
+    reminderTemplateMissing: authoritativeReminder.missing,
     scriptMissing: interactionScriptId !== null && !interactionScript,
     affiliateMissing: isMissingDefaultAffiliate(quotaPolicy.defaultAffiliateCode, defaultAffiliate),
     customMembershipMissing: hasInvalidCustomMembership || hasInvalidMemberQuota,
@@ -1195,8 +1301,8 @@ export async function upsertLiveAction(formData: FormData) {
     videoId,
     formId,
     messageTemplateId,
-    liveReminderTemplateId,
-    liveReminderOffsetMinutes: Number(submittedDraft.liveReminderOffsetMinutes),
+    liveReminderTemplateId: authoritativeReminder.templateId,
+    liveReminderOffsetMinutes: authoritativeReminder.offsetMinutes,
     interactionScriptId,
     heroImageUrl,
     heroImageAssetId: heroImageAsset?.id ?? null,
@@ -1229,8 +1335,25 @@ export async function upsertLiveAction(formData: FormData) {
     productIds,
     notificationRules,
     reminderReconciliationSnapshot,
+    expectedLegacyBinding: existingLive ? {
+      templateId: existingLive.liveReminderTemplateId,
+      offsetMinutes: existingLive.liveReminderOffsetMinutes,
+    } : null,
   });
   if (!committed) redirect(draftClaim.conflictPath);
+  try {
+    await materializeLiveNotificationRules({
+      vendorId: vendor.id,
+      liveId: committed.id,
+      ruleIds: committed.notificationRuleIds,
+    });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "live_notification", operation: "rule_materialize", status: "failed" });
+    } catch {
+      // Durable cron repair remains available if optional eager materialization fails.
+    }
+  }
   if (committed.created) redirect(`/lives/${committed.id}/preview`);
   const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);

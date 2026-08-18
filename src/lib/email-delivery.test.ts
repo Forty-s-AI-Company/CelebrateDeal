@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   sendTransactionalEmail: vi.fn(),
   writeAuditLog: vi.fn(),
   captureOperationalError: vi.fn(),
+  materializeLiveNotificationsForSubmission: vi.fn(),
   db: {
     $transaction: vi.fn(),
     emailDelivery: {
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     emailSuppression: { findUnique: vi.fn() },
     blacklist: { findFirst: vi.fn() },
     liveReminderReconciliationJob: { findFirst: vi.fn() },
-    liveNotificationRule: { count: vi.fn(), findMany: vi.fn() },
+    liveNotificationRule: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     live: { findFirst: vi.fn() },
     formSubmission: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   },
@@ -25,6 +26,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/live-notification-delivery")>()),
+  materializeLiveNotificationsForSubmission: mocks.materializeLiveNotificationsForSubmission,
+}));
 vi.mock("@/lib/email", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/email")>()),
   sendTransactionalEmail: mocks.sendTransactionalEmail,
@@ -79,6 +84,7 @@ beforeEach(() => {
   mocks.db.emailDelivery.updateMany.mockResolvedValue({ count: 1 });
   mocks.db.$transaction.mockImplementation(async (callback: (db: typeof mocks.db) => unknown) => callback(mocks.db));
   mocks.writeAuditLog.mockResolvedValue(undefined);
+  mocks.materializeLiveNotificationsForSubmission.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -130,6 +136,11 @@ describe("email delivery outbox", () => {
 
     const result = await ensureRegistrationConfirmationDelivery(input);
     expect(result).toMatchObject({ status: "queued", deliveryId: expect.stringMatching(/^email_/u) });
+    expect(mocks.materializeLiveNotificationsForSubmission).toHaveBeenCalledWith({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      submissionId: "submission-1",
+    });
     const create = mocks.db.emailDelivery.create.mock.calls[0]?.[0];
     expect(create.data).toMatchObject({
       vendorId: "vendor-1",
@@ -800,6 +811,19 @@ describe("email delivery outbox", () => {
         lastErrorCode: "config_superseded",
       },
     });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("supersedes a stale canonical before snapshot before provider send", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({
+      trigger: "before_live",
+      idempotencyKey: "live-notification/before-live/rule-1/delivery-1",
+    }));
+    mocks.db.live.findFirst.mockResolvedValue(null);
+    mocks.db.liveNotificationRule.findFirst.mockResolvedValue(null);
+    mocks.db.formSubmission.findFirst.mockResolvedValue(null);
+
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 

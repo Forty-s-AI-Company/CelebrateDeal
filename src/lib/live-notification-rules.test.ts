@@ -97,7 +97,7 @@ describe("live notification rule parser", () => {
 });
 
 describe("notification rule reconciliation", () => {
-  it("supersedes only the changed post rule scope and never touches before/during or a sibling using the same template", async () => {
+  it("supersedes each changed rule by its canonical prefix without touching siblings", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { ...rule({ id: "keep", sortOrder: 0 }), vendorId: "vendor-1", liveId: "live-1" },
       { ...rule({ id: "change-before", offsetMinutes: 30, sortOrder: 1 }), vendorId: "vendor-1", liveId: "live-1" },
@@ -108,7 +108,7 @@ describe("notification rule reconciliation", () => {
       liveNotificationRule: {
         findMany,
         update: vi.fn(),
-        create: vi.fn(),
+        create: vi.fn().mockResolvedValue({ id: "new-during" }),
         deleteMany: vi.fn(),
       },
       emailDelivery: { updateMany: vi.fn() },
@@ -122,13 +122,24 @@ describe("notification rule reconciliation", () => {
     ]);
     if (!parsed.success) throw new Error("fixture must parse");
 
-    await reconcileLiveNotificationRules(tx as never, { vendorId: "vendor-1", liveId: "live-1", rules: parsed.data });
+    const result = await reconcileLiveNotificationRules(tx as never, { vendorId: "vendor-1", liveId: "live-1", rules: parsed.data });
 
     expect(tx.liveNotificationRule.update).toHaveBeenCalledTimes(2);
     expect(tx.liveNotificationRule.create).toHaveBeenCalledOnce();
+    expect(result.materializeRuleIds).toEqual(["keep", "change-before", "new-during"]);
     expect(tx.liveNotificationRule.deleteMany).not.toHaveBeenCalled();
-    expect(tx.emailDelivery.updateMany).toHaveBeenCalledOnce();
-    expect(tx.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+    expect(tx.emailDelivery.updateMany).toHaveBeenCalledTimes(2);
+    expect(tx.emailDelivery.updateMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: {
+        vendorId: "vendor-1",
+        sourceLiveId: "live-1",
+        trigger: "before_live",
+        idempotencyKey: { startsWith: "live-notification/before-live/change-before/" },
+        status: { in: ["queued", "failed"] },
+      },
+      data: { status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "config_superseded" },
+    }));
+    expect(tx.emailDelivery.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
       where: {
         vendorId: "vendor-1",
         sourceLiveId: "live-1",

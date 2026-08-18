@@ -9,6 +9,11 @@ import {
 import { createEmailRecipientHash } from "@/lib/email-delivery-pii";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+import {
+  processDueLiveNotifications,
+  processLegacyReminderCutovers,
+  supersedeLiveNotificationDeliveriesForLifecycle,
+} from "@/lib/live-notification-delivery";
 
 const createdVendorIds: string[] = [];
 
@@ -207,4 +212,106 @@ describe("webinar email lifecycle disposable database integration", () => {
       where: { vendorId: vendor.id, liveId: live.id, eventType: "lead_submit" },
     })).toBe(1);
   });
+
+  it("cuts legacy over without a gap or duplicate, then stops before/during at lifecycle boundaries", async () => {
+    const db = getDb();
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const materializeAt = new Date("2026-08-18T00:00:00.000Z");
+    const scheduledAt = new Date("2026-08-18T02:00:00.000Z");
+    const startedAt = new Date("2026-08-18T02:00:00.000Z");
+    const endedAt = new Date("2026-08-18T03:00:00.000Z");
+    const vendor = await db.vendor.create({
+      data: {
+        name: `Canonical Lifecycle ${suffix}`,
+        slug: `canonical-lifecycle-${suffix}`,
+        email: `canonical-${suffix}@example.test`,
+        passwordHash: "disposable-test-only",
+      },
+    });
+    createdVendorIds.push(vendor.id);
+    const form = await db.registrationForm.create({
+      data: {
+        vendorId: vendor.id,
+        name: "Canonical registration",
+        slug: `canonical-form-${suffix}`,
+        headline: "Canonical lifecycle",
+        fields: [
+          { key: "name", label: "Name", type: "text", required: true },
+          { key: "email", label: "Email", type: "email", required: true },
+        ],
+      },
+    });
+    const [reminder, followup] = await Promise.all([
+      db.messageTemplate.create({
+        data: { vendorId: vendor.id, name: "Canonical reminder", trigger: "live_reminder", subject: "{{live_title}} reminder", body: "{{name}} {{unsubscribe_url}}" },
+      }),
+      db.messageTemplate.create({
+        data: { vendorId: vendor.id, name: "Canonical followup", trigger: "post_live_followup", subject: "{{live_title}} followup", body: "{{name}} {{unsubscribe_url}}" },
+      }),
+    ]);
+    const live = await db.live.create({
+      data: {
+        vendorId: vendor.id,
+        formId: form.id,
+        title: "Canonical lifecycle",
+        slug: `canonical-live-${suffix}`,
+        scheduledAt,
+        status: "scheduled",
+        streamMode: "live",
+        liveReminderTemplateId: reminder.id,
+        liveReminderOffsetMinutes: 60,
+      },
+    });
+    const [beforeRule, duringRule] = await Promise.all([
+      db.liveNotificationRule.create({ data: { vendorId: vendor.id, liveId: live.id, messageTemplateId: reminder.id, trigger: "before_live", offsetMinutes: 60 } }),
+      db.liveNotificationRule.create({ data: { vendorId: vendor.id, liveId: live.id, messageTemplateId: reminder.id, trigger: "during_live", offsetMinutes: 10 } }),
+      db.liveNotificationRule.create({ data: { vendorId: vendor.id, liveId: live.id, messageTemplateId: followup.id, trigger: "post_live_followup", offsetMinutes: 15 } }),
+    ]);
+    void beforeRule;
+    void duringRule;
+    const submission = await db.formSubmission.create({
+      data: { formId: form.id, liveId: live.id, name: "Canonical Lead", email: `lead-${suffix}@example.test`, verificationStatus: "VERIFIED" },
+    });
+    await db.emailDelivery.create({
+      data: {
+        id: `legacy-${suffix}`,
+        vendorId: vendor.id,
+        sourceTemplateId: reminder.id,
+        sourceLiveId: live.id,
+        sourceFormSubmissionId: submission.id,
+        trigger: "live_reminder",
+        payloadEncryptedEnvelope: "disposable-not-dispatched",
+        recipientHash: `hash-${suffix}`,
+        recipientMaskedEmail: "l***@example.test",
+        idempotencyKey: `live-reminder/legacy-${suffix}`,
+        status: "queued",
+        nextAttemptAt: new Date("2026-08-18T01:00:00.000Z"),
+      },
+    });
+
+    await expect(processLegacyReminderCutovers({ now: materializeAt, vendorId: vendor.id }))
+      .resolves.toEqual([{ status: "cutover" }]);
+    await expect(db.live.findUniqueOrThrow({ where: { id: live.id }, select: { liveReminderTemplateId: true } }))
+      .resolves.toEqual({ liveReminderTemplateId: null });
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "before_live" } })).toBe(1);
+    await expect(db.emailDelivery.findUniqueOrThrow({ where: { id: `legacy-${suffix}` }, select: { status: true } }))
+      .resolves.toEqual({ status: "superseded" });
+
+    await db.$transaction(async (tx) => {
+      await tx.live.update({ where: { id: live.id }, data: { status: "live", startedAt } });
+      await supersedeLiveNotificationDeliveriesForLifecycle(tx, { vendorId: vendor.id, liveId: live.id, triggers: ["before_live"] });
+    });
+    await processDueLiveNotifications({ now: new Date("2026-08-18T02:11:00.000Z"), vendorId: vendor.id });
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "during_live", status: "queued" } })).toBe(1);
+
+    await db.$transaction(async (tx) => {
+      await tx.live.update({ where: { id: live.id }, data: { status: "ended", endedAt } });
+      await supersedeLiveNotificationDeliveriesForLifecycle(tx, { vendorId: vendor.id, liveId: live.id, triggers: ["before_live", "during_live"] });
+    });
+    await processDueLiveNotifications({ now: new Date("2026-08-18T03:20:00.000Z"), vendorId: vendor.id });
+    await processDuePostLiveFollowups({ now: new Date("2026-08-18T03:16:00.000Z") });
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "before_live", status: "superseded" } })).toBe(1);
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "during_live", status: "superseded" } })).toBe(1);
+    expect(await db.emailDelivery.count({ where: { vendorId: vendor.id, sourceLiveId: live.id, trigger: "post_live_followup", status: "queued" } })).toBe(1);
+  }, 20_000);
 });

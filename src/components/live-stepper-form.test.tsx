@@ -725,7 +725,7 @@ describe("LiveStepperForm", () => {
     for (const label of ["新增開播前通知", "新增直播中通知", "新增課後通知"]) {
       expect(findElement(renderedEditor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === label)?.props.disabled).toBe(false);
     }
-    const boundaryCopy = "課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。";
+    const boundaryCopy = "開播前與直播中通知已接通排程；課後通知維持既有排程。";
     expect(renderToStaticMarkup(form as ReactElement).split(boundaryCopy)).toHaveLength(3);
 
     const addBefore = findElement(renderedEditor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "新增開播前通知");

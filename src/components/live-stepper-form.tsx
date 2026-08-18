@@ -678,7 +678,7 @@ function NotificationRulesEditor({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 id="notification-rules-title" className="font-semibold text-slate-950">選配通知規則</h3>
-          <p className="mt-1 text-sm text-slate-600">課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。</p>
+          <p className="mt-1 text-sm text-slate-600">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
         </div>
         <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
           套用建議設定
@@ -857,7 +857,7 @@ function renderLiveStudioStepPanels({
         <input type="hidden" name="liveReminderOffsetMinutes" value={initialValues.liveReminderOffsetMinutes} readOnly />
         <NotificationRulesEditor rules={notificationRules} templates={notificationTemplates} onChange={onNotificationRulesChange} />
         {registrationTemplates.length === 0 || notificationTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
-        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。</p>
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
       </StepPanel>
 
       <StepPanel active={activeStep === 6} index={6}>

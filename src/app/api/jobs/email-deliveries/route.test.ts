@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   processDueEmailDeliveries: vi.fn(),
   processDuePostLiveFollowups: vi.fn(),
   processLiveReminderReconciliationJobs: vi.fn(),
+  processDueLiveNotifications: vi.fn(),
+  processLegacyReminderCutovers: vi.fn(),
   captureOperationalError: vi.fn(),
 }));
 
@@ -13,6 +15,10 @@ vi.mock("@/lib/email-delivery", () => ({
 }));
 vi.mock("@/lib/live-reminder-reconciliation", () => ({
   processLiveReminderReconciliationJobs: mocks.processLiveReminderReconciliationJobs,
+}));
+vi.mock("@/lib/live-notification-delivery", () => ({
+  processDueLiveNotifications: mocks.processDueLiveNotifications,
+  processLegacyReminderCutovers: mocks.processLegacyReminderCutovers,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 
@@ -25,6 +31,8 @@ beforeEach(() => {
   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
   mocks.processDuePostLiveFollowups.mockResolvedValue([]);
   mocks.processDueEmailDeliveries.mockResolvedValue([]);
+  mocks.processDueLiveNotifications.mockResolvedValue([]);
+  mocks.processLegacyReminderCutovers.mockResolvedValue([]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -45,6 +53,8 @@ describe("POST /api/jobs/email-deliveries", () => {
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
     expect(mocks.processDuePostLiveFollowups).not.toHaveBeenCalled();
     expect(mocks.processLiveReminderReconciliationJobs).not.toHaveBeenCalled();
+    expect(mocks.processDueLiveNotifications).not.toHaveBeenCalled();
+    expect(mocks.processLegacyReminderCutovers).not.toHaveBeenCalled();
   });
 
   it("returns only bounded status evidence without delivery identifiers", async () => {
@@ -60,12 +70,26 @@ describe("POST /api/jobs/email-deliveries", () => {
       { deliveryId: "private-followup-1", status: "queued" },
       { deliveryId: "private-followup-2", status: "unexpected" },
     ]);
+    mocks.processLegacyReminderCutovers.mockResolvedValue([
+      { liveId: "private-live-1", status: "cutover" },
+      { liveId: "private-live-2", status: "unexpected" },
+    ]);
+    mocks.processDueLiveNotifications
+      .mockResolvedValueOnce([
+        { deliveryId: "private-live-notification-1", status: "queued" },
+        { deliveryId: "private-live-notification-2", status: "unexpected" },
+      ])
+      .mockResolvedValueOnce([{ deliveryId: "private-future-repair", status: "duplicate" }]);
     const response = await POST(request("g7-07-job-secret"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
       ok: true,
+      cutovers: 2,
+      cutoverResults: [{ status: "cutover" }, { status: "unknown" }],
+      liveNotifications: 3,
+      liveNotificationResults: [{ status: "queued" }, { status: "unknown" }, { status: "duplicate" }],
       followups: 2,
       followupResults: [{ status: "queued" }, { status: "unknown" }],
       reconciled: 2,
@@ -76,10 +100,19 @@ describe("POST /api/jobs/email-deliveries", () => {
     expect(JSON.stringify(body)).not.toContain("private-delivery");
     expect(JSON.stringify(body)).not.toContain("private-job");
     expect(JSON.stringify(body)).not.toContain("private-followup");
+    expect(JSON.stringify(body)).not.toContain("private-live");
+    expect(mocks.processLegacyReminderCutovers.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDueLiveNotifications.mock.invocationCallOrder[0]);
+    expect(mocks.processDueLiveNotifications.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0]);
     expect(mocks.processDuePostLiveFollowups.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0]);
     expect(mocks.processLiveReminderReconciliationJobs.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]);
+    expect(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.processDueLiveNotifications.mock.invocationCallOrder[1]);
+    expect(mocks.processDueLiveNotifications).toHaveBeenNthCalledWith(1, { includeFuture: false, writeBudget: 100 });
+    expect(mocks.processDueLiveNotifications).toHaveBeenNthCalledWith(2, { includeFuture: true, writeBudget: 100 });
   });
 
   it("fails closed without leaking processing errors", async () => {
@@ -94,6 +127,21 @@ describe("POST /api/jobs/email-deliveries", () => {
     expect(mocks.captureOperationalError).toHaveBeenCalledWith(error, {
       source: "email_delivery_job",
       operation: "process_due",
+      status: "failed",
+    });
+  });
+
+  it("does not let bounded future repair failure block already due dispatch", async () => {
+    mocks.processDueLiveNotifications
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("future-private-detail"));
+    mocks.processDueEmailDeliveries.mockResolvedValue([{ deliveryId: "private-due", status: "sent" }]);
+    const response = await POST(request("g7-07-job-secret"));
+    expect(response.status).toBe(200);
+    expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), {
+      source: "email_delivery_job",
+      operation: "future_repair",
       status: "failed",
     });
   });

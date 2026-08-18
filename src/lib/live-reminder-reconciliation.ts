@@ -340,7 +340,15 @@ async function markFailure(db: ReconciliationDb, job: ReconciliationJob, code: s
 async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, batchSize: number, now: Date) {
   const current = await currentSnapshot(db, job.vendorId, job.liveId, now);
   if (!current || current.snapshot.configDigest !== job.configDigest) {
-    await finalizeJob(db, job, { lifecycle: "superseded", supersededAt: now, claimedAt: null, nextAttemptAt: null, lastErrorCode: "config_superseded" });
+    const cancelled = await supersedeQueuedReminderDeliveries(db, job.vendorId, job.liveId);
+    await finalizeJob(db, job, {
+      lifecycle: "superseded",
+      supersededAt: now,
+      claimedAt: null,
+      nextAttemptAt: null,
+      supersededCount: { increment: cancelled.count },
+      lastErrorCode: "config_superseded",
+    });
     return { jobId: job.id, status: "superseded" as const };
   }
 
@@ -379,7 +387,15 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
 
   const beforeWrite = await currentSnapshot(db, job.vendorId, job.liveId, now);
   if (!beforeWrite || beforeWrite.snapshot.configDigest !== job.configDigest || !beforeWrite.snapshot.isDeliverable) {
-    await finalizeJob(db, job, { lifecycle: "superseded", supersededAt: now, claimedAt: null, nextAttemptAt: null, lastErrorCode: "config_superseded" });
+    const cancelled = await supersedeQueuedReminderDeliveries(db, job.vendorId, job.liveId);
+    await finalizeJob(db, job, {
+      lifecycle: "superseded",
+      supersededAt: now,
+      claimedAt: null,
+      nextAttemptAt: null,
+      supersededCount: { increment: cancelled.count },
+      lastErrorCode: "config_superseded",
+    });
     return { jobId: job.id, status: "superseded" as const };
   }
 

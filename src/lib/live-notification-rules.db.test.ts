@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import { postLiveFollowupIdempotencyPrefix } from "@/lib/post-live-followup";
+import { liveNotificationIdempotencyPrefix } from "@/lib/live-notification-identity";
 import { parseLiveNotificationRules, reconcileLiveNotificationRules } from "./live-notification-rules";
 
 const createdVendorIds: string[] = [];
@@ -106,8 +107,8 @@ describe("live notification rule disposable PostgreSQL invariants", () => {
     const post = persisted.find((rule) => rule.trigger === "post_live_followup" && rule.offsetMinutes === 15)!;
     const postSibling = persisted.find((rule) => rule.trigger === "post_live_followup" && rule.offsetMinutes === 30)!;
     await db.emailDelivery.createMany({ data: [
-      delivery("delivery-before-sent", fixture.vendor.id, fixture.live.id, fixture.reminderA.id, "live_reminder", "sent", "before-sent"),
-      delivery("delivery-during-queued", fixture.vendor.id, fixture.live.id, fixture.reminderB.id, "live_reminder", "queued", "during-queued"),
+      delivery("delivery-before-sent", fixture.vendor.id, fixture.live.id, fixture.reminderA.id, "before_live", "sent", `${liveNotificationIdempotencyPrefix("before_live", before.id)}sent`),
+      delivery("delivery-during-queued", fixture.vendor.id, fixture.live.id, fixture.reminderB.id, "during_live", "queued", `${liveNotificationIdempotencyPrefix("during_live", during.id)}queued`),
       delivery("delivery-post-failed", fixture.vendor.id, fixture.live.id, fixture.followup.id, "post_live_followup", "failed", `${postLiveFollowupIdempotencyPrefix(post.id)}failed`),
       delivery("delivery-post-sibling", fixture.vendor.id, fixture.live.id, fixture.followup.id, "post_live_followup", "queued", `${postLiveFollowupIdempotencyPrefix(postSibling.id)}queued`),
     ] });
@@ -129,7 +130,7 @@ describe("live notification rule disposable PostgreSQL invariants", () => {
       select: { id: true, status: true, nextAttemptAt: true, claimedAt: true, lastErrorCode: true },
     })).resolves.toEqual([
       { id: "delivery-before-sent", status: "sent", nextAttemptAt: new Date("2026-08-20T10:00:00.000Z"), claimedAt: null, lastErrorCode: null },
-      { id: "delivery-during-queued", status: "queued", nextAttemptAt: new Date("2026-08-20T10:00:00.000Z"), claimedAt: null, lastErrorCode: null },
+      { id: "delivery-during-queued", status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "config_superseded" },
       { id: "delivery-post-failed", status: "superseded", nextAttemptAt: null, claimedAt: null, lastErrorCode: "config_superseded" },
       { id: "delivery-post-sibling", status: "queued", nextAttemptAt: new Date("2026-08-20T10:00:00.000Z"), claimedAt: null, lastErrorCode: null },
     ]);

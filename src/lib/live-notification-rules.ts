@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { postLiveFollowupIdempotencyPrefix } from "@/lib/post-live-followup";
+import {
+  liveNotificationIdempotencyPrefix,
+  type LiveNotificationDeliveryTrigger,
+} from "@/lib/live-notification-identity";
 
 export const LIVE_NOTIFICATION_RULE_TRIGGERS = [
   "before_live",
@@ -147,13 +151,18 @@ async function supersedeRuleDeliveries(
   tx: NotificationRuleTransaction,
   rule: NotificationRuleRecord,
 ) {
-  if (rule.trigger !== "post_live_followup") return false;
+  const prefix = rule.trigger === "post_live_followup"
+    ? postLiveFollowupIdempotencyPrefix(rule.id)
+    : LIVE_NOTIFICATION_DELIVERY_TRIGGERS.has(rule.trigger)
+      ? liveNotificationIdempotencyPrefix(rule.trigger as LiveNotificationDeliveryTrigger, rule.id)
+      : null;
+  if (!prefix) return false;
   await tx.emailDelivery.updateMany({
     where: {
       vendorId: rule.vendorId,
       sourceLiveId: rule.liveId,
-      trigger: "post_live_followup",
-      idempotencyKey: { startsWith: postLiveFollowupIdempotencyPrefix(rule.id) },
+      trigger: rule.trigger,
+      idempotencyKey: { startsWith: prefix },
       status: { in: ["queued", "failed"] },
     },
     data: {
@@ -165,6 +174,8 @@ async function supersedeRuleDeliveries(
   });
   return true;
 }
+
+const LIVE_NOTIFICATION_DELIVERY_TRIGGERS = new Set(["before_live", "during_live"]);
 
 export async function reconcileLiveNotificationRules(
   tx: NotificationRuleTransaction,
@@ -205,6 +216,7 @@ export async function reconcileLiveNotificationRules(
     });
   }
 
+  const materializeRuleIds: string[] = [];
   for (const rule of input.rules) {
     const current = rule.id ? existingById.get(rule.id) : undefined;
     const data = {
@@ -221,12 +233,15 @@ export async function reconcileLiveNotificationRules(
           data,
         });
       }
+      if (rule.isActive && LIVE_NOTIFICATION_DELIVERY_TRIGGERS.has(rule.trigger)) materializeRuleIds.push(current.id);
     } else {
-      await tx.liveNotificationRule.create({
+      const created = await tx.liveNotificationRule.create({
         data: { ...data, vendorId: input.vendorId, liveId: input.liveId },
+        select: { id: true },
       });
+      if (rule.isActive && LIVE_NOTIFICATION_DELIVERY_TRIGGERS.has(rule.trigger) && created?.id) materializeRuleIds.push(created.id);
     }
   }
 
-  return { retained: retainedIds.size, created: input.rules.length - retainedIds.size, removed: removed.length, superseded };
+  return { retained: retainedIds.size, created: input.rules.length - retainedIds.size, removed: removed.length, superseded, materializeRuleIds };
 }
