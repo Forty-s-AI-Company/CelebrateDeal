@@ -12,6 +12,7 @@ describe("LiveStudioDraftPayloadSchema", () => {
       quotaPayerScope: "VENDOR",
       liveReminderTemplateId: "",
       liveReminderOffsetMinutes: "60",
+      notificationRules: [],
       replayAvailableUntil: "",
       flowVersion: 2,
       activeStep: 0,
@@ -35,6 +36,14 @@ describe("LiveStudioDraftPayloadSchema", () => {
       messageTemplateId: "registration-template-1",
       liveReminderTemplateId: "reminder-template-1",
       liveReminderOffsetMinutes: "30",
+      notificationRules: [{
+        id: "rule-1",
+        trigger: "before_live",
+        messageTemplateId: "reminder-template-1",
+        offsetMinutes: 60,
+        sortOrder: 0,
+        isActive: true,
+      }],
       replayAvailableUntil: "2026-08-21T20:00",
       activeStep: 7,
     }).success).toBe(true);

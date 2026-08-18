@@ -17,6 +17,12 @@ function stringValue(formData: FormData, name: string) {
   return typeof value === "string" ? value : "";
 }
 
+function notificationRulesValue(formData: FormData) {
+  const value = stringValue(formData, "notificationRules");
+  if (!value) return [];
+  return JSON.parse(value) as unknown;
+}
+
 export function serializeLiveStudioDraft(form: HTMLFormElement, activeStep: number): LiveStudioDraftPayload {
   const data = new FormData(form);
   return liveStudioDraftFromFormData(data, activeStep);
@@ -37,6 +43,7 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     messageTemplateId: stringValue(data, "messageTemplateId"),
     liveReminderTemplateId: stringValue(data, "liveReminderTemplateId"),
     liveReminderOffsetMinutes: stringValue(data, "liveReminderOffsetMinutes") || "60",
+    notificationRules: notificationRulesValue(data),
     streamMode: stringValue(data, "streamMode"),
     videoId: stringValue(data, "videoId"),
     heroImageUrl: stringValue(data, "heroImageUrl"),

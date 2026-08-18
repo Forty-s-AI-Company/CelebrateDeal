@@ -83,7 +83,11 @@ describe("NewLivePage data minimization", () => {
     expect(mocks.messageTemplateFindMany).toHaveBeenCalledExactlyOnceWith({
       where: {
         vendorId: "vendor-1",
-        OR: [REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE, LIVE_REMINDER_EMAIL_TEMPLATE_WHERE],
+        OR: [
+          REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+          LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+          { channel: "email", trigger: "post_live_followup", isActive: true },
+        ],
       },
       select: { id: true, name: true, channel: true, trigger: true, subject: true, body: true },
       orderBy: { createdAt: "desc" },

@@ -65,6 +65,7 @@ function LiveResourceWarnings({
   hasUnavailableForm,
   hasUnavailableTemplate,
   hasUnavailableReminderTemplate,
+  hasUnavailableNotificationRuleTemplate,
 }: {
   hasUnavailableScript: boolean;
   hasUnavailableVideo: boolean;
@@ -72,6 +73,7 @@ function LiveResourceWarnings({
   hasUnavailableForm: boolean;
   hasUnavailableTemplate: boolean;
   hasUnavailableReminderTemplate: boolean;
+  hasUnavailableNotificationRuleTemplate: boolean;
 }) {
   return (
     <>
@@ -81,6 +83,7 @@ function LiveResourceWarnings({
       {hasUnavailableForm ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的報名表已停用或缺少必要姓名／Email 欄位；本次儲存會解除綁定。</p> : null}
       {hasUnavailableTemplate ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的通知模板不是啟用中的「報名成功 Email」，因此不會寄送；本次儲存會解除綁定，請改選可用模板。</p> : null}
       {hasUnavailableReminderTemplate ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的開播提醒模板已停用或不再有效；本次儲存會解除綁定，請改選啟用中的「開播提醒 Email」。</p> : null}
+      {hasUnavailableNotificationRuleTemplate ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前有通知規則綁定到已停用、已刪除或類型不符的 Email 模板；請刪除該規則或重新選擇模板後再儲存。</p> : null}
     </>
   );
 }
@@ -97,7 +100,10 @@ export default async function EditLivePage({
   const { error, notice } = await searchParams;
   const db = getDb();
   const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
-    db.live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: true } }),
+    db.live.findFirst({
+      where: { id, vendorId: vendor.id },
+      include: { products: true, notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] } },
+    }),
     db.video.findMany({
       where: liveReadyVideoWhere(vendor.id),
       select: { id: true, title: true },
@@ -116,7 +122,11 @@ export default async function EditLivePage({
     db.messageTemplate.findMany({
       where: {
         vendorId: vendor.id,
-        OR: [REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE, LIVE_REMINDER_EMAIL_TEMPLATE_WHERE],
+        OR: [
+          REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+          LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+          { channel: "email", trigger: "post_live_followup", isActive: true },
+        ],
       },
       select: { id: true, name: true, channel: true, trigger: true, subject: true, body: true },
       orderBy: { createdAt: "desc" },
@@ -156,6 +166,7 @@ export default async function EditLivePage({
 
   const preparedResources = prepareLiveEditorResources({ live, videos, products, formCandidates, templateCandidates });
   const { forms, templates } = preparedResources;
+  const notificationRules = live.notificationRules ?? [];
   const quotaPolicy = parseLiveQuotaPolicy(live.quotaPolicy);
   const hasUnavailableScript = Boolean(
     live.interactionScriptId && !scripts.some((script) => script.id === live.interactionScriptId),
@@ -166,6 +177,11 @@ export default async function EditLivePage({
   const hasUnavailableReminderTemplate = Boolean(
     live.liveReminderTemplateId && !templates.some((template) => template.id === live.liveReminderTemplateId),
   );
+  const hasUnavailableNotificationRuleTemplate = notificationRules.some((rule) => {
+    const template = templates.find((candidate) => candidate.id === rule.messageTemplateId);
+    const expectedTrigger = rule.trigger === "post_live_followup" ? "post_live_followup" : "live_reminder";
+    return !template || template.trigger !== expectedTrigger;
+  });
   const basePayload = LiveStudioDraftPayloadSchema.parse({
     title: live.title,
     slug: live.slug,
@@ -177,6 +193,14 @@ export default async function EditLivePage({
     messageTemplateId: hasUnavailableTemplate ? "" : (live.messageTemplateId ?? ""),
     liveReminderTemplateId: hasUnavailableReminderTemplate ? "" : (live.liveReminderTemplateId ?? ""),
     liveReminderOffsetMinutes: String(live.liveReminderOffsetMinutes),
+    notificationRules: notificationRules.map((rule) => ({
+      id: rule.id,
+      trigger: rule.trigger,
+      messageTemplateId: rule.messageTemplateId,
+      offsetMinutes: rule.offsetMinutes,
+      sortOrder: rule.sortOrder,
+      isActive: rule.isActive,
+    })),
     streamMode: live.streamMode === "live" ? "live" : "vod",
     videoId: preparedResources.videoId,
     heroImageUrl: live.heroImageUrl ?? "",
@@ -229,6 +253,7 @@ export default async function EditLivePage({
         hasUnavailableForm={preparedResources.hasUnavailableForm}
         hasUnavailableTemplate={hasUnavailableTemplate}
         hasUnavailableReminderTemplate={hasUnavailableReminderTemplate}
+        hasUnavailableNotificationRuleTemplate={hasUnavailableNotificationRuleTemplate}
       />
       <LiveStepperForm
         videos={videos}

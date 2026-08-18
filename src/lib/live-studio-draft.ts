@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LiveNotificationRuleDraftListSchema } from "@/lib/live-notification-rules";
 
 const boundedReference = z.string().trim().min(1).max(128);
 const optionalReference = z.union([boundedReference, z.literal("")]).default("");
@@ -27,6 +28,7 @@ const liveStudioDraftFields = {
   messageTemplateId: optionalReference,
   liveReminderTemplateId: optionalReference,
   liveReminderOffsetMinutes: z.enum(["15", "30", "60", "180", "1440"]).default("60"),
+  notificationRules: LiveNotificationRuleDraftListSchema,
   streamMode: z.enum(["vod", "live"]).default("vod"),
   videoId: optionalReference,
   heroImageUrl: DraftImageReference.default(""),

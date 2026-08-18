@@ -213,19 +213,6 @@ function control(tree: unknown, name: string, value?: string) {
   };
 }
 
-function selectControl(tree: unknown, name: string) {
-  const element = findElement(tree, (candidate) => (
-    candidate.type === "select" && candidate.props.name === name
-  ));
-
-  expect(element).toBeDefined();
-  return element as ElementNode & {
-    props: Record<string, unknown> & {
-      onChange: (event: { target: { value: string } }) => void;
-    };
-  };
-}
-
 function productSelection(tree: unknown) {
   const element = findElement(tree, (candidate) => (
     typeof candidate.type === "function" && candidate.type.name === "ProductSelection"
@@ -236,6 +223,23 @@ function productSelection(tree: unknown) {
       onSelectionChange: (productId: string, checked: boolean) => void;
     };
   };
+}
+
+function notificationRulesEditor(tree: unknown) {
+  const element = findElement(tree, (candidate) => (
+    typeof candidate.type === "function" && candidate.type.name === "NotificationRulesEditor"
+  ));
+  expect(element).toBeDefined();
+  return element as ElementNode & {
+    props: Record<string, unknown> & {
+      rules: Array<{ id: string; trigger: string; messageTemplateId: string; offsetMinutes: number; isActive: boolean }>;
+    };
+  };
+}
+
+function renderNotificationRulesEditor(tree: unknown) {
+  const editor = notificationRulesEditor(tree);
+  return (editor.type as (props: Record<string, unknown>) => unknown)(editor.props);
 }
 
 function submitAction(tree: unknown, label: string) {
@@ -663,9 +667,109 @@ describe("LiveStepperForm", () => {
 
     expect(markup).toContain("示範影片");
     expect(markup).toContain("活動報名表");
-    expect(markup).toContain("開播通知 · email");
+    expect(markup).toContain("選配通知規則");
     expect(markup).toContain("互動腳本");
     expect(markup).toContain("合作推廣者 · REF-1");
+  });
+
+  it("disables suggestions with a clear explanation when no notification templates exist", () => {
+    const editor = renderNotificationRulesEditor(renderForm([], {
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+    }));
+    const suggestionButton = findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "套用建議設定");
+    expect(suggestionButton?.props.disabled).toBe(true);
+    const markup = renderToStaticMarkup(editor as ReactElement);
+    expect(markup).toContain("目前沒有可用的開播提醒或課後 Email 模板");
+    for (const label of ["新增開播前通知", "新增直播中通知", "新增課後通知"]) {
+      expect(findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === label)?.props.disabled).toBe(true);
+    }
+    expect(markup).toContain("需要啟用中的 Email 開播提醒模板（live_reminder）才能新增。");
+    expect(markup).toContain("需要啟用中的課後 Email 模板（post_live_followup）才能新增。");
+  });
+
+  it("suggests only post rules when only a post-live template exists", () => {
+    const overrides: FormOverrides = {
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+      templates: [{ id: "followup-1", name: "課後追蹤", channel: "email", trigger: "post_live_followup" }] as FormOverrides["templates"],
+    };
+    const editor = renderNotificationRulesEditor(renderForm([], overrides));
+    const suggestionButton = findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "套用建議設定");
+    expect(suggestionButton?.props.disabled).toBe(false);
+    expect(findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "新增開播前通知")?.props.disabled).toBe(true);
+    expect(findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "新增直播中通知")?.props.disabled).toBe(true);
+    expect(findElement(editor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "新增課後通知")?.props.disabled).toBe(false);
+    (suggestionButton?.props.onClick as () => void)();
+    expect(notificationRulesEditor(renderForm([], overrides)).props.rules).toMatchObject([
+      { trigger: "post_live_followup", messageTemplateId: "followup-1", offsetMinutes: 15 },
+      { trigger: "post_live_followup", messageTemplateId: "followup-1", offsetMinutes: 1440 },
+      { trigger: "post_live_followup", messageTemplateId: "followup-1", offsetMinutes: 4320 },
+    ]);
+  });
+
+  it("supports empty, suggested, add, delete, reorder, enable, and template controls across 3/3/8 groups", () => {
+    const overrides: FormOverrides = {
+      initialValues: { ...emptyLiveStudioDraft(), activeStep: 5 },
+      templates: [
+        { id: "registration-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "reminder-1", name: "直播提醒", channel: "email", trigger: "live_reminder" },
+        { id: "followup-1", name: "課後追蹤", channel: "email", trigger: "post_live_followup" },
+      ] as FormOverrides["templates"],
+    };
+    let form = renderForm([], overrides);
+    let renderedEditor = renderNotificationRulesEditor(form);
+    let markup = renderToStaticMarkup(renderedEditor as ReactElement);
+    expect(markup).toContain("開播前 0/3");
+    expect(markup).toContain("直播中 0/3");
+    expect(markup).toContain("課後 0/8");
+    expect(control(form, "notificationRules").props.value).toBe("[]");
+    for (const label of ["新增開播前通知", "新增直播中通知", "新增課後通知"]) {
+      expect(findElement(renderedEditor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === label)?.props.disabled).toBe(false);
+    }
+    const boundaryCopy = "課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。";
+    expect(renderToStaticMarkup(form as ReactElement).split(boundaryCopy)).toHaveLength(3);
+
+    const addBefore = findElement(renderedEditor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "新增開播前通知");
+    (addBefore?.props.onClick as () => void)();
+    form = renderForm([], overrides);
+    expect(notificationRulesEditor(form).props.rules).toMatchObject([
+      { trigger: "before_live", messageTemplateId: "reminder-1", isActive: true },
+    ]);
+    renderedEditor = renderNotificationRulesEditor(form);
+    expect(renderToStaticMarkup(renderedEditor as ReactElement)).toContain("直播提醒");
+
+    const enabled = findElement(renderedEditor, (candidate) => candidate.type === "input" && candidate.props["aria-label"] === "開播前第 1 則通知啟用");
+    (enabled?.props.onChange as (event: { target: { checked: boolean } }) => void)({ target: { checked: false } });
+    form = renderForm([], overrides);
+    expect(notificationRulesEditor(form).props.rules[0]?.isActive).toBe(false);
+
+    renderedEditor = renderNotificationRulesEditor(form);
+    const applyDefaults = findElement(renderedEditor, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "套用建議設定");
+    (applyDefaults?.props.onClick as () => void)();
+    form = renderForm([], overrides);
+    expect(notificationRulesEditor(form).props.rules.map((rule) => rule.trigger)).toEqual([
+      "before_live", "before_live", "before_live",
+      "during_live", "during_live", "during_live",
+      "post_live_followup", "post_live_followup", "post_live_followup",
+    ]);
+    renderedEditor = renderNotificationRulesEditor(form);
+    markup = renderToStaticMarkup(renderedEditor as ReactElement);
+    expect(markup).toContain("開播前 3/3");
+    expect(markup).toContain("直播中 3/3");
+    expect(markup).toContain("課後 3/8");
+    expect(markup).toContain("課後追蹤");
+
+    const firstId = notificationRulesEditor(form).props.rules[0]?.id;
+    const moveDown = findElement(renderedEditor, (candidate) => candidate.type === "button" && candidate.props["aria-label"] === "下移開播前第 1 則");
+    (moveDown?.props.onClick as () => void)();
+    form = renderForm([], overrides);
+    expect(notificationRulesEditor(form).props.rules[1]?.id).toBe(firstId);
+
+    renderedEditor = renderNotificationRulesEditor(form);
+    const remove = findElement(renderedEditor, (candidate) => candidate.type === "button" && candidate.props["aria-label"] === "刪除開播前第 1 則");
+    (remove?.props.onClick as () => void)();
+    form = renderForm([], overrides);
+    expect(notificationRulesEditor(form).props.rules.filter((rule) => rule.trigger === "before_live")).toHaveLength(2);
+    expect(draftMocks.scheduleSave).toHaveBeenCalled();
   });
 
   it("offers direct create links for every missing Studio resource", () => {
@@ -794,7 +898,7 @@ describe("LiveStepperForm", () => {
     expect(scheduleButton?.props.disabled).toBe(false);
   });
 
-  it("updates reminder readiness immediately and gates only the schedule submitter", () => {
+  it("keeps optional notification rules empty without blocking the schedule submitter", () => {
     const initialValues = {
       ...emptyLiveStudioDraft(),
       studioPreset: "CONTENT" as const,
@@ -817,15 +921,11 @@ describe("LiveStepperForm", () => {
     };
     const form = renderForm([], overrides);
     const draftButton = submitAction(form, "建立草稿並預覽");
-    const blockedSchedule = submitAction(form, "建立並排程");
+    const schedule = submitAction(form, "建立並排程");
     expect(draftButton?.props.disabled).toBe(false);
-    expect(blockedSchedule?.props.disabled).toBe(true);
-    expect(renderToStaticMarkup(form as ReactElement)).toContain("可寄送的開播提醒 Email");
-
-    selectControl(form, "liveReminderTemplateId").props.onChange({ target: { value: "template-2" } });
-    const completedForm = renderForm([], overrides);
-    expect(submitAction(completedForm, "建立並排程")?.props.disabled).toBe(false);
-    expect(renderToStaticMarkup(completedForm as ReactElement)).toContain("發布條件已完成");
+    expect(schedule?.props.disabled).toBe(false);
+    expect(renderToStaticMarkup(form as ReactElement)).not.toContain("可寄送的開播提醒 Email");
+    expect(renderToStaticMarkup(form as ReactElement)).toContain("發布條件已完成");
   });
 
   it("shows a complete sales-live checklist and enables scheduling", () => {

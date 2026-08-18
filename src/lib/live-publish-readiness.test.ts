@@ -21,7 +21,6 @@ describe("live publish readiness", () => {
         { code: "media", ready: true },
         { code: "registration_form", ready: true },
         { code: "registration_email", ready: true },
-        { code: "live_reminder_email", ready: true },
       ],
       blockers: [],
       ready: true,
@@ -44,7 +43,6 @@ describe("live publish readiness", () => {
         { code: "products", ready: true },
         { code: "registration_form", ready: false },
         { code: "registration_email", ready: true },
-        { code: "live_reminder_email", ready: true },
         { code: "interaction_script", ready: false },
       ],
       blockers: [
@@ -96,7 +94,7 @@ describe("live publish readiness", () => {
     }).mode).toBe("commerce");
   });
 
-  it("requires the live reminder email for content publishing too", () => {
+  it("keeps optional notification rules out of content publishing blockers", () => {
     expect(getLivePublishReadiness({
       studioPreset: "CONTENT",
       productCount: 0,
@@ -108,8 +106,8 @@ describe("live publish readiness", () => {
       interactionScriptReady: true,
     })).toMatchObject({
       mode: "content",
-      blockers: [{ code: "live_reminder_email", ready: false }],
-      ready: false,
+      blockers: [],
+      ready: true,
     });
   });
 

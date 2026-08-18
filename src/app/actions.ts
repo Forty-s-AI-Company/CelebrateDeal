@@ -30,6 +30,12 @@ import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuot
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
 import {
+  haveValidLiveNotificationRuleTemplates,
+  parseLiveNotificationRules,
+  reconcileLiveNotificationRules,
+  type LiveNotificationRuleInput,
+} from "@/lib/live-notification-rules";
+import {
   createLiveReminderReconciliationSnapshot,
   queueLiveReminderReconciliation,
   type LiveReminderReconciliationSnapshot,
@@ -701,6 +707,7 @@ async function commitLiveDraft(input: {
   data: LiveMutationData;
   productIds: string[];
   reminderReconciliationSnapshot: LiveReminderReconciliationSnapshot | null;
+  notificationRules: LiveNotificationRuleInput[];
 }) {
   const transitionAt = new Date();
   if (input.liveId) {
@@ -725,6 +732,11 @@ async function commitLiveDraft(input: {
           data: { vendorId: input.vendorId, liveId: input.liveId!, productId, sortOrder: index + 1, isPinned: index === 0 },
         });
       }
+      await reconcileLiveNotificationRules(tx, {
+        vendorId: input.vendorId,
+        liveId: input.liveId!,
+        rules: input.notificationRules,
+      });
       const reminderReconciliation = input.reminderReconciliationSnapshot
         ? await queueLiveReminderReconciliation(tx, input.reminderReconciliationSnapshot, transitionAt)
         : null;
@@ -763,6 +775,11 @@ async function commitLiveDraft(input: {
           })),
         },
       },
+    });
+    await reconcileLiveNotificationRules(tx, {
+      vendorId: input.vendorId,
+      liveId: live.id,
+      rules: input.notificationRules,
     });
     return { id: live.id, created: true, reminderReconciliationStatus: null };
   });
@@ -862,13 +879,14 @@ async function resolveSubmittedLiveReferences(input: {
   formId: string | null;
   messageTemplateId: string | null;
   liveReminderTemplateId: string | null;
+  notificationRules: LiveNotificationRuleInput[];
   interactionScriptId: string | null;
   defaultAffiliateCode: string | null;
   heroImageAssetId: string | null;
   quotaPageIds: string[];
   invalidReferencePath: string;
 }) {
-  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
+  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
     input.liveId
       ? input.db.live.findFirst({
           where: { id: input.liveId, vendorId: input.vendorId },
@@ -915,6 +933,15 @@ async function resolveSubmittedLiveReferences(input: {
         updatedAt: true,
       },
     }) : Promise.resolve(null),
+    input.notificationRules.length > 0 ? input.db.messageTemplate.findMany({
+      where: {
+        vendorId: input.vendorId,
+        id: { in: [...new Set(input.notificationRules.map((rule) => rule.messageTemplateId))] },
+        channel: "email",
+        isActive: true,
+      },
+      select: { id: true, vendorId: true, channel: true, trigger: true, isActive: true },
+    }) : Promise.resolve([]),
     input.interactionScriptId ? input.db.interactionScript.findFirst({ where: { id: input.interactionScriptId, vendorId: input.vendorId, status: "published" }, select: { id: true } }) : Promise.resolve(null),
     input.defaultAffiliateCode ? input.db.affiliate.findFirst({
       where: { vendorId: input.vendorId, code: input.defaultAffiliateCode, isActive: true },
@@ -926,7 +953,7 @@ async function resolveSubmittedLiveReferences(input: {
       ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
       : Promise.resolve([]),
   ]);
-  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, interactionScript, defaultAffiliate, heroImageAsset, quotaPages };
+  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages };
 }
 
 function requireSubmittedLivePublishReadiness(input: {
@@ -1006,6 +1033,26 @@ function liveReminderReconciliationNotice(status: string | null) {
     : "reminders_reconciling";
 }
 
+function parseSubmittedNotificationRuleDraft(
+  submittedDraft: LiveStudioDraftPayload,
+  invalidDraftPath: string,
+) {
+  const parsed = parseLiveNotificationRules(submittedDraft.notificationRules);
+  if (!parsed.success) redirect(invalidDraftPath);
+  return parsed.data;
+}
+
+function requireValidNotificationRuleTemplates(input: {
+  rules: LiveNotificationRuleInput[];
+  templates: Array<{ id: string; vendorId: string; channel: string; trigger: string; isActive: boolean }>;
+  vendorId: string;
+  invalidReferencePath: string;
+}) {
+  if (!haveValidLiveNotificationRuleTemplates(input.rules, input.templates, input.vendorId)) {
+    redirect(input.invalidReferencePath);
+  }
+}
+
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
@@ -1013,6 +1060,7 @@ export async function upsertLiveAction(formData: FormData) {
   const draftClaim = parseLiveDraftClaim(formData, id);
   const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId, vendor.timezone);
   const submittedDraft = parsedSubmission.payload;
+  const notificationRules = parseSubmittedNotificationRuleDraft(submittedDraft, parsedSubmission.invalidDraftPath);
   const scheduledAt = parsedSubmission.scheduledAt;
   const createDraftSuffix = parsedSubmission.suffix;
   const rawProductIds = submittedDraft.productIds;
@@ -1027,7 +1075,7 @@ export async function upsertLiveAction(formData: FormData) {
   const invalidReferencePath = id
     ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : `/lives/new?error=invalid_reference${createDraftSuffix}`;
-  const referenceIds = [id, videoId, formId, messageTemplateId, liveReminderTemplateId, interactionScriptId, heroImageAssetId, ...productIds].filter(
+  const referenceIds = [id, videoId, formId, messageTemplateId, liveReminderTemplateId, interactionScriptId, heroImageAssetId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
     (value): value is string => value !== null,
   );
   if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
@@ -1048,6 +1096,7 @@ export async function upsertLiveAction(formData: FormData) {
     formId,
     messageTemplateId,
     liveReminderTemplateId,
+    notificationRules,
     interactionScriptId,
     defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
     heroImageAssetId,
@@ -1061,6 +1110,7 @@ export async function upsertLiveAction(formData: FormData) {
     registrationForm,
     messageTemplate,
     liveReminderTemplate,
+    notificationTemplates,
     interactionScript,
     defaultAffiliate,
     heroImageAsset,
@@ -1101,6 +1151,12 @@ export async function upsertLiveAction(formData: FormData) {
   if (hasInvalidReference) {
     redirect(invalidReferencePath);
   }
+  requireValidNotificationRuleTemplates({
+    rules: notificationRules,
+    templates: notificationTemplates,
+    vendorId: vendor.id,
+    invalidReferencePath,
+  });
   requireValidReplayDeadline({
     replayAvailableUntil: parsedSubmission.replayAvailableUntil,
     scheduledAt,
@@ -1171,6 +1227,7 @@ export async function upsertLiveAction(formData: FormData) {
     expectedDraftPayload: submittedDraft,
     data,
     productIds,
+    notificationRules,
     reminderReconciliationSnapshot,
   });
   if (!committed) redirect(draftClaim.conflictPath);

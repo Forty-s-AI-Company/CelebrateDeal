@@ -18,6 +18,14 @@ describe("serializeLiveStudioDraft", () => {
       ["messageTemplateId", "registration-template-1"],
       ["liveReminderTemplateId", "reminder-template-1"],
       ["liveReminderOffsetMinutes", "30"],
+      ["notificationRules", JSON.stringify([{
+        id: "rule-1",
+        trigger: "before_live",
+        messageTemplateId: "reminder-template-1",
+        offsetMinutes: 60,
+        sortOrder: 0,
+        isActive: true,
+      }])],
       ["streamMode", "vod"],
       ["affiliateMode", "enabled"],
       ["maxConcurrentViewers", "500"],
@@ -40,6 +48,7 @@ describe("serializeLiveStudioDraft", () => {
       messageTemplateId: "registration-template-1",
       liveReminderTemplateId: "reminder-template-1",
       liveReminderOffsetMinutes: "30",
+      notificationRules: [expect.objectContaining({ id: "rule-1", trigger: "before_live", offsetMinutes: 60 })],
       replayEnabled: true,
       replayAvailableUntil: "2026-08-21T20:00",
       flowVersion: 2,
@@ -78,6 +87,7 @@ describe("serializeLiveStudioDraft", () => {
 
     expect(draft.liveReminderTemplateId).toBe("");
     expect(draft.liveReminderOffsetMinutes).toBe("60");
+    expect(draft.notificationRules).toEqual([]);
     expect(draft.replayAvailableUntil).toBe("");
   });
 

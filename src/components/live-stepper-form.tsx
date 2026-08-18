@@ -25,6 +25,14 @@ import {
   type LiveStudioDraftEnvelope,
   type LiveStudioDraftPayload,
 } from "@/lib/live-studio-draft";
+import {
+  createSuggestedLiveNotificationRules,
+  expectedTemplateTrigger,
+  LIVE_NOTIFICATION_RULE_LIMITS,
+  LIVE_NOTIFICATION_RULE_TRIGGERS,
+  type LiveNotificationRuleDraft,
+  type LiveNotificationRuleTrigger,
+} from "@/lib/live-notification-rules";
 
 const steps = [
   { key: "purpose", label: "用途與基本資料", icon: Calendar },
@@ -54,8 +62,6 @@ type LiveReadinessResources = {
   formId: string;
   templates: LiveTemplateOption[];
   templateId: string;
-  reminderTemplates: LiveTemplateOption[];
-  reminderTemplateId: string;
   scripts: LiveScriptOption[];
   scriptId: string;
 };
@@ -213,7 +219,6 @@ function buildLivePublishReadiness(resources: LiveReadinessResources) {
     videoReady: resources.videos.some((video) => video.id === resources.videoId),
     formReady: resources.forms.some((form) => form.id === resources.formId),
     registrationEmailReady: resources.templates.some((template) => template.id === resources.templateId),
-    liveReminderEmailReady: resources.reminderTemplates.some((template) => template.id === resources.reminderTemplateId),
     interactionScriptReady: resources.scripts.some((script) => script.id === resources.scriptId),
   });
 }
@@ -279,7 +284,7 @@ function LiveReviewPanel({
           <p className="mt-1 text-sm text-slate-600">
             {readiness.mode === "commerce"
               ? "已選擇商品。公開前需要完整的播放、報名、通知與互動路徑。"
-              : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與兩種通知 Email。"}
+              : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與報名成功 Email。"}
           </p>
           <p className={`mt-3 text-sm font-semibold ${readiness.ready ? "text-emerald-800" : "text-amber-900"}`}>
             {readiness.ready ? "發布條件已完成" : `還有 ${readiness.blockers.length} 項需要完成`}
@@ -591,9 +596,9 @@ type LiveStudioStepPanelRenderOptions = {
   registrationTemplates: LiveTemplateOption[];
   selectedTemplateId: string;
   onTemplateChange: (value: string) => void;
-  reminderTemplates: LiveTemplateOption[];
-  selectedReminderTemplateId: string;
-  onReminderTemplateChange: (value: string) => void;
+  notificationTemplates: LiveTemplateOption[];
+  notificationRules: LiveNotificationRuleDraft[];
+  onNotificationRulesChange: (rules: LiveNotificationRuleDraft[]) => void;
   scripts: LiveScriptOption[];
   selectedScriptId: string;
   onScriptChange: (value: string) => void;
@@ -601,6 +606,154 @@ type LiveStudioStepPanelRenderOptions = {
   streamMembers: StreamAllocationMemberOption[];
   streamPages: StreamAllocationPageOption[];
 };
+
+const notificationRuleGroupCopy: Record<LiveNotificationRuleTrigger, { title: string; timing: string }> = {
+  before_live: { title: "開播前", timing: "開播前幾分鐘寄送" },
+  during_live: { title: "直播中", timing: "開播後幾分鐘寄送" },
+  post_live_followup: { title: "課後", timing: "內容結束後幾分鐘寄送" },
+};
+
+let draftNotificationRuleSequence = 0;
+
+function withDraftRuleIds(rules: LiveNotificationRuleDraft[]) {
+  return rules.map((rule) => ({
+    ...rule,
+    id: rule.id || `draft-notification-rule-${++draftNotificationRuleSequence}`,
+  }));
+}
+
+function NotificationRulesEditor({
+  rules,
+  templates,
+  onChange,
+}: {
+  rules: LiveNotificationRuleDraft[];
+  templates: LiveTemplateOption[];
+  onChange: (rules: LiveNotificationRuleDraft[]) => void;
+}) {
+  const hasSuggestionTemplates = templates.some((template) => (
+    template.trigger === "live_reminder" || template.trigger === "post_live_followup"
+  ));
+  function replaceRule(id: string, patch: Partial<LiveNotificationRuleDraft>) {
+    onChange(rules.map((rule) => rule.id === id ? { ...rule, ...patch } : rule));
+  }
+
+  function addRule(trigger: LiveNotificationRuleTrigger) {
+    const group = rules.filter((rule) => rule.trigger === trigger);
+    if (group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger]) return;
+    const template = templates.find((candidate) => candidate.trigger === expectedTemplateTrigger(trigger));
+    const usedOffsets = new Set(group.map((rule) => rule.offsetMinutes));
+    const candidates = trigger === "before_live" ? [60, 10, 30, 1, 1440] : [0, 10, 30, 60, 15, 1440, 4320];
+    const offsetMinutes = candidates.find((candidate) => !usedOffsets.has(candidate)) ?? (trigger === "before_live" ? 1 : 0);
+    onChange([...rules, ...withDraftRuleIds([{
+      id: "",
+      trigger,
+      messageTemplateId: template?.id ?? "",
+      offsetMinutes,
+      sortOrder: group.length,
+      isActive: true,
+    }])]);
+  }
+
+  function moveRule(trigger: LiveNotificationRuleTrigger, id: string, direction: -1 | 1) {
+    const indexes = rules.flatMap((rule, index) => rule.trigger === trigger ? [index] : []);
+    const position = indexes.findIndex((index) => rules[index]?.id === id);
+    const targetPosition = position + direction;
+    if (position < 0 || targetPosition < 0 || targetPosition >= indexes.length) return;
+    const next = [...rules];
+    const currentIndex = indexes[position]!;
+    const targetIndex = indexes[targetPosition]!;
+    [next[currentIndex], next[targetIndex]] = [next[targetIndex]!, next[currentIndex]!];
+    onChange(next);
+  }
+
+  function applySuggestions() {
+    const liveReminder = templates.find((template) => template.trigger === "live_reminder")?.id ?? "";
+    const postLiveFollowup = templates.find((template) => template.trigger === "post_live_followup")?.id ?? "";
+    onChange(withDraftRuleIds(createSuggestedLiveNotificationRules({ liveReminder, postLiveFollowup })));
+  }
+
+  return (
+    <section aria-labelledby="notification-rules-title" className="grid gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 id="notification-rules-title" className="font-semibold text-slate-950">選配通知規則</h3>
+          <p className="mt-1 text-sm text-slate-600">課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。</p>
+        </div>
+        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
+          套用建議設定
+        </button>
+      </div>
+      {!hasSuggestionTemplates ? <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">目前沒有可用的開播提醒或課後 Email 模板，請先建立模板再套用建議設定。</p> : null}
+      {LIVE_NOTIFICATION_RULE_TRIGGERS.map((trigger) => {
+        const group = rules.filter((rule) => rule.trigger === trigger);
+        const availableTemplates = templates.filter((template) => template.trigger === expectedTemplateTrigger(trigger));
+        const missingTemplateReason = trigger === "post_live_followup"
+          ? "需要啟用中的課後 Email 模板（post_live_followup）才能新增。"
+          : "需要啟用中的 Email 開播提醒模板（live_reminder）才能新增。";
+        const addButtonDescriptionId = `notification-rule-${trigger}-add-description`;
+        return (
+          <fieldset key={trigger} className="grid gap-3 rounded-lg border border-border p-4">
+            <legend className="px-1 font-semibold text-slate-900">
+              {notificationRuleGroupCopy[trigger].title} {group.length}/{LIVE_NOTIFICATION_RULE_LIMITS[trigger]}
+            </legend>
+            {group.length === 0 ? <p className="text-sm text-slate-500">尚未設定通知。</p> : null}
+            {group.map((rule, index) => (
+              <div key={rule.id} className="grid gap-3 rounded-md bg-slate-50 p-3 lg:grid-cols-[auto_minmax(0,1fr)_150px_auto] lg:items-end">
+                <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={rule.isActive}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則通知啟用`}
+                    onChange={(event) => replaceRule(rule.id, { isActive: event.target.checked })}
+                    className="h-4 w-4 accent-blue-600"
+                  />
+                  啟用
+                </label>
+                <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+                  Email 模板
+                  <select
+                    value={rule.messageTemplateId}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則 Email 模板`}
+                    onChange={(event) => replaceRule(rule.id, { messageTemplateId: event.target.value })}
+                    className="h-10 min-w-0 rounded-md border border-border px-3"
+                  >
+                    <option value="">請選擇模板</option>
+                    {availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+                  {notificationRuleGroupCopy[trigger].timing}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={trigger === "before_live" ? 1 : 0}
+                    max={10_080}
+                    value={rule.offsetMinutes}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則寄送分鐘`}
+                    onChange={(event) => replaceRule(rule.id, { offsetMinutes: Number(event.target.value) })}
+                    className="h-10 rounded-md border border-border px-3"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2" aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則排序控制`}>
+                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
+                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
+                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-10 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
+                </div>
+              </div>
+            ))}
+            <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-10 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                新增{notificationRuleGroupCopy[trigger].title}通知
+              </button>
+              {availableTemplates.length === 0 ? <span id={addButtonDescriptionId} className="text-xs text-amber-800">{missingTemplateReason}</span> : null}
+            </div>
+          </fieldset>
+        );
+      })}
+    </section>
+  );
+}
 
 function renderLiveStudioStepPanels({
   activeStep,
@@ -617,9 +770,9 @@ function renderLiveStudioStepPanels({
   registrationTemplates,
   selectedTemplateId,
   onTemplateChange,
-  reminderTemplates,
-  selectedReminderTemplateId,
-  onReminderTemplateChange,
+  notificationTemplates,
+  notificationRules,
+  onNotificationRulesChange,
   scripts,
   selectedScriptId,
   onScriptChange,
@@ -689,7 +842,7 @@ function renderLiveStudioStepPanels({
       <StepPanel active={activeStep === 5} index={5}>
         <div>
           <h2 className="text-base font-semibold text-slate-950">Email</h2>
-          <p className="mt-1 text-sm text-slate-500">設定報名成功信、開播提醒信與寄送時間。</p>
+          <p className="mt-1 text-sm text-slate-500">報名成功信是發布必要條件；開播前、直播中與課後通知皆可選配。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -699,22 +852,12 @@ function renderLiveStudioStepPanels({
               {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            開播提醒 Email
-            <select name="liveReminderTemplateId" defaultValue={selectedReminderTemplateId} onChange={(event) => onReminderTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
-              <option value="">不寄送開播提醒</option>
-              {reminderTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            提前多久寄送
-            <select name="liveReminderOffsetMinutes" defaultValue={initialValues.liveReminderOffsetMinutes} className="h-10 rounded-md border border-border px-3">
-              <option value="15">15 分鐘</option><option value="30">30 分鐘</option><option value="60">1 小時</option><option value="180">3 小時</option><option value="1440">1 天</option>
-            </select>
-          </label>
         </div>
-        {registrationTemplates.length === 0 || reminderTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
-        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">只有完成 Email 驗證的報名者會進入開播提醒排程；直播時間已過時不會建立提醒。</p>
+        <input type="hidden" name="liveReminderTemplateId" value={initialValues.liveReminderTemplateId} readOnly />
+        <input type="hidden" name="liveReminderOffsetMinutes" value={initialValues.liveReminderOffsetMinutes} readOnly />
+        <NotificationRulesEditor rules={notificationRules} templates={notificationTemplates} onChange={onNotificationRulesChange} />
+        {registrationTemplates.length === 0 || notificationTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">課後通知目前會沿用既有排程。開播前與直播中規則目前先保存設定，完成下一階段排程接通後才會寄送。</p>
       </StepPanel>
 
       <StepPanel active={activeStep === 6} index={6}>
@@ -741,6 +884,80 @@ function renderLiveStudioStepPanels({
       </StepPanel>
 
     </>
+  );
+}
+
+function renderLiveStudioBasicsStep(input: {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  studioPreset: LiveStudioPreset;
+  purposeStarter: React.ReactNode;
+  onTitleChange: (value: string) => void;
+  onSlugChange: (value: string) => void;
+}) {
+  return (
+    <StepPanel active={input.activeStep === 0} index={0}>
+      <input type="hidden" name="studioPreset" value={input.studioPreset} readOnly />
+      {input.purposeStarter}
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        直播標題
+        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        Slug
+        <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={input.initialValues.slug} onChange={(event) => input.onSlugChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        直播說明
+        <textarea name="description" rows={4} autoComplete="off" defaultValue={input.initialValues.description} className="rounded-md border border-border px-3 py-2" />
+      </label>
+    </StepPanel>
+  );
+}
+
+function renderLiveStudioScheduleStep(input: {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  timeZone: string;
+  replayEnabled: boolean;
+  replayAvailableUntil: string;
+  onScheduledAtChange: (value: string) => void;
+  onReplayEnabledChange: (enabled: boolean) => void;
+  onReplayAvailableUntilChange: (value: string) => void;
+  onMediaValueChange: () => void;
+}) {
+  return (
+    <StepPanel active={input.activeStep === 4} index={4}>
+      <div>
+        <h2 className="text-base font-semibold text-slate-950">時間、回放與品牌</h2>
+        <p className="mt-1 text-sm text-slate-500">設定開播時間、回放選項與直播主視覺。</p>
+      </div>
+      <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+        Logo、品牌色、寄件資訊與聯絡網址會沿用商店品牌設定。
+        <Link href="/settings/brand" className="ml-1 font-semibold text-primary underline">編輯品牌設定</Link>
+      </p>
+      <ScheduleDateTimeField timeZone={input.timeZone} defaultValue={input.initialValues.scheduledAt} onChange={input.onScheduledAtChange} />
+      <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input name="replayEnabled" type="checkbox" checked={input.replayEnabled} onChange={(event) => input.onReplayEnabledChange(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+        直播結束後允許回放
+      </label>
+      <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        回放觀看期限（{input.timeZone}，選填）
+        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
+        <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
+      </label>
+      <MediaUploadField
+        kind="image"
+        label="直播封面"
+        description="直接上傳直播主視覺；完成後可在最後一步預覽，URL 僅保留為進階相容選項。"
+        defaultUrl={input.initialValues.heroImageUrl}
+        defaultAssetId={input.initialValues.heroImageAssetId}
+        urlInputName="heroImageUrl"
+        assetIdInputName="heroImageAssetId"
+        onValueChange={input.onMediaValueChange}
+      />
+    </StepPanel>
   );
 }
 
@@ -779,7 +996,7 @@ export function LiveStepperForm({
 }) {
   const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
   const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
-  const reminderTemplates = templates.filter((template) => template.trigger === "live_reminder");
+  const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
   const [activeStep, setActiveStep] = useState(initialValues.activeStep);
   const [previewTitle, setPreviewTitle] = useState(initialValues.title);
   const [slug, setSlug] = useState(initialValues.slug);
@@ -796,7 +1013,7 @@ export function LiveStepperForm({
   const [selectedScriptId, setSelectedScriptId] = useState(initialValues.interactionScriptId);
   const [replayEnabled, setReplayEnabled] = useState(initialValues.replayEnabled);
   const [studioPreset, setStudioPreset] = useState<LiveStudioPreset>(initialValues.studioPreset);
-  const [selectedReminderTemplateId, setSelectedReminderTemplateId] = useState(initialValues.liveReminderTemplateId);
+  const [notificationRules, setNotificationRules] = useState<LiveNotificationRuleDraft[]>(initialValues.notificationRules);
   const [replayAvailableUntil, setReplayAvailableUntil] = useState(
     initialValues.replayEnabled ? initialValues.replayAvailableUntil : "",
   );
@@ -810,7 +1027,7 @@ export function LiveStepperForm({
   });
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
-  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, reminderTemplates, reminderTemplateId: selectedReminderTemplateId, scripts, scriptId: selectedScriptId });
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
   const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (
     publishReadiness.requirements.find((requirement) => requirement.code === code)?.ready ?? true
   );
@@ -820,7 +1037,7 @@ export function LiveStepperForm({
     readinessIsReady("products"),
     readinessIsReady("registration_form"),
     Boolean(scheduledAt),
-    readinessIsReady("registration_email") && readinessIsReady("live_reminder_email"),
+    readinessIsReady("registration_email"),
     readinessIsReady("interaction_script"),
     publishReadiness.ready,
   ];
@@ -866,6 +1083,11 @@ export function LiveStepperForm({
     draft.scheduleSave(step);
   }
 
+  function updateNotificationRules(rules: LiveNotificationRuleDraft[]) {
+    setNotificationRules(rules);
+    draft.scheduleSave();
+  }
+
   return (
     <form
       ref={formRef}
@@ -880,6 +1102,7 @@ export function LiveStepperForm({
       <input type="hidden" name="liveDraftId" value={draft.draftId} readOnly />
       <input type="hidden" name="liveDraftRevision" value={draft.revision ?? ""} readOnly />
       <input type="hidden" name="flowVersion" value="2" readOnly />
+      <input type="hidden" name="notificationRules" value={JSON.stringify(notificationRules)} readOnly />
       {liveFormError(error)}
       <p role="status" aria-live="polite" className="min-h-5 text-sm font-medium text-red-700">
         {validationMessage}
@@ -931,22 +1154,14 @@ export function LiveStepperForm({
             <MobileLivePreviewToggle preview={preview} />
           ) : null}
 
-      <StepPanel active={activeStep === 0} index={0}>
-        <input type="hidden" name="studioPreset" value={studioPreset} readOnly />
-        {!liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null}
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          直播標題
-          <input name="title" required autoComplete="off" defaultValue={initialValues.title} onChange={(event) => setPreviewTitle(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          Slug
-          <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={initialValues.slug} onChange={(event) => setSlug(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          直播說明
-          <textarea name="description" rows={4} autoComplete="off" defaultValue={initialValues.description} className="rounded-md border border-border px-3 py-2" />
-        </label>
-      </StepPanel>
+      {renderLiveStudioBasicsStep({
+        activeStep,
+        initialValues,
+        studioPreset,
+        purposeStarter: !liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null,
+        onTitleChange: setPreviewTitle,
+        onSlugChange: setSlug,
+      })}
 
       {renderLiveStudioStepPanels({
         activeStep,
@@ -965,9 +1180,9 @@ export function LiveStepperForm({
         registrationTemplates,
         selectedTemplateId,
         onTemplateChange: setSelectedTemplateId,
-        reminderTemplates,
-        selectedReminderTemplateId,
-        onReminderTemplateChange: setSelectedReminderTemplateId,
+        notificationTemplates,
+        notificationRules,
+        onNotificationRulesChange: updateNotificationRules,
         scripts,
         selectedScriptId,
         onScriptChange: setSelectedScriptId,
@@ -976,51 +1191,7 @@ export function LiveStepperForm({
         streamPages,
       })}
 
-      <StepPanel active={activeStep === 4} index={4}>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">時間、回放與品牌</h2>
-          <p className="mt-1 text-sm text-slate-500">設定開播時間、回放選項與直播主視覺。</p>
-        </div>
-        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-          Logo、品牌色、寄件資訊與聯絡網址會沿用商店品牌設定。
-          <Link href="/settings/brand" className="ml-1 font-semibold text-primary underline">編輯品牌設定</Link>
-        </p>
-        <ScheduleDateTimeField timeZone={timeZone} defaultValue={initialValues.scheduledAt} onChange={setScheduledAt} />
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input name="replayEnabled" type="checkbox" checked={replayEnabled} onChange={(event) => {
-            setReplayEnabled(event.target.checked);
-            if (!event.target.checked) setReplayAvailableUntil("");
-          }} className="h-4 w-4 accent-blue-600" />
-          直播結束後允許回放
-        </label>
-        <input type="hidden" name="replayAvailableUntil" value="" disabled={replayEnabled} readOnly />
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          回放觀看期限（{timeZone}，選填）
-          <input
-            name="replayAvailableUntil"
-            type="datetime-local"
-            autoComplete="off"
-            value={replayAvailableUntil}
-            disabled={!replayEnabled}
-            onChange={(event) => setReplayAvailableUntil(event.target.value)}
-            className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-          />
-          <span className="text-xs font-normal text-slate-500">
-            依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。
-          </span>
-        </label>
-        <MediaUploadField
-          kind="image"
-          label="直播封面"
-          description="直接上傳直播主視覺；完成後可在最後一步預覽，URL 僅保留為進階相容選項。"
-          defaultUrl={initialValues.heroImageUrl}
-          defaultAssetId={initialValues.heroImageAssetId}
-          urlInputName="heroImageUrl"
-          assetIdInputName="heroImageAssetId"
-          onValueChange={() => draft.scheduleSave()}
-        />
-      </StepPanel>
-
+      {renderLiveStudioScheduleStep({ activeStep, initialValues, timeZone, replayEnabled, replayAvailableUntil, onScheduledAtChange: setScheduledAt, onReplayEnabledChange: (enabled) => { setReplayEnabled(enabled); if (!enabled) setReplayAvailableUntil(""); }, onReplayAvailableUntilChange: setReplayAvailableUntil, onMediaValueChange: () => draft.scheduleSave() })}
       <StepPanel active={activeStep === 7} index={7}>
         <LiveReviewPanel preview={preview} readiness={publishReadiness} onFix={fixReadinessRequirement} />
       </StepPanel>

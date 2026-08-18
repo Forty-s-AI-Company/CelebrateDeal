@@ -56,13 +56,6 @@ export function getLivePublishReadiness(input: LivePublishReadinessInput) {
     { code: "registration_form", ready: input.formReady },
     { code: "registration_email", ready: input.registrationEmailReady },
   );
-  if (input.studioPreset !== undefined || input.liveReminderEmailReady !== undefined) {
-    requirements.push({
-      code: "live_reminder_email" as LivePublishRequirementCode,
-      ready: input.liveReminderEmailReady ?? false,
-    });
-  }
-
   if (mode === "commerce") {
     requirements.push({ code: "interaction_script", ready: input.interactionScriptReady });
   }

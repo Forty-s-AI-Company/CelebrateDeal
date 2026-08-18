@@ -58,6 +58,11 @@ const mocks = vi.hoisted(() => ({
   liveStudioDraftUpdateMany: vi.fn(),
   liveProductDeleteMany: vi.fn(),
   liveProductCreate: vi.fn(),
+  liveNotificationRuleFindMany: vi.fn(),
+  liveNotificationRuleCreate: vi.fn(),
+  liveNotificationRuleUpdate: vi.fn(),
+  liveNotificationRuleDeleteMany: vi.fn(),
+  emailDeliveryUpdateMany: vi.fn(),
   createLiveReminderReconciliationSnapshot: vi.fn(),
   queueLiveReminderReconciliation: vi.fn(),
   productFindMany: vi.fn(),
@@ -66,6 +71,7 @@ const mocks = vi.hoisted(() => ({
   videoUpdate: vi.fn(),
   registrationFormFindFirst: vi.fn(),
   messageTemplateFindFirst: vi.fn(),
+  messageTemplateFindMany: vi.fn(),
   messageTemplateCreate: vi.fn(),
   messageTemplateUpdate: vi.fn(),
   interactionScriptFindFirst: vi.fn(),
@@ -249,6 +255,13 @@ vi.mock("@/lib/db", () => ({
     imageAsset: { findFirst: mocks.imageAssetFindFirst },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, updateMany: mocks.liveUpdateMany },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
+    liveNotificationRule: {
+      findMany: mocks.liveNotificationRuleFindMany,
+      create: mocks.liveNotificationRuleCreate,
+      update: mocks.liveNotificationRuleUpdate,
+      deleteMany: mocks.liveNotificationRuleDeleteMany,
+    },
+    emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
     product: { findMany: mocks.productFindMany },
     video: {
@@ -259,6 +272,7 @@ vi.mock("@/lib/db", () => ({
     messageTemplate: {
       create: mocks.messageTemplateCreate,
       findFirst: mocks.messageTemplateFindFirst,
+      findMany: mocks.messageTemplateFindMany,
       update: mocks.messageTemplateUpdate,
     },
     $transaction: mocks.transaction,
@@ -760,6 +774,12 @@ beforeEach(() => {
   mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
   mocks.liveProductDeleteMany.mockResolvedValue({ count: 1 });
   mocks.liveProductCreate.mockResolvedValue({ id: "live-product-1" });
+  mocks.liveNotificationRuleFindMany.mockResolvedValue([]);
+  mocks.liveNotificationRuleCreate.mockResolvedValue({ id: "notification-rule-1" });
+  mocks.liveNotificationRuleUpdate.mockResolvedValue({ id: "notification-rule-1" });
+  mocks.liveNotificationRuleDeleteMany.mockResolvedValue({ count: 0 });
+  mocks.emailDeliveryUpdateMany.mockResolvedValue({ count: 0 });
+  mocks.messageTemplateFindMany.mockResolvedValue([]);
   mocks.createLiveReminderReconciliationSnapshot.mockImplementation((input: Record<string, unknown>) => ({
     ...input,
     templateId: (input.template as { id?: string } | null)?.id ?? null,
@@ -834,6 +854,13 @@ beforeEach(() => {
     live: { create: mocks.liveCreate, findMany: mocks.liveFindMany, update: mocks.liveUpdate },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
+    liveNotificationRule: {
+      findMany: mocks.liveNotificationRuleFindMany,
+      create: mocks.liveNotificationRuleCreate,
+      update: mocks.liveNotificationRuleUpdate,
+      deleteMany: mocks.liveNotificationRuleDeleteMany,
+    },
+    emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
     product: { findMany: mocks.productFindMany },
   }));
   mocks.redirect.mockImplementation((path: string) => {
@@ -2007,7 +2034,7 @@ describe("upsertLiveAction", () => {
     }));
   });
 
-  it("requires a reminder email for a content schedule before claiming its draft", async () => {
+  it("allows a content schedule with no optional notification rules", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("studioPreset", "CONTENT");
@@ -2016,11 +2043,77 @@ describe("upsertLiveAction", () => {
     formData.delete("interactionScriptId");
     formData.delete("liveReminderTemplateId");
 
-    await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
-    );
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "scheduled", liveReminderTemplateId: null }),
+    });
+    expect(mocks.liveNotificationRuleCreate).not.toHaveBeenCalled();
+  });
+
+  it("reparses notification rules atomically without clearing or cancelling the legacy reminder", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    mocks.messageTemplateFindMany.mockResolvedValue([
+      { id: "reminder-rule-template", vendorId: "vendor-1", channel: "email", trigger: "live_reminder", isActive: true },
+      { id: "followup-rule-template", vendorId: "vendor-1", channel: "email", trigger: "post_live_followup", isActive: true },
+    ]);
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "scheduled");
+    formData.set("notificationRules", JSON.stringify([
+      { id: "", trigger: "before_live", messageTemplateId: "reminder-rule-template", offsetMinutes: 60, sortOrder: 7, isActive: true },
+      { id: "", trigger: "post_live_followup", messageTemplateId: "followup-rule-template", offsetMinutes: 15, sortOrder: 7, isActive: true },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ liveReminderTemplateId: "reminder-template-1" }),
+    }));
+    expect(mocks.liveNotificationRuleCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(1, { data: expect.objectContaining({ trigger: "before_live", sortOrder: 0 }) });
+    expect(mocks.liveNotificationRuleCreate).toHaveBeenNthCalledWith(2, { data: expect.objectContaining({ trigger: "post_live_followup", sortOrder: 0 }) });
+    expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["duplicate offsets", [
+      { id: "", trigger: "before_live", messageTemplateId: "reminder-rule-template", offsetMinutes: 60, sortOrder: 0, isActive: true },
+      { id: "", trigger: "before_live", messageTemplateId: "reminder-rule-template", offsetMinutes: 60, sortOrder: 1, isActive: true },
+    ]],
+    ["more than three before-live rules", [10, 20, 30, 40].map((offsetMinutes) => ({
+      id: "", trigger: "before_live", messageTemplateId: "reminder-rule-template", offsetMinutes, sortOrder: 0, isActive: true,
+    }))],
+  ])("rejects %s before database reconciliation", async (_label, rules) => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("notificationRules", JSON.stringify(rules));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/new?error=invalid_draft&draft=draft-1");
+    expect(mocks.messageTemplateFindMany).not.toHaveBeenCalled();
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
-    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a rule template is from another tenant or has the wrong trigger", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.messageTemplateFindMany.mockResolvedValue([
+      { id: "followup-rule-template", vendorId: "vendor-2", channel: "email", trigger: "live_reminder", isActive: true },
+    ]);
+    const formData = liveFormData();
+    formData.set("notificationRules", JSON.stringify([
+      { id: "", trigger: "post_live_followup", messageTemplateId: "followup-rule-template", offsetMinutes: 15, sortOrder: 0, isActive: true },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/new?error=invalid_reference&draft=draft-1");
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveNotificationRuleCreate).not.toHaveBeenCalled();
   });
 
   it("keeps an explicit commerce setup blocked when its product and script are absent", async () => {

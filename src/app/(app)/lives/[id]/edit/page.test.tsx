@@ -82,6 +82,7 @@ const live = {
   replayAvailableUntil: new Date("2026-08-09T01:00:00.000Z"),
   quotaPolicy: null,
   products: [],
+  notificationRules: [],
 };
 
 beforeEach(() => {
@@ -115,7 +116,11 @@ describe("EditLivePage unified Live Studio", () => {
     expect(mocks.templateFindMany).toHaveBeenCalledWith({
       where: {
         vendorId: "vendor-1",
-        OR: [REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE, LIVE_REMINDER_EMAIL_TEMPLATE_WHERE],
+        OR: [
+          REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+          LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+          { channel: "email", trigger: "post_live_followup", isActive: true },
+        ],
       },
       select: { id: true, name: true, channel: true, trigger: true, subject: true, body: true },
       orderBy: { createdAt: "desc" },
@@ -239,6 +244,42 @@ describe("EditLivePage unified Live Studio", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("正在分批更新已驗證報名者的開播提醒");
+  });
+
+  it("hydrates existing rules in stable order and warns when a rule template is unavailable", async () => {
+    mocks.liveFindFirst.mockResolvedValue({
+      ...live,
+      interactionScriptId: null,
+      notificationRules: [{
+        id: "rule-post-1",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        messageTemplateId: "missing-followup",
+        trigger: "post_live_followup",
+        offsetMinutes: 15,
+        sortOrder: 0,
+        isActive: true,
+      }],
+    });
+
+    const html = renderToStaticMarkup(await EditLivePage({
+      params: Promise.resolve({ id: "live-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(html).toContain("目前有通知規則綁定到已停用、已刪除或類型不符的 Email 模板");
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialValues: expect.objectContaining({
+        notificationRules: [{
+          id: "rule-post-1",
+          messageTemplateId: "missing-followup",
+          trigger: "post_live_followup",
+          offsetMinutes: 15,
+          sortOrder: 0,
+          isActive: true,
+        }],
+      }),
+    }), undefined);
   });
 
   it("warns and unbinds a notification template that cannot send registration email", async () => {
