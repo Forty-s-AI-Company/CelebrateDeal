@@ -71,6 +71,7 @@ vi.mock("@/lib/stream-usage-client", () => ({ postStreamUsageHeartbeat: vi.fn() 
 vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-visitor-id" }));
 
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
+import { trackClientAnalytics } from "@/lib/client-analytics";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
 import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
@@ -92,7 +93,7 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
     ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
     : value.type === PersistentMiniPlayerControls
       ? PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0])
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard"].includes(value.type.name)
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard", "ExternalNavigationConfirmDialog"].includes(value.type.name)
         ? (value.type as (props: Record<string, unknown>) => unknown)(value.props)
     : value.props.children;
 
@@ -110,7 +111,7 @@ function textContent(value: unknown): string {
     ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
     : value.type === PersistentMiniPlayerControls
       ? textContent(PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0]))
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard"].includes(value.type.name)
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard", "ExternalNavigationConfirmDialog"].includes(value.type.name)
         ? textContent((value.type as (props: Record<string, unknown>) => unknown)(value.props))
       : textContent(value.props.children);
 }
@@ -1032,6 +1033,148 @@ describe("LivePlayback checkout", () => {
     tree = renderLive({ interactionEvents });
     expect(checkoutErrors(tree)).toHaveLength(1);
     expect(textContent(checkoutErrors(tree)[0]?.props.children)).toBe("目前無法開啟這個連結，請稍後再試。");
+    expect(findElements(tree, (element) => element.props.role === "dialog")).toHaveLength(0);
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("pauses for external product intent, keeps cancel side-effect free, and confirms only once", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", {
+      location: { href: "https://app.example.test/live/demo", search: "" },
+      localStorage: {},
+    });
+    const products = live.products.map((product) => product.id === "test-fixture-product-1"
+      ? { ...product, checkoutUrl: "https://merchant.example.test/buy" }
+      : product);
+    const interactionEvents = [productSpotlightEvent("external-product", 0, "test-fixture-product-1")];
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products, interactionEvents });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    const pause = vi.fn();
+    if (!video) throw new Error("Expected video element");
+    (video.props.ref as { current: unknown }).current = { pause };
+    const buy = checkoutButtons(tree).find((button) => textContent(button.props.children) === "立即搶購");
+    if (!buy) throw new Error("Expected spotlight checkout button");
+
+    await (buy.props.onClick as () => Promise<void>)();
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products, interactionEvents });
+    const dialog = findElements(tree, (element) => element.props.role === "dialog")[0];
+    expect(pause).toHaveBeenCalledOnce();
+    expect(dialog?.props["aria-modal"]).toBe("true");
+    expect(textContent(dialog)).toContain("離開後直播聲音會中斷");
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+
+    const cancel = findElements(dialog, (element) => element.type === "button" && textContent(element.props.children) === "留在直播")[0];
+    (cancel?.props.onClick as () => void)();
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products, interactionEvents });
+    expect(findElements(tree, (element) => element.props.role === "dialog")).toHaveLength(0);
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+
+    await (checkoutButtons(tree).find((button) => textContent(button.props.children) === "立即搶購")?.props.onClick as () => Promise<void>)();
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products, interactionEvents });
+    const confirmDialog = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "ExternalNavigationConfirmDialog")[0];
+    if (!confirmDialog) throw new Error("Expected external navigation dialog component");
+    const confirm = confirmDialog.props.onConfirm as () => Promise<void>;
+    const firstConfirm = confirm();
+    const duplicateConfirm = confirm();
+    const confirmingTree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products, interactionEvents });
+    const confirmingButton = findElements(confirmingTree, (element) => element.type === "button" && textContent(element.props.children) === "正在前往…")[0];
+    expect(confirmingButton?.props.disabled).toBe(true);
+    expect(confirmingButton?.props["aria-busy"]).toBe(true);
+    await Promise.all([firstConfirm, duplicateConfirm]);
+
+    expect(vi.mocked(trackClientAnalytics).mock.calls.filter(([event]) => event.eventType === "product_click")).toHaveLength(1);
+    expect(window.location.href).toBe("https://merchant.example.test/buy");
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("pauses for external CTA intent and keeps cancel and duplicate confirm one-shot", async () => {
+    const open = vi.fn();
+    const pendingAnalytics = deferred<boolean>();
+    vi.mocked(trackClientAnalytics).mockReturnValueOnce(pendingAnalytics.promise);
+    vi.stubGlobal("window", { location: { search: "" }, localStorage: {}, open });
+    const interactionEvents = [{
+      id: "external-cta",
+      eventType: "cta_switch",
+      triggerSec: 0,
+      title: "外部活動",
+      message: null,
+      productId: null,
+      ctaLabel: "查看外部活動",
+      ctaUrl: "https://merchant.example.test/campaign",
+      role: null,
+    }];
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    const pause = vi.fn();
+    if (!video) throw new Error("Expected video element");
+    (video.props.ref as { current: unknown }).current = { pause };
+    const cta = findElements(tree, (element) => element.props["aria-label"] === "商家預設腳本導購：查看外部活動")[0];
+    await (cta?.props.onClick as () => Promise<void>)();
+
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+    expect(pause).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled();
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+    const cancel = findElements(tree, (element) => element.type === "button" && textContent(element.props.children) === "留在直播")[0];
+    (cancel?.props.onClick as () => void)();
+    expect(open).not.toHaveBeenCalled();
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+    await (findElements(tree, (element) => element.props["aria-label"] === "商家預設腳本導購：查看外部活動")[0]?.props.onClick as () => Promise<void>)();
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+    const confirmDialog = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "ExternalNavigationConfirmDialog")[0];
+    const confirm = confirmDialog?.props.onConfirm as () => Promise<void>;
+    const firstConfirm = confirm();
+    const duplicateConfirm = confirm();
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://merchant.example.test/campaign", "_blank", "noopener,noreferrer");
+    expect(vi.mocked(trackClientAnalytics).mock.results[0]?.value).toBe(pendingAnalytics.promise);
+    await Promise.all([firstConfirm, duplicateConfirm]);
+
+    expect(vi.mocked(trackClientAnalytics).mock.calls.filter(([event]) => event.eventType === "cta_click")).toHaveLength(1);
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://merchant.example.test/campaign", "_blank", "noopener,noreferrer");
+  });
+
+  it("keeps internal products immediate without a dialog or playback pause", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { location: { search: "" }, localStorage: {} });
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    const pause = vi.fn();
+    if (!video) throw new Error("Expected video element");
+    (video.props.ref as { current: unknown }).current = { pause };
+    const navigationComponent = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    (navigationComponent?.props.onPanelChange as (panel: "products") => void)("products");
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const buy = checkoutButtons(tree)[0];
+    await (buy.props.onClick as () => Promise<void>)();
+
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/checkout/test-fixture-vendor-1/test-fixture-product-1");
+    expect(findElements(renderLive({ videoUrl: "https://video.example.test/recording.mp4" }), (element) => element.props.role === "dialog")).toHaveLength(0);
+    expect(pause).not.toHaveBeenCalled();
+    expect(vi.mocked(trackClientAnalytics).mock.calls.filter(([event]) => event.eventType === "product_click")).toHaveLength(1);
+  });
+
+  it("fails closed before intent for an invalid external product URL", async () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo", search: "" }, localStorage: {} });
+    const products = [{ ...live.products[0], checkoutUrl: "javascript:alert(document.cookie)" }, live.products[1]];
+    const interactionEvents = [productSpotlightEvent("unsafe-product", 0, "test-fixture-product-1")];
+    const tree = renderLive({ products, interactionEvents });
+    await (checkoutButtons(tree)[0].props.onClick as () => Promise<void>)();
+    const updated = renderLive({ products, interactionEvents });
+
+    expect(findElements(updated, (element) => element.props.role === "dialog")).toHaveLength(0);
+    expect(checkoutErrors(updated)).toHaveLength(1);
+    expect(trackClientAnalytics).not.toHaveBeenCalled();
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
   });
 
   it("labels merchant-configured interaction roles, product spotlights, and CTAs truthfully", () => {

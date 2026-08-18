@@ -813,6 +813,9 @@ function prioritizeProduct<T extends { id: string }>(products: T[], spotlightPro
 type LiveInteractionEvent = LivePageData["interactionEvents"][number];
 type LiveProduct = LivePageData["products"][number];
 type SpotlightCardState = "expanded" | "minimized" | "dismissed";
+type ExternalNavigationIntent =
+  | { kind: "product"; productId: string; label: string; url: string }
+  | { kind: "cta"; label: string; url: string };
 
 function resolveProductSpotlight(products: LiveProduct[], triggeredEvents: LiveInteractionEvent[]) {
   const latestProductEvent = [...triggeredEvents].reverse().find((event) => (
@@ -824,6 +827,68 @@ function resolveProductSpotlight(products: LiveProduct[], triggeredEvents: LiveI
     : undefined;
   const spotlightProduct = spotlightCardProduct ?? products[0];
   return { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts: prioritizeProduct(products, spotlightProduct) };
+}
+
+function ExternalNavigationConfirmDialog({
+  intent,
+  isConfirming,
+  onCancel,
+  onConfirm,
+}: {
+  intent: ExternalNavigationIntent | null;
+  isConfirming: boolean;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!intent || typeof document === "undefined") return;
+    cancelButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isConfirming) {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const first = cancelButtonRef.current;
+      const last = confirmButtonRef.current;
+      if (!first || !last) return;
+      const focusIsOutsideDialog = document.activeElement !== first && document.activeElement !== last;
+      if (event.shiftKey && (document.activeElement === first || focusIsOutsideDialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || focusIsOutsideDialog)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [intent, isConfirming, onCancel]);
+  if (!intent) return null;
+  const title = intent.kind === "product" ? "前往外部商品頁？" : "開啟外部連結？";
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true"
+      aria-labelledby="external-navigation-title" aria-describedby="external-navigation-description">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-950 shadow-2xl">
+        <h2 id="external-navigation-title" className="text-lg font-black">{title}</h2>
+        <p id="external-navigation-description" className="mt-2 text-sm leading-6 text-slate-600">
+          你即將離開直播前往「{intent.label}」。直播已暫停，離開後直播聲音會中斷；取消後請自行按播放繼續觀看。
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button ref={cancelButtonRef} type="button" onClick={onCancel} disabled={isConfirming} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-black disabled:opacity-60">
+            留在直播
+          </button>
+          <button ref={confirmButtonRef} type="button" onClick={() => void onConfirm()} disabled={isConfirming} aria-busy={isConfirming}
+            className="min-h-11 rounded-xl bg-orange-700 px-4 text-sm font-black text-white disabled:opacity-60">
+            {isConfirming ? "正在前往…" : "確認前往"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ProductSpotlightCard({
@@ -1246,6 +1311,125 @@ function LivePlaybackExperience({
   );
 }
 
+function useExternalNavigationIntent({
+  live,
+  latestCtaEvent,
+  admissionStatus,
+  referralCode,
+  videoRef,
+  checkoutNavigation,
+  streamUsage,
+  router,
+  setCheckoutError,
+  setIsPlaybackPaused,
+}: {
+  live: LivePageData;
+  latestCtaEvent: LiveInteractionEvent | undefined;
+  admissionStatus: LiveAdmissionStatus;
+  referralCode: string | null;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  checkoutNavigation: ReturnType<typeof useCheckoutNavigationLock>;
+  streamUsage: ReturnType<typeof useStreamUsageTracker>;
+  router: ReturnType<typeof useRouter>;
+  setCheckoutError: (message: string | null) => void;
+  setIsPlaybackPaused: (paused: boolean) => void;
+}) {
+  const [intent, setIntent] = useState<ExternalNavigationIntent | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const confirmLockRef = useRef(false);
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
+  async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string) {
+    if (!checkoutNavigation.begin()) return;
+    setCheckoutError(null);
+    void trackClientAnalytics({
+      liveId: live.id,
+      vendorId: live.vendorId,
+      eventType: "product_click",
+      payload: { productId: product.id, ref: referralCode },
+    });
+    let keepNavigationLocked = false;
+    try {
+      const started = await requestCheckout({ vendorId: live.vendorId, productId: product.id, checkoutUrl, navigateInternal: (path) => router.push(path) });
+      if (!started) setCheckoutError("目前無法完成結帳，請稍後再試。");
+      else if (!checkoutUrl) {
+        keepNavigationLocked = true;
+        checkoutNavigation.retainUntilTimeout(() => setCheckoutError("結帳頁載入逾時，請再試一次。"));
+      }
+    } finally {
+      if (!keepNavigationLocked) checkoutNavigation.release();
+    }
+  }
+
+  function openIntent(nextIntent: ExternalNavigationIntent) {
+    triggerElementRef.current = typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    videoRef.current?.pause();
+    setIsPlaybackPaused(true);
+    streamUsage.stop();
+    setCheckoutError(null);
+    setIntent(nextIntent);
+  }
+
+  async function trackProduct(productId: string) {
+    if (admissionStatus !== "admitted") return setCheckoutError("直播目前無法提供購買，請稍後再試。");
+    const product = live.products.find((item) => item.id === productId);
+    if (!product) return setCheckoutError("目前無法完成結帳，請稍後再試。");
+    if (!product.checkoutUrl) return completeProductCheckout(product);
+    const checkoutUrl = parseSafeExternalHttpUrl(product.checkoutUrl);
+    if (!checkoutUrl) return setCheckoutError("目前無法完成結帳，請稍後再試。");
+    openIntent({ kind: "product", productId: product.id, label: product.name, url: checkoutUrl });
+  }
+
+  async function trackCta() {
+    if (!latestCtaEvent?.ctaLabel) return;
+    if (admissionStatus !== "admitted") return setCheckoutError("直播目前無法提供導購，請稍後再試。");
+    const ctaUrl = parseSafeExternalHttpUrl(latestCtaEvent.ctaUrl);
+    if (!ctaUrl) return setCheckoutError("目前無法開啟這個連結，請稍後再試。");
+    openIntent({ kind: "cta", label: latestCtaEvent.ctaLabel, url: ctaUrl });
+  }
+
+  async function confirm() {
+    if (!intent || confirmLockRef.current) return;
+    confirmLockRef.current = true;
+    setIsConfirming(true);
+    try {
+      if (intent.kind === "product") {
+        const product = live.products.find((item) => item.id === intent.productId);
+        if (!product || admissionStatus !== "admitted") return setCheckoutError("目前無法完成結帳，請稍後再試。");
+        await completeProductCheckout(product, intent.url);
+      } else {
+        void trackClientAnalytics({ liveId: live.id, vendorId: live.vendorId, eventType: "cta_click", payload: { label: intent.label, ref: referralCode } });
+        if (!openExternalUrl(intent.url)) setCheckoutError("目前無法開啟這個連結，請稍後再試。");
+        await Promise.resolve();
+      }
+    } finally {
+      setIntent(null);
+      setIsConfirming(false);
+      confirmLockRef.current = false;
+      triggerElementRef.current = null;
+    }
+  }
+
+  return {
+    intent,
+    isConfirming,
+    isPending: intent !== null,
+    trackProduct,
+    trackCta,
+    confirm,
+    cancel: () => {
+      if (confirmLockRef.current) return;
+      const trigger = triggerElementRef.current;
+      setIntent(null);
+      triggerElementRef.current = null;
+      if (trigger && typeof requestAnimationFrame === "function") requestAnimationFrame(() => trigger.focus());
+      else trigger?.focus();
+    },
+  };
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1347,6 +1531,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const scheduledMessages = (live.scheduledMessages ?? []).filter((message) => message.triggerSec <= currentSeconds);
   const latestCtaEvent = [...triggeredEvents].reverse().find((event) => event.eventType === "cta_switch" && event.ctaLabel);
   const { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts } = resolveProductSpotlight(live.products, triggeredEvents);
+  const externalNavigation = useExternalNavigationIntent({ live, latestCtaEvent, admissionStatus, referralCode, videoRef,
+    checkoutNavigation, streamUsage, router, setCheckoutError, setIsPlaybackPaused });
   useEffect(() => {
     if (!isPlayableRuntime || admissionStatus !== "admitted") return;
     void trackClientAnalytics({
@@ -1409,55 +1595,6 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       eventType: "play_progress",
       payload: { seconds: checkpoint, ref: referralCode },
     });
-  }
-
-  async function trackProduct(productId: string) {
-    if (admissionStatus !== "admitted") {
-      setCheckoutError("直播目前無法提供購買，請稍後再試。");
-      return;
-    }
-    if (!checkoutNavigation.begin()) return;
-    setCheckoutError(null);
-    void trackClientAnalytics({
-      liveId: live.id,
-      vendorId: live.vendorId,
-      eventType: "product_click",
-      payload: { productId, ref: referralCode },
-    });
-
-    let keepNavigationLocked = false;
-    try {
-      const product = live.products.find((item) => item.id === productId);
-      const checkoutStarted = await requestCheckout({ vendorId: live.vendorId, productId, checkoutUrl: product?.checkoutUrl, navigateInternal: (path) => router.push(path) });
-      if (!checkoutStarted) {
-        setCheckoutError("目前無法完成結帳，請稍後再試。");
-      } else if (!product?.checkoutUrl) {
-        keepNavigationLocked = true;
-        checkoutNavigation.retainUntilTimeout(() => {
-          setCheckoutError("結帳頁載入逾時，請再試一次。");
-        });
-      }
-    } finally {
-      if (!keepNavigationLocked) checkoutNavigation.release();
-    }
-  }
-
-  async function trackCta() {
-    if (!latestCtaEvent?.ctaLabel) return;
-    if (admissionStatus !== "admitted") {
-      setCheckoutError("直播目前無法提供導購，請稍後再試。");
-      return;
-    }
-    setCheckoutError(null);
-    void trackClientAnalytics({
-      liveId: live.id,
-      vendorId: live.vendorId,
-      eventType: "cta_click",
-      payload: { label: latestCtaEvent.ctaLabel, ref: referralCode },
-    });
-    if (!openExternalUrl(latestCtaEvent.ctaUrl)) {
-      setCheckoutError("目前無法開啟這個連結，請稍後再試。");
-    }
   }
 
   function handlePlaybackEnded() {
@@ -1537,9 +1674,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             spotlightCardProduct={spotlightCardProduct}
             spotlightCardState={spotlightCardState}
             sortedProducts={sortedProducts}
-            checkoutNavigation={checkoutNavigation}
-            trackCta={trackCta}
-            trackProduct={trackProduct}
+            checkoutNavigation={{ isLocked: checkoutNavigation.isLocked || externalNavigation.isPending }}
+            trackCta={externalNavigation.trackCta}
+            trackProduct={externalNavigation.trackProduct}
             panel={panel}
             onPanelChange={setPanel}
             onSpotlightStateChange={setSpotlightCardState}
@@ -1553,6 +1690,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         ) : (
           <LiveUnavailableNotice live={live} />
         )}
+        <ExternalNavigationConfirmDialog
+          intent={externalNavigation.intent}
+          isConfirming={externalNavigation.isConfirming}
+          onCancel={externalNavigation.cancel}
+          onConfirm={externalNavigation.confirm}
+        />
         <LiveAdmissionOverlay status={visibleAdmissionStatus} />
       </section>
     </main>
