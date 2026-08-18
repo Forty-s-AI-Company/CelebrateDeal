@@ -13,6 +13,10 @@ describe("announcement feed", () => {
   it("keeps the canonical feed truthful and bounded", () => {
     expect(ANNOUNCEMENT_FEED).toHaveLength(1);
     const [latest] = ANNOUNCEMENT_FEED;
+    expect(latest.id).toBe("goal-progress-2026-08-18-v2");
+    expect(latest.version).toBe("2026-08-18-v2");
+    expect(latest.summary).toContain("本階段估算 82%");
+    expect(latest.progressPercent).toBe(82);
     expect(latest.progressPercent).toBeGreaterThanOrEqual(0);
     expect(latest.progressPercent).toBeLessThanOrEqual(100);
     expect(latest.completed).toEqual(expect.arrayContaining([
@@ -20,10 +24,27 @@ describe("announcement feed", () => {
       "觀看流程已完成。",
       "商品浮窗已完成。",
       "播放器已完成。",
+      "Email 3/3/8 設定與 before/during/post 排程已通過 unit + DB 驗證。",
+      "公告中心 Playwright 7/7 已通過。",
+      "staging Preview READY，health/database check 已通過。",
     ]));
-    expect(latest.incomplete.join(" ")).toContain("Email 排程正在修正");
-    expect(latest.incomplete.join(" ")).toContain("staging 驗證尚待完成");
-    expect(latest.incomplete.join(" ")).toContain("完整 E2E 尚未完成");
+    expect(latest.incomplete).toEqual(expect.arrayContaining([
+      "自訂結帳欄位尚未完成。",
+      "完整一條龍外部 E2E 與使用者 staging 驗收尚未完成。",
+      "Hobby staging 尚未註冊每分鐘 Cron；endpoint 可人工觸發，尚不宣稱自動執行。",
+      "正式金流仍排除於本階段驗證。",
+    ]));
+    expect(latest.changes).toEqual(expect.arrayContaining([
+      "Email 冪等／legacy cutover／lifecycle 已納入目前里程碑。",
+      "公告視窗已提供進站最新消息與版本抑制。",
+      "固定 staging 已更新。",
+    ]));
+    expect(latest.nextSteps).toEqual(expect.arrayContaining([
+      "等待使用者驗證 staging。",
+      "完成自訂結帳欄位。",
+      "完成完整一條龍外部 E2E。",
+      "go-live 前決定採用 Pro 或外部 scheduler。",
+    ]));
   });
 
   it("sorts announcements from newest to oldest without mutating the feed", () => {

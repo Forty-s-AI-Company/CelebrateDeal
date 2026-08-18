@@ -22,37 +22,41 @@ export const ANNOUNCEMENT_SUPPRESSION_STORAGE_KEY =
   "celebratedeal.announcement-center.suppression.v1";
 
 /**
- * 進站公告的唯一靜態來源。進度沿用目前 Goal 的 canonical readiness 75.5，
- * 以整數 76% 呈現；未通過驗證的 staging／完整 E2E 不在 completed 內。
+ * 進站公告的唯一靜態來源。82% 是本階段估算，不代表正式金流或完整外部 E2E 已完成。
  */
 export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
   {
-    id: "goal-progress-2026-08-18",
-    version: "2026-08-18-v1",
+    id: "goal-progress-2026-08-18-v2",
+    version: "2026-08-18-v2",
     publishedAt: "2026-08-18",
     title: "目前 Goal 進度更新",
-    summary: "核心報名、觀看、商品浮窗與播放器已完成；Email 排程仍在修正。",
-    progressPercent: 76,
+    summary: "本階段估算 82%：核心報名、觀看、商品浮窗與播放器已完成，Email 3/3/8 設定與排程驗證通過。",
+    progressPercent: 82,
     completed: [
       "核心報名流程已完成。",
       "觀看流程已完成。",
       "商品浮窗已完成。",
       "播放器已完成。",
+      "Email 3/3/8 設定與 before/during/post 排程已通過 unit + DB 驗證。",
+      "公告中心 Playwright 7/7 已通過。",
+      "staging Preview READY，health/database check 已通過。",
     ],
     incomplete: [
-      "Email 排程正在修正，尚未宣稱整體 Email 工作完成。",
       "自訂結帳欄位尚未完成。",
-      "完整 E2E 尚未完成。",
-      "staging 驗證尚待完成。",
+      "完整一條龍外部 E2E 與使用者 staging 驗收尚未完成。",
+      "Hobby staging 尚未註冊每分鐘 Cron；endpoint 可人工觸發，尚不宣稱自動執行。",
+      "正式金流仍排除於本階段驗證。",
     ],
     changes: [
-      "這次公告中心會在進站時提醒最新 Goal 狀態。",
-      "公告內容明確分開已完成項目與仍待驗證項目。",
+      "Email 冪等／legacy cutover／lifecycle 已納入目前里程碑。",
+      "公告視窗已提供進站最新消息與版本抑制。",
+      "固定 staging 已更新。",
     ],
     nextSteps: [
-      "完成 Email 排程修正並補上對應回歸證據。",
+      "等待使用者驗證 staging。",
       "完成自訂結帳欄位。",
-      "補齊完整 E2E 後，再進行 staging 驗證。",
+      "完成完整一條龍外部 E2E。",
+      "go-live 前決定採用 Pro 或外部 scheduler。",
     ],
   },
 ];
