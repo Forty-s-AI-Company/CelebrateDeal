@@ -98,4 +98,85 @@ describe("sendTransactionalEmail", () => {
     })).rejects.toMatchObject({ code: "configuration" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("changes only the platform mailbox display name and sends a normalized reply_to", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "email-brand-1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTransactionalEmail({
+      to: "recipient@example.test",
+      subject: "品牌通知",
+      text: "內容",
+      brand: {
+        version: 1,
+        senderName: "品牌 \"A\" \\ 團隊",
+        replyTo: "SUPPORT@EXAMPLE.TEST",
+      },
+    });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as Record<string, unknown>;
+    expect(body.from).toBe('"品牌 \\"A\\" \\\\ 團隊" <no-reply@example.test>');
+    expect(body.from).not.toContain("support@example.test");
+    expect(body.reply_to).toBe("support@example.test");
+    expect(body).not.toHaveProperty("replyTo");
+  });
+
+  it("appends one safe contact footer to text and html without creating a link", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "email-brand-2" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTransactionalEmail({
+      to: "recipient@example.test",
+      subject: "品牌通知",
+      text: "純文字內容",
+      html: "<p>HTML 內容</p>",
+      brand: { version: 1, contactUrl: "https://example.test/contact?a=1&b=2" },
+    });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as Record<string, string>;
+    expect(body.text).toBe("純文字內容\n\n聯絡主辦單位：https://example.test/contact?a=1&b=2");
+    expect(body.html).toContain("<p>聯絡主辦單位：https://example.test/contact?a=1&amp;b=2</p>");
+    expect(body.html).not.toContain("<a");
+    expect(body.html.match(/聯絡主辦單位/gu)).toHaveLength(1);
+  });
+
+  it("fails soft for invalid merchant brand fields and preserves the legacy payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "email-legacy-1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTransactionalEmail({
+      to: "recipient@example.test",
+      subject: "Legacy",
+      text: "原始內容",
+      brand: {
+        version: 1,
+        senderName: "攻擊\n名稱",
+        replyTo: "first@example.test,second@example.test",
+        contactUrl: "https://127.0.0.1/internal",
+      },
+    });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as Record<string, unknown>;
+    expect(body).toEqual(expect.objectContaining({
+      from: "CelebrateDeal Test <no-reply@example.test>",
+      text: "原始內容",
+    }));
+    expect(body).not.toHaveProperty("reply_to");
+  });
+
+  it("rejects an invalid platform EMAIL_FROM before making a provider request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("EMAIL_FROM", "attacker@example.test,other@example.test");
+
+    await expect(sendTransactionalEmail({
+      to: "recipient@example.test",
+      subject: "Test",
+      text: "Safe body",
+    })).rejects.toMatchObject({ code: "configuration" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

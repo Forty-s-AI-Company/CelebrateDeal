@@ -40,6 +40,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  classifyCloudflareOperationError,
   completeResumableUploadMapping,
   createDirectUploadMapping,
   createLiveInputMapping,
@@ -77,6 +78,17 @@ afterEach(() => {
 });
 
 describe("Cloudflare tenant resource preflight", () => {
+  it.each([
+    ["P2022", "database_schema", 503],
+    ["P1001", "database_unavailable", 503],
+    ["P2003", "database_constraint", 409],
+  ])("classifies Prisma %s without exposing database details", (code, expectedCode, status) => {
+    expect(classifyCloudflareOperationError({ code, message: "sensitive database details" })).toEqual({
+      code: expectedCode,
+      providerStatus: null,
+      status,
+    });
+  });
   it("does not create an external upload for an unknown vendor", async () => {
     mocks.vendorFindUnique.mockResolvedValue(null);
 

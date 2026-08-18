@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { buildCommissionDeduplicationKey } from "../../src/lib/affiliate-commission";
 import { formatCurrency } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp75SyntheticPassword!";
@@ -139,9 +140,9 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
 
     const snapshot = async () => ({
       vendor: await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({ where: { id: tracking.id } }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({ where: { vendorId: vendor.id } }),
       trackingCompositeCount: await db.trackingSetting.count({
         where: { id: tracking.id, vendorId: vendor.id },
@@ -151,9 +152,9 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
         select: { id: true, vendorId: true },
       }),
       user: await db.user.findUniqueOrThrow({ where: { id: user.id } }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({ where: { id: membership.id } }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({ where: { vendorId: vendor.id } }),
       membershipUserCount: await db.vendorMember.count({ where: { userId: user.id } }),
       activeAccountantMembershipCount: await db.vendorMember.count({
@@ -170,7 +171,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
         select: { id: true, vendorId: true, userId: true },
       }),
       affiliate: await db.affiliate.findUniqueOrThrow({ where: { id: affiliate.id } }),
-      affiliateCount: await db.affiliate.count(),
+      affiliateCount: await db.affiliate.count({ where: { id: affiliate.id } }),
       affiliateVendorCount: await db.affiliate.count({ where: { vendorId: vendor.id } }),
       activeAffiliateCount: await db.affiliate.count({
         where: { vendorId: vendor.id, isActive: true },
@@ -191,7 +192,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
         where: { id: { in: clicks.map((click) => click.id) } },
         orderBy: { id: "asc" },
       }),
-      clickCount: await db.affiliateClick.count(),
+      clickCount: await db.affiliateClick.count({ where: { id: { in: clicks.map((click) => click.id) } } }),
       clickVendorCount: await db.affiliateClick.count({ where: { vendorId: vendor.id } }),
       clickAffiliateCount: await db.affiliateClick.count({ where: { affiliateId: affiliate.id } }),
       convertedClickCount: await db.affiliateClick.count({
@@ -223,7 +224,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
         where: { id: { in: commissions.map((commission) => commission.id) } },
         orderBy: { id: "asc" },
       }),
-      commissionCount: await db.affiliateCommission.count(),
+      commissionCount: await db.affiliateCommission.count({ where: { id: { in: commissions.map((commission) => commission.id) } } }),
       commissionVendorCount: await db.affiliateCommission.count({ where: { vendorId: vendor.id } }),
       commissionAffiliateCount: await db.affiliateCommission.count({
         where: { affiliateId: affiliate.id },
@@ -253,7 +254,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
         select: { id: true, vendorId: true, affiliateId: true },
       }),
       payout: await db.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } }),
-      payoutCount: await db.affiliatePayout.count(),
+      payoutCount: await db.affiliatePayout.count({ where: { id: payout.id } }),
       payoutVendorCount: await db.affiliatePayout.count({ where: { vendorId: vendor.id } }),
       payoutAffiliateCount: await db.affiliatePayout.count({ where: { affiliateId: affiliate.id } }),
       payoutStatusCount: await db.affiliatePayout.count({
@@ -276,7 +277,8 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     const before = await snapshot();
     // Next.js serializes the already-requested dynamic route segment in the
     // redirect shell. Treat that route identity separately from DB-backed data.
-    const routeIdentityCanary = affiliate.id;
+    const detailPath = `/affiliates/${affiliate.id}`;
+    const routeIdentityCanaries = [affiliate.id, detailPath];
     const rawSensitiveCanaries = [
       affiliate.name,
       affiliate.code,
@@ -304,56 +306,39 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
       String(payout.adjustmentAmountCents),
       String(payout.finalAmountCents),
     ].filter((value): value is string => typeof value === "string" && value.length > 0);
-    const deniedDashboardCanaries = [routeIdentityCanary, ...rawSensitiveCanaries].filter(
+    const deniedDashboardCanaries = rawSensitiveCanaries.filter(
       (value) => value !== affiliate.name && value !== affiliate.code,
     );
 
     const posts: string[] = [];
     const external: string[] = [];
     const invalid: string[] = [];
-    const detailPath = `/affiliates/${affiliate.id}`;
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
       if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) external.push(request.url());
       if (url.hostname.endsWith(".invalid")) invalid.push(request.url());
     });
-    await page.route("**/affiliates/**", async (route) => {
-      if (new URL(route.request().url()).pathname !== detailPath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: detailPath,
+      routeIdentityCanaries,
+      protectedPayloadCanaries: rawSensitiveCanaries,
+      documentCanaries: deniedDashboardCanaries,
+      transport: {
+        kind: "http-redirect",
+        status: 307,
+        location: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        "佣金紀錄",
+        "推廣設定",
+        "最近來源事件",
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === detailPath && response.status() === 307,
-    );
-    const finalResponse = await page.goto(detailPath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe("/dashboard?error=insufficient_role");
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe("/dashboard?error=insufficient_role");
-    for (const canary of rawSensitiveCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const heading of ["佣金紀錄", "推廣設定", "最近來源事件"]) {
-      expect(intercepted.current?.body).not.toContain(heading);
-    }
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

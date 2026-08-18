@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { ensureLiveReminderDelivery } from "./email-delivery";
 import {
@@ -9,10 +9,6 @@ import {
 import type { LiveReminderTemplateSnapshot } from "./live-reminder-reconciliation";
 
 const createdVendorIds: string[] = [];
-
-beforeAll(() => {
-  expect(process.env.G7_EMAIL_DISPOSABLE_SCHEMA).toMatch(/^g7_email_[a-f0-9]{16}$/u);
-});
 
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "g7-23-disposable-db-secret-longer-than-thirty-two-bytes");

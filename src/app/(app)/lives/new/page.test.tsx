@@ -49,6 +49,7 @@ import {
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
+import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
 
 describe("NewLivePage data minimization", () => {
   beforeEach(() => {
@@ -188,7 +189,11 @@ describe("NewLivePage data minimization", () => {
       select: { id: true, revision: true, payload: true, updatedAt: true },
     });
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({
-      initialDraft: expect.objectContaining({ id: "draft-1", revision: 4 }),
+      initialDraft: expect.objectContaining({
+        id: "draft-1",
+        revision: 4,
+        payload: expect.objectContaining({ flowVersion: 2, activeStep: 0, title: "可復原直播" }),
+      }),
     }), undefined);
   });
 
@@ -196,7 +201,7 @@ describe("NewLivePage data minimization", () => {
     mocks.liveStudioDraftFindMany.mockResolvedValue([
       {
         id: "draft-latest",
-        payload: { title: "週五新品直播", activeStep: 3 },
+        payload: { ...emptyLiveStudioDraft(), title: "週五新品直播", activeStep: 3 },
         updatedAt: new Date("2026-08-08T01:00:00.000Z"),
       },
       {
@@ -221,7 +226,8 @@ describe("NewLivePage data minimization", () => {
     });
     expect(html).toContain("找到未完成的直播草稿");
     expect(html).toContain("週五新品直播");
-    expect(html).toContain("第 4 步：直播與互動");
+    expect(html).toContain("第 4 步：報名頁");
+    expect(html).toContain("第 3 步：商品優惠");
     expect(html).toContain("/lives/new?draft=draft-latest");
     expect(html).toContain("會員回饋場");
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ initialDraft: undefined }), undefined);

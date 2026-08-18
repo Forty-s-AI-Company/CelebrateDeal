@@ -13,7 +13,7 @@ import {
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
-const liveStudioStepLabels = ["基本資料", "商品與轉換", "媒體", "直播與互動", "預覽發布"] as const;
+const liveStudioStepLabels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
 
 type ResumableLiveDraft = {
   id: string;
@@ -153,7 +153,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="建立直播間" description="用五個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
+      <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
       {draft && !initialDraft ? (
         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           指定的直播草稿已失效、已完成或不屬於目前商店。系統沒有載入任何內容，你可以改選下方仍有效的草稿。

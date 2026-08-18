@@ -41,10 +41,10 @@ describe("live publish readiness", () => {
       mode: "commerce",
       requirements: [
         { code: "media", ready: true },
+        { code: "products", ready: true },
         { code: "registration_form", ready: false },
         { code: "registration_email", ready: true },
         { code: "live_reminder_email", ready: true },
-        { code: "products", ready: true },
         { code: "interaction_script", ready: false },
       ],
       blockers: [

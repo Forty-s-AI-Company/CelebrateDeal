@@ -51,7 +51,7 @@ test("same-team non-owner cannot read another member's template edit URL", async
     await ownerPage.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY WP86 B 私有主標題");
     await ownerPage.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY WP86 B CTA");
     await ownerPage.getByRole("button", { name: "建立原始頁" }).click();
-    await expect(ownerPage.getByRole("status")).toContainText("原始頁與第一個模板版本已建立");
+    await expect(ownerPage.getByRole("status").filter({ hasText: "原始頁與第一個模板版本已建立" })).toBeVisible();
 
     const template = await db.teamFunnelTemplate.findFirstOrThrow({
       where: { vendorId: fixture.leader.vendorId, name: `${TEAM_FUNNEL_TEST_ONLY.templateName} WP86 B` },

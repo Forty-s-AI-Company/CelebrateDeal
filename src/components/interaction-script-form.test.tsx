@@ -195,6 +195,27 @@ describe("InteractionScriptForm", () => {
 
     expect(preventDefault).toHaveBeenCalledOnce();
   });
+
+  it("makes the video and timeline outline scroll region keyboard-focusable", () => {
+    const form = renderForm();
+    const regions = findElements(form, (candidate) => (
+      candidate.props.className === "min-h-0 flex-1 overflow-y-auto p-4"
+      && findElements(candidate.props.children, (child) => (
+        child.props["data-testid"] === "interaction-timeline-outline"
+      )).length === 1
+    ));
+
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.props).toMatchObject({
+      role: "region",
+      "aria-label": "綁定影片與時間點大綱",
+      tabIndex: 0,
+      className: "min-h-0 flex-1 overflow-y-auto p-4",
+    });
+    expect(findElements(regions[0]?.props.children, (child) => (
+      child.props["data-testid"] === "interaction-timeline-outline"
+    ))).toHaveLength(1);
+  });
 });
 
 function renderNewForm(roles: InteractionRole[] = []) {

@@ -118,10 +118,10 @@ export function TeamTemplateList({ templates, csrfToken, action }: { templates: 
       <Card>
         <div className="grid gap-3">
           {templates.map((template) => (
-            <article key={template.id} className="grid gap-4 rounded-lg border border-border p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <article key={template.id} aria-labelledby={`team-template-${template.id}`} className="grid gap-4 rounded-lg border border-border p-4 lg:grid-cols-[1fr_auto] lg:items-center">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-semibold text-slate-950">{template.name}</h2>
+                  <h2 id={`team-template-${template.id}`} className="font-semibold text-slate-950">{template.name}</h2>
                   <Badge tone={template.status === "ACTIVE" ? "green" : "gray"}>{template.status === "ACTIVE" ? "已發布" : "草稿"}</Badge>
                   <Badge tone="blue">v{template.latestVersion}</Badge>
                 </div>

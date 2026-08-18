@@ -57,7 +57,7 @@ test("member A cannot publish a template bound to member B's webinar through DOM
     await page.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY WP25 A 主標題");
     await page.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY WP25 CTA");
     await page.getByRole("button", { name: "建立原始頁" }).click();
-    await expect(page.getByRole("status")).toContainText("原始頁與第一個模板版本已建立");
+    await expect(page.getByRole("status").filter({ hasText: "原始頁與第一個模板版本已建立" })).toBeVisible();
 
     const template = await db.teamFunnelTemplate.findFirstOrThrow({
       where: { vendorId: fixture.leader.vendorId, name: `${TEAM_FUNNEL_TEST_ONLY.templateName} WP25` },
@@ -104,7 +104,7 @@ test("member A cannot publish a template bound to member B's webinar through DOM
 
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "發布新版本" }).click();
-    await expect(page.getByRole("status")).toContainText("你沒有管理這個團隊模板的權限，或該資源已不存在。");
+    await expect(page.getByRole("alert").filter({ hasText: "你沒有管理這個團隊模板的權限，或該資源已不存在。" })).toHaveText("你沒有管理這個團隊模板的權限，或該資源已不存在。");
 
     expect(await db.teamFunnelTemplateVersion.count({ where: { templateId: template.id } })).toBe(versionCountBefore);
     await expect.poll(async () => db.partnerFunnelPage.findUniqueOrThrow({

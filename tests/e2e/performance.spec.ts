@@ -23,7 +23,15 @@ type PerformanceBudget = {
   scriptTransferBytes: number;
 };
 
-async function measurePage(page: Page) {
+async function measurePage(page: Page, expectedPath?: string) {
+  if (expectedPath) {
+    const escapedPath = expectedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await expect(page).toHaveURL(new RegExp(`${escapedPath}$`));
+  }
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
+  await expect(page.locator("body")).toBeVisible();
+
   return page.evaluate(() => {
     const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     if (!navigation) throw new Error("Navigation timing is unavailable.");
@@ -59,6 +67,12 @@ async function loginOwner(page: Page) {
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  // The performance test is not an MFA flow; mark this isolated local session
+  // verified after the normal login so the protected billing page is measured.
+  await db.userSession.updateMany({
+    where: { userId: fixture.userId, revokedAt: null },
+    data: { mfaVerifiedAt: new Date() },
+  });
 }
 
 test.beforeAll(async () => {
@@ -88,6 +102,14 @@ test.beforeAll(async () => {
       },
     },
   });
+  // Billing routes require an enrolled MFA factor. This opaque test marker is
+  // only checked for presence by the guard and is never decrypted or sent out.
+  await db.userMfaFactor.create({
+    data: {
+      userId: user.id,
+      secretEncrypted: "performance-test-only-mfa-factor",
+    },
+  });
   const product = await db.product.create({
     data: {
       vendorId: vendor.id,
@@ -100,9 +122,68 @@ test.beforeAll(async () => {
       isActive: true,
     },
   });
+  const form = await db.registrationForm.create({
+    data: {
+      vendorId: vendor.id,
+      name: "Performance Test Registration Form",
+      slug: `performance-form-${runId}`,
+      headline: "Performance Test Registration",
+      description: "Public live performance fixture",
+      fields: [
+        { key: "name", label: "姓名", type: "text", required: true },
+        { key: "email", label: "Email", type: "email", required: true },
+      ],
+      isActive: true,
+    },
+  });
+  const video = await db.video.create({
+    data: {
+      vendorId: vendor.id,
+      title: "Performance Test Video",
+      description: "Synthetic ready VOD for the public live performance fixture",
+      sourceType: "url",
+      videoUrl: "https://example.test/e2e-webinar.mp4",
+      durationSec: 900,
+      status: "ready",
+    },
+  });
+  const registrationTemplate = await db.messageTemplate.create({
+    data: {
+      vendorId: vendor.id,
+      name: "Performance Test Registration Email",
+      channel: "email",
+      trigger: "registration_confirmed",
+      subject: "{{name}}，你已報名 {{live_title}}",
+      body: "活動：{{live_title}}\n時間：{{live_start_at}}\n{{unsubscribe_url}}",
+      isActive: true,
+    },
+  });
+  const reminderTemplate = await db.messageTemplate.create({
+    data: {
+      vendorId: vendor.id,
+      name: "Performance Test Live Reminder Email",
+      channel: "email",
+      trigger: "live_reminder",
+      subject: "{{live_title}} 即將開始",
+      body: "提醒：{{live_title}} 將於 {{live_start_at}} 開始。\n{{live_url}}\n{{unsubscribe_url}}",
+      isActive: true,
+    },
+  });
+  const interactionScript = await db.interactionScript.create({
+    data: {
+      vendorId: vendor.id,
+      name: "Performance Test Commerce Script",
+      status: "published",
+    },
+  });
   await db.live.create({
     data: {
       vendorId: vendor.id,
+      videoId: video.id,
+      formId: form.id,
+      messageTemplateId: registrationTemplate.id,
+      liveReminderTemplateId: reminderTemplate.id,
+      interactionScriptId: interactionScript.id,
       title: "Performance Test Live",
       slug: fixture.liveSlug,
       description: "Public live performance fixture",
@@ -140,7 +221,7 @@ test("public account routes stay within the release performance budget", async (
   for (const route of ["/login", "/password-reset/request"]) {
     const response = await page.goto(route, { waitUntil: "load" });
     expect(response?.status()).toBe(200);
-    expectWithinBudget(await measurePage(page), publicBudget, route);
+    expectWithinBudget(await measurePage(page, route), publicBudget, route);
   }
 });
 
@@ -154,7 +235,7 @@ test("authenticated dashboard stays within the release performance budget", asyn
     scriptTransferBytes: 2_500_000,
   };
 
-  expectWithinBudget(await measurePage(page), dashboardBudget, "/dashboard");
+  expectWithinBudget(await measurePage(page, "/dashboard"), dashboardBudget, "/dashboard");
 });
 
 test("authenticated billing usage stays within the release performance budget", async ({ page }) => {
@@ -167,9 +248,12 @@ test("authenticated billing usage stays within the release performance budget", 
     scriptTransferBytes: 2_500_000,
   };
 
-  const response = await page.goto("/billing/usage", { waitUntil: "load" });
+  const response = await page.goto("/billing/usage", { waitUntil: "domcontentloaded" });
   expect(response?.status()).toBe(200);
-  expectWithinBudget(await measurePage(page), billingBudget, "/billing/usage");
+  await expect(page).toHaveURL(/\/billing\/usage$/);
+  await page.waitForLoadState("load");
+  await expect(page.getByRole("heading", { name: "用量與扣點", exact: true })).toBeVisible();
+  expectWithinBudget(await measurePage(page, "/billing/usage"), billingBudget, "/billing/usage");
 });
 
 test("public live commerce stays within the release performance budget", async ({ page }) => {
@@ -186,5 +270,5 @@ test("public live commerce stays within the release performance budget", async (
   expect(response?.status()).toBe(200);
   await expect(page.getByText("Performance Test Live")).toBeVisible();
   await expect(page.getByText("Performance Test Product")).toBeVisible();
-  expectWithinBudget(await measurePage(page), liveBudget, route);
+  expectWithinBudget(await measurePage(page, route), liveBudget, route);
 });

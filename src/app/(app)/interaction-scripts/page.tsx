@@ -57,7 +57,12 @@ export default async function InteractionScriptsPage({
         <Card>
           <div className="grid gap-3">
             {scripts.map((script) => (
-              <div key={script.id} className="grid gap-4 rounded-xl border border-border p-4 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md lg:grid-cols-[220px_1fr_auto]">
+              <article
+                key={script.id}
+                id={`interaction-script-${script.id}`}
+                aria-labelledby={`interaction-script-${script.id}-name`}
+                className="grid gap-4 rounded-xl border border-border p-4 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md lg:grid-cols-[220px_1fr_auto]"
+              >
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
                   <div className="relative aspect-video">
                     {script.lives[0]?.video?.thumbnailUrl ? (
@@ -76,7 +81,7 @@ export default async function InteractionScriptsPage({
                 <div className="min-w-0">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h2 className="font-semibold text-slate-950">{script.name}</h2>
+                      <h2 id={`interaction-script-${script.id}-name`} className="font-semibold text-slate-950">{script.name}</h2>
                       <p className="mt-1 text-sm text-slate-500">{script.description ?? "未填寫說明"}</p>
                     </div>
                     <div className="flex gap-2">
@@ -126,7 +131,7 @@ export default async function InteractionScriptsPage({
                     </FormSubmitButton>
                   </form>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
 

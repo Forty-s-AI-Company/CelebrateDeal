@@ -68,6 +68,14 @@ function lineNumberAt(content: string, index: number) {
   return content.slice(0, index).split(/\r?\n/).length;
 }
 
+function databaseHostFromAuthority(authority: string) {
+  const bracketedIpv6 = authority.match(/^\[([^\]]+)\](?::(?:\d+|\$\{[^}]+\}))?$/u);
+  if (bracketedIpv6) return bracketedIpv6[1]?.toLowerCase() ?? null;
+
+  const hostname = authority.match(/^([^:]+)(?::(?:\d+|\$\{[^}]+\}))?$/u);
+  return hostname?.[1]?.toLowerCase() ?? null;
+}
+
 function databaseUrlFindings(file: string, content: string): SecretFinding[] {
   const findings: SecretFinding[] = [];
   const pattern = /postgres(?:ql)?:\/\/[^:\s"'`]+:[^@\s"'`]+@([^/\s"'`]+)\/([^?\s"'`]+)/gi;
@@ -75,7 +83,10 @@ function databaseUrlFindings(file: string, content: string): SecretFinding[] {
   for (const match of content.matchAll(pattern)) {
     const authority = match[1] ?? "";
     const database = match[2] ?? "";
-    const host = authority.replace(/^\[/, "").replace(/\]?(?::\d+)?$/, "").toLowerCase();
+    // QA scripts commonly interpolate only the disposable loopback port. Parse
+    // that shape explicitly instead of treating the unparsed authority as an
+    // external host; host interpolation remains non-loopback and is blocked.
+    const host = databaseHostFromAuthority(authority);
     const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
     const isSafeDatabase = /(?:^|[_-])(ci|dev|test|e2e|isolated)(?:$|[_-])/i.test(database);
 

@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => ({
   requireVendorContext: vi.fn(),
   liveCount: vi.fn(),
   productCount: vi.fn(),
-  leadCount: vi.fn(),
+  formSubmissionCount: vi.fn(),
   liveChatMessageCount: vi.fn(),
   interactionEventCount: vi.fn(),
   analyticsFindMany: vi.fn(),
+  commerceOrderCount: vi.fn(),
+  emailDeliveryCount: vi.fn(),
   liveFindMany: vi.fn(),
   affiliateFindMany: vi.fn(),
   usageFindUnique: vi.fn(),
@@ -26,10 +28,12 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({
     live: { count: mocks.liveCount, findMany: mocks.liveFindMany },
     product: { count: mocks.productCount },
-    formSubmission: { count: mocks.leadCount },
+    formSubmission: { count: mocks.formSubmissionCount },
     liveChatMessage: { count: mocks.liveChatMessageCount },
     interactionEvent: { count: mocks.interactionEventCount },
     analyticsEvent: { findMany: mocks.analyticsFindMany },
+    commerceOrder: { count: mocks.commerceOrderCount },
+    emailDelivery: { count: mocks.emailDeliveryCount },
     affiliate: { findMany: mocks.affiliateFindMany },
     vendorUsageLimit: { findUnique: mocks.usageFindUnique },
     interactionScript: { count: mocks.scriptCount },
@@ -69,7 +73,9 @@ beforeEach(() => {
   });
   mocks.liveCount.mockResolvedValue(2);
   mocks.productCount.mockResolvedValue(3);
-  mocks.leadCount.mockResolvedValue(4);
+  mocks.formSubmissionCount.mockImplementation(async ({ where }: { where: { verificationStatus?: string } }) => (
+    where.verificationStatus === "VERIFIED" ? 4 : 6
+  ));
   mocks.liveChatMessageCount.mockResolvedValue(9);
   mocks.interactionEventCount.mockResolvedValue(12);
   mocks.analyticsFindMany.mockResolvedValue([
@@ -77,6 +83,10 @@ beforeEach(() => {
     ...Array.from({ length: 20 }, (_, index) => ({ eventType: "product_click", visitorId: `product-session-${index}` })),
     ...Array.from({ length: 10 }, (_, index) => ({ eventType: "cta_click", visitorId: `cta-session-${index}` })),
   ]);
+  mocks.commerceOrderCount.mockResolvedValue(3);
+  mocks.emailDeliveryCount.mockImplementation(async ({ where }: { where: { status: string } }) => (
+    where.status === "sent" ? 8 : 2
+  ));
   mocks.liveFindMany
     .mockResolvedValueOnce([recentLive])
     .mockResolvedValueOnce([upcomingLive])
@@ -113,12 +123,27 @@ describe("/dashboard route", () => {
     expect(mocks.requireVendorContext).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.liveCount).toHaveBeenCalledWith({ where: { vendorId: vendor.id } });
     expect(mocks.productCount).toHaveBeenCalledWith({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true } });
-    expect(mocks.leadCount).toHaveBeenCalledWith({
+    expect(mocks.formSubmissionCount).toHaveBeenCalledWith({
+      where: {
+        form: { vendorId: vendor.id },
+        createdAt: { gte: expect.any(Date) },
+      },
+    });
+    expect(mocks.formSubmissionCount).toHaveBeenCalledWith({
       where: {
         form: { vendorId: vendor.id },
         verificationStatus: "VERIFIED",
         createdAt: { gte: expect.any(Date) },
       },
+    });
+    expect(mocks.commerceOrderCount).toHaveBeenCalledWith({
+      where: { vendorId: vendor.id, createdAt: { gte: expect.any(Date) } },
+    });
+    expect(mocks.emailDeliveryCount).toHaveBeenCalledWith({
+      where: { vendorId: vendor.id, status: "sent", createdAt: { gte: expect.any(Date) } },
+    });
+    expect(mocks.emailDeliveryCount).toHaveBeenCalledWith({
+      where: { vendorId: vendor.id, status: "failed", createdAt: { gte: expect.any(Date) } },
     });
     expect(mocks.analyticsFindMany).toHaveBeenCalledWith({
       where: {
@@ -170,6 +195,12 @@ describe("/dashboard route", () => {
     expect(html).toContain("夏日夥伴");
     expect(html).toContain("商家方案");
     expect(html).toContain("近 7 天播放 session");
+    expect(html).toContain("完成 Email 驗證");
+    expect(html).toContain("近 7 天訂單建立");
+    expect(html).toContain("Email 寄送成功");
+    expect(html).toContain("Email 寄送失敗");
+    expect(html).toContain(">8<");
+    expect(html).toContain(">2<");
     expect(html).toContain("近 7 天真實留言");
     expect(html).toContain(">9<");
     expect(html).toContain("排程留言腳本（設定數）");
@@ -186,10 +217,12 @@ describe("/dashboard route", () => {
     mocks.requireVendorContext.mockResolvedValue({ auth: { member: { role: "viewer" } }, vendor: { ...vendor, tracking: null } });
     mocks.liveCount.mockResolvedValue(0);
     mocks.productCount.mockResolvedValue(0);
-    mocks.leadCount.mockResolvedValue(0);
+    mocks.formSubmissionCount.mockResolvedValue(0);
     mocks.liveChatMessageCount.mockResolvedValue(0);
     mocks.interactionEventCount.mockResolvedValue(0);
     mocks.analyticsFindMany.mockResolvedValue([]);
+    mocks.commerceOrderCount.mockResolvedValue(0);
+    mocks.emailDeliveryCount.mockResolvedValue(0);
     mocks.liveFindMany.mockReset().mockResolvedValue([]);
     mocks.affiliateFindMany.mockResolvedValue([]);
     mocks.usageFindUnique.mockResolvedValue(null);

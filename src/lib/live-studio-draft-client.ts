@@ -1,4 +1,5 @@
 import {
+  LIVE_STUDIO_FLOW_VERSION,
   type LiveStudioDraftEnvelope,
   type LiveStudioDraftPayload,
   LiveStudioDraftPayloadSchema,
@@ -23,6 +24,7 @@ export function serializeLiveStudioDraft(form: HTMLFormElement, activeStep: numb
 
 export function liveStudioDraftFromFormData(data: FormData, activeStep: number): LiveStudioDraftPayload {
   return LiveStudioDraftPayloadSchema.parse({
+    flowVersion: LIVE_STUDIO_FLOW_VERSION,
     studioPreset: stringValue(data, "studioPreset") || "CUSTOM",
     title: stringValue(data, "title"),
     slug: stringValue(data, "slug"),

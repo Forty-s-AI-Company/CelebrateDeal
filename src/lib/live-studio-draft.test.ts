@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyLiveStudioDraft, LiveStudioDraftPayloadSchema, SaveLiveStudioDraftRequestSchema } from "./live-studio-draft";
 
 describe("LiveStudioDraftPayloadSchema", () => {
-  it("builds a bounded default five-step draft", () => {
+  it("builds a canonical bounded eight-step draft", () => {
     expect(emptyLiveStudioDraft()).toMatchObject({
       studioPreset: "CUSTOM",
       title: "",
@@ -12,6 +12,7 @@ describe("LiveStudioDraftPayloadSchema", () => {
       quotaPayerScope: "VENDOR",
       liveReminderTemplateId: "",
       liveReminderOffsetMinutes: "60",
+      flowVersion: 2,
       activeStep: 0,
     });
   });
@@ -33,12 +34,28 @@ describe("LiveStudioDraftPayloadSchema", () => {
       messageTemplateId: "registration-template-1",
       liveReminderTemplateId: "reminder-template-1",
       liveReminderOffsetMinutes: "30",
-      activeStep: 4,
+      activeStep: 7,
     }).success).toBe(true);
     expect(LiveStudioDraftPayloadSchema.safeParse({
       ...emptyLiveStudioDraft(),
       heroImageUrl: "https://",
     }).success).toBe(true);
+  });
+
+  it.each([
+    [0, 0], [1, 2], [2, 1], [3, 6], [4, 7],
+  ])("maps legacy v1 step %s to canonical v2 step %s without changing values", (legacyStep, canonicalStep) => {
+    const { flowVersion, ...legacy } = emptyLiveStudioDraft();
+    expect(flowVersion).toBe(2);
+    const parsed = LiveStudioDraftPayloadSchema.parse({ ...legacy, title: "保留內容", activeStep: legacyStep });
+    expect(parsed).toMatchObject({ flowVersion: 2, activeStep: canonicalStep, title: "保留內容" });
+  });
+
+  it("does not remap an already canonical v2 step and enforces its boundaries", () => {
+    expect(LiveStudioDraftPayloadSchema.parse({ ...emptyLiveStudioDraft(), activeStep: 2 }).activeStep).toBe(2);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 7 }).success).toBe(true);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: 8 }).success).toBe(false);
+    expect(LiveStudioDraftPayloadSchema.safeParse({ ...emptyLiveStudioDraft(), activeStep: -1 }).success).toBe(false);
   });
 
   it("rejects unknown fields, unsafe URLs, oversized arrays, and unbounded JSON text", () => {

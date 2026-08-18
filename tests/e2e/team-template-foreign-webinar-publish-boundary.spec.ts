@@ -50,7 +50,7 @@ test("template owner cannot publish a payload tampered with another member's web
     page.once("dialog", (dialog) => dialog.accept());
     const responses: number[] = []; page.on("response", (response) => { if (response.request().method() === "POST" && response.request().headers()["next-action"]) responses.push(response.status()); });
     await page.getByRole("button", { name: "發布新版本" }).click();
-    await expect(page.getByRole("status")).toHaveText("你沒有管理這個團隊模板的權限，或該資源已不存在。");
+    await expect(page.getByRole("alert").filter({ hasText: "你沒有管理這個團隊模板的權限，或該資源已不存在。" })).toHaveText("你沒有管理這個團隊模板的權限，或該資源已不存在。");
     expect(responses).toContain(200);
     await expect.poll(snapshot).toEqual(before);
   } finally {

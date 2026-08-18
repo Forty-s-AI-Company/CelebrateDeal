@@ -5,11 +5,14 @@ import { isRuntimeArchive, scanContent } from "./secret-scan";
 describe("secret scanner", () => {
   it("allows loopback test databases with a safe database name", () => {
     const url = ["postgresql", "://synthetic:synthetic@127.0.0.1:54329/celebratedeal_test"].join("");
+    const dynamicPortUrl = ["postgresql", "://synthetic:synthetic@127.0.0.1:", "${testPort}", "/celebratedeal_test"].join("");
     expect(scanContent("fixture.ts", url)).toEqual([]);
+    expect(scanContent("dynamic-port-fixture.ts", dynamicPortUrl)).toEqual([]);
   });
 
   it("flags non-loopback and unsafe loopback database URLs", () => {
     const external = ["postgresql", "://synthetic:synthetic@db.projectref.supabase.co:5432/test"].join("");
+    const interpolatedExternal = ["postgresql", "://synthetic:synthetic@db.", "${region}", ".example.com:5432/app_test"].join("");
     const unsafeLoopback = ["postgresql", "://synthetic:synthetic@127.0.0.1:54329/synthetic"].join("");
 
     expect(scanContent("external-fixture.ts", external)).toEqual([
@@ -17,6 +20,9 @@ describe("secret scanner", () => {
     ]);
     expect(scanContent("unsafe-loopback-fixture.ts", unsafeLoopback)).toEqual([
       { file: "unsafe-loopback-fixture.ts", line: 1, category: "external_database_url" },
+    ]);
+    expect(scanContent("interpolated-external-fixture.ts", interpolatedExternal)).toEqual([
+      { file: "interpolated-external-fixture.ts", line: 1, category: "external_database_url" },
     ]);
   });
 

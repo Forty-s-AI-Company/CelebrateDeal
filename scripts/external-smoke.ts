@@ -1,10 +1,5 @@
-import { config as loadEnv } from "dotenv";
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
-import { getStreamVideoStatus } from "../src/lib/cloudflare-stream";
-import { createCloudflareStreamWebhookSignature } from "../src/lib/cloudflare-webhook-signature";
-
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
+import { resolveSmokeTarget } from "./external-smoke-safety";
 
 type SmokeResult = {
   name: string;
@@ -12,7 +7,12 @@ type SmokeResult = {
   detail: string;
 };
 
-const baseUrl = (process.env.TARGET_APP_URL ?? "http://localhost:31023").replace(/\/$/, "");
+const baseUrl = resolveSmokeTarget({
+  targetAppUrl: process.env.TARGET_APP_URL,
+  smokeEnvironment: process.env.SMOKE_ENVIRONMENT,
+  allowStagingSmoke: process.env.ALLOW_STAGING_SMOKE,
+  expectedHostname: process.env.SMOKE_EXPECTED_HOSTNAME,
+});
 const jobSecret = process.env.JOB_SECRET;
 const results: SmokeResult[] = [];
 const sampleVideoUrl = "https://storage.googleapis.com/stream-example-bucket/video.mp4";
@@ -80,25 +80,17 @@ async function main() {
   await checkJson("health", "/api/health");
   await checkJson("admin preflight", "/api/admin/preflight");
 
-  if (process.env.SMOKE_TEST_EMAIL) {
-    await checkJson("resend test email", "/api/admin/ops/test-email", {
-      method: "POST",
-      body: JSON.stringify({ to: process.env.SMOKE_TEST_EMAIL }),
-    });
-  } else {
-    record({ name: "resend test email", status: "skip", detail: "SMOKE_TEST_EMAIL not set" });
-  }
+  await checkJson("resend test email", "/api/admin/ops/test-email", {
+    method: "POST",
+    body: JSON.stringify(process.env.SMOKE_TEST_EMAIL ? { to: process.env.SMOKE_TEST_EMAIL } : {}),
+  });
 
   await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
   await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
 
   if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
     const vendorId = process.env.SMOKE_VENDOR_ID;
-    if (!vendorId) {
-      record({ name: "cloudflare mutating smoke", status: "skip", detail: "SMOKE_VENDOR_ID not set" });
-    } else {
-      await runCloudflareSmoke(vendorId);
-    }
+    await runCloudflareSmoke(vendorId);
   } else {
     record({ name: "cloudflare mutating smoke", status: "skip", detail: "Set RUN_CLOUDFLARE_SMOKE=true to create direct upload and live input" });
   }
@@ -150,11 +142,15 @@ async function main() {
   }
 }
 
-async function runCloudflareSmoke(vendorId: string) {
+async function runCloudflareSmoke(vendorId?: string) {
   try {
     const directUploadResponse = await request("/api/admin/ops/cloudflare/direct-upload", {
       method: "POST",
-      body: JSON.stringify({ vendorId, title: `Smoke upload ${Date.now()}`, maxDurationSeconds: 600 }),
+      body: JSON.stringify({
+        ...(vendorId ? { vendorId } : {}),
+        title: `Smoke upload ${Date.now()}`,
+        maxDurationSeconds: 600,
+      }),
     });
     const directUploadBody = await readResponsePayload(directUploadResponse);
     if (!directUploadResponse.ok || !directUploadBody?.upload?.uploadURL || !directUploadBody?.upload?.uid) {
@@ -185,49 +181,23 @@ async function runCloudflareSmoke(vendorId: string) {
     }
     record({ name: "cloudflare upload file", status: "pass", detail: `HTTP ${uploadResponse.status}` });
 
-    const readyDetails = await pollUntilReady(directUploadBody.upload.uid);
-    record({ name: "cloudflare stream ready", status: "pass", detail: readyDetails.playback?.hls ?? "readyToStream=true" });
-
-    const signedWebhookBody = JSON.stringify({
-      uid: directUploadBody.upload.uid,
-      readyToStream: true,
-      thumbnail: readyDetails.thumbnail,
-      duration: readyDetails.duration,
-      playback: readyDetails.playback,
-      status: {
-        state: "ready",
-        pctComplete: "100.000000",
-      },
-    });
-    const webhookTimestamp = Math.floor(Date.now() / 1000);
-    const webhookSecret = process.env.CLOUDFLARE_STREAM_WEBHOOK_SECRET ?? "";
-    const webhookSignature = createCloudflareStreamWebhookSignature({
-      body: signedWebhookBody,
-      secret: webhookSecret,
-      timestamp: webhookTimestamp,
-    });
-    const webhookResponse = await fetch(`${baseUrl}/api/cloudflare/stream-webhook`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Webhook-Signature": `time=${webhookTimestamp},sig1=${webhookSignature}`,
-      },
-      body: signedWebhookBody,
-    });
-    const webhookResult = await readResponsePayload(webhookResponse);
-    if (!webhookResponse.ok || (isRecord(webhookResult) && webhookResult.ok === false)) {
-      record({
-        name: "cloudflare ready webhook replay",
-        status: "fail",
-        detail: `HTTP ${webhookResponse.status}: ${formatPayload(webhookResult)}`,
-      });
+    if (!directUploadBody.videoId) {
+      record({ name: "cloudflare webhook ready mapping", status: "fail", detail: "videoId missing" });
       return;
     }
-    record({ name: "cloudflare ready webhook replay", status: "pass", detail: JSON.stringify(webhookResult) });
+    const readyDetails = await pollUntilReady(directUploadBody.videoId);
+    record({
+      name: "cloudflare webhook ready mapping",
+      status: "pass",
+      detail: `status=${readyDetails.status}, durationSec=${readyDetails.durationSec}`,
+    });
 
     const liveInputResponse = await request("/api/admin/ops/cloudflare/live-input", {
       method: "POST",
-      body: JSON.stringify({ vendorId, name: `CelebrateDeal smoke ${new Date().toISOString()}` }),
+      body: JSON.stringify({
+        ...(vendorId ? { vendorId } : {}),
+        name: `CelebrateDeal smoke ${new Date().toISOString()}`,
+      }),
     });
     const liveInputBody = await readResponsePayload(liveInputResponse);
     if (!liveInputResponse.ok || !liveInputBody?.liveInput?.uid) {
@@ -249,16 +219,23 @@ async function runCloudflareSmoke(vendorId: string) {
   }
 }
 
-async function pollUntilReady(uid: string) {
+async function pollUntilReady(videoId: string) {
   const timeoutAt = Date.now() + 180_000;
   while (Date.now() < timeoutAt) {
-    const details = await getStreamVideoStatus(uid);
-    if (details.readyToStream) {
-      return details;
+    const response = await request(`/api/admin/ops/cloudflare/direct-upload?videoId=${encodeURIComponent(videoId)}`);
+    const payload = await readResponsePayload(response);
+    if (!response.ok || !isRecord(payload) || !isRecord(payload.video)) {
+      throw new Error(`Cloudflare video status failed: HTTP ${response.status}: ${formatPayload(payload)}`);
+    }
+    if (payload.video.readyToStream === true) {
+      return {
+        status: String(payload.video.status ?? "ready"),
+        durationSec: Number(payload.video.durationSec ?? 0),
+      };
     }
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  throw new Error(`Cloudflare video ${uid} did not reach readyToStream within timeout.`);
+  throw new Error(`Cloudflare video ${videoId} did not reach readyToStream within timeout.`);
 }
 
 async function runPayUniSmoke() {

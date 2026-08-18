@@ -23,7 +23,13 @@ export function usageMonthRange(monthKey: string) {
     throw new UsageEstimationError("invalid_month");
   }
 
-  const [year, month] = monthKey.split("-").map((part) => Number.parseInt(part, 10));
+  const [yearText, monthText] = monthKey.split("-");
+  if (yearText === undefined || monthText === undefined) {
+    throw new UsageEstimationError("invalid_month");
+  }
+
+  const year = Number.parseInt(yearText, 10);
+  const month = Number.parseInt(monthText, 10);
   return {
     start: new Date(Date.UTC(year, month - 1, 1)),
     end: new Date(Date.UTC(year, month, 1)),

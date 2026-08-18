@@ -12,8 +12,11 @@ const db = {
 };
 const runtimeReadyContent = {
   video: { vendorId: "vendor-1", sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null },
-  form: null,
-  messageTemplate: null,
+  form: { vendorId: "vendor-1", isActive: true, fields: [
+    { key: "name", label: "姓名", type: "text", required: true },
+    { key: "email", label: "Email", type: "email", required: true },
+  ] },
+  messageTemplate: { vendorId: "vendor-1", channel: "email", trigger: "registration_confirmed", isActive: true, subject: "報名成功", body: "{{name}} {{unsubscribe_url}}" },
   interactionScript: null,
   products: [],
 };

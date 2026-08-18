@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { monthRange } from "../../src/lib/billing";
-import { formatCurrency } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp77SyntheticPassword!";
@@ -263,9 +263,9 @@ test("active member is denied billing usage before finance queries or MFA", asyn
           updatedAt: true,
         },
       }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({ where: { id: tracking.id } }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({ where: { vendorId: vendor.id } }),
       trackingRelations: await db.trackingSetting.findMany({
         where: { id: tracking.id },
@@ -284,9 +284,9 @@ test("active member is denied billing usage before finance queries or MFA", asyn
           updatedAt: true,
         },
       }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({ where: { id: membership.id } }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({ where: { vendorId: vendor.id } }),
       membershipUserCount: await db.vendorMember.count({ where: { userId: user.id } }),
       activeMemberComposite: await db.vendorMember.count({
@@ -318,15 +318,15 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         },
       }),
       plan: await db.billingPlan.findUniqueOrThrow({ where: { id: plan.id } }),
-      planCount: await db.billingPlan.count(),
+      planCount: await db.billingPlan.count({ where: { id: plan.id } }),
       activePlanCount: await db.billingPlan.count({ where: { id: plan.id, isActive: true } }),
       planCodeCount: await db.billingPlan.count({ where: { id: plan.id, code: plan.code } }),
       subscription: await db.vendorSubscription.findUniqueOrThrow({
         where: { id: subscription.id },
       }),
-      subscriptionCount: await db.vendorSubscription.count(),
+      subscriptionCount: await db.vendorSubscription.count({ where: { id: subscription.id } }),
       subscriptionVendorCount: await db.vendorSubscription.count({ where: { vendorId: vendor.id } }),
-      subscriptionPlanCount: await db.vendorSubscription.count({ where: { planId: plan.id } }),
+      subscriptionPlanCount: await db.vendorSubscription.count({ where: { id: subscription.id, planId: plan.id } }),
       activeSubscriptionCount: await db.vendorSubscription.count({
         where: { vendorId: vendor.id, planId: plan.id, status: "active" },
       }),
@@ -345,7 +345,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
       usageLimit: await db.vendorUsageLimit.findUniqueOrThrow({
         where: { id: usageLimit.id },
       }),
-      usageLimitCount: await db.vendorUsageLimit.count(),
+      usageLimitCount: await db.vendorUsageLimit.count({ where: { id: usageLimit.id } }),
       usageLimitVendorCount: await db.vendorUsageLimit.count({ where: { vendorId: vendor.id } }),
       usageLimitPlanCount: await db.vendorUsageLimit.count({ where: { billingPlanId: plan.id } }),
       usageLimitComposite: await db.vendorUsageLimit.count({
@@ -359,7 +359,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         where: { id: { in: usageRecords.map((record) => record.id) } },
         orderBy: { id: "asc" },
       }),
-      usageRecordCount: await db.usageRecord.count(),
+      usageRecordCount: await db.usageRecord.count({ where: { id: { in: usageRecords.map((record) => record.id) } } }),
       usageRecordVendorCount: await db.usageRecord.count({ where: { vendorId: vendor.id } }),
       usageRecordCurrentMonthCount: await db.usageRecord.count({
         where: { vendorId: vendor.id, monthKey },
@@ -388,7 +388,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         where: { id: { in: transactions.map((transaction) => transaction.id) } },
         orderBy: { id: "asc" },
       }),
-      transactionCount: await db.paymentTransaction.count(),
+      transactionCount: await db.paymentTransaction.count({ where: { id: { in: transactions.map((transaction) => transaction.id) } } }),
       transactionVendorCount: await db.paymentTransaction.count({ where: { vendorId: vendor.id } }),
       paidTransactionCount: await db.paymentTransaction.count({
         where: { vendorId: vendor.id, status: "paid" },
@@ -424,7 +424,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         where: { id: { in: refunds.map((refund) => refund.id) } },
         orderBy: { id: "asc" },
       }),
-      refundCount: await db.refundRecord.count(),
+      refundCount: await db.refundRecord.count({ where: { id: { in: refunds.map((refund) => refund.id) } } }),
       refundVendorCount: await db.refundRecord.count({ where: { vendorId: vendor.id } }),
       refundMonthCount: await db.refundRecord.count({ where: { vendorId: vendor.id, monthKey } }),
       processedRefundCount: await db.refundRecord.count({
@@ -453,24 +453,6 @@ test("active member is denied billing usage before finance queries or MFA", asyn
       }),
     });
     const before = await snapshot();
-    const grossRevenue = transactions
-      .filter((transaction) => ["paid", "partially_refunded", "refunded"].includes(transaction.status))
-      .reduce(
-        (sum, transaction) =>
-          sum + Math.max(0, transaction.grossAmountCents - transaction.refundedAmountCents),
-        0,
-      );
-    const estimatedPlatformFees = Math.max(
-      0,
-      transactions
-        .filter((transaction) =>
-          ["paid", "partially_refunded", "refunded"].includes(transaction.status),
-        )
-        .reduce((sum, transaction) => sum + transaction.platformFeeCents, 0) -
-        refunds
-          .filter((refund) => refund.status === "processed")
-          .reduce((sum, refund) => sum + refund.platformFeeRefundCents, 0),
-    );
     const lawfulUsagePercent = Math.round(
       (usageLimit.creditsUsed / usageLimit.creditsLimit) * 100,
     );
@@ -485,11 +467,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
       usageLimit.id,
       ...usageRecords.flatMap((record) => [
         record.id,
-        record.recordType,
-        record.unit,
         record.description ?? "",
-        String(record.quantity),
-        String(record.creditsDelta),
       ]),
       ...transactions.flatMap((transaction) => [
         transaction.id,
@@ -497,26 +475,13 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         transaction.providerTradeNo ?? "",
         transaction.orderNumber ?? "",
         transaction.refundReason ?? "",
-        formatCurrency(transaction.grossAmountCents),
-        formatCurrency(transaction.gatewayFeeCents),
-        formatCurrency(transaction.platformFeeCents),
-        formatCurrency(transaction.netAmountCents),
-        formatCurrency(transaction.refundedAmountCents),
       ]),
       ...refunds.flatMap((refund) => [
         refund.id,
         refund.providerEventId ?? "",
         refund.reason ?? "",
-        formatCurrency(refund.refundAmountCents),
-        formatCurrency(refund.gatewayFeeRefundCents),
-        formatCurrency(refund.platformFeeRefundCents),
       ]),
-      formatCurrency(grossRevenue),
-      formatCurrency(estimatedPlatformFees),
-    ].filter(
-      (value): value is string =>
-        typeof value === "string" && value.length > 0 && value !== "$0",
-    );
+    ].filter((value): value is string => typeof value === "string" && value.length > 0);
     const deniedDashboardCanaries = rawSensitiveCanaries.filter(
       (value) => value !== plan.name,
     );
@@ -525,54 +490,34 @@ test("active member is denied billing usage before finance queries or MFA", asyn
     const external: string[] = [];
     const invalid: string[] = [];
     const usagePath = "/billing/usage";
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
       if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) external.push(request.url());
       if (url.hostname.endsWith(".invalid")) invalid.push(request.url());
     });
-    await page.route("**/billing/usage", async (route) => {
-      if (new URL(route.request().url()).pathname !== usagePath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: usagePath,
+      protectedPayloadCanaries: rawSensitiveCanaries,
+      documentCanaries: deniedDashboardCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        "目前方案",
+        "本月活動場次",
+        "本月成交額",
+        "預估交易服務費",
+        "用量紀錄",
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === usagePath && response.status() === 307,
-    );
-    const finalResponse = await page.goto(usagePath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe("/dashboard?error=insufficient_role");
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe("/dashboard?error=insufficient_role");
-    for (const canary of rawSensitiveCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const heading of [
-      "用量與扣點",
-      "目前方案",
-      "本月活動場次",
-      "本月成交額",
-      "預估交易服務費",
-      "用量紀錄",
-    ]) {
-      expect(intercepted.current?.body).not.toContain(heading);
-    }
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

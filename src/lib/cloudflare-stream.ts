@@ -12,9 +12,14 @@ const CloudflareVideoDetails = z.object({
   }).optional(),
 });
 
+const CLOUDFLARE_UPLOAD_HOSTS = new Set([
+  "upload.videodelivery.net",
+  "upload.cloudflarestream.com",
+]);
+
 const CloudflareUploadUrl = z.string().url().refine((value) => {
   const url = new URL(value);
-  return url.protocol === "https:" && url.hostname.toLowerCase() === "upload.videodelivery.net";
+  return url.protocol === "https:" && CLOUDFLARE_UPLOAD_HOSTS.has(url.hostname.toLowerCase());
 });
 
 const CloudflareDirectUpload = z.object({

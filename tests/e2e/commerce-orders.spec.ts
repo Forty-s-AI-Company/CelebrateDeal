@@ -22,7 +22,7 @@ const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_
 // This is a deliberately synthetic local token. The browser receives only the
 // token, while the database stores its deterministic SHA-256 hash as production
 // auth does.
-const sessionToken = "g7-04-local-playwright-session-token";
+const sessionToken = `g7-04-local-playwright-session-token-${runId}`;
 const sessionTokenHash = createHash("sha256").update(sessionToken).digest("hex");
 
 const buyer = {
@@ -105,6 +105,26 @@ async function installOwnerSession(page: Page) {
     httpOnly: true,
     sameSite: "Lax",
   }]);
+}
+
+type LiveWizardControlName = "scheduledAt" | "messageTemplateId";
+
+async function openWizardPanelForControl(page: Page, controlName: LiveWizardControlName) {
+  const panels = page.locator("[data-step-index]").filter({
+    // controlName is restricted to fixed internal form names before it is used in a selector.
+    has: page.locator(`[name="${controlName}"]`),
+  });
+  await expect(panels).toHaveCount(1);
+  const panel = panels.first();
+  const panelId = await panel.getAttribute("id");
+  if (!panelId) throw new Error(`WIZARD_PANEL_ID_MISSING:${controlName}`);
+
+  const navigation = page.locator(`button[aria-controls="${panelId}"]`);
+  await expect(navigation).toHaveCount(1);
+  await expect(navigation).toBeVisible();
+  await navigation.click();
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 async function installBuyerOrderCapability(page: Page) {
@@ -407,7 +427,9 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
           description: "僅供本機 Playwright 驗收的合成商品",
           priceCents: 12_800,
           currency: "TWD",
-          inventory: 2,
+          // This serial acceptance flow consumes three units: one prebuilt paid
+          // order, one public checkout, and one response-loss recovery checkout.
+          inventory: 4,
           isActive: true,
           commerceDomain: "merchant",
           fulfillmentType: "physical",
@@ -468,9 +490,9 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     fixture.sellableLiveId = foreignLive.live.id;
     fixture.sellableLiveSlug = foreignLive.live.slug;
 
-    // Keep the quota-stop proof isolated from commerce publish readiness. A
-    // content-only public live requires only ready media, so a future product or
-    // form policy change cannot turn this playback-specific fixture into a 404.
+    // Keep the quota-stop proof isolated from commerce data. The public runtime
+    // still requires an active registration form and confirmation template, but
+    // this fixture intentionally has no product and does not alter quota policy.
     const streamQuotaVideo = await db.video.create({
       data: {
         vendorId: foreignVendor.id,
@@ -480,10 +502,38 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
         status: "ready",
       },
     });
+    const [streamQuotaForm, streamQuotaTemplate] = await Promise.all([
+      db.registrationForm.create({
+        data: {
+          vendorId: foreignVendor.id,
+          name: `G7-50 合成額度播放報名表單 ${runId}`,
+          slug: `g7-50-stream-quota-form-${runId}`,
+          headline: "G7-50 合成額度播放報名",
+          fields: [
+            { key: "name", label: "姓名", type: "text", required: true },
+            { key: "email", label: "Email", type: "email", required: true },
+          ],
+          isActive: true,
+        },
+      }),
+      db.messageTemplate.create({
+        data: {
+          vendorId: foreignVendor.id,
+          name: `G7-50 合成額度播放報名成功 Email ${runId}`,
+          channel: "email",
+          trigger: "registration_confirmed",
+          subject: "{{live_title}} 報名成功",
+          body: "{{name}}，你已報名 {{live_title}}。",
+          isActive: true,
+        },
+      }),
+    ]);
     const streamQuotaLive = await db.live.create({
       data: {
         vendorId: foreignVendor.id,
         videoId: streamQuotaVideo.id,
+        formId: streamQuotaForm.id,
+        messageTemplateId: streamQuotaTemplate.id,
         title: "G7-50 合成額度播放直播",
         slug: `g7-50-stream-quota-${runId}`,
         scheduledAt: new Date("2026-08-10T12:00:00.000Z"),
@@ -576,7 +626,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(page.getByText("已選擇：g7-15-product.png", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "儲存", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "開始上傳", exact: true }).click();
-    await expect(page.getByText("R2 圖片儲存尚未完成設定，可先使用進階 URL。", { exact: true })).toBeVisible();
+    await expect(page.getByText("R2 圖片儲存尚未完成設定，請稍後重試。", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "重試上傳", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "移除", exact: true }).click();
     await expect(page.getByRole("button", { name: "儲存", exact: true })).toBeEnabled();
@@ -618,7 +668,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await page.goto(`/products/${created.id}/preview`);
     await expect(page.getByRole("heading", { name: "商品預覽" })).toBeVisible();
     await expect(page.getByText(productName, { exact: true })).toBeVisible();
-    await expect(page.getByText("尚不可販售：請確認已上架、售價大於 0、庫存大於 0，且交付方式已確認。", { exact: true })).toBeVisible();
+    await expect(page.getByText("尚不可販售：請確認已上架、售價與庫存有效、交付方式已確認，且非實體商品已有完整的付款後交付設定。", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "開啟買家結帳預覽" })).toHaveCount(0);
 
     await page.getByRole("link", { name: "返回編輯" }).click();
@@ -643,17 +693,29 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expectNoBlockingAxeViolations(page);
   });
 
-  test("mobile product catalog has no overflow, preserves keyboard entry and passes axe", async ({ page }) => {
+  test("mobile product upload has no overflow, preserves recovery actions and passes axe", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await installOwnerSession(page);
-    const response = await page.goto(`/products?q=${encodeURIComponent(fixture.catalogProductSlug)}&status=active`);
+    const response = await page.goto("/products/new");
     expect(response?.status()).toBe(200);
-    await expect(page.getByRole("heading", { name: "商品管理" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "預覽", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "新增商品" })).toBeVisible();
+
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    await page.locator('input[type="file"][accept^="image/"]').setInputFiles({
+      name: "g7-15-mobile-product.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+    await expect(page.getByText("已選擇：g7-15-mobile-product.png", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "開始上傳", exact: true }).click();
+    await expect(page.getByText("R2 圖片儲存尚未完成設定，請稍後重試。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "重試上傳", exact: true })).toBeVisible();
     await captureIfRequested(page, "product-mobile.png");
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow, "product catalog must not overflow horizontally on mobile").toBeLessThanOrEqual(1);
+    expect(overflow, "product upload must not overflow horizontally on mobile").toBeLessThanOrEqual(1);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "新增商品" })).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "跳至主要內容" })).toBeFocused();
     await expectNoBlockingAxeViolations(page);
@@ -1021,7 +1083,32 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
 
     await page.goto(`/orders/${fixture.orderId}`);
     await expect(page.getByText("已出貨", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "標記已送達" }).click();
+    const markDelivered = page.getByRole("button", { name: "標記已送達", exact: true });
+    await expect(markDelivered).toBeEnabled();
+    const deliveredActionResponse = page.waitForResponse((candidate) => {
+      const request = candidate.request();
+      return request.method() === "POST" && new URL(candidate.url()).pathname === `/orders/${fixture.orderId}`;
+    }, { timeout: 15_000 });
+    await markDelivered.click();
+    let deliveredResponse: Response;
+    try {
+      deliveredResponse = await deliveredActionResponse;
+    } catch {
+      throw new Error(`DELIVERED_ACTION_POST_NOT_OBSERVED_CLASSIFICATION_NO_RESPONSE_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+    }
+    const deliveredResponseStatus = deliveredResponse.status();
+    const deliveredResponseIsRedirect = [301, 302, 303, 307, 308].includes(deliveredResponseStatus);
+    const deliveredActionRedirect = deliveredResponse.headers()["x-action-redirect"] ?? "";
+    const deliveredActionClassification = deliveredResponseIsRedirect
+      ? "SERVER_ACTION_REDIRECT"
+      : classifyServerActionBody(await deliveredResponse.text());
+    const deliveredRedirectTarget = `/orders/${fixture.orderId}?updated=shipping`;
+    if (deliveredResponseStatus === 200 && !deliveredActionRedirect.includes(deliveredRedirectTarget)) {
+      throw new Error(`DELIVERED_ACTION_REDIRECT_HEADER_MISSING_HTTP_${deliveredResponseStatus}_${deliveredActionClassification}_X_ACTION_REDIRECT_${deliveredActionRedirect || "MISSING"}_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+    }
+    if (deliveredResponseStatus !== 200 && !deliveredResponseIsRedirect) {
+      throw new Error(`DELIVERED_ACTION_HTTP_${deliveredResponseStatus}_${deliveredActionClassification}_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+    }
     await expect(page).toHaveURL(new RegExp(`/orders/${fixture.orderId}\\?updated=shipping$`));
     await expect(page.getByText("履約狀態已更新。", { exact: true })).toBeVisible();
     await expect(page.getByText("已送達", { exact: true })).toBeVisible();
@@ -1286,6 +1373,13 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
   test("public live keeps the same video node, playback state and controls through internal checkout", async ({ page }) => {
     test.setTimeout(180_000);
     await page.context().clearCookies();
+    // The shared sellable fixture is scheduled in the future so other tests can
+    // exercise publish readiness. This playback case must explicitly enter the
+    // live state; otherwise the pre-live waiting room correctly hides media.
+    await db.live.update({
+      where: { id: fixture.sellableLiveId },
+      data: { status: "live", startedAt: new Date() },
+    });
     let admissionRequests = 0;
     let renewalPending = false;
     await page.route("**/api/live-admission", async (route) => {
@@ -1295,6 +1389,9 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       }
       admissionRequests += 1;
       const response = await route.fetch();
+      if (!response.ok()) {
+        throw new Error(`LIVE_ADMISSION_FAILED:${response.status()}:${await response.text()}`);
+      }
       if (admissionRequests === 2) {
         renewalPending = true;
         await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -1325,6 +1422,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: 42 });
       media.volume = 0.35;
       media.muted = false;
+      media.dispatchEvent(new Event("play", { bubbles: true }));
       browserWindow.__persistentPlayerTimer = window.setInterval(() => { media.currentTime += 0.25; }, 250);
     });
 
@@ -1525,7 +1623,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     const pendingKind = await pendingState();
     if (pendingKind === "button") {
       await expect(page.locator('button[aria-busy="true"]:disabled')).toContainText("建立中…");
-      await expect(page.getByRole("status")).toContainText("正在同步平台推薦 ledger 並建立 payout batch");
+      await expect(page.getByRole("status").filter({ hasText: "正在同步平台推薦 ledger 並建立 payout batch" })).toContainText("正在同步平台推薦 ledger 並建立 payout batch");
     } else {
       await expect(page.getByRole("heading", { name: "正在載入財務作業資料", exact: true })).toBeVisible();
       await expect(page.locator('section[aria-busy="true"]')).toContainText("完成前不會送出任何財務操作");
@@ -1623,9 +1721,12 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(channel.locator('option[value="sms"]')).toHaveAttribute("disabled", "");
     await expect(channel.locator('option[value="line"]')).toHaveAttribute("disabled", "");
     await expect(trigger.locator('option[value="live_reminder"]')).not.toHaveAttribute("disabled");
+    const postLiveFollowupOption = trigger.locator('option[value="post_live_followup"]');
+    await expect(postLiveFollowupOption).toHaveCount(1);
+    await expect(postLiveFollowupOption).not.toHaveAttribute("disabled");
     await expect(trigger.locator('option[value="cart_followup"]')).toHaveAttribute("disabled", "");
     await expect(page.locator("p").filter({ hasText: "{{live_start_at}}" })).toHaveText("{{name}} · {{live_title}} · {{live_start_at}} · {{vendor_name}} · {{unsubscribe_url}}");
-    await expect(page.getByText("報名成功與開播提醒會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。", { exact: true })).toBeVisible();
+    await expect(page.getByText("報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。", { exact: true })).toBeVisible();
     await expect(page.getByText(/購買追蹤已接通/u)).toHaveCount(0);
 
     await channel.focus();
@@ -1656,15 +1757,14 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(desktopLivePreview).toContainText("G7-21 合成開播提醒直播");
     await captureIfRequested(page, "live-studio-desktop.png");
     await page.locator('input[name="slug"]').fill(`g7-21-live-reminder-${runId}`);
-    await page.locator('input[name="scheduledAt"]').fill("2026-12-31T12:00");
-    const conversionStep = page.getByRole("button", { name: "商品與轉換", exact: true });
-    await conversionStep.click();
-    await expect(conversionStep).toHaveAttribute("aria-current", "step");
-    await expect(page.locator('[data-step-index="1"]')).toBeVisible();
+    const schedulePanel = await openWizardPanelForControl(page, "scheduledAt");
+    await schedulePanel.locator('input[name="scheduledAt"]').fill("2026-12-31T12:00");
 
-    const registrationTemplate = page.locator('select[name="messageTemplateId"]');
-    const reminderTemplate = page.locator('select[name="liveReminderTemplateId"]');
-    const reminderOffset = page.locator('select[name="liveReminderOffsetMinutes"]');
+    const emailPanel = await openWizardPanelForControl(page, "messageTemplateId");
+
+    const registrationTemplate = emailPanel.locator('select[name="messageTemplateId"]');
+    const reminderTemplate = emailPanel.locator('select[name="liveReminderTemplateId"]');
+    const reminderOffset = emailPanel.locator('select[name="liveReminderOffsetMinutes"]');
     await expect(registrationTemplate.locator(`option[value="${fixture.registrationTemplateId}"]`)).toHaveText("G7-21 合成報名成功 Email · email");
     await expect(registrationTemplate.locator(`option[value="${fixture.reminderTemplateId}"]`)).toHaveCount(0);
     await expect(reminderTemplate.locator(`option[value="${fixture.reminderTemplateId}"]`)).toHaveText("G7-21 合成開播提醒 Email · email");
@@ -1700,6 +1800,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
         roleType: "official",
         tone: "溫暖、簡潔，清楚提醒下一步",
         isActive: true,
+        isScheduled: true,
       },
     });
     const script = await db.interactionScript.create({
@@ -1748,7 +1849,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       const preview = page.getByRole("region", { name: "角色即時預覽" });
       await expect(preview).toContainText("G7-52 合成直播小編");
       await expect(preview).toContainText("官方預設角色");
-      await expect(preview).toContainText("預先設定角色");
+      await expect(preview).toContainText("排程角色");
       await expect(preview).toContainText("這個預覽不會發布訊息，也不會建立觀看、報名、訂單、付款、評論或成效資料。");
       await expect(page.getByText("它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。", { exact: false })).toBeVisible();
 

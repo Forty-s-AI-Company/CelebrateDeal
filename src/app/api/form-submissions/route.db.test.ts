@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -9,10 +9,16 @@ import { POST } from "@/app/api/form-submissions/route";
 
 const createdVendorIds: string[] = [];
 
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "form-submission-db-test-secret-longer-than-thirty-two-bytes");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+});
+
 afterEach(async () => {
   await getDb().vendor.deleteMany({
     where: { id: { in: createdVendorIds.splice(0) } },
   });
+  vi.unstubAllEnvs();
 });
 function submissionRequest(formId: string, email: string) {
   return new Request("https://app.example.test/api/form-submissions", {

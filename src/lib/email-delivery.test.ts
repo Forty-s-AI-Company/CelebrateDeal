@@ -51,6 +51,11 @@ const input = {
   recipientName: "王小明",
   recipientEmail: "lead@example.test",
   liveScheduledAt: new Date("2026-08-08T04:00:00.000Z"),
+  emailBrand: {
+    senderName: "測試品牌",
+    supportEmail: "support@example.test",
+    contactUrl: "https://example.test/contact",
+  },
   template: {
     id: "template-1",
     vendorId: "vendor-1",
@@ -94,6 +99,7 @@ function candidate(overrides: Record<string, unknown> = {}) {
       recipientEmail: "lead@example.test",
       subject: "你已報名新品直播",
       body: "報名成功",
+      brand: input.emailBrand,
     }, { vendorId: "vendor-1", deliveryId: id }),
     idempotencyKey: "registration-confirmed/delivery-1",
     status: "queued",
@@ -109,6 +115,10 @@ function candidate(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date("2026-08-08T00:00:00.000Z"),
     ...overrides,
   };
+}
+
+function countUnsubscribeUrls(body: string) {
+  return body.match(/https:\/\/app\.example\.test\/unsubscribe\?token=eu1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu)?.length ?? 0;
 }
 
 describe("email delivery outbox", () => {
@@ -129,16 +139,27 @@ describe("email delivery outbox", () => {
       recipientMaskedEmail: "l***@example.test",
       idempotencyKey: expect.stringMatching(/^registration-confirmed\/email_/u),
     });
-    expect(revealEmailDeliveryPayload(create.data.payloadEncryptedEnvelope, {
+    const payload = revealEmailDeliveryPayload(create.data.payloadEncryptedEnvelope, {
       vendorId: "vendor-1",
       deliveryId: create.data.id,
-    })).toMatchObject({
+    });
+    expect(payload).toMatchObject({
       recipientEmail: "lead@example.test",
       subject: "王小明，你已報名 新品直播",
       body: expect.stringContaining("https://app.example.test/unsubscribe?token=eu1."),
+      brand: {
+        version: 1,
+        senderName: "測試品牌",
+        replyTo: "support@example.test",
+        contactUrl: "https://example.test/contact",
+      },
     });
+    expect(countUnsubscribeUrls(payload.body)).toBe(1);
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
     expect(JSON.stringify(create)).not.toContain("王小明");
+    expect(JSON.stringify(create)).not.toContain("測試品牌");
+    expect(JSON.stringify(create)).not.toContain("support@example.test");
+    expect(JSON.stringify(create)).not.toContain("https://example.test/contact");
   });
 
   it("queues an encrypted, idempotent form-submission verification delivery without serializing recipient PII or the token", async () => {
@@ -155,6 +176,7 @@ describe("email delivery outbox", () => {
       recipientEmail: "lead@example.test",
       verificationVersion: 1,
       verificationExpiresAt: new Date("2026-08-11T00:00:00.000Z"),
+      emailBrand: input.emailBrand,
     };
 
     await expect(ensureFormSubmissionVerificationDelivery(verificationInput)).resolves.toMatchObject({
@@ -181,12 +203,83 @@ describe("email delivery outbox", () => {
       recipientEmail: "lead@example.test",
       subject: "請確認 測試商家 的報名 Email",
       body: expect.stringContaining("https://app.example.test/verify-registration?token=fsv1."),
+      brand: expect.objectContaining({
+        version: 1,
+        senderName: "測試品牌",
+        replyTo: "support@example.test",
+      }),
     });
     expect(token).toMatch(/^fsv1\.[^.]+\.[^.]+\.[^.]+\.[^.]+$/u);
     const serializedCreate = JSON.stringify(create);
     expect(serializedCreate).not.toContain("lead@example.test");
     expect(serializedCreate).not.toContain("王小明");
     expect(serializedCreate).not.toContain(token!);
+  });
+
+  it("adds exactly one unsubscribe URL to queued lifecycle payloads when templates omit the variable", async () => {
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: data.id,
+      status: data.status,
+      nextAttemptAt: data.nextAttemptAt,
+    }));
+
+    const templateWithoutUnsubscribe = (id: string, trigger: string, body: string) => ({
+      ...input.template,
+      id,
+      trigger,
+      body,
+    });
+
+    await expect(ensureRegistrationConfirmationDelivery({
+      ...input,
+      template: templateWithoutUnsubscribe("registration-without-unsubscribe", "registration_confirmed", "報名內容"),
+    })).resolves.toMatchObject({ status: "queued" });
+    const registrationCreate = mocks.db.emailDelivery.create.mock.calls[0]?.[0];
+    expect(registrationCreate.data.status).toBe("queued");
+    const registrationPayload = revealEmailDeliveryPayload(registrationCreate.data.payloadEncryptedEnvelope, {
+      vendorId: "vendor-1",
+      deliveryId: registrationCreate.data.id,
+    });
+    expect(countUnsubscribeUrls(registrationPayload.body)).toBe(1);
+
+    const reminderNow = new Date("2026-08-08T00:00:00.000Z");
+    await expect(ensureLiveReminderDelivery({
+      ...input,
+      liveScheduledAt: new Date("2026-08-08T01:00:00.000Z"),
+      reminderOffsetMinutes: 60,
+      template: templateWithoutUnsubscribe("reminder-without-unsubscribe", "live_reminder", "提醒內容"),
+    }, reminderNow)).resolves.toMatchObject({ status: "scheduled" });
+    const reminderCreate = mocks.db.emailDelivery.create.mock.calls[1]?.[0];
+    expect(reminderCreate.data.status).toBe("queued");
+    const reminderPayload = revealEmailDeliveryPayload(reminderCreate.data.payloadEncryptedEnvelope, {
+      vendorId: "vendor-1",
+      deliveryId: reminderCreate.data.id,
+    });
+    expect(countUnsubscribeUrls(reminderPayload.body)).toBe(1);
+
+    await expect(ensurePostLiveFollowupDelivery({
+      ...input,
+      template: templateWithoutUnsubscribe("followup-without-unsubscribe", "post_live_followup", "課後內容"),
+      rule: {
+        id: "rule-without-unsubscribe",
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        trigger: "post_live_followup",
+        offsetMinutes: 30,
+        isActive: true,
+      },
+      streamMode: "vod",
+      endedAt: null,
+      videoDurationSec: 3_600,
+      verificationStatus: "VERIFIED",
+    }, new Date("2026-08-08T06:00:00.000Z"))).resolves.toMatchObject({ status: "queued" });
+    const followupCreate = mocks.db.emailDelivery.create.mock.calls[2]?.[0];
+    expect(followupCreate.data.status).toBe("queued");
+    const followupPayload = revealEmailDeliveryPayload(followupCreate.data.payloadEncryptedEnvelope, {
+      vendorId: "vendor-1",
+      deliveryId: followupCreate.data.id,
+    });
+    expect(countUnsubscribeUrls(followupPayload.body)).toBe(1);
   });
 
   it("schedules an encrypted reminder and gives changed template or title content a new delivery identity", async () => {
@@ -256,6 +349,12 @@ describe("email delivery outbox", () => {
     });
     expect(payload.subject).toContain("新品直播");
     expect(payload.subject).not.toContain("{{live_start_at}}");
+    expect(payload.brand).toEqual({
+      version: 1,
+      senderName: "測試品牌",
+      replyTo: "support@example.test",
+      contactUrl: "https://example.test/contact",
+    });
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
   });
 
@@ -403,6 +502,15 @@ describe("email delivery outbox", () => {
       sourceLiveId: "live-1",
       sourceFormSubmissionId: "submission-1",
       idempotencyKey: expect.stringMatching(/^post-live-followup\/rule-1\/email_/u),
+    });
+    expect(revealEmailDeliveryPayload(create.data.payloadEncryptedEnvelope, {
+      vendorId: "vendor-1",
+      deliveryId: create.data.id,
+    }).brand).toEqual({
+      version: 1,
+      senderName: "測試品牌",
+      replyTo: "support@example.test",
+      contactUrl: "https://example.test/contact",
     });
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -577,11 +685,37 @@ describe("email delivery outbox", () => {
       subject: "你已報名新品直播",
       text: "報名成功",
       idempotencyKey: "registration-confirmed/delivery-1",
+      brand: {
+        version: 1,
+        senderName: "測試品牌",
+        replyTo: "support@example.test",
+        contactUrl: "https://example.test/contact",
+      },
     });
     expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: { id: "delivery-1", status: "sending", attemptCount: 1 },
       data: expect.objectContaining({ status: "sent", providerMessageId: "provider-message-1" }),
     }));
+  });
+
+  it("dispatches a legacy envelope without rebuilding brand data from the current vendor", async () => {
+    const legacyPayload = protectEmailDeliveryPayload({
+      recipientEmail: "lead@example.test",
+      subject: "舊通知",
+      body: "舊內容",
+    }, { vendorId: "vendor-1", deliveryId: "delivery-1" });
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate(legacyPayload));
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "provider-legacy-1" });
+
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    const providerInput = mocks.sendTransactionalEmail.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(providerInput).toEqual({
+      to: "lead@example.test",
+      subject: "舊通知",
+      text: "舊內容",
+      idempotencyKey: "registration-confirmed/delivery-1",
+    });
+    expect(providerInput).not.toHaveProperty("brand");
   });
 
   it("keeps an unchanged current live reminder eligible for provider delivery", async () => {

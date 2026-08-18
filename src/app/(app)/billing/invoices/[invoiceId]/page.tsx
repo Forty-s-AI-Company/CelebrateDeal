@@ -62,6 +62,10 @@ const paymentMessages: Record<string, string> = {
   conflict: "付款交易狀態與帳單不一致，系統已停止建立新交易，請交由客服處理。",
 };
 
+function paymentMessage(code: string) {
+  return paymentMessages[code] ?? null;
+}
+
 const paymentErrors: Record<string, string> = {
   checkout: "目前無法建立付款頁，這筆付款交易已停止，請稍後再試。",
   not_payable: "這筆帳單目前不是可付款狀態。",
@@ -89,10 +93,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: Invoic
   const csrfToken = isPayable ? await getCsrfToken() : null;
   const requestedStatus = queryText(query?.status);
   const statusMessage = requestedStatus === "paid"
-    ? (invoice.status === "paid" ? paymentMessages.paid : null)
+    ? (invoice.status === "paid" ? paymentMessage("paid") : null)
     : requestedStatus === "checkout"
-      ? (checkout ? paymentMessages.checkout : null)
-      : paymentMessages[requestedStatus] ?? null;
+      ? (checkout ? paymentMessage("checkout") : null)
+      : paymentMessage(requestedStatus);
   const paymentErrorCode = queryText(query?.error);
   const errorMessage = paymentErrors[paymentErrorCode] ?? null;
 

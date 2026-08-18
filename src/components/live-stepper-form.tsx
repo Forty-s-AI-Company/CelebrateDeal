@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
@@ -26,11 +27,14 @@ import {
 } from "@/lib/live-studio-draft";
 
 const steps = [
-  { key: "basics", label: "基本資料", icon: Calendar },
-  { key: "conversion", label: "商品與轉換", icon: Package },
-  { key: "media", label: "媒體", icon: PlaySquare },
-  { key: "operations", label: "直播與互動", icon: Shield },
-  { key: "review", label: "預覽發布", icon: Check },
+  { key: "purpose", label: "用途與基本資料", icon: Calendar },
+  { key: "media", label: "媒體與 Live Input", icon: PlaySquare },
+  { key: "products", label: "商品優惠", icon: Package },
+  { key: "registration", label: "報名頁", icon: Calendar },
+  { key: "schedule", label: "時間、回放與品牌", icon: Calendar },
+  { key: "emails", label: "Email", icon: Check },
+  { key: "interactions", label: "留言、商品浮窗與 CTA", icon: Shield },
+  { key: "review", label: "桌機／手機預覽發布", icon: Check },
 ];
 const requiredFieldsMessage = "請先完成本步驟的必填欄位，再繼續下一步。";
 
@@ -63,7 +67,7 @@ const liveStudioPresetOptions: Array<{
 }> = [
   { value: "COMMERCE", label: "商品銷售直播", description: "適合導購、報名與開播提醒；發布前會檢查商品、Email 與互動腳本。" },
   { value: "CONTENT", label: "內容／課程直播", description: "適合分享、教學與回放；商品可留空，至少需要可播放媒體。" },
-  { value: "CUSTOM", label: "從空白開始", description: "保留完整五步設定，自行決定商品、通知、互動與用量規則。" },
+  { value: "CUSTOM", label: "從空白開始", description: "保留完整八步設定，自行決定商品、通知、互動與用量規則。" },
 ];
 
 function LiveStudioPurposeStarter({
@@ -145,11 +149,11 @@ function StepPanel({
   );
 }
 
-function ScheduleDateTimeField({ timeZone, defaultValue }: { timeZone: string; defaultValue: string }) {
+function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone: string; defaultValue: string; onChange?: (value: string) => void }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       開播時間（{timeZone}）
-      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} className="h-10 rounded-md border border-border px-3" />
+      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
       <span className="text-xs font-normal text-slate-500">請依商家時區輸入；儲存時會轉成 UTC，提醒與公開頁會使用同一時間。</span>
     </label>
   );
@@ -166,9 +170,10 @@ function ProductSelection({
 }) {
   if (products.length === 0) {
     return (
-      <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        目前沒有可綁定的啟用商品。你仍可先建立草稿，之後再從編輯頁補上商品。
-      </p>
+      <div data-readiness-focus="products" tabIndex={-1} className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p>目前沒有可綁定的啟用商品。你仍可先建立草稿，或先建立商品。</p>
+        <Link href="/products/new" className="mt-2 inline-flex font-semibold text-primary underline">新增商品</Link>
+      </div>
     );
   }
 
@@ -224,12 +229,21 @@ function liveStatusAction(status: string) {
 }
 
 const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: string; step: number; action: string }> = {
-  media: { label: "可播放的影片或 Live Input", step: 2, action: "前往媒體" },
-  products: { label: "啟用且已確認履約類型的商品", step: 1, action: "前往商品與轉換" },
-  registration_form: { label: "有效的報名表單", step: 1, action: "前往商品與轉換" },
-  registration_email: { label: "可寄送的報名成功 Email", step: 1, action: "前往商品與轉換" },
-  live_reminder_email: { label: "可寄送的開播提醒 Email", step: 1, action: "前往商品與轉換" },
-  interaction_script: { label: "已發布的互動腳本", step: 3, action: "前往直播與互動" },
+  media: { label: "可播放的影片或 Live Input", step: 1, action: "前往媒體" },
+  products: { label: "啟用且已確認履約類型的商品", step: 2, action: "前往商品優惠" },
+  registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
+  registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
+  live_reminder_email: { label: "可寄送的開播提醒 Email", step: 5, action: "前往 Email" },
+  interaction_script: { label: "已發布的互動腳本", step: 6, action: "前往互動設定" },
+};
+
+const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, string> = {
+  media: '[name="videoId"]',
+  products: '[data-readiness-focus="products"]',
+  registration_form: '[name="formId"]',
+  registration_email: '[name="messageTemplateId"]',
+  live_reminder_email: '[name="liveReminderTemplateId"]',
+  interaction_script: '[name="interactionScriptId"]',
 };
 
 function LiveReviewPanel({
@@ -239,7 +253,7 @@ function LiveReviewPanel({
 }: {
   preview: ReturnType<typeof buildLivePreview>;
   readiness: ReturnType<typeof getLivePublishReadiness>;
-  onFix: (step: number) => void;
+  onFix: (code: LivePublishRequirementCodeWithReminder) => void;
 }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -279,7 +293,7 @@ function LiveReviewPanel({
                     {requirement.ready ? "已完成" : "待完成"} · {copy.label}
                   </span>
                   {!requirement.ready ? (
-                    <button type="button" onClick={() => onFix(copy.step)} className="min-h-9 rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900">
+                    <button type="button" onClick={() => onFix(requirement.code)} className="min-h-9 rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900">
                       {copy.action}
                     </button>
                   ) : null}
@@ -311,9 +325,42 @@ function LiveReviewPanel({
         </div>
       </div>
 
-      <div className="lg:hidden">
-        <LivePhonePreview preview={preview} />
+      <LiveDevicePreviews preview={preview} />
+    </div>
+  );
+}
+
+function LiveDesktopPreview({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
+      <div className="aspect-video rounded-xl bg-[radial-gradient(circle_at_30%_20%,#475569,transparent_28%),linear-gradient(160deg,#0f172a,#020617)] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-lg font-black">{preview.title}</p>
+          <span className="rounded-full bg-red-700 px-3 py-1 text-xs font-black">LIVE</span>
+        </div>
+        <div className="mt-12 rounded-xl bg-white p-4 text-slate-950 shadow-2xl">
+          <p className="text-sm font-black text-orange-800">{preview.accentCopy}</p>
+          <p className="mt-2 font-bold">
+            {preview.productNames.length > 0 ? preview.productNames.join("、") : preview.emptyProductLabel}
+          </p>
+          {preview.remainingProductCount > 0 ? <p className="mt-1 text-xs text-slate-500">及其他 {preview.remainingProductCount} 件商品</p> : null}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function LiveDevicePreviews({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <div className="grid gap-4">
+      <section aria-labelledby="desktop-live-preview-label">
+        <h3 id="desktop-live-preview-label" className="mb-2 text-sm font-semibold text-slate-700">桌機預覽</h3>
+        <LiveDesktopPreview preview={preview} />
+      </section>
+      <section aria-labelledby="mobile-live-preview-label" className="mx-auto w-full max-w-[320px]">
+        <h3 id="mobile-live-preview-label" className="mb-2 text-sm font-semibold text-slate-700">手機預覽</h3>
+        <LivePhonePreview preview={preview} />
+      </section>
     </div>
   );
 }
@@ -476,7 +523,7 @@ function liveFormError(error?: string) {
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
-    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第五步檢查清單補齊後再發布。",
+    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布。",
   };
   const message = error ? messages[error] : undefined;
   return message ? (
@@ -529,6 +576,174 @@ function LiveSubmitActions({
   );
 }
 
+type LiveStudioStepPanelRenderOptions = {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  videos: Array<Pick<Video, "id" | "title">>;
+  selectedVideoId: string;
+  onVideoChange: (value: string) => void;
+  products: LiveProductOption[];
+  selectedProductIds: string[];
+  onProductSelectionChange: (productId: string, checked: boolean) => void;
+  onAccentCopyChange: (value: string) => void;
+  forms: LiveFormOption[];
+  onFormChange: (value: string) => void;
+  registrationTemplates: LiveTemplateOption[];
+  selectedTemplateId: string;
+  onTemplateChange: (value: string) => void;
+  reminderTemplates: LiveTemplateOption[];
+  selectedReminderTemplateId: string;
+  onReminderTemplateChange: (value: string) => void;
+  scripts: LiveScriptOption[];
+  selectedScriptId: string;
+  onScriptChange: (value: string) => void;
+  affiliates: LiveAffiliateOption[];
+  streamMembers: StreamAllocationMemberOption[];
+  streamPages: StreamAllocationPageOption[];
+};
+
+function renderLiveStudioStepPanels({
+  activeStep,
+  initialValues,
+  videos,
+  selectedVideoId,
+  onVideoChange,
+  products,
+  selectedProductIds,
+  onProductSelectionChange,
+  onAccentCopyChange,
+  forms,
+  onFormChange,
+  registrationTemplates,
+  selectedTemplateId,
+  onTemplateChange,
+  reminderTemplates,
+  selectedReminderTemplateId,
+  onReminderTemplateChange,
+  scripts,
+  selectedScriptId,
+  onScriptChange,
+  affiliates,
+  streamMembers,
+  streamPages,
+}: LiveStudioStepPanelRenderOptions) {
+  return (
+    <>
+      <StepPanel active={activeStep === 1} index={1}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">媒體與 Live Input</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇既有 Stream 影片或 Live Input；來源識別碼由受保護流程管理。</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            串流模式
+            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
+              <option value="vod">Cloudflare Stream VOD</option>
+              <option value="live">Cloudflare Stream Live</option>
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            影片 / Live Input
+            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+              <option value="">不綁定影片</option>
+              {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
+            </select>
+          </label>
+        </div>
+        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或 Live Input</Link></p> : null}
+      </StepPanel>
+
+      <StepPanel active={activeStep === 2} index={2}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">商品優惠</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇主打商品並設定直播促銷短句；內容型直播可不選商品。</p>
+        </div>
+        <div data-readiness-focus="products" tabIndex={-1} className="grid gap-3">
+          <ProductSelection
+            products={products}
+            selectedProductIds={selectedProductIds}
+            onSelectionChange={onProductSelectionChange}
+          />
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          促銷短句
+          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
+        </label>
+      </StepPanel>
+
+      <StepPanel active={activeStep === 3} index={3}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">報名頁</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇這場直播要使用的報名表單。</p>
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          報名頁
+          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <option value="">不綁定表單</option>
+            {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
+          </select>
+        </label>
+        {forms.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用報名頁。<Link href="/forms/new" className="ml-1 font-semibold text-primary underline">新增報名頁</Link></p> : null}
+      </StepPanel>
+
+      <StepPanel active={activeStep === 5} index={5}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">Email</h2>
+          <p className="mt-1 text-sm text-slate-500">設定報名成功信、開播提醒信與寄送時間。</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            報名成功 Email
+            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+              <option value="">不綁定模板</option>
+              {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            開播提醒 Email
+            <select name="liveReminderTemplateId" defaultValue={selectedReminderTemplateId} onChange={(event) => onReminderTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+              <option value="">不寄送開播提醒</option>
+              {reminderTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            提前多久寄送
+            <select name="liveReminderOffsetMinutes" defaultValue={initialValues.liveReminderOffsetMinutes} className="h-10 rounded-md border border-border px-3">
+              <option value="15">15 分鐘</option><option value="30">30 分鐘</option><option value="60">1 小時</option><option value="180">3 小時</option><option value="1440">1 天</option>
+            </select>
+          </label>
+        </div>
+        {registrationTemplates.length === 0 || reminderTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">只有完成 Email 驗證的報名者會進入開播提醒排程；直播時間已過時不會建立提醒。</p>
+      </StepPanel>
+
+      <StepPanel active={activeStep === 6} index={6}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">留言、商品浮窗與 CTA</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇已發布的互動腳本，再設定聯盟來源、觀看上限與 Stream 用量歸屬。</p>
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          互動腳本
+          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <option value="">不綁定腳本</option>
+            {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
+          </select>
+        </label>
+        {scripts.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有已發布的互動腳本。<Link href="/interaction-scripts/new" className="ml-1 font-semibold text-primary underline">新增互動腳本</Link></p> : null}
+        {selectedScriptId ? (
+          <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <p>已選腳本：<strong>{scripts.find((script) => script.id === selectedScriptId)?.name ?? "目前選取的腳本"}</strong></p>
+            <p className="mt-1">事件摘要請至互動腳本編輯時間軸查看。</p>
+            <Link href={`/interaction-scripts/${encodeURIComponent(selectedScriptId)}/edit`} className="mt-1 inline-flex font-semibold text-primary underline">至互動腳本編輯時間軸</Link>
+          </div>
+        ) : null}
+        <LiveRulesFields affiliates={affiliates} initialValues={initialValues} streamMembers={streamMembers} streamPages={streamPages} />
+      </StepPanel>
+
+    </>
+  );
+}
+
 export function LiveStepperForm({
   videos,
   products,
@@ -567,11 +782,14 @@ export function LiveStepperForm({
   const reminderTemplates = templates.filter((template) => template.trigger === "live_reminder");
   const [activeStep, setActiveStep] = useState(initialValues.activeStep);
   const [previewTitle, setPreviewTitle] = useState(initialValues.title);
+  const [slug, setSlug] = useState(initialValues.slug);
+  const [scheduledAt, setScheduledAt] = useState(initialValues.scheduledAt);
   const [previewAccentCopy, setPreviewAccentCopy] = useState(initialValues.accentCopy);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>(initialValues.productIds);
   const [validationMessage, setValidationMessage] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const invalidFocusPendingRef = useRef(false);
+  const readinessFocusPendingRef = useRef<LivePublishRequirementCodeWithReminder | null>(null);
   const [selectedVideoId, setSelectedVideoId] = useState(initialValues.videoId);
   const [selectedFormId, setSelectedFormId] = useState(initialValues.formId);
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialValues.messageTemplateId);
@@ -590,6 +808,27 @@ export function LiveStepperForm({
   useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
   const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
   const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, reminderTemplates, reminderTemplateId: selectedReminderTemplateId, scripts, scriptId: selectedScriptId });
+  const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (
+    publishReadiness.requirements.find((requirement) => requirement.code === code)?.ready ?? true
+  );
+  const stepCompletion = [
+    Boolean(previewTitle.trim() && slug.trim()),
+    readinessIsReady("media"),
+    readinessIsReady("products"),
+    readinessIsReady("registration_form"),
+    Boolean(scheduledAt),
+    readinessIsReady("registration_email") && readinessIsReady("live_reminder_email"),
+    readinessIsReady("interaction_script"),
+    publishReadiness.ready,
+  ];
+
+  useEffect(() => {
+    const code = readinessFocusPendingRef.current;
+    if (!code) return;
+    const target = formRef.current?.querySelector<HTMLElement>(readinessFocusSelector[code]);
+    target?.focus();
+    readinessFocusPendingRef.current = null;
+  }, [activeStep]);
   function validateCurrentStep() {
     const panel = formRef.current?.querySelector<HTMLElement>(`[data-step-index="${activeStep}"]`);
     const invalidControl = panel?.querySelector<
@@ -616,6 +855,14 @@ export function LiveStepperForm({
     if (accentCopy) setPreviewAccentCopy(accentCopy);
   }
 
+  function fixReadinessRequirement(code: LivePublishRequirementCodeWithReminder) {
+    const step = readinessCopy[code].step;
+    readinessFocusPendingRef.current = code;
+    setValidationMessage("");
+    setActiveStep(step);
+    draft.scheduleSave(step);
+  }
+
   return (
     <form
       ref={formRef}
@@ -629,7 +876,7 @@ export function LiveStepperForm({
       {liveId ? <input type="hidden" name="id" value={liveId} /> : null}
       <input type="hidden" name="liveDraftId" value={draft.draftId} readOnly />
       <input type="hidden" name="liveDraftRevision" value={draft.revision ?? ""} readOnly />
-      <input type="hidden" name="studioPreset" value={studioPreset} readOnly />
+      <input type="hidden" name="flowVersion" value="2" readOnly />
       {liveFormError(error)}
       <p role="status" aria-live="polite" className="min-h-5 text-sm font-medium text-red-700">
         {validationMessage}
@@ -652,7 +899,7 @@ export function LiveStepperForm({
           {draft.status === "saving" ? "儲存中…" : "立即儲存草稿"}
         </button>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button
             key={step.key}
@@ -667,7 +914,10 @@ export function LiveStepperForm({
             }`}
           >
             <step.icon size={17} aria-hidden="true" />
-            {step.label}
+            <span>{step.label}</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${stepCompletion[index] ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+              {stepCompletion[index] ? "已完成" : "待完成"}
+            </span>
           </button>
         ))}
       </div>
@@ -679,6 +929,7 @@ export function LiveStepperForm({
           ) : null}
 
       <StepPanel active={activeStep === 0} index={0}>
+        <input type="hidden" name="studioPreset" value={studioPreset} readOnly />
         {!liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null}
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           直播標題
@@ -686,93 +937,56 @@ export function LiveStepperForm({
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           Slug
-          <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={initialValues.slug} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
+          <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={initialValues.slug} onChange={(event) => setSlug(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
         </label>
-        <ScheduleDateTimeField timeZone={timeZone} defaultValue={initialValues.scheduledAt} />
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           直播說明
           <textarea name="description" rows={4} autoComplete="off" defaultValue={initialValues.description} className="rounded-md border border-border px-3 py-2" />
         </label>
       </StepPanel>
 
-      <StepPanel active={activeStep === 1} index={1}>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">商品與轉換</h2>
-          <p className="mt-1 text-sm text-slate-500">先選這場直播要賣什麼，再決定報名頁與開播通知。</p>
-        </div>
-        <ProductSelection
-          products={products}
-          selectedProductIds={selectedProductIds}
-          onSelectionChange={(productId, checked) => setSelectedProductIds(
-            (currentIds) => updateSelectedProductIds(currentIds, productId, checked),
-          )}
-        />
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          促銷短句
-          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => setPreviewAccentCopy(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
-        </label>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            報名頁
-            <select name="formId" defaultValue={initialValues.formId} onChange={(event) => setSelectedFormId(event.target.value)} className="h-10 rounded-md border border-border px-3">
-              <option value="">不綁定表單</option>
-              {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            報名成功 Email
-            <select name="messageTemplateId" defaultValue={initialValues.messageTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)} className="h-10 rounded-md border border-border px-3">
-              <option value="">不綁定模板</option>
-              {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            開播提醒 Email
-            <select name="liveReminderTemplateId" defaultValue={initialValues.liveReminderTemplateId} onChange={(event) => setSelectedReminderTemplateId(event.target.value)} className="h-10 rounded-md border border-border px-3">
-              <option value="">不寄送開播提醒</option>
-              {reminderTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            提前多久寄送
-            <select name="liveReminderOffsetMinutes" defaultValue={initialValues.liveReminderOffsetMinutes} className="h-10 rounded-md border border-border px-3">
-              <option value="15">15 分鐘</option>
-              <option value="30">30 分鐘</option>
-              <option value="60">1 小時</option>
-              <option value="180">3 小時</option>
-              <option value="1440">1 天</option>
-            </select>
-          </label>
-        </div>
-        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          只有完成 Email 驗證的報名者會進入開播提醒排程；直播時間已過時不會建立提醒。
-        </p>
-      </StepPanel>
+      {renderLiveStudioStepPanels({
+        activeStep,
+        initialValues,
+        videos,
+        selectedVideoId,
+        onVideoChange: setSelectedVideoId,
+        products,
+        selectedProductIds,
+        onProductSelectionChange: (productId, checked) => setSelectedProductIds(
+          (currentIds) => updateSelectedProductIds(currentIds, productId, checked),
+        ),
+        onAccentCopyChange: setPreviewAccentCopy,
+        forms,
+        onFormChange: setSelectedFormId,
+        registrationTemplates,
+        selectedTemplateId,
+        onTemplateChange: setSelectedTemplateId,
+        reminderTemplates,
+        selectedReminderTemplateId,
+        onReminderTemplateChange: setSelectedReminderTemplateId,
+        scripts,
+        selectedScriptId,
+        onScriptChange: setSelectedScriptId,
+        affiliates,
+        streamMembers,
+        streamPages,
+      })}
 
-      <StepPanel active={activeStep === 2} index={2}>
+      <StepPanel active={activeStep === 4} index={4}>
         <div>
-          <h2 className="text-base font-semibold text-slate-950">媒體</h2>
-          <p className="mt-1 text-sm text-slate-500">選擇既有 Stream 影片或 Live Input，並直接上傳直播封面。</p>
+          <h2 className="text-base font-semibold text-slate-950">時間、回放與品牌</h2>
+          <p className="mt-1 text-sm text-slate-500">設定開播時間、回放選項與直播主視覺。</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            串流模式
-            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
-              <option value="vod">Cloudflare Stream VOD</option>
-              <option value="live">Cloudflare Stream Live</option>
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            影片 / Live Input
-            <select name="videoId" defaultValue={initialValues.videoId} onChange={(event) => setSelectedVideoId(event.target.value)} className="h-10 rounded-md border border-border px-3">
-              <option value="">不綁定影片</option>
-              {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
-            </select>
-          </label>
-        </div>
-        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-slate-600">
-          Cloudflare Live Input UID 會由受保護的串流建立流程自動綁定，不接受表單手動輸入。
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Logo、品牌色、寄件資訊與聯絡網址會沿用商店品牌設定。
+          <Link href="/settings/brand" className="ml-1 font-semibold text-primary underline">編輯品牌設定</Link>
         </p>
+        <ScheduleDateTimeField timeZone={timeZone} defaultValue={initialValues.scheduledAt} onChange={setScheduledAt} />
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input name="replayEnabled" type="checkbox" defaultChecked={initialValues.replayEnabled} onChange={(event) => setReplayEnabled(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+          直播結束後允許回放
+        </label>
         <MediaUploadField
           kind="image"
           label="直播封面"
@@ -785,27 +999,8 @@ export function LiveStepperForm({
         />
       </StepPanel>
 
-      <StepPanel active={activeStep === 3} index={3}>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">直播與互動</h2>
-          <p className="mt-1 text-sm text-slate-500">選擇已發布的互動腳本，再設定聯盟來源、觀看上限與 Stream 用量歸屬。</p>
-        </div>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          互動腳本
-          <select name="interactionScriptId" defaultValue={initialValues.interactionScriptId} onChange={(event) => setSelectedScriptId(event.target.value)} className="h-10 rounded-md border border-border px-3">
-            <option value="">不綁定腳本</option>
-            {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
-          </select>
-        </label>
-        <LiveRulesFields affiliates={affiliates} initialValues={initialValues} streamMembers={streamMembers} streamPages={streamPages} />
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input name="replayEnabled" type="checkbox" defaultChecked={initialValues.replayEnabled} onChange={(event) => setReplayEnabled(event.target.checked)} className="h-4 w-4 accent-blue-600" />
-          直播結束後允許回放
-        </label>
-      </StepPanel>
-
-      <StepPanel active={activeStep === 4} index={4}>
-        <LiveReviewPanel preview={preview} readiness={publishReadiness} onFix={moveToStep} />
+      <StepPanel active={activeStep === 7} index={7}>
+        <LiveReviewPanel preview={preview} readiness={publishReadiness} onFix={fixReadinessRequirement} />
       </StepPanel>
 
       <div className="flex justify-between">

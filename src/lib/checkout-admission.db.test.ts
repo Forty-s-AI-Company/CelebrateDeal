@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueCheckoutAdmission, verifyCheckoutAdmission } from "@/lib/checkout-admission";
 import { getDb } from "@/lib/db";
 import {
@@ -8,8 +8,13 @@ import {
 
 const createdVendorIds: string[] = [];
 
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "checkout-admission-test-secret-longer-than-thirty-two-bytes");
+});
+
 afterEach(async () => {
   await getDb().vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
+  vi.unstubAllEnvs();
 });
 
 describe("checkout admission disposable PostgreSQL invariants", () => {

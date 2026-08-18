@@ -7,6 +7,7 @@ import {
   createEmailUnsubscribeUrl,
   protectEmailDeliveryPayload,
   revealEmailDeliveryPayload,
+  type VendorEmailBrandSource,
 } from "@/lib/email-delivery-pii";
 import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
@@ -36,6 +37,7 @@ export type RegistrationConfirmationInput = {
   recipientName: string;
   recipientEmail: string;
   liveScheduledAt: Date;
+  emailBrand?: VendorEmailBrandSource;
   template: {
     id: string;
     vendorId: string;
@@ -80,6 +82,7 @@ export type FormSubmissionVerificationDeliveryInput = {
   recipientEmail: string;
   verificationVersion: number;
   verificationExpiresAt: Date;
+  emailBrand?: VendorEmailBrandSource;
 };
 
 function stableDeliveryId(input: Pick<RegistrationConfirmationInput, "vendorId" | "formSubmissionId"> & { templateId: string }) {
@@ -92,6 +95,12 @@ function stableDeliveryId(input: Pick<RegistrationConfirmationInput, "vendorId" 
 
 function renderTemplate(value: string, variables: Record<"name" | "live_title" | "live_start_at" | "vendor_name" | "unsubscribe_url", string>) {
   return value.replace(TEMPLATE_VARIABLE_PATTERN, (_, variable: keyof typeof variables) => variables[variable]);
+}
+
+function ensureEmailUnsubscribeFooter(body: string, unsubscribeUrl: string) {
+  const renderedBody = body.trim();
+  if (renderedBody.includes(unsubscribeUrl)) return renderedBody;
+  return [renderedBody, `退訂：${unsubscribeUrl}`].filter(Boolean).join("\n\n");
 }
 
 function formatLiveStartAt(value: Date) {
@@ -158,11 +167,12 @@ export async function ensureRegistrationConfirmationDelivery(input: Registration
     unsubscribe_url: unsubscribeUrl,
   };
   const subject = renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim();
-  const body = renderTemplate(template.body, variables).trim();
+  const body = ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), unsubscribeUrl);
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject,
     body,
+    brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
     deliveryId,
@@ -283,7 +293,8 @@ export async function ensureLiveReminderDelivery(
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: renderTemplate(template.body, variables).trim(),
+    body: ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), unsubscribeUrl),
+    brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
     deliveryId,
@@ -450,7 +461,8 @@ export async function ensurePostLiveFollowupDelivery(
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject: renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: renderTemplate(template.body, variables).trim(),
+    body: ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), variables.unsubscribe_url),
+    brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const db = getDb();
   const normalizedEmail = normalizeBlacklistIdentifier("email", input.recipientEmail);
@@ -617,6 +629,11 @@ export async function processDuePostLiveFollowups(
         endedAt: live.endedAt,
         videoDurationSec: live.video?.durationSec ?? null,
         verificationStatus: submission.verificationStatus,
+        emailBrand: {
+          senderName: live.vendor.senderName,
+          supportEmail: live.vendor.supportEmail,
+          contactUrl: live.vendor.contactUrl,
+        },
       }, now);
       results.push({ status: result.status });
     }
@@ -667,6 +684,7 @@ export async function ensureFormSubmissionVerificationDelivery(
     recipientEmail: input.recipientEmail,
     subject: `請確認 ${vendorName} 的報名 Email`,
     body: `${recipientName}：\n\n請開啟以下連結，並在頁面上按下確認，完成 Email 驗證：\n${verificationUrl}\n\n連結將於 48 小時後失效。如果不是你本人送出，可以忽略這封信。`,
+    brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
     deliveryId,
@@ -1044,6 +1062,7 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
       subject: payload.subject,
       text: payload.body,
       idempotencyKey: delivery.idempotencyKey,
+      ...(payload.brand ? { brand: payload.brand } : {}),
     });
   } catch (error) {
     const failure = deliveryError(error);

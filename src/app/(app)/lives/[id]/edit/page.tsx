@@ -208,7 +208,7 @@ export default async function EditLivePage({
 
   return (
     <>
-      <PageHeader title="編輯直播間" description="用同一套五步驟 Studio 調整內容；草稿與公開狀態分開儲存。" />
+      <PageHeader title="編輯直播間" description="用同一套八步驟 Studio 調整內容；草稿與公開狀態分開儲存。" />
       {notice === "reminders_reconciling" ? (
         <p role="status" aria-live="polite" className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
           直播設定已儲存。系統正在分批更新已驗證報名者的開播提醒，寄送紀錄會保留最新排程與被取代版本。

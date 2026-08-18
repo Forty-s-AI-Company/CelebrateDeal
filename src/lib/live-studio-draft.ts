@@ -12,7 +12,10 @@ const DraftImageReference = z.string().trim().max(2_048).refine(
   "unsafe_url_scheme",
 );
 
-export const LiveStudioDraftPayloadSchema = z.object({
+export const LIVE_STUDIO_FLOW_VERSION = 2 as const;
+export const LIVE_STUDIO_STEP_COUNT = 8;
+
+const liveStudioDraftFields = {
   studioPreset: z.enum(["CONTENT", "COMMERCE", "CUSTOM"]).default("CUSTOM"),
   title: z.string().trim().max(200).default(""),
   slug: z.string().trim().max(200).default(""),
@@ -41,8 +44,32 @@ export const LiveStudioDraftPayloadSchema = z.object({
   memberQuotas: boundedJsonText,
   pageQuotas: boundedJsonText,
   replayEnabled: z.boolean().default(true),
+};
+
+const LegacyLiveStudioDraftPayloadSchema = z.object({
+  ...liveStudioDraftFields,
   activeStep: z.number().int().min(0).max(4).default(0),
 }).strict();
+
+const CanonicalLiveStudioDraftPayloadSchema = z.object({
+  ...liveStudioDraftFields,
+  flowVersion: z.literal(LIVE_STUDIO_FLOW_VERSION),
+  activeStep: z.number().int().min(0).max(LIVE_STUDIO_STEP_COUNT - 1).default(0),
+}).strict();
+
+const legacyStepToVersionTwo = [0, 2, 1, 6, 7] as const;
+
+export const LiveStudioDraftPayloadSchema = z.union([
+  CanonicalLiveStudioDraftPayloadSchema,
+  LegacyLiveStudioDraftPayloadSchema,
+]).transform((payload) => {
+  if ("flowVersion" in payload) return payload;
+  return {
+    ...payload,
+    flowVersion: LIVE_STUDIO_FLOW_VERSION,
+    activeStep: legacyStepToVersionTwo[payload.activeStep]!,
+  };
+});
 
 export const SaveLiveStudioDraftRequestSchema = z.object({
   draftId: optionalReference,

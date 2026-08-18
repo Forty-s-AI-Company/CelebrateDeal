@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
 import { createPasswordResetToken } from "../../src/lib/password-reset";
+import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "../../src/lib/product-delivery";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
 
 const db = new PrismaClient();
@@ -19,6 +20,11 @@ const rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, "0");
 // PayUni UPP accepts integer TWD only. Keep the fixture provider-valid while
 // still proving that checkout ignores a forged client-side amount.
 const e2eProductPriceCents = 12_300;
+
+function redactedEmail(email: string) {
+  return `[redacted length=${email.length}]`;
+}
+
 const e2eOrigin = new URL(
   process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? "31023"}`,
 ).origin;
@@ -255,11 +261,11 @@ const passwordResetTest = test.extend<{ passwordResetUser: PasswordResetTestUser
           OR: [
             ...(user
               ? [
-                  { actorId: user.id },
-                  { targetId: user.id },
-                  { targetId: user.email },
-                  { after: { path: ["email"], equals: user.email } },
-                ]
+            { actorId: user.id },
+            { targetId: user.id },
+            { targetId: user.email },
+            { after: { path: ["email"], equals: redactedEmail(user.email) } },
+          ]
               : []),
             { vendorId: vendor.id },
           ],
@@ -491,9 +497,50 @@ test.beforeAll(async () => {
       currency: "TWD",
       inventory: 10,
       isActive: true,
+      fulfillmentType: "digital",
+      fulfillmentTypeConfirmed: true,
     },
   });
-  const inactiveProduct = await db.product.create({
+  const delivery = validateProductDeliveryDraft({
+    fulfillmentType: "digital",
+    isActive: true,
+    title: "E2E 數位研討會教材",
+    destinationUrl: "https://delivery.example.com/e2e/webinar-materials",
+    instructions: "付款完成後，請從此入口取得研討會教材。",
+    hostConfirmed: true,
+  });
+  if (!delivery) throw new Error("Checkout fixture delivery was not created.");
+  const deliveryConfigId = randomUUID();
+  const deliveryAllowlist = await db.vendorDeliveryUrlAllowlist.create({
+    data: {
+      vendorId: vendor.id,
+      hostname: delivery.destinationHostname!,
+      pathPrefix: delivery.destinationPathPrefix!,
+      allowQuery: false,
+      status: "active",
+    },
+  });
+  await db.productDeliveryConfig.create({
+    data: {
+      id: deliveryConfigId,
+      vendorId: vendor.id,
+      productId: product.id,
+      allowlistId: deliveryAllowlist.id,
+      revision: 1,
+      status: delivery.status,
+      fulfillmentType: delivery.fulfillmentType,
+      deliveryKind: delivery.deliveryKind,
+      title: delivery.title,
+      ...protectProductDeliveryConfig(delivery, {
+        vendorId: vendor.id,
+        productId: product.id,
+        configId: deliveryConfigId,
+        revision: 1,
+      }),
+      activatedAt: new Date(),
+    },
+  });
+  await db.product.create({
     data: {
       vendorId: vendor.id,
       name: "E2E 停用商品",
@@ -554,10 +601,31 @@ test.beforeAll(async () => {
       isActive: true,
     },
   });
+  await db.interactionRole.create({
+    data: {
+      vendorId: vendor.id,
+      name: "E2E 官方主持人",
+      label: "官方角色",
+      roleType: "official",
+      tone: "溫暖、清楚、協助觀眾掌握直播重點",
+      isActive: true,
+      isScheduled: true,
+    },
+  });
+  const interactionScript = await db.interactionScript.create({
+    data: {
+      vendorId: vendor.id,
+      name: "E2E 公開直播互動腳本",
+      status: "published",
+    },
+  });
   const live = await db.live.create({
     data: {
       vendorId: vendor.id,
+      videoId: readyVideo.id,
       formId: form.id,
+      messageTemplateId: registrationTemplate.id,
+      interactionScriptId: interactionScript.id,
       title: "E2E 直播頁",
       slug: seed.liveSlug,
       description: "Smoke live page",
@@ -567,7 +635,6 @@ test.beforeAll(async () => {
       products: {
         create: [
           { productId: product.id, sortOrder: 1, isPinned: true },
-          { productId: inactiveProduct.id, sortOrder: 2, isPinned: false },
         ],
       },
     },
@@ -648,8 +715,8 @@ test("merchant can drag the last template message to the first timeline slot", a
   await expect(page.getByRole("heading", { name: "新增互動腳本" })).toBeVisible();
 
   const scriptName = `E2E 拖曳排序持久化 ${e2eRunId}`;
-  await page.getByLabel("留言組名稱").fill(scriptName);
-  await page.getByRole("button", { name: "新品快閃" }).click();
+  await page.getByLabel("互動腳本名稱", { exact: true }).fill(scriptName);
+  await page.getByRole("button", { name: "新品快閃", exact: true }).click();
 
   const messageRows = page.getByTestId("interaction-message-row");
   await expect(messageRows).toHaveCount(4);
@@ -658,29 +725,40 @@ test("merchant can drag the last template message to the first timeline slot", a
   const expectedMessages = [
     "直播限定優惠已開放，等等會整理完整連結。",
     "歡迎來到官方直播間，今天會快速整理新品亮點。",
-    "主打組合已經浮出，想比較規格可以先點商品卡。",
     "第一次接觸可以先從體驗組開始，門檻比較輕。",
   ];
+  const expectedEventTypes = ["chat_message", "chat_message", "product_spotlight", "chat_message"];
   const expectedTimes = ["00:00:05", "00:00:45", "00:01:30", "00:03:00"];
+  const expectedOutline = [
+    expectedMessages[0],
+    expectedMessages[1],
+    "E2E 導購商品",
+    expectedMessages[2],
+  ];
 
-  await expect(messageRows.nth(0).getByTestId("interaction-message-content")).toHaveValue(expectedMessages[0]);
   expect(await messageRows.getByTestId("interaction-message-content").evaluateAll((elements) => (
     elements.map((element) => (element as HTMLTextAreaElement).value)
   ))).toEqual(expectedMessages);
+  expect(await messageRows.locator('select[name="eventType"]').evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLSelectElement).value)
+  ))).toEqual(expectedEventTypes);
+  await expect(messageRows.nth(2).locator('select[name="productId"]')).toHaveValue(seed.productId);
   expect(await messageRows.getByTestId("interaction-message-time").evaluateAll((elements) => (
     elements.map((element) => (element as HTMLInputElement).value)
   ))).toEqual(expectedTimes);
 
   const timelineOutline = page.getByTestId("interaction-timeline-outline");
-  await expect(timelineOutline.getByTestId("interaction-timeline-outline-message")).toHaveText(expectedMessages);
+  await expect(timelineOutline.getByTestId("interaction-timeline-outline-message")).toHaveText(expectedOutline);
   await expect(timelineOutline.getByTestId("interaction-timeline-outline-time")).toHaveText(expectedTimes);
 
-  await page.getByRole("button", { name: "更新留言組" }).click();
+  await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
   await expect(page).toHaveURL(/\/interaction-scripts$/);
 
-  const savedScript = page.getByRole("heading", { name: scriptName, exact: true }).locator("../../../..");
+  const savedScript = page.getByRole("article", { name: scriptName, exact: true });
   await expect(savedScript).toBeVisible();
-  await savedScript.getByTitle("編輯").click();
+  const editLink = savedScript.getByRole("link", { name: "編輯", exact: true });
+  await expect(editLink).toHaveAttribute("href", /\/interaction-scripts\/[^/]+\/edit$/);
+  await editLink.click();
   await expect(page).toHaveURL(/\/interaction-scripts\/[^/]+\/edit$/);
 
   const persistedMessageRows = page.getByTestId("interaction-message-row");
@@ -688,9 +766,14 @@ test("merchant can drag the last template message to the first timeline slot", a
   expect(await persistedMessageRows.getByTestId("interaction-message-content").evaluateAll((elements) => (
     elements.map((element) => (element as HTMLTextAreaElement).value)
   ))).toEqual(expectedMessages);
+  expect(await persistedMessageRows.locator('select[name="eventType"]').evaluateAll((elements) => (
+    elements.map((element) => (element as HTMLSelectElement).value)
+  ))).toEqual(expectedEventTypes);
+  await expect(persistedMessageRows.nth(2).locator('select[name="productId"]')).toHaveValue(seed.productId);
   expect(await persistedMessageRows.getByTestId("interaction-message-time").evaluateAll((elements) => (
     elements.map((element) => (element as HTMLInputElement).value)
   ))).toEqual(expectedTimes);
+  await expect(page.getByTestId("interaction-timeline-outline").getByTestId("interaction-timeline-outline-message")).toHaveText(expectedOutline);
 });
 
 loginRateLimitTest("login failures are audited and the sixth UI attempt is rejected before authentication", async ({ page, loginRateLimitUser }) => {
@@ -777,7 +860,7 @@ passwordResetTest("password reset request hides account existence and revokes an
     action: "password_reset_email_failed",
     targetType: "PasswordResetToken",
     targetId: resetRecords[0]!.id,
-    after: { path: ["email"], equals: passwordResetUser.email },
+    after: { path: ["email"], equals: redactedEmail(passwordResetUser.email) },
   };
 
   // Server Action 會在 generic response 後以 after() 寫入 audit；只輪詢同一筆
@@ -799,7 +882,7 @@ passwordResetTest("password reset request hides account existence and revokes an
     targetId: resetRecords[0]!.id,
     // auditSnapshot redacts token-related metadata before persistence; the
     // event's targetId and action retain the verifiable revoke contract.
-    after: { email: passwordResetUser.email, tokenRevoked: "[redacted]" },
+    after: { email: redactedEmail(passwordResetUser.email), tokenRevoked: "[redacted]" },
   });
 });
 
@@ -835,7 +918,7 @@ passwordResetTest("security password reset smoke targets only the signed-in user
       action: "password_reset_smoke_email_failed",
       actorId: passwordResetUser.id,
       targetId: passwordResetUser.id,
-      after: { path: ["email"], equals: passwordResetUser.email },
+      after: { path: ["email"], equals: redactedEmail(passwordResetUser.email) },
     },
     select: { actorId: true, targetId: true, after: true },
   });
@@ -843,7 +926,7 @@ passwordResetTest("security password reset smoke targets only the signed-in user
   expect(failedAudits[0]).toMatchObject({
     actorId: passwordResetUser.id,
     targetId: passwordResetUser.id,
-    after: { email: passwordResetUser.email },
+    after: { email: redactedEmail(passwordResetUser.email) },
   });
   expect(await db.auditLog.count({
     where: { action: "password_reset_smoke_email_sent", actorId: passwordResetUser.id },
@@ -861,20 +944,30 @@ passwordResetTest("password reset confirmation validates safely and replaces cre
     where: { userId: passwordResetUser.id, revokedAt: null },
   });
   expect(activeSessionsBeforeReset).toBeGreaterThan(0);
+  const resetTokensBeforeShortPassword = await db.passwordResetToken.count({ where: { userId: passwordResetUser.id } });
 
   await page.goto(confirmUrlWithInvalidResetReference());
-  await page.getByLabel("新密碼").fill(undersizedCredential);
-  await page.getByLabel("確認密碼").fill(undersizedCredential);
+  const newPassword = page.getByLabel("新密碼", { exact: true });
+  const confirmPassword = page.getByLabel("確認密碼", { exact: true });
+  await expect(newPassword).toHaveAttribute("minlength", "12");
+  await expect(confirmPassword).toHaveAttribute("minlength", "12");
+  await newPassword.fill(undersizedCredential);
+  await confirmPassword.fill(undersizedCredential);
   await page.getByRole("button", { name: "更新密碼" }).click();
-  await expect(page.getByText("密碼至少需要 12 個字元。")).toBeVisible();
+  expect(await newPassword.evaluate((input) => !(input as HTMLInputElement).checkValidity())).toBe(true);
+  expect(await confirmPassword.evaluate((input) => !(input as HTMLInputElement).checkValidity())).toBe(true);
+  expect(new URL(page.url()).pathname).toBe("/password-reset/confirm");
+  expect(new URL(page.url()).searchParams.get("token")).toBe(resetReference);
+  expect(await db.passwordResetToken.count({ where: { userId: passwordResetUser.id } })).toBe(resetTokensBeforeShortPassword);
+  expect(await db.userSession.count({ where: { userId: passwordResetUser.id, revokedAt: null } })).toBe(activeSessionsBeforeReset);
 
-  await page.getByLabel("新密碼").fill(replacementCredential);
-  await page.getByLabel("確認密碼").fill(previousCredential);
+  await newPassword.fill(replacementCredential);
+  await confirmPassword.fill(previousCredential);
   await page.getByRole("button", { name: "更新密碼" }).click();
   await expect(page.getByText("兩次輸入的密碼不一致。")).toBeVisible();
 
-  await page.getByLabel("新密碼").fill(replacementCredential);
-  await page.getByLabel("確認密碼").fill(replacementCredential);
+  await newPassword.fill(replacementCredential);
+  await confirmPassword.fill(replacementCredential);
   await page.getByRole("button", { name: "更新密碼" }).click();
   await expect(page.getByText("這個重設連結已失效，請重新申請。")).toBeVisible();
 
@@ -1133,6 +1226,7 @@ mfaTest("platform admin can enable TOTP, rejects an incorrect code, and enters a
 
   await verifyMfa(page, totpCodeForTimestamp(totpSeed));
   await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await expect(page.getByRole("heading", { name: "財務總覽", exact: true })).toBeVisible();
   await expectMfaAuditActions(mfaUser.id, ["mfa_verify_failed", "mfa_verify_totp"]);
 });
 
@@ -1146,6 +1240,7 @@ mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, 
   await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
   await verifyMfa(page, recoveryCode);
   await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await expect(page.getByRole("heading", { name: "財務總覽", exact: true })).toBeVisible();
 
   const usedCode = await db.userRecoveryCode.findFirst({
     where: { userId: mfaUser.id, usedAt: { not: null } },
@@ -1157,6 +1252,7 @@ mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, 
   await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
   await verifyMfa(page, recoveryCode);
   await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+  await expect(page.locator('p[role="alert"]')).toHaveText("驗證碼不正確，請重新輸入。");
   await expectMfaAuditActions(mfaUser.id, ["mfa_verify_recovery_code", "mfa_verify_failed"]);
 });
 
@@ -1168,7 +1264,20 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
 
   await page.goto("/mfa/setup");
   await page.getByLabel("目前 TOTP 驗證碼").fill(totpCodeForTimestamp(totpSeed));
+  const confirmationHandled = new Promise<void>((resolve, reject) => {
+    page.once("dialog", async (dialog) => {
+      try {
+        expect(dialog.type()).toBe("confirm");
+        expect(dialog.message()).toBe("重新產生後，舊 recovery codes 會立即失效。確定繼續？");
+        await dialog.accept();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
   await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
+  await confirmationHandled;
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=recovery_regenerated/);
   const newRecoveryCode = await displayedRecoveryCode(page);
   expect(oldRecoveryCode === newRecoveryCode).toBe(false);
@@ -1184,11 +1293,13 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
   await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
   await verifyMfa(page, oldRecoveryCode);
   await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+  await expect(page.locator('p[role="alert"]')).toHaveText("驗證碼不正確，請重新輸入。");
 
   await page.context().clearCookies();
   await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
   await verifyMfa(page, newRecoveryCode);
   await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await expect(page.getByRole("heading", { name: "財務總覽", exact: true })).toBeVisible();
   await expectMfaAuditActions(mfaUser.id, [
     "mfa_recovery_codes_regenerated",
     "mfa_verify_failed",
@@ -1223,21 +1334,21 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await loginSeededOwner(page);
   await page.goto("/lives/new");
 
-  await page.getByRole("button", { name: "發布" }).click();
-  await expect(page.getByRole("button", { name: "基本資料" })).toHaveAttribute("aria-current", "step");
-  await expect(page.getByRole("status")).toContainText("請先完成本步驟的必填欄位");
+  const reviewStep = page.getByRole("button", { name: "桌機／手機預覽發布 待完成", exact: true });
+  await reviewStep.click();
+  await expect(page.getByRole("button", { name: "用途與基本資料 待完成", exact: true })).toHaveAttribute("aria-current", "step");
+  await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
 
-  await page.getByLabel("直播標題").fill("E2E 建立流程驗收");
-  await page.getByLabel("Slug").fill(`e2e-stepper-${stamp}`);
-  await page.getByLabel("開播時間").fill("2026-07-26T12:00");
-  await page.getByRole("button", { name: "發布" }).click();
+  await page.getByLabel("直播標題", { exact: true }).fill("E2E 建立流程驗收");
+  await page.getByLabel("Slug", { exact: true }).fill(`e2e-stepper-${stamp}`);
+  await reviewStep.click();
 
-  await expect(page.getByRole("button", { name: "發布" })).toHaveAttribute("aria-current", "step");
+  await expect(reviewStep).toHaveAttribute("aria-current", "step");
   await expect(page.getByRole("heading", { name: "確認直播間設定" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "建立直播間" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "建立並排程", exact: true })).toBeDisabled();
 });
 
-test("merchant can create and schedule a prerecorded content webinar from the five-step studio", async ({ page }) => {
+test("merchant can create and schedule a prerecorded content webinar from the eight-step studio", async ({ page }) => {
   const title = `E2E 預錄研討會 ${e2eRunId}`;
   const slug = `e2e-scheduled-webinar-${stamp}`;
   const nonLoopbackRequests: string[] = [];
@@ -1252,18 +1363,25 @@ test("merchant can create and schedule a prerecorded content webinar from the fi
     await loginSeededOwner(page);
     await page.goto("/lives/new");
 
+    await page.getByRole("button", { name: /內容／課程直播/ }).click();
     await page.getByLabel("直播標題").fill(title);
     await page.getByLabel("Slug").fill(slug);
-    await page.getByLabel("開播時間").fill("2026-08-20T20:00");
-    await page.getByRole("button", { name: "下一步" }).click();
-
-    await page.getByLabel("報名頁").selectOption(seed.formId);
-    await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
-    await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
     await page.getByRole("button", { name: "下一步" }).click();
 
     await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);
     await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByRole("button", { name: "下一步" }).click();
+
+    await page.getByLabel("報名頁").selectOption(seed.formId);
+    await page.getByRole("button", { name: "下一步" }).click();
+
+    await page.getByLabel(/開播時間/).fill("2026-08-20T20:00");
+    await page.getByRole("button", { name: "下一步" }).click();
+
+    await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
+    await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
+    await page.getByRole("button", { name: "下一步" }).click();
+
     await page.getByRole("button", { name: "下一步" }).click();
 
     await expect(page.getByText("內容直播發布檢查")).toBeVisible();
@@ -1347,15 +1465,6 @@ test("checkout rejects a client amount and uses the server product price for an 
   expect(admissionResponse.status()).toBe(200);
   const admission = await admissionResponse.json() as { admissionToken: string; idempotencyKey: string };
   const buyer = { name: "E2E Buyer", email: `checkout-${stamp}@example.com`, phone: "0912345678" };
-  const shipping = {
-    recipientName: "E2E Buyer",
-    phone: "0912345678",
-    countryCode: "TW",
-    administrativeArea: "台北市",
-    locality: "中正區",
-    addressLine1: "測試路 1 號",
-  };
-
   const forged = await request.post("/api/payments/checkout", {
     headers: {
       "X-CelebrateDeal-Client": "web",
@@ -1367,7 +1476,7 @@ test("checkout rejects a client amount and uses the server product price for an 
       idempotencyKey: admission.idempotencyKey,
       admissionToken: admission.admissionToken,
       buyer,
-      shipping,
+      shipping: null,
       amountCents: 1,
     },
   });
@@ -1382,10 +1491,20 @@ test("checkout rejects a client amount and uses the server product price for an 
   });
   expect(validAdmissionResponse.status()).toBe(200);
   const validAdmission = await validAdmissionResponse.json() as { admissionToken: string; idempotencyKey: string };
+  const setCookie = validAdmissionResponse.headers()["set-cookie"] ?? "";
+  expect(setCookie).toMatch(/(?:^|,\s*)celebratedeal_checkout_session=[^;,\s]+(?:;|,|$)/);
+  expect(setCookie).toMatch(/(?:^|;\s*)Path=\/api\/payments\/checkout(?:;|$)/);
+  expect(setCookie).toMatch(/(?:^|;\s*)Secure(?:;|$)/);
+  expect(setCookie).toMatch(/(?:^|;\s*)HttpOnly(?:;|$)/);
+  expect(setCookie).toMatch(/(?:^|;\s*)SameSite=Strict(?:;|$)/i);
+  expect(process.env.G7_COMMERCE_LOOPBACK_TLS_BRIDGE).toBe("1");
+  const checkoutCookie = setCookie.match(/(?:^|,\s*)(celebratedeal_checkout_session=[^;,\s]+)/)?.[1];
+  expect(checkoutCookie).toBeDefined();
   const response = await request.post("/api/payments/checkout", {
     headers: {
       "X-CelebrateDeal-Client": "web",
       Origin: e2eOrigin,
+      Cookie: checkoutCookie!,
     },
     data: {
       vendorId: seed.vendorId,
@@ -1393,7 +1512,7 @@ test("checkout rejects a client amount and uses the server product price for an 
       idempotencyKey: validAdmission.idempotencyKey,
       admissionToken: validAdmission.admissionToken,
       buyer,
-      shipping,
+      shipping: null,
     },
   });
   expect(response.status()).toBe(200);
@@ -1466,9 +1585,10 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
   const publishNextVersion = async (page: Page, templateId: string) => {
     await page.goto(`/team-templates/${templateId}/edit`);
     await expect(page.getByRole("heading", { name: new RegExp(`編輯 ${TEAM_FUNNEL_TEST_ONLY.templateName}`) })).toBeVisible();
+    const publishForm = page.locator('form:has(input[name="operation"][value="publish"])');
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "發布新版本" }).click();
-    await expect(page.getByRole("status")).toContainText("已發布", { timeout: 30_000 });
+    await publishForm.getByRole("button", { name: "發布新版本", exact: true }).click();
+    await expect(publishForm.locator('p[role="status"]')).toContainText("已發布", { timeout: 30_000 });
   };
   const claim = async (page: Page, sharePath: string, mode: "快速套用" | "複製後編輯" | "空白頁綁定研討會", slug: string) => {
     await page.goto(sharePath);
@@ -1509,8 +1629,9 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await leaderPage.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY 立即參加");
     await leaderPage.locator('input[name="lockedFields"][value="BODY"]').check();
     await leaderPage.locator('select[name="product_main_product"]').selectOption(fixture.product.id);
-    await leaderPage.getByRole("button", { name: "建立原始頁" }).click();
-    await expect(leaderPage.getByRole("status")).toContainText("原始頁與第一個模板版本已建立");
+    const createTemplateForm = leaderPage.locator('form:has(input[name="operation"][value="create"])');
+    await createTemplateForm.getByRole("button", { name: "建立原始頁", exact: true }).click();
+    await expect(createTemplateForm.locator('p[role="status"]')).toHaveText("原始頁與第一個模板版本已建立。");
 
     const template = await db.teamFunnelTemplate.findFirstOrThrow({
       where: { vendorId: fixture.leader.vendorId, name: fixture.scenario.templateName },
@@ -1525,9 +1646,12 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     expect(sourcePage.liveId).toBe(fixture.seminar.id);
 
     await leaderPage.goto("/team-templates");
-    await leaderPage.getByRole("button", { name: "建立分享連結" }).click();
-    const sharePath = await leaderPage.getByRole("status").locator("code").innerText();
-    expect(sharePath).toMatch(/^\/team-template\?share=tf1\./);
+    const templateCard = leaderPage.getByRole("article", { name: fixture.scenario.templateName, exact: true });
+    const createShareForm = templateCard.locator('form:has(input[name="operation"][value="create-share"])');
+    await createShareForm.getByRole("button", { name: "建立分享連結", exact: true }).click();
+    const shareCode = templateCard.locator('div[role="status"] code');
+    await expect(shareCode).toHaveText(/^\/team-template\?share=tf1\./);
+    const sharePath = await shareCode.innerText();
 
     // B mode 1: quick apply, editable copy, product override, immutable locked body, and readable error state.
     const quickSlug = `${fixture.scenario.sourceSlug}-b-quick`;
@@ -1535,10 +1659,12 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await expect(partnerPage.getByText(`來源 A：${TEAM_FUNNEL_TEST_ONLY.leader.name}`)).toBeVisible();
     await expect(partnerPage.getByLabel("內容說明")).toBeDisabled();
     await expect(partnerPage.getByLabel("主標題")).toBeEnabled();
+    const partnerSaveForm = partnerPage.locator("form")
+      .filter({ has: partnerPage.getByRole("button", { name: "儲存可編輯內容", exact: true }) });
     await partnerPage.getByLabel("主標題").fill("TEST ONLY B 的公開主標題");
     await partnerPage.locator('input[name="url_main_product"]').fill(TEAM_FUNNEL_TEST_ONLY.partnerProductUrl);
-    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
-    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
+    await partnerSaveForm.getByRole("button", { name: "儲存可編輯內容", exact: true }).click();
+    await expect(partnerSaveForm.locator('p[role="status"]')).toHaveText("夥伴頁已儲存。");
     const quickPage = await db.partnerFunnelPage.findUniqueOrThrow({
       where: { slug: quickSlug },
       include: { productOverrides: true },
@@ -1553,11 +1679,11 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     // Exercise the server-side readable error, which remains necessary even
     // though production browsers normally block this required field first.
     await partnerPage.locator('input[name="headline"]').evaluate((input) => input.removeAttribute("required"));
-    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
+    await partnerSaveForm.getByRole("button", { name: "儲存可編輯內容", exact: true }).click();
     await expect(partnerPage.getByRole("alert").filter({ hasText: "主標題與 CTA 按鈕文字不可留白" })).toBeVisible();
     await partnerPage.getByLabel("主標題").fill("TEST ONLY B 的公開主標題");
-    await partnerPage.getByRole("button", { name: "儲存可編輯內容" }).click();
-    await expect(partnerPage.getByRole("status")).toContainText("夥伴頁已儲存");
+    await partnerSaveForm.getByRole("button", { name: "儲存可編輯內容", exact: true }).click();
+    await expect(partnerSaveForm.locator('p[role="status"]')).toHaveText("夥伴頁已儲存。");
     await partnerPage.getByRole("button", { name: "發布公開頁" }).click();
     // Development mode may compile this Server Action on first use. Keep the
     // wait bounded while matching the other cold-action checks in this flow.

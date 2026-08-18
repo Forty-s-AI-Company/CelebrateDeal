@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { formatCurrency, formatDateTime } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp81SyntheticPassword!";
@@ -151,11 +152,11 @@ test("active member is denied billing settlements before tenant query or MFA", a
           updatedAt: true,
         },
       }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({
         where: { id: tracking.id },
       }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({
         where: { vendorId: vendor.id },
       }),
@@ -176,11 +177,11 @@ test("active member is denied billing settlements before tenant query or MFA", a
           updatedAt: true,
         },
       }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({
         where: { id: membership.id },
       }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({
         where: { vendorId: vendor.id },
       }),
@@ -220,7 +221,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
       plan: await db.billingPlan.findUniqueOrThrow({
         where: { id: plan.id },
       }),
-      planCount: await db.billingPlan.count(),
+      planCount: await db.billingPlan.count({ where: { id: plan.id } }),
       activePlanComposite: await db.billingPlan.count({
         where: { id: plan.id, code: plan.code, isActive: true },
       }),
@@ -237,7 +238,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
       usageLimit: await db.vendorUsageLimit.findUniqueOrThrow({
         where: { id: usageLimit.id },
       }),
-      usageLimitCount: await db.vendorUsageLimit.count(),
+      usageLimitCount: await db.vendorUsageLimit.count({ where: { id: usageLimit.id } }),
       usageLimitVendorCount: await db.vendorUsageLimit.count({
         where: { vendorId: vendor.id },
       }),
@@ -259,7 +260,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
         where: { id: { in: settlementIds } },
         orderBy: { id: "asc" },
       }),
-      settlementCount: await db.settlement.count(),
+      settlementCount: await db.settlement.count({ where: { id: { in: settlementIds } } }),
       settlementVendorCount: await db.settlement.count({
         where: { vendorId: vendor.id },
       }),
@@ -318,9 +319,9 @@ test("active member is denied billing settlements before tenant query or MFA", a
       payoutBatch: await db.payoutBatch.findUniqueOrThrow({
         where: { id: payoutBatch.id },
       }),
-      payoutBatchCount: await db.payoutBatch.count(),
+      payoutBatchCount: await db.payoutBatch.count({ where: { id: payoutBatch.id } }),
       payoutBatchStatusCount: await db.payoutBatch.count({
-        where: { status: payoutBatch.status },
+        where: { id: payoutBatch.id, status: payoutBatch.status },
       }),
       payoutBatchComposite: await db.payoutBatch.count({
         where: {
@@ -395,9 +396,6 @@ test("active member is denied billing settlements before tenant query or MFA", a
     const targetNonGets: string[] = [];
     const otherSettlementOrPayout: string[] = [];
     const settlementsPath = "/billing/settlements";
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
@@ -416,59 +414,37 @@ test("active member is denied billing settlements before tenant query or MFA", a
         otherSettlementOrPayout.push(url.pathname);
       }
     });
-    await page.route("**/billing/settlements", async (route) => {
-      if (new URL(route.request().url()).pathname !== settlementsPath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: settlementsPath,
+      protectedPayloadCanaries: disclosureCanaries,
+      documentCanaries: disclosureCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        'title="月結"',
+        "平台金流與自帶金流共用同一套結算報表",
+        "本期成交額",
+        "平台費用",
+        "金流手續費",
+        "預計撥款",
+        "實際撥款金額",
+        "月費",
+        "超額用量",
+        "交易服務費",
+        "聯盟管理費",
+        "調整金額",
+        "已鎖單",
+        "已連結出款批次",
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === settlementsPath &&
-        response.status() === 307,
-    );
-    const finalResponse = await page.goto(settlementsPath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    for (const canary of disclosureCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const deniedText of [
-      'title="月結"',
-      "平台金流與自帶金流共用同一套結算報表",
-      "本期成交額",
-      "平台費用",
-      "金流手續費",
-      "預計撥款",
-      "實際撥款金額",
-      "月費",
-      "超額用量",
-      "交易服務費",
-      "聯盟管理費",
-      "調整金額",
-      "已鎖單",
-      "已連結出款批次",
-    ]) {
-      expect(intercepted.current?.body).not.toContain(deniedText);
-    }
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

@@ -227,6 +227,7 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
     refundReason,
     refundReasonUnavailable,
   } = detail;
+  const availableNextStatuses = nextStatuses[supportCase.status] ?? [];
 
   const timeline = revealTimeline(supportCase.events, vendor.id, supportCase.id);
   const query = await searchParams;
@@ -325,11 +326,11 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
             </Card>
           ) : null}
 
-          {canManageOrders && nextStatuses[supportCase.status]?.length ? (
+          {canManageOrders && availableNextStatuses.length ? (
             <Card>
               <h2 className="font-semibold text-slate-950">更新狀態</h2>
               <div className="mt-4 grid gap-2">
-                {nextStatuses[supportCase.status].map((status) => (
+                {availableNextStatuses.map((status) => (
                   <form key={status} action={transitionSupportCaseAction}>
                     <CsrfField />
                     <input type="hidden" name="supportCaseId" value={supportCase.id} />

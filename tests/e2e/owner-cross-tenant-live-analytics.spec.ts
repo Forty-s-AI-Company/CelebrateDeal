@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp39SyntheticPassword!";
@@ -25,8 +26,8 @@ test("owner cannot open another vendor live analytics route through direct URL n
   const ownReferral = `wp39-own-referral-${suffix}`;
   const foreignReferral = `wp39-foreign-referral-${suffix}`;
   const [, foreignEvent] = await Promise.all([
-    db.analyticsEvent.create({ data: { vendorId: ownerVendor.id, liveId: ownLive.id, eventType: "page_view", visitorId: ownVisitor } }),
-    db.analyticsEvent.create({ data: { vendorId: foreignVendor.id, liveId: foreignLive.id, eventType: "page_view", visitorId: foreignVisitor } }),
+    db.analyticsEvent.create({ data: { vendorId: ownerVendor.id, liveId: ownLive.id, eventType: "page_view", visitorId: ownVisitor, trustLevel: "ADMITTED_LIVE_SESSION" } }),
+    db.analyticsEvent.create({ data: { vendorId: foreignVendor.id, liveId: foreignLive.id, eventType: "page_view", visitorId: foreignVisitor, trustLevel: "ADMITTED_LIVE_SESSION" } }),
   ]);
   const [, foreignClick] = await Promise.all([
     db.affiliateClick.create({ data: { vendorId: ownerVendor.id, liveId: ownLive.id, referralCode: ownReferral, visitorId: `wp39-own-click-${suffix}`, landingPath: `/wp39-own-${suffix}` } }),
@@ -44,14 +45,13 @@ test("owner cannot open another vendor live analytics route through direct URL n
     db.affiliateClick.count({ where: { liveId: ownLive.id } }),
     db.affiliateClick.count({ where: { liveId: foreignLive.id } }),
   ]);
-  const before = await snapshot();
-
   try {
     await page.goto("/login");
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
+    const before = await snapshot();
 
     const ownPath = `/lives/${ownLive.id}/analytics`;
     const ownResponse = await page.goto(ownPath);
@@ -59,16 +59,27 @@ test("owner cannot open another vendor live analytics route through direct URL n
     await expect(page).toHaveURL(new RegExp(`${ownPath}$`));
     await expect(page.getByRole("heading", { name: `${ownLive.title} 分析` })).toBeVisible();
     for (const heading of ["轉換漏斗", "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-    await expect(page.getByText(ownVisitor)).toBeVisible();
+    await expect(page.getByText(`${ownVisitor.slice(0, 12)}…`)).toBeVisible();
+    await expect(page.getByText(ownVisitor, { exact: true })).toHaveCount(0);
     await expect(page.getByText(ownReferral, { exact: true })).toBeVisible();
     await expect(page.getByLabel(/^觀看：1，/)).toBeVisible();
 
     const foreignPath = `/lives/${foreignLive.id}/analytics`;
-    const foreignResponse = await page.goto(foreignPath);
-    expect(foreignResponse?.status()).toBe(404);
-    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
-    for (const heading of [`${foreignLive.title} 分析`, "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0);
     const foreignCanaries = [foreignLive.title, foreignVisitor, foreignReferral, foreignEvent.id, foreignClick.id];
+    await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignLive.id],
+      protectedPayloadCanaries: foreignCanaries,
+      documentCanaries: foreignCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: {
+        kind: "http-not-found",
+        status: 404,
+      },
+      finalStatus: 404,
+    });
+    for (const heading of [`${foreignLive.title} 分析`, "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0);
     for (const value of foreignCanaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const documentContent = await page.content();
     for (const value of foreignCanaries) expect(documentContent).not.toContain(value);

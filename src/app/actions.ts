@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Prisma, type PrismaClient } from "@prisma/client";
@@ -8,7 +9,6 @@ import {
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
-  requireVendorManagerContext,
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
@@ -36,26 +36,12 @@ import {
   type LiveReminderTemplateSnapshot,
 } from "@/lib/live-reminder-reconciliation";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
-import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
-import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
-import { isEligibleScheduledRole } from "@/lib/live-chat-contract";
-import {
-  INTERACTION_ROLE_AVATAR_MODES,
-  isCanonicalInteractionRolePresetUrl,
-  parseInteractionRoleBoolean,
-  normalizeInteractionRoleDraft,
-  type InteractionRoleAvatarMode,
-  type NormalizedInteractionRole,
-} from "@/lib/interaction-role";
-import type { InteractionRoleActionState, InteractionRoleFormValues } from "@/lib/interaction-role-action-state";
+import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
-  normalizeMessageTemplateDraft,
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
-  type MessageTemplateActionError,
   type MessageTemplateActionState,
-  type MessageTemplateFormDraft,
 } from "@/lib/message-template";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
@@ -64,8 +50,7 @@ import {
   requiresLivePublishReadiness,
 } from "@/lib/live-publish-readiness";
 import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
-import { isLiveVideoReady, liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import { BlacklistIdentifierType, normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
@@ -76,6 +61,23 @@ import {
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
 import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import {
+  deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
+  deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
+  duplicateInteractionScriptAction as duplicateInteractionScriptActionImpl,
+  importSystemRolesAction as importSystemRolesActionImpl,
+  unblockBlacklistAction as unblockBlacklistActionImpl,
+  unbindInteractionScriptFromLiveAction as unbindInteractionScriptFromLiveActionImpl,
+  upsertBlacklistAction as upsertBlacklistActionImpl,
+  upsertInteractionRoleAction as upsertInteractionRoleActionImpl,
+  upsertInteractionRoleActionState as upsertInteractionRoleActionStateImpl,
+  upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
+} from "./actions/interaction-actions";
+import {
+  upsertFormAction as upsertFormActionImpl,
+  upsertTemplateAction as upsertTemplateActionImpl,
+  upsertVideoAction as upsertVideoActionImpl,
+} from "./actions/webinar-resource-actions";
 import {
   confirmMfaEnrollmentAction as confirmMfaEnrollmentActionImpl,
   confirmPasswordResetAction as confirmPasswordResetActionImpl,
@@ -110,21 +112,6 @@ function safeExternalUrl(value: string | null, label: string) {
   return safeUrl;
 }
 
-function optionalExternalUrl(formData: FormData, key: string, label: string) {
-  return safeExternalUrl(optionalText(formData, key), label);
-}
-
-function requiredExternalUrl(formData: FormData, key: string, label: string) {
-  const safeUrl = parseSafeExternalHttpUrl(text(formData, key));
-  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
-  return safeUrl;
-}
-
-function intValue(formData: FormData, key: string, fallback = 0) {
-  const parsed = Number.parseInt(text(formData, key, String(fallback)), 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function moneyToCents(formData: FormData, key: string, fallback = 0) {
   const value = text(formData, key);
   if (!value) return fallback;
@@ -137,20 +124,9 @@ class PayoutBatchClaimConflict extends Error {}
 class SettlementMutationConflict extends Error {}
 class AffiliatePayoutMutationConflict extends Error {}
 
-function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
-  return {
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? "vendor_manager",
-  };
-}
-
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2025" || error.code === "P2034");
-}
-
-function isRecordNotFoundError(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2025";
 }
 
 function isSettlementMutationConflict(error: unknown) {
@@ -167,15 +143,6 @@ function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
-class InteractionScriptInvalidEventError extends Error {}
-class InteractionScriptReferenceError extends Error {}
-class InteractionScriptMissingError extends Error {}
-class InteractionScriptDuplicateSourceMissingError extends Error {}
-
-function isInteractionScriptWriteConflict(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error
-    && (error.code === "P2002" || error.code === "P2034");
-}
 
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
 
@@ -196,6 +163,8 @@ export type BrandSettingsFormValues = {
   ctaColor: string;
   timezone: string;
   supportEmail: string;
+  senderName: string;
+  contactUrl: string;
   logoUrl: string;
   /** 只在表單與 action state 中傳遞 opaque asset id；page 可省略此欄位。 */
   logoAssetId?: string;
@@ -211,9 +180,13 @@ const INVALID_BRAND_TIMEZONE_MESSAGE = "時區格式無效，請輸入有效的 
 const INVALID_BRAND_LOGO_MESSAGE = "品牌 Logo 來源無效，請完成上傳、移除未完成的檔案，或改用有效的 HTTP/HTTPS 圖片網址。";
 const INVALID_BRAND_LOGO_ASSET_MESSAGE = "品牌 Logo 圖片資產無效，請重新上傳。";
 const INVALID_BRAND_LOGO_PHASE_MESSAGE = "品牌 Logo 上傳尚未完成，請完成上傳或移除未完成的檔案。";
+const INVALID_BRAND_SENDER_NAME_MESSAGE = "寄件人名稱無效，請輸入 80 字元以內且不含控制字元的文字。";
+const INVALID_BRAND_CONTACT_URL_MESSAGE = "聯絡網址無效，請輸入不含帳密、非本機或內部 IP 的 HTTPS 絕對網址。";
 const BRAND_LOGO_URL_MAX_LENGTH = 2048;
+const BRAND_CONTACT_URL_MAX_LENGTH = 2048;
+const BRAND_SENDER_NAME_MAX_LENGTH = 80;
 
-type BrandSettingsValidationCode = "invalid_timezone" | "invalid_logo";
+type BrandSettingsValidationCode = "invalid_timezone" | "invalid_logo" | "invalid_sender_name" | "invalid_contact_url";
 
 class BrandSettingsValidationError extends Error {
   constructor(
@@ -238,18 +211,138 @@ function submittedBrandSettingsValues(formData: FormData): BrandSettingsFormValu
     ctaColor: boundedValue("ctaColor", 32),
     timezone: boundedValue("timezone", 128),
     supportEmail: boundedValue("supportEmail", 320),
+    senderName: rawSubmittedValue(formData, "senderName"),
+    contactUrl: rawSubmittedValue(formData, "contactUrl"),
     logoUrl: boundedValue("logoUrl", BRAND_LOGO_URL_MAX_LENGTH),
     logoAssetId: boundedValue("logoAssetId", 128),
   };
 }
 
+function rawSubmittedValue(formData: FormData, key: string) {
+  const submitted = formData.get(key);
+  return submitted === null ? "" : typeof submitted === "string" ? submitted : "__invalid__";
+}
+
+function isPrivateOrSpecialIpv4(value: string) {
+  const octets = value.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
+  const [first = Number.NaN, second = Number.NaN] = octets;
+  return first === 0
+    || first === 10
+    || first === 127
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168);
+}
+
+function parseIpv6Segments(value: string) {
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parseHalf = (half: string) => half ? half.split(":") : [];
+  const left = parseHalf(halves[0] ?? "");
+  const right = parseHalf(halves[1] ?? "");
+  const rawSegments = [...left, ...right];
+  if (rawSegments.some((segment) => segment === "")) return null;
+
+  const segments = rawSegments.flatMap((segment, index) => {
+    if (!segment.includes(".")) return [/^[0-9a-f]{1,4}$/iu.test(segment) ? Number.parseInt(segment, 16) : Number.NaN];
+    if (index !== rawSegments.length - 1 || isPrivateOrSpecialIpv4(segment)) return [Number.NaN, Number.NaN];
+    const octets = segment.split(".").map(Number);
+    const [
+      firstOctet = Number.NaN,
+      secondOctet = Number.NaN,
+      thirdOctet = Number.NaN,
+      fourthOctet = Number.NaN,
+    ] = octets;
+    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+      ? [(firstOctet << 8) | secondOctet, (thirdOctet << 8) | fourthOctet]
+      : [Number.NaN, Number.NaN];
+  });
+  const zeroCount = halves.length === 2 ? 8 - segments.length : 0;
+  if (zeroCount < (halves.length === 2 ? 1 : 0) || segments.length + zeroCount !== 8) return null;
+  const expanded = halves.length === 2
+    ? [...segments.slice(0, left.length), ...Array.from({ length: zeroCount }, () => 0), ...segments.slice(left.length)]
+    : segments;
+  return expanded.every((segment) => Number.isInteger(segment) && segment >= 0 && segment <= 0xffff) ? expanded : null;
+}
+
+function isUnsafeContactHostname(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.+$/u, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+
+  const ipVersion = isIP(host);
+  if (ipVersion === 4) return isPrivateOrSpecialIpv4(host);
+  if (ipVersion !== 6) return false;
+
+  const segments = parseIpv6Segments(host);
+  if (!segments) return true;
+  const [
+    firstSegment = Number.NaN,
+    secondSegment = Number.NaN,
+    thirdSegment = Number.NaN,
+    fourthSegment = Number.NaN,
+    fifthSegment = Number.NaN,
+    sixthSegment = Number.NaN,
+    seventhSegment = Number.NaN,
+    eighthSegment = Number.NaN,
+  ] = segments;
+  const isAllZero = segments.every((segment) => segment === 0);
+  const isLoopback = isAllZero === false && [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment, sixthSegment, seventhSegment].every((segment) => segment === 0) && eighthSegment === 1;
+  const isUniqueLocal = (firstSegment & 0xfe00) === 0xfc00;
+  const isLinkLocal = (firstSegment & 0xffc0) === 0xfe80;
+  const isIpv4Mapped = [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment].every((segment) => segment === 0) && sixthSegment === 0xffff;
+  if (!isIpv4Mapped) return isAllZero || isLoopback || isUniqueLocal || isLinkLocal;
+
+  const mappedIpv4 = [seventhSegment >> 8, seventhSegment & 0xff, eighthSegment >> 8, eighthSegment & 0xff].join(".");
+  return isPrivateOrSpecialIpv4(mappedIpv4);
+}
+
+function parseSafeBrandContactUrl(value: string | null) {
+  const candidate = value?.trim();
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" || url.username || url.password || isUnsafeContactHostname(url.hostname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function validateBrandSenderName(formData: FormData) {
+  const input = rawSubmittedValue(formData, "senderName");
+  if (input === "") return null;
+  if (input === "__invalid__") throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
+  const normalized = input.trim().normalize("NFC");
+  if (!normalized) return null;
+  if (Array.from(normalized).length > BRAND_SENDER_NAME_MAX_LENGTH || /\p{Cc}/u.test(normalized)) {
+    throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
+  }
+  return normalized;
+}
+
 type ValidatedBrandSettings = {
   timezone: string;
+  senderName: string | null;
+  contactUrl: string | null;
   logoUrl: string | null;
   logoAssetId: string | null;
 };
 
 async function validateBrandSettings(vendorId: string, formData: FormData): Promise<ValidatedBrandSettings> {
+  const senderName = validateBrandSenderName(formData);
+  const contactUrlInput = rawSubmittedValue(formData, "contactUrl");
+  if (contactUrlInput === "__invalid__") {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+  if (contactUrlInput.length > BRAND_CONTACT_URL_MAX_LENGTH || /\p{Cc}/u.test(contactUrlInput)) {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+  const contactUrl = contactUrlInput.trim() === "" ? null : parseSafeBrandContactUrl(contactUrlInput);
+  if (contactUrlInput.trim() !== "" && !contactUrl) {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+
   const timezone = text(formData, "timezone", "Asia/Taipei");
   try {
     assertIanaTimeZone(timezone);
@@ -281,7 +374,7 @@ async function validateBrandSettings(vendorId: string, formData: FormData): Prom
     try {
       const logoAsset = await resolveReadyImageAsset(getDb(), { vendorId, assetId: logoAssetId });
       if (!logoAsset) throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
-      return { timezone, logoUrl: logoAsset.publicUrl, logoAssetId: logoAsset.id };
+      return { timezone, senderName, contactUrl, logoUrl: logoAsset.publicUrl, logoAssetId: logoAsset.id };
     } catch (error) {
       if (error instanceof ImageAssetReferenceError) {
         throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
@@ -306,7 +399,7 @@ async function validateBrandSettings(vendorId: string, formData: FormData): Prom
     throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_MESSAGE);
   }
 
-  return { timezone, logoUrl, logoAssetId: null };
+  return { timezone, senderName, contactUrl, logoUrl, logoAssetId: null };
 }
 
 async function updateBrandSettings(vendorId: string, formData: FormData, validated: ValidatedBrandSettings) {
@@ -320,6 +413,8 @@ async function updateBrandSettings(vendorId: string, formData: FormData, validat
       ctaColor: text(formData, "ctaColor", "#f97316"),
       timezone: validated.timezone,
       supportEmail: optionalText(formData, "supportEmail"),
+      senderName: validated.senderName,
+      contactUrl: validated.contactUrl,
     },
   });
 }
@@ -455,244 +550,21 @@ export async function revokeAllSessionsAction(formData: FormData) {
   return revokeAllSessionsActionImpl(formData);
 }
 
+// Keep the legacy public action surface stable while webinar resources live in
+// a dedicated file-level `use server` module.
 export async function upsertVideoAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  const invalidVideoPath = id
-    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_video`
-    : "/videos/new?error=invalid_video";
-  if (id && id.length > 128) redirect("/videos/new?error=invalid_video");
-  const db = getDb();
-  const thumbnailAssetId = optionalText(formData, "thumbnailAssetId");
-  const invalidImageAssetPath = id
-    ? `/videos/${encodeURIComponent(id)}/edit?error=invalid_image_asset`
-    : "/videos/new?error=invalid_image_asset";
-  const thumbnailAsset = await resolveReadyImageAsset(db, { vendorId: vendor.id, assetId: thumbnailAssetId })
-    .catch(() => redirect(invalidImageAssetPath));
-  const thumbnailUrl = thumbnailAsset?.publicUrl
-    ?? optionalExternalUrl(formData, "thumbnailUrl", "影片縮圖網址");
-  const editableData = {
-    title: text(formData, "title"),
-    description: optionalText(formData, "description"),
-    thumbnailUrl,
-    thumbnailAssetId: thumbnailAsset?.id ?? null,
-    durationSec: intValue(formData, "durationSec"),
-    estimatedMinutes: intValue(formData, "estimatedMinutes"),
-  };
-
-  if (id) {
-    const existingVideo = await db.video.findFirst({
-      where: { id, vendorId: vendor.id },
-      select: {
-        id: true,
-        sourceType: true,
-        status: true,
-        cloudflareReadyToStream: true,
-        cloudflareLiveInputUid: true,
-        liveInputStatus: true,
-      },
-    });
-    if (!existingVideo) redirect("/videos?error=not_found");
-    if (existingVideo.sourceType !== "url" && !isLiveVideoReady(existingVideo)) {
-      redirect(`/videos/${encodeURIComponent(id)}/edit?error=video_processing`);
-    }
-
-    const data = existingVideo.sourceType === "url"
-      ? {
-          ...editableData,
-          videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
-          status: text(formData, "status") === "archived" ? "archived" : "ready",
-        }
-      : editableData;
-    await db.video.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    const externalVideoUrl = parseSafeExternalHttpUrl(text(formData, "videoUrl"));
-    if (!externalVideoUrl) redirect(invalidVideoPath);
-    await db.video.create({
-      data: {
-        ...editableData,
-        vendorId: vendor.id,
-        sourceType: "url",
-        videoUrl: externalVideoUrl,
-        status: "ready",
-      },
-    });
-  }
-
-  redirect("/videos");
+  return upsertVideoActionImpl(formData);
 }
 
 export async function upsertFormAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  let rawFields: unknown;
-  try {
-    rawFields = JSON.parse(text(formData, "fields", "[]"));
-  } catch {
-    redirect(id ? `/forms/${encodeURIComponent(id)}/edit?error=invalid_fields` : "/forms/new?error=invalid_fields");
-  }
-  const fields = parseRegistrationFormFields(rawFields);
-  if (!fields.success) {
-    redirect(id ? `/forms/${encodeURIComponent(id)}/edit?error=invalid_fields` : "/forms/new?error=invalid_fields");
-  }
-
-  const data = {
-    name: text(formData, "name"),
-    slug: toSlug(text(formData, "slug")),
-    headline: text(formData, "headline"),
-    description: optionalText(formData, "description"),
-    submitLabel: text(formData, "submitLabel", "送出報名"),
-    fields: fields.data as Prisma.InputJsonValue,
-    successMessage: text(formData, "successMessage", "已收到你的資料，開播前會再提醒你。"),
-    isActive: formData.get("isActive") === "on",
-  };
-
-  if (id) {
-    await getDb().registrationForm.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().registrationForm.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/forms");
-}
-
-function messageTemplateFormDraft(formData: FormData): MessageTemplateFormDraft {
-  const boundedValue = (key: string, maximum: number) => {
-    const value = formData.get(key);
-    return typeof value === "string" ? value.slice(0, maximum + 1) : "";
-  };
-  return {
-    name: boundedValue("name", 160),
-    channel: boundedValue("channel", 32),
-    trigger: boundedValue("trigger", 64),
-    subject: boundedValue("subject", 200),
-    body: boundedValue("body", 20_000),
-    isActive: formData.get("isActive") === "on",
-  };
-}
-
-function messageTemplateActionError(
-  previousState: MessageTemplateActionState,
-  error: MessageTemplateActionError,
-  draft: MessageTemplateFormDraft,
-  expectedUpdatedAt: string | null = null,
-): MessageTemplateActionState {
-  return {
-    status: "error",
-    error,
-    draft,
-    expectedUpdatedAt,
-    version: previousState.version + 1,
-  };
+  return upsertFormActionImpl(formData);
 }
 
 export async function upsertTemplateAction(
   previousState: MessageTemplateActionState,
   formData: FormData,
 ): Promise<MessageTemplateActionState> {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = optionalText(formData, "id");
-  const expectedUpdatedAtValue = optionalText(formData, "expectedUpdatedAt");
-  const expectedUpdatedAt = expectedUpdatedAtValue ? new Date(expectedUpdatedAtValue) : null;
-  const expectedUpdatedAtIsValid = Boolean(
-    expectedUpdatedAt
-    && !Number.isNaN(expectedUpdatedAt.getTime())
-    && expectedUpdatedAt.toISOString() === expectedUpdatedAtValue,
-  );
-  const submittedDraft = messageTemplateFormDraft(formData);
-  if (
-    id
-    && (
-      id.length > 128
-      || !expectedUpdatedAtIsValid
-    )
-  ) {
-    return messageTemplateActionError(previousState, "invalid_template", submittedDraft);
-  }
-  const normalized = normalizeMessageTemplateDraft(submittedDraft);
-  if (!normalized.success) {
-    return messageTemplateActionError(
-      previousState,
-      "invalid_template",
-      submittedDraft,
-      expectedUpdatedAtIsValid ? expectedUpdatedAtValue : null,
-    );
-  }
-  const data = normalized.data;
-
-  const db = getDb();
-  let outcome: {
-    template: Awaited<ReturnType<typeof db.messageTemplate.create>>;
-    reconciliationStatuses: string[];
-  };
-  try {
-    outcome = await db.$transaction(async (tx) => {
-      const template = id
-        ? await tx.messageTemplate.update({ where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt ?? undefined }, data })
-        : await tx.messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
-      if (!id) return { template, reconciliationStatuses: [] };
-
-      const linkedLives = await tx.live.findMany({
-        where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
-        select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
-      });
-      const reconciliationStatuses: string[] = [];
-      for (const live of linkedLives) {
-        const queued = await queueLiveReminderReconciliation(tx, createLiveReminderReconciliationSnapshot({
-          vendorId: vendor.id,
-          liveId: live.id,
-          liveTitle: live.title,
-          liveStatus: live.status,
-          scheduledAt: live.scheduledAt,
-          reminderOffsetMinutes: live.liveReminderOffsetMinutes,
-          template,
-        }));
-        reconciliationStatuses.push(queued.status);
-      }
-      return { template, reconciliationStatuses };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (isRecordNotFoundError(error)) {
-      const current = id
-        ? await db.messageTemplate.findFirst({
-            where: { id, vendorId: vendor.id },
-            select: { updatedAt: true },
-          })
-        : null;
-      return messageTemplateActionError(
-        previousState,
-        current ? "conflict" : "missing_template",
-        submittedDraft,
-        current?.updatedAt.toISOString() ?? null,
-      );
-    }
-    throw error;
-  }
-  const { template, reconciliationStatuses } = outcome;
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: id ? "message_template_updated" : "message_template_created",
-    targetType: "MessageTemplate",
-    targetId: template.id,
-    after: auditSnapshot({
-      name: data.name,
-      channel: data.channel,
-      trigger: data.trigger,
-      isActive: data.isActive,
-      hasSubject: true,
-      bodyLength: data.body.length,
-    }),
-  });
-
-  redirect(reconciliationStatuses.length > 0
-    ? "/messages/templates?notice=reminders_reconciling"
-    : "/messages/templates");
+  return upsertTemplateActionImpl(previousState, formData);
 }
 
 async function requireLiveQuotaPaymentMethod(
@@ -907,7 +779,7 @@ function parseSubmittedLiveDraft(
     : `/lives/new?error=invalid_draft${suffix}`;
   let payload: LiveStudioDraftPayload;
   try {
-    payload = liveStudioDraftFromFormData(formData, 4);
+    payload = liveStudioDraftFromFormData(formData, 7);
   } catch {
     redirect(invalidDraftPath);
   }
@@ -1271,706 +1143,49 @@ export async function upsertLiveAction(formData: FormData) {
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
 
-class InteractionRoleInputError extends Error {}
-class InteractionRoleMissingError extends Error {}
-
-function boundedInteractionRoleValue(formData: FormData, key: string, maximum: number) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.slice(0, maximum) : "";
-}
-
-function submittedInteractionRoleMode(formData: FormData): string {
-  const avatarMode = text(formData, "avatarMode");
-  const legacyMode = text(formData, "mode");
-  if (avatarMode && legacyMode && avatarMode !== legacyMode) {
-    throw new InteractionRoleInputError("頭像模式無效。");
-  }
-  return avatarMode || legacyMode;
-}
-
-function submittedInteractionRoleUploadPhase(formData: FormData) {
-  const value = formData.get("avatarUploadPhase");
-  return value === null ? "" : typeof value === "string" ? value.trim() : "__invalid__";
-}
-
-function submittedInteractionRoleValues(formData: FormData): InteractionRoleFormValues {
-  const rawAvatarUrl = boundedInteractionRoleValue(formData, "avatarUrl", 2_048).trim();
-  const avatarUrl = parseSafeExternalHttpUrl(rawAvatarUrl) ?? "";
-  const avatarMode = text(formData, "avatarMode");
-  const legacyMode = text(formData, "mode");
-  const mode = avatarMode && legacyMode && avatarMode !== legacyMode ? "" : avatarMode || legacyMode;
-  return {
-    id: boundedInteractionRoleValue(formData, "id", 128),
-    name: boundedInteractionRoleValue(formData, "name", 160),
-    avatarUrl,
-    avatarAssetId: boundedInteractionRoleValue(formData, "avatarAssetId", 128),
-    avatarMode: (INTERACTION_ROLE_AVATAR_MODES as readonly string[]).includes(mode)
-      ? mode as InteractionRoleAvatarMode
-      : "",
-    avatarUploadPhase: boundedInteractionRoleValue(formData, "avatarUploadPhase", 32),
-    label: boundedInteractionRoleValue(formData, "label", 80),
-    roleType: boundedInteractionRoleValue(formData, "roleType", 64),
-    tone: boundedInteractionRoleValue(formData, "tone", 500),
-    isActive: parseInteractionRoleBoolean(formData.get("isActive")),
-    isScheduled: parseInteractionRoleBoolean(formData.get("isScheduled")),
-  };
-}
-
-async function resolveInteractionRoleAvatar(vendorId: string, formData: FormData) {
-  const rawAvatarUrl = optionalText(formData, "avatarUrl") ?? "";
-  const avatarModeValue = submittedInteractionRoleMode(formData);
-  const avatarUploadPhase = submittedInteractionRoleUploadPhase(formData);
-  const hasExplicitMode = avatarModeValue !== "";
-  const avatarAssetIdValue = formData.get("avatarAssetId");
-  if (avatarAssetIdValue !== null && typeof avatarAssetIdValue !== "string") {
-    throw new InteractionRoleInputError("角色頭像圖片資產無效，請重新上傳。");
-  }
-  const avatarAssetId = typeof avatarAssetIdValue === "string" ? avatarAssetIdValue.trim() || null : null;
-
-  if (hasExplicitMode && !(INTERACTION_ROLE_AVATAR_MODES as readonly string[]).includes(avatarModeValue)) {
-    throw new InteractionRoleInputError("頭像模式無效。");
-  }
-  const avatarMode = hasExplicitMode ? avatarModeValue as InteractionRoleAvatarMode : null;
-
-  if (avatarMode === "preset") {
-    if (avatarAssetId || (avatarUploadPhase && avatarUploadPhase !== "idle")) {
-      throw new InteractionRoleInputError("預設頭像模式無效。");
-    }
-    if (!isCanonicalInteractionRolePresetUrl(rawAvatarUrl)) {
-      throw new InteractionRoleInputError("預設頭像不受支援。");
-    }
-    return rawAvatarUrl;
-  }
-
-  if (avatarMode === "custom" || avatarAssetId) {
-    if (!(["", "idle", "success"] as const).includes(avatarUploadPhase as "" | "idle" | "success")) {
-      throw new InteractionRoleInputError("自訂頭像上傳狀態無效。");
-    }
-    if (avatarAssetId) {
-      if (avatarUploadPhase !== "success") {
-        throw new InteractionRoleInputError("自訂頭像上傳尚未完成。");
-      }
-      let asset;
-      try {
-        asset = await resolveReadyImageAsset(getDb(), { vendorId, assetId: avatarAssetId });
-      } catch (error) {
-        if (error instanceof ImageAssetReferenceError) {
-          throw new InteractionRoleInputError("角色頭像圖片資產無效，請重新上傳。");
-        }
-        throw error;
-      }
-      return asset?.publicUrl ?? null;
-    }
-    if (avatarUploadPhase === "success") {
-      throw new InteractionRoleInputError("自訂頭像上傳尚未完成。");
-    }
-  }
-
-  const safeAvatarUrl = rawAvatarUrl ? parseSafeExternalHttpUrl(rawAvatarUrl) : null;
-  if (rawAvatarUrl && !safeAvatarUrl) throw new InteractionRoleInputError("角色頭像必須是安全的 HTTP 或 HTTPS 完整網址。");
-  return safeAvatarUrl;
-}
-
-async function persistInteractionRole(input: {
-  vendorId: string;
-  id: string | null;
-  data: NormalizedInteractionRole;
-}) {
-  try {
-    return input.id
-      ? await getDb().interactionRole.update({ where: { id: input.id, vendorId: input.vendorId }, data: input.data })
-      : await getDb().interactionRole.create({ data: { ...input.data, vendorId: input.vendorId } });
-  } catch (error) {
-    if (isRecordNotFoundError(error)) throw new InteractionRoleMissingError();
-    throw error;
-  }
-}
-
-function interactionRoleAuditData(data: {
-  roleType: string;
-  isActive: boolean;
-  isScheduled: boolean;
-  avatarUrl: string | null;
-}) {
-  return auditSnapshot({
-    roleType: data.roleType,
-    isActive: data.isActive,
-    isScheduled: data.isScheduled,
-    hasAvatar: Boolean(data.avatarUrl),
-  });
-}
-
-async function persistAndAuditInteractionRole(input: {
-  vendorId: string;
-  auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"];
-  id: string | null;
-  data: NormalizedInteractionRole;
-}) {
-  const role = await persistInteractionRole(input);
-  await writeAuditLog({
-    vendorId: input.vendorId,
-    ...managerAuditIdentity(input.auth),
-    action: input.id ? "interaction_role_updated" : "interaction_role_created",
-    targetType: "InteractionRole",
-    targetId: role.id,
-    after: interactionRoleAuditData(input.data),
-  });
-  return role;
-}
-
-async function normalizedInteractionRoleData(vendorId: string, formData: FormData) {
-  const id = optionalText(formData, "id");
-  if (id && id.length > 128) throw new InteractionRoleInputError("角色識別碼無效。");
-  const avatarUrl = await resolveInteractionRoleAvatar(vendorId, formData);
-  const avatarModeValue = submittedInteractionRoleMode(formData);
-  const validation = normalizeInteractionRoleDraft({
-    name: text(formData, "name"),
-    avatarUrl,
-    avatarMode: avatarModeValue === "preset" ? "preset" : null,
-    label: optionalText(formData, "label"),
-    roleType: text(formData, "roleType", "official"),
-    tone: optionalText(formData, "tone"),
-    isActive: parseInteractionRoleBoolean(formData.get("isActive")),
-    isScheduled: parseInteractionRoleBoolean(formData.get("isScheduled")),
-  });
-  if (!validation.success) throw new InteractionRoleInputError(validation.error);
-  return validation.data;
-}
-
+// Keep existing imports stable while interaction and blacklist mutations live
+// in their own server-action domain.
 export async function upsertInteractionRoleAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const id = optionalText(formData, "id");
-  const invalidRolePath = id
-    ? `/interaction-roles/${encodeURIComponent(id)}/edit?error=invalid_role`
-    : "/interaction-roles/new?error=invalid_role";
-  if (id && id.length > 128) redirect("/interaction-roles/new?error=invalid_role");
-
-  let data;
-  try {
-    data = await normalizedInteractionRoleData(vendor.id, formData);
-    await persistAndAuditInteractionRole({ vendorId: vendor.id, auth, id, data });
-  } catch (error) {
-    if (error instanceof InteractionRoleInputError) redirect(invalidRolePath);
-    if (error instanceof ImageAssetReferenceError) redirect(invalidRolePath);
-    if (error instanceof InteractionRoleMissingError) redirect("/interaction-roles/new?error=missing_role");
-    throw error;
-  }
-
-  redirect("/interaction-roles");
+  return upsertInteractionRoleActionImpl(formData);
 }
 
 export async function upsertInteractionRoleActionState(
-  _previousState: InteractionRoleActionState,
+  previousState: InteractionRoleActionState,
   formData: FormData,
 ): Promise<InteractionRoleActionState> {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const values = submittedInteractionRoleValues(formData);
-  try {
-    const data = await normalizedInteractionRoleData(vendor.id, formData);
-    await persistAndAuditInteractionRole({ vendorId: vendor.id, auth, id: optionalText(formData, "id"), data });
-  } catch (error) {
-    if (error instanceof InteractionRoleInputError) {
-      return { status: "error", message: error.message, values };
-    }
-    if (error instanceof ImageAssetReferenceError) {
-      return {
-        status: "error",
-        message: "角色頭像圖片資產無效，請重新上傳。",
-        values,
-      };
-    }
-    if (error instanceof InteractionRoleMissingError) {
-      return { status: "error", message: "這個角色已不存在或不屬於目前商店。", values };
-    }
-    throw error;
-  }
-
-  redirect("/interaction-roles");
+  return upsertInteractionRoleActionStateImpl(previousState, formData);
 }
 
 export async function deleteInteractionRoleAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = text(formData, "id");
-  if (!id || id.length > 128) redirect("/interaction-roles/new?error=invalid_role");
-  const role = await (async () => {
-    try {
-      return await getDb().interactionRole.delete({
-        where: { id, vendorId: vendor.id },
-      });
-    } catch (error) {
-      if (isRecordNotFoundError(error)) {
-        redirect("/interaction-roles/new?error=missing_role");
-      }
-      throw error;
-    }
-  })();
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: "interaction_role_deleted",
-    targetType: "InteractionRole",
-    targetId: role.id,
-    before: auditSnapshot({
-      name: role.name,
-      label: role.label,
-      roleType: role.roleType,
-      isActive: role.isActive,
-    }),
-  });
-  redirect("/interaction-roles/new");
+  return deleteInteractionRoleActionImpl(formData);
 }
-
-function roleAvatar(seed: string) {
-  return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
-}
-
-const systemRoleLibrary = [
-  { name: "開場 AI 主持人", label: "官方角色", roleType: "official", tone: "熱情但不吵，負責歡迎、提醒流程與整理重點", avatarUrl: roleAvatar("host-blue"), isScheduled: true },
-  { name: "官方商品顧問", label: "官方角色", roleType: "official", tone: "清楚說明商品差異、價格與適合族群", avatarUrl: roleAvatar("advisor-cyan"), isScheduled: true },
-  { name: "優惠提醒助手", label: "官方角色", roleType: "official", tone: "在關鍵節點提醒限時優惠與表單，不過度催促", avatarUrl: roleAvatar("reminder-rose"), isScheduled: true },
-  { name: "客服 Q&A 助手", label: "官方角色", roleType: "official", tone: "簡短回答常見問題，引導私訊或表單", avatarUrl: roleAvatar("qa-indigo"), isScheduled: true },
-  { name: "保養知識顧問", label: "官方角色", roleType: "official", tone: "用生活化方式補充使用情境與注意事項", avatarUrl: roleAvatar("care-teal"), isScheduled: true },
-  { name: "成交節奏助手", label: "官方角色", roleType: "official", tone: "在商品浮出時整理賣點與 CTA", avatarUrl: roleAvatar("sales-amber"), isScheduled: true },
-  { name: "直播小編", label: "官方角色", roleType: "official", tone: "像品牌小編一樣親切補充直播資訊", avatarUrl: roleAvatar("editor-purple"), isScheduled: true },
-  { name: "提醒通知助手", label: "官方角色", roleType: "official", tone: "提醒報名、優惠到期、庫存與下一段重點", avatarUrl: roleAvatar("assistant-lime"), isScheduled: true },
-  { name: "售後關懷助手", label: "官方角色", roleType: "official", tone: "說明出貨、保固、退換貨與客服入口", avatarUrl: roleAvatar("support-green"), isScheduled: true },
-  { name: "限時活動主持", label: "官方角色", roleType: "official", tone: "在促銷段落帶節奏，強調活動時間與組合價值", avatarUrl: roleAvatar("promo-red"), isScheduled: true },
-];
 
 export async function importSystemRolesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const db = getDb();
-  const existing = await db.interactionRole.findMany({
-    where: {
-      vendorId: vendor.id,
-      name: { in: systemRoleLibrary.map((role) => role.name) },
-    },
-    select: { name: true },
-  });
-  const existingNames = new Set(existing.map((role) => role.name));
-
-  const imported = await db.interactionRole.createMany({
-    data: systemRoleLibrary
-      .filter((role) => !existingNames.has(role.name))
-      .map((role) => ({ ...role, vendorId: vendor.id, isActive: true, isScheduled: true })),
-  });
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: "interaction_role_library_imported",
-    targetType: "InteractionRole",
-    targetId: vendor.id,
-    after: auditSnapshot({ requestedCount: systemRoleLibrary.length, importedCount: imported.count }),
-  });
-
-  revalidatePath("/interaction-roles");
-  redirect("/interaction-roles");
+  return importSystemRolesActionImpl(formData);
 }
 
 export async function upsertInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = optionalText(formData, "id");
-  const db = getDb();
-  const roleIds = formData.getAll("roleId").map(String);
-  const eventTypes = formData.getAll("eventType").map(String);
-  const parsedTriggerSecs = formData.getAll("triggerSec").map((value) => parseInteractionTriggerSeconds(String(value)));
-  const titles = formData.getAll("eventTitle").map(String);
-  const messages = formData.getAll("message").map(String);
-  const productIds = formData.getAll("productId").map(String);
-  const ctaLabels = formData.getAll("ctaLabel").map(String);
-  const ctaUrls = formData.getAll("ctaUrl").map(String);
-  const invalidEventPath = id
-    ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_event`
-    : "/interaction-scripts/new?error=invalid_event";
-
-  if (eventTypes.length > 200) {
-    redirect(invalidEventPath);
-  }
-  if (eventTypes.length === 0 || [roleIds, titles, messages, productIds, ctaLabels, ctaUrls]
-    .some((column) => column.length !== eventTypes.length)) {
-    redirect(invalidEventPath);
-  }
-  if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
-    redirect(invalidEventPath);
-  }
-  const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
-    if (triggerSec === null) redirect(invalidEventPath);
-    return triggerSec;
-  });
-
-  const eventResults = eventTypes.map((eventType, index) => normalizeInteractionEventDraft({
-      eventType,
-      triggerSec: triggerSecs[index],
-      title: titles[index],
-      message: messages[index],
-      productId: productIds[index],
-      ctaLabel: ctaLabels[index],
-      ctaUrl: ctaUrls[index],
-      roleId: roleIds[index],
-    }, index));
-  if (eventResults.some((result) => !result.success)) redirect(invalidEventPath);
-  const events = eventResults.flatMap((result) => result.success ? [result.data] : []);
-
-  const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
-  const referencedProductIds = [...new Set(events.flatMap((event) => event.productId ? [event.productId] : []))];
-  const invalidReferencePath = id
-    ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_reference`
-    : "/interaction-scripts/new?error=invalid_reference";
-  if ([id, ...referencedRoleIds, ...referencedProductIds].some((value) => value && value.length > 128)) {
-    redirect(invalidReferencePath);
-  }
-
-  const name = text(formData, "name");
-  const description = optionalText(formData, "description");
-  const status = text(formData, "status", "draft");
-  if (!name || name.length > 160 || (description?.length ?? 0) > 1_000 || (status !== "draft" && status !== "published")) {
-    redirect(invalidEventPath);
-  }
-  const data = { name, description, status };
-
-  let scriptId: string;
-  if (id) {
-    scriptId = id;
-  }
-
-  try {
-    scriptId = await db.$transaction(async (tx) => {
-      // Read all tenant and lifecycle references again inside the same
-      // Serializable transaction as the script/event writes. The values read
-      // before this boundary are form-derived only and are never trusted as a
-      // reference authorization decision.
-      const [referencedRoles, referencedProducts] = await Promise.all([
-        referencedRoleIds.length > 0
-          ? tx.interactionRole.findMany({
-              where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true, isScheduled: true },
-              select: {
-                id: true,
-                vendorId: true,
-                name: true,
-                avatarUrl: true,
-                label: true,
-                roleType: true,
-                isActive: true,
-                isScheduled: true,
-              },
-            })
-          : Promise.resolve([]),
-        referencedProductIds.length > 0
-          ? tx.product.findMany({
-              where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
-              select: { id: true },
-            })
-          : Promise.resolve([]),
-      ]);
-      if (
-        referencedRoles.length !== referencedRoleIds.length
-        || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
-        || referencedProducts.length !== referencedProductIds.length
-      ) {
-        throw new InteractionScriptReferenceError();
-      }
-
-      if (id) {
-        try {
-          await tx.interactionScript.update({ where: { id, vendorId: vendor.id }, data });
-          await tx.interactionEvent.deleteMany({ where: { scriptId: id } });
-          for (const event of events) {
-            await tx.interactionEvent.create({ data: { ...event, scriptId: id } });
-          }
-        } catch (error) {
-          if (isRecordNotFoundError(error)) throw new InteractionScriptMissingError();
-          throw error;
-        }
-        return id;
-      }
-
-      const script = await tx.interactionScript.create({
-        data: {
-          ...data,
-          vendorId: vendor.id,
-          events: { create: events },
-        },
-      });
-      return script.id;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof InteractionScriptMissingError || isRecordNotFoundError(error)) {
-      redirect("/interaction-scripts?error=missing_script");
-    }
-    if (error instanceof InteractionScriptReferenceError) {
-      redirect(invalidReferencePath);
-    }
-    if (isInteractionScriptWriteConflict(error)) {
-      redirect("/interaction-scripts?error=conflict");
-    }
-    throw error;
-  }
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: id ? "interaction_script_updated" : "interaction_script_created",
-    targetType: "InteractionScript",
-    targetId: scriptId,
-    after: auditSnapshot({ name, status, eventCount: events.length }),
-  });
-
-  redirect("/interaction-scripts");
+  return upsertInteractionScriptActionImpl(formData);
 }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const scriptId = text(formData, "id");
-  const liveId = text(formData, "liveId");
-
-  if (!scriptId || !liveId || scriptId.length > 128 || liveId.length > 128) {
-    throw new Error("直播不存在或未綁定此互動腳本。");
-  }
-
-  const updateResult = await getDb().live.updateMany({
-    where: {
-      id: liveId,
-      vendorId: vendor.id,
-      interactionScriptId: scriptId,
-      interactionScript: { is: { id: scriptId, vendorId: vendor.id } },
-    },
-    data: { interactionScriptId: null },
-  });
-
-  if (updateResult.count !== 1) {
-    throw new Error("直播不存在或未綁定此互動腳本。");
-  }
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: "interaction_script_unbound_from_live",
-    targetType: "Live",
-    targetId: liveId,
-    before: auditSnapshot({ interactionScriptId: scriptId }),
-    after: auditSnapshot({ interactionScriptId: null }),
-  });
-
-  revalidatePath("/interaction-scripts");
-  revalidatePath(`/interaction-scripts/${scriptId}/edit`);
-  revalidatePath("/lives");
-  revalidatePath(`/lives/${liveId}/edit`);
+  return unbindInteractionScriptFromLiveActionImpl(formData);
 }
 
 export async function duplicateInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = text(formData, "id");
-  if (!id || id.length > 128) redirect("/interaction-scripts");
-  const db = getDb();
-  let duplicateResult: {
-    duplicateId: string;
-    sourceScriptId: string;
-    duplicateName: string;
-    eventCount: number;
-  };
-
-  try {
-    duplicateResult = await db.$transaction(async (tx) => {
-      // The source, its events, all references, and the duplicate are read or
-      // written through this one transaction. No source snapshot from outside
-      // the transaction can authorize a duplicate.
-      const script = await tx.interactionScript.findFirst({
-        where: { id, vendorId: vendor.id },
-        include: { events: { orderBy: { triggerSec: "asc" } } },
-      });
-      if (!script) throw new InteractionScriptDuplicateSourceMissingError();
-
-      const eventResults = script.events.map((event, index) => normalizeInteractionEventDraft({
-        eventType: event.eventType,
-        triggerSec: event.triggerSec,
-        title: event.title,
-        message: event.message,
-        productId: event.productId,
-        ctaLabel: event.ctaLabel,
-        ctaUrl: event.ctaUrl,
-        roleId: event.roleId,
-      }, index));
-      if (eventResults.some((result) => !result.success)) {
-        throw new InteractionScriptInvalidEventError();
-      }
-      const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
-      const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
-      const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
-      const [referencedRoles, referencedProducts] = await Promise.all([
-        referencedRoleIds.length > 0
-          ? tx.interactionRole.findMany({
-              where: { vendorId: vendor.id, id: { in: referencedRoleIds }, isActive: true, isScheduled: true },
-              select: {
-                id: true,
-                vendorId: true,
-                name: true,
-                avatarUrl: true,
-                label: true,
-                roleType: true,
-                isActive: true,
-                isScheduled: true,
-              },
-            })
-          : Promise.resolve([]),
-        referencedProductIds.length > 0
-          ? tx.product.findMany({
-              where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
-              select: { id: true },
-            })
-          : Promise.resolve([]),
-      ]);
-      if (
-        referencedRoles.length !== referencedRoleIds.length
-        || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
-        || referencedProducts.length !== referencedProductIds.length
-      ) {
-        throw new InteractionScriptReferenceError();
-      }
-      const duplicateNameSuffix = " 複本";
-      const duplicateName = `${script.name.slice(0, 160 - duplicateNameSuffix.length)}${duplicateNameSuffix}`;
-      const duplicate = await tx.interactionScript.create({
-        data: {
-          vendorId: vendor.id,
-          name: duplicateName,
-          description: script.description,
-          status: "draft",
-          events: {
-            create: normalizedEvents.map((event, index) => ({
-              eventType: event.eventType,
-              triggerSec: event.triggerSec,
-              title: event.title,
-              message: event.message,
-              productId: event.productId,
-              ctaLabel: event.ctaLabel,
-              ctaUrl: event.ctaUrl,
-              roleId: event.roleId,
-              metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
-            })),
-          },
-        },
-      });
-      return {
-        duplicateId: duplicate.id,
-        sourceScriptId: script.id,
-        duplicateName,
-        eventCount: normalizedEvents.length,
-      };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof InteractionScriptInvalidEventError) {
-      redirect("/interaction-scripts?error=invalid_event");
-    }
-    if (error instanceof InteractionScriptDuplicateSourceMissingError) {
-      redirect("/interaction-scripts");
-    }
-    if (isRecordNotFoundError(error)) {
-      redirect("/interaction-scripts?error=missing_script");
-    }
-    if (error instanceof InteractionScriptReferenceError) {
-      redirect("/interaction-scripts?error=invalid_reference");
-    }
-    if (isInteractionScriptWriteConflict(error)) {
-      redirect("/interaction-scripts?error=conflict");
-    }
-    throw error;
-  }
-
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: "interaction_script_duplicated",
-    targetType: "InteractionScript",
-    targetId: duplicateResult.duplicateId,
-    after: auditSnapshot({ sourceScriptId: duplicateResult.sourceScriptId, name: duplicateResult.duplicateName, status: "draft", eventCount: duplicateResult.eventCount }),
-  });
-
-  revalidatePath("/interaction-scripts");
-  redirect("/interaction-scripts");
+  return duplicateInteractionScriptActionImpl(formData);
 }
 
 export async function deleteInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const auditActor = managerAuditIdentity(auth);
-  const id = text(formData, "id");
-  if (!id || id.length > 128) redirect("/interaction-scripts");
-  const script = await (async () => {
-    try {
-      return await getDb().interactionScript.delete({
-        where: { id, vendorId: vendor.id },
-      });
-    } catch (error) {
-      if (isRecordNotFoundError(error)) {
-        redirect("/interaction-scripts?error=missing_script");
-      }
-      throw error;
-    }
-  })();
-  await writeAuditLog({
-    vendorId: vendor.id,
-    ...auditActor,
-    action: "interaction_script_deleted",
-    targetType: "InteractionScript",
-    targetId: script.id,
-    before: auditSnapshot({ name: script.name, status: script.status }),
-  });
-  revalidatePath("/interaction-scripts");
-  redirect("/interaction-scripts");
+  return deleteInteractionScriptActionImpl(formData);
 }
 
 export async function upsertBlacklistAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const identifierType = BlacklistIdentifierType.safeParse(text(formData, "identifierType", "email"));
-  const identifier = identifierType.success
-    ? normalizeBlacklistIdentifier(identifierType.data, text(formData, "identifier"))
-    : null;
-  if (!identifierType.success || !identifier) {
-    redirect("/blacklists?error=invalid_identifier");
-  }
-  await getDb().blacklist.create({
-    data: {
-      vendorId: vendor.id,
-      identifier,
-      identifierType: identifierType.data,
-      reason: text(formData, "reason"),
-      notes: optionalText(formData, "notes"),
-    },
-  });
-  await writeAuditLog({
-    vendorId: vendor.id,
-    action: "blacklist_created",
-    targetType: "Blacklist",
-    after: auditSnapshot({ identifierType: identifierType.data, isActive: true }),
-  });
-  revalidatePath("/blacklists");
+  return upsertBlacklistActionImpl(formData);
 }
 
 export async function unblockBlacklistAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = text(formData, "id");
-  await getDb().blacklist.update({
-    where: { id, vendorId: vendor.id },
-    data: {
-      isActive: false,
-      unblockedAt: new Date(),
-    },
-  });
-  revalidatePath("/blacklists");
+  return unblockBlacklistActionImpl(formData);
 }
 
 export async function upsertAffiliateAction(formData: FormData) {

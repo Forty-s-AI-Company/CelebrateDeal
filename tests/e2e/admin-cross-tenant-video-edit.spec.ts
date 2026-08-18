@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp40SyntheticPassword!";
@@ -29,14 +30,13 @@ test("admin cannot open another vendor video edit route through direct URL navig
     db.video.count({ where: { vendorId: ownerVendor.id } }),
     db.video.count({ where: { vendorId: foreignVendor.id } }),
   ]);
-  const before = await snapshot();
-
   try {
     await page.goto("/login");
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
+    const before = await snapshot();
 
     const requests: string[] = [];
     page.on("request", (request) => requests.push(request.url()));
@@ -47,20 +47,41 @@ test("admin cannot open another vendor video edit route through direct URL navig
     await expect(page.getByRole("heading", { name: "編輯影片" })).toBeVisible();
     await expect(page.getByLabel("影片名稱")).toHaveValue(ownVideo.title);
     await expect(page.getByLabel("影片描述")).toHaveValue(ownVideo.description ?? "");
+    await expect(page.getByText("替換影片檔案", { exact: true })).toBeVisible();
+    const replacementVideoInput = page.locator('input[type="file"][accept="video/*"]');
+    await expect(replacementVideoInput).toHaveCount(1);
+    await expect(replacementVideoInput).toBeAttached();
+    await expect(page.getByText("進階：使用既有外部影片 URL", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("影片 URL")).toBeHidden();
+    await page.getByText("進階：使用既有外部影片 URL", { exact: true }).click();
     await expect(page.getByLabel("影片 URL")).toHaveValue(ownVideo.videoUrl);
-    await expect(page.getByLabel("縮圖 URL")).toHaveValue(ownVideo.thumbnailUrl ?? "");
+    await expect(page.getByText("進階：使用既有圖片 URL", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("圖片 URL")).toBeHidden();
+    await page.getByText("進階：使用既有圖片 URL", { exact: true }).click();
+    await expect(page.getByLabel("圖片 URL")).toHaveValue(ownVideo.thumbnailUrl ?? "");
     await expect(page.getByLabel("長度秒數")).toHaveValue(String(ownVideo.durationSec));
     await expect(page.getByLabel("估算用量分鐘")).toHaveValue(String(ownVideo.estimatedMinutes));
     await expect(page.getByLabel("狀態")).toHaveValue(ownVideo.status);
     await expect(page.getByText("尚未建立 Live Input", { exact: true })).toBeVisible();
 
     const foreignPath = `/videos/${foreignVideo.id}/edit`;
-    const foreignResponse = await page.goto(foreignPath);
-    expect(foreignResponse?.status()).toBe(404);
-    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
-    await expect(page.getByRole("heading", { name: "編輯影片" })).toHaveCount(0);
-    for (const label of ["影片名稱", "影片描述", "影片 URL", "縮圖 URL", "長度秒數", "估算用量分鐘", "狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);
     const foreignDataCanaries = [foreignVideo.title, foreignVideo.description ?? "", foreignVideoUrl, foreignThumbnailUrl];
+    requests.length = 0;
+    await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignVideo.id],
+      protectedPayloadCanaries: foreignDataCanaries,
+      documentCanaries: foreignDataCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: {
+        kind: "http-not-found",
+        status: 404,
+      },
+      finalStatus: 404,
+    });
+    await expect(page.getByRole("heading", { name: "編輯影片" })).toHaveCount(0);
+    for (const label of ["影片名稱", "影片描述", "影片 URL", "圖片 URL", "長度秒數", "估算用量分鐘", "狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);
     for (const value of [foreignVideo.id, ...foreignDataCanaries]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const documentContent = await page.content();
     // Next.js serializes the requested dynamic route ID into the 404 RSC payload.

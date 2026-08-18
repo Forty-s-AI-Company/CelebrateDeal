@@ -86,6 +86,22 @@ export function classifyCloudflareOperationError(error: unknown) {
       status: error.code === "configuration" ? 503 : 502,
     };
   }
+  // Prisma messages may contain connection and schema details. Only expose a
+  // bounded category so operators can distinguish migration/availability
+  // failures without leaking database metadata to the caller.
+  const prismaCode = error && typeof error === "object" && "code" in error
+    && typeof error.code === "string"
+    ? error.code
+    : null;
+  if (prismaCode === "P2021" || prismaCode === "P2022") {
+    return { code: "database_schema", providerStatus: null, status: 503 };
+  }
+  if (prismaCode === "P1001" || prismaCode === "P1002" || prismaCode === "P1017") {
+    return { code: "database_unavailable", providerStatus: null, status: 503 };
+  }
+  if (prismaCode === "P2002" || prismaCode === "P2003") {
+    return { code: "database_constraint", providerStatus: null, status: 409 };
+  }
   return { code: "internal_failure", providerStatus: null, status: 500 };
 }
 

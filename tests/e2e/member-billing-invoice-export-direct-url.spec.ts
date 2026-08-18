@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { formatCurrency, formatDateTime } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp83SyntheticPassword!";
@@ -136,11 +137,11 @@ test("active member is denied billing invoice export before tenant query, CSV, a
           updatedAt: true,
         },
       }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({
         where: { id: tracking.id },
       }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({
         where: { vendorId: vendor.id },
       }),
@@ -161,11 +162,11 @@ test("active member is denied billing invoice export before tenant query, CSV, a
           updatedAt: true,
         },
       }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({
         where: { id: membership.id },
       }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({
         where: { vendorId: vendor.id },
       }),
@@ -201,7 +202,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
           updatedAt: true,
         },
       }),
-      auditGlobalCount: await db.auditLog.count(),
+      auditScopedCount: await db.auditLog.count({ where: { OR: [{ vendorId: vendor.id }, { actorId: user.id }] } }),
       auditVendorCount: await db.auditLog.count({
         where: { vendorId: vendor.id },
       }),
@@ -235,7 +236,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
       plan: await db.billingPlan.findUniqueOrThrow({
         where: { id: plan.id },
       }),
-      planCount: await db.billingPlan.count(),
+      planCount: await db.billingPlan.count({ where: { id: plan.id } }),
       activePlanComposite: await db.billingPlan.count({
         where: { id: plan.id, code: plan.code, isActive: true },
       }),
@@ -252,7 +253,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
       usageLimit: await db.vendorUsageLimit.findUniqueOrThrow({
         where: { id: usageLimit.id },
       }),
-      usageLimitCount: await db.vendorUsageLimit.count(),
+      usageLimitCount: await db.vendorUsageLimit.count({ where: { id: usageLimit.id } }),
       usageLimitVendorCount: await db.vendorUsageLimit.count({
         where: { vendorId: vendor.id },
       }),
@@ -274,7 +275,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
         where: { id: { in: invoiceIds } },
         orderBy: { id: "asc" },
       }),
-      invoiceCount: await db.invoice.count(),
+      invoiceCount: await db.invoice.count({ where: { id: { in: invoiceIds } } }),
       invoiceVendorCount: await db.invoice.count({
         where: { vendorId: vendor.id },
       }),
@@ -373,16 +374,6 @@ test("active member is denied billing invoice export before tenant query, CSV, a
     const targetExportMethods: string[] = [];
     const otherInvoiceOrFinanceRequests: string[] = [];
     const exportPath = "/billing/invoices/export";
-    const intercepted: {
-      current?: {
-        status: number;
-        location: string | undefined;
-        contentType: string | undefined;
-        contentDisposition: string | undefined;
-        rawPrefix: number[];
-        body: string;
-      };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
@@ -404,65 +395,33 @@ test("active member is denied billing invoice export before tenant query, CSV, a
         otherInvoiceOrFinanceRequests.push(`${request.method()} ${url.pathname}`);
       }
     });
-    await page.route("**/billing/invoices/export", async (route) => {
-      if (new URL(route.request().url()).pathname !== exportPath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      const rawBody = await response.body();
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        contentType: response.headers()["content-type"],
-        contentDisposition: response.headers()["content-disposition"],
-        rawPrefix: [...rawBody.subarray(0, 3)],
-        body: new TextDecoder().decode(rawBody),
-      };
-      await route.fulfill({ response });
+    const { finalResponse, protectedResponse, protectedPayload } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: exportPath,
+      protectedPayloadCanaries: invoiceCanaries,
+      documentCanaries: invoiceCanaries,
+      transport: {
+        kind: "http-redirect",
+        status: 307,
+        location: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        'title="帳單"',
+        "累計帳單金額",
+        "未付款 / 待扣款",
+        "對帳匯出",
+        "匯出 CSV",
+        "帳單列表",
+        ...csvHeaders,
+        ...csvRowCanaries,
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === exportPath &&
-        response.status() === 307,
-    );
-    const finalResponse = await page.goto(exportPath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current?.contentType ?? "").not.toContain("text/csv");
-    expect(intercepted.current?.contentDisposition).toBeUndefined();
-    expect(intercepted.current?.rawPrefix).not.toEqual([0xef, 0xbb, 0xbf]);
-    expect(intercepted.current?.body.startsWith("\uFEFF")).toBe(false);
-    for (const header of csvHeaders) {
-      expect(intercepted.current?.body).not.toContain(header);
-    }
-    for (const row of csvRowCanaries) {
-      expect(intercepted.current?.body).not.toContain(row);
-    }
-    for (const canary of invoiceCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const deniedText of [
-      'title="帳單"',
-      "累計帳單金額",
-      "未付款 / 待扣款",
-      "對帳匯出",
-      "匯出 CSV",
-      "帳單列表",
-    ]) {
-      expect(intercepted.current?.body).not.toContain(deniedText);
-    }
+    expect(protectedResponse.headers()["content-type"] ?? "").not.toContain("text/csv");
+    expect(protectedResponse.headers()["content-disposition"]).toBeUndefined();
+    expect(protectedPayload).toBeNull();
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

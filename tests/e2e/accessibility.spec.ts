@@ -40,17 +40,51 @@ async function blockingAxeViolations(page: Page) {
     }));
 }
 
+async function waitForStableRoute(page: Page, expectedPath: string) {
+  await page.waitForLoadState("load");
+  const actualUrl = new URL(page.url());
+  const expectedUrl = new URL(expectedPath, page.url());
+  expect(`${actualUrl.pathname}${actualUrl.search}`, `導航後應停留在 ${expectedPath}`).toBe(`${expectedUrl.pathname}${expectedUrl.search}`);
+  await expect(page.locator("main").first()).toBeVisible();
+}
+
+async function gotoStableRoute(page: Page, expectedPath: string) {
+  const response = await page.goto(expectedPath, { waitUntil: "load" });
+  expect(response?.status()).toBe(200);
+  await waitForStableRoute(page, expectedPath);
+  return response;
+}
+
 async function expectNoBlockingAxeViolations(page: Page) {
+  await page.waitForLoadState("load");
+  await expect(page.locator("main").first()).toBeVisible();
   const blocking = await blockingAxeViolations(page);
   expect(blocking, "頁面不可出現 axe critical/serious 違規").toEqual([]);
 }
 
 async function loginOwner(page: Page) {
-  await page.goto("/login");
+  await gotoStableRoute(page, "/login");
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  await waitForStableRoute(page, "/dashboard");
+}
+
+async function enableOwnerMfa(page: Page) {
+  await gotoStableRoute(page, "/settings/security");
+  await page.getByRole("button", { name: "開始設定 TOTP", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/security\?updated=mfa_started$/);
+  await waitForStableRoute(page, "/settings/security?updated=mfa_started");
+
+  const totpSeed = (await page.locator("p.font-mono").first().textContent())?.trim();
+  if (!totpSeed) throw new Error("Owner MFA setup did not provide a TOTP secret.");
+
+  await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed));
+  await page.getByRole("button", { name: "啟用 MFA", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/security\?updated=mfa_enabled$/);
+  await waitForStableRoute(page, "/settings/security?updated=mfa_enabled");
+  await expect(page.getByText("目前 session：已完成 MFA 驗證", { exact: true })).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -219,14 +253,13 @@ test.afterAll(async () => {
 
 test("public account pages pass automated WCAG checks", async ({ page }) => {
   for (const path of ["/login", "/password-reset/request"]) {
-    const response = await page.goto(path);
-    expect(response?.status()).toBe(200);
+    await gotoStableRoute(page, path);
     await expectNoBlockingAxeViolations(page);
   }
 });
 
 test("login keyboard focus is visible and follows the form order", async ({ page }) => {
-  await page.goto("/login");
+  await gotoStableRoute(page, "/login");
 
   await page.keyboard.press("Tab");
   const email = page.getByLabel("Email");
@@ -262,6 +295,7 @@ test("authenticated shell exposes a working skip link and passes axe", async ({ 
 test("static authenticated owner routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
   await loginOwner(page);
+  await enableOwnerMfa(page);
   const routes = [
     "/dashboard",
     "/lives",
@@ -298,14 +332,19 @@ test("static authenticated owner routes have no blocking axe violations", async 
   const failures: Array<{ route: string; status: number | null; violations: Awaited<ReturnType<typeof blockingAxeViolations>> }> = [];
 
   for (const route of routes) {
-    const response = await page.goto(route, { waitUntil: "domcontentloaded" });
-    const violations = await blockingAxeViolations(page);
-    if (response?.status() !== 200 || violations.length > 0) {
-      failures.push({
-        route,
-        status: response?.status() ?? null,
-        violations,
-      });
+    const routePage = await page.context().newPage();
+    try {
+      const response = await gotoStableRoute(routePage, route);
+      const violations = await blockingAxeViolations(routePage);
+      if (response?.status() !== 200 || violations.length > 0) {
+        failures.push({
+          route,
+          status: response?.status() ?? null,
+          violations,
+        });
+      }
+    } finally {
+      await routePage.close();
     }
   }
 
@@ -334,7 +373,7 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
   const failures: Array<{ route: string; status: number | null; violations: Awaited<ReturnType<typeof blockingAxeViolations>> }> = [];
 
   for (const route of routes) {
-    const response = await page.goto(route, { waitUntil: "domcontentloaded" });
+    const response = await gotoStableRoute(page, route);
     const violations = await blockingAxeViolations(page);
     if (response?.status() !== 200 || violations.length > 0) {
       failures.push({
@@ -350,15 +389,17 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/login");
+  await gotoStableRoute(page, "/login");
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup$/);
+  await waitForStableRoute(page, "/mfa/setup");
   await expectNoBlockingAxeViolations(page);
 
   await page.getByRole("button", { name: "開始建立 TOTP" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_started/);
+  await waitForStableRoute(page, "/mfa/setup?updated=mfa_started");
   await expectNoBlockingAxeViolations(page);
   const totpSeed = (await page.locator("details p.font-mono").textContent())?.trim();
   expect(totpSeed).toBeTruthy();
@@ -366,18 +407,21 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed!));
   await page.getByRole("button", { name: "啟用 MFA" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_enabled/);
+  await waitForStableRoute(page, "/mfa/setup?updated=mfa_enabled");
   await expectNoBlockingAxeViolations(page);
 
   await page.context().clearCookies();
-  await page.goto("/login");
+  await gotoStableRoute(page, "/login");
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  await expect(page).toHaveURL(/\/mfa\/verify/);
+  await expect(page).toHaveURL("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
+  await waitForStableRoute(page, "/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
   await expectNoBlockingAxeViolations(page);
   await page.getByLabel("驗證碼").fill(totpCodeForTimestamp(totpSeed!));
   await page.getByRole("button", { name: "確認並進入後台" }).click();
   await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
+  await waitForStableRoute(page, "/admin/billing/dashboard");
 
   const routes = [
     "/admin/billing/dashboard",
@@ -388,7 +432,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   ];
   const failures: Array<{ route: string; status: number | null; violations: Awaited<ReturnType<typeof blockingAxeViolations>> }> = [];
   for (const route of routes) {
-    const response = await page.goto(route, { waitUntil: "domcontentloaded" });
+    const response = await gotoStableRoute(page, route);
     const violations = await blockingAxeViolations(page);
     if (response?.status() !== 200 || violations.length > 0) {
       failures.push({
@@ -404,7 +448,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
 
 test("reduced-motion preference suppresses authored motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/login");
+  await gotoStableRoute(page, "/login");
   const duration = await page.evaluate(() => {
     const probe = document.createElement("div");
     probe.style.animation = "fadeInUp 2s ease";

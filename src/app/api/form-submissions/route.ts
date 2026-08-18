@@ -232,10 +232,12 @@ async function refreshExpiredVerification(submission: VerifiableSubmission, now 
 async function enqueueSubmissionVerificationSafely({
   vendorId,
   vendorName,
+  emailBrand,
   submission,
 }: {
   vendorId: string;
   vendorName: string;
+  emailBrand: { senderName: string | null; supportEmail: string | null; contactUrl: string | null };
   submission: VerifiableSubmission;
 }) {
   if (submission.verificationStatus === "VERIFIED") return true;
@@ -250,6 +252,7 @@ async function enqueueSubmissionVerificationSafely({
       recipientEmail: submission.email,
       verificationVersion: submission.verificationVersion,
       verificationExpiresAt: submission.verificationExpiresAt,
+      emailBrand,
     });
     return delivery.status !== "suppressed";
   } catch (error) {
@@ -298,7 +301,9 @@ export async function POST(request: Request) {
 
   const form = await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
-    include: { vendor: { select: { name: true } } },
+    include: {
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+    },
   });
   if (!form || !form.isActive) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
@@ -378,6 +383,11 @@ export async function POST(request: Request) {
     const verificationQueued = await enqueueSubmissionVerificationSafely({
       vendorId: form.vendorId,
       vendorName: form.vendor.name,
+      emailBrand: {
+        senderName: form.vendor.senderName,
+        supportEmail: form.vendor.supportEmail,
+        contactUrl: form.vendor.contactUrl,
+      },
       submission: refreshed,
     });
     if (!verificationQueued) {
@@ -439,6 +449,11 @@ export async function POST(request: Request) {
     const verificationQueued = await enqueueSubmissionVerificationSafely({
       vendorId: form.vendorId,
       vendorName: form.vendor.name,
+      emailBrand: {
+        senderName: form.vendor.senderName,
+        supportEmail: form.vendor.supportEmail,
+        contactUrl: form.vendor.contactUrl,
+      },
       submission: concurrentSubmission,
     });
     if (!verificationQueued) {
@@ -450,6 +465,11 @@ export async function POST(request: Request) {
   const verificationQueued = await enqueueSubmissionVerificationSafely({
     vendorId: form.vendorId,
     vendorName: form.vendor.name,
+    emailBrand: {
+      senderName: form.vendor.senderName,
+      supportEmail: form.vendor.supportEmail,
+      contactUrl: form.vendor.contactUrl,
+    },
     submission,
   });
   if (!verificationQueued) {

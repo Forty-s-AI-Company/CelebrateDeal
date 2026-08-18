@@ -167,7 +167,12 @@ export function parseZonedDateTimeLocal(value: string, timeZone: string): Date {
     throw new ZonedDateTimeError("ambiguous_local_time", "指定時間在此時區重複，可能是夏令時間切換造成的歧義。");
   }
 
-  return new Date([...candidates][0]);
+  const [candidateMs] = candidates;
+  if (candidateMs === undefined) {
+    throw new ZonedDateTimeError("invalid_date", "無法解析指定時區的日期時間。");
+  }
+
+  return new Date(candidateMs);
 }
 
 export function formatZonedDateTimeLocal(value: Date, timeZone: string): string {

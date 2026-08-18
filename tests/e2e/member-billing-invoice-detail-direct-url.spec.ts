@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { formatCurrency, formatDateTime } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp80SyntheticPassword!";
@@ -138,11 +139,11 @@ test("active member is denied a billing invoice detail before params, tenant que
           updatedAt: true,
         },
       }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({
         where: { id: tracking.id },
       }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({
         where: { vendorId: vendor.id },
       }),
@@ -163,11 +164,11 @@ test("active member is denied a billing invoice detail before params, tenant que
           updatedAt: true,
         },
       }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({
         where: { id: membership.id },
       }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({
         where: { vendorId: vendor.id },
       }),
@@ -206,7 +207,7 @@ test("active member is denied a billing invoice detail before params, tenant que
       plan: await db.billingPlan.findUniqueOrThrow({
         where: { id: plan.id },
       }),
-      planCount: await db.billingPlan.count(),
+      planCount: await db.billingPlan.count({ where: { id: plan.id } }),
       activePlanComposite: await db.billingPlan.count({
         where: { id: plan.id, code: plan.code, isActive: true },
       }),
@@ -223,7 +224,7 @@ test("active member is denied a billing invoice detail before params, tenant que
       usageLimit: await db.vendorUsageLimit.findUniqueOrThrow({
         where: { id: usageLimit.id },
       }),
-      usageLimitCount: await db.vendorUsageLimit.count(),
+      usageLimitCount: await db.vendorUsageLimit.count({ where: { id: usageLimit.id } }),
       usageLimitVendorCount: await db.vendorUsageLimit.count({
         where: { vendorId: vendor.id },
       }),
@@ -245,7 +246,7 @@ test("active member is denied a billing invoice detail before params, tenant que
         where: { id: { in: invoiceIds } },
         orderBy: { id: "asc" },
       }),
-      invoiceCount: await db.invoice.count(),
+      invoiceCount: await db.invoice.count({ where: { id: { in: invoiceIds } } }),
       invoiceVendorCount: await db.invoice.count({
         where: { vendorId: vendor.id },
       }),
@@ -313,6 +314,7 @@ test("active member is denied a billing invoice detail before params, tenant que
     const rawInvoiceCanaries = invoiceCanaries.filter(
       (value) => value !== targetInvoice.id && value !== targetPath,
     );
+    const routeIdentityCanaries = [targetInvoice.id, targetPath];
 
     const posts: string[] = [];
     const external: string[] = [];
@@ -320,9 +322,6 @@ test("active member is denied a billing invoice detail before params, tenant que
     const exports: string[] = [];
     const targetDetails: string[] = [];
     const otherDetails: string[] = [];
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
@@ -344,58 +343,36 @@ test("active member is denied a billing invoice detail before params, tenant que
         }
       }
     });
-    await page.route("**/billing/invoices/*", async (route) => {
-      if (new URL(route.request().url()).pathname !== targetPath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: targetPath,
+      routeIdentityCanaries,
+      protectedPayloadCanaries: rawInvoiceCanaries,
+      documentCanaries: rawInvoiceCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        "付款收據",
+        "帳單明細",
+        "查看單筆帳單費用、付款狀態與可列印收據。",
+        "返回帳單",
+        "列印／另存 PDF",
+        "費用項目",
+        "平台月費",
+        "超額用量費",
+        "金流服務費",
+        "交易服務費",
+        "聯盟結算管理費",
+        "不是財政部電子發票",
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === targetPath &&
-        response.status() === 307,
-    );
-    const finalResponse = await page.goto(targetPath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current?.body).toContain(targetInvoice.id);
-    for (const canary of rawInvoiceCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const deniedText of [
-      "付款收據",
-      "帳單明細",
-      "查看單筆帳單費用、付款狀態與可列印收據。",
-      "返回帳單",
-      "列印／另存 PDF",
-      "費用項目",
-      "平台月費",
-      "超額用量費",
-      "金流服務費",
-      "交易服務費",
-      "聯盟結算管理費",
-      "不是財政部電子發票",
-    ]) {
-      expect(intercepted.current?.body).not.toContain(deniedText);
-    }
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

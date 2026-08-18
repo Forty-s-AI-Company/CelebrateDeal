@@ -28,22 +28,25 @@ test("owner receives only its vendor blacklist entries from the blacklist index"
   const before = await snapshot();
 
   try {
-    await page.goto("/login");
+    await page.goto("/login", { waitUntil: "load" });
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator("main").first()).toBeVisible();
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    const response = await page.goto("/blacklists");
+    const response = await page.goto("/blacklists", { waitUntil: "load" });
     expect(response?.status()).toBe(200);
     await expect(page).toHaveURL(/\/blacklists$/);
+    await expect(page.locator("main").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "黑名單管理" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "新增封鎖項目" })).toBeVisible();
     await expect(page.getByText(ownBlacklist.identifier, { exact: true })).toBeVisible();
     await expect(page.getByText(ownBlacklist.reason, { exact: true })).toBeVisible();
-    await expect(page.getByText(ownBlacklist.identifierType, { exact: true })).toBeVisible();
-    await expect(page.getByText("封鎖中", { exact: true })).toBeVisible();
-    await expect(page.getByText("顯示 1 筆黑名單", { exact: true })).toBeAttached();
+    await expect(page.getByText("訪客識別碼", { exact: true })).toBeVisible();
+    await expect(page.locator("span").filter({ hasText: /^封鎖中$/ })).toBeVisible();
+    await expect(page.getByText("顯示 1 / 1 筆黑名單", { exact: true })).toBeAttached();
     await expect(page.locator(`input[name="id"][value="${ownBlacklist.id}"]`)).toHaveCount(1);
 
     for (const value of [foreignBlacklist.identifier, foreignBlacklist.reason, foreignBlacklist.notes ?? "", foreignBlacklist.id]) {
@@ -54,10 +57,10 @@ test("owner receives only its vendor blacklist entries from the blacklist index"
     for (const value of [foreignBlacklist.identifier, foreignBlacklist.reason, foreignBlacklist.notes ?? "", foreignBlacklist.id]) {
       expect(documentContent).not.toContain(value);
     }
-    await expect.poll(snapshot).toEqual(before);
+    expect(await snapshot()).toEqual(before);
   } finally {
-    await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } });
     await db.user.deleteMany({ where: { id: user.id } });
+    await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } });
     await db.$disconnect();
   }
 });

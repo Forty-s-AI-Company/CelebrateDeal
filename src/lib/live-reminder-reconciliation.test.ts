@@ -187,7 +187,12 @@ describe("processLiveReminderReconciliationJobs", () => {
       { id: "verified-b", name: "B", email: "b@example.test", createdAt: new Date("2026-08-09T02:00:00.000Z") },
     ];
     const currentLive = {
-      id: "live-1", vendorId: "vendor-1", title: "Live", status: "scheduled", scheduledAt, liveReminderOffsetMinutes: 60, liveReminderTemplate: template(), vendor: { name: "Tenant One" },
+      id: "live-1", vendorId: "vendor-1", title: "Live", status: "scheduled", scheduledAt, liveReminderOffsetMinutes: 60, liveReminderTemplate: template(), vendor: {
+        name: "Tenant One",
+        senderName: "Tenant Sender",
+        supportEmail: "support@example.test",
+        contactUrl: "https://example.test/contact",
+      },
     };
     const db = {
       liveReminderReconciliationJob: {
@@ -220,10 +225,23 @@ describe("processLiveReminderReconciliationJobs", () => {
     }));
     expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledTimes(2);
     expect(mocks.ensureLiveReminderDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ vendorName: "Tenant One" }),
+      expect.objectContaining({
+        vendorName: "Tenant One",
+        emailBrand: {
+          senderName: "Tenant Sender",
+          supportEmail: "support@example.test",
+          contactUrl: "https://example.test/contact",
+        },
+      }),
       now,
       { reconciliationGuard: { jobId: "job-1", configDigest: snapshot().configDigest } },
     );
+    expect(db.live.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "live-1", vendorId: "vendor-1" },
+      select: expect.objectContaining({
+        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      }),
+    }));
     const cursorWrite = db.liveReminderReconciliationJob.updateMany.mock.calls.at(-1)?.[0];
     expect(cursorWrite.data).toMatchObject({ cursorId: "verified-b", scannedCount: { increment: 2 }, scheduledCount: { increment: 2 } });
   });

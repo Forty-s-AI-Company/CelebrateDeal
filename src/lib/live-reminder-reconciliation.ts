@@ -73,7 +73,12 @@ type CurrentLive = {
   scheduledAt: Date;
   liveReminderOffsetMinutes: number;
   liveReminderTemplate: LiveReminderTemplateSnapshot | null;
-  vendor: { name: string };
+  vendor: {
+    name: string;
+    senderName: string | null;
+    supportEmail: string | null;
+    contactUrl: string | null;
+  };
 };
 
 type VerifiedSubmission = { id: string; name: string; email: string; createdAt: Date };
@@ -297,7 +302,7 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
       liveReminderTemplate: {
         select: { id: true, vendorId: true, channel: true, trigger: true, subject: true, body: true, isActive: true, updatedAt: true },
       },
-      vendor: { select: { name: true } },
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
     },
   }) as CurrentLive | null | undefined;
   if (!live) return null;
@@ -395,6 +400,11 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
         liveScheduledAt: beforeWrite.live.scheduledAt,
         reminderOffsetMinutes: beforeWrite.live.liveReminderOffsetMinutes,
         template: beforeWrite.live.liveReminderTemplate,
+        emailBrand: {
+          senderName: beforeWrite.live.vendor.senderName,
+          supportEmail: beforeWrite.live.vendor.supportEmail,
+          contactUrl: beforeWrite.live.vendor.contactUrl,
+        },
       }, now, { reconciliationGuard: { jobId: job.id, configDigest: job.configDigest } });
       if (result.status === "config_superseded") {
         return { jobId: job.id, status: "superseded" as const };

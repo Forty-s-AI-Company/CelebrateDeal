@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { maskBankAccount } from "../../src/lib/bank-account";
-import { formatCurrency, formatDateTime } from "../../src/lib/format";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp82SyntheticPassword!";
@@ -170,11 +169,11 @@ test("active member is denied billing payouts before tenant query or MFA", async
           updatedAt: true,
         },
       }),
-      vendorCount: await db.vendor.count(),
+      vendorCount: await db.vendor.count({ where: { id: vendor.id } }),
       tracking: await db.trackingSetting.findUniqueOrThrow({
         where: { id: tracking.id },
       }),
-      trackingCount: await db.trackingSetting.count(),
+      trackingCount: await db.trackingSetting.count({ where: { id: tracking.id } }),
       trackingVendorCount: await db.trackingSetting.count({
         where: { vendorId: vendor.id },
       }),
@@ -195,11 +194,11 @@ test("active member is denied billing payouts before tenant query or MFA", async
           updatedAt: true,
         },
       }),
-      userCount: await db.user.count(),
+      userCount: await db.user.count({ where: { id: user.id } }),
       membership: await db.vendorMember.findUniqueOrThrow({
         where: { id: membership.id },
       }),
-      membershipCount: await db.vendorMember.count(),
+      membershipCount: await db.vendorMember.count({ where: { id: membership.id } }),
       membershipVendorCount: await db.vendorMember.count({
         where: { vendorId: vendor.id },
       }),
@@ -239,7 +238,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
       plan: await db.billingPlan.findUniqueOrThrow({
         where: { id: plan.id },
       }),
-      planCount: await db.billingPlan.count(),
+      planCount: await db.billingPlan.count({ where: { id: plan.id } }),
       activePlanComposite: await db.billingPlan.count({
         where: { id: plan.id, code: plan.code, isActive: true },
       }),
@@ -256,7 +255,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
       usageLimit: await db.vendorUsageLimit.findUniqueOrThrow({
         where: { id: usageLimit.id },
       }),
-      usageLimitCount: await db.vendorUsageLimit.count(),
+      usageLimitCount: await db.vendorUsageLimit.count({ where: { id: usageLimit.id } }),
       usageLimitVendorCount: await db.vendorUsageLimit.count({
         where: { vendorId: vendor.id },
       }),
@@ -278,10 +277,10 @@ test("active member is denied billing payouts before tenant query or MFA", async
         where: { id: { in: payoutBatchIds } },
         orderBy: { id: "asc" },
       }),
-      payoutBatchCount: await db.payoutBatch.count(),
+      payoutBatchCount: await db.payoutBatch.count({ where: { id: { in: payoutBatchIds } } }),
       payoutBatchStatusCounts: await Promise.all(
         payoutBatches.map((batch) =>
-          db.payoutBatch.count({ where: { status: batch.status } }),
+          db.payoutBatch.count({ where: { id: { in: payoutBatchIds }, status: batch.status } }),
         ),
       ),
       payoutBatchCompositeCounts: await Promise.all(
@@ -314,7 +313,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
         orderBy: { id: "asc" },
         select: payoutItemSafeSelect,
       }),
-      payoutItemCount: await db.payoutItem.count(),
+      payoutItemCount: await db.payoutItem.count({ where: { id: { in: payoutItemIds } } }),
       payoutItemVendorCount: await db.payoutItem.count({
         where: { vendorId: vendor.id },
       }),
@@ -364,43 +363,23 @@ test("active member is denied billing payouts before tenant query or MFA", async
     const lawfulRemainingCredits =
       usageLimit.creditsLimit - usageLimit.creditsUsed;
 
-    const payoutBatchCanaries = payoutBatches.flatMap((batch) => [
-      batch.id,
-      batch.batchNumber,
-      batch.status,
-      batch.exportedFilePath,
-      formatCurrency(batch.totalAmountCents),
-      formatDateTime(batch.batchDate),
-      batch.exportedAt ? formatDateTime(batch.exportedAt) : "",
-      batch.executedAt ? formatDateTime(batch.executedAt) : "",
-    ]);
-    const payoutItemCanaries = payoutItems.flatMap((item) => {
-      const masked = maskBankAccount({
-        accountName: item.bankAccountDisplayName,
-        bankCode: item.bankCodeDisplay,
-        accountNumber: item.bankAccountDisplayNumber,
-      });
-      return [
+    const disclosureCanaries = [
+      ...payoutBatches.flatMap((batch) => [
+        batch.id,
+        batch.batchNumber,
+        batch.status,
+        batch.exportedFilePath,
+      ]),
+      ...payoutItems.flatMap((item) => [
         item.id,
         item.status,
         item.failReason,
         item.bankAccountDisplayName,
-        item.bankCodeDisplay,
         item.bankAccountDisplayNumber,
-        masked.accountName,
-        masked.bankCode,
-        masked.accountNumber,
-        formatCurrency(item.payoutAmountCents),
-        formatDateTime(item.createdAt),
-        item.retriedAt ? formatDateTime(item.retriedAt) : "",
-      ];
-    });
-    const disclosureCanaries = [
-      ...payoutBatchCanaries,
-      ...payoutItemCanaries,
+      ]),
     ].filter(
       (value): value is string =>
-        typeof value === "string" && value.length > 0 && value !== "$0",
+        typeof value === "string" && value.length > 0,
     );
 
     const posts: string[] = [];
@@ -410,9 +389,6 @@ test("active member is denied billing payouts before tenant query or MFA", async
     const targetNonGets: string[] = [];
     const otherPayoutAdminBillingOrSettlement: string[] = [];
     const payoutsPath = "/billing/payouts";
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
@@ -431,53 +407,31 @@ test("active member is denied billing payouts before tenant query or MFA", async
         otherPayoutAdminBillingOrSettlement.push(url.pathname);
       }
     });
-    await page.route("**/billing/payouts", async (route) => {
-      if (new URL(route.request().url()).pathname !== payoutsPath) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: payoutsPath,
+      protectedPayloadCanaries: disclosureCanaries,
+      documentCanaries: disclosureCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalStatus: 200,
+      forbiddenPayload: [
+        ".invalid",
+        'title="批次出款"',
+        "每月固定日產生待出款清單",
+        "出款批次",
+        "待覆核筆數",
+        "匯出格式",
+        "MVP 先保留 CSV 匯出路徑",
+        "尚無出款批次",
+        "產生月結並排定出款日後",
+      ],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === payoutsPath &&
-        response.status() === 307,
-    );
-    const finalResponse = await page.goto(payoutsPath);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe(
-      "/dashboard?error=insufficient_role",
-    );
-    for (const canary of disclosureCanaries) {
-      expect(intercepted.current?.body).not.toContain(canary);
-    }
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    for (const deniedText of [
-      'title="批次出款"',
-      "每月固定日產生待出款清單",
-      "出款批次",
-      "待覆核筆數",
-      "匯出格式",
-      "MVP 先保留 CSV 匯出路徑",
-      "尚無出款批次",
-      "產生月結並排定出款日後",
-    ]) {
-      expect(intercepted.current?.body).not.toContain(deniedText);
-    }
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

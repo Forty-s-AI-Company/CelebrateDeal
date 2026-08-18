@@ -46,9 +46,16 @@ export function getLivePublishReadiness(input: LivePublishReadinessInput) {
       : input.productCount > 0 ? "commerce" : "content";
   const requirements: LivePublishRequirement[] = [
     { code: "media", ready: input.videoReady },
+  ];
+  // Keep the operational checklist in the same order as the webinar wizard:
+  // media → product (sales only) → registration → email → interaction.
+  if (mode === "commerce") {
+    requirements.push({ code: "products", ready: input.productsReady });
+  }
+  requirements.push(
     { code: "registration_form", ready: input.formReady },
     { code: "registration_email", ready: input.registrationEmailReady },
-  ];
+  );
   if (input.studioPreset !== undefined || input.liveReminderEmailReady !== undefined) {
     requirements.push({
       code: "live_reminder_email" as LivePublishRequirementCode,
@@ -57,10 +64,7 @@ export function getLivePublishReadiness(input: LivePublishReadinessInput) {
   }
 
   if (mode === "commerce") {
-    requirements.push(
-      { code: "products", ready: input.productsReady },
-      { code: "interaction_script", ready: input.interactionScriptReady },
-    );
+    requirements.push({ code: "interaction_script", ready: input.interactionScriptReady });
   }
 
   const blockers = requirements.filter((requirement) => !requirement.ready);

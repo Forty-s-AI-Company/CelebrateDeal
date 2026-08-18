@@ -62,13 +62,27 @@ describe("MessageTemplateForm", () => {
     expect(html).toMatch(/value="sms" disabled=""/u);
     expect(html).toMatch(/value="line" disabled=""/u);
     expect(html).toMatch(/value="cart_followup" disabled=""/u);
+    expect(html).toContain('value="post_live_followup"');
+    expect(html).toContain("課後通知");
     expect(html).toContain("SMS（尚未串接，不能啟用）");
     expect(html).toContain("{{name}}");
     expect(html).toContain("{{live_start_at}}");
     expect(html).toContain("{{unsubscribe_url}}");
+    expect(html).toContain("課後通知會自動附上退訂連結");
     expect(html).toMatch(/<input[^>]*required=""[^>]*maxLength="200"[^>]*name="subject"/u);
     expect(html).toMatch(/<textarea[^>]*name="body"[^>]*rows="8"[^>]*required=""[^>]*maxLength="20000"/u);
     expect(html).toContain('aria-busy="false"');
+  });
+
+  it("keeps the post-live follow-up trigger selected when editing that template", () => {
+    const html = renderToStaticMarkup(<MessageTemplateForm template={{
+      ...template,
+      name: "課後通知",
+      trigger: "post_live_followup",
+    }} />);
+
+    expect(html).toMatch(/value="post_live_followup" selected=""/u);
+    expect(html).toContain("課後通知");
   });
 
   it.each([

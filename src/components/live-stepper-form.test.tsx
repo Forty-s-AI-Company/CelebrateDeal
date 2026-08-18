@@ -250,9 +250,15 @@ function submitAction(tree: unknown, label: string) {
   ));
 }
 
+function stepButton(tree: unknown, label: string) {
+  return findElement(tree, (candidate) => (
+    candidate.type === "button" && textContent(candidate.props.children).includes(label)
+  ));
+}
+
 function showPublishPreview(tree: unknown) {
   let currentTree = tree;
-  for (let step = 0; step < 4; step += 1) {
+  for (let step = 0; step < 7; step += 1) {
     const nextButton = findElement(currentTree, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "下一步"
     ));
@@ -262,7 +268,7 @@ function showPublishPreview(tree: unknown) {
   }
 
   const publishPanel = findElement(currentTree, (candidate) => (
-    candidate.props.active === true && candidate.props.index === 4
+    candidate.props.active === true && candidate.props.index === 7
   ));
   expect(publishPanel).toBeDefined();
   return renderToStaticMarkup(publishPanel as unknown as ReactElement);
@@ -339,19 +345,56 @@ describe("LiveStepperForm", () => {
 
   it("marks the current step and connects every step control to its panel", () => {
     const form = renderForm();
-    const basicsButton = findElement(form, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "基本資料"
-    ));
+    const basicsButton = stepButton(form, "用途與基本資料");
 
     expect(basicsButton?.props["aria-current"]).toBe("step");
     expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-0");
+    const labels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
+    labels.forEach((label, index) => {
+      expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${index}`);
+    });
+  });
+
+  it("keeps every field in its canonical eight-step panel", () => {
+    const form = renderForm();
+    const expectedFields = [
+      [0, ["studioPreset", "title", "slug", "description"]],
+      [1, ["streamMode", "videoId"]],
+      [2, ["accentCopy"]],
+      [3, ["formId"]],
+      [4, ["replayEnabled"]],
+      [5, ["messageTemplateId", "liveReminderTemplateId", "liveReminderOffsetMinutes"]],
+      [6, ["interactionScriptId"]],
+    ] as const;
+
+    for (const [index, names] of expectedFields) {
+      const panel = findElement(form, (candidate) => candidate.props.index === index && "active" in candidate.props);
+      expect(panel).toBeDefined();
+      for (const name of names) {
+        expect(
+          findElement(panel?.props.children, (candidate) => candidate.props.name === name),
+          `step ${index + 1} should own ${name}`,
+        ).toBeDefined();
+      }
+    }
+    const productPanel = findElement(form, (candidate) => candidate.props.index === 2 && "active" in candidate.props);
+    expect(findElement(productPanel?.props.children, (candidate) => typeof candidate.type === "function" && candidate.type.name === "ProductSelection")).toBeDefined();
+    const brandPanel = findElement(form, (candidate) => candidate.props.index === 4 && "active" in candidate.props);
+    expect(findElement(brandPanel?.props.children, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "ScheduleDateTimeField"
+    ))).toBeDefined();
+    expect(findElement(brandPanel?.props.children, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "MediaUploadField" && candidate.props.urlInputName === "heroImageUrl"
+    ))).toBeDefined();
+    const interactionPanel = findElement(form, (candidate) => candidate.props.index === 6 && "active" in candidate.props);
+    expect(findElement(interactionPanel?.props.children, (candidate) => (
+      typeof candidate.type === "function" && candidate.type.name === "LiveRulesFields"
+    ))).toBeDefined();
   });
 
   it("shows an instructive empty product state instead of a blank panel", () => {
     const form = renderForm([]);
-    const productButton = findElement(form, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
-    ));
+    const productButton = stepButton(form, "商品優惠");
     expect(productButton).toBeDefined();
 
     const onClick = productButton?.props.onClick as () => void;
@@ -359,6 +402,7 @@ describe("LiveStepperForm", () => {
     const productPanel = findElement(renderForm([]), (candidate) => candidate.props.active === true);
     const markup = renderToStaticMarkup(productPanel as unknown as ReactElement);
     expect(markup).toContain("目前沒有可綁定的啟用商品");
+    expect(markup).toContain('href="/products/new"');
   });
 
   it("updates the publish phone preview with entered copy and selected product summary", () => {
@@ -387,9 +431,7 @@ describe("LiveStepperForm", () => {
     (nextButton?.props.onClick as () => void)();
 
     const conversionForm = renderForm();
-    const conversionButton = findElement(conversionForm, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
-    ));
+    const conversionButton = stepButton(conversionForm, "媒體與 Live Input");
     expect(conversionButton?.props["aria-current"]).toBe("step");
     expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-1");
     const activePanel = findElement(conversionForm, (candidate) => candidate.props.active === true);
@@ -401,9 +443,7 @@ describe("LiveStepperForm", () => {
     expect(previousButton).toBeDefined();
     (previousButton?.props.onClick as () => void)();
     const basicsForm = renderForm();
-    const basicsButton = findElement(basicsForm, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "基本資料"
-    ));
+    const basicsButton = stepButton(basicsForm, "用途與基本資料");
     expect(basicsButton?.props["aria-current"]).toBe("step");
     expect(findElement(basicsForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
@@ -420,7 +460,7 @@ describe("LiveStepperForm", () => {
       querySelector: vi.fn(() => panel),
     };
     const form = renderForm();
-    const formRef = hookState.refs[5];
+    const formRef = hookState.refs[7];
     expect(formRef).toBeDefined();
     formRef.current = formNode;
 
@@ -443,9 +483,7 @@ describe("LiveStepperForm", () => {
     expect(retryButton).toBeDefined();
     (retryButton?.props.onClick as () => void)();
     const advancedForm = renderForm();
-    const conversionButton = findElement(advancedForm, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "商品與轉換"
-    ));
+    const conversionButton = stepButton(advancedForm, "媒體與 Live Input");
     expect(conversionButton?.props["aria-current"]).toBe("step");
   });
 
@@ -525,22 +563,97 @@ describe("LiveStepperForm", () => {
     expect(markup).toContain("合作推廣者 · REF-1");
   });
 
+  it("offers direct create links for every missing Studio resource", () => {
+    const markup = renderToStaticMarkup(renderForm([]) as ReactElement);
+
+    for (const href of ["/videos/new", "/products/new", "/forms/new", "/settings/brand", "/messages/templates/new", "/interaction-scripts/new"]) {
+      expect(markup).toContain(`href="${href}"`);
+    }
+  });
+
+  it("shows a readonly selected-script summary with an edit-timeline link", () => {
+    const markup = renderToStaticMarkup(renderForm([], {
+      scripts: [{ id: "script-1", name: "首波促購腳本" }] as FormOverrides["scripts"],
+      initialValues: { ...emptyLiveStudioDraft(), interactionScriptId: "script-1", activeStep: 6 },
+    }) as ReactElement);
+
+    expect(markup).toContain("已選腳本");
+    expect(markup).toContain("首波促購腳本");
+    expect(markup).toContain("至互動腳本編輯時間軸");
+    expect(markup).toContain('href="/interaction-scripts/script-1/edit"');
+  });
+
   it("renders the final confirmation step and submit action", () => {
     const form = renderForm();
-    const publishButton = findElement(form, (candidate) => (
-      candidate.type === "button" && textContent(candidate.props.children) === "預覽發布"
-    ));
+    const publishButton = stepButton(form, "桌機／手機預覽發布");
     expect(publishButton).toBeDefined();
     (publishButton?.props.onClick as () => void)();
 
     const reviewForm = renderForm();
     const markup = renderToStaticMarkup(reviewForm as ReactElement);
     expect(markup).toContain("確認直播間設定");
+    expect(markup).toContain("桌機預覽");
+    expect(markup).toContain("手機預覽");
     expect(markup).toContain("建立草稿並預覽");
     expect(markup).toContain('name="liveDraftRevision"');
     expect(findElement(reviewForm, (candidate) => (
       candidate.type === "button" && textContent(candidate.props.children) === "上一步"
     ))?.props.disabled).toBe(false);
+  });
+
+  it("does not mark optional product, copy, hero, or script fields as pending for a complete content live", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      studioPreset: "CONTENT" as const,
+      title: "內容場",
+      slug: "content-live",
+      scheduledAt: "2026-08-20T20:00",
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
+      activeStep: 7,
+    };
+    const markup = renderToStaticMarkup(renderForm([], {
+      initialValues,
+      videos: [{ id: "video-1", title: "影片" }],
+      forms: [{ id: "form-1", name: "報名頁" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名信", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "提醒信", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+    }) as ReactElement);
+
+    for (const label of ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"]) {
+      expect(textContent(stepButton(renderForm([], {
+        initialValues,
+        videos: [{ id: "video-1", title: "影片" }],
+        forms: [{ id: "form-1", name: "報名頁" }] as FormOverrides["forms"],
+        templates: [
+          { id: "template-1", name: "報名信", channel: "email", trigger: "registration_confirmed" },
+          { id: "template-2", name: "提醒信", channel: "email", trigger: "live_reminder" },
+        ] as FormOverrides["templates"],
+      }), label)?.props.children)).toContain("已完成");
+    }
+    expect(markup).not.toContain(">待完成<");
+  });
+
+  it("moves a readiness blocker to its exact step and focuses its control after render", () => {
+    const initialValues = { ...emptyLiveStudioDraft(), activeStep: 7 };
+    const form = renderForm([], { initialValues });
+    const target = { focus: vi.fn() };
+    const querySelector = vi.fn(() => target);
+    hookState.refs[7].current = { querySelector };
+    const review = findElement(form, (candidate) => typeof candidate.type === "function" && candidate.type.name === "LiveReviewPanel");
+    const renderedReview = (review?.type as (props: Record<string, unknown>) => unknown)(review?.props ?? {});
+    const fixMedia = findElement(renderedReview, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === "前往媒體");
+
+    (fixMedia?.props.onClick as () => void)();
+    const moved = renderForm([], { initialValues });
+
+    expect(findElement(moved, (candidate) => candidate.props.active === true)?.props.index).toBe(1);
+    expect(querySelector).toHaveBeenCalledWith('[name="videoId"]');
+    expect(target.focus).toHaveBeenCalledOnce();
   });
 
   it("offers separate draft and schedule submitters for a new complete content live", () => {
@@ -554,7 +667,7 @@ describe("LiveStepperForm", () => {
       formId: "form-1",
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
-      activeStep: 4,
+      activeStep: 7,
     };
     const form = renderForm([], {
       initialValues,
@@ -586,7 +699,7 @@ describe("LiveStepperForm", () => {
       videoId: "video-1",
       formId: "form-1",
       messageTemplateId: "template-1",
-      activeStep: 4,
+      activeStep: 7,
     };
     const overrides: FormOverrides = {
       initialValues,
@@ -622,7 +735,7 @@ describe("LiveStepperForm", () => {
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
-      activeStep: 4,
+      activeStep: 7,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -656,7 +769,7 @@ describe("LiveStepperForm", () => {
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
       interactionScriptId: "script-1",
-      activeStep: 4,
+      activeStep: 7,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -689,7 +802,7 @@ describe("LiveStepperForm", () => {
       formId: "form-1",
       messageTemplateId: "template-1",
       liveReminderTemplateId: "template-2",
-      activeStep: 4,
+      activeStep: 7,
     };
     const form = renderForm(products, {
       liveId: "live-1",
@@ -719,7 +832,7 @@ describe("LiveStepperForm", () => {
     const requestSubmit = vi.fn();
     const draftIdControl = { value: "draft-1" };
     const revisionControl = { value: "3" };
-    const formRef = hookState.refs[5];
+    const formRef = hookState.refs[7];
     formRef.current = {
       requestSubmit,
       elements: {

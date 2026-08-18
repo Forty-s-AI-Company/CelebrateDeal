@@ -57,6 +57,8 @@ model Vendor {
   ctaColor     String   @default("#f97316")
   timezone     String   @default("Asia/Taipei")
   supportEmail String?
+  senderName   String?
+  contactUrl   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -21,6 +21,11 @@ export type FormSubmissionVerificationResult =
         recipientEmail: string;
         liveScheduledAt: Date;
         liveReminderOffsetMinutes: number;
+        emailBrand: {
+          senderName: string | null;
+          supportEmail: string | null;
+          contactUrl: string | null;
+        };
         template: {
           id: string;
           vendorId: string;
@@ -77,7 +82,12 @@ export async function verifyFormSubmission(
         verificationStatus: true,
         verificationVersion: true,
         verificationExpiresAt: true,
-        form: { select: { vendorId: true, vendor: { select: { name: true } } } },
+        form: {
+          select: {
+            vendorId: true,
+            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+          },
+        },
         affiliateClick: {
           select: { id: true, vendorId: true, affiliateId: true, referralCode: true },
         },
@@ -208,6 +218,11 @@ export async function verifyFormSubmission(
         recipientEmail: submission.email,
         liveScheduledAt: submission.live.scheduledAt,
         liveReminderOffsetMinutes: submission.live.liveReminderOffsetMinutes,
+        emailBrand: {
+          senderName: submission.form.vendor.senderName,
+          supportEmail: submission.form.vendor.supportEmail,
+          contactUrl: submission.form.vendor.contactUrl,
+        },
         template: submission.live.messageTemplate,
         reminderTemplate: submission.live.liveReminderTemplate,
       } : null,

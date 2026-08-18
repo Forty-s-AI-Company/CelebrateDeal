@@ -54,8 +54,11 @@ export async function POST(request: Request) {
           },
           select: { id: true, revision: true, updatedAt: true },
         });
-        if (revived.length === 1) return NextResponse.json(envelope(revived[0], parsed.data.payload));
-        if (revived.length > 1) return error("DRAFT_CONFLICT", 409);
+        const [revivedDraft, ...additionalRevivedDrafts] = revived;
+        if (revivedDraft && additionalRevivedDrafts.length === 0) {
+          return NextResponse.json(envelope(revivedDraft, parsed.data.payload));
+        }
+        if (additionalRevivedDrafts.length > 0) return error("DRAFT_CONFLICT", 409);
       }
       const created = await db.liveStudioDraft.create({
         data: {
@@ -70,11 +73,14 @@ export async function POST(request: Request) {
       return NextResponse.json(envelope(created, parsed.data.payload));
     }
 
+    const revision = parsed.data.revision;
+    if (revision === null) return error("INVALID_DRAFT", 400);
+
     const updated = await db.liveStudioDraft.updateManyAndReturn({
       where: {
         id: parsed.data.draftId,
         vendorId: authorization.actor.vendorId,
-        revision: parsed.data.revision!,
+        revision,
         liveId,
         consumedAt: null,
         expiresAt: { gt: now },
@@ -87,8 +93,9 @@ export async function POST(request: Request) {
       },
       select: { id: true, revision: true, updatedAt: true },
     });
-    if (updated.length !== 1) return error("DRAFT_CONFLICT", 409);
-    return NextResponse.json(envelope(updated[0], parsed.data.payload));
+    const [updatedDraft] = updated;
+    if (!updatedDraft || updated.length !== 1) return error("DRAFT_CONFLICT", 409);
+    return NextResponse.json(envelope(updatedDraft, parsed.data.payload));
   } catch (reason) {
     if (liveId && isUniqueConstraint(reason)) return error("DRAFT_CONFLICT", 409);
     return error("DRAFT_SAVE_FAILED", 500);

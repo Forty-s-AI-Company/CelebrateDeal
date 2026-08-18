@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { PublicPolicyShell, PolicyDraftNotice, PublicResourceLinks } from "@/components/public-policy";
 
@@ -8,6 +8,14 @@ export const metadata: Metadata = {
 };
 
 export default function PoliciesPage() {
+  const policyLinks = [
+    { href: "/policies/terms", title: "使用條款（草稿）", description: "帳號、服務、內容與方案的待核准邊界。" },
+    { href: "/policies/privacy", title: "隱私通知（草稿）", description: "資料用途、保存、請求與第三方服務的待核准入口。" },
+    { href: "/policies/refunds", title: "退款政策（草稿）", description: "退款狀態、客服交接與禁止重試的產品說明。" },
+    { href: "/support", title: "客服與付款協助", description: "P0／P1／P2 目標回應與付款事件升級草稿。" },
+    { href: "/merchant-onboarding", title: "商家 onboarding", description: "八階段商家交接與 owner evidence 的可見摘要。" },
+  ] satisfies readonly { href: Route; title: string; description: string }[];
+
   return (
     <PublicPolicyShell>
       <section aria-labelledby="policies-title" className="mx-auto max-w-4xl">
@@ -20,13 +28,7 @@ export default function PoliciesPage() {
         </div>
         <PolicyDraftNotice status="DRAFT — HUMAN OWNER ACCEPTANCE REQUIRED" owner="privacy／legal、finance、support、merchant 與 release owner" />
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          {[
-            ["/policies/terms", "使用條款（草稿）", "帳號、服務、內容與方案的待核准邊界。"],
-            ["/policies/privacy", "隱私通知（草稿）", "資料用途、保存、請求與第三方服務的待核准入口。"],
-            ["/policies/refunds", "退款政策（草稿）", "退款狀態、客服交接與禁止重試的產品說明。"],
-            ["/support", "客服與付款協助", "P0／P1／P2 目標回應與付款事件升級草稿。"],
-            ["/merchant-onboarding", "商家 onboarding", "八階段商家交接與 owner evidence 的可見摘要。"],
-          ].map(([href, title, description]) => (
+          {policyLinks.map(({ href, title, description }) => (
             <Link key={href} href={href} className="rounded-lg border border-border bg-white p-5 shadow-sm transition-colors hover:border-primary hover:bg-blue-50">
               <h2 className="font-semibold text-slate-950">{title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>

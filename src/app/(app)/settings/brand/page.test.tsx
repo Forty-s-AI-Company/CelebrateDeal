@@ -34,6 +34,8 @@ describe("brand settings page", () => {
       ctaColor: "#f97316",
       timezone: "Asia/Taipei",
       supportEmail: "support@example.test",
+      senderName: "寄件品牌小組",
+      contactUrl: "https://example.test/contact",
       logoUrl: null,
     });
   });
@@ -49,6 +51,8 @@ describe("brand settings page", () => {
       ctaColor: "#f97316",
       timezone: "Asia/Taipei",
       supportEmail: "support@example.test",
+      senderName: "寄件品牌小組",
+      contactUrl: "https://example.test/contact",
       logoUrl: "",
     });
     expect(props.initialValues).not.toHaveProperty("id");

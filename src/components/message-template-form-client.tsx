@@ -74,6 +74,7 @@ export function MessageTemplateFormClient({
         <SelectField label="觸發條件" name="trigger" defaultValue={draft.trigger}>
           <option value="registration_confirmed">報名成功</option>
           <option value="live_reminder">開播提醒</option>
+          <option value="post_live_followup">課後通知</option>
           <option value="cart_followup" disabled>購買追蹤（購物車事件尚未接通）</option>
         </SelectField>
       </div>
@@ -84,7 +85,7 @@ export function MessageTemplateFormClient({
         <p className="mt-1 break-words font-mono text-xs">
           {MESSAGE_TEMPLATE_VARIABLES.map(messageTemplateVariableLabel).join(" · ")}
         </p>
-        <p className="mt-2 text-xs text-blue-700">報名成功與開播提醒會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。</p>
+        <p className="mt-2 text-xs text-blue-700">報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。</p>
       </div>
       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="h-4 w-4 accent-blue-600" />

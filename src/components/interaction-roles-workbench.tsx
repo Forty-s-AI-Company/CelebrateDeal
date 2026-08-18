@@ -33,6 +33,48 @@ import type { InteractionRoleUsage } from "@/lib/interaction-role-usage";
 
 const DEFAULT_INTERACTION_AVATAR_SEED = "host-blue";
 
+type RoleStatusFilter = "all" | "active" | "inactive";
+type RolePresentationFilter = "all" | "official" | "audience";
+type RoleScheduledFilter = "all" | "scheduled" | "manual";
+
+function normalizeRoleSearchQuery(value: string) {
+  return value.trim().slice(0, 120).toLowerCase();
+}
+
+function normalizeRoleSearchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function safeNormalizePresentationRole(roleType: string): InteractionRoleType | null {
+  try {
+    return normalizePresentationRole(roleType);
+  } catch {
+    return null;
+  }
+}
+
+function roleMatchesFilters(
+  role: InteractionRole,
+  query: string,
+  status: RoleStatusFilter,
+  presentation: RolePresentationFilter,
+  scheduled: RoleScheduledFilter,
+) {
+  const normalizedQuery = normalizeRoleSearchQuery(query);
+  const searchableText = [role.name, role.label, role.tone]
+    .map((value) => normalizeRoleSearchText(value ?? ""))
+    .join(" ");
+  const normalizedPresentation = safeNormalizePresentationRole(role.roleType);
+
+  if (normalizedQuery && !searchableText.includes(normalizedQuery)) return false;
+  if (status === "active" && !role.isActive) return false;
+  if (status === "inactive" && role.isActive) return false;
+  if (presentation !== "all" && normalizedPresentation !== presentation) return false;
+  if (scheduled === "scheduled" && !role.isScheduled) return false;
+  if (scheduled === "manual" && role.isScheduled) return false;
+  return true;
+}
+
 function InteractionRolePreview({
   avatarUrl,
   name,
@@ -165,8 +207,11 @@ export function InteractionRolesWorkbench({
   const selectedAvatarMode: InteractionRoleAvatarMode = isCanonicalInteractionRolePresetUrl(selectedRole?.avatarUrl)
     ? "preset"
     : "custom";
-  const selectedPresentationRole = selectedRole ? normalizePresentationRole(selectedRole.roleType) : "official";
-  const isLegacyRole = Boolean(selectedRole && selectedRole.roleType !== selectedPresentationRole);
+  const selectedPresentationRole = selectedRole
+    ? safeNormalizePresentationRole(selectedRole.roleType)
+    : "official";
+  const isLegacyRole = Boolean(selectedRole && selectedPresentationRole && selectedRole.roleType !== selectedPresentationRole);
+  const initialSelectedRoleType = selectedRole ? selectedPresentationRole ?? "" : "official";
   const initialState: InteractionRoleActionState = {
     ...initialInteractionRoleActionState,
     values: {
@@ -175,8 +220,8 @@ export function InteractionRolesWorkbench({
       name: selectedRole?.name ?? "",
       avatarUrl: selectedRole?.avatarUrl ?? "",
       avatarMode: selectedAvatarMode,
-      label: selectedRole?.label ?? interactionRoleTypeLabel(selectedPresentationRole),
-      roleType: selectedPresentationRole,
+      label: selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
+      roleType: initialSelectedRoleType,
       tone: selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
       isActive: selectedRole?.isActive ?? true,
       isScheduled: selectedRole?.isScheduled ?? false,
@@ -186,6 +231,32 @@ export function InteractionRolesWorkbench({
   const actionStateValues = actionState.status === "error" ? actionState.values : null;
   const [actionStateEdited, setActionStateEdited] = useState(false);
   const visibleActionStateValues = actionStateValues && !actionStateEdited ? actionStateValues : null;
+  const [roleQuery, setRoleQuery] = useState("");
+  const [roleStatusFilter, setRoleStatusFilter] = useState<RoleStatusFilter>("all");
+  const [rolePresentationFilter, setRolePresentationFilter] = useState<RolePresentationFilter>("all");
+  const [roleScheduledFilter, setRoleScheduledFilter] = useState<RoleScheduledFilter>("all");
+  const filteredRoles = useMemo(
+    () => roles.filter((role) => roleMatchesFilters(
+      role,
+      roleQuery,
+      roleStatusFilter,
+      rolePresentationFilter,
+      roleScheduledFilter,
+    )),
+    [rolePresentationFilter, roleQuery, roleScheduledFilter, roleStatusFilter, roles],
+  );
+  const hasRoleFilters = Boolean(
+    normalizeRoleSearchQuery(roleQuery)
+      || roleStatusFilter !== "all"
+      || rolePresentationFilter !== "all"
+      || roleScheduledFilter !== "all",
+  );
+  const clearRoleFilters = () => {
+    setRoleQuery("");
+    setRoleStatusFilter("all");
+    setRolePresentationFilter("all");
+    setRoleScheduledFilter("all");
+  };
   const [gender, setGender] = useState<InteractionAvatarGender>(() => interactionRoleAvatarGender(selectedRole?.avatarUrl));
   const allSeeds = useMemo(() => INTERACTION_AVATAR_SEEDS[gender], [gender]);
   const [selectedAvatar, setSelectedAvatar] = useState(
@@ -193,9 +264,9 @@ export function InteractionRolesWorkbench({
       ? actionStateValues.avatarUrl
       : selectedRole?.avatarUrl ?? interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED),
   );
-  const [roleType, setRoleType] = useState(actionStateValues?.roleType ?? selectedPresentationRole);
+  const [roleType, setRoleType] = useState<string>(actionStateValues?.roleType ?? initialSelectedRoleType);
   const [label, setLabel] = useState(
-    actionStateValues?.label ?? selectedRole?.label ?? interactionRoleTypeLabel(selectedPresentationRole),
+    actionStateValues?.label ?? selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
   );
   const [name, setName] = useState(actionStateValues?.name ?? selectedRole?.name ?? "");
   const [tone, setTone] = useState(
@@ -220,10 +291,13 @@ export function InteractionRolesWorkbench({
     ? visibleActionStateValues.avatarMode
     : avatarMode;
   const displayedAvatarUrl = visibleActionStateValues?.avatarUrl ?? customAvatarUrl;
-  const displayedSelectedAvatar = visibleActionStateValues?.avatarUrl ?? selectedAvatar;
+  const displayedSelectedAvatarCandidate = visibleActionStateValues?.avatarUrl ?? selectedAvatar;
+  const displayedSelectedAvatar = isCanonicalInteractionRolePresetUrl(displayedSelectedAvatarCandidate)
+    ? displayedSelectedAvatarCandidate
+    : interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED);
   const displayedCustomAvatarAssetId = visibleActionStateValues?.avatarAssetId ?? customAvatarAssetId;
   const displayedName = visibleActionStateValues?.name ?? name;
-  const displayedRoleType = normalizePresentationRole(visibleActionStateValues?.roleType || roleType);
+  const displayedRoleType = safeNormalizePresentationRole(visibleActionStateValues?.roleType || roleType || "");
   const displayedLabel = visibleActionStateValues?.label ?? label;
   const displayedTone = visibleActionStateValues?.tone ?? tone;
   const displayedIsActive = visibleActionStateValues?.isActive ?? isActive;
@@ -232,7 +306,7 @@ export function InteractionRolesWorkbench({
     ? displayedSafeCustomAvatarUrl || interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED)
     : displayedSelectedAvatar;
   const previewName = displayedName.trim() || "未命名角色";
-  const previewLabel = displayedLabel.trim() || interactionRoleTypeLabel(displayedRoleType);
+  const previewLabel = displayedLabel.trim() || (displayedRoleType ? interactionRoleTypeLabel(displayedRoleType) : "");
 
   function shiftAvatar(direction: -1 | 1) {
     setActionStateEdited(true);
@@ -269,6 +343,21 @@ export function InteractionRolesWorkbench({
     setRoleType(nextType);
   }
 
+  if (!displayedRoleType || (selectedRole && !selectedPresentationRole)) {
+    return (
+      <section role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">互動角色無法安全編輯</p>
+        <h2 className="mt-1 text-xl font-bold">此角色使用尚未支援的角色類型</h2>
+        <p className="mt-3 text-sm leading-6">
+          「{selectedRole?.name || "目前角色"}」的角色類型「{selectedRole?.roleType || "未知"}」無法安全正規化。為避免誤改資料，這個角色目前不可編輯、預覽或一般儲存。
+        </p>
+        <Link href="/interaction-roles" className="mt-4 inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+          返回互動角色清單
+        </Link>
+      </section>
+    );
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
       <aside className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
@@ -286,6 +375,74 @@ export function InteractionRolesWorkbench({
           </Link>
         </div>
         <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-3">
+          <div className="mb-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label htmlFor="interaction-role-search" className="grid gap-1 text-xs font-semibold text-slate-700">
+              搜尋互動角色
+              <input
+                id="interaction-role-search"
+                name="q"
+                type="search"
+                value={roleQuery}
+                onChange={(event) => setRoleQuery(normalizeRoleSearchQuery(event.target.value))}
+                placeholder="搜尋名稱、標籤或語氣"
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <label htmlFor="interaction-role-status" className="grid gap-1 text-xs font-semibold text-slate-700">
+              狀態
+              <select
+                id="interaction-role-status"
+                name="status"
+                value={roleStatusFilter}
+                onChange={(event) => setRoleStatusFilter(event.target.value as RoleStatusFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部狀態</option>
+                <option value="active">啟用</option>
+                <option value="inactive">停用</option>
+              </select>
+            </label>
+            <label htmlFor="interaction-role-presentation" className="grid gap-1 text-xs font-semibold text-slate-700">
+              呈現角色
+              <select
+                id="interaction-role-presentation"
+                name="presentation"
+                value={rolePresentationFilter}
+                onChange={(event) => setRolePresentationFilter(event.target.value as RolePresentationFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部角色</option>
+                <option value="official">官方角色</option>
+                <option value="audience">一般觀眾</option>
+              </select>
+            </label>
+            <label htmlFor="interaction-role-scheduled" className="grid gap-1 text-xs font-semibold text-slate-700">
+              排程方式
+              <select
+                id="interaction-role-scheduled"
+                name="scheduled"
+                value={roleScheduledFilter}
+                onChange={(event) => setRoleScheduledFilter(event.target.value as RoleScheduledFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部方式</option>
+                <option value="scheduled">排程角色</option>
+                <option value="manual">手動角色</option>
+              </select>
+            </label>
+            {hasRoleFilters ? (
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                清除條件
+              </button>
+            ) : null}
+            <p aria-live="polite" className="text-xs font-semibold text-slate-600">
+              顯示 {filteredRoles.length} / {roles.length} 個互動角色
+            </p>
+          </div>
           <Link
             href="/interaction-roles/new"
             className={`mb-2 flex items-center gap-3 rounded-lg border p-3 transition ${
@@ -300,23 +457,40 @@ export function InteractionRolesWorkbench({
               <span className="block text-xs text-slate-600">選頭像、輸入暱稱即可</span>
             </span>
           </Link>
-          <div className="grid gap-2">
-            {roles.map((role) => (
-              <Link
-                key={role.id}
-                href={`/interaction-roles/${role.id}/edit`}
-                className={`flex items-center gap-3 rounded-lg border p-3 transition ${
-                  selectedRole?.id === role.id ? "border-blue-200 bg-blue-50 shadow-sm" : "border-transparent hover:bg-slate-50"
-                }`}
+          {roles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-600">
+              還沒有互動角色，建立第一個角色來安排直播互動。
+            </div>
+          ) : filteredRoles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-600">
+              <p>找不到符合條件的互動角色</p>
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="mt-3 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               >
-                {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
-                  <span className="block truncate text-xs text-slate-600">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
+                清除條件
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {filteredRoles.map((role) => (
+                <Link
+                  key={role.id}
+                  href={`/interaction-roles/${role.id}/edit`}
+                  className={`flex items-center gap-3 rounded-lg border p-3 transition ${
+                    selectedRole?.id === role.id ? "border-blue-200 bg-blue-50 shadow-sm" : "border-transparent hover:bg-slate-50"
+                  }`}
+                >
+                  {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
+                    <span className="block truncate text-xs text-slate-600">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -375,6 +549,21 @@ export function InteractionRolesWorkbench({
           <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             互動角色會以商家預先設定的腳本出現在直播中；前台會明確標示。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
           </p>
+
+          {selectedRole && !filteredRoles.some((role) => role.id === selectedRole.id) ? (
+            <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              <p>
+                目前正在編輯「{selectedRole.name}」，但它不符合目前篩選條件。篩選只影響左側清單，不會變更或捨棄編輯內容。
+              </p>
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                清除條件
+              </button>
+            </div>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center shadow-inner">

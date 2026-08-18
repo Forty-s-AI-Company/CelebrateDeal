@@ -114,6 +114,8 @@ import { interactionRoleAvatarUrl } from "@/lib/interaction-role";
 
 type ElementProps = Record<string, unknown> & {
   onBlockingChange?: (blocked: boolean) => void;
+  onChange?: (event: { target: { value: string } }) => void;
+  onClick?: () => void;
   onSubmit?: (event: { preventDefault: () => void; nativeEvent: { submitter: unknown } }) => void;
 };
 type ElementNode = { type: unknown; props: ElementProps };
@@ -140,6 +142,16 @@ function renderTree(props: React.ComponentProps<typeof InteractionRolesWorkbench
 
 function renderHtml(props: React.ComponentProps<typeof InteractionRolesWorkbench>) {
   return renderToStaticMarkup(renderTree(props));
+}
+
+function renderPreviewHtml(props: React.ComponentProps<typeof InteractionRolesWorkbench>) {
+  const html = renderHtml(props);
+  const start = html.indexOf('<section aria-labelledby="interaction-role-preview-title"');
+  const end = html.indexOf("</section>", start);
+
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return html.slice(start, end + "</section>".length);
 }
 
 function role(overrides: Partial<InteractionRole> = {}): InteractionRole {
@@ -256,6 +268,7 @@ describe("InteractionRolesWorkbench", () => {
     const errorHtml = renderHtml({ roles: [selected], selectedRole: role({ ...selected, isScheduled: false }), csrfToken: "csrf-scheduled-error-token" });
     expect(errorHtml).toMatch(/name="isScheduled"[^>]*checked=""/u);
     expect(errorHtml).toContain("角色資料無效");
+    expect(errorHtml).not.toContain('src=""');
   });
 
   it("uses the presentation role for preview appearance while keeping scheduled marker separate", () => {
@@ -265,12 +278,27 @@ describe("InteractionRolesWorkbench", () => {
     expect(audienceHtml).toContain("排程角色");
     expect(audienceHtml).not.toContain("官方外觀");
 
-    hookState.stateCursor = 0;
     hookState.stateValues = [];
-    const official = role({ roleType: "official", isScheduled: false });
-    const officialHtml = renderHtml({ roles: [official], selectedRole: official, csrfToken: "csrf-official-preview-token" });
-    expect(officialHtml).toContain("官方外觀");
-    expect(officialHtml).not.toContain("一般觀眾外觀");
+    const scheduledOfficial = role({ roleType: "official", isScheduled: true });
+    const scheduledOfficialPreview = renderPreviewHtml({
+      roles: [scheduledOfficial],
+      selectedRole: scheduledOfficial,
+      csrfToken: "csrf-official-scheduled-preview-token",
+    });
+    expect(scheduledOfficialPreview).toContain("官方外觀");
+    expect(scheduledOfficialPreview).toContain("排程角色");
+    expect(scheduledOfficialPreview).not.toContain("一般觀眾外觀");
+
+    hookState.stateValues = [];
+    const manualOfficial = role({ roleType: "official", isScheduled: false });
+    const manualOfficialPreview = renderPreviewHtml({
+      roles: [manualOfficial],
+      selectedRole: manualOfficial,
+      csrfToken: "csrf-official-manual-preview-token",
+    });
+    expect(manualOfficialPreview).toContain("官方外觀");
+    expect(manualOfficialPreview).not.toContain("排程角色");
+    expect(manualOfficialPreview).not.toContain("一般觀眾外觀");
   });
 
   it("shows exact script impact before an active role is disabled or deleted", () => {
@@ -432,5 +460,239 @@ describe("InteractionRolesWorkbench", () => {
     expect(html).toContain("保留中的語氣");
     expect(html).toContain('name="avatarMode" value="custom"');
     expect(html).toContain('name="avatarUrl" value="https://cdn.example.test/role-avatar.webp"');
+  });
+
+  it("shows a distinct initial empty state when no roles exist", () => {
+    const html = renderHtml({ roles: [], selectedRole: null, csrfToken: "csrf-filter-empty-token" });
+
+    expect(html).toContain("還沒有互動角色");
+    expect(html).not.toContain("找不到符合條件的互動角色");
+    expect(html).toContain("顯示 0 / 0 個互動角色");
+  });
+
+  it("searches name, label, and tone case-insensitively", () => {
+    const roles = [
+      role({ id: "name-match", name: "夏季主持人" }),
+      role({ id: "label-match", name: "角色二", label: "優惠小編" }),
+      role({ id: "tone-match", name: "角色三", tone: "溫柔提醒折扣" }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-search-token" });
+    const search = findElements(tree, (element) => element.props.id === "interaction-role-search")[0];
+
+    search?.props.onChange?.({ target: { value: "  優惠  " } });
+    const html = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-search-token" });
+
+    expect(html).toContain("顯示 1 / 3 個互動角色");
+    expect(html).toContain("優惠小編");
+    expect(html).not.toContain("夏季主持人");
+    expect(html).not.toContain("溫柔提醒折扣");
+
+    search?.props.onChange?.({ target: { value: "  溫柔提醒折扣  " } });
+    const toneHtml = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-search-token" });
+    expect(toneHtml).toContain("顯示 1 / 3 個互動角色");
+    expect(toneHtml).toContain("角色三");
+  });
+
+  it("trims, lowercases, and caps the search query at 120 characters", () => {
+    const roles = [role({ id: "long-query-role", name: "a".repeat(120) })];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-query-limit-token" });
+    const search = findElements(tree, (element) => element.props.id === "interaction-role-search")[0];
+    const rawQuery = `  ${"A".repeat(130)}  `;
+
+    search?.props.onChange?.({ target: { value: rawQuery } });
+    const filteredTree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-query-limit-token" });
+    const filteredSearch = findElements(filteredTree, (element) => element.props.id === "interaction-role-search")[0];
+
+    expect(filteredSearch?.props.value).toBe("a".repeat(120));
+    expect(renderToStaticMarkup(filteredTree)).toContain("顯示 1 / 1 個互動角色");
+
+    hookState.stateCursor = 0;
+    hookState.stateValues = [];
+    const longToneRole = role({
+      id: "long-tone-role",
+      name: "長語氣角色",
+      tone: `${"前置文字".repeat(31)}深層語氣關鍵字`,
+    });
+    const longToneTree = renderTree({ roles: [longToneRole], selectedRole: null, csrfToken: "csrf-query-limit-token" });
+    const longToneSearch = findElements(longToneTree, (element) => element.props.id === "interaction-role-search")[0];
+    longToneSearch?.props.onChange?.({ target: { value: "深層語氣關鍵字" } });
+    expect(renderToStaticMarkup(renderTree({ roles: [longToneRole], selectedRole: null, csrfToken: "csrf-query-limit-token" }))).toContain("顯示 1 / 1 個互動角色");
+  });
+
+  it("filters active and inactive roles without changing their original order", () => {
+    const roles = [
+      role({ id: "inactive-first", name: "停用角色", isActive: false }),
+      role({ id: "active-second", name: "啟用角色", isActive: true }),
+      role({ id: "active-third", name: "啟用角色三", isActive: true }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-status-token" });
+    const status = findElements(tree, (element) => element.props.id === "interaction-role-status")[0];
+
+    status?.props.onChange?.({ target: { value: "active" } });
+    const html = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-status-token" });
+
+    expect(html).toContain("顯示 2 / 3 個互動角色");
+    expect(html).not.toContain("停用角色");
+    expect(html.indexOf("啟用角色")).toBeLessThan(html.indexOf("啟用角色三"));
+
+    status?.props.onChange?.({ target: { value: "inactive" } });
+    expect(renderHtml({ roles, selectedRole: null, csrfToken: "csrf-status-token" })).toContain("顯示 1 / 3 個互動角色");
+  });
+
+  it("filters official and audience presentation roles and maps legacy roles to official", () => {
+    const roles = [
+      role({ id: "legacy-official", name: "舊官方", roleType: "support" }),
+      role({ id: "audience-role", name: "觀眾角色", roleType: "audience" }),
+      role({ id: "official-role", name: "官方角色", roleType: "official" }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-presentation-token" });
+    const presentation = findElements(tree, (element) => element.props.id === "interaction-role-presentation")[0];
+
+    presentation?.props.onChange?.({ target: { value: "official" } });
+    const officialHtml = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-presentation-token" });
+    expect(officialHtml).toContain("顯示 2 / 3 個互動角色");
+    expect(officialHtml).toContain("舊官方");
+    expect(officialHtml).toContain("官方角色");
+    expect(officialHtml).not.toContain("觀眾角色");
+
+    presentation?.props.onChange?.({ target: { value: "audience" } });
+    const audienceHtml = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-presentation-token" });
+    expect(audienceHtml).toContain("顯示 1 / 3 個互動角色");
+    expect(audienceHtml).toContain("觀眾角色");
+    expect(audienceHtml).not.toContain("舊官方");
+  });
+
+  it("keeps scheduled and manual role filters separate", () => {
+    const roles = [
+      role({ id: "scheduled-role", name: "排程角色", isScheduled: true }),
+      role({ id: "manual-role", name: "手動角色", isScheduled: false }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-scheduled-filter-token" });
+    const scheduled = findElements(tree, (element) => element.props.id === "interaction-role-scheduled")[0];
+
+    scheduled?.props.onChange?.({ target: { value: "scheduled" } });
+    const scheduledHtml = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-scheduled-filter-token" });
+    expect(scheduledHtml).toContain("顯示 1 / 2 個互動角色");
+    expect(scheduledHtml).toContain("排程角色");
+    expect(scheduledHtml).toContain('href="/interaction-roles/scheduled-role/edit"');
+    expect(scheduledHtml).not.toContain('href="/interaction-roles/manual-role/edit"');
+
+    scheduled?.props.onChange?.({ target: { value: "manual" } });
+    const manualHtml = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-scheduled-filter-token" });
+    expect(manualHtml).toContain("顯示 1 / 2 個互動角色");
+    expect(manualHtml).toContain("手動角色");
+    expect(manualHtml).toContain('href="/interaction-roles/manual-role/edit"');
+    expect(manualHtml).not.toContain('href="/interaction-roles/scheduled-role/edit"');
+  });
+
+  it("combines query, status, presentation, and scheduled filters as an intersection", () => {
+    const roles = [
+      role({ id: "all-match", name: "優惠主持", label: "官方", roleType: "official", isActive: true, isScheduled: true }),
+      role({ id: "wrong-status", name: "優惠觀眾", roleType: "audience", isActive: false, isScheduled: true }),
+      role({ id: "wrong-schedule", name: "優惠官方手動", roleType: "official", isActive: true, isScheduled: false }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-intersection-token" });
+    findElements(tree, (element) => element.props.id === "interaction-role-search")[0]?.props.onChange?.({ target: { value: "優惠" } });
+    findElements(tree, (element) => element.props.id === "interaction-role-status")[0]?.props.onChange?.({ target: { value: "active" } });
+    findElements(tree, (element) => element.props.id === "interaction-role-presentation")[0]?.props.onChange?.({ target: { value: "official" } });
+    findElements(tree, (element) => element.props.id === "interaction-role-scheduled")[0]?.props.onChange?.({ target: { value: "scheduled" } });
+
+    const html = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-intersection-token" });
+    expect(html).toContain("顯示 1 / 3 個互動角色");
+    expect(html).toContain("優惠主持");
+    expect(html).not.toContain("優惠觀眾");
+    expect(html).not.toContain("優惠官方手動");
+  });
+
+  it("shows a filter-empty state instead of the initial empty state", () => {
+    const roles = [role({ name: "現有角色" })];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-filter-no-result-token" });
+    findElements(tree, (element) => element.props.id === "interaction-role-search")[0]?.props.onChange?.({ target: { value: "不存在" } });
+
+    const html = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-filter-no-result-token" });
+    expect(html).toContain("找不到符合條件的互動角色");
+    expect(html).not.toContain("還沒有互動角色");
+    expect(html).toContain("清除條件");
+  });
+
+  it("only renders clear controls after a filter is active and restores all roles", () => {
+    const roles = [role({ id: "first-role", name: "第一角色" }), role({ id: "second-role", name: "第二角色" })];
+    const initialTree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-clear-token" });
+    expect(findElements(initialTree, (element) => element.props.children === "清除條件")).toHaveLength(0);
+
+    findElements(initialTree, (element) => element.props.id === "interaction-role-status")[0]?.props.onChange?.({ target: { value: "inactive" } });
+    const filteredTree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-clear-token" });
+    const clearButton = findElements(filteredTree, (element) => element.props.children === "清除條件")[0];
+    expect(clearButton).toBeDefined();
+    clearButton?.props.onClick?.();
+
+    expect(renderToStaticMarkup(renderTree({ roles, selectedRole: null, csrfToken: "csrf-clear-token" }))).toContain("顯示 2 / 2 個互動角色");
+  });
+
+  it("announces filtered and total counts through the labelled live region", () => {
+    const roles = [role({ id: "one", name: "一" }), role({ id: "two", name: "二" }), role({ id: "three", name: "三" })];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-live-region-token" });
+    const search = findElements(tree, (element) => element.props.id === "interaction-role-search")[0];
+    expect((findElements(tree, (element) => element.props["aria-live"] === "polite")[0]?.props.children as unknown[]).join("")).toContain("顯示 3 / 3");
+
+    search?.props.onChange?.({ target: { value: "一" } });
+    const filteredTree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-live-region-token" });
+    expect((findElements(filteredTree, (element) => element.props["aria-live"] === "polite")[0]?.props.children as unknown[]).join("")).toContain("顯示 1 / 3");
+  });
+
+  it("keeps the selected role form and identity when the selected role is filtered out", () => {
+    const selected = role({ id: "selected-role", name: "正在編輯的官方角色", roleType: "official" });
+    const roles = [selected, role({ id: "audience-role", name: "其他觀眾", roleType: "audience" })];
+    const firstTree = renderTree({ roles, selectedRole: selected, csrfToken: "csrf-selected-filter-token" });
+    findElements(firstTree, (element) => element.props.id === "interaction-role-presentation")[0]?.props.onChange?.({ target: { value: "audience" } });
+
+    const filteredTree = renderTree({ roles, selectedRole: selected, csrfToken: "csrf-selected-filter-token" });
+    const html = renderToStaticMarkup(filteredTree);
+    expect(html).toContain("目前正在編輯「正在編輯的官方角色」");
+    expect(html).toContain("篩選只影響左側清單，不會變更或捨棄編輯內容");
+    expect(html).toContain('name="id" value="selected-role"');
+    expect(html).toMatch(/name="name"[^>]*value="正在編輯的官方角色"/u);
+    expect(html).toContain("其他觀眾");
+  });
+
+  it("keeps unknown role types in all results without crashing or misclassifying them", () => {
+    const unknown = role({ id: "unknown-role", name: "未知類型角色", roleType: "future_role" });
+    const known = role({ id: "known-role", name: "官方角色", roleType: "official" });
+    const tree = renderTree({ roles: [unknown, known], selectedRole: null, csrfToken: "csrf-unknown-role-token" });
+
+    expect(renderToStaticMarkup(tree)).toContain("未知類型角色");
+    const presentation = findElements(tree, (element) => element.props.id === "interaction-role-presentation")[0];
+    presentation?.props.onChange?.({ target: { value: "official" } });
+    const officialHtml = renderHtml({ roles: [unknown, known], selectedRole: null, csrfToken: "csrf-unknown-role-token" });
+    expect(officialHtml).toContain("顯示 1 / 2 個互動角色");
+    expect(officialHtml).toContain("官方角色");
+    expect(officialHtml).not.toContain("未知類型角色");
+  });
+
+  it("fails closed for an unknown selected role instead of silently changing it to official", () => {
+    const selected = role({ id: "unknown-selected", roleType: "future_role", name: "未知選取角色" });
+
+    expect(() => renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-unknown-selected-token" })).not.toThrow();
+    const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-unknown-selected-token" });
+    expect(html).toContain("未知選取角色");
+    expect(html).toContain("不可編輯、預覽或一般儲存");
+    expect(html).not.toContain("角色即時預覽");
+    expect(html).not.toContain("儲存後會轉為官方角色");
+    expect(html).not.toContain("官方外觀");
+  });
+
+  it("preserves the roles array order after filtering", () => {
+    const roles = [
+      role({ id: "third", name: "第三個角色", isActive: true }),
+      role({ id: "first", name: "第一個角色", isActive: true }),
+      role({ id: "second", name: "第二個角色", isActive: true }),
+    ];
+    const tree = renderTree({ roles, selectedRole: null, csrfToken: "csrf-order-token" });
+    const status = findElements(tree, (element) => element.props.id === "interaction-role-status")[0];
+    status?.props.onChange?.({ target: { value: "active" } });
+    const html = renderHtml({ roles, selectedRole: null, csrfToken: "csrf-order-token" });
+
+    expect(html.indexOf("第三個角色")).toBeLessThan(html.indexOf("第一個角色"));
+    expect(html.indexOf("第一個角色")).toBeLessThan(html.indexOf("第二個角色"));
   });
 });

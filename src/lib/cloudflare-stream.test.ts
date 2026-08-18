@@ -51,6 +51,36 @@ describe("Cloudflare Stream API", () => {
     );
   });
 
+  it("accepts Cloudflare's current cloudflarestream.com direct-upload host", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      result: {
+        uid: "upload-current-host",
+        uploadURL: "https://upload.cloudflarestream.com/upload-current-host",
+      },
+    }), { status: 200 })));
+
+    await expect(createDirectCreatorUpload()).resolves.toEqual({
+      uid: "upload-current-host",
+      uploadURL: "https://upload.cloudflarestream.com/upload-current-host",
+    });
+  });
+
+  it("rejects lookalike upload hosts even when the response otherwise looks valid", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      result: {
+        uid: "upload-lookalike",
+        uploadURL: "https://upload.cloudflarestream.com.attacker.invalid/upload-lookalike",
+      },
+    }), { status: 200 })));
+
+    await expect(createDirectCreatorUpload()).rejects.toMatchObject({
+      code: "invalid_response",
+      providerStatus: 200,
+    });
+  });
+
   it("creates a direct-creator tus session with bounded server-owned metadata", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
       status: 201,

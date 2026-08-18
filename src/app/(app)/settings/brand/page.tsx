@@ -8,7 +8,7 @@ export default async function BrandSettingsPage() {
 
   return (
     <>
-      <PageHeader title="品牌設定" description="控制公開直播頁的品牌名稱、Logo、主色與 CTA 顏色。" />
+      <PageHeader title="品牌設定" description="控制公開直播頁的品牌名稱、寄件人、聯絡網址、Logo、主色與 CTA 顏色。" />
       <Card>
         <BrandSettingsForm
           csrfField={<CsrfField />}
@@ -19,6 +19,8 @@ export default async function BrandSettingsPage() {
             ctaColor: vendor.ctaColor,
             timezone: vendor.timezone,
             supportEmail: vendor.supportEmail ?? "",
+            senderName: vendor.senderName ?? "",
+            contactUrl: vendor.contactUrl ?? "",
             logoUrl: vendor.logoUrl ?? "",
           }}
         />

@@ -94,6 +94,18 @@ describe("POST /api/admin/ops/test-email", () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 
+  it("uses the server-owned smoke recipient when the caller omits it", async () => {
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "mock-email-id" });
+
+    const response = await POST(authorizedRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(mocks.isAllowedSmokeTestRecipient).toHaveBeenCalledWith("recipient@example.test");
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledWith(expect.objectContaining({
+      to: "recipient@example.test",
+    }));
+  });
+
   it("rejects any recipient outside the configured smoke-test allowlist", async () => {
     mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
 

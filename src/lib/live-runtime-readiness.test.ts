@@ -34,7 +34,7 @@ describe("runtime live publish readiness", () => {
     expect(getRuntimeLivePublishReadiness(candidate(overrides as Partial<RuntimeLivePublishCandidate>)).ready).toBe(false);
   });
 
-  it("keeps a same-vendor content live independent from sales resources", () => {
-    expect(getRuntimeLivePublishReadiness(candidate({ products: [], form: null, messageTemplate: null, interactionScript: null })).ready).toBe(true);
+  it("keeps a same-vendor content live independent from sales-only resources", () => {
+    expect(getRuntimeLivePublishReadiness(candidate({ products: [], interactionScript: null })).ready).toBe(true);
   });
 });

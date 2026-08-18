@@ -31,9 +31,10 @@ export default async function DashboardPage() {
   const db = getDb();
   const sevenDaysAgo = getDateDaysAgo(7);
   const now = getDateDaysAgo(0);
-  const [liveCount, productCount, leadCount, realViewerMessageCount, scheduledMessageCount, verifiedAnalyticsSessions, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount, sellableLiveCandidates] = await Promise.all([
+  const [liveCount, productCount, registrationCount, verifiedRegistrationCount, realViewerMessageCount, scheduledMessageCount, verifiedAnalyticsSessions, orderCreatedCount, emailSentCount, emailFailedCount, recentLives, upcomingLives, affiliates, usageLimit, scripts, roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount, sellableLiveCandidates] = await Promise.all([
     db.live.count({ where: { vendorId: vendor.id } }),
     db.product.count({ where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true } }),
+    db.formSubmission.count({ where: { form: { vendorId: vendor.id }, createdAt: { gte: sevenDaysAgo } } }),
     db.formSubmission.count({ where: { form: { vendorId: vendor.id }, verificationStatus: "VERIFIED", createdAt: { gte: sevenDaysAgo } } }),
     db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId: vendor.id, createdAtGte: sevenDaysAgo }) }),
     db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendor.id }) }),
@@ -47,6 +48,9 @@ export default async function DashboardPage() {
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     }),
+    db.commerceOrder.count({ where: { vendorId: vendor.id, createdAt: { gte: sevenDaysAgo } } }),
+    db.emailDelivery.count({ where: { vendorId: vendor.id, status: "sent", createdAt: { gte: sevenDaysAgo } } }),
+    db.emailDelivery.count({ where: { vendorId: vendor.id, status: "failed", createdAt: { gte: sevenDaysAgo } } }),
     db.live.findMany({
       where: { vendorId: vendor.id },
       orderBy: { scheduledAt: "desc" },
@@ -87,12 +91,12 @@ export default async function DashboardPage() {
   const ctaClicks = verifiedAnalyticsCountByType.get("cta_click") ?? 0;
   const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
 
-  const conversionRate = viewCount > 0 ? Math.round((leadCount / viewCount) * 1000) / 10 : 0;
+  const conversionRate = viewCount > 0 ? Math.round((verifiedRegistrationCount / viewCount) * 1000) / 10 : 0;
   const funnel = calculateAnalyticsFunnel({
     views: viewCount,
     productClicks,
     ctaClicks,
-    submissions: leadCount,
+    submissions: verifiedRegistrationCount,
   });
   const usagePercent = usageLimit && usageLimit.creditsLimit > 0
     ? Math.round((usageLimit.creditsUsed / usageLimit.creditsLimit) * 100)
@@ -129,9 +133,13 @@ export default async function DashboardPage() {
 
   const kpis = [
     { label: "近 7 天播放 session", value: viewCount, tone: "blue" },
-    { label: "近 7 天報名", value: leadCount, tone: "green" },
+    { label: "近 7 天報名", value: registrationCount, tone: "green" },
+    { label: "完成 Email 驗證", value: verifiedRegistrationCount, tone: "green" },
     { label: "商品點擊", value: productClicks, tone: "orange" },
-    { label: "轉換率", value: `${conversionRate}%`, tone: "gray" },
+    { label: "近 7 天訂單建立", value: orderCreatedCount, tone: "orange" },
+    { label: "Email 寄送成功", value: emailSentCount, tone: "green" },
+    { label: "Email 寄送失敗", value: emailFailedCount, tone: "orange" },
+    { label: "已驗證報名／觀看", value: `${conversionRate}%`, tone: "gray" },
     { label: "近 7 天真實留言", value: realViewerMessageCount, tone: "green" },
     { label: "排程留言腳本（設定數）", value: scheduledMessageCount, tone: "gray" },
   ] as const;
@@ -144,7 +152,7 @@ export default async function DashboardPage() {
         action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
             <p className="text-sm text-slate-500">{kpi.label}</p>

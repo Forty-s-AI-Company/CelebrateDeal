@@ -34,6 +34,11 @@ const confirmation = {
   recipientEmail: "lead@example.test",
   liveScheduledAt: new Date("2026-08-10T04:00:00.000Z"),
   liveReminderOffsetMinutes: 60,
+  emailBrand: {
+    senderName: "測試寄件人",
+    supportEmail: "support@example.test",
+    contactUrl: "https://example.test/contact",
+  },
   template: null,
   reminderTemplate: null,
 };

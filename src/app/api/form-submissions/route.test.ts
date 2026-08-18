@@ -21,6 +21,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 
 import { POST } from "@/app/api/form-submissions/route";
+import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
 
 function pendingSubmission(id = "submission-1", values: Record<string, unknown> = {}) {
@@ -63,7 +64,12 @@ beforeEach(() => {
     isActive: true,
     hideExpiredSessions: true,
     maxVisibleSessions: 1,
-    vendor: { name: "測試商家" },
+    vendor: {
+      name: "測試商家",
+      senderName: "測試寄件人",
+      supportEmail: "support@example.test",
+      contactUrl: "https://example.test/contact",
+    },
     fields: [
       { key: "name", label: "姓名", type: "text", required: true },
       { key: "email", label: "Email", type: "email", required: true },
@@ -275,6 +281,7 @@ describe("team lead attribution", () => {
     const response = await POST(jsonRequest({
       formId: "form-1",
       liveId: "live-a",
+      vendorId: "attacker-vendor",
       payload: { name: "Lead", email: "lead@example.test" },
     }));
 
@@ -289,8 +296,25 @@ describe("team lead attribution", () => {
       recipientMaskedEmail: "l***@example.test",
       status: "queued",
     });
+    expect(revealEmailDeliveryPayload(create.data.payloadEncryptedEnvelope, {
+      vendorId: "vendor-1",
+      deliveryId: create.data.id,
+    }).brand).toEqual({
+      version: 1,
+      senderName: "測試寄件人",
+      replyTo: "support@example.test",
+      contactUrl: "https://example.test/contact",
+    });
+    expect(db.registrationForm.findUnique).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      include: {
+        vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      },
+    });
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
     expect(JSON.stringify(create)).not.toContain("Lead 報名成功");
+    expect(JSON.stringify(create)).not.toContain("測試寄件人");
+    expect(JSON.stringify(create)).not.toContain("support@example.test");
   });
 
   it("uses the same normalized email and phone values for blacklist checks and persistence", async () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
@@ -16,6 +16,10 @@ const createdWebhookEventIds: string[] = [];
 const createdUserIds: string[] = [];
 const createdPlatformReferralPayoutIds: string[] = [];
 const createdPlatformReferralPayoutBatchIds: string[] = [];
+
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "payment-webhook-test-encryption-secret-longer-than-thirty-two-bytes");
+});
 
 function webhookPayloadJson(payload: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify({ normalized: payload })) as Prisma.InputJsonValue;
@@ -143,6 +147,7 @@ afterEach(async () => {
   const vendorIds = createdVendorIds.splice(0);
   const billingPlanIds = createdBillingPlanIds.splice(0);
   const userIds = createdUserIds.splice(0);
+  vi.unstubAllEnvs();
   await db.platformReferralPayout.deleteMany({ where: { id: { in: createdPlatformReferralPayoutIds.splice(0) } } });
   await db.platformReferralPayoutBatch.deleteMany({ where: { id: { in: createdPlatformReferralPayoutBatchIds.splice(0) } } });
   await db.webhookEvent.deleteMany({ where: { id: { in: createdWebhookEventIds.splice(0) } } });
@@ -161,10 +166,17 @@ afterEach(async () => {
   try {
     await db.vendor.deleteMany({ where: { id: { in: vendorIds } } });
   } catch (error) {
-    if (!(error instanceof Error) || !/append-only|Foreign key constraint/.test(error.message)) throw error;
+    if (!(error instanceof Error) || !/append-only|foreign key constraint|RESTRICT setting/i.test(error.message)) throw error;
     retainedAccountingFixture = true;
   }
-  if (retainedAccountingFixture) return;
+  if (retainedAccountingFixture) {
+    // append-only accounting 保留 vendor 時，至少停用本測試建立的合成方案，避免污染方案頁。
+    await db.billingPlan.updateMany({
+      where: { id: { in: billingPlanIds } },
+      data: { isActive: false },
+    });
+    return;
+  }
   // Platform referral fixtures are owned by synthetic users rather than a
   // vendor. Remove the non-accounting rows before deleting those users so a
   // failed-payment test cannot leak a referral code into the next test.

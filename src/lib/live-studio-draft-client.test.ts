@@ -30,7 +30,7 @@ describe("serializeLiveStudioDraft", () => {
       ["cloudflareLiveInputUid", "forged-provider-uid"],
     ]);
 
-    const draft = liveStudioDraftFromFormData(form, 3);
+    const draft = liveStudioDraftFromFormData(form, 7);
 
     expect(draft).toMatchObject({
       studioPreset: "COMMERCE",
@@ -40,7 +40,8 @@ describe("serializeLiveStudioDraft", () => {
       liveReminderTemplateId: "reminder-template-1",
       liveReminderOffsetMinutes: "30",
       replayEnabled: true,
-      activeStep: 3,
+      flowVersion: 2,
+      activeStep: 7,
     });
     expect(draft).not.toHaveProperty("cloudflareLiveInputUid");
   });
@@ -95,7 +96,12 @@ describe("saveLiveStudioDraft", () => {
       credentials: "same-origin",
       headers: expect.objectContaining({ "x-csrf-token": "csrf-test", "x-celebratedeal-client": "web" }),
     }));
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ draftId: "draft-1", liveId: "live-1", revision: 1 });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      draftId: "draft-1",
+      liveId: "live-1",
+      revision: 1,
+      payload: { flowVersion: 2, activeStep: 0 },
+    });
   });
 
   it("surfaces optimistic conflicts without leaking arbitrary response details", async () => {

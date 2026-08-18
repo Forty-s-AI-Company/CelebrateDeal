@@ -61,6 +61,20 @@ describe("POST /api/live-studio/drafts", () => {
     });
   });
 
+  it("normalizes a legacy v1 payload once before persisting and responding", async () => {
+    const { flowVersion, ...legacyPayload } = payload;
+    expect(flowVersion).toBe(2);
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...legacyPayload, activeStep: 1 } });
+
+    const response = await POST(request());
+
+    const canonicalPayload = expect.objectContaining({ flowVersion: 2, activeStep: 2, title: "新品直播" });
+    await expect(response.json()).resolves.toMatchObject({ payload: canonicalPayload });
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ payload: canonicalPayload }),
+    }));
+  });
+
   it("updates only the matching current-vendor revision", async () => {
     mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload });
 

@@ -61,6 +61,7 @@ describe("commerce order fulfillment actions", () => {
       nextStatus: "shipped", actor: { id: "member-1" },
     }));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/orders");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/orders/order-1");
   });
 
   it("accepts the refund-review returned outcome through the same tenant-scoped CAS action", async () => {

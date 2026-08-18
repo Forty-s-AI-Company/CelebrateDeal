@@ -46,6 +46,18 @@ describe("message template draft", () => {
     });
   });
 
+  it("accepts the supported post-live follow-up trigger with the existing variables", () => {
+    expect(normalizeMessageTemplateDraft(validDraft({
+      name: "課後通知",
+      trigger: "post_live_followup",
+      subject: "謝謝你參加 {{live_title}}",
+      body: "嗨 {{name}}，課程已結束。{{unsubscribe_url}}",
+    }))).toEqual({
+      success: true,
+      data: expect.objectContaining({ trigger: "post_live_followup" }),
+    });
+  });
+
   it.each(["sms", "line"])("rejects the unconnected %s channel", (channel) => {
     expect(normalizeMessageTemplateDraft(validDraft({ channel }))).toEqual({ success: false });
   });

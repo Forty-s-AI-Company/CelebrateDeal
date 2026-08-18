@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
@@ -37,7 +38,6 @@ import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_SOURCE_LIMIT = 20;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -94,10 +94,11 @@ export async function loginAction(formData: FormData) {
     headers: forwardedRequestHeaders(headerStore),
   });
 
+  const loginSourceLimit = getLoginSourceLimit(process.env);
   const sourceRateLimited = await checkRateLimit(
     rateLimitRequest,
     "login-source",
-    LOGIN_SOURCE_LIMIT,
+    loginSourceLimit,
     LOGIN_RATE_LIMIT_WINDOW_MS,
   );
   if (sourceRateLimited) {

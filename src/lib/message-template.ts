@@ -4,6 +4,7 @@ export const MESSAGE_TEMPLATE_CHANNELS = ["email"] as const;
 export const MESSAGE_TEMPLATE_TRIGGERS = [
   "registration_confirmed",
   "live_reminder",
+  "post_live_followup",
 ] as const;
 export const MESSAGE_TEMPLATE_VARIABLES = [
   "name",

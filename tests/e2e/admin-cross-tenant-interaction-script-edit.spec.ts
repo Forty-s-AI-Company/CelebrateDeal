@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp42SyntheticPassword!";
@@ -34,8 +35,8 @@ test("admin cannot open another vendor interaction-script editor through direct 
   ]);
   const [user, ownRole, foreignRole] = await Promise.all([
     db.user.create({ data: { email: `wp42-admin-${suffix}@celebratedeal.test`, name: "WP42 Admin", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: ownerVendor.id, role: "admin", status: "active" } } } }),
-    db.interactionRole.create({ data: { vendorId: ownerVendor.id, name: own.role, avatarUrl: null, isActive: true } }),
-    db.interactionRole.create({ data: { vendorId: foreignVendor.id, name: foreign.role, avatarUrl: null, isActive: true } }),
+    db.interactionRole.create({ data: { vendorId: ownerVendor.id, name: own.role, avatarUrl: null, isActive: true, isScheduled: true, roleType: "official" } }),
+    db.interactionRole.create({ data: { vendorId: foreignVendor.id, name: foreign.role, avatarUrl: null, isActive: true, isScheduled: true, roleType: "official" } }),
   ]);
   const [ownScript, foreignScript] = await Promise.all([
     db.interactionScript.create({ data: { vendorId: ownerVendor.id, name: own.script, description: own.description, events: { create: { roleId: ownRole.id, eventType: "chat_message", triggerSec: 42, title: own.title, message: own.message, ctaLabel: own.ctaLabel, ctaUrl: own.ctaUrl } } } }),
@@ -52,13 +53,13 @@ test("admin cannot open another vendor interaction-script editor through direct 
     db.interactionEvent.count({ where: { script: { vendorId: ownerVendor.id } } }), db.interactionEvent.count({ where: { script: { vendorId: foreignVendor.id } } }),
     db.interactionRole.count({ where: { vendorId: ownerVendor.id } }), db.interactionRole.count({ where: { vendorId: foreignVendor.id } }),
   ]);
-  const before = await snapshot();
   try {
     await page.goto("/login");
     await page.getByLabel("Email").fill(user.email);
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
+    const before = await snapshot();
     const requests: string[] = [];
     page.on("request", (request) => requests.push(request.url()));
     const ownPath = `/interaction-scripts/${ownScript.id}/edit`;
@@ -66,27 +67,38 @@ test("admin cannot open another vendor interaction-script editor through direct 
     expect(ownResponse?.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${ownPath}$`));
     await expect(page.getByRole("heading", { name: "編輯互動腳本" })).toBeVisible();
-    await expect(page.getByLabel("留言組名稱")).toHaveValue(own.script);
-    await expect(page.getByLabel("第 1 則留言時間")).toHaveValue("00:00:42");
-    await expect(page.getByLabel("第 1 則留言內容")).toHaveValue(own.message);
+    await expect(page.getByLabel("互動腳本名稱")).toHaveValue(own.script);
+    await expect(page.getByLabel("第 1 個事件時間")).toHaveValue("00:00:42");
+    await expect(page.getByLabel("第 1 個事件訊息內容")).toHaveValue(own.message);
     await expect(page.getByTestId("interaction-timeline-outline-time")).toHaveText("00:00:42");
     await expect(page.getByTestId("interaction-timeline-outline-message")).toHaveText(own.message);
-    await expect(page.locator('select[name="roleId"] option:checked')).toHaveText(own.role);
+    await expect(page.getByLabel("第 1 個事件角色")).toHaveValue(ownRole.id);
     const ownContent = await page.content();
     for (const value of Object.values(foreign)) {
       await expect(page.getByText(value, { exact: true })).toHaveCount(0);
       expect(ownContent).not.toContain(value);
     }
     const foreignPath = `/interaction-scripts/${foreignScript.id}/edit`;
-    const foreignResponse = await page.goto(foreignPath);
-    expect(foreignResponse?.status()).toBe(404);
-    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
+    const foreignDataCanaries = Object.values(foreign);
+    await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignScript.id],
+      protectedPayloadCanaries: foreignDataCanaries,
+      documentCanaries: foreignDataCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: {
+        kind: "http-not-found",
+        status: 404,
+      },
+      finalStatus: 404,
+    });
     await expect(page.getByRole("heading", { name: "編輯互動腳本" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "留言清單" })).toHaveCount(0);
-    await expect(page.getByLabel("留言組名稱")).toHaveCount(0);
-    await expect(page.getByLabel("第 1 則留言時間")).toHaveCount(0);
-    await expect(page.getByLabel("第 1 則留言角色")).toHaveCount(0);
-    await expect(page.getByLabel("第 1 則留言內容")).toHaveCount(0);
+    await expect(page.getByLabel("互動腳本名稱")).toHaveCount(0);
+    await expect(page.getByLabel("第 1 個事件時間")).toHaveCount(0);
+    await expect(page.getByLabel("第 1 個事件角色")).toHaveCount(0);
+    await expect(page.getByLabel("第 1 個事件訊息內容")).toHaveCount(0);
     await expect(page.getByTestId("interaction-timeline-outline-item")).toHaveCount(0);
     const foreignContent = await page.content();
     for (const value of Object.values(foreign)) {

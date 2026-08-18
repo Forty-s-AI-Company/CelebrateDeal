@@ -1214,6 +1214,8 @@ describe("saveBrandSettingsAction timezone validation", () => {
     formData.set("ctaColor", "#f97316");
     formData.set("timezone", timezone);
     formData.set("supportEmail", "support@example.test");
+    formData.set("senderName", "測試寄件人");
+    formData.set("contactUrl", "https://example.test/contact?source=brand#support");
     formData.set("logoUrl", "https://submitted.example.test/logo.png");
     formData.set("logoUploadPhase", "idle");
     return formData;
@@ -1230,6 +1232,8 @@ describe("saveBrandSettingsAction timezone validation", () => {
         ctaColor: "#ffffff",
         timezone: "Asia/Taipei",
         supportEmail: "current@example.test",
+        senderName: "目前寄件人",
+        contactUrl: "https://current.example.test/contact",
         logoUrl: "https://current.example.test/logo.png",
         logoAssetId: "current-logo-asset",
       },
@@ -1265,6 +1269,8 @@ describe("saveBrandSettingsAction timezone validation", () => {
     formData.set("primaryColor", "#102030");
     formData.set("ctaColor", "#405060");
     formData.set("supportEmail", "unsaved@example.test");
+    formData.set("senderName", "尚未儲存寄件人");
+    formData.set("contactUrl", "https://unsaved.example.test/contact");
     formData.set("logoUrl", "https://unsaved.example.test/logo.png");
     formData.set("logoAssetId", "unsaved-logo-asset");
 
@@ -1280,11 +1286,48 @@ describe("saveBrandSettingsAction timezone validation", () => {
         ctaColor: "#405060",
         timezone: "Mars/Olympus_Mons",
         supportEmail: "unsaved@example.test",
+        senderName: "尚未儲存寄件人",
+        contactUrl: "https://unsaved.example.test/contact",
         logoUrl: "https://unsaved.example.test/logo.png",
         logoAssetId: "unsaved-logo-asset",
       },
     });
     expect(result.values).not.toHaveProperty("id");
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized contact URL before updating and preserves every submitted value", async () => {
+    const formData = brandSettingsFormData("Asia/Taipei");
+    const oversizedContactUrl = "https://example.test/".padEnd(2049, "a");
+    formData.set("name", "尚未儲存品牌");
+    formData.set("slug", "unsaved-brand");
+    formData.set("primaryColor", "#102030");
+    formData.set("ctaColor", "#405060");
+    formData.set("supportEmail", "unsaved@example.test");
+    formData.set("senderName", "尚未儲存寄件人");
+    formData.set("contactUrl", oversizedContactUrl);
+    formData.set("logoUrl", "https://unsaved.example.test/logo.png");
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "聯絡網址無效，請輸入不含帳密、非本機或內部 IP 的 HTTPS 絕對網址。",
+      values: {
+        name: "尚未儲存品牌",
+        slug: "unsaved-brand",
+        primaryColor: "#102030",
+        ctaColor: "#405060",
+        timezone: "Asia/Taipei",
+        supportEmail: "unsaved@example.test",
+        senderName: "尚未儲存寄件人",
+        contactUrl: oversizedContactUrl,
+        logoUrl: "https://unsaved.example.test/logo.png",
+        logoAssetId: "",
+      },
+    });
+    expect(oversizedContactUrl).toHaveLength(2049);
+    expect(result.values.contactUrl).toBe(oversizedContactUrl);
     expect(mocks.vendorUpdate).not.toHaveBeenCalled();
   });
 
@@ -1418,6 +1461,8 @@ describe("saveBrandSettingsAction timezone validation", () => {
     formData.set("primaryColor", "p".repeat(33));
     formData.set("ctaColor", "c".repeat(33));
     formData.set("supportEmail", "e".repeat(321));
+    formData.set("senderName", "s");
+    formData.set("contactUrl", "https://submitted.example.test/contact");
     formData.set("logoUrl", "u".repeat(2049));
     formData.set("logoAssetId", "a".repeat(129));
     formData.set("logoUploadPhase", "success");
@@ -1434,6 +1479,8 @@ describe("saveBrandSettingsAction timezone validation", () => {
         ctaColor: "c".repeat(32),
         timezone: "Asia/Taipei",
         supportEmail: "e".repeat(320),
+        senderName: "s",
+        contactUrl: "https://submitted.example.test/contact",
         logoUrl: "u".repeat(2048),
         logoAssetId: "a".repeat(128),
       },
@@ -1494,6 +1541,75 @@ describe("saveBrandSettingsAction timezone validation", () => {
       data: expect.objectContaining({ logoUrl: null }),
     });
     expect(mocks.vendorUpdate.mock.calls[0]?.[0]?.data).not.toHaveProperty("logoAssetId");
+  });
+
+  it("normalizes a sender name with trim and NFC, and persists contact URL components", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("senderName", "  e\u0301quipe  ");
+    formData.set("contactUrl", "https://example.test/contact?source=brand#support");
+
+    await expect(saveBrandSettingsAction(formData)).resolves.toBeUndefined();
+
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ senderName: "équipe", contactUrl: "https://example.test/contact?source=brand#support" }),
+    });
+  });
+
+  it.each([
+    ["sender over 80 characters", "senderName", "s".repeat(81), "寄件人名稱無效"],
+    ["sender control character", "senderName", "正常\u0007名稱", "寄件人名稱無效"],
+    ["contact tab control character", "contactUrl", "https://example.test/contact\t?source=brand", "聯絡網址無效"],
+    ["contact bell control character", "contactUrl", "https://example.test/contact\u0007", "聯絡網址無效"],
+    ["contact non-HTTPS", "contactUrl", "http://example.test/contact", "聯絡網址無效"],
+    ["contact credentials", "contactUrl", "https://user:password@example.test/contact", "聯絡網址無效"],
+    ["contact localhost", "contactUrl", "https://shop.localhost/contact", "聯絡網址無效"],
+    ["contact IPv4 private", "contactUrl", "https://192.168.1.10/contact", "聯絡網址無效"],
+    ["contact IPv4 link-local", "contactUrl", "https://169.254.1.10/contact", "聯絡網址無效"],
+    ["contact IPv6 loopback", "contactUrl", "https://[::1]/contact", "聯絡網址無效"],
+    ["contact IPv6 unspecified", "contactUrl", "https://[::]/contact", "聯絡網址無效"],
+    ["contact IPv6 unique-local", "contactUrl", "https://[fc00::7]/contact", "聯絡網址無效"],
+    ["contact IPv6 link-local", "contactUrl", "https://[fe80::10]/contact", "聯絡網址無效"],
+    ["contact IPv4-mapped private", "contactUrl", "https://[::ffff:10.0.0.1]/contact", "聯絡網址無效"],
+  ] as const)("rejects %s and preserves the submitted value in action state", async (_label, field, value, message) => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set(field, value);
+
+    const result = await saveBrandSettingsActionState(initialBrandSettingsState(), formData);
+
+    expect(result.status).toBe("error");
+    expect(result.message).toContain(message);
+    expect(result.values[field]).toBe(value);
+    expect(mocks.vendorUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([["senderName", "   "], ["contactUrl", "   "]] as const)("stores empty %s as null", async (field, value) => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set(field, value);
+
+    await expect(saveBrandSettingsAction(formData)).resolves.toBeUndefined();
+
+    expect(mocks.vendorUpdate).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: expect.objectContaining({ [field]: null }),
+    });
+  });
+
+  it("writes only the brand settings allowlist and ignores overposted vendor fields", async () => {
+    const formData = brandSettingsFormData("America/New_York");
+    formData.set("id", "attacker-vendor");
+    formData.set("passwordHash", "attacker-hash");
+    formData.set("createdAt", "2099-01-01T00:00:00.000Z");
+    formData.set("senderName", "合法寄件人");
+    formData.set("contactUrl", "https://example.test/contact");
+
+    await expect(saveBrandSettingsAction(formData)).resolves.toBeUndefined();
+
+    const data = mocks.vendorUpdate.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(data).toEqual(expect.objectContaining({ senderName: "合法寄件人", contactUrl: "https://example.test/contact" }));
+    expect(data).not.toHaveProperty("id");
+    expect(data).not.toHaveProperty("passwordHash");
+    expect(data).not.toHaveProperty("createdAt");
   });
 });
 
@@ -1615,7 +1731,8 @@ describe("upsertLiveAction", () => {
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
           affiliateMode: "disabled",
-          activeStep: 4,
+          flowVersion: 2,
+          activeStep: 7,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },
@@ -1904,7 +2021,8 @@ describe("upsertLiveAction", () => {
         revision: 3,
         payload: { equals: expect.objectContaining({
           title: "租戶限定直播",
-          activeStep: 4,
+          flowVersion: 2,
+          activeStep: 7,
         }) },
         consumedAt: null,
         expiresAt: { gt: expect.any(Date) },
@@ -3298,6 +3416,7 @@ describe("message template actions", () => {
   it.each([
     ["an unavailable SMS channel", "channel", "sms"],
     ["an unavailable LINE channel", "channel", "line"],
+    ["an unknown trigger", "trigger", "provider_magic"],
     ["an unknown variable", "body", "{{provider_secret}}"],
     ["a missing email subject", "subject", ""],
   ])("rejects %s before persistence", async (_label, field, value) => {
@@ -3407,6 +3526,72 @@ describe("message template actions", () => {
       expect.any(Object),
       expect.objectContaining({ liveId: "live-1", liveTitle: "租戶限定直播", template: expect.objectContaining({ updatedAt }) }),
     );
+  });
+
+  it("creates a post-live follow-up template with safe audit metadata", async () => {
+    const formData = templateFormData();
+    formData.set("trigger", "post_live_followup");
+    formData.set("name", " 課後通知 ");
+    formData.set("subject", " {{live_title}} 課後資源 ");
+
+    await expect(upsertTemplateAction(initialMessageTemplateActionState, formData)).rejects.toThrow("redirect:/messages/templates");
+
+    expect(mocks.messageTemplateCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        name: "課後通知",
+        trigger: "post_live_followup",
+      }),
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "message_template_created",
+      after: expect.objectContaining({
+        name: "課後通知",
+        trigger: "post_live_followup",
+        hasSubject: true,
+        bodyLength: expect.any(Number),
+      }),
+    }));
+    const auditAfter = mocks.writeAuditLog.mock.calls[0]?.[0]?.after as Record<string, unknown>;
+    expect(auditAfter).not.toHaveProperty("subject");
+    expect(auditAfter).not.toHaveProperty("body");
+  });
+
+  it("updates a post-live follow-up template without queuing live reminder reconciliation", async () => {
+    const updatedAt = new Date("2026-08-09T05:00:00.000Z");
+    mocks.messageTemplateUpdate.mockResolvedValue({
+      id: "template-1",
+      vendorId: "vendor-1",
+      name: "課後通知",
+      channel: "email",
+      trigger: "post_live_followup",
+      subject: "{{live_title}} 課後資源",
+      body: "嗨 {{name}}，課後資源在這裡。{{unsubscribe_url}}",
+      isActive: true,
+      updatedAt,
+    });
+    mocks.liveFindMany.mockResolvedValue([]);
+    const formData = templateFormData();
+    formData.set("id", "template-1");
+    formData.set("expectedUpdatedAt", "2026-08-09T04:00:00.000Z");
+    formData.set("trigger", "post_live_followup");
+    formData.set("name", "課後通知");
+
+    await expect(upsertTemplateAction(initialMessageTemplateActionState, formData)).rejects.toThrow("redirect:/messages/templates");
+
+    expect(mocks.messageTemplateUpdate).toHaveBeenCalledWith({
+      where: { id: "template-1", vendorId: "vendor-1", updatedAt: new Date("2026-08-09T04:00:00.000Z") },
+      data: expect.objectContaining({ trigger: "post_live_followup" }),
+    });
+    expect(mocks.queueLiveReminderReconciliation).not.toHaveBeenCalled();
+    expect(mocks.createLiveReminderReconciliationSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "message_template_updated",
+      after: expect.objectContaining({ trigger: "post_live_followup" }),
+    }));
+    const auditAfter = mocks.writeAuditLog.mock.calls[0]?.[0]?.after as Record<string, unknown>;
+    expect(auditAfter).not.toHaveProperty("subject");
+    expect(auditAfter).not.toHaveProperty("body");
   });
 });
 

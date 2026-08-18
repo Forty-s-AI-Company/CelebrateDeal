@@ -81,7 +81,7 @@ const liveDraftClientMock = vi.hoisted(() => {
 
   return {
     LiveStudioDraftClientError: MockLiveStudioDraftClientError,
-    serializeLiveStudioDraft: vi.fn(() => ({})),
+    serializeLiveStudioDraft: vi.fn((_form: HTMLFormElement, activeStep: number) => ({ flowVersion: 2, activeStep })),
     saveLiveStudioDraft: vi.fn(async ({ draftId, revision, payload }: {
       draftId: string;
       revision: number | null;
@@ -97,7 +97,7 @@ const liveDraftClientMock = vi.hoisted(() => {
 
 vi.mock("@/lib/live-studio-draft-client", () => liveDraftClientMock);
 
-function LiveStudioDraftHarness(initialDraft?: LiveStudioDraftEnvelope) {
+function LiveStudioDraftHarness(initialDraft?: LiveStudioDraftEnvelope, activeStep = 0) {
   const runtime: HookHarnessRuntime = {
     effects: [],
     refs: [],
@@ -109,7 +109,7 @@ function LiveStudioDraftHarness(initialDraft?: LiveStudioDraftEnvelope) {
   const formRef = { current: {} as HTMLFormElement };
   reactHookHarness.setRuntime(runtime);
   const result = useLiveStudioDraft({
-    activeStep: 0,
+    activeStep,
     csrfToken: "csrf-token",
     formRef,
     initialDraft,
@@ -319,6 +319,15 @@ describe("Live Studio draft beforeunload guard", () => {
 });
 
 describe("Live Studio draft hook beforeunload lifecycle", () => {
+  it("serializes autosave with the canonical v2 active step", () => {
+    createWindowListenerMock();
+    const hook = LiveStudioDraftHarness(undefined, 7);
+
+    hook.result.scheduleSave();
+
+    expect(liveDraftClientMock.serializeLiveStudioDraft).toHaveBeenCalledWith(expect.any(Object), 7);
+    hook.unmount();
+  });
   it("registers the listener, blocks dirty dispatch, and removes it on unmount", () => {
     const browser = createWindowListenerMock();
     const hook = LiveStudioDraftHarness();

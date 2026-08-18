@@ -41,7 +41,12 @@ describe("repository hygiene", () => {
   it("does not track generated runtime, credential, or backup artifacts", () => {
     const forbidden = trackedFiles().filter((filePath) => (
       /(^|\/)(?:node_modules|\.next|coverage|test-results|playwright-report|runtime|logs)\//.test(filePath)
-      || /\.(?:dump|age|sha256|agekey|pem|rclone\.conf)$/i.test(filePath)
+      // Evidence checksum manifests are intentional, reviewable integrity
+      // records. Keep checksum files forbidden everywhere else.
+      || (
+        !/^docs\/ai-team\/evidence\/[^/]+\.sha256$/i.test(filePath)
+        && /\.(?:dump|age|sha256|agekey|pem|rclone\.conf)$/i.test(filePath)
+      )
       || /(^|\/)cookies?\.txt$/i.test(filePath)
       || (
         /(^|\/)\.env(?:\.|$)/i.test(filePath)

@@ -4,6 +4,36 @@ import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+const localE2eCsrfSecret = "celebratedeal-local-playwright-csrf-secret-v1";
+const commerceLoopbackTlsBridgeEnvironmentName = "G7_COMMERCE_LOOPBACK_TLS_BRIDGE";
+
+function isLoopbackE2eUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.origin === value
+      && url.protocol === "http:"
+      && ["127.0.0.1", "localhost"].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (!isLoopbackE2eUrl(baseURL)) {
+  delete process.env[commerceLoopbackTlsBridgeEnvironmentName];
+  throw new Error("Playwright browser QA requires an explicit loopback E2E_BASE_URL.");
+}
+
+// The commerce suite has already verified that its Secure-cookie session is
+// valid before using the local HTTP bridge. Keep this marker available only
+// for the verified loopback E2E runtime; never inherit or expose it elsewhere.
+process.env[commerceLoopbackTlsBridgeEnvironmentName] = "1";
+
+// The test process imports server-side commerce code directly. Keep its
+// synthetic key identical to the local Next server without ever inheriting a
+// configured development, preview, or production secret.
+process.env.CSRF_SECRET = localE2eCsrfSecret;
 // Browser fixtures may write data, so isolate them from the interactive local
 // development database. Provision this database from committed migrations
 // before running browser tests.
@@ -68,7 +98,8 @@ export default defineConfig({
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? "demo",
       // 空字串也視為未設定；E2E 僅使用明確標註的測試密鑰。
       JOB_SECRET: process.env.JOB_SECRET || "e2e-job-secret-at-least-16-chars",
-      CSRF_SECRET: process.env.CSRF_SECRET || "e2e-csrf-secret-at-least-16-chars",
+      CSRF_SECRET: localE2eCsrfSecret,
+      [commerceLoopbackTlsBridgeEnvironmentName]: "1",
       RATE_LIMIT_PROVIDER: e2eRateLimitProvider,
       SMOKE_TEST_EMAIL: e2eSmokeTestEmail,
       [resendApiKeyEnvironmentName]: "",

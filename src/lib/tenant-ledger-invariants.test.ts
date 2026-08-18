@@ -11,7 +11,7 @@ afterEach(async () => {
   try {
     await db.vendor.deleteMany({ where: { id: { in: createdVendorIds.splice(0) } } });
   } catch (error) {
-    if (!(error instanceof Error) || !/append-only|Foreign key constraint/.test(error.message)) throw error;
+    if (!(error instanceof Error) || !/append-only|foreign key constraint|RESTRICT setting/i.test(error.message)) throw error;
   }
   await db.payoutBatch.deleteMany({ where: { id: { in: createdPayoutBatchIds.splice(0) } } });
 });

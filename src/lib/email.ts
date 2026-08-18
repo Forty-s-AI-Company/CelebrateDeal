@@ -1,9 +1,13 @@
+import type { EmailBrandSnapshot } from "@/lib/email-delivery-pii";
+import { sanitizeEmailBrandSnapshot } from "@/lib/email-delivery-pii";
+
 type SendEmailInput = {
   to: string;
   subject: string;
   html?: string;
   text?: string;
   idempotencyKey?: string;
+  brand?: EmailBrandSnapshot;
 };
 
 export type TransactionalEmailErrorCode =
@@ -45,16 +49,57 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function isSingleMailbox(value: string) {
+  return value.length <= 320
+    && !/[\s<>,;]/u.test(value)
+    && /^[^@]+@[^@]+\.[^@]+$/u.test(value);
+}
+
+function parsePlatformFrom(value: string) {
+  const candidate = value.trim();
+  if (!candidate || /\p{Cc}/u.test(candidate)) return null;
+  if (isSingleMailbox(candidate)) return { address: candidate, original: candidate };
+  const displayMailbox = candidate.match(/^(.+?)\s*<([^<>]+)>$/u);
+  if (!displayMailbox) return null;
+  const displayName = displayMailbox[1]?.trim();
+  const address = displayMailbox[2]?.trim();
+  if (!displayName || !address || /\p{Cc}/u.test(displayName) || !isSingleMailbox(address)) return null;
+  return { address, original: candidate };
+}
+
+function quotedDisplayName(value: string) {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+function appendBrandFooter(input: SendEmailInput, contactUrl: string | undefined) {
+  if (!contactUrl) return { text: input.text, html: input.html };
+  const label = `聯絡主辦單位：${contactUrl}`;
+  return {
+    text: input.text === undefined ? undefined : `${input.text}\n\n${label}`,
+    html: input.html === undefined
+      ? undefined
+      : `${input.html}\n<p>聯絡主辦單位：${escapeHtml(contactUrl)}</p>`,
+  };
+}
+
 export async function sendTransactionalEmail(input: SendEmailInput) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
+  const configuredFrom = process.env.EMAIL_FROM;
 
-  if (!apiKey || !from) {
+  if (!apiKey || !configuredFrom) {
     throw new TransactionalEmailError("configuration");
   }
+  const platformFrom = parsePlatformFrom(configuredFrom);
+  if (!platformFrom) throw new TransactionalEmailError("configuration");
   if (input.idempotencyKey && (input.idempotencyKey.length > 256 || !/^[\x21-\x7E]+$/u.test(input.idempotencyKey))) {
     throw new TransactionalEmailError("configuration");
   }
+
+  const brand = sanitizeEmailBrandSnapshot(input.brand);
+  const from = brand?.senderName
+    ? `${quotedDisplayName(brand.senderName)} <${platformFrom.address}>`
+    : platformFrom.original;
+  const content = appendBrandFooter(input, brand?.contactUrl);
 
   let response: Response;
   try {
@@ -69,8 +114,9 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
         from,
         to: input.to,
         subject: input.subject,
-        html: input.html,
-        text: input.text,
+        html: content.html,
+        text: content.text,
+        ...(brand?.replyTo ? { reply_to: brand.replyTo } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });

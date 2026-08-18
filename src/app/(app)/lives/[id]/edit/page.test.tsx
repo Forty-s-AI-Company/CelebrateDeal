@@ -100,7 +100,7 @@ beforeEach(() => {
 });
 
 describe("EditLivePage unified Live Studio", () => {
-  it("offers only published scripts and maps the existing live into the five-step draft", async () => {
+  it("offers only published scripts and maps the existing live into the canonical eight-step draft", async () => {
     const html = renderToStaticMarkup(await EditLivePage({
       params: Promise.resolve({ id: "live-1" }),
       searchParams: Promise.resolve({}),
@@ -139,6 +139,8 @@ describe("EditLivePage unified Live Studio", () => {
         scheduledAt: "2026-08-08T09:00",
         interactionScriptId: "",
         replayEnabled: true,
+        flowVersion: 2,
+        activeStep: 0,
       }),
       timeZone: "Asia/Taipei",
     }), undefined);

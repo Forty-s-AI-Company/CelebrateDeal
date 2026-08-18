@@ -155,7 +155,12 @@ function renderTimelineSidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div
+          role="region"
+          aria-label="綁定影片與時間點大綱"
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-y-auto p-4"
+        >
           {boundLives.length > 0 ? (
             <div className="mb-5 grid gap-2">
               <h3 className="text-sm font-semibold text-slate-950">目前綁定的直播</h3>

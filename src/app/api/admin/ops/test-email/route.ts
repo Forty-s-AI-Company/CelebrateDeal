@@ -4,7 +4,7 @@ import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-secu
 import { getSmokeTestEmail, isAllowedSmokeTestRecipient, sendTransactionalEmail } from "@/lib/email";
 
 const TestEmailRequest = z.object({
-  to: z.string().email(),
+  to: z.string().email().optional(),
 });
 
 export async function POST(request: Request) {
@@ -21,7 +21,8 @@ export async function POST(request: Request) {
   if (!smokeTestEmail) {
     return NextResponse.json({ error: "Test email recipient is not configured" }, { status: 503 });
   }
-  if (!isAllowedSmokeTestRecipient(parsed.data.to)) {
+  const requestedRecipient = parsed.data.to ?? smokeTestEmail;
+  if (!isAllowedSmokeTestRecipient(requestedRecipient)) {
     return NextResponse.json({ error: "Test email recipient is not allowed" }, { status: 403 });
   }
 
