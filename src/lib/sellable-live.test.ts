@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   countSellableLiveReadinessCandidates,
+  isSellableLiveReadinessCandidate,
   publicLiveAvailabilityWhere,
   sellableLiveReadinessQuery,
   type SellableLiveReadinessCandidate,
@@ -15,8 +16,17 @@ const validFields = [
 function candidate(
   overrides: Partial<SellableLiveReadinessCandidate> = {},
 ): SellableLiveReadinessCandidate {
+  const scheduledAt = new Date(Date.now() - 60_000);
   return {
+    scheduledAt,
+    status: "live",
+    startedAt: scheduledAt,
+    endedAt: null,
+    replayAvailableUntil: null,
+    replayEnabled: true,
+    streamMode: "live",
     video: {
+      durationSec: 600,
       sourceType: "url",
       status: "ready",
       cloudflareReadyToStream: false,
@@ -46,7 +56,7 @@ describe("sellable live readiness", () => {
     expect(sellableLiveReadinessQuery("vendor-1")).toEqual({
       where: {
         vendorId: "vendor-1",
-        ...publicLiveAvailabilityWhere(),
+        status: { in: ["scheduled", "live", "ended"] },
         video: {
           is: {
             vendorId: "vendor-1",
@@ -86,10 +96,18 @@ describe("sellable live readiness", () => {
         },
       },
       select: {
+        scheduledAt: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        replayAvailableUntil: true,
+        replayEnabled: true,
+        streamMode: true,
         form: { select: { fields: true } },
         messageTemplate: { select: { subject: true, body: true } },
         video: {
           select: {
+            durationSec: true,
             sourceType: true,
             status: true,
             cloudflareReadyToStream: true,
@@ -118,6 +136,7 @@ describe("sellable live readiness", () => {
       candidate(),
       candidate({
         video: {
+          durationSec: 600,
           sourceType: "cloudflare_stream",
           status: "ready",
           cloudflareReadyToStream: true,
@@ -127,6 +146,7 @@ describe("sellable live readiness", () => {
       }),
       candidate({
         video: {
+          durationSec: 600,
           sourceType: "cloudflare_live",
           status: "processing",
           cloudflareReadyToStream: false,
@@ -135,5 +155,61 @@ describe("sellable live readiness", () => {
         },
       }),
     ])).toBe(3);
+  });
+
+  it.each([
+    ["T 前", new Date("2026-08-18T07:59:59.999Z"), true],
+    ["T", new Date("2026-08-18T08:00:00.000Z"), true],
+    ["T+duration", new Date("2026-08-18T08:10:00.000Z"), true],
+  ])("uses the canonical runtime state at %s", (_label, now, expected) => {
+    const live = candidate({
+      streamMode: "vod",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-18T08:00:00.000Z"),
+      startedAt: null,
+      video: { ...candidate().video!, durationSec: 600 },
+    });
+
+    expect(isSellableLiveReadinessCandidate(live, now)).toBe(expected);
+  });
+
+  it("treats waiting, playing, and replay as sellable readiness states", () => {
+    const scheduledAt = new Date("2026-08-18T08:00:00.000Z");
+    const completionAt = new Date("2026-08-18T08:10:00.000Z");
+    expect(countSellableLiveReadinessCandidates([
+      candidate({ streamMode: "vod", status: "scheduled", scheduledAt: new Date("2026-08-18T08:10:00.000Z") }),
+      candidate({ streamMode: "vod", status: "scheduled", scheduledAt }),
+      candidate({ streamMode: "vod", status: "ended", scheduledAt, endedAt: completionAt }),
+    ], new Date("2026-08-18T08:05:00.000Z"))).toBe(2);
+    expect(isSellableLiveReadinessCandidate(
+      candidate({ streamMode: "vod", status: "ended", scheduledAt, endedAt: completionAt }),
+      completionAt,
+    )).toBe(true);
+  });
+
+  it("rejects an unknown mode, an invalid VOD duration, and a replay deadline at now", () => {
+    const now = new Date("2026-08-18T08:10:00.000Z");
+    const live = candidate({
+      streamMode: "vod",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-18T08:00:00.000Z"),
+      startedAt: null,
+    });
+
+    expect(isSellableLiveReadinessCandidate({ ...live, streamMode: "preview" }, now)).toBe(false);
+    expect(isSellableLiveReadinessCandidate({ ...live, video: { ...live.video!, durationSec: 0 } }, now)).toBe(false);
+    expect(isSellableLiveReadinessCandidate({ ...live, replayAvailableUntil: now }, now)).toBe(false);
+  });
+
+  it("allows a started live input at its startedAt", () => {
+    const startedAt = new Date("2026-08-18T08:01:00.000Z");
+    const live = candidate({
+      streamMode: "live",
+      status: "live",
+      scheduledAt: new Date("2026-08-18T08:00:00.000Z"),
+      startedAt,
+    });
+
+    expect(isSellableLiveReadinessCandidate(live, startedAt)).toBe(true);
   });
 });

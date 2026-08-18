@@ -2,12 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
+import { reconcileLiveRuntimeState, resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { assertStreamQuotaAvailable } from "@/lib/stream-quota";
 
 export const LIVE_VIEWER_SESSION_COOKIE = "celebratedeal_live_viewer";
 export const LIVE_VIEWER_SESSION_TTL_MS = 90_000;
+const LIVE_ADMISSION_MAX_ATTEMPTS = 3;
 const LIVE_VIEWER_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type LiveQuotaAdmissionErrorCode =
@@ -15,7 +17,8 @@ export type LiveQuotaAdmissionErrorCode =
   | "viewer_limit_reached"
   | "credits_below_threshold"
   | "stream_minutes_exhausted"
-  | "payment_method_required";
+  | "payment_method_required"
+  | "admission_busy";
 
 export class LiveQuotaAdmissionError extends Error {
   constructor(public readonly code: LiveQuotaAdmissionErrorCode) {
@@ -132,8 +135,15 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     select: {
       id: true,
       vendorId: true,
+      streamMode: true,
+      scheduledAt: true,
+      status: true,
+      startedAt: true,
+      endedAt: true,
+      replayAvailableUntil: true,
+      replayEnabled: true,
       quotaPolicy: true,
-      video: { select: { vendorId: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } },
+      video: { select: { vendorId: true, durationSec: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } },
       form: { select: { vendorId: true, isActive: true, fields: true } },
       messageTemplate: { select: { vendorId: true, channel: true, trigger: true, isActive: true, subject: true, body: true } },
       interactionScript: { select: { vendorId: true, status: true } },
@@ -146,6 +156,10 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
   });
   if (!live || !getRuntimeLivePublishReadiness(live).ready) {
+    throw new LiveQuotaAdmissionError("live_not_found");
+  }
+  const runtime = resolveLiveRuntime(live, now);
+  if (runtime.state !== "playing" && runtime.state !== "replay") {
     throw new LiveQuotaAdmissionError("live_not_found");
   }
 
@@ -232,11 +246,42 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
   return { token, expiresAt, reused: false };
 }
 
+function isPrismaCode(error: unknown, code: string) {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === code;
+}
+
 export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
-  return db.$transaction(
-    (tx) => admitWithinTransaction(tx, input),
-    { isolationLevel: "Serializable" },
-  );
+  const now = input.now ?? new Date();
+  const transactionInput = { ...input, now };
+
+  // This write must commit independently. If quota or payment admission later
+  // fails, the natural VOD completion marker must remain durable.
+  await reconcileLiveRuntimeState(db, {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    now,
+  });
+
+  for (let attempt = 1; attempt <= LIVE_ADMISSION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      // Every retry starts a fresh Serializable transaction and re-reads the
+      // live plus all quota state through the transaction callback.
+      return await db.$transaction(
+        (tx) => admitWithinTransaction(tx, transactionInput),
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (!isPrismaCode(error, "P2034")) throw error;
+      if (attempt === LIVE_ADMISSION_MAX_ATTEMPTS) {
+        throw new LiveQuotaAdmissionError("admission_busy");
+      }
+    }
+  }
+
+  throw new LiveQuotaAdmissionError("admission_busy");
 }
 
 export async function releaseLiveViewer(db: PrismaClient, input: Omit<AdmissionInput, "now">) {

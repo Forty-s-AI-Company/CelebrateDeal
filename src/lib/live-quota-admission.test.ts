@@ -9,7 +9,7 @@ import {
 } from "@/lib/live-quota-admission";
 
 const tx = {
-  live: { findFirst: vi.fn() },
+  live: { findFirst: vi.fn(), updateMany: vi.fn() },
   paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
   vendorUsageLimit: { findUnique: vi.fn() },
   streamUsageLedgerEntry: { aggregate: vi.fn() },
@@ -17,13 +17,21 @@ const tx = {
 };
 const deleteMany = vi.fn();
 const db = {
+  live: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   liveViewerSession: { findUnique: vi.fn(), deleteMany },
 } as unknown as PrismaClient;
 
 const now = new Date("2026-08-07T06:00:00.000Z");
 const runtimeReadyContent = {
-  video: { vendorId: "vendor-1", sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null },
+  streamMode: "live",
+  scheduledAt: new Date("2026-08-07T05:59:00.000Z"),
+  status: "live",
+  startedAt: new Date("2026-08-07T05:59:00.000Z"),
+  endedAt: null,
+  replayAvailableUntil: null,
+  replayEnabled: true,
+  video: { vendorId: "vendor-1", durationSec: null, sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null },
   form: { vendorId: "vendor-1", isActive: true, fields: [
     { key: "name", label: "姓名", type: "text", required: true },
     { key: "email", label: "Email", type: "email", required: true },
@@ -35,6 +43,12 @@ const runtimeReadyContent = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: "live-1",
+    vendorId: "vendor-1",
+    ...runtimeReadyContent,
+  });
+  (db.live.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 });
   tx.live.findFirst.mockResolvedValue({
     id: "live-1",
     vendorId: "vendor-1",
@@ -53,6 +67,7 @@ beforeEach(() => {
   tx.liveViewerSession.count.mockResolvedValue(0);
   tx.liveViewerSession.create.mockResolvedValue({ id: "session-1" });
   tx.liveViewerSession.update.mockResolvedValue({ id: "session-1" });
+  tx.live.updateMany.mockResolvedValue({ count: 1 });
   (db.liveViewerSession.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
     vendorId: "vendor-1",
     liveId: "live-1",
@@ -164,6 +179,173 @@ describe("live quota admission", () => {
 
     expect(tx.vendorUsageLimit.findUnique).not.toHaveBeenCalled();
     expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["waiting", {
+      streamMode: "vod", status: "scheduled", scheduledAt: new Date("2026-08-07T06:01:00.000Z"), startedAt: null,
+      video: { ...runtimeReadyContent.video, durationSec: 600 },
+    }],
+    ["unknown mode", { streamMode: "preview" }],
+    ["invalid VOD duration", {
+      streamMode: "vod", status: "scheduled", scheduledAt: new Date("2026-08-07T05:59:00.000Z"), startedAt: null,
+      video: { ...runtimeReadyContent.video, durationSec: 0 },
+    }],
+    ["replay deadline at now", {
+      streamMode: "vod", status: "scheduled", scheduledAt: new Date("2026-08-07T05:59:00.000Z"), startedAt: null,
+      video: { ...runtimeReadyContent.video, durationSec: 60 },
+      replayAvailableUntil: now,
+    }],
+  ])("rejects %s before quota work", async (_label, runtime) => {
+    tx.live.findFirst.mockResolvedValue({
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      ...runtime,
+    });
+
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
+      .rejects.toMatchObject({ code: "live_not_found" });
+    expect(tx.vendorUsageLimit.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("re-reads the canonical runtime inside admission without writing reconciliation in the transaction", async () => {
+    const vod = {
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      streamMode: "vod",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-07T06:00:00.000Z"),
+      startedAt: null,
+      video: { ...runtimeReadyContent.video, durationSec: 60 },
+    };
+    tx.live.findFirst.mockResolvedValue(vod);
+
+    await expect(admitLiveViewer(db, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now: new Date("2026-08-07T06:00:00.000Z"),
+    })).resolves.toMatchObject({ reused: false });
+    expect(tx.live.updateMany).not.toHaveBeenCalled();
+
+    tx.live.findFirst.mockResolvedValue({ ...vod, status: "live" });
+    await expect(admitLiveViewer(db, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now: new Date("2026-08-07T06:01:00.000Z"),
+    })).resolves.toMatchObject({ reused: false });
+    expect(tx.live.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["replay disabled", { replayEnabled: false, replayAvailableUntil: null }],
+    ["replay deadline expired", { replayEnabled: true, replayAvailableUntil: now }],
+  ])("durably reconciles a completed VOD before failing closed for %s", async (_label, replay) => {
+    const completionAt = new Date("2026-08-07T06:00:00.000Z");
+    const completed = {
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      streamMode: "vod",
+      status: "live",
+      scheduledAt: new Date("2026-08-07T05:59:00.000Z"),
+      startedAt: null,
+      ...replay,
+      video: { ...runtimeReadyContent.video, id: "video-1", durationSec: 60 },
+    };
+    (db.live.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(completed);
+    (db.live.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 1 });
+    tx.live.findFirst.mockResolvedValue({ ...completed, status: "ended", endedAt: completionAt });
+
+    await expect(admitLiveViewer(db, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now,
+    })).rejects.toMatchObject({ code: "live_not_found" });
+    expect(db.live.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: "ended", endedAt: completionAt },
+    }));
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+    expect(tx.vendorUsageLimit.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("retries a full Serializable admission once after P2034", async () => {
+    (db.$transaction as ReturnType<typeof vi.fn>).mockRejectedValueOnce({ code: "P2034" });
+
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
+      .resolves.toMatchObject({ reused: false });
+
+    expect(db.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.live.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.liveViewerSession.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps three P2034 transaction failures to admission_busy", async () => {
+    (db.$transaction as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockRejectedValueOnce({ code: "P2034" });
+
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
+      .rejects.toMatchObject({ code: "admission_busy" });
+
+    expect(db.$transaction).toHaveBeenCalledTimes(3);
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it("does not retry an unknown transaction error", async () => {
+    const error = new Error("unexpected transaction failure");
+    (db.$transaction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(error);
+
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
+      .rejects.toBe(error);
+
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows an active live input from its startedAt", async () => {
+    const startedAt = new Date("2026-08-07T06:00:00.000Z");
+    tx.live.findFirst.mockResolvedValue({
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      streamMode: "live",
+      status: "live",
+      startedAt,
+    });
+
+    await expect(admitLiveViewer(db, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now: startedAt,
+    })).resolves.toMatchObject({ reused: false });
+  });
+
+  it("does not reconcile a replayable Live Input inside quota admission", async () => {
+    const startedAt = new Date("2026-08-07T05:59:00.000Z");
+    const endedAt = new Date("2026-08-07T06:00:00.000Z");
+    tx.live.findFirst.mockResolvedValue({
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      streamMode: "live",
+      status: "live",
+      startedAt,
+      endedAt,
+    });
+
+    await expect(admitLiveViewer(db, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      now,
+    })).resolves.toMatchObject({ reused: false });
+    expect(tx.live.updateMany).not.toHaveBeenCalled();
   });
 
   it("releases only the matching opaque session hash", async () => {

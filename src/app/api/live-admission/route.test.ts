@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const tx = {
-  live: { findFirst: vi.fn() },
+  live: { findFirst: vi.fn(), updateMany: vi.fn() },
   paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
   vendorUsageLimit: { findUnique: vi.fn() },
   liveViewerSession: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
 };
 const db = {
+  live: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   liveViewerSession: { deleteMany: vi.fn() },
 };
 const runtimeReadyContent = {
-  video: { vendorId: "vendor-1", sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null },
+  streamMode: "live",
+  scheduledAt: new Date("2026-08-07T05:59:00.000Z"),
+  status: "live",
+  startedAt: new Date("2026-08-07T05:59:00.000Z"),
+  endedAt: null,
+  replayAvailableUntil: null,
+  replayEnabled: true,
+  video: { id: "video-1", vendorId: "vendor-1", durationSec: null, sourceType: "url", status: "ready", cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null },
   form: { vendorId: "vendor-1", isActive: true, fields: [
     { key: "name", label: "姓名", type: "text", required: true },
     { key: "email", label: "Email", type: "email", required: true },
@@ -41,6 +49,8 @@ function request(method: "POST" | "DELETE" = "POST", payload = { vendorId: "vend
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", ...runtimeReadyContent });
+  db.live.updateMany.mockResolvedValue({ count: 0 });
   tx.live.findFirst.mockResolvedValue({
     id: "live-1",
     vendorId: "vendor-1",
@@ -133,6 +143,50 @@ describe("POST /api/live-admission", () => {
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: "Playback source not found" });
     expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["replay disabled", { replayEnabled: false, replayAvailableUntil: null }],
+    ["replay deadline expired", { replayEnabled: true, replayAvailableUntil: new Date("2026-08-07T06:00:00.000Z") }],
+  ])("persists natural VOD completion before returning 404 when %s", async (_label, replay) => {
+    const completionAt = new Date("2026-08-07T06:00:00.000Z");
+    const completed = {
+      id: "live-1",
+      vendorId: "vendor-1",
+      quotaPolicy: null,
+      ...runtimeReadyContent,
+      streamMode: "vod",
+      status: "live",
+      scheduledAt: new Date("2026-08-07T05:59:00.000Z"),
+      startedAt: null,
+      ...replay,
+      video: { ...runtimeReadyContent.video, durationSec: 60 },
+    };
+    db.live.findFirst.mockResolvedValue(completed);
+    db.live.updateMany.mockResolvedValue({ count: 1 });
+    tx.live.findFirst.mockResolvedValue({ ...completed, status: "ended", endedAt: completionAt });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Playback source not found" });
+    expect(db.live.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: "ended", endedAt: completionAt },
+    }));
+    expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+  });
+
+  it("maps exhausted serializable admission conflicts to 503", async () => {
+    db.$transaction
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockRejectedValueOnce({ code: "P2034" });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Playback temporarily unavailable" });
+    expect(db.$transaction).toHaveBeenCalledTimes(3);
   });
 });
 

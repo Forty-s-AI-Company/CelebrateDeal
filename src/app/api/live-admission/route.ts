@@ -14,6 +14,9 @@ function errorResponse(error: LiveQuotaAdmissionError) {
   if (error.code === "live_not_found") {
     return NextResponse.json({ error: "Playback source not found" }, { status: 404 });
   }
+  if (error.code === "admission_busy") {
+    return NextResponse.json({ error: "Playback temporarily unavailable" }, { status: 503 });
+  }
   return NextResponse.json({ error: "Playback temporarily unavailable" }, { status: 429 });
 }
 
