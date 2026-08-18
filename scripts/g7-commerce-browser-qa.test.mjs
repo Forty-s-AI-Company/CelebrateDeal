@@ -477,6 +477,36 @@ test("G7-48B focused mode requires exact buyer capability, delivery RWD evidence
   assert.match(browserContract, /buyer-delivery-mobile\.png/u);
 });
 
+test("WP7-01 focused mode isolates the one-stop webinar E2E contract", () => {
+  const source = fs.readFileSync(new URL("./g7-commerce-browser-qa.mjs", import.meta.url), "utf8");
+  const config = fs.readFileSync(new URL("../playwright.g7-commerce.config.ts", import.meta.url), "utf8");
+
+  assert.match(source, /--focus-wp7-one-stop/u);
+  assert.match(source, /focusWp7OneStop \? "WP7-01"/u);
+  assert.match(source, /wp7OneStopContract/u);
+  assert.match(source, /tests\/e2e\/wp7-one-stop-webinar-flow\.spec\.ts/u);
+  assert.match(source, /"wp7-one-stop-webinar-flow-browser-qa"/u);
+  assert.match(source, /G7_COMMERCE_BROWSER_E2E_TARGET: e2eTarget/u);
+  assert.match(source, /e2eTarget: focusWp7OneStop \? "wp7-one-stop" : "commerce"/u);
+  assert.match(source, /wp7Registration: path\.join\(screenshots, "wp7-registration\.png"\)/u);
+  assert.match(source, /wp7Checkout: path\.join\(screenshots, "wp7-checkout\.png"\)/u);
+  assert.match(source, /receipt\.browser\.wp7OneStop = focusWp7OneStop && browserPassed \? "PASS" : "NOT_VERIFIED"/u);
+  assert.match(config, /e2eTarget !== "commerce" && e2eTarget !== "wp7-one-stop"/u);
+  assert.match(config, /wp7-one-stop-webinar-flow\.spec\.ts/u);
+  for (const path of [
+    "src/lib/email-delivery.ts",
+    "src/lib/email-delivery-pii.ts",
+    "src/lib/form-submission-verification-domain.ts",
+    "src/lib/form-submission-verification.ts",
+    "src/lib/post-live-followup.ts",
+    "src/lib/post-live-followup-identity.ts",
+    "src/lib/live-chat-contract.ts",
+    "src/app/(viewer)/live/[slug]/page.tsx",
+  ]) {
+    assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
+  }
+});
+
 test("G7-04 build failure classification is deterministic and fail closed", () => {
   const cases = [
     ["G7_COMMERCE_EXTERNAL_NETWORK_DENIED", "EXTERNAL_NETWORK_DENIED"],
@@ -593,6 +623,18 @@ test("G7-04 sanitizers redact local paths, credentials, identities, and long val
     assert.doesNotMatch(output, /password|buyer@example\.test|a{48}/u);
   }
   assert.match(browser, /<redacted-phone>/u);
+});
+
+test("G7-04 Playwright sanitizer redacts verification token query values", () => {
+  const tempRoot = path.join(os.tmpdir(), "g7-commerce-token-sanitizer-test");
+  const rawToken = "fsv1.submission-1.1787000000.1.signature-value";
+  const output = sanitizePlaywrightMessage(
+    `request failed: http://127.0.0.1:41234/verify-registration?token=${rawToken}&status=failed`,
+    tempRoot,
+  ).join("\n");
+
+  assert.match(output, /verify-registration\?token=<redacted>&status=failed/u);
+  assert.doesNotMatch(output, new RegExp(rawToken.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
 });
 
 test("G7-04 server runtime sanitizer redacts headers, short secrets, identities, and bounded diagnostics", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Image from "next/image";
 import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -68,7 +68,7 @@ function useLiveQueryParam(name: string) {
   }, [name]);
 }
 
-type LivePageData = {
+export type LivePageData = {
   id: string;
   title: string;
   slug: string;
@@ -1017,8 +1017,39 @@ export function ScriptedInteractionOverlay({
 export function persistentPlayerShellClass(isCheckoutOverlay: boolean, isExpanded: boolean) {
   if (!isCheckoutOverlay) return "absolute inset-0";
   return isExpanded
-    ? "fixed inset-3 z-[70] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl"
-    : "fixed bottom-4 right-4 z-[70] h-48 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl";
+    ? "pointer-events-auto fixed inset-3 z-[70] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl"
+    : "pointer-events-auto fixed bottom-4 right-4 z-[70] h-48 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl";
+}
+
+function playbackPageClass(isCheckoutOverlay: boolean) {
+  return isCheckoutOverlay ? "pointer-events-none fixed inset-0 z-[60]" : "min-h-screen bg-slate-950";
+}
+
+function playbackSectionClass(isCheckoutOverlay: boolean) {
+  return isCheckoutOverlay
+    ? "contents"
+    : "relative mx-auto min-h-screen max-w-[430px] overflow-hidden bg-slate-950 text-white shadow-2xl";
+}
+
+function playbackSourceStatus({
+  streamQuotaExhausted,
+  isPlayableRuntime,
+  admissionStatus,
+  hasPlayableSource,
+}: {
+  streamQuotaExhausted: boolean;
+  isPlayableRuntime: boolean;
+  admissionStatus: LiveAdmissionStatus;
+  hasPlayableSource: boolean;
+}) {
+  if (streamQuotaExhausted) return "quota-exhausted";
+  if (!isPlayableRuntime) return "not-playable";
+  if (admissionStatus !== "admitted") return "waiting-for-admission";
+  return hasPlayableSource ? "ready" : "unavailable";
+}
+
+function HideDuringCheckout({ active, children }: { active: boolean; children: ReactNode }) {
+  return active ? null : children;
 }
 
 export function PersistentMiniPlayerControls({
@@ -1468,6 +1499,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, admissionStatus, admissionRefreshKey);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
   const playableUrl = playableSource?.playbackUrl ?? null;
+  const playbackSourceState = playbackSourceStatus({
+    streamQuotaExhausted,
+    isPlayableRuntime,
+    admissionStatus,
+    hasPlayableSource: Boolean(playableSource),
+  });
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekSourceIdentityRef = useRef<string | null>(null);
   const seekAppliedRef = useRef(false);
@@ -1609,11 +1646,18 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950" data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}>
+    <main
+      className={playbackPageClass(isCheckoutOverlay)}
+      data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}
+    >
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
-      <section className="relative mx-auto min-h-screen max-w-[430px] overflow-hidden bg-slate-950 text-white shadow-2xl">
-        <div data-testid="persistent-live-player" className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}>
+      <section className={playbackSectionClass(isCheckoutOverlay)}>
+        <div
+          data-testid="persistent-live-player"
+          data-playback-source-state={playbackSourceState}
+          className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}
+        >
           {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
             <video
               ref={videoRef}
@@ -1660,43 +1704,45 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           ) : null}
         </div>
 
-        <LiveBrandHeader live={live} runtimeState={runtimeState} />
-        {isPlayableRuntime && streamQuotaExhausted ? <StreamQuotaAlert /> : null}
+        <HideDuringCheckout active={isCheckoutOverlay}>
+          <LiveBrandHeader live={live} runtimeState={runtimeState} />
+          {isPlayableRuntime && streamQuotaExhausted ? <StreamQuotaAlert /> : null}
 
-        {isPlayableRuntime ? (
-          <LivePlaybackExperience
-            live={live}
-            currentSeconds={currentSeconds}
-            referralCode={referralCode}
-            latestCtaEvent={latestCtaEvent}
-            latestProductEvent={latestProductEvent}
-            spotlightProduct={spotlightProduct}
-            spotlightCardProduct={spotlightCardProduct}
-            spotlightCardState={spotlightCardState}
-            sortedProducts={sortedProducts}
-            checkoutNavigation={{ isLocked: checkoutNavigation.isLocked || externalNavigation.isPending }}
-            trackCta={externalNavigation.trackCta}
-            trackProduct={externalNavigation.trackProduct}
-            panel={panel}
-            onPanelChange={setPanel}
-            onSpotlightStateChange={setSpotlightCardState}
-            checkoutError={checkoutError}
-            admissionStatus={visibleAdmissionStatus}
-            scheduledMessages={scheduledMessages}
-            onAdmissionInvalid={refreshAdmission}
+          {isPlayableRuntime ? (
+            <LivePlaybackExperience
+              live={live}
+              currentSeconds={currentSeconds}
+              referralCode={referralCode}
+              latestCtaEvent={latestCtaEvent}
+              latestProductEvent={latestProductEvent}
+              spotlightProduct={spotlightProduct}
+              spotlightCardProduct={spotlightCardProduct}
+              spotlightCardState={spotlightCardState}
+              sortedProducts={sortedProducts}
+              checkoutNavigation={{ isLocked: checkoutNavigation.isLocked || externalNavigation.isPending }}
+              trackCta={externalNavigation.trackCta}
+              trackProduct={externalNavigation.trackProduct}
+              panel={panel}
+              onPanelChange={setPanel}
+              onSpotlightStateChange={setSpotlightCardState}
+              checkoutError={checkoutError}
+              admissionStatus={visibleAdmissionStatus}
+              scheduledMessages={scheduledMessages}
+              onAdmissionInvalid={refreshAdmission}
+            />
+          ) : runtimeState === "waiting" ? (
+            <LiveWaitingRoom live={live} countdownSeconds={waitingCountdownSeconds} />
+          ) : (
+            <LiveUnavailableNotice live={live} />
+          )}
+          <ExternalNavigationConfirmDialog
+            intent={externalNavigation.intent}
+            isConfirming={externalNavigation.isConfirming}
+            onCancel={externalNavigation.cancel}
+            onConfirm={externalNavigation.confirm}
           />
-        ) : runtimeState === "waiting" ? (
-          <LiveWaitingRoom live={live} countdownSeconds={waitingCountdownSeconds} />
-        ) : (
-          <LiveUnavailableNotice live={live} />
-        )}
-        <ExternalNavigationConfirmDialog
-          intent={externalNavigation.intent}
-          isConfirming={externalNavigation.isConfirming}
-          onCancel={externalNavigation.cancel}
-          onConfirm={externalNavigation.confirm}
-        />
-        <LiveAdmissionOverlay status={visibleAdmissionStatus} />
+          <LiveAdmissionOverlay status={visibleAdmissionStatus} />
+        </HideDuringCheckout>
       </section>
     </main>
   );

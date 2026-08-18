@@ -22,16 +22,16 @@ export const ANNOUNCEMENT_SUPPRESSION_STORAGE_KEY =
   "celebratedeal.announcement-center.suppression.v1";
 
 /**
- * 進站公告的唯一靜態來源。88% 是本階段估算，不代表正式金流或完整外部 E2E 已完成。
+ * 進站公告的唯一靜態來源。94% 是本階段估算，不代表正式金流或使用者 staging 驗收已完成。
  */
 export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
   {
-    id: "goal-progress-2026-08-18-v3",
-    version: "2026-08-18-v3",
+    id: "goal-progress-2026-08-18-v4",
+    version: "2026-08-18-v4",
     publishedAt: "2026-08-18",
     title: "目前 Goal 進度更新",
-    summary: "本階段估算 88%：商品自訂結帳欄位、加密答案與訂單快照已完成，核心報名、觀看、互動與 Email 排程維持可用。",
-    progressPercent: 88,
+    summary: "本階段估算 94%：本機完整一條龍 E2E 已通過，包含報名驗證、直播互動、商品浮窗、持續播放器、待付款訂單與課後信入列。",
+    progressPercent: 94,
     completed: [
       "核心報名流程已完成。",
       "觀看流程已完成。",
@@ -42,9 +42,11 @@ export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
       "staging Preview READY，health/database check 已通過。",
       "商品自訂結帳欄位已完成：支援友善編輯、前台填寫、後端驗證、加密答案與訂單快照。",
       "自訂欄位 migration 已在 disposable PostgreSQL 完成 57/57 套用與清理驗證。",
+      "完整一條龍 production-mode E2E 已通過，包含報名、Email 驗證、直播、指定秒數互動、商品浮窗、結帳與課後信。",
+      "內部結帳跨頁維持同一個播放器節點，直接開啟結帳頁則不會顯示不存在的直播。",
     ],
     incomplete: [
-      "完整一條龍外部 E2E 與使用者 staging 驗收尚未完成。",
+      "staging 部署與使用者線上驗收尚未完成。",
       "Hobby staging 尚未註冊每分鐘 Cron；endpoint 可人工觸發，尚不宣稱自動執行。",
       "正式金流仍排除於本階段驗證。",
     ],
@@ -54,10 +56,12 @@ export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
       "固定 staging 已更新。",
       "商品表單新增最多 10 個自訂結帳欄位，可新增、刪除、排序與設定必填／選項。",
       "同一防重送識別若答案不同會拒絕舊訂單重播，避免畫面與訂單資料不一致。",
+      "播放器改由根 layout 持有，切到內部結帳頁時不會重建媒體節點。",
+      "新增 WP7 一條龍 disposable PostgreSQL＋Playwright 驗收與可稽核 receipt。",
     ],
     nextSteps: [
-      "等待使用者驗證 staging。",
-      "完成完整一條龍外部 E2E。",
+      "部署目前里程碑到固定 staging。",
+      "等待使用者驗證 staging 的報名、直播、浮窗與結帳體驗。",
       "go-live 前決定採用 Pro 或外部 scheduler。",
     ],
   },

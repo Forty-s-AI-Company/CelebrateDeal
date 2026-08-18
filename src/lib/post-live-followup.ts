@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+export { postLiveFollowupIdempotencyPrefix } from "@/lib/post-live-followup-identity";
+
 export type PostLiveCompletionInput = {
   streamMode: string;
   scheduledAt: Date;
@@ -56,10 +58,6 @@ export function stablePostLiveFollowupDeliveryId(input: PostLiveFollowupRevision
     .digest("hex")
     .slice(0, 32);
   return `email_${digest}`;
-}
-
-export function postLiveFollowupIdempotencyPrefix(ruleId: string) {
-  return `post-live-followup/${ruleId}/`;
 }
 
 /** The source-controlled cron runs every minute, so every bounded page is visited in turn. */

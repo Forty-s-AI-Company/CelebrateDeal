@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { postLiveFollowupIdempotencyPrefix } from "@/lib/post-live-followup";
+import { postLiveFollowupIdempotencyPrefix } from "@/lib/post-live-followup-identity";
 import {
   liveNotificationIdempotencyPrefix,
   type LiveNotificationDeliveryTrigger,

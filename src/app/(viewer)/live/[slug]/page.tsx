@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { LivePlayback } from "@/components/live-playback";
+import { PersistentLivePlaybackRegistration } from "@/components/persistent-live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
@@ -118,7 +118,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
       }))
 
   return (
-    <LivePlayback
+    <PersistentLivePlaybackRegistration
       live={{
         id: live.id,
         title: live.title,

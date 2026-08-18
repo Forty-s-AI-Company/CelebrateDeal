@@ -5,6 +5,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const directUrl = process.env.DIRECT_URL;
 const schema = process.env.G7_COMMERCE_BROWSER_SCHEMA;
 const baseURL = process.env.E2E_BASE_URL;
+const e2eTarget = process.env.G7_COMMERCE_BROWSER_E2E_TARGET ?? "commerce";
 
 assertLocalTestDatabase("DATABASE_URL", databaseUrl);
 assertLocalTestDatabase("DIRECT_URL", directUrl);
@@ -13,6 +14,9 @@ if (!schema || !/^g7_04_browser_[a-f0-9]{16}$/u.test(schema)) {
 }
 if (!baseURL || !/^http:\/\/127\.0\.0\.1:\d+$/u.test(baseURL)) {
   throw new Error("[g7_commerce_browser] base URL must be loopback HTTP.");
+}
+if (e2eTarget !== "commerce" && e2eTarget !== "wp7-one-stop") {
+  throw new Error("[g7_commerce_browser] E2E target is invalid.");
 }
 if (
   new URL(databaseUrl).searchParams.get("schema") !== schema
@@ -23,8 +27,10 @@ if (
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "commerce-orders.spec.ts",
-  timeout: 45_000,
+  testMatch: e2eTarget === "wp7-one-stop"
+    ? "wp7-one-stop-webinar-flow.spec.ts"
+    : "commerce-orders.spec.ts",
+  timeout: e2eTarget === "wp7-one-stop" ? 90_000 : 45_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
@@ -32,7 +38,9 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL,
-    trace: "retain-on-failure",
+    // The WP7 journey follows an in-memory verification URL. Never persist a
+    // browser trace that could retain its one-time token or submitted PII.
+    trace: e2eTarget === "wp7-one-stop" ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
