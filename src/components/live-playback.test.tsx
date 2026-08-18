@@ -92,7 +92,7 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
     ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
     : value.type === PersistentMiniPlayerControls
       ? PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0])
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel"].includes(value.type.name)
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard"].includes(value.type.name)
         ? (value.type as (props: Record<string, unknown>) => unknown)(value.props)
     : value.props.children;
 
@@ -110,7 +110,7 @@ function textContent(value: unknown): string {
     ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
     : value.type === PersistentMiniPlayerControls
       ? textContent(PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0]))
-      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel"].includes(value.type.name)
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel", "ProductSpotlightCard"].includes(value.type.name)
         ? textContent((value.type as (props: Record<string, unknown>) => unknown)(value.props))
       : textContent(value.props.children);
 }
@@ -135,6 +135,20 @@ const live: Parameters<typeof LivePlayback>[0]["live"] = {
     { id: "test-fixture-product-2", name: "測試商品二", description: null, priceCents: 2000, compareAtCents: null, currency: "TWD", imageUrl: null, checkoutUrl: null, offerLabel: null },
   ],
 };
+
+function productSpotlightEvent(id: string, triggerSec: number, productId: string) {
+  return {
+    id,
+    eventType: "product_spotlight",
+    triggerSec,
+    title: "商品聚焦",
+    message: null,
+    productId,
+    ctaLabel: null,
+    ctaUrl: null,
+    role: null,
+  };
+}
 
 function renderLive(overrides: Partial<Parameters<typeof LivePlayback>[0]["live"]> = {}) {
   hookState.cursor = 0;
@@ -1067,6 +1081,85 @@ describe("LivePlayback checkout", () => {
     expect(chatPanel?.props.enabled).toBe(false);
   });
 
+  it("does not render a product card before a valid spotlight event and shows it at the trigger second", () => {
+    const interactionEvents = [productSpotlightEvent("spotlight-later", 10, "test-fixture-product-2")];
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+
+    expect(findElements(tree, (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
+    expect(textContent(tree)).not.toContain("測試商品二");
+
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 10 } });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+
+    expect(findElements(tree, (element) => element.props["data-spotlight-state"] === "expanded")).toHaveLength(1);
+    expect(textContent(tree)).toContain("測試商品二");
+  });
+
+  it("supports minimizing, closing, and reopening the event-driven card from the independent product panel", () => {
+    const interactionEvents = [productSpotlightEvent("spotlight-now", 0, "test-fixture-product-2")];
+    let tree = renderLive({ interactionEvents });
+    const minimize = findElements(tree, (element) => element.type === "button" && element.props["aria-label"] === "縮小推薦商品浮卡")[0];
+    if (!minimize) throw new Error("Expected spotlight minimize button");
+
+    (minimize.props.onClick as () => void)();
+    tree = renderLive({ interactionEvents });
+    const minimized = findElements(tree, (element) => element.props["data-spotlight-state"] === "minimized")[0];
+    expect(minimized?.props["aria-label"]).toBe("展開推薦商品：測試商品二");
+    expect(minimized?.props["aria-expanded"]).toBe("false");
+
+    (minimized?.props.onClick as () => void)();
+    tree = renderLive({ interactionEvents });
+    expect(findElements(tree, (element) => element.props["data-spotlight-state"] === "expanded")).toHaveLength(1);
+    const close = findElements(tree, (element) => element.type === "button" && element.props["aria-label"] === "關閉推薦商品浮卡")[0];
+    if (!close) throw new Error("Expected spotlight close button");
+    (close.props.onClick as () => void)();
+
+    tree = renderLive({ interactionEvents });
+    expect(findElements(tree, (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
+    const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+    if (!navigation) throw new Error("Expected playback navigation");
+    (navigation.props.onPanelChange as (panel: "products") => void)("products");
+    tree = renderLive({ interactionEvents });
+    expect(findElements(tree, (element) => element.props["aria-label"] === "直播商品")).toHaveLength(1);
+    const reopen = findElements(tree, (element) => element.type === "button" && element.props["aria-label"] === "重新開啟推薦商品浮卡：測試商品二")[0];
+    if (!reopen) throw new Error("Expected spotlight reopen button");
+    (reopen.props.onClick as () => void)();
+
+    tree = renderLive({ interactionEvents });
+    expect(findElements(tree, (element) => element.props["data-spotlight-state"] === "expanded")).toHaveLength(1);
+  });
+
+  it.each(["minimized", "dismissed"] as const)("keeps the %s card state while a newer event changes the product", (state) => {
+    const interactionEvents = [
+      productSpotlightEvent("spotlight-first", 0, "test-fixture-product-1"),
+      productSpotlightEvent("spotlight-second", 10, "test-fixture-product-2"),
+    ];
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+    const stateButtonLabel = state === "minimized" ? "縮小推薦商品浮卡" : "關閉推薦商品浮卡";
+    const stateButton = findElements(tree, (element) => element.type === "button" && element.props["aria-label"] === stateButtonLabel)[0];
+    if (!stateButton) throw new Error(`Expected spotlight ${state} button`);
+    (stateButton.props.onClick as () => void)();
+
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 10 } });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+
+    if (state === "minimized") {
+      const minimized = findElements(tree, (element) => element.props["data-spotlight-state"] === "minimized")[0];
+      expect(minimized?.props["aria-label"]).toBe("展開推薦商品：測試商品二");
+    } else {
+      expect(findElements(tree, (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
+      const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
+      if (!navigation) throw new Error("Expected playback navigation");
+      (navigation.props.onPanelChange as (panel: "products") => void)("products");
+      tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
+      expect(findElements(tree, (element) => element.props["aria-label"] === "重新開啟推薦商品浮卡：測試商品二")).toHaveLength(1);
+    }
+  });
+
   it("renders scheduled official and audience messages only at or after their trigger second", () => {
     const scheduledMessages: ScheduledRuntimeMessage[] = [
       {
@@ -1119,9 +1212,9 @@ describe("LivePlayback checkout", () => {
 
     const pageCopy = textContent(renderLive({ interactionEvents }));
 
-    expect(pageCopy).toContain("主打商品");
-    expect(pageCopy).toContain("測試商品一");
+    expect(pageCopy).not.toContain("測試商品一");
     expect(pageCopy).not.toContain("腳本推薦");
+    expect(findElements(renderLive({ interactionEvents }), (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
   });
 
   it("does not imply that a script will appear when the live has no interaction events", () => {
@@ -1214,12 +1307,14 @@ describe("LivePlayback checkout", () => {
       },
       localStorage: {},
     });
+    const interactionEvents = [productSpotlightEvent("checkout-spotlight", 0, "test-fixture-product-1")];
+    const renderCheckoutLive = () => renderLive({ interactionEvents });
 
-    let tree = renderLive();
+    let tree = renderCheckoutLive();
     const playbackNavigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
     if (!playbackNavigation) throw new Error("Expected playback navigation");
     (playbackNavigation.props.onPanelChange as (panel: "products") => void)("products");
-    tree = renderLive();
+    tree = renderCheckoutLive();
 
     const initialButtons = checkoutButtons(tree);
     expect(initialButtons).toHaveLength(3);
@@ -1228,17 +1323,17 @@ describe("LivePlayback checkout", () => {
     const pendingNavigation = firstCheckout();
 
     expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/checkout/test-fixture-vendor-1/test-fixture-product-1");
-    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
+    expect(checkoutButtons(renderCheckoutLive()).every((button) => button.props.disabled === true)).toBe(true);
 
     await secondCheckout();
     expect(navigation.push).toHaveBeenCalledTimes(1);
     await pendingNavigation;
 
-    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === true)).toBe(true);
-    expect(checkoutErrors(renderLive())).toHaveLength(0);
+    expect(checkoutButtons(renderCheckoutLive()).every((button) => button.props.disabled === true)).toBe(true);
+    expect(checkoutErrors(renderCheckoutLive())).toHaveLength(0);
 
     await vi.advanceTimersByTimeAsync(CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS);
-    expect(checkoutButtons(renderLive()).every((button) => button.props.disabled === false)).toBe(true);
-    expect(textContent(checkoutErrors(renderLive()))).toContain("結帳頁載入逾時");
+    expect(checkoutButtons(renderCheckoutLive()).every((button) => button.props.disabled === false)).toBe(true);
+    expect(textContent(checkoutErrors(renderCheckoutLive()))).toContain("結帳頁載入逾時");
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Image from "next/image";
-import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveChatPanel } from "@/components/live-chat-panel";
@@ -812,6 +812,92 @@ function prioritizeProduct<T extends { id: string }>(products: T[], spotlightPro
 
 type LiveInteractionEvent = LivePageData["interactionEvents"][number];
 type LiveProduct = LivePageData["products"][number];
+type SpotlightCardState = "expanded" | "minimized" | "dismissed";
+
+function resolveProductSpotlight(products: LiveProduct[], triggeredEvents: LiveInteractionEvent[]) {
+  const latestProductEvent = [...triggeredEvents].reverse().find((event) => (
+    event.eventType === "product_spotlight"
+    && Boolean(event.productId && products.some((product) => product.id === event.productId))
+  ));
+  const spotlightCardProduct = latestProductEvent
+    ? products.find((product) => product.id === latestProductEvent.productId)
+    : undefined;
+  const spotlightProduct = spotlightCardProduct ?? products[0];
+  return { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts: prioritizeProduct(products, spotlightProduct) };
+}
+
+function ProductSpotlightCard({
+  event,
+  product,
+  state,
+  isSubmittingCheckout,
+  onStateChange,
+  trackProduct,
+}: {
+  event: LiveInteractionEvent;
+  product: LiveProduct;
+  state: SpotlightCardState;
+  isSubmittingCheckout: boolean;
+  onStateChange: (state: SpotlightCardState) => void;
+  trackProduct: (productId: string) => Promise<void>;
+}) {
+  if (state === "dismissed") return null;
+  const positionClass = "fixed inset-x-3 bottom-20 z-40 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[22rem]";
+  if (state === "minimized") {
+    return (
+      <button
+        type="button"
+        onClick={() => onStateChange("expanded")}
+        aria-label={`展開推薦商品：${product.name}`}
+        aria-expanded="false"
+        data-spotlight-state="minimized"
+        className={`${positionClass} flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-white px-4 py-3 text-left text-slate-950 shadow-2xl`}
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-black">推薦商品 · {product.name}</span>
+        <Maximize2 size={18} aria-hidden="true" />
+      </button>
+    );
+  }
+
+  return (
+    <aside
+      aria-label={`推薦商品：${product.name}`}
+      data-spotlight-state="expanded"
+      className={`${positionClass} animate-[fadeInUp_260ms_ease-out] rounded-2xl border border-white/20 bg-white/95 p-3 text-slate-950 shadow-2xl`}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-slate-950">腳本推薦</span>
+          <span className="text-xs text-slate-600">{secondsLabel(event.triggerSec)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => onStateChange("minimized")} aria-label="縮小推薦商品浮卡" className="grid min-h-11 min-w-11 place-items-center rounded-lg text-slate-600 hover:bg-slate-100">
+            <Minimize2 size={18} aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onStateChange("dismissed")} aria-label="關閉推薦商品浮卡" className="grid min-h-11 min-w-11 place-items-center rounded-lg text-slate-600 hover:bg-slate-100">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <div className="flex gap-3">
+        {product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={92} height={92} unoptimized className="h-20 w-20 rounded-xl object-cover" /> : null}
+        <div className="min-w-0 flex-1">
+          <h2 className="line-clamp-1 font-bold">{product.name}</h2>
+          <p className="mt-1 text-sm font-black text-orange-700">{formatCurrency(product.priceCents, product.currency)}</p>
+          <button
+            type="button"
+            onClick={() => trackProduct(product.id)}
+            disabled={isSubmittingCheckout}
+            aria-busy={isSubmittingCheckout}
+            className="mt-2 min-h-11 w-full rounded-lg bg-orange-700 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmittingCheckout ? "結帳送出中…" : "立即搶購"}
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
 
 export function ScriptedInteractionOverlay({
   latestCtaEvent,
@@ -819,6 +905,8 @@ export function ScriptedInteractionOverlay({
   spotlightProduct,
   hasScriptedEvents,
   isSubmittingCheckout,
+  spotlightCardState = "expanded",
+  onSpotlightStateChange = () => undefined,
   trackCta,
   trackProduct,
 }: {
@@ -827,6 +915,8 @@ export function ScriptedInteractionOverlay({
   spotlightProduct: LiveProduct | undefined;
   hasScriptedEvents: boolean;
   isSubmittingCheckout: boolean;
+  spotlightCardState?: SpotlightCardState;
+  onSpotlightStateChange?: (state: SpotlightCardState) => void;
   trackCta: () => Promise<void>;
   trackProduct: (productId: string) => Promise<void>;
 }) {
@@ -845,31 +935,9 @@ export function ScriptedInteractionOverlay({
         </button>
       ) : null}
 
-      {spotlightProduct ? (
-        <div className="mb-3 animate-[fadeInUp_260ms_ease-out] rounded-2xl border border-white/20 bg-white/95 p-3 text-slate-950 shadow-2xl">
-          <div className="flex gap-3">
-            {spotlightProduct.imageUrl ? <Image src={spotlightProduct.imageUrl} alt={spotlightProduct.name} width={92} height={92} unoptimized className="h-20 w-20 rounded-xl object-cover" /> : null}
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center gap-2">
-                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-slate-950">
-                  {latestProductEvent ? "腳本推薦" : "主打商品"}
-                </span>
-                {latestProductEvent ? <span className="text-xs text-slate-600">{secondsLabel(latestProductEvent.triggerSec)}</span> : null}
-              </div>
-              <h2 className="line-clamp-1 font-bold">{spotlightProduct.name}</h2>
-              <p className="mt-1 text-sm font-black text-orange-700">{formatCurrency(spotlightProduct.priceCents, spotlightProduct.currency)}</p>
-              <button
-                type="button"
-                onClick={() => trackProduct(spotlightProduct.id)}
-                disabled={isSubmittingCheckout}
-                aria-busy={isSubmittingCheckout}
-                className="mt-2 min-h-11 w-full rounded-lg bg-orange-700 text-sm font-black text-white shadow-lg shadow-orange-200 hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSubmittingCheckout ? "結帳送出中…" : "立即搶購"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {latestProductEvent && spotlightProduct ? (
+        <ProductSpotlightCard event={latestProductEvent} product={spotlightProduct} state={spotlightCardState}
+          isSubmittingCheckout={isSubmittingCheckout} onStateChange={onSpotlightStateChange} trackProduct={trackProduct} />
       ) : null}
 
       <p className="mb-2 rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[11px] leading-4 text-white/85 backdrop-blur-md">
@@ -1001,6 +1069,9 @@ function LivePlaybackPanel({
   panel,
   sortedProducts,
   spotlightProduct,
+  spotlightCardProduct,
+  spotlightCardState,
+  onReopenSpotlight,
   checkoutNavigation,
   trackProduct,
 }: {
@@ -1008,6 +1079,9 @@ function LivePlaybackPanel({
   panel: PlaybackPanel;
   sortedProducts: LiveProduct[];
   spotlightProduct: LiveProduct | undefined;
+  spotlightCardProduct: LiveProduct | undefined;
+  spotlightCardState: SpotlightCardState;
+  onReopenSpotlight: () => void;
   checkoutNavigation: { isLocked: boolean };
   trackProduct: (productId: string) => Promise<void>;
 }) {
@@ -1040,6 +1114,11 @@ function LivePlaybackPanel({
                       {checkoutNavigation.isLocked ? "送出中…" : "購買"}
                     </button>
                   </div>
+                  {spotlightCardState === "dismissed" && product.id === spotlightCardProduct?.id ? (
+                    <button type="button" onClick={onReopenSpotlight} aria-label={`重新開啟推薦商品浮卡：${product.name}`} className="mt-2 min-h-11 w-full rounded-lg border border-orange-300 bg-white px-3 text-xs font-black text-orange-800 hover:bg-orange-50">
+                      重新開啟推薦浮卡
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -1078,12 +1157,15 @@ function LivePlaybackExperience({
   latestCtaEvent,
   latestProductEvent,
   spotlightProduct,
+  spotlightCardProduct,
+  spotlightCardState,
   sortedProducts,
   checkoutNavigation,
   trackCta,
   trackProduct,
   panel,
   onPanelChange,
+  onSpotlightStateChange,
   checkoutError,
   admissionStatus,
   scheduledMessages,
@@ -1095,12 +1177,15 @@ function LivePlaybackExperience({
   latestCtaEvent: LiveInteractionEvent | undefined;
   latestProductEvent: LiveInteractionEvent | undefined;
   spotlightProduct: LiveProduct | undefined;
+  spotlightCardProduct: LiveProduct | undefined;
+  spotlightCardState: SpotlightCardState;
   sortedProducts: LiveProduct[];
   checkoutNavigation: { isLocked: boolean };
   trackCta: () => Promise<void>;
   trackProduct: (productId: string) => Promise<void>;
   panel: PlaybackPanel;
   onPanelChange: (panel: PlaybackPanel) => void;
+  onSpotlightStateChange: (state: SpotlightCardState) => void;
   checkoutError: string | null;
   admissionStatus: LiveAdmissionStatus;
   scheduledMessages: ScheduledRuntimeMessage[];
@@ -1118,9 +1203,11 @@ function LivePlaybackExperience({
         <ScriptedInteractionOverlay
           latestCtaEvent={latestCtaEvent}
           latestProductEvent={latestProductEvent}
-          spotlightProduct={spotlightProduct}
+          spotlightProduct={spotlightCardProduct}
           hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
           isSubmittingCheckout={checkoutNavigation.isLocked}
+          spotlightCardState={spotlightCardState}
+          onSpotlightStateChange={onSpotlightStateChange}
           trackCta={trackCta}
           trackProduct={trackProduct}
         />
@@ -1149,6 +1236,9 @@ function LivePlaybackExperience({
         panel={panel}
         sortedProducts={sortedProducts}
         spotlightProduct={spotlightProduct}
+        spotlightCardProduct={spotlightCardProduct}
+        spotlightCardState={spotlightCardState}
+        onReopenSpotlight={() => onSpotlightStateChange("expanded")}
         checkoutNavigation={checkoutNavigation}
         trackProduct={trackProduct}
       />
@@ -1167,6 +1257,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [streamQuotaExhausted, setStreamQuotaExhausted] = useState(false);
   const [admissionRefreshKey, setAdmissionRefreshKey] = useState(0);
+  const [spotlightCardState, setSpotlightCardState] = useState<SpotlightCardState>("expanded");
   const { isExpanded: isMiniPlayerExpanded, setIsExpanded: setIsMiniPlayerExpanded, isPaused: isPlaybackPaused, setIsPaused: setIsPlaybackPaused, isMuted: isPlaybackMuted, setIsMuted: setIsPlaybackMuted } = useMiniPlayerState();
   const checkoutNavigation = useCheckoutNavigationLock(isCheckoutOverlay);
   const refreshAdmission = useMemo(() => () => setAdmissionRefreshKey((current) => current + 1), []);
@@ -1254,13 +1345,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   });
   const triggeredEvents = live.interactionEvents.filter((event) => event.triggerSec <= currentSeconds);
   const scheduledMessages = (live.scheduledMessages ?? []).filter((message) => message.triggerSec <= currentSeconds);
-  const latestProductEvent = [...triggeredEvents].reverse().find((event) => (
-    event.eventType === "product_spotlight"
-    && Boolean(event.productId && live.products.some((product) => product.id === event.productId))
-  ));
   const latestCtaEvent = [...triggeredEvents].reverse().find((event) => event.eventType === "cta_switch" && event.ctaLabel);
-  const spotlightProduct = live.products.find((product) => product.id === latestProductEvent?.productId) ?? live.products[0];
-  const sortedProducts = prioritizeProduct(live.products, spotlightProduct);
+  const { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts } = resolveProductSpotlight(live.products, triggeredEvents);
   useEffect(() => {
     if (!isPlayableRuntime || admissionStatus !== "admitted") return;
     void trackClientAnalytics({
@@ -1448,12 +1534,15 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             latestCtaEvent={latestCtaEvent}
             latestProductEvent={latestProductEvent}
             spotlightProduct={spotlightProduct}
+            spotlightCardProduct={spotlightCardProduct}
+            spotlightCardState={spotlightCardState}
             sortedProducts={sortedProducts}
             checkoutNavigation={checkoutNavigation}
             trackCta={trackCta}
             trackProduct={trackProduct}
             panel={panel}
             onPanelChange={setPanel}
+            onSpotlightStateChange={setSpotlightCardState}
             checkoutError={checkoutError}
             admissionStatus={visibleAdmissionStatus}
             scheduledMessages={scheduledMessages}
