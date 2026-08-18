@@ -12,6 +12,7 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
+import type { LiveRuntimeState } from "@/lib/live-runtime-state";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -72,6 +73,9 @@ type LivePageData = {
   title: string;
   slug: string;
   status: string;
+  runtimeState?: LiveRuntimeState;
+  scheduledAt?: string | null;
+  serverNow?: string | null;
   description: string | null;
   accentCopy: string | null;
   heroImageUrl: string | null;
@@ -134,10 +138,163 @@ type CheckoutResponse = {
 
 type LiveAdmissionStatus = "checking" | "admitted" | "blocked";
 
+export type LivePlaybackSource = {
+  playbackUrl: string;
+  playbackStartSeconds: number;
+};
+
+export function normalizePlaybackStartSeconds(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function isLiveRuntimeState(value: unknown): value is LiveRuntimeState {
+  return value === "waiting" || value === "playing" || value === "replay" || value === "unavailable";
+}
+
+function getClientRuntimeState(live: Pick<LivePageData, "runtimeState" | "status">): LiveRuntimeState {
+  if (isLiveRuntimeState(live.runtimeState)) return live.runtimeState;
+  if (live.status === "ended") return "replay";
+  if (live.status === "scheduled") return "waiting";
+  return "playing";
+}
+
+function isPlayableRuntimeState(state: LiveRuntimeState): state is "playing" | "replay" {
+  return state === "playing" || state === "replay";
+}
+
+function timestampMs(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function waitingCountdownMilliseconds(scheduledAt: string | null | undefined, serverNow: string | null | undefined) {
+  const scheduledAtMs = timestampMs(scheduledAt);
+  const serverNowMs = timestampMs(serverNow);
+  if (scheduledAtMs === null || serverNowMs === null) return null;
+  return Math.max(0, scheduledAtMs - serverNowMs);
+}
+
+export function getWaitingCountdownSeconds(scheduledAt: string | null | undefined, serverNow: string | null | undefined) {
+  const remainingMs = waitingCountdownMilliseconds(scheduledAt, serverNow);
+  return remainingMs === null ? null : Math.ceil(remainingMs / 1_000);
+}
+
+function createDirectPlaybackSource(videoUrl: string | null | undefined): LivePlaybackSource | null {
+  const playbackUrl = parseSafeExternalHttpUrl(videoUrl);
+  return playbackUrl ? { playbackUrl, playbackStartSeconds: 0 } : null;
+}
+
+function projectPlaybackSource(payload: unknown, runtimeState: LiveRuntimeState): LivePlaybackSource | null {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
+  const rawPlaybackUrl = (payload as { playbackUrl?: unknown }).playbackUrl;
+  const playbackUrl = typeof rawPlaybackUrl === "string" ? parseSafeExternalHttpUrl(rawPlaybackUrl) : null;
+  if (!playbackUrl) return null;
+  return {
+    playbackUrl,
+    playbackStartSeconds: runtimeState === "replay"
+      ? 0
+      : normalizePlaybackStartSeconds((payload as { playbackStartSeconds?: unknown }).playbackStartSeconds),
+  };
+}
+
 function secondsLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainSeconds = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function waitingCountdownLabel(seconds: number | null) {
+  if (seconds === null) return "直播時間待確認";
+  if (seconds <= 0) return "即將開始，正在更新直播狀態…";
+  return `距離開播 ${secondsLabel(seconds)}`;
+}
+
+function useWaitingRoomCountdown({
+  liveId,
+  runtimeState,
+  scheduledAt,
+  serverNow,
+  onRefresh,
+}: {
+  liveId: string;
+  runtimeState: LiveRuntimeState;
+  scheduledAt: string | null | undefined;
+  serverNow: string | null | undefined;
+  onRefresh: () => void;
+}) {
+  const waitingIdentity = `${liveId}:${scheduledAt ?? ""}`;
+  const initialSeconds = getWaitingCountdownSeconds(scheduledAt, serverNow);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(() => initialSeconds);
+  const countdownRef = useRef<{ identity: string; deadlineMs: number | null }>({ identity: "", deadlineMs: null });
+  const refreshRef = useRef<{ identity: string; triggered: boolean }>({ identity: "", triggered: false });
+
+  useEffect(() => {
+    if (runtimeState !== "waiting") return;
+
+    const remainingMs = waitingCountdownMilliseconds(scheduledAt, serverNow);
+    if (countdownRef.current.identity !== waitingIdentity) {
+      countdownRef.current = {
+        identity: waitingIdentity,
+        deadlineMs: remainingMs === null ? null : Date.now() + remainingMs,
+      };
+      refreshRef.current = { identity: waitingIdentity, triggered: false };
+      setRemainingSeconds(remainingMs === null ? null : Math.ceil(remainingMs / 1_000));
+    } else if (countdownRef.current.deadlineMs === null && remainingMs !== null) {
+      countdownRef.current.deadlineMs = Date.now() + remainingMs;
+      setRemainingSeconds(Math.ceil(remainingMs / 1_000));
+    }
+
+    const deadlineMs = countdownRef.current.deadlineMs;
+    if (deadlineMs === null) return;
+    let disposed = false;
+    const update = () => {
+      if (disposed) return;
+      const nextSeconds = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1_000));
+      setRemainingSeconds((current) => current === null ? nextSeconds : Math.min(current, nextSeconds));
+      if (nextSeconds <= 0 && !refreshRef.current.triggered) {
+        refreshRef.current.triggered = true;
+        onRefresh();
+      }
+    };
+
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [onRefresh, runtimeState, scheduledAt, serverNow, waitingIdentity]);
+
+  return remainingSeconds;
+}
+
+function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; countdownSeconds: number | null }) {
+  return (
+    <div data-testid="live-waiting-room" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
+      <div className="mx-auto grid max-w-xs gap-3">
+        {live.brand.logoUrl ? <Image src={live.brand.logoUrl} alt="" width={64} height={64} unoptimized className="mx-auto h-16 w-16 rounded-2xl object-cover" /> : null}
+        <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">品牌等候室</p>
+        <h2 className="text-2xl font-black">{live.brand.name}</h2>
+        <p className="text-sm leading-6 text-white/75">{live.title} 即將開始，請先留在這裡。</p>
+        <p className="rounded-2xl bg-white/10 px-4 py-3 text-lg font-black" aria-live="polite">{waitingCountdownLabel(countdownSeconds)}</p>
+        <p className="text-xs leading-5 text-white/55">直播開始前不會建立直播容量連線，也不會載入播放來源。</p>
+      </div>
+    </div>
+  );
+}
+
+function LiveUnavailableNotice({ live }: { live: LivePageData }) {
+  return (
+    <div data-testid="live-unavailable" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
+      <div className="mx-auto grid max-w-xs gap-3">
+        <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">活動狀態</p>
+        <h2 className="text-2xl font-black">此活動目前無法觀看</h2>
+        <p className="text-sm leading-6 text-white/75">「{live.title}」目前沒有可用的直播或回放，可能尚未開放或回放期限已到。</p>
+        <p className="text-xs leading-5 text-white/55">這不是直播容量暫停；頁面不會建立播放或載入媒體來源。</p>
+      </div>
+    </div>
+  );
 }
 
 export function useLiveAdmission({
@@ -205,41 +362,100 @@ export function useLiveAdmission({
   return admissionStatus;
 }
 
-async function fetchLivePlaybackSource(vendorId: string, liveId: string) {
+async function fetchLivePlaybackSource(vendorId: string, liveId: string, runtimeState: LiveRuntimeState) {
   const query = new URLSearchParams({ vendorId, liveId });
   const response = await fetch(`/api/live-playback-source?${query.toString()}`, { headers: clientHeaders });
   if (!response.ok) return null;
 
-  const payload = await response.json() as { playbackUrl?: unknown };
-  return typeof payload.playbackUrl === "string" ? parseSafeExternalHttpUrl(payload.playbackUrl) : null;
+  return projectPlaybackSource(await response.json(), runtimeState);
 }
 
-export function useLivePlaybackSource(live: LivePageData, admissionStatus: LiveAdmissionStatus) {
-  const [playbackUrl, setPlaybackUrl] = useState<string | null>(() => live.videoUrl ?? null);
+type LivePlaybackSourceState = {
+  scopeIdentity: string;
+  source: LivePlaybackSource | null;
+  authorized: boolean;
+  provenance: "direct" | "endpoint" | null;
+};
+
+function emptyPlaybackSourceState(scopeIdentity: string): LivePlaybackSourceState {
+  return { scopeIdentity, source: null, authorized: false, provenance: null };
+}
+
+export function useLivePlaybackSource(
+  live: LivePageData,
+  admissionStatus: LiveAdmissionStatus,
+  refreshKey = 0,
+) {
+  const runtimeState = getClientRuntimeState(live);
+  const isPlayable = isPlayableRuntimeState(runtimeState);
+  const directSource = useMemo(() => createDirectPlaybackSource(live.videoUrl), [live.videoUrl]);
+  const scopeIdentity = `${live.vendorId}:${live.id}:${live.videoUrl ?? ""}`;
+  const [sourceState, setSourceState] = useState<LivePlaybackSourceState>(() => (
+    directSource && live.admissionRequired !== true
+      ? { scopeIdentity, source: directSource, authorized: true, provenance: "direct" }
+      : emptyPlaybackSourceState(scopeIdentity)
+  ));
 
   useEffect(() => {
-    // Public pages resolve the source only after the server-side admission
-    // cookie is established. The optional prop remains for local fixtures.
-    if (!live.admissionRequired || live.videoUrl || admissionStatus !== "admitted") return;
-
     let disposed = false;
-    void fetchLivePlaybackSource(live.vendorId, live.id)
-      .then((safeUrl) => {
-        if (!disposed) setPlaybackUrl(safeUrl);
+    const updateSourceState = (resolve: (current: LivePlaybackSourceState) => LivePlaybackSourceState) => {
+      queueMicrotask(() => {
+        if (!disposed) setSourceState(resolve);
+      });
+    };
+    if (!isPlayable || admissionStatus === "blocked") {
+      updateSourceState(() => emptyPlaybackSourceState(scopeIdentity));
+      return () => { disposed = true; };
+    }
+
+    if (directSource) {
+      if (live.admissionRequired === true && admissionStatus !== "admitted") {
+        updateSourceState((current) => (
+          current.scopeIdentity === scopeIdentity ? current : emptyPlaybackSourceState(scopeIdentity)
+        ));
+        return () => { disposed = true; };
+      }
+      updateSourceState(() => ({ scopeIdentity, source: directSource, authorized: true, provenance: "direct" }));
+      return () => { disposed = true; };
+    }
+
+    if (live.admissionRequired !== true || admissionStatus !== "admitted") {
+      updateSourceState((current) => (
+        current.scopeIdentity === scopeIdentity ? current : emptyPlaybackSourceState(scopeIdentity)
+      ));
+      return () => { disposed = true; };
+    }
+
+    void fetchLivePlaybackSource(live.vendorId, live.id, runtimeState)
+      .then((source) => {
+        if (!disposed) {
+          setSourceState(source
+            ? { scopeIdentity, source, authorized: true, provenance: "endpoint" }
+            : emptyPlaybackSourceState(scopeIdentity));
+        }
       })
       .catch(() => {
-        if (!disposed) setPlaybackUrl(null);
+        if (!disposed) setSourceState(emptyPlaybackSourceState(scopeIdentity));
       });
 
     return () => {
       disposed = true;
     };
-  }, [admissionStatus, live.admissionRequired, live.id, live.vendorId, live.videoUrl]);
+  }, [admissionStatus, directSource, isPlayable, live.admissionRequired, live.id, live.vendorId, live.videoUrl, refreshKey, runtimeState, scopeIdentity]);
 
-  return admissionStatus === "admitted" ? playbackUrl : null;
+  if (!isPlayable || admissionStatus === "blocked") return null;
+  if (sourceState.scopeIdentity !== scopeIdentity || !sourceState.authorized) return null;
+  return sourceState.source;
 }
 
-function LiveBrandHeader({ live }: { live: LivePageData }) {
+function LiveBrandHeader({ live, runtimeState }: { live: LivePageData; runtimeState: LiveRuntimeState }) {
+  const statusLabel = runtimeState === "unavailable"
+    ? "目前不可觀看"
+    : runtimeState === "waiting"
+      ? "即將直播"
+      : runtimeState === "replay"
+        ? "精彩回放"
+        : getLiveStatusLabel(live.status);
   return (
     <header className="relative z-10 flex items-center justify-between gap-3 p-4">
       <div className="flex min-w-0 items-center gap-3 rounded-full bg-black/35 px-3 py-2 backdrop-blur-md">
@@ -250,7 +466,7 @@ function LiveBrandHeader({ live }: { live: LivePageData }) {
         </div>
       </div>
       <div className="rounded-full bg-red-700 px-3 py-1 text-xs font-black tracking-wide shadow-lg shadow-red-950/40">
-        {getLiveStatusLabel(live.status)}
+        {statusLabel}
       </div>
     </header>
   );
@@ -261,7 +477,7 @@ function LiveAdmissionOverlay({ status }: { status: LiveAdmissionStatus }) {
   return (
     <div role="status" className="absolute inset-0 z-50 grid place-items-center bg-slate-950/85 p-6 text-center">
       <div className="max-w-xs rounded-2xl border border-white/15 bg-black/45 p-5 backdrop-blur-md">
-        <p className="text-base font-black">{status === "checking" ? "正在確認直播容量…" : "直播目前暫停服務"}</p>
+        <p className="text-base font-black">{status === "checking" ? "正在確認直播容量…" : "直播容量目前暫停服務"}</p>
         <p className="mt-2 text-sm text-white/75">請稍後再試；目前不會建立播放、報名或購買來源。</p>
       </div>
     </div>
@@ -567,14 +783,14 @@ export async function requestCheckout({
   return true;
 }
 
-function DirectEntryAttributionReset() {
+function DirectEntryAttributionReset({ enabled }: { enabled: boolean }) {
   useEffect(() => {
-    if (typeof window === "undefined" || !shouldResetAffiliateAttribution(window.location.search)) return;
+    if (!enabled || typeof window === "undefined" || !shouldResetAffiliateAttribution(window.location.search)) return;
     void fetch(DIRECT_ENTRY_ATTRIBUTION_ENDPOINT, {
       method: "POST",
       headers: clientHeaders,
     }).catch(() => undefined);
-  }, []);
+  }, [enabled]);
 
   return null;
 }
@@ -778,9 +994,173 @@ function useCheckoutNavigationLock(isCheckoutOverlay: boolean) {
   };
 }
 
+type PlaybackPanel = "chat" | "products" | "form";
+
+function LivePlaybackPanel({
+  live,
+  panel,
+  sortedProducts,
+  spotlightProduct,
+  checkoutNavigation,
+  trackProduct,
+}: {
+  live: LivePageData;
+  panel: PlaybackPanel;
+  sortedProducts: LiveProduct[];
+  spotlightProduct: LiveProduct | undefined;
+  checkoutNavigation: { isLocked: boolean };
+  trackProduct: (productId: string) => Promise<void>;
+}) {
+  if (panel === "chat") return null;
+  return (
+    <aside id="live-playback-panel" aria-label={panel === "products" ? "直播商品" : "直播報名"} className="absolute bottom-20 left-3 right-3 z-30 max-h-[58vh] overflow-auto rounded-2xl border border-white/15 bg-white p-4 text-slate-950 shadow-2xl">
+      {panel === "products" ? (
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-black">直播商品</h2>
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-black text-slate-950">{live.products.length} 件</span>
+          </div>
+          {sortedProducts.map((product) => (
+            <article key={product.id} className={`rounded-xl border p-3 ${product.id === spotlightProduct?.id ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
+              <div className="flex gap-3">
+                {product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={84} height={84} unoptimized className="h-20 w-20 rounded-lg object-cover" /> : null}
+                <div className="min-w-0 flex-1">
+                  <h3 className="line-clamp-1 font-bold">{product.name}</h3>
+                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">{product.description}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="font-black text-orange-700">{formatCurrency(product.priceCents, product.currency)}</p>
+                    <button
+                      type="button"
+                      onClick={() => trackProduct(product.id)}
+                      disabled={checkoutNavigation.isLocked}
+                      aria-busy={checkoutNavigation.isLocked}
+                      className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-orange-700 px-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <ShoppingBag size={14} aria-hidden="true" />
+                      {checkoutNavigation.isLocked ? "送出中…" : "購買"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      {panel === "form" ? (
+        live.form ? (
+          <div>
+            <div className="mb-4 flex items-start gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700">
+                <Sparkles size={18} />
+              </span>
+              <div>
+                <h2 className="font-black">{live.form.headline}</h2>
+                {live.form.description ? <p className="mt-1 text-sm text-slate-500">{live.form.description}</p> : null}
+              </div>
+            </div>
+            <LeadForm formId={live.form.id} liveId={live.id} fields={live.form.fields} submitLabel={live.form.submitLabel} successMessage={live.form.successMessage} />
+          </div>
+        ) : live.formConfigurationUnavailable ? (
+          <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">報名表欄位需要商家重新確認，目前暫停接收資料。</p>
+        ) : (
+          <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">這場直播尚未綁定報名表。</p>
+        )
+      ) : null}
+    </aside>
+  );
+}
+
+function LivePlaybackExperience({
+  live,
+  currentSeconds,
+  referralCode,
+  latestCtaEvent,
+  latestProductEvent,
+  spotlightProduct,
+  sortedProducts,
+  checkoutNavigation,
+  trackCta,
+  trackProduct,
+  panel,
+  onPanelChange,
+  checkoutError,
+  admissionStatus,
+  scheduledMessages,
+  onAdmissionInvalid,
+}: {
+  live: LivePageData;
+  currentSeconds: number;
+  referralCode: string | null;
+  latestCtaEvent: LiveInteractionEvent | undefined;
+  latestProductEvent: LiveInteractionEvent | undefined;
+  spotlightProduct: LiveProduct | undefined;
+  sortedProducts: LiveProduct[];
+  checkoutNavigation: { isLocked: boolean };
+  trackCta: () => Promise<void>;
+  trackProduct: (productId: string) => Promise<void>;
+  panel: PlaybackPanel;
+  onPanelChange: (panel: PlaybackPanel) => void;
+  checkoutError: string | null;
+  admissionStatus: LiveAdmissionStatus;
+  scheduledMessages: ScheduledRuntimeMessage[];
+  onAdmissionInvalid: () => void;
+}) {
+  return (
+    <>
+      <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
+          {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
+          {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
+        </div>
+
+        <ScriptedInteractionOverlay
+          latestCtaEvent={latestCtaEvent}
+          latestProductEvent={latestProductEvent}
+          spotlightProduct={spotlightProduct}
+          hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
+          isSubmittingCheckout={checkoutNavigation.isLocked}
+          trackCta={trackCta}
+          trackProduct={trackProduct}
+        />
+        <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+          <LiveChatPanel
+            enabled={live.chatEnabled === true}
+            admissionStatus={admissionStatus}
+            vendorId={live.vendorId}
+            liveId={live.id}
+            scheduledMessages={scheduledMessages}
+            onAdmissionInvalid={onAdmissionInvalid}
+          />
+        </div>
+      </div>
+
+      <PlaybackNavigation panel={panel} onPanelChange={onPanelChange} />
+
+      {checkoutError ? (
+        <p role="alert" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
+          {checkoutError}
+        </p>
+      ) : null}
+
+      <LivePlaybackPanel
+        live={live}
+        panel={panel}
+        sortedProducts={sortedProducts}
+        spotlightProduct={spotlightProduct}
+        checkoutNavigation={checkoutNavigation}
+        trackProduct={trackProduct}
+      />
+    </>
+  );
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
+  const runtimeState = getClientRuntimeState(live);
+  const isPlayableRuntime = isPlayableRuntimeState(runtimeState);
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
@@ -790,17 +1170,68 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const { isExpanded: isMiniPlayerExpanded, setIsExpanded: setIsMiniPlayerExpanded, isPaused: isPlaybackPaused, setIsPaused: setIsPlaybackPaused, isMuted: isPlaybackMuted, setIsMuted: setIsPlaybackMuted } = useMiniPlayerState();
   const checkoutNavigation = useCheckoutNavigationLock(isCheckoutOverlay);
   const refreshAdmission = useMemo(() => () => setAdmissionRefreshKey((current) => current + 1), []);
+  const refreshWaitingRoom = useMemo(() => () => router.refresh(), [router]);
+  const waitingCountdownSeconds = useWaitingRoomCountdown({
+    liveId: live.id,
+    runtimeState,
+    scheduledAt: live.scheduledAt,
+    serverNow: live.serverNow,
+    onRefresh: refreshWaitingRoom,
+  });
   // Public pages opt into admission-required SSR; direct component fixtures can
   // keep the admitted default while testing the rest of the playback contract.
   const admissionStatus = useLiveAdmission({
     vendorId: live.vendorId,
     liveId: live.id,
-    admissionRequired: live.admissionRequired === true,
+    admissionRequired: isPlayableRuntime && live.admissionRequired === true,
     refreshKey: admissionRefreshKey,
   });
-  const visiblePlaybackUrl = useLivePlaybackSource(live, admissionStatus);
-  const playableSource = streamQuotaExhausted ? null : visiblePlaybackUrl;
+  const visibleAdmissionStatus: LiveAdmissionStatus = isPlayableRuntime ? admissionStatus : "admitted";
+  const visiblePlaybackSource = useLivePlaybackSource({
+    ...live,
+    admissionRequired: isPlayableRuntime && live.admissionRequired === true,
+  }, admissionStatus, admissionRefreshKey);
+  const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
+  const playableUrl = playableSource?.playbackUrl ?? null;
   const videoRef = useRef<HTMLVideoElement>(null);
+  const seekSourceIdentityRef = useRef<string | null>(null);
+  const seekAppliedRef = useRef(false);
+  const previousPlaybackUrlRef = useRef<string | null>(null);
+  const previousPlaybackSeekIdentityRef = useRef<string | null>(null);
+  const endedRefreshIdentityRef = useRef<string | null>(null);
+  const playbackStartSeconds = playableSource && runtimeState !== "replay"
+    ? normalizePlaybackStartSeconds(playableSource.playbackStartSeconds)
+    : 0;
+  const playbackSeekIdentity = playableSource
+    ? `${live.id}:${runtimeState}:${playableSource.playbackUrl}:${playbackStartSeconds}`
+    : null;
+  const applyPlaybackStart = useMemo(() => (video: HTMLVideoElement) => {
+    if (!playbackSeekIdentity) return;
+    if (seekSourceIdentityRef.current !== playbackSeekIdentity) {
+      seekSourceIdentityRef.current = playbackSeekIdentity;
+      seekAppliedRef.current = false;
+    }
+    if (seekAppliedRef.current) return;
+    video.currentTime = playbackStartSeconds;
+    seekAppliedRef.current = true;
+    previousPlaybackUrlRef.current = playableUrl;
+    previousPlaybackSeekIdentityRef.current = playbackSeekIdentity;
+  }, [playableUrl, playbackSeekIdentity, playbackStartSeconds]);
+  useEffect(() => {
+    if (seekSourceIdentityRef.current === playbackSeekIdentity) return;
+    const previousPlaybackUrl = previousPlaybackUrlRef.current;
+    const previousPlaybackSeekIdentity = previousPlaybackSeekIdentityRef.current;
+    seekSourceIdentityRef.current = playbackSeekIdentity;
+    seekAppliedRef.current = false;
+    if (!playableUrl) return;
+    previousPlaybackUrlRef.current = playableUrl;
+    previousPlaybackSeekIdentityRef.current = playbackSeekIdentity;
+    const video = videoRef.current;
+    const canApplyToExistingMetadata = previousPlaybackUrl === playableUrl
+      && previousPlaybackSeekIdentity !== null
+      && previousPlaybackSeekIdentity !== playbackSeekIdentity;
+    if (canApplyToExistingMetadata && video && video.readyState >= 1) applyPlaybackStart(video);
+  }, [applyPlaybackStart, playableUrl, playbackSeekIdentity, playbackStartSeconds]);
   const visitorId = useMemo(
     () => (typeof window === "undefined"
       ? "server"
@@ -831,16 +1262,16 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const spotlightProduct = live.products.find((product) => product.id === latestProductEvent?.productId) ?? live.products[0];
   const sortedProducts = prioritizeProduct(live.products, spotlightProduct);
   useEffect(() => {
-    if (admissionStatus !== "admitted") return;
+    if (!isPlayableRuntime || admissionStatus !== "admitted") return;
     void trackClientAnalytics({
       liveId: live.id,
       vendorId: live.vendorId,
       eventType: "page_view",
       payload: { slug: live.slug },
     });
-  }, [admissionStatus, live.id, live.slug, live.vendorId]);
+  }, [admissionStatus, isPlayableRuntime, live.id, live.slug, live.vendorId]);
   useEffect(() => {
-    if ((!referralCode && !sourcePageSlug && !liveShareCode) || typeof window === "undefined") return;
+    if (!isPlayableRuntime || admissionStatus !== "admitted" || (!referralCode && !sourcePageSlug && !liveShareCode) || typeof window === "undefined") return;
     void fetch(affiliateClickEndpoint(sourcePageSlug), {
       method: "POST",
       headers: clientHeaders,
@@ -853,12 +1284,12 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         landingPath: `${window.location.pathname}${window.location.search}`,
       }),
     });
-  }, [live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
+  }, [admissionStatus, isPlayableRuntime, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isHlsPlaybackUrl(playableSource) || !playableSource) return;
+    if (!video || !playableUrl || !isHlsPlaybackUrl(playableUrl)) return;
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = playableSource;
+      video.src = playableUrl;
       return;
     }
     let disposed = false;
@@ -868,7 +1299,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         if (disposed || !Hls.isSupported()) return;
         const player = new Hls();
         hls = player;
-        player.loadSource(playableSource);
+        player.loadSource(playableUrl);
         player.attachMedia(video);
       })
       .catch(() => undefined);
@@ -877,7 +1308,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       disposed = true;
       hls?.destroy();
     };
-  }, [playableSource]);
+  }, [playableUrl]);
 
   function trackProgress(seconds: number) {
     const checkpoints = [30, 60, 120, 300, 600] as const;
@@ -943,21 +1374,33 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     }
   }
 
+  function handlePlaybackEnded() {
+    setIsPlaybackPaused(true);
+    streamUsage.stop();
+    if (!isPlayableRuntime || !live.admissionRequired || !playableSource) return;
+    const refreshIdentity = `${live.id}:${playableSource.playbackUrl}`;
+    if (endedRefreshIdentityRef.current === refreshIdentity) return;
+    endedRefreshIdentityRef.current = refreshIdentity;
+    router.refresh();
+    refreshAdmission();
+  }
+
   return (
     <main className="min-h-screen bg-slate-950" data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}>
-      <DirectEntryAttributionReset />
+      <DirectEntryAttributionReset enabled={isPlayableRuntime} />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
       <section className="relative mx-auto min-h-screen max-w-[430px] overflow-hidden bg-slate-950 text-white shadow-2xl">
         <div data-testid="persistent-live-player" className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}>
-          {!streamQuotaExhausted && (visiblePlaybackUrl || live.videoUrl) ? (
+          {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
             <video
               ref={videoRef}
               className="h-full w-full object-cover"
-              src={playableSource ?? undefined}
-              controls={admissionStatus === "admitted" && !streamQuotaExhausted}
+              src={playableUrl ?? undefined}
+              controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
               poster={live.heroImageUrl ?? undefined}
+              onLoadedMetadata={(event) => applyPlaybackStart(event.currentTarget)}
               onTimeUpdate={(event) => {
                 if (streamQuotaExhausted) return;
                 streamUsage.track(event.currentTarget.currentTime);
@@ -980,117 +1423,48 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                 });
               }}
               onPause={() => { setIsPlaybackPaused(true); streamUsage.stop(); }}
-              onEnded={() => { setIsPlaybackPaused(true); streamUsage.stop(); }}
+              onEnded={handlePlaybackEnded}
               onVolumeChange={(event) => setIsPlaybackMuted(event.currentTarget.muted)}
             />
           ) : (
             <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
-          {isCheckoutOverlay ? (
+          {isCheckoutOverlay && isPlayableRuntime ? (
             <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}
               isExpanded={isMiniPlayerExpanded} onBack={() => router.back()} onMutedChange={setIsPlaybackMuted}
               onToggleExpanded={() => setIsMiniPlayerExpanded((current) => !current)} />
           ) : null}
         </div>
 
-        <LiveBrandHeader live={live} />
-        {streamQuotaExhausted ? <StreamQuotaAlert /> : null}
+        <LiveBrandHeader live={live} runtimeState={runtimeState} />
+        {isPlayableRuntime && streamQuotaExhausted ? <StreamQuotaAlert /> : null}
 
-        <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
-            {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
-          {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
-          </div>
-
-          <ScriptedInteractionOverlay
+        {isPlayableRuntime ? (
+          <LivePlaybackExperience
+            live={live}
+            currentSeconds={currentSeconds}
+            referralCode={referralCode}
             latestCtaEvent={latestCtaEvent}
             latestProductEvent={latestProductEvent}
             spotlightProduct={spotlightProduct}
-            hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
-            isSubmittingCheckout={checkoutNavigation.isLocked}
+            sortedProducts={sortedProducts}
+            checkoutNavigation={checkoutNavigation}
             trackCta={trackCta}
             trackProduct={trackProduct}
+            panel={panel}
+            onPanelChange={setPanel}
+            checkoutError={checkoutError}
+            admissionStatus={visibleAdmissionStatus}
+            scheduledMessages={scheduledMessages}
+            onAdmissionInvalid={refreshAdmission}
           />
-          <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
-            <LiveChatPanel
-              enabled={live.chatEnabled === true}
-              admissionStatus={admissionStatus}
-              vendorId={live.vendorId}
-              liveId={live.id}
-              scheduledMessages={scheduledMessages}
-              onAdmissionInvalid={refreshAdmission}
-            />
-          </div>
-        </div>
-
-        <PlaybackNavigation panel={panel} onPanelChange={setPanel} />
-
-        {checkoutError ? (
-          <p role="alert" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
-            {checkoutError}
-          </p>
-        ) : null}
-
-        {panel !== "chat" ? (
-          <aside id="live-playback-panel" aria-label={panel === "products" ? "直播商品" : "直播報名"} className="absolute bottom-20 left-3 right-3 z-30 max-h-[58vh] overflow-auto rounded-2xl border border-white/15 bg-white p-4 text-slate-950 shadow-2xl">
-            {panel === "products" ? (
-              <div className="grid gap-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-black">直播商品</h2>
-                  <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-black text-slate-950">{live.products.length} 件</span>
-                </div>
-                {sortedProducts.map((product) => (
-                  <article key={product.id} className={`rounded-xl border p-3 ${product.id === spotlightProduct?.id ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
-                    <div className="flex gap-3">
-                      {product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={84} height={84} unoptimized className="h-20 w-20 rounded-lg object-cover" /> : null}
-                      <div className="min-w-0 flex-1">
-                        <h3 className="line-clamp-1 font-bold">{product.name}</h3>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{product.description}</p>
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="font-black text-orange-700">{formatCurrency(product.priceCents, product.currency)}</p>
-                          <button
-                            type="button"
-                            onClick={() => trackProduct(product.id)}
-                            disabled={checkoutNavigation.isLocked}
-                            aria-busy={checkoutNavigation.isLocked}
-                            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-orange-700 px-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <ShoppingBag size={14} aria-hidden="true" />
-                            {checkoutNavigation.isLocked ? "送出中…" : "購買"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-
-            {panel === "form" ? (
-              live.form ? (
-                <div>
-                  <div className="mb-4 flex items-start gap-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700">
-                      <Sparkles size={18} />
-                    </span>
-                    <div>
-                      <h2 className="font-black">{live.form.headline}</h2>
-                      {live.form.description ? <p className="mt-1 text-sm text-slate-500">{live.form.description}</p> : null}
-                    </div>
-                  </div>
-                  <LeadForm formId={live.form.id} liveId={live.id} fields={live.form.fields} submitLabel={live.form.submitLabel} successMessage={live.form.successMessage} />
-                </div>
-              ) : live.formConfigurationUnavailable ? (
-                <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">報名表欄位需要商家重新確認，目前暫停接收資料。</p>
-              ) : (
-                <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">這場直播尚未綁定報名表。</p>
-              )
-            ) : null}
-          </aside>
-        ) : null}
-        <LiveAdmissionOverlay status={admissionStatus} />
+        ) : runtimeState === "waiting" ? (
+          <LiveWaitingRoom live={live} countdownSeconds={waitingCountdownSeconds} />
+        ) : (
+          <LiveUnavailableNotice live={live} />
+        )}
+        <LiveAdmissionOverlay status={visibleAdmissionStatus} />
       </section>
     </main>
   );

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   getRuntimeLivePublishReadiness: vi.fn(),
+  resolveLiveRuntime: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -25,6 +26,10 @@ vi.mock("@/lib/live-runtime-readiness", () => ({
   getRuntimeLivePublishReadiness: mocks.getRuntimeLivePublishReadiness,
 }));
 
+vi.mock("@/lib/live-runtime-state", () => ({
+  resolveLiveRuntime: mocks.resolveLiveRuntime,
+}));
+
 vi.mock("@/components/live-playback", () => ({
   LivePlayback: () => null,
 }));
@@ -39,6 +44,7 @@ const readyVideo = {
   vendorId: "vendor-1",
   sourceType: "url",
   status: "ready",
+  durationSec: 3_600,
   cloudflareReadyToStream: false,
   cloudflareLiveInputUid: null,
   liveInputStatus: null,
@@ -61,6 +67,12 @@ const publicLive = {
   accentCopy: null,
   heroImageUrl: null,
   vendorId: "vendor-1",
+  streamMode: "vod",
+  scheduledAt: new Date("2026-08-20T01:00:00.000Z"),
+  startedAt: null,
+  endedAt: null,
+  replayAvailableUntil: null,
+  replayEnabled: true,
   vendor: {
     name: "測試商店",
     logoUrl: null,
@@ -93,6 +105,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "warn").mockImplementation(mocks.warn);
   mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: true });
+  mocks.resolveLiveRuntime.mockReturnValue({ state: "playing", playbackStartSeconds: 0 });
   mocks.findFirst.mockResolvedValue(publicLive);
 });
 
@@ -105,13 +118,15 @@ describe("PublicLivePage", () => {
     await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
     expect(mocks.findFirst).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      where: {
+      where: expect.objectContaining({
         slug: "public-live",
-        OR: [
+        OR: expect.arrayContaining([
           { status: { in: ["scheduled", "live"] } },
           { status: "ended", replayEnabled: true },
-        ],
-      },
+          { status: "ended", replayEnabled: false },
+          { status: "ended", replayAvailableUntil: { lte: expect.any(Date) } },
+        ]),
+      }),
     }));
     expect(mocks.notFound).not.toHaveBeenCalled();
     expect(mocks.warn).not.toHaveBeenCalled();
@@ -147,6 +162,52 @@ describe("PublicLivePage", () => {
     }));
     expect(element.props.live.form).toBeNull();
     expect(element.props.live.chatEnabled).toBe(false);
+  });
+
+  it("returns not found when a waiting runtime is not publish-ready", async () => {
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "waiting", playbackStartSeconds: null });
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false, blockers: [{ code: "media", ready: false }] });
+
+    await expect(PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) }))
+      .rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(mocks.notFound).toHaveBeenCalledOnce();
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith("PUBLIC_LIVE_NOT_FOUND_READINESS", ["media"]);
+  });
+
+  it("returns not found when an unavailable runtime is not publish-ready", async () => {
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "unavailable", playbackStartSeconds: null });
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      status: "ended",
+      replayEnabled: true,
+      replayAvailableUntil: new Date("2026-08-01T00:00:00.000Z"),
+    });
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false, blockers: [{ code: "media", ready: false }] });
+
+    await expect(PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) }))
+      .rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(mocks.notFound).toHaveBeenCalledOnce();
+    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith("PUBLIC_LIVE_NOT_FOUND_READINESS", ["media"]);
+  });
+
+  it.each([
+    ["expired", { replayEnabled: true, replayAvailableUntil: new Date("2026-08-01T00:00:00.000Z") }],
+    ["disabled", { replayEnabled: false, replayAvailableUntil: null }],
+  ])("projects a publish-ready %s replay as unavailable without exposing playback data", async (_label, overrides) => {
+    mocks.resolveLiveRuntime.mockReturnValue({ state: "unavailable", playbackStartSeconds: null });
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      status: "ended",
+      ...overrides,
+    });
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+
+    expect(mocks.notFound).not.toHaveBeenCalled();
+    expect(element.props.live.runtimeState).toBe("unavailable");
+    expect(element.props.live).not.toHaveProperty("videoUrl");
   });
 
   it("returns not found when the lifecycle filter rejects the live", async () => {
@@ -242,7 +303,7 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
     expect(element.props.live).toEqual({
-      id: "live-1", title: "公開直播", slug: "public-live", status: "live", description: "直播說明", accentCopy: "限時優惠", heroImageUrl: "/hero.png", vendorId: "vendor-1", admissionRequired: true, chatEnabled: true,
+      id: "live-1", title: "公開直播", slug: "public-live", status: "live", runtimeState: "playing", scheduledAt: publicLive.scheduledAt.toISOString(), serverNow: expect.any(String), description: "直播說明", accentCopy: "限時優惠", heroImageUrl: "/hero.png", vendorId: "vendor-1", admissionRequired: true, chatEnabled: true,
       brand: { name: "品牌商店", logoUrl: "/logo.png", primaryColor: "#123456", ctaColor: "#654321" },
       form: { id: "form-1", headline: "立即登記", description: "報名說明", submitLabel: "送出資料", successMessage: "已完成", fields: validFields },
       interactionEvents: [
@@ -550,7 +611,7 @@ describe("PublicLivePage", () => {
     expect(element.props.live.interactionEvents).toEqual([]);
     expect(element.props.live.products).toEqual([]);
     expect(Object.keys(element.props.live)).toEqual([
-      "id", "title", "slug", "status", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
+      "id", "title", "slug", "status", "runtimeState", "scheduledAt", "serverNow", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
   });
 });

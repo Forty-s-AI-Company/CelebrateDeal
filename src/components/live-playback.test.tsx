@@ -18,11 +18,12 @@ const navigation = vi.hoisted(() => ({
   pathname: "/live/test-fixture-live",
   push: vi.fn(),
   back: vi.fn(),
+  refresh: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
-  useRouter: () => ({ push: navigation.push, back: navigation.back }),
+  useRouter: () => ({ push: navigation.push, back: navigation.back, refresh: navigation.refresh }),
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -72,7 +73,7 @@ vi.mock("@/lib/visitor-id", () => ({ getOrCreateVisitorId: () => "test-fixture-v
 import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
-import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 type ElementNode = {
   type: unknown;
@@ -91,6 +92,8 @@ function findElements(value: unknown, predicate: (element: ElementNode) => boole
     ? ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0])
     : value.type === PersistentMiniPlayerControls
       ? PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0])
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel"].includes(value.type.name)
+        ? (value.type as (props: Record<string, unknown>) => unknown)(value.props)
     : value.props.children;
 
   return [
@@ -107,7 +110,9 @@ function textContent(value: unknown): string {
     ? textContent(ScriptedInteractionOverlay(value.props as Parameters<typeof ScriptedInteractionOverlay>[0]))
     : value.type === PersistentMiniPlayerControls
       ? textContent(PersistentMiniPlayerControls(value.props as Parameters<typeof PersistentMiniPlayerControls>[0]))
-    : textContent(value.props.children);
+      : typeof value.type === "function" && ["LiveWaitingRoom", "LiveUnavailableNotice", "LivePlaybackExperience", "LivePlaybackPanel"].includes(value.type.name)
+        ? textContent((value.type as (props: Record<string, unknown>) => unknown)(value.props))
+      : textContent(value.props.children);
 }
 
 const live: Parameters<typeof LivePlayback>[0]["live"] = {
@@ -134,6 +139,7 @@ const live: Parameters<typeof LivePlayback>[0]["live"] = {
 function renderLive(overrides: Partial<Parameters<typeof LivePlayback>[0]["live"]> = {}) {
   hookState.cursor = 0;
   hookState.refCursor = 0;
+  hookState.effectCursor = 0;
   return LivePlayback({ live: { ...live, ...overrides } });
 }
 
@@ -144,7 +150,7 @@ function AdmissionPlaybackHarness({ refreshKey }: { refreshKey: number }) {
     admissionRequired: true,
     refreshKey,
   });
-  const playbackSource = useLivePlaybackSource({ ...live, admissionRequired: true }, admissionStatus);
+  const playbackSource = useLivePlaybackSource({ ...live, admissionRequired: true }, admissionStatus, refreshKey);
   return { admissionStatus, playbackSource };
 }
 
@@ -153,6 +159,29 @@ function renderAdmissionPlayback(refreshKey = 0) {
   hookState.refCursor = 0;
   hookState.effectCursor = 0;
   return AdmissionPlaybackHarness({ refreshKey });
+}
+
+function PlaybackSourceHarness({
+  overrides,
+  admissionStatus,
+  refreshKey,
+}: {
+  overrides: Partial<Parameters<typeof LivePlayback>[0]["live"]>;
+  admissionStatus: "checking" | "admitted" | "blocked";
+  refreshKey: number;
+}) {
+  return useLivePlaybackSource({ ...live, admissionRequired: true, ...overrides }, admissionStatus, refreshKey);
+}
+
+function renderPlaybackSource(
+  overrides: Partial<Parameters<typeof LivePlayback>[0]["live"]> = {},
+  admissionStatus: "checking" | "admitted" | "blocked" = "admitted",
+  refreshKey = 0,
+) {
+  hookState.cursor = 0;
+  hookState.refCursor = 0;
+  hookState.effectCursor = 0;
+  return PlaybackSourceHarness({ overrides, admissionStatus, refreshKey });
 }
 
 async function flushHookEffects() {
@@ -296,6 +325,75 @@ describe("LivePlayback checkout", () => {
     expect(video?.props.src).toBeUndefined();
   });
 
+  it("keeps an authorized same-scope source while replay admission is checking", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+      ok: true,
+      json: async () => ({ playbackUrl: "https://video.example.test/authorized.mp4", playbackStartSeconds: 21 }),
+    })));
+
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).toBeNull();
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).toEqual({
+      playbackUrl: "https://video.example.test/authorized.mp4",
+      playbackStartSeconds: 21,
+    });
+
+    expect(renderPlaybackSource({ runtimeState: "replay", status: "ended" }, "checking", 1)).toEqual({
+      playbackUrl: "https://video.example.test/authorized.mp4",
+      playbackStartSeconds: 21,
+    });
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "replay", status: "ended" }, "checking", 1)).toEqual({
+      playbackUrl: "https://video.example.test/authorized.mp4",
+      playbackStartSeconds: 21,
+    });
+  });
+
+  it.each([
+    ["blocked admission", { runtimeState: "playing", status: "live" }, "blocked"],
+    ["waiting runtime", { runtimeState: "waiting", status: "scheduled" }, "admitted"],
+    ["unavailable runtime", { runtimeState: "unavailable", status: "ended" }, "admitted"],
+    ["changed live scope", { id: "test-fixture-live-2", runtimeState: "playing", status: "live" }, "checking"],
+    ["changed vendor scope", { vendorId: "test-fixture-vendor-2", runtimeState: "playing", status: "live" }, "checking"],
+  ] as const)("clears an authorized source for %s", async (_label, overrides, admissionStatus) => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+      ok: true,
+      json: async () => ({ playbackUrl: "https://video.example.test/authorized.mp4", playbackStartSeconds: 9 }),
+    })));
+
+    renderPlaybackSource({ runtimeState: "playing", status: "live" });
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).not.toBeNull();
+
+    expect(renderPlaybackSource(overrides, admissionStatus)).toBeNull();
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" }, "checking", 1)).toBeNull();
+  });
+
+  it("clears a cached source when replay revalidation fails", async () => {
+    hookState.effectsEnabled = true;
+    let sourceRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(() => {
+      sourceRequests += 1;
+      return sourceRequests === 1
+        ? Promise.resolve({
+          ok: true,
+          json: async () => ({ playbackUrl: "https://video.example.test/authorized.mp4", playbackStartSeconds: 15 }),
+        })
+        : Promise.resolve({ ok: false });
+    }));
+
+    renderPlaybackSource({ runtimeState: "playing", status: "live" });
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).not.toBeNull();
+
+    expect(renderPlaybackSource({ runtimeState: "replay", status: "ended" }, "admitted", 1)).not.toBeNull();
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "replay", status: "ended" }, "admitted", 1)).toBeNull();
+  });
+
   it("keeps an admitted playback source during one non-overlapping background renewal and removes it when rejected", async () => {
     vi.useFakeTimers();
     hookState.effectsEnabled = true;
@@ -328,7 +426,10 @@ describe("LivePlayback checkout", () => {
     const admitted = renderAdmissionPlayback();
     expect(admitted).toEqual({
       admissionStatus: "admitted",
-      playbackSource: "https://video.example.test/admitted.mp4",
+      playbackSource: {
+        playbackUrl: "https://video.example.test/admitted.mp4",
+        playbackStartSeconds: 0,
+      },
     });
 
     await vi.advanceTimersByTimeAsync(30_000);
@@ -371,7 +472,10 @@ describe("LivePlayback checkout", () => {
     renderAdmissionPlayback();
     await flushHookEffects();
     await Promise.resolve();
-    expect(renderAdmissionPlayback().playbackSource).toBe("https://video.example.test/admitted.mp4");
+    expect(renderAdmissionPlayback().playbackSource).toEqual({
+      playbackUrl: "https://video.example.test/admitted.mp4",
+      playbackStartSeconds: 0,
+    });
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(renderAdmissionPlayback().admissionStatus).toBe("admitted");
@@ -402,6 +506,228 @@ describe("LivePlayback checkout", () => {
     await Promise.resolve();
 
     expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "checking", playbackSource: null });
+  });
+
+  it("renders a waiting brand room without admission, source, or media requests and refreshes once at zero", async () => {
+    vi.useFakeTimers();
+    hookState.effectsEnabled = true;
+    const serverNow = new Date(Date.now()).toISOString();
+    const scheduledAt = new Date(Date.now() + 2_000).toISOString();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+      setInterval,
+      clearInterval,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tree = renderLive({
+      status: "scheduled",
+      runtimeState: "waiting",
+      scheduledAt,
+      serverNow,
+      admissionRequired: true,
+      videoUrl: "https://video.example.test/should-not-load.mp4",
+    });
+
+    expect(textContent(tree)).toContain("品牌等候室");
+    expect(textContent(tree)).toContain("距離開播");
+    expect(findElements(tree, (element) => element.type === "video" || element.type === "audio" || element.type === "iframe")).toHaveLength(0);
+    await flushHookEffects();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(navigation.refresh).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("renders unavailable as a lifecycle state without admission, source, or media requests", async () => {
+    hookState.effectsEnabled = true;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+      setInterval,
+      clearInterval,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tree = renderLive({
+      status: "ended",
+      runtimeState: "unavailable",
+      admissionRequired: true,
+      videoUrl: "https://video.example.test/should-not-load.mp4",
+    });
+
+    expect(textContent(tree)).toContain("此活動目前無法觀看");
+    expect(textContent(tree)).not.toContain("直播容量目前暫停服務");
+    expect(findElements(tree, (element) => element.type === "video" || element.type === "audio" || element.type === "iframe")).toHaveLength(0);
+    await flushHookEffects();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("validates playback offsets, defaults a missing API offset to zero, and exposes the source object", async () => {
+    expect(normalizePlaybackStartSeconds(12.5)).toBe(12.5);
+    expect(normalizePlaybackStartSeconds(Number.NaN)).toBe(0);
+    expect(normalizePlaybackStartSeconds(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(normalizePlaybackStartSeconds(-1)).toBe(0);
+    expect(normalizePlaybackStartSeconds("12")).toBe(0);
+    expect(getWaitingCountdownSeconds("invalid", new Date().toISOString())).toBeNull();
+
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/admitted.mp4" }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAdmissionPlayback();
+    await flushHookEffects();
+    renderAdmissionPlayback();
+    await flushHookEffects();
+
+    expect(renderAdmissionPlayback().playbackSource).toEqual({
+      playbackUrl: "https://video.example.test/admitted.mp4",
+      playbackStartSeconds: 0,
+    });
+  });
+
+  it("seeks a playing source once per source and offset identity", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/offset.mp4", playbackStartSeconds: 12.5 }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    const tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+    const currentTarget = { currentTime: 99 };
+    const onLoadedMetadata = video.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
+    onLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(12.5);
+    currentTarget.currentTime = 44;
+    onLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(44);
+  });
+
+  it("waits for new metadata before seeking when the HLS playback URL changes", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
+    let sourceRequestCount = 0;
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        sourceRequestCount += 1;
+        return Promise.resolve({
+          ok: true,
+          json: async () => sourceRequestCount === 1
+            ? { playbackUrl: "https://video.example.test/hls-a/manifest/video.m3u8", playbackStartSeconds: 12 }
+            : { playbackUrl: "https://video.example.test/hls-b/manifest/video.m3u8", playbackStartSeconds: 34 },
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    let tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    const firstVideo = findElements(tree, (element) => element.type === "video")[0];
+    if (!firstVideo) throw new Error("Expected first HLS video element");
+    const currentTarget = {
+      currentTime: 99,
+      readyState: 1,
+      src: "",
+      canPlayType: vi.fn(() => "probably"),
+    };
+    const videoRef = firstVideo.props.ref as { current: HTMLVideoElement | null };
+    videoRef.current = currentTarget as unknown as HTMLVideoElement;
+    const firstLoadedMetadata = firstVideo.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
+    firstLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(12);
+
+    currentTarget.currentTime = 77;
+    (firstVideo.props.onEnded as () => void)();
+    tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+
+    const secondVideo = findElements(tree, (element) => element.type === "video")[0];
+    if (!secondVideo) throw new Error("Expected replacement HLS video element");
+    expect(secondVideo.props.src).toBe("https://video.example.test/hls-b/manifest/video.m3u8");
+    expect(currentTarget.currentTime).toBe(77);
+
+    const secondLoadedMetadata = secondVideo.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
+    secondLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(34);
+    currentTarget.currentTime = 55;
+    secondLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(55);
+  });
+
+  it("refreshes route and admission once on ended, then applies replay zero for the same URL", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (String(input).startsWith("/api/live-playback-source?")) {
+        return Promise.resolve({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/same.mp4", playbackStartSeconds: 0 }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    await flushHookEffects();
+    let tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected playing video element");
+    const currentTarget = { currentTime: 99, readyState: 1 };
+    const videoRef = video.props.ref as { current: HTMLVideoElement | null };
+    videoRef.current = currentTarget as unknown as HTMLVideoElement;
+    const onLoadedMetadata = video.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
+    onLoadedMetadata({ currentTarget: currentTarget as unknown as HTMLVideoElement });
+    expect(currentTarget.currentTime).toBe(0);
+    currentTarget.currentTime = 37;
+
+    (video.props.onEnded as () => void)();
+    (video.props.onEnded as () => void)();
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+
+    tree = renderLive({ runtimeState: "replay", status: "ended", admissionRequired: true });
+    await flushHookEffects();
+    tree = renderLive({ runtimeState: "replay", status: "ended", admissionRequired: true });
+    await flushHookEffects();
+    tree = renderLive({ runtimeState: "replay", status: "ended", admissionRequired: true });
+    await flushHookEffects();
+
+    expect(currentTarget.currentTime).toBe(0);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(findElements(tree, (element) => element.type === "video")).toHaveLength(1);
   });
 
   it("flushes validated playback seconds with the shared page lineage", async () => {

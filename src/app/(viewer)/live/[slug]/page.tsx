@@ -5,13 +5,23 @@ import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
+import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  const serverNow = new Date();
+  const publicAvailability = publicLiveAvailabilityWhere();
   const live = await getDb().live.findFirst({
     where: {
       slug,
-      ...publicLiveAvailabilityWhere(),
+      // Keep the shared public gate for playable lives, but retain ended
+      // lifecycle records locally so an expired replay can render a truthful
+      // unavailable state instead of becoming an indistinguishable 404.
+      OR: [
+        ...(publicAvailability.OR ?? []),
+        { status: "ended", replayEnabled: false },
+        { status: "ended", replayAvailableUntil: { lte: serverNow } },
+      ],
     },
     include: {
       vendor: true,
@@ -37,6 +47,16 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     console.warn("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
     notFound();
   }
+  const runtime = resolveLiveRuntime({
+    streamMode: live.streamMode,
+    scheduledAt: live.scheduledAt,
+    status: live.status,
+    startedAt: live.startedAt,
+    endedAt: live.endedAt,
+    replayAvailableUntil: live.replayAvailableUntil,
+    replayEnabled: live.replayEnabled,
+    video: live.video ? { durationSec: live.video.durationSec } : null,
+  }, serverNow);
   const readiness = getRuntimeLivePublishReadiness(live);
   if (!readiness.ready) {
     console.warn("PUBLIC_LIVE_NOT_FOUND_READINESS", readiness.blockers.map(({ code }) => code));
@@ -104,6 +124,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         title: live.title,
         slug: live.slug,
         status: live.status,
+        runtimeState: runtime.state,
+        scheduledAt: live.scheduledAt.toISOString(),
+        serverNow: serverNow.toISOString(),
         description: live.description,
         accentCopy: live.accentCopy,
         heroImageUrl: live.heroImageUrl,
