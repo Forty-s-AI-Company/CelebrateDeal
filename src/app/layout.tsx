@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AnnouncementCenter } from "@/components/announcement-center";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,6 +19,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         {checkout}
+        <AnnouncementCenter />
       </body>
     </html>
   );
