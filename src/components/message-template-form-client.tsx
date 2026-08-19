@@ -2,7 +2,8 @@
 
 import { useActionState, type ReactNode } from "react";
 import { upsertTemplateAction } from "@/app/actions";
-import { Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
+import { RichTextEditor } from "@/components/rich-text-editor";
+import { Field, SelectField, SubmitButton } from "@/components/ui";
 import {
   initialMessageTemplateActionState,
   MESSAGE_TEMPLATE_VARIABLES,
@@ -79,7 +80,19 @@ export function MessageTemplateFormClient({
         </SelectField>
       </div>
       <Field label="主旨" name="subject" required maxLength={200} defaultValue={draft.subject} />
-      <TextArea label="內容" name="body" required rows={8} maxLength={20_000} defaultValue={draft.body} />
+      <RichTextEditor
+        label="內容"
+        name="body"
+        required
+        rows={8}
+        maxLength={20_000}
+        defaultValue={draft.body}
+        insertTokens={MESSAGE_TEMPLATE_VARIABLES.map((variable) => ({
+          value: messageTemplateVariableLabel(variable),
+          label: messageTemplateVariableLabel(variable),
+        }))}
+        insertTokensLabel="點選插入變數"
+      />
       <div className="rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         <p className="font-semibold">可用變數</p>
         <p className="mt-1 break-words font-mono text-xs">

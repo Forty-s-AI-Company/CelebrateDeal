@@ -46,7 +46,7 @@ describe("EmailDeliveryOperationsWorkbench", () => {
           id: "email_search_target",
           recipientMaskedEmail: "s***@example.test",
           status: "failed",
-          trigger: "registration_confirmed",
+          trigger: "post_live_followup",
           attemptCount: 1,
           maxAttempts: 5,
           manualRetryCount: 0,
@@ -68,6 +68,8 @@ describe("EmailDeliveryOperationsWorkbench", () => {
     expect(html).toContain("找到 1 筆寄送紀錄");
     expect(html).toContain("email_search_target");
     expect(html).toContain("s***@example.test");
+    expect(html).toContain("課後通知");
+    expect(html).toContain('value="post_live_followup"');
     expect(html).toContain('value="failed" selected=""');
   });
 

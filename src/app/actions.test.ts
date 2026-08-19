@@ -1683,6 +1683,7 @@ describe("upsertLiveAction", () => {
     mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1" });
     mocks.liveFindFirst.mockResolvedValue({
       id: "live-1",
+      slug: "tenant-live",
       title: "租戶限定直播",
       status: "draft",
       scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
@@ -2063,6 +2064,7 @@ describe("upsertLiveAction", () => {
     allowCurrentVendorLiveReferences();
     mocks.liveFindFirst.mockResolvedValue({
       id: "live-1",
+      slug: "tenant-live",
       title: "租戶限定直播",
       status: "scheduled",
       scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
@@ -2251,6 +2253,7 @@ describe("upsertLiveAction", () => {
     allowCurrentVendorLiveReferences();
     mocks.liveFindFirst.mockResolvedValue({
       id: "live-1",
+      slug: "tenant-live",
       title: "租戶限定直播",
       status: "scheduled",
       scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
@@ -3774,7 +3777,7 @@ describe("message template actions", () => {
 
     expect(mocks.liveFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", liveReminderTemplateId: "template-1" },
-      select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
     });
     expect(mocks.queueLiveReminderReconciliation).toHaveBeenCalledWith(
       expect.any(Object),

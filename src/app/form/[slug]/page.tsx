@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lead-form";
 import { PromoVideoPlayer } from "@/components/promo-video-player";
+import { RichTextContent } from "@/components/rich-text-content";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
 
 type PublicFormPageProps = {
@@ -86,7 +87,7 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
           ) : null}
 
           {form.stickyText ? <p className="rounded-xl border-l-4 border-[var(--registration-theme)] bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700">{form.stickyText}</p> : null}
-          {form.bodyContent ? <section className="whitespace-pre-line text-sm leading-7 text-slate-700" aria-label="活動內容">{form.bodyContent}</section> : null}
+          {form.bodyContent ? <section className="text-sm leading-7 text-slate-700" aria-label="活動內容"><RichTextContent value={form.bodyContent} /></section> : null}
           {form.notice ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="note">{form.notice}</p> : null}
 
           {!form.fields ? (

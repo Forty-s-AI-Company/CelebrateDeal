@@ -7,7 +7,8 @@ import {
   protectEmailDeliveryPayload,
   type VendorEmailBrandSource,
 } from "@/lib/email-delivery-pii";
-import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
+import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
+import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
   LIVE_NOTIFICATION_DELIVERY_TRIGGERS,
@@ -18,7 +19,6 @@ import {
 
 const MAX_ATTEMPTS = 5;
 const CUTOVER_RECIPIENT_LIMIT = 250;
-const TEMPLATE_VARIABLE_PATTERN = /\{\{\s*(name|live_title|live_start_at|vendor_name|unsubscribe_url)\s*\}\}/gu;
 
 type NotificationTemplate = {
   id: string;
@@ -43,6 +43,7 @@ type NotificationRule = {
 type NotificationLive = {
   id: string;
   vendorId: string;
+  slug: string;
   title: string;
   status: string;
   scheduledAt: Date;
@@ -101,6 +102,7 @@ function liveAnchor(live: Pick<NotificationLive, "scheduledAt" | "startedAt">, t
 export function stableLiveNotificationDeliveryId(input: {
   vendorId: string;
   liveId: string;
+  liveSlug: string;
   liveTitle: string;
   formSubmissionId: string;
   ruleId: string;
@@ -112,6 +114,7 @@ export function stableLiveNotificationDeliveryId(input: {
   const digest = createHash("sha256").update(JSON.stringify([
     input.vendorId,
     input.liveId,
+    input.liveSlug,
     input.liveTitle,
     input.formSubmissionId,
     input.ruleId,
@@ -132,10 +135,6 @@ function formatLiveStartAt(value: Date) {
     timeStyle: "short",
     timeZone: "Asia/Taipei",
   }).format(value);
-}
-
-function renderTemplate(value: string, variables: Record<string, string>) {
-  return value.replace(TEMPLATE_VARIABLE_PATTERN, (_, variable: string) => variables[variable] ?? "");
 }
 
 function ensureUnsubscribeFooter(body: string, unsubscribeUrl: string) {
@@ -180,6 +179,7 @@ function deliverySnapshot(input: {
   const deliveryId = stableLiveNotificationDeliveryId({
     vendorId: input.live.vendorId,
     liveId: input.live.id,
+    liveSlug: input.live.slug,
     liveTitle: input.live.title,
     formSubmissionId: input.submission.id,
     ruleId: input.rule.id,
@@ -207,14 +207,15 @@ async function buildDeliveryData(
   const variables = {
     name: input.submission.name,
     live_title: input.live.title,
+    live_url: createLiveViewerUrl(input.live.slug),
     live_start_at: formatLiveStartAt(input.live.scheduledAt),
     vendor_name: input.live.vendor.name,
     unsubscribe_url: unsubscribeUrl,
   };
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.submission.email,
-    subject: renderTemplate(snapshot.template.subject!, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureUnsubscribeFooter(renderTemplate(snapshot.template.body, variables), unsubscribeUrl),
+    subject: renderMessageTemplate(snapshot.template.subject!, variables).replace(/\s+/gu, " ").trim(),
+    body: ensureUnsubscribeFooter(renderMessageTemplate(snapshot.template.body, variables), unsubscribeUrl),
     brand: {
       senderName: input.live.vendor.senderName,
       supportEmail: input.live.vendor.supportEmail,
@@ -261,7 +262,7 @@ async function readCurrentNotificationSnapshot(
     db.live.findFirst({
       where: { id: input.liveId, vendorId: input.vendorId },
       select: {
-        id: true, vendorId: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true,
+        id: true, vendorId: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true, liveReminderTemplateId: true,
         vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
       },
     }),
@@ -665,7 +666,7 @@ export async function processLegacyReminderCutovers(options: { now?: Date; limit
         const live = await tx.live.findFirst({
           where: { id: candidate.id, vendorId: candidate.vendorId, status: "scheduled", startedAt: null, scheduledAt: { gt: now }, liveReminderTemplateId: { not: null } },
           select: {
-            id: true, vendorId: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true,
+            id: true, vendorId: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true,
             liveReminderTemplateId: true, liveReminderOffsetMinutes: true,
             vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
             notificationRules: { where: { trigger: "before_live", isActive: true }, include: { messageTemplate: true } },

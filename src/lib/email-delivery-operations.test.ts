@@ -46,6 +46,25 @@ describe("email delivery merchant operations", () => {
     expect(parseEmailDeliverySearchInput(formData({ query: "partial recipient" }))).toMatchObject({ success: false });
   });
 
+  it("allows merchants to filter durable course follow-up deliveries", () => {
+    expect(parseEmailDeliverySearchInput(formData({
+      status: "ALL",
+      trigger: "post_live_followup",
+      operation: "search",
+      page: "1",
+    }))).toEqual({
+      success: true,
+      data: { query: "", status: "ALL", trigger: "post_live_followup", page: 1 },
+      retryDeliveryId: null,
+    });
+    expect(buildEmailDeliveryWhere("vendor-1", {
+      query: "",
+      status: "ALL",
+      trigger: "post_live_followup",
+      page: 1,
+    })).toEqual({ vendorId: "vendor-1", trigger: "post_live_followup" });
+  });
+
   it("hashes an exact recipient per tenant and never builds a decrypted email predicate", () => {
     const vendorA = buildEmailDeliveryWhere("vendor-a", {
       query: "Lead@Example.Test",

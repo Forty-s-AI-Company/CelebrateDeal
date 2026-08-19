@@ -140,6 +140,7 @@ const attestedSourcePaths = [
   "src/lib/message-template.ts",
   "src/app/actions.ts",
   "src/lib/email-delivery.ts",
+  "src/lib/rich-text.ts",
   "src/app/api/jobs/email-deliveries/route.ts",
   "src/components/message-template-form.tsx",
   "src/components/message-template-form-client.tsx",
@@ -513,7 +514,19 @@ function allocatePort() {
   });
 }
 
-export function syntheticEnvironment({ tempRoot, port, databaseUrl, schema, screenshotDirectory, networkGuard, playwrightBrowsersPath, e2eTarget = "commerce" }) {
+function findLocalChromiumExecutable() {
+  const candidates = process.platform === "win32"
+    ? [
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    ]
+    : [];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+export function syntheticEnvironment({ tempRoot, port, databaseUrl, schema, screenshotDirectory, networkGuard, playwrightBrowsersPath, chromiumExecutablePath = null, e2eTarget = "commerce" }) {
   return {
     PATH: process.env.PATH ?? process.env.Path ?? "",
     SystemRoot: process.env.SystemRoot ?? "",
@@ -531,7 +544,8 @@ export function syntheticEnvironment({ tempRoot, port, databaseUrl, schema, scre
     NPM_CONFIG_AUDIT: "false",
     NPM_CONFIG_FUND: "false",
     PRISMA_HIDE_UPDATE_MESSAGE: "true",
-    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath ?? "",
+    E2E_CHROMIUM_EXECUTABLE_PATH: chromiumExecutablePath ?? "",
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1",
     DATABASE_URL: databaseUrl,
     DIRECT_URL: databaseUrl,
@@ -545,6 +559,10 @@ export function syntheticEnvironment({ tempRoot, port, databaseUrl, schema, scre
     RATE_LIMIT_PROVIDER: "memory",
     JOB_SECRET: "g7-04-local-synthetic-job-secret",
     CSRF_SECRET: "g7-04-local-synthetic-csrf-secret",
+    // The browser server runs in production mode. Keep these test-only values
+    // self-contained so it never reads a developer or deployed runtime key.
+    CRON_SECRET: "g7-04-local-synthetic-cron-secret",
+    LIVE_CHAT_INGRESS_SECRET: "g7-04-local-synthetic-live-chat-ingress-secret",
     G7_COMMERCE_SCREENSHOT_DIR: screenshotDirectory,
     G7_COMMERCE_LOOPBACK_TLS_BRIDGE: "1",
     SENTRY_DISABLE_AUTO_UPLOAD: "true",
@@ -732,12 +750,22 @@ export async function main() {
     const networkGuard = writeNetworkGuard(tempRoot);
     const localAppData = process.env.LOCALAPPDATA;
     const playwrightBrowsersPath = localAppData ? path.resolve(localAppData, "ms-playwright") : null;
-    if (!playwrightBrowsersPath || path.basename(playwrightBrowsersPath) !== "ms-playwright" || !fs.existsSync(playwrightBrowsersPath)) {
+    const hasPlaywrightBrowserCache = Boolean(
+      playwrightBrowsersPath
+      && path.basename(playwrightBrowsersPath) === "ms-playwright"
+      && fs.existsSync(playwrightBrowsersPath),
+    );
+    const chromiumExecutablePath = hasPlaywrightBrowserCache ? null : findLocalChromiumExecutable();
+    if (!hasPlaywrightBrowserCache && !chromiumExecutablePath) {
       throw new Error("playwright-browser-cache-missing");
     }
-    env = syntheticEnvironment({ tempRoot, port: browserPort, databaseUrl, schema, screenshotDirectory: screenshots, networkGuard, playwrightBrowsersPath, e2eTarget: focusWp7OneStop ? "wp7-one-stop" : "commerce" });
+    env = syntheticEnvironment({ tempRoot, port: browserPort, databaseUrl, schema, screenshotDirectory: screenshots, networkGuard, playwrightBrowsersPath, chromiumExecutablePath, e2eTarget: focusWp7OneStop ? "wp7-one-stop" : "commerce" });
     if (!writeDatabaseMarker(container.id, marker, env)) throw new Error("database-marker-failed");
     if (psql(container.id, `CREATE SCHEMA "${schema}"; COMMENT ON SCHEMA "${schema}" IS '${marker}';`, env).exitCode !== 0) throw new Error("schema-marker-failed");
+    // pg_trgm is relocatable. Install it in the disposable schema before
+    // Prisma runs the search-index migration; otherwise a non-public schema
+    // can see the extension in public but not resolve gin_trgm_ops.
+    if (psql(container.id, `CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA "${schema}";`, env).exitCode !== 0) throw new Error("trigram-extension-failed");
 
     const prismaConfig = writePrismaConfig(mirror);
     const prismaCli = path.join(mirror, "node_modules", "prisma", "build", "index.js");
@@ -847,9 +875,13 @@ export async function main() {
       persistentPlayerDesktop: path.join(screenshots, "persistent-player-desktop.png"),
       persistentPlayerMobile: path.join(screenshots, "persistent-player-mobile.png"),
       wp7Registration: path.join(screenshots, "wp7-registration.png"),
+      wp7RegistrationMobile: path.join(screenshots, "wp7-registration-mobile.png"),
       wp7Live: path.join(screenshots, "wp7-live.png"),
+      wp7LiveMobile: path.join(screenshots, "wp7-live-mobile.png"),
       wp7Checkout: path.join(screenshots, "wp7-checkout.png"),
+      wp7CheckoutMobile: path.join(screenshots, "wp7-checkout-mobile.png"),
       wp7Order: path.join(screenshots, "wp7-order.png"),
+      wp7OrderMobile: path.join(screenshots, "wp7-order-mobile.png"),
     };
     for (const [name, screenshotPath] of Object.entries(screenshotEntries)) {
       if (fs.existsSync(screenshotPath)) receipt.screenshots[name] = { filename: path.basename(screenshotPath), sha256: hashFile(screenshotPath) };
@@ -866,7 +898,7 @@ export async function main() {
       : focusMessageTemplateDraft ? ["messageTemplateDraftDesktop", "messageTemplateDraftMobile"]
       : focusInteractionRole ? ["interactionRoleDesktop", "interactionRoleMobile"]
       : focusPersistentPlayer ? ["persistentPlayerDesktop", "persistentPlayerMobile"]
-      : focusWp7OneStop ? ["wp7Registration", "wp7Live", "wp7Checkout", "wp7Order"]
+      : focusWp7OneStop ? ["wp7Registration", "wp7RegistrationMobile", "wp7Live", "wp7LiveMobile", "wp7Checkout", "wp7CheckoutMobile", "wp7Order", "wp7OrderMobile"]
       : focusLiveStudio
         ? ["liveStudioDesktop", "liveStudioMobile"]
         : ["desktop", "mobile", "productDesktop", "productMobile", "productDeliveryDesktop", "productDeliveryMobile", "paymentResult", "financePending", "emailTemplates", "buyerOrdersDesktop", "buyerOrdersMobile"];

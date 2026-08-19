@@ -487,9 +487,15 @@ test("WP7-01 focused mode isolates the one-stop webinar E2E contract", () => {
   assert.match(source, /tests\/e2e\/wp7-one-stop-webinar-flow\.spec\.ts/u);
   assert.match(source, /"wp7-one-stop-webinar-flow-browser-qa"/u);
   assert.match(source, /G7_COMMERCE_BROWSER_E2E_TARGET: e2eTarget/u);
+  assert.match(source, /E2E_CHROMIUM_EXECUTABLE_PATH/u);
+  assert.match(config, /E2E_CHROMIUM_EXECUTABLE_PATH/u);
   assert.match(source, /e2eTarget: focusWp7OneStop \? "wp7-one-stop" : "commerce"/u);
+  assert.match(source, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA/u);
   assert.match(source, /wp7Registration: path\.join\(screenshots, "wp7-registration\.png"\)/u);
+  assert.match(source, /wp7RegistrationMobile: path\.join\(screenshots, "wp7-registration-mobile\.png"\)/u);
   assert.match(source, /wp7Checkout: path\.join\(screenshots, "wp7-checkout\.png"\)/u);
+  assert.match(source, /wp7CheckoutMobile: path\.join\(screenshots, "wp7-checkout-mobile\.png"\)/u);
+  assert.match(source, /\["wp7Registration", "wp7RegistrationMobile", "wp7Live", "wp7LiveMobile", "wp7Checkout", "wp7CheckoutMobile", "wp7Order", "wp7OrderMobile"\]/u);
   assert.match(source, /receipt\.browser\.wp7OneStop = focusWp7OneStop && browserPassed \? "PASS" : "NOT_VERIFIED"/u);
   assert.match(config, /e2eTarget !== "commerce" && e2eTarget !== "wp7-one-stop"/u);
   assert.match(config, /wp7-one-stop-webinar-flow\.spec\.ts/u);
@@ -505,6 +511,16 @@ test("WP7-01 focused mode isolates the one-stop webinar E2E contract", () => {
   ]) {
     assert.equal(source.includes(`"${path}"`), true, `${path} must be source-attested`);
   }
+  const browserContract = fs.readFileSync(new URL("../tests/e2e/wp7-one-stop-webinar-flow.spec.ts", import.meta.url), "utf8");
+  assert.match(browserContract, /expectNoBlockingAxeViolations/u);
+  assert.match(browserContract, /const registrationPayload = revealEmailDeliveryPayload/u);
+  assert.match(browserContract, /expect\(registrationPayload\.body\)\.toContain\(`\/live\/\$\{fixture\.slug\}`\)/u);
+  assert.match(browserContract, /direct or refreshed checkout does not invent a live playback session/u);
+  assert.match(browserContract, /expect\(page\.getByTestId\("persistent-live-player"\)\)\.toHaveCount\(0\)/u);
+  assert.match(browserContract, /wp7-registration-mobile\.png/u);
+  assert.match(browserContract, /wp7-live-mobile\.png/u);
+  assert.match(browserContract, /wp7-checkout-mobile\.png/u);
+  assert.match(browserContract, /wp7-order-mobile\.png/u);
 });
 
 test("G7-04 build failure classification is deterministic and fail closed", () => {
@@ -745,6 +761,8 @@ test("G7-04 synthetic environment uses an explicit allowlist and loopback-only U
     assert.equal(env.E2E_BASE_URL, "http://127.0.0.1:41234");
     assert.equal(env.G7_COMMERCE_BROWSER_SCHEMA, "g7_04_browser_0123456789abcdef");
     assert.equal(env.PAYMENT_PROVIDER, "demo");
+    assert.equal(env.CRON_SECRET, "g7-04-local-synthetic-cron-secret");
+    assert.equal(env.LIVE_CHAT_INGRESS_SECRET, "g7-04-local-synthetic-live-chat-ingress-secret");
     assert.match(env.NODE_OPTIONS, /^--require=/u);
   } finally {
     if (previous === undefined) delete process.env[sentinelName];

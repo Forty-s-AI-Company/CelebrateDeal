@@ -5,6 +5,8 @@ import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
 const localE2eCsrfSecret = "celebratedeal-local-playwright-csrf-secret-v1";
+const localE2eCronSecret = "celebratedeal-local-playwright-cron-secret-v1";
+const localE2eLiveChatIngressSecret = "celebratedeal-local-playwright-live-chat-ingress-secret-v1";
 const commerceLoopbackTlsBridgeEnvironmentName = "G7_COMMERCE_LOOPBACK_TLS_BRIDGE";
 
 function isLoopbackE2eUrl(value: string) {
@@ -99,6 +101,11 @@ export default defineConfig({
       // 空字串也視為未設定；E2E 僅使用明確標註的測試密鑰。
       JOB_SECRET: process.env.JOB_SECRET || "e2e-job-secret-at-least-16-chars",
       CSRF_SECRET: localE2eCsrfSecret,
+      // These are synthetic loopback-only keys. Keep the production-mode
+      // browser server aligned with build preflight without reading a user's
+      // local or deployed runtime secrets.
+      CRON_SECRET: localE2eCronSecret,
+      LIVE_CHAT_INGRESS_SECRET: localE2eLiveChatIngressSecret,
       [commerceLoopbackTlsBridgeEnvironmentName]: "1",
       RATE_LIMIT_PROVIDER: e2eRateLimitProvider,
       SMOKE_TEST_EMAIL: e2eSmokeTestEmail,

@@ -23,7 +23,16 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
   const validScriptId = live.interactionScript?.vendorId === vendor.id && live.interactionScript.status === "published"
     ? live.interactionScript.id
     : null;
-  const [verifiedAnalyticsSessions, submissionCount, recentEvents, realViewerMessageCount, scheduledMessageCount] = await Promise.all([
+  const [
+    verifiedAnalyticsSessions,
+    registrationCount,
+    verifiedSubmissionCount,
+    recentEvents,
+    realViewerMessageCount,
+    scheduledMessageCount,
+    liveOrderCount,
+    emailDeliveryStatusCounts,
+  ] = await Promise.all([
     db.analyticsEvent.findMany({
       where: {
         vendorId: vendor.id,
@@ -34,6 +43,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     }),
+    db.formSubmission.count({ where: { liveId: live.id } }),
     db.formSubmission.count({ where: { liveId: live.id, verificationStatus: "VERIFIED" } }),
     db.analyticsEvent.findMany({
       where: {
@@ -51,6 +61,21 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
     validScriptId
       ? db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendor.id, scriptId: validScriptId }) })
       : Promise.resolve(0),
+    // A checkout is counted only when the order's payment transaction has a
+    // sourceLiveId derived on the server from a verified registration cookie.
+    // Direct catalogue checkout must not be guessed into a live's results.
+    db.paymentTransaction.count({
+      where: {
+        vendorId: vendor.id,
+        primaryCommerceOrder: { isNot: null },
+        metadata: { path: ["sourceLiveId"], equals: live.id },
+      },
+    }),
+    db.emailDelivery.groupBy({
+      by: ["status"],
+      where: { vendorId: vendor.id, sourceLiveId: live.id },
+      _count: { _all: true },
+    }),
   ]);
   const eventCountByType = new Map<string, number>();
   for (const event of verifiedAnalyticsSessions) {
@@ -60,11 +85,14 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
   const productClicks = eventCountByType.get("product_click") ?? 0;
   const ctaClicks = eventCountByType.get("cta_click") ?? 0;
   const progressEvents = eventCountByType.get("play_progress") ?? 0;
+  const emailDeliveryCounts = new Map(emailDeliveryStatusCounts.map((entry) => [entry.status, entry._count._all]));
+  const emailSentCount = emailDeliveryCounts.get("sent") ?? 0;
+  const emailFailedCount = (emailDeliveryCounts.get("failed") ?? 0) + (emailDeliveryCounts.get("exhausted") ?? 0);
   const funnel = calculateAnalyticsFunnel({
     views: pageViews,
     productClicks,
     ctaClicks,
-    submissions: submissionCount,
+    submissions: verifiedSubmissionCount,
   });
 
   return (
@@ -74,13 +102,17 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         description="觀看與點擊只計入已通過直播 admission 的不重複播放 session；真實留言與排程腳本分開統計。"
         action={<ButtonLink href={`/lives/${live.id}/analytics/messages/export`} tone="secondary">匯出留言 CSV</ButtonLink>}
       />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card><p className="text-sm text-slate-500">播放 session</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
-        <Card><p className="text-sm text-slate-500">名單</p><p className="mt-2 text-3xl font-semibold">{submissionCount}</p></Card>
+        <Card><p className="text-sm text-slate-500">報名</p><p className="mt-2 text-3xl font-semibold">{registrationCount}</p></Card>
+        <Card><p className="text-sm text-slate-500">Email 已驗證</p><p className="mt-2 text-3xl font-semibold">{verifiedSubmissionCount}</p></Card>
         <Card><p className="text-sm text-slate-500">商品點擊</p><p className="mt-2 text-3xl font-semibold">{productClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">CTA 點擊</p><p className="mt-2 text-3xl font-semibold">{ctaClicks}</p></Card>
         <Card><p className="text-sm text-slate-500">播放進度</p><p className="mt-2 text-3xl font-semibold">{progressEvents}</p></Card>
         <Card><p className="text-sm text-slate-500">真實觀眾留言</p><p className="mt-2 text-3xl font-semibold">{realViewerMessageCount}</p><p className="mt-1 text-xs text-slate-500">只計已驗證觀眾可見留言</p></Card>
+        <Card><p className="text-sm text-slate-500">建立待付款訂單</p><p className="mt-2 text-3xl font-semibold">{liveOrderCount}</p><p className="mt-1 text-xs text-slate-500">只計直播來源已驗證報名</p></Card>
+        <Card><p className="text-sm text-slate-500">Email 成功</p><p className="mt-2 text-3xl font-semibold">{emailSentCount}</p></Card>
+        <Card><p className="text-sm text-slate-500">Email 失敗</p><p className="mt-2 text-3xl font-semibold">{emailFailedCount}</p><p className="mt-1 text-xs text-slate-500">含重試耗盡</p></Card>
         <Card><p className="text-sm text-slate-500">排程留言腳本</p><p className="mt-2 text-3xl font-semibold">{scheduledMessageCount}</p><p className="mt-1 text-xs text-slate-500">設定數，不列入轉換率</p></Card>
       </div>
       <section className="mt-6" aria-labelledby="conversion-funnel-title">

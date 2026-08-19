@@ -31,6 +31,7 @@ const triggerLabel: Record<string, string> = {
   registration_confirmed: "報名成功通知",
   form_submission_verification: "Email 驗證通知",
   live_reminder: "開播提醒",
+  post_live_followup: "課後通知",
 };
 
 const errorGuidance: Record<string, string> = {
@@ -189,6 +190,7 @@ export function EmailDeliveryOperationsWorkbench({
               <option value="registration_confirmed">報名成功</option>
               <option value="form_submission_verification">Email 驗證</option>
               <option value="live_reminder">開播提醒</option>
+              <option value="post_live_followup">課後通知</option>
             </select>
           </label>
           <div className="flex flex-wrap gap-2">

@@ -179,10 +179,24 @@ describe("sellable live readiness", () => {
     expect(countSellableLiveReadinessCandidates([
       candidate({ streamMode: "vod", status: "scheduled", scheduledAt: new Date("2026-08-18T08:10:00.000Z") }),
       candidate({ streamMode: "vod", status: "scheduled", scheduledAt }),
-      candidate({ streamMode: "vod", status: "ended", scheduledAt, endedAt: completionAt }),
+      candidate({
+        streamMode: "vod",
+        status: "ended",
+        scheduledAt,
+        startedAt: scheduledAt,
+        endedAt: completionAt,
+        replayAvailableUntil: new Date("2026-08-18T09:00:00.000Z"),
+      }),
     ], new Date("2026-08-18T08:05:00.000Z"))).toBe(2);
     expect(isSellableLiveReadinessCandidate(
-      candidate({ streamMode: "vod", status: "ended", scheduledAt, endedAt: completionAt }),
+      candidate({
+        streamMode: "vod",
+        status: "ended",
+        scheduledAt,
+        startedAt: scheduledAt,
+        endedAt: completionAt,
+        replayAvailableUntil: new Date("2026-08-18T09:00:00.000Z"),
+      }),
       completionAt,
     )).toBe(true);
   });

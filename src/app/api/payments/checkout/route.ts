@@ -124,6 +124,20 @@ function hasReadyProductDelivery(product: {
     );
 }
 
+function unavailableCheckoutProductResponse(product: {
+  checkoutUrl: string | null;
+  fulfillmentType: string;
+  deliveryConfig: { status: string; fulfillmentType: string } | null;
+}) {
+  if (product.checkoutUrl) {
+    return NextResponse.json({ error: "External checkout required" }, { status: 409 });
+  }
+  if (!hasReadyProductDelivery(product)) {
+    return NextResponse.json({ error: "Product delivery is not ready" }, { status: 409 });
+  }
+  return null;
+}
+
 function checkoutTransactionMetadata(input: {
   productId: string;
   productName: string;
@@ -131,6 +145,8 @@ function checkoutTransactionMetadata(input: {
   referralCode?: string;
   affiliateClickId?: string;
   formSubmissionId?: string;
+  /** Only assigned from a server-validated, verified registration. */
+  sourceLiveId?: string;
 }) {
   return {
     productId: input.productId,
@@ -139,6 +155,7 @@ function checkoutTransactionMetadata(input: {
     ...(input.referralCode ? { referralCode: input.referralCode } : {}),
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
+    ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
   };
 }
 
@@ -438,12 +455,8 @@ export async function POST(request: Request) {
   if (!product) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
-  if (product.checkoutUrl) {
-    return NextResponse.json({ error: "External checkout required" }, { status: 409 });
-  }
-  if (!hasReadyProductDelivery(product)) {
-    return NextResponse.json({ error: "Product delivery is not ready" }, { status: 409 });
-  }
+  const unavailableProductResponse = unavailableCheckoutProductResponse(product);
+  if (unavailableProductResponse) return unavailableProductResponse;
 
   // Use the database definition, never a definition supplied by the browser.
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
@@ -488,14 +501,9 @@ export async function POST(request: Request) {
   }
 
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
-  const cookieSubmissionId = formSubmissionIdFromRequest(request);
-  const formSubmission = cookieSubmissionId
-    ? await db.formSubmission.findFirst({
-        where: { id: cookieSubmissionId, form: { vendorId: parsed.data.vendorId } },
-        select: { id: true },
-      })
-    : null;
+  const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
   const formSubmissionId = formSubmission?.id;
+  const sourceLiveId = formSubmission?.liveId ?? undefined;
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
@@ -508,6 +516,7 @@ export async function POST(request: Request) {
     referralCode,
     affiliateClickId: affiliateAttribution?.affiliateClickId,
     formSubmissionId,
+    sourceLiveId,
   });
 
   const order = orderNumber();
@@ -679,4 +688,22 @@ function formSubmissionIdFromRequest(request: Request) {
 
   const value = cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_COOKIE}=`))?.slice(FORM_SUBMISSION_COOKIE.length + 1);
   return value && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : null;
+}
+
+async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: string) {
+  const submissionId = formSubmissionIdFromRequest(request);
+  if (!submissionId) return null;
+
+  // The browser never sends a live ID. Attribution is attached only when its
+  // existing, httpOnly registration cookie resolves to this vendor's verified
+  // submission and an actual live relation.
+  return getDb().formSubmission.findFirst({
+    where: {
+      id: submissionId,
+      verificationStatus: "VERIFIED",
+      form: { vendorId },
+      live: { is: { vendorId } },
+    },
+    select: { id: true, liveId: true },
+  });
 }

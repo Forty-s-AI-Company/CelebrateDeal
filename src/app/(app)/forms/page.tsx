@@ -1,4 +1,5 @@
 import { Plus } from "lucide-react";
+import Link from "next/link";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -102,14 +103,14 @@ export default async function FormsPage({
             </select>
           </label>
           <button type="submit" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">搜尋</button>
-          {hasFilters ? <a href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">清除篩選</a> : null}
+          {hasFilters ? <Link href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">清除篩選</Link> : null}
         </form>
       </Card>
       {forms.length === 0 ? (
         <EmptyState
           title={hasFilters ? "找不到符合條件的報名表" : "還沒有報名表"}
           description={hasFilters ? "請調整搜尋文字或狀態條件後再試。" : "先建立一張表單，直播頁就能收集觀看者名單。"}
-          action={hasFilters ? <a href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</a> : <ButtonLink href="/forms/new">新增表單</ButtonLink>}
+          action={hasFilters ? <Link href="/forms" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</Link> : <ButtonLink href="/forms/new">新增表單</ButtonLink>}
         />
       ) : (
         <Card>

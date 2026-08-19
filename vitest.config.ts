@@ -43,6 +43,10 @@ export default defineConfig({
       "tests/e2e/**",
       // Historical AI Team snapshots are evidence, not active test sources.
       ".ai-team/tmp/**",
+      // Browser QA mirrors are disposable copies of the source tree, not
+      // independent test suites. Running them here duplicates work and can
+      // mix their temporary fixtures with the canonical local database.
+      "tmp/**",
       // Node TAP contracts run through `npm run test:contracts`.
       ...nodeTapContractTests,
       // These PostgreSQL race tests require isolated owner schemas and run

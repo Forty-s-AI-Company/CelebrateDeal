@@ -28,6 +28,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import OnboardingPage from "./page";
+import { sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
 const vendor = {
   id: "vendor-onboarding",
@@ -51,7 +52,15 @@ beforeEach(() => {
   mocks.templateFindMany.mockResolvedValue([{ subject: "報名成功", body: "內容" }]);
   mocks.videoCount.mockResolvedValue(1);
   mocks.liveFindMany.mockResolvedValue([{
+    scheduledAt: new Date("2026-08-18T08:00:00.000Z"),
+    status: "live",
+    startedAt: new Date("2026-08-18T08:00:00.000Z"),
+    endedAt: null,
+    replayAvailableUntil: null,
+    replayEnabled: true,
+    streamMode: "live",
     video: {
+      durationSec: null,
       sourceType: "url",
       status: "ready",
       cloudflareReadyToStream: false,
@@ -80,65 +89,7 @@ describe("/onboarding route", () => {
         OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
       },
     });
-    expect(mocks.liveFindMany).toHaveBeenCalledWith({
-      where: {
-        vendorId: vendor.id,
-        OR: [
-          { status: { in: ["scheduled", "live"] } },
-          { status: "ended", replayEnabled: true },
-        ],
-        video: {
-          is: {
-            vendorId: vendor.id,
-            OR: [
-              { sourceType: "url", status: "ready" },
-              { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
-              {
-                sourceType: "cloudflare_live",
-                status: { not: "archived" },
-                cloudflareLiveInputUid: { not: null },
-                liveInputStatus: "created",
-              },
-            ],
-          },
-        },
-        form: { is: { vendorId: vendor.id, isActive: true } },
-        messageTemplate: {
-          is: {
-            vendorId: vendor.id,
-            channel: "email",
-            trigger: "registration_confirmed",
-            isActive: true,
-          },
-        },
-        interactionScript: { is: { vendorId: vendor.id, status: "published" } },
-        products: {
-          some: {
-            vendorId: vendor.id,
-            product: {
-              is: {
-                vendorId: vendor.id,
-                isActive: true,
-                fulfillmentTypeConfirmed: true,
-              },
-            },
-          },
-        },
-      },
-      select: {
-        form: { select: { fields: true } },
-        messageTemplate: { select: { subject: true, body: true } },
-        video: {
-          select: {
-            sourceType: true,
-            status: true,
-            cloudflareReadyToStream: true,
-            cloudflareLiveInputUid: true,
-            liveInputStatus: true,
-          },
-        },
-      },
-    });
+    expect(mocks.liveFindMany).toHaveBeenCalledWith(sellableLiveReadinessQuery(vendor.id));
     expect(html).toContain("商家上線導引");
     expect(html).toContain("5 / 5");
     expect(html).toContain("核心流程完成");

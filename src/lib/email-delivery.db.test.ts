@@ -41,6 +41,7 @@ function deliveryInput(vendor: { id: string; name: string }, submissionId: strin
     vendorId: vendor.id,
     vendorName: vendor.name,
     liveId: "disposable-live-1",
+    liveSlug: "disposable-live-one",
     liveTitle: "Disposable live",
     formSubmissionId: submissionId,
     recipientName: "Disposable Lead",

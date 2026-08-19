@@ -23,7 +23,8 @@ export type EmailDeliveryTriggerFilter =
   | "ALL"
   | "registration_confirmed"
   | "form_submission_verification"
-  | "live_reminder";
+  | "live_reminder"
+  | "post_live_followup";
 
 export type EmailDeliverySearchCriteria = {
   query: string;
@@ -70,7 +71,7 @@ const STATUS_FILTERS = new Set<EmailDeliveryStatusFilter>([
   "ALL", "ATTENTION", "queued", "sending", "sent", "failed", "exhausted", "suppressed", "superseded",
 ]);
 const TRIGGER_FILTERS = new Set<EmailDeliveryTriggerFilter>([
-  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder",
+  "ALL", "registration_confirmed", "form_submission_verification", "live_reminder", "post_live_followup",
 ]);
 
 function readText(formData: FormData, name: string) {

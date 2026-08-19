@@ -51,6 +51,7 @@ const input = {
   vendorId: "vendor-1",
   vendorName: "測試商家",
   liveId: "live-1",
+  liveSlug: "new-product-live",
   liveTitle: "新品直播",
   formSubmissionId: "submission-1",
   recipientName: "王小明",
@@ -67,7 +68,7 @@ const input = {
     channel: "email",
     trigger: "registration_confirmed",
     subject: "{{name}}，你已報名 {{live_title}}",
-    body: "{{vendor_name}} 已收到報名。\n退訂：{{unsubscribe_url}}",
+    body: "{{vendor_name}} 已收到報名。\n直播入口：{{live_url}}\n退訂：{{unsubscribe_url}}",
     isActive: true,
   },
 };
@@ -166,6 +167,7 @@ describe("email delivery outbox", () => {
       },
     });
     expect(countUnsubscribeUrls(payload.body)).toBe(1);
+    expect(payload.body).toContain("https://app.example.test/live/new-product-live");
     expect(JSON.stringify(create)).not.toContain("lead@example.test");
     expect(JSON.stringify(create)).not.toContain("王小明");
     expect(JSON.stringify(create)).not.toContain("測試品牌");
@@ -252,6 +254,7 @@ describe("email delivery outbox", () => {
       deliveryId: registrationCreate.data.id,
     });
     expect(countUnsubscribeUrls(registrationPayload.body)).toBe(1);
+    expect(registrationPayload.body).toContain("直播入口：https://app.example.test/live/new-product-live");
 
     const reminderNow = new Date("2026-08-08T00:00:00.000Z");
     await expect(ensureLiveReminderDelivery({
@@ -633,6 +636,7 @@ describe("email delivery outbox", () => {
       messageTemplate: template,
       live: {
         id: "live-1",
+        slug: "new-product-live",
         title: "新品直播",
         scheduledAt: new Date("2026-08-08T04:00:00.000Z"),
         endedAt: null,
@@ -695,6 +699,7 @@ describe("email delivery outbox", () => {
       to: "lead@example.test",
       subject: "你已報名新品直播",
       text: "報名成功",
+      html: "<p>報名成功</p>",
       idempotencyKey: "registration-confirmed/delivery-1",
       brand: {
         version: 1,
@@ -724,6 +729,7 @@ describe("email delivery outbox", () => {
       to: "lead@example.test",
       subject: "舊通知",
       text: "舊內容",
+      html: "<p>舊內容</p>",
       idempotencyKey: "registration-confirmed/delivery-1",
     });
     expect(providerInput).not.toHaveProperty("brand");
@@ -761,6 +767,7 @@ describe("email delivery outbox", () => {
     mocks.db.live.findFirst.mockResolvedValue({
       id: "live-1",
       vendorId: "vendor-1",
+      slug: "new-product-live",
       title: "新品直播",
       status: "scheduled",
       scheduledAt: liveScheduledAt,

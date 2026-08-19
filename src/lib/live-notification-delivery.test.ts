@@ -50,6 +50,7 @@ function current(trigger: "before_live" | "during_live", overrides: Record<strin
   const live = {
     id: "live-1",
     vendorId: "vendor-1",
+    slug: "new-product-live",
     title: "新品直播",
     status: trigger === "before_live" ? "scheduled" : "live",
     scheduledAt,
@@ -118,7 +119,7 @@ describe("canonical live notification identity and due time", () => {
 
   it("includes rule, trigger, offset, template content and anchor in the stable id", () => {
     const base = {
-      vendorId: "vendor-1", liveId: "live-1", liveTitle: "新品直播", formSubmissionId: "submission-1",
+      vendorId: "vendor-1", liveId: "live-1", liveSlug: "new-product-live", liveTitle: "新品直播", formSubmissionId: "submission-1",
       ruleId: "rule-1", trigger: "before_live" as const, offsetMinutes: 60, anchor: scheduledAt,
       template: { id: "template-1", subject: "Subject", body: "Body" },
     };
@@ -126,6 +127,7 @@ describe("canonical live notification identity and due time", () => {
     expect(stableLiveNotificationDeliveryId(base)).toBe(id);
     expect(stableLiveNotificationDeliveryId({ ...base, ruleId: "rule-2" })).not.toBe(id);
     expect(stableLiveNotificationDeliveryId({ ...base, offsetMinutes: 30 })).not.toBe(id);
+    expect(stableLiveNotificationDeliveryId({ ...base, liveSlug: "renamed-live" })).not.toBe(id);
     expect(stableLiveNotificationDeliveryId({ ...base, template: { ...base.template, body: "Changed" } })).not.toBe(id);
     expect(stableLiveNotificationDeliveryId({ ...base, anchor: new Date(scheduledAt.getTime() + 1) })).not.toBe(id);
   });
@@ -159,7 +161,7 @@ describe("canonical materialization and send-time snapshot", () => {
     const value = current("before_live");
     mockCurrent(value);
     const oldId = stableLiveNotificationDeliveryId({
-      vendorId: "vendor-1", liveId: "live-1", liveTitle: "新品直播", formSubmissionId: "submission-1",
+      vendorId: "vendor-1", liveId: "live-1", liveSlug: "new-product-live", liveTitle: "新品直播", formSubmissionId: "submission-1",
       ruleId: "rule-1", trigger: "before_live", offsetMinutes: 60, anchor: scheduledAt,
       template: { id: "template-1", subject: "old", body: "old" },
     });

@@ -88,6 +88,19 @@ describe("requireSameOriginRequest", () => {
     expect(requireSameOriginRequest(trustedRequest({ [header]: value }), { requireClientHeader: true })).toBeNull();
   });
 
+  it("allows the browser origin matching the actual Host when request.url uses an internal origin", () => {
+    const response = requireSameOriginRequest(new Request("https://internal-loopback.test/api/test", {
+      method: "POST",
+      headers: {
+        [CLIENT_REQUEST_HEADER]: CLIENT_REQUEST_HEADER_VALUE,
+        host: "127.0.0.1:31124",
+        origin: "http://127.0.0.1:31124",
+      },
+    }), { requireClientHeader: true });
+
+    expect(response).toBeNull();
+  });
+
   it("does not let forwarded host headers expand the origin allowlist", async () => {
     const response = requireSameOriginRequest(trustedRequest({
       origin: "https://attacker.example.test",

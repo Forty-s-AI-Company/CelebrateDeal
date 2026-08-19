@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 31023",
-    "build": "npm run preflight && prisma generate && next build",
+    "build": "node --import tsx scripts/preflight.ts --production && prisma generate && next build",
     "start": "next start --port 31023",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requestPasswordResetAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
@@ -40,7 +41,7 @@ export default async function PasswordResetRequestPage({
           </FormSubmitButton>
         </form>
         <div className="mt-4 text-sm">
-          <a href="/login" className="font-semibold text-primary hover:underline">返回登入</a>
+          <Link href="/login" className="font-semibold text-primary hover:underline">返回登入</Link>
         </div>
       </section>
     </main>

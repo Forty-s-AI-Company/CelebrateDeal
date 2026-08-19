@@ -955,6 +955,7 @@ async function resolveSubmittedLiveReferences(input: {
           where: { id: input.liveId, vendorId: input.vendorId },
           select: {
             id: true,
+            slug: true,
             title: true,
             status: true,
             scheduledAt: true,
@@ -1055,6 +1056,7 @@ function liveReminderSnapshotAfterUpdate(input: {
   vendorId: string;
   liveId: string | null;
   existingLive: {
+    slug: string;
     title: string;
     status: string;
     scheduledAt: Date;
@@ -1062,6 +1064,7 @@ function liveReminderSnapshotAfterUpdate(input: {
     liveReminderOffsetMinutes: number;
   } | null;
   requestedTitle: string;
+  requestedSlug: string;
   requestedStatus: string;
   scheduledAt: Date;
   reminderOffsetMinutes: number;
@@ -1072,7 +1075,8 @@ function liveReminderSnapshotAfterUpdate(input: {
   const previousActive = ["scheduled", "live"].includes(existing.status);
   const nextActive = ["scheduled", "live"].includes(input.requestedStatus);
   const templateId = input.template?.id ?? null;
-  const changed = existing.title !== input.requestedTitle
+  const changed = existing.slug !== input.requestedSlug
+    || existing.title !== input.requestedTitle
     || existing.scheduledAt.getTime() !== input.scheduledAt.getTime()
     || existing.liveReminderTemplateId !== templateId
     || existing.liveReminderOffsetMinutes !== input.reminderOffsetMinutes
@@ -1081,6 +1085,7 @@ function liveReminderSnapshotAfterUpdate(input: {
   return createLiveReminderReconciliationSnapshot({
     vendorId: input.vendorId,
     liveId: input.liveId,
+    liveSlug: input.requestedSlug,
     liveTitle: input.requestedTitle,
     liveStatus: input.requestedStatus,
     scheduledAt: input.scheduledAt,
@@ -1318,6 +1323,7 @@ export async function upsertLiveAction(formData: FormData) {
     liveId: id,
     existingLive,
     requestedTitle: data.title,
+    requestedSlug: data.slug,
     requestedStatus,
     scheduledAt,
     reminderOffsetMinutes: data.liveReminderOffsetMinutes,

@@ -39,6 +39,8 @@ describe("FormBuilder", () => {
     expect(html).toContain("修改後會自動保存瀏覽器草稿");
     expect(html).toContain("報名頁海報");
     expect(html).toContain("報名頁背景");
+    expect(html).toContain("內文格式工具");
+    expect(html).toContain("內文即時預覽");
     expect(html).toContain('name="heroImageUrl"');
     expect(html).toContain('name="heroImageAssetId"');
     expect(html).toContain('name="backgroundImageUrl"');

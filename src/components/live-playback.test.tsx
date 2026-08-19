@@ -963,6 +963,14 @@ describe("LivePlayback checkout", () => {
     expect(productButton?.props["aria-controls"]).toBe("live-playback-panel");
   });
 
+  it("removes the product navigation entirely until a timed product spotlight is active", () => {
+    const navigation = PlaybackNavigation({ panel: "chat", onPanelChange: vi.fn(), productsAvailable: false });
+    const labels = findElements(navigation, (element) => element.type === "button")
+      .map((button) => textContent(button.props.children));
+
+    expect(labels).toEqual(["聊天", "報名"]);
+  });
+
   it("shows a non-submittable recovery state for an invalid registration schema", () => {
     let tree = renderLive({ form: null, formConfigurationUnavailable: true });
     const navigation = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
@@ -1145,19 +1153,20 @@ describe("LivePlayback checkout", () => {
   it("keeps internal products immediate without a dialog or playback pause", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", { location: { search: "" }, localStorage: {} });
-    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const interactionEvents = [productSpotlightEvent("internal-product", 0, "test-fixture-product-1")];
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
     const video = findElements(tree, (element) => element.type === "video")[0];
     const pause = vi.fn();
     if (!video) throw new Error("Expected video element");
     (video.props.ref as { current: unknown }).current = { pause };
     const navigationComponent = findElements(tree, (element) => element.type === PlaybackNavigation)[0];
     (navigationComponent?.props.onPanelChange as (panel: "products") => void)("products");
-    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
     const buy = checkoutButtons(tree)[0];
     await (buy.props.onClick as () => Promise<void>)();
 
     expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/checkout/test-fixture-vendor-1/test-fixture-product-1");
-    expect(findElements(renderLive({ videoUrl: "https://video.example.test/recording.mp4" }), (element) => element.props.role === "dialog")).toHaveLength(0);
+    expect(findElements(renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents }), (element) => element.props.role === "dialog")).toHaveLength(0);
     expect(pause).not.toHaveBeenCalled();
     expect(vi.mocked(trackClientAnalytics).mock.calls.filter(([event]) => event.eventType === "product_click")).toHaveLength(1);
   });
@@ -1224,11 +1233,13 @@ describe("LivePlayback checkout", () => {
     expect(chatPanel?.props.enabled).toBe(false);
   });
 
-  it("does not render a product card before a valid spotlight event and shows it at the trigger second", () => {
+  it("does not expose products before a valid spotlight event and shows them at the trigger second", () => {
     const interactionEvents = [productSpotlightEvent("spotlight-later", 10, "test-fixture-product-2")];
     let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
 
     expect(findElements(tree, (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
+    expect(findElements(tree, (element) => element.type === PlaybackNavigation)[0]?.props.productsAvailable).toBe(false);
+    expect(textContent(tree)).not.toContain("測試商品一");
     expect(textContent(tree)).not.toContain("測試商品二");
 
     const video = findElements(tree, (element) => element.type === "video")[0];
@@ -1237,6 +1248,7 @@ describe("LivePlayback checkout", () => {
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
 
     expect(findElements(tree, (element) => element.props["data-spotlight-state"] === "expanded")).toHaveLength(1);
+    expect(findElements(tree, (element) => element.type === PlaybackNavigation)[0]?.props.productsAvailable).toBe(true);
     expect(textContent(tree)).toContain("測試商品二");
   });
 

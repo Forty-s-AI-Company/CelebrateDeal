@@ -41,6 +41,17 @@ textarea {
   touch-action: manipulation;
 }
 
+/* Keep the global announcement launcher out of the persistent player controls. */
+body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-launcher"] {
+  bottom: 13rem;
+}
+
+@media (max-width: 639px) {
+  body:has([data-live-player-mode="page"]) [data-testid="announcement-center-launcher"] {
+    bottom: 24rem;
+  }
+}
+
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 3px;

@@ -66,6 +66,23 @@ describe("public registration form", () => {
     expect(html).toContain("#123456");
   });
 
+  it("renders constrained rich text without injecting authored HTML", async () => {
+    mocks.getPublicRegistrationForm.mockResolvedValue({
+      ...publicForm,
+      bodyContent: "## 課程重點\n\n**立即** [查看課程](https://example.test/course)\n\n<script>不執行</script>",
+    });
+    const html = renderToStaticMarkup(await PublicFormPage({
+      params: Promise.resolve({ slug: "summer" }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    expect(html).toContain("課程重點");
+    expect(html).toContain("<strong>立即</strong>");
+    expect(html).toContain('href="https://example.test/course"');
+    expect(html).toContain("&lt;script&gt;不執行&lt;/script&gt;");
+    expect(html).not.toContain("<script>不執行</script>");
+  });
+
   it("renders both the custom success copy and fixed verification gate", async () => {
     const html = renderToStaticMarkup(await PublicFormPage({
       params: Promise.resolve({ slug: "summer" }),

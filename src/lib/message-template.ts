@@ -9,6 +9,7 @@ export const MESSAGE_TEMPLATE_TRIGGERS = [
 export const MESSAGE_TEMPLATE_VARIABLES = [
   "name",
   "live_title",
+  "live_url",
   "live_start_at",
   "vendor_name",
   "unsubscribe_url",
@@ -29,7 +30,10 @@ export const LIVE_REMINDER_EMAIL_TEMPLATE_WHERE = {
 export const LIVE_REMINDER_OFFSET_OPTIONS = [15, 30, 60, 180, 1440] as const;
 
 const variablePattern = /\{\{\s*([a-z_]+)\s*\}\}/gu;
+const renderableVariablePattern = /\{\{\s*(name|live_title|live_url|live_start_at|vendor_name|unsubscribe_url)\s*\}\}/gu;
 const allowedVariables = new Set<string>(MESSAGE_TEMPLATE_VARIABLES);
+
+export type MessageTemplateVariables = Record<typeof MESSAGE_TEMPLATE_VARIABLES[number], string>;
 
 const MessageTemplateDraftSchema = z.object({
   name: z.string().trim().min(1).max(160),
@@ -105,4 +109,9 @@ export function normalizeMessageTemplateDraft(input: unknown): MessageTemplateDr
 
 export function messageTemplateVariableLabel(variable: typeof MESSAGE_TEMPLATE_VARIABLES[number]) {
   return `{{${variable}}}`;
+}
+
+/** Renders only the same allowlisted variables accepted by the template validator. */
+export function renderMessageTemplate(value: string, variables: MessageTemplateVariables) {
+  return value.replace(renderableVariablePattern, (_, variable: keyof MessageTemplateVariables) => variables[variable]);
 }

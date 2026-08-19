@@ -1,6 +1,7 @@
 "use client";
 
 import type { RegistrationFormBuilderField } from "@/lib/registration-form-builder";
+import { RichTextContent } from "@/components/rich-text-content";
 
 export function FormPreview({
   headline,
@@ -62,7 +63,7 @@ export function FormPreview({
         <h3 className="text-xl font-semibold text-slate-950">{headline.trim() || "你的公開標題"}</h3>
         {description.trim() ? <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{description}</p> : null}
         {stickyText?.trim() ? <p className="mt-3 rounded-md px-3 py-2 text-sm font-semibold" style={safeThemeColor ? { color: safeThemeColor } : undefined}>{stickyText.trim()}</p> : null}
-        {bodyContent?.trim() ? <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{bodyContent.trim()}</p> : null}
+        {bodyContent?.trim() ? <RichTextContent value={bodyContent} className="mt-3 text-sm leading-6 text-slate-700" /> : null}
         {notice?.trim() ? <p className="mt-3 whitespace-pre-line rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">{notice.trim()}</p> : null}
         <div className="mt-3 grid gap-1 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
           <p>倒數設定：{safeCountdownMinutes === null ? "未設定" : `${safeCountdownMinutes} 分鐘`}</p>

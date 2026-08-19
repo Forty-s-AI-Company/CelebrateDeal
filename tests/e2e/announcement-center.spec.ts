@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { ANNOUNCEMENT_FEED } from "../../src/lib/announcement-feed";
+
+const latestAnnouncement = ANNOUNCEMENT_FEED[0];
+
+if (!latestAnnouncement) throw new Error("announcement-feed-empty");
 
 async function openFreshAnnouncement(page: Page) {
   await page.goto("/");
@@ -20,7 +25,7 @@ test.describe("進站最新消息／開發進度公告中心", () => {
     await expect(dialog.getByTestId("announcement-section-incomplete")).toBeVisible();
     await expect(dialog.getByTestId("announcement-section-changes")).toBeVisible();
     await expect(dialog.getByTestId("announcement-section-nextSteps")).toBeVisible();
-    await expect(dialog.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "88");
+    await expect(dialog.getByRole("progressbar")).toHaveAttribute("aria-valuenow", String(latestAnnouncement.progressPercent));
     await expect(page.getByTestId("announcement-center-close")).toBeFocused();
 
     await page.keyboard.press("Shift+Tab");
@@ -76,14 +81,14 @@ test.describe("進站最新消息／開發進度公告中心", () => {
   });
 
   test("既存 dialog 時 auto 與 launcher 都不開，移除後 launcher 可開", async ({ page }) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((version) => {
       const now = new Date();
       const localDate = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
       window.localStorage.setItem(
         "celebratedeal.announcement-center.suppression.v1",
-        JSON.stringify({ version: "2026-08-18-v3", localDate }),
+        JSON.stringify({ version, localDate }),
       );
-    });
+    }, latestAnnouncement.version);
     await page.goto("/");
     await expect(page.getByTestId("announcement-center-backdrop")).toBeHidden();
     await page.evaluate(() => {
@@ -111,7 +116,7 @@ test.describe("進站最新消息／開發進度公告中心", () => {
       const key = "celebratedeal.announcement-center.suppression.v1";
       return JSON.parse(window.localStorage.getItem(key) ?? "null") as { version: string; localDate: string };
     });
-    expect(suppression.version).toBe("2026-08-18-v3");
+    expect(suppression.version).toBe(latestAnnouncement.version);
     expect(suppression.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     await page.reload();

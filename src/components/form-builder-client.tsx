@@ -9,6 +9,7 @@ import {
 import { FormFieldEditor, registrationFormFieldTypeLabel } from "@/components/form-field-editor";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import { FormPreview } from "@/components/form-preview";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { useRegistrationFormDraft } from "@/components/use-registration-form-draft";
 import {
   createRegistrationFormField,
@@ -268,11 +269,19 @@ function FormBuilderPublicSettings({
         <input name="stickyText" maxLength={300} value={values.stickyText ?? ""} onChange={(event) => updateValue("stickyText", event.target.value || null)} className={inputClass} />
         <InlineError id="form-sticky-text-error" message={errors.stickyText} />
       </label>
-      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        內文
-        <textarea name="bodyContent" rows={5} maxLength={10_000} value={values.bodyContent ?? ""} onChange={(event) => updateValue("bodyContent", event.target.value || null)} className={textareaClass} />
+      <div className="grid gap-1.5">
+        <RichTextEditor
+          label="內文"
+          name="bodyContent"
+          rows={5}
+          maxLength={10_000}
+          value={values.bodyContent ?? ""}
+          onChange={(value) => updateValue("bodyContent", value || null)}
+          invalid={Boolean(errors.bodyContent)}
+          errorId="form-body-content-error"
+        />
         <InlineError id="form-body-content-error" message={errors.bodyContent} />
-      </label>
+      </div>
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         注意事項
         <textarea name="notice" rows={3} maxLength={1_000} value={values.notice ?? ""} onChange={(event) => updateValue("notice", event.target.value || null)} className={textareaClass} />

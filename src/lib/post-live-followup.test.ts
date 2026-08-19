@@ -38,6 +38,7 @@ describe("post-live follow-up domain", () => {
     const input = {
       vendorId: "vendor-1",
       liveId: "live-1",
+      liveSlug: "webinar-one",
       liveTitle: "研討會",
       liveScheduledAt: scheduledAt,
       formSubmissionId: "submission-1",
@@ -51,6 +52,7 @@ describe("post-live follow-up domain", () => {
       ...input,
       template: { ...input.template, body: "新版內容" },
     }));
+    expect(stablePostLiveFollowupDeliveryId(input)).not.toBe(stablePostLiveFollowupDeliveryId({ ...input, liveSlug: "renamed-webinar" }));
     expect(postLiveFollowupIdempotencyPrefix("rule-1")).toBe("post-live-followup/rule-1/");
   });
 

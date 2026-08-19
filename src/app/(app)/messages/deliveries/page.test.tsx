@@ -24,7 +24,7 @@ beforeEach(() => {
       id: "email_0123456789abcdef0123456789abcdef",
       recipientMaskedEmail: "l***@example.test",
       status: "failed",
-      trigger: "registration_confirmed",
+      trigger: "post_live_followup",
       attemptCount: 2,
       maxAttempts: 5,
       manualRetryCount: 0,
@@ -50,6 +50,7 @@ describe("MessageDeliveriesPage", () => {
     expect(html).toContain("完整收件 Email 或寄送編號");
     expect(html).toContain("l***@example.test");
     expect(html).toContain("寄送服務連線暫時失敗");
+    expect(html).toContain("課後通知");
     expect(html).toContain("重新排程");
     expect(html).toContain("有效退訂");
     expect(html).not.toContain("lead@example.test");

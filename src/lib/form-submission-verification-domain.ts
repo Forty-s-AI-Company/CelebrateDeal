@@ -15,6 +15,7 @@ export type FormSubmissionVerificationResult =
         vendorId: string;
         vendorName: string;
         liveId: string;
+        liveSlug: string;
         liveTitle: string;
         formSubmissionId: string;
         recipientName: string;
@@ -96,6 +97,7 @@ export async function verifyFormSubmission(
             id: true,
             vendorId: true,
             formId: true,
+            slug: true,
             title: true,
             scheduledAt: true,
             liveReminderOffsetMinutes: true,
@@ -212,6 +214,7 @@ export async function verifyFormSubmission(
         vendorId: submission.form.vendorId,
         vendorName: submission.form.vendor.name,
         liveId: submission.live.id,
+        liveSlug: submission.live.slug,
         liveTitle: submission.live.title,
         formSubmissionId: submission.id,
         recipientName: submission.name,

@@ -63,6 +63,15 @@ function allowedRequestOrigins(request: Request) {
   const requestUrl = new URL(request.url);
   origins.add(requestUrl.origin);
 
+  // Some local reverse proxies and loopback bridges build request.url from an
+  // internal origin while preserving the browser-visible Host header. Treat
+  // that actual Host as same-origin, but never trust forwarded host headers.
+  const host = request.headers.get("host");
+  if (host) {
+    const protocol = host.includes("localhost") || host.startsWith("127.") ? "http" : "https";
+    origins.add(`${protocol}://${host}`);
+  }
+
   const configured = originFrom(process.env.NEXT_PUBLIC_APP_URL ?? null);
   if (configured) origins.add(configured);
 

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import Image from "next/image";
+import Link from "next/link";
 import QRCode from "qrcode";
 import {
   confirmMfaEnrollmentAction,
@@ -80,7 +81,7 @@ export default async function MfaSetupPage({
               <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
                 MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。
                 <br />
-                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <a href="/mfa/verify" className="font-semibold underline">二次驗證頁</a>。
+                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href="/mfa/verify" className="font-semibold underline">二次驗證頁</Link>。
               </div>
             ) : pendingMfa ? (
               <div className="grid gap-4">

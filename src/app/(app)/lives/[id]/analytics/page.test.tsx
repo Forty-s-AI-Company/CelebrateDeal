@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   formSubmissionCount: vi.fn(),
   liveChatMessageCount: vi.fn(),
   interactionEventCount: vi.fn(),
+  paymentTransactionCount: vi.fn(),
+  emailDeliveryGroupBy: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
@@ -18,6 +20,8 @@ vi.mock("@/lib/db", () => ({
     formSubmission: { count: mocks.formSubmissionCount },
     liveChatMessage: { count: mocks.liveChatMessageCount },
     interactionEvent: { count: mocks.interactionEventCount },
+    paymentTransaction: { count: mocks.paymentTransactionCount },
+    emailDelivery: { groupBy: mocks.emailDeliveryGroupBy },
   }),
 }));
 
@@ -53,9 +57,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendor.mockResolvedValue({ id: "vendor-current" });
   mocks.liveFindFirst.mockResolvedValue(live);
-  mocks.formSubmissionCount.mockResolvedValue(4);
+  mocks.formSubmissionCount.mockResolvedValueOnce(6).mockResolvedValueOnce(4);
   mocks.liveChatMessageCount.mockResolvedValue(3);
   mocks.interactionEventCount.mockResolvedValue(7);
+  mocks.paymentTransactionCount.mockResolvedValue(2);
+  mocks.emailDeliveryGroupBy.mockResolvedValue([
+    { status: "sent", _count: { _all: 12 } },
+    { status: "failed", _count: { _all: 1 } },
+    { status: "exhausted", _count: { _all: 2 } },
+  ]);
   mocks.analyticsFindMany
     .mockResolvedValueOnce(verifiedAnalyticsSessions)
     .mockResolvedValueOnce(recentEvents);
@@ -75,13 +85,16 @@ describe("/lives/[id]/analytics route", () => {
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     });
-    expect(mocks.formSubmissionCount).toHaveBeenCalledWith({ where: { liveId: live.id, verificationStatus: "VERIFIED" } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED" } });
     expect(html).toMatch(/播放 session<\/p><p[^>]*>40<\/p>/);
     expect(html).toMatch(/商品點擊<\/p><p[^>]*>8<\/p>/);
     expect(html).toMatch(/CTA 點擊<\/p><p[^>]*>6<\/p>/);
     expect(html).toMatch(/播放進度<\/p><p[^>]*>5<\/p>/);
     expect(html).toContain('aria-label="商品點擊：8，相對觀看轉換率 20%"');
     expect(html).toContain('aria-label="CTA 點擊：6，相對觀看轉換率 15%"');
+    expect(html).toMatch(/報名<\/p><p[^>]*>6<\/p>/);
+    expect(html).toMatch(/Email 已驗證<\/p><p[^>]*>4<\/p>/);
     expect(html).toContain('aria-label="名單：4，相對觀看轉換率 10%"');
     expect(mocks.liveChatMessageCount).toHaveBeenCalledWith({ where: {
       vendorId: "vendor-current",
@@ -100,6 +113,21 @@ describe("/lives/[id]/analytics route", () => {
       role: { is: { vendorId: "vendor-current", isActive: true, isScheduled: true } },
     } });
     expect(html).toMatch(/真實觀眾留言<\/p><p[^>]*>3<\/p>/);
+    expect(mocks.paymentTransactionCount).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-current",
+        primaryCommerceOrder: { isNot: null },
+        metadata: { path: ["sourceLiveId"], equals: live.id },
+      },
+    });
+    expect(html).toMatch(/建立待付款訂單<\/p><p[^>]*>2<\/p>/);
+    expect(mocks.emailDeliveryGroupBy).toHaveBeenCalledWith({
+      by: ["status"],
+      where: { vendorId: "vendor-current", sourceLiveId: live.id },
+      _count: { _all: true },
+    });
+    expect(html).toMatch(/Email 成功<\/p><p[^>]*>12<\/p>/);
+    expect(html).toMatch(/Email 失敗<\/p><p[^>]*>3<\/p>/);
     expect(html).toMatch(/排程留言腳本<\/p><p[^>]*>7<\/p>/);
     expect(html).toContain("設定數，不列入轉換率");
     expect(html).toContain(`href="/lives/${live.id}/analytics/messages/export"`);

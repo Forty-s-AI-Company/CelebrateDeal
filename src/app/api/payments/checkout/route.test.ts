@@ -124,7 +124,7 @@ beforeEach(() => {
     vendor: { id: "vendor-1" },
   });
   db.affiliateClick.findFirst.mockResolvedValue(null);
-  db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1" });
+  db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", liveId: "live-1" });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
@@ -891,19 +891,24 @@ describe("checkout affiliate click attribution", () => {
 });
 
 describe("checkout form submission attribution", () => {
-  it("carries a same-vendor form submission cookie into transaction metadata", async () => {
+  it("carries a verified same-vendor live registration into transaction metadata", async () => {
     const response = await POST(checkoutRequest("celebratedeal_form_submission=submission-1"));
 
     expect(response.status).toBe(200);
     expect(db.formSubmission.findFirst).toHaveBeenCalledWith({
-      where: { id: "submission-1", form: { vendorId: "vendor-1" } },
-      select: { id: true },
+      where: {
+        id: "submission-1",
+        verificationStatus: "VERIFIED",
+        form: { vendorId: "vendor-1" },
+        live: { is: { vendorId: "vendor-1" } },
+      },
+      select: { id: true, liveId: true },
     });
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1" }) }),
+      data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),
     }));
     expect(db.paymentTransaction.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1" }) }),
+      data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),
     }));
     expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=lax");
   });

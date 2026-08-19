@@ -29,6 +29,7 @@ export function resolvePostLiveDeliveryAt(input: PostLiveCompletionInput, offset
 export type PostLiveFollowupRevision = {
   vendorId: string;
   liveId: string;
+  liveSlug: string;
   liveTitle: string;
   liveScheduledAt: Date;
   formSubmissionId: string;
@@ -44,6 +45,7 @@ export function stablePostLiveFollowupDeliveryId(input: PostLiveFollowupRevision
     .update(JSON.stringify([
       input.vendorId,
       input.liveId,
+      input.liveSlug,
       input.liveTitle,
       input.liveScheduledAt.toISOString(),
       input.formSubmissionId,

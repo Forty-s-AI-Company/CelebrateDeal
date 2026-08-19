@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { processDuePostLiveFollowups } from "../../src/lib/email-delivery";
@@ -18,6 +19,25 @@ const fixture = {
   roleId: "",
   slug: `wp7-one-stop-${runId}`,
 };
+
+async function expectNoBlockingAxeViolations(page: Page) {
+  const result = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  const blocking = result.violations
+    .filter((violation) => violation.impact === "critical" || violation.impact === "serious")
+    .map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      targets: violation.nodes.map((node) => node.target.map((selector) => (
+        String(selector).split(" > ").slice(-3).join(" > ")
+      ))),
+    }));
+
+  if (blocking.length > 0) {
+    throw new Error(`AXE_BLOCKING:${JSON.stringify(blocking)}`);
+  }
+}
 
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
@@ -190,6 +210,10 @@ test("one stop webinar verifies registration, preserves live playback through de
   ));
   const formResponse = await page.goto(`/form/${fixture.formSlug}`, { waitUntil: "domcontentloaded" });
   expect(formResponse?.status()).toBe(200);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-registration-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-registration.png"), fullPage: true });
   const announcement = page.getByRole("dialog", { name: "進站最新消息" });
   await expect(announcement).toBeVisible();
@@ -201,7 +225,17 @@ test("one stop webinar verifies registration, preserves live playback through de
   await page.getByLabel("姓名").fill("WP7 Lead");
   await page.getByLabel("Email").fill(`wp7-lead-${runId}@example.test`);
   await page.getByRole("button", { name: "完成 WP7 報名", exact: true }).click();
-  await expect((await registrationResponse).status()).toBe(200);
+  const registrationResponseResult = await registrationResponse;
+  const registrationResponseBody = await registrationResponseResult.json().catch(() => null) as { error?: unknown } | null;
+  const registrationRequestHeaders = await registrationResponseResult.request().allHeaders();
+  expect(registrationResponseResult.status(), JSON.stringify({
+    body: registrationResponseBody,
+    pageUrl: page.url(),
+    requestUrl: registrationResponseResult.url(),
+    origin: registrationRequestHeaders.origin,
+    host: registrationRequestHeaders.host,
+    referer: registrationRequestHeaders.referer,
+  })).toBe(200);
   await expect(page.getByText("請到 Email 開啟確認連結；完成確認後才會列入正式名單。", { exact: true })).toBeVisible();
 
   await expect.poll(async () => await db.formSubmission.count({
@@ -253,6 +287,15 @@ test("one stop webinar verifies registration, preserves live playback through de
   await expect.poll(async () => await db.emailDelivery.count({
     where: { vendorId: fixture.vendorId, sourceFormSubmissionId: submissionId, trigger: "registration_confirmed" },
   })).toBe(1);
+  const registrationDelivery = await db.emailDelivery.findFirstOrThrow({
+    where: { vendorId: fixture.vendorId, sourceFormSubmissionId: submissionId, trigger: "registration_confirmed" },
+    select: { id: true, payloadEncryptedEnvelope: true },
+  });
+  const registrationPayload = revealEmailDeliveryPayload(registrationDelivery.payloadEncryptedEnvelope, {
+    vendorId: fixture.vendorId,
+    deliveryId: registrationDelivery.id,
+  });
+  expect(registrationPayload.body).toContain(`/live/${fixture.slug}`);
 
   const liveAdmissionResponse = page.waitForResponse((response) => (
     new URL(response.url()).pathname === "/api/live-admission" && response.request().method() === "POST"
@@ -279,6 +322,7 @@ test("one stop webinar verifies registration, preserves live playback through de
     sourceState: element.getAttribute("data-playback-source-state"),
     videoCount: element.querySelectorAll("video").length,
   }))).toEqual({ sourceState: "ready", videoCount: 1 });
+  await expect(page.getByRole("button", { name: "商品", exact: true })).toHaveCount(0);
   await video.evaluate((element) => {
     const media = element as HTMLVideoElement;
     const browserWindow = window as typeof window & { __wp7Video?: HTMLVideoElement };
@@ -295,6 +339,11 @@ test("one stop webinar verifies registration, preserves live playback through de
     media.dispatchEvent(new Event("timeupdate", { bubbles: true }));
   });
   await expect(page.getByRole("complementary", { name: "推薦商品：WP7 直播內商品" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "商品", exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await expectNoBlockingAxeViolations(page);
+  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-live-mobile.png"), fullPage: true });
 
   await page.getByRole("button", { name: "商品", exact: true }).click();
   await page.getByRole("article").filter({ hasText: "WP7 直播內商品" }).getByRole("button", { name: "購買", exact: true }).click();
@@ -305,6 +354,9 @@ test("one stop webinar verifies registration, preserves live playback through de
   await expect.poll(() => page.locator("video").evaluate((current) => (
     (window as typeof window & { __wp7Video?: HTMLVideoElement }).__wp7Video === current
   ))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await expectNoBlockingAxeViolations(page);
+  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-checkout-mobile.png"), fullPage: true });
 
   await page.getByLabel("姓名").fill("WP7 Buyer");
   await page.getByLabel("Email").fill(`wp7-buyer-${runId}@example.test`);
@@ -332,6 +384,7 @@ test("one stop webinar verifies registration, preserves live playback through de
     },
   })).toBe(0);
   await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-order.png") });
+  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-order-mobile.png") });
 
   const completedScheduledAt = new Date(Date.now() - 601_000);
   const completionAt = new Date(completedScheduledAt.getTime() + 600_000);
@@ -355,4 +408,25 @@ test("one stop webinar verifies registration, preserves live playback through de
     },
   })).toBe(1);
   expect(pageErrorCount).toBe(0);
+});
+
+test("direct or refreshed checkout does not invent a live playback session", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const checkoutPath = `/checkout/${fixture.vendorId}/${fixture.productId}`;
+
+  try {
+    const response = await page.goto(checkoutPath, { waitUntil: "domcontentloaded" });
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "確認購買資料", exact: true })).toBeVisible();
+    await expect(page.getByTestId("persistent-live-player")).toHaveCount(0);
+    await expect(page.locator("video")).toHaveCount(0);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "確認購買資料", exact: true })).toBeVisible();
+    await expect(page.getByTestId("persistent-live-player")).toHaveCount(0);
+    await expect(page.locator("video")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });

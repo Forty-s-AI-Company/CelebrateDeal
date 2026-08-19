@@ -67,10 +67,16 @@ describe("MessageTemplateForm", () => {
     expect(html).toContain("SMS（尚未串接，不能啟用）");
     expect(html).toContain("{{name}}");
     expect(html).toContain("{{live_start_at}}");
+    expect(html).toContain("{{live_url}}");
     expect(html).toContain("{{unsubscribe_url}}");
+    expect(html).toContain('aria-label="點選插入變數"');
+    expect(html).toMatch(/<button[^>]*>\{\{name\}\}<\/button>/u);
+    expect(html).toMatch(/<button[^>]*>\{\{live_title\}\}<\/button>/u);
     expect(html).toContain("課後通知會自動附上退訂連結");
     expect(html).toMatch(/<input[^>]*required=""[^>]*maxLength="200"[^>]*name="subject"/u);
-    expect(html).toMatch(/<textarea[^>]*name="body"[^>]*rows="8"[^>]*required=""[^>]*maxLength="20000"/u);
+    expect(html).toMatch(/<textarea(?=[^>]*name="body")(?=[^>]*rows="8")(?=[^>]*required="")(?=[^>]*maxLength="20000")[^>]*>/u);
+    expect(html).toContain('role="toolbar"');
+    expect(html).toContain("內容即時預覽");
     expect(html).toContain('aria-busy="false"');
   });
 

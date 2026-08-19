@@ -297,7 +297,6 @@ function LiveChatSession({
                 <span className="ml-2 text-white/55">{message.actor.label}</span>
                 {message.actor.presentationRole === "official" ? <span className="ml-2 rounded-full border border-amber-200/40 px-2 py-0.5 text-[10px]">官方</span> : null}
               </span>
-              <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/60">預設腳本</span>
             </div>
             <p className="mt-1 break-words text-sm leading-6 text-white/85">{message.body}</p>
           </article>

@@ -26,7 +26,9 @@ jobs:
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
       JOB_SECRET: ci-job-secret-123456
+      CRON_SECRET: ci-cron-secret-123456
       CSRF_SECRET: ci-csrf-secret-123456
+      LIVE_CHAT_INGRESS_SECRET: ci-live-chat-ingress-secret-1234567890
       RATE_LIMIT_PROVIDER: cloudflare_waf
       CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
       CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token

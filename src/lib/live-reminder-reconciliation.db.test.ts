@@ -53,10 +53,11 @@ async function createLiveFixture(vendor: { id: string; name: string }, suffix: s
   return { form, reminderTemplate, live };
 }
 
-function snapshotFor(live: { id: string; vendorId: string; title: string; status: string; scheduledAt: Date; liveReminderOffsetMinutes: number; liveReminderTemplate: LiveReminderTemplateSnapshot | null }, now: Date) {
+function snapshotFor(live: { id: string; vendorId: string; slug: string; title: string; status: string; scheduledAt: Date; liveReminderOffsetMinutes: number; liveReminderTemplate: LiveReminderTemplateSnapshot | null }, now: Date) {
   return createLiveReminderReconciliationSnapshot({
     vendorId: live.vendorId,
     liveId: live.id,
+    liveSlug: live.slug,
     liveTitle: live.title,
     liveStatus: live.status,
     scheduledAt: live.scheduledAt,
@@ -134,6 +135,7 @@ describe("live reminder reconciliation disposable PostgreSQL invariants", () => 
       vendorId: vendor.id,
       vendorName: vendor.name,
       liveId: fixture.live.id,
+      liveSlug: fixture.live.slug,
       liveTitle: fixture.live.title,
       formSubmissionId: submission.id,
       recipientName: submission.name,
@@ -215,6 +217,7 @@ describe("live reminder reconciliation disposable PostgreSQL invariants", () => 
       vendorId: vendor.id,
       vendorName: vendor.name,
       liveId: fixture.live.id,
+      liveSlug: fixture.live.slug,
       liveTitle: fixture.live.title,
       formSubmissionId: submission.id,
       recipientName: submission.name,
@@ -272,6 +275,7 @@ describe("live reminder reconciliation disposable PostgreSQL invariants", () => 
       vendorId: vendor.id,
       vendorName: vendor.name,
       liveId: fixture.live.id,
+      liveSlug: fixture.live.slug,
       liveTitle: fixture.live.title,
       formSubmissionId: submission.id,
       recipientName: submission.name,

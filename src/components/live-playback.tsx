@@ -675,14 +675,20 @@ function useStreamUsageTracker({
 export function PlaybackNavigation({
   panel,
   onPanelChange,
+  productsAvailable = true,
 }: {
   panel: "chat" | "products" | "form";
   onPanelChange: (panel: "chat" | "products" | "form") => void;
+  /** Product discovery is script-gated: never reveal a default catalog early. */
+  productsAvailable?: boolean;
 }) {
+  const visiblePanels = productsAvailable
+    ? playbackPanels
+    : playbackPanels.filter((item) => item.key !== "products");
   return (
     <nav aria-label="直播功能" className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/10 bg-black/55 px-3 py-3 backdrop-blur-xl">
-      <div className="grid grid-cols-3 gap-2">
-        {playbackPanels.map(({ key, label, Icon }) => (
+      <div className={`grid gap-2 ${productsAvailable ? "grid-cols-3" : "grid-cols-2"}`}>
+        {visiblePanels.map(({ key, label, Icon }) => (
           <button
             key={key}
             type="button"
@@ -825,8 +831,15 @@ function resolveProductSpotlight(products: LiveProduct[], triggeredEvents: LiveI
   const spotlightCardProduct = latestProductEvent
     ? products.find((product) => product.id === latestProductEvent.productId)
     : undefined;
-  const spotlightProduct = spotlightCardProduct ?? products[0];
-  return { latestProductEvent, spotlightCardProduct, spotlightProduct, sortedProducts: prioritizeProduct(products, spotlightProduct) };
+  // Products are not a permanently visible catalog. A merchant must publish a
+  // valid timed spotlight before the audience can discover any offer.
+  const spotlightProduct = spotlightCardProduct;
+  return {
+    latestProductEvent,
+    spotlightCardProduct,
+    spotlightProduct,
+    sortedProducts: spotlightProduct ? prioritizeProduct(products, spotlightProduct) : [],
+  };
 }
 
 function ExternalNavigationConfirmDialog({
@@ -1017,12 +1030,16 @@ export function ScriptedInteractionOverlay({
 export function persistentPlayerShellClass(isCheckoutOverlay: boolean, isExpanded: boolean) {
   if (!isCheckoutOverlay) return "absolute inset-0";
   return isExpanded
-    ? "pointer-events-auto fixed inset-3 z-[70] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl"
-    : "pointer-events-auto fixed bottom-4 right-4 z-[70] h-48 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl";
+    ? "pointer-events-none fixed inset-3 z-[70] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl"
+    : "pointer-events-none fixed bottom-4 right-4 z-[70] h-48 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl";
 }
 
 function playbackPageClass(isCheckoutOverlay: boolean) {
   return isCheckoutOverlay ? "pointer-events-none fixed inset-0 z-[60]" : "min-h-screen bg-slate-950";
+}
+
+function playbackVideoClass(isCheckoutOverlay: boolean) {
+  return `${isCheckoutOverlay ? "pointer-events-none " : ""}h-full w-full object-cover`;
 }
 
 function playbackSectionClass(isCheckoutOverlay: boolean) {
@@ -1085,18 +1102,18 @@ export function PersistentMiniPlayerControls({
   };
 
   return (
-    <div className="absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 rounded-xl bg-black/75 p-2 text-white backdrop-blur-md">
-      <button type="button" onClick={onBack} aria-label="返回直播" className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+    <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 rounded-xl bg-black/75 p-2 text-white backdrop-blur-md">
+      <button type="button" onClick={onBack} aria-label="返回直播" className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
         <ArrowLeft size={18} aria-hidden="true" />
       </button>
-      <button type="button" onClick={togglePlayback} aria-label={isPaused ? "播放直播" : "暫停直播"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+      <button type="button" onClick={togglePlayback} aria-label={isPaused ? "播放直播" : "暫停直播"} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
         {isPaused ? <Play size={18} aria-hidden="true" /> : <Pause size={18} aria-hidden="true" />}
       </button>
-      <button type="button" onClick={toggleMuted} aria-label={isMuted ? "開啟直播聲音" : "將直播靜音"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+      <button type="button" onClick={toggleMuted} aria-label={isMuted ? "開啟直播聲音" : "將直播靜音"} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
         {isMuted ? <VolumeX size={18} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
       </button>
       <p className="min-w-0 flex-1 truncate px-1 text-xs font-bold">{title}</p>
-      <button type="button" onClick={onToggleExpanded} aria-label={isExpanded ? "縮小直播小窗" : "展開直播小窗"} className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
+      <button type="button" onClick={onToggleExpanded} aria-label={isExpanded ? "縮小直播小窗" : "展開直播小窗"} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/15 hover:bg-white/25">
         {isExpanded ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}
       </button>
     </div>
@@ -1287,6 +1304,12 @@ function LivePlaybackExperience({
   scheduledMessages: ScheduledRuntimeMessage[];
   onAdmissionInvalid: () => void;
 }) {
+  const productsAvailable = Boolean(latestProductEvent && spotlightCardProduct);
+  // A seek or a refreshed timeline can move before the timed offer. Keep the
+  // visible panel truthful even if an old client-side selection still says
+  // "products"; the catalog must not leak before the trigger second.
+  const visiblePanel = !productsAvailable && panel === "products" ? "chat" : panel;
+
   return (
     <>
       <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
@@ -1319,7 +1342,7 @@ function LivePlaybackExperience({
         </div>
       </div>
 
-      <PlaybackNavigation panel={panel} onPanelChange={onPanelChange} />
+      <PlaybackNavigation panel={visiblePanel} onPanelChange={onPanelChange} productsAvailable={productsAvailable} />
 
       {checkoutError ? (
         <p role="alert" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">
@@ -1329,7 +1352,7 @@ function LivePlaybackExperience({
 
       <LivePlaybackPanel
         live={live}
-        panel={panel}
+        panel={visiblePanel}
         sortedProducts={sortedProducts}
         spotlightProduct={spotlightProduct}
         spotlightCardProduct={spotlightCardProduct}
@@ -1655,13 +1678,14 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       <section className={playbackSectionClass(isCheckoutOverlay)}>
         <div
           data-testid="persistent-live-player"
+          data-live-player-mode={isCheckoutOverlay ? "checkout" : "page"}
           data-playback-source-state={playbackSourceState}
           className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}
         >
           {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
             <video
               ref={videoRef}
-              className="h-full w-full object-cover"
+              className={playbackVideoClass(isCheckoutOverlay)}
               src={playableUrl ?? undefined}
               controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
@@ -1696,7 +1720,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           ) : (
             <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
           {isCheckoutOverlay && isPlayableRuntime ? (
             <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}
               isExpanded={isMiniPlayerExpanded} onBack={() => router.back()} onMutedChange={setIsPlaybackMuted}

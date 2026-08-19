@@ -3,6 +3,7 @@ import {
   MESSAGE_TEMPLATE_VARIABLES,
   messageTemplateVariableLabel,
   normalizeMessageTemplateDraft,
+  renderMessageTemplate,
 } from "./message-template";
 
 function validDraft(overrides: Record<string, unknown> = {}) {
@@ -33,6 +34,7 @@ describe("message template draft", () => {
     expect(MESSAGE_TEMPLATE_VARIABLES.map(messageTemplateVariableLabel)).toEqual([
       "{{name}}",
       "{{live_title}}",
+      "{{live_url}}",
       "{{live_start_at}}",
       "{{vendor_name}}",
       "{{unsubscribe_url}}",
@@ -44,6 +46,17 @@ describe("message template draft", () => {
       success: true,
       data: expect.objectContaining({ body: "第一行\n第二行\n{{unsubscribe_url}}" }),
     });
+  });
+
+  it("renders only allowlisted variables for a safe preview and preserves unknown markers for validation", () => {
+    expect(renderMessageTemplate("嗨 {{ name }}，{{live_title}} {{live_url}} {{unknown}}", {
+      name: "王小明",
+      live_title: "示範研討會",
+      live_url: "https://example.test/live/demo",
+      live_start_at: "示範時間",
+      vendor_name: "示範品牌",
+      unsubscribe_url: "https://example.test/unsubscribe",
+    })).toBe("嗨 王小明，示範研討會 https://example.test/live/demo {{unknown}}");
   });
 
   it("accepts the supported post-live follow-up trigger with the existing variables", () => {

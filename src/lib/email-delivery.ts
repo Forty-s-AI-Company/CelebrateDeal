@@ -3,13 +3,15 @@ import type { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendTransactionalEmail, TransactionalEmailError } from "@/lib/email";
+import { richTextToEmailHtml, richTextToPlainText } from "@/lib/rich-text";
 import {
   createEmailUnsubscribeUrl,
   protectEmailDeliveryPayload,
   revealEmailDeliveryPayload,
   type VendorEmailBrandSource,
 } from "@/lib/email-delivery-pii";
-import { hasOnlySupportedMessageTemplateVariables } from "@/lib/message-template";
+import { hasOnlySupportedMessageTemplateVariables, renderMessageTemplate } from "@/lib/message-template";
+import { createLiveViewerUrl } from "@/lib/live-public-url";
 import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
 import { captureOperationalError } from "@/lib/monitoring";
 import {
@@ -30,12 +32,12 @@ import {
 
 const DELIVERY_LEASE_MS = 10 * 60 * 1_000;
 const MAX_ATTEMPTS = 5;
-const TEMPLATE_VARIABLE_PATTERN = /\{\{\s*(name|live_title|live_start_at|vendor_name|unsubscribe_url)\s*\}\}/gu;
 
 export type RegistrationConfirmationInput = {
   vendorId: string;
   vendorName: string;
   liveId: string;
+  liveSlug: string;
   liveTitle: string;
   formSubmissionId: string;
   recipientName: string;
@@ -97,14 +99,22 @@ function stableDeliveryId(input: Pick<RegistrationConfirmationInput, "vendorId" 
   return `email_${digest}`;
 }
 
-function renderTemplate(value: string, variables: Record<"name" | "live_title" | "live_start_at" | "vendor_name" | "unsubscribe_url", string>) {
-  return value.replace(TEMPLATE_VARIABLE_PATTERN, (_, variable: keyof typeof variables) => variables[variable]);
-}
-
 function ensureEmailUnsubscribeFooter(body: string, unsubscribeUrl: string) {
   const renderedBody = body.trim();
   if (renderedBody.includes(unsubscribeUrl)) return renderedBody;
   return [renderedBody, `退訂：${unsubscribeUrl}`].filter(Boolean).join("\n\n");
+}
+
+/**
+ * A confirmed registration must be actionable even when a merchant's custom
+ * template forgot to insert {{live_url}}. This is intentionally limited to
+ * the post-verification confirmation; reminders and follow-ups remain fully
+ * merchant-authored apart from their mandatory unsubscribe footer.
+ */
+function ensureRegistrationLiveEntry(body: string, liveUrl: string) {
+  const renderedBody = body.trim();
+  if (renderedBody.includes(liveUrl)) return renderedBody;
+  return [renderedBody, `直播入口：${liveUrl}`].filter(Boolean).join("\n\n");
 }
 
 function formatLiveStartAt(value: Date) {
@@ -175,12 +185,16 @@ export async function ensureRegistrationConfirmationDelivery(input: Registration
   const variables = {
     name: input.recipientName,
     live_title: input.liveTitle,
+    live_url: createLiveViewerUrl(input.liveSlug),
     live_start_at: formatLiveStartAt(input.liveScheduledAt),
     vendor_name: input.vendorName,
     unsubscribe_url: unsubscribeUrl,
   };
-  const subject = renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim();
-  const body = ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), unsubscribeUrl);
+  const subject = renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim();
+  const body = ensureEmailUnsubscribeFooter(
+    ensureRegistrationLiveEntry(renderMessageTemplate(template.body, variables), variables.live_url),
+    unsubscribeUrl,
+  );
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
     subject,
@@ -233,7 +247,7 @@ export async function ensureRegistrationConfirmationDelivery(input: Registration
 }
 
 function stableLiveReminderDeliveryId(
-  input: Pick<LiveReminderDeliveryInput, "vendorId" | "liveId" | "liveTitle" | "formSubmissionId" | "liveScheduledAt" | "reminderOffsetMinutes"> & {
+  input: Pick<LiveReminderDeliveryInput, "vendorId" | "liveId" | "liveSlug" | "liveTitle" | "formSubmissionId" | "liveScheduledAt" | "reminderOffsetMinutes"> & {
     template: { id: string; subject: string; body: string };
   },
 ) {
@@ -241,6 +255,7 @@ function stableLiveReminderDeliveryId(
     .update(JSON.stringify([
       input.vendorId,
       input.liveId,
+      input.liveSlug,
       input.liveTitle,
       input.formSubmissionId,
       input.template.id,
@@ -285,6 +300,7 @@ export async function ensureLiveReminderDelivery(
   const deliveryId = stableLiveReminderDeliveryId({
     vendorId: input.vendorId,
     liveId: input.liveId,
+    liveSlug: input.liveSlug,
     liveTitle: input.liveTitle,
     formSubmissionId: input.formSubmissionId,
     template: {
@@ -299,14 +315,15 @@ export async function ensureLiveReminderDelivery(
   const variables = {
     name: input.recipientName,
     live_title: input.liveTitle,
+    live_url: createLiveViewerUrl(input.liveSlug),
     live_start_at: formatLiveStartAt(input.liveScheduledAt),
     vendor_name: input.vendorName,
     unsubscribe_url: unsubscribeUrl,
   };
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
-    subject: renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), unsubscribeUrl),
+    subject: renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
+    body: ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), unsubscribeUrl),
     brand: input.emailBrand,
   }, {
     vendorId: input.vendorId,
@@ -456,6 +473,7 @@ export async function ensurePostLiveFollowupDelivery(
   const deliveryId = stablePostLiveFollowupDeliveryId({
     vendorId: input.vendorId,
     liveId: input.liveId,
+    liveSlug: input.liveSlug,
     liveTitle: input.liveTitle,
     liveScheduledAt: input.liveScheduledAt,
     formSubmissionId: input.formSubmissionId,
@@ -467,14 +485,15 @@ export async function ensurePostLiveFollowupDelivery(
   const variables = {
     name: input.recipientName,
     live_title: input.liveTitle,
+    live_url: createLiveViewerUrl(input.liveSlug),
     live_start_at: formatLiveStartAt(input.liveScheduledAt),
     vendor_name: input.vendorName,
     unsubscribe_url: createEmailUnsubscribeUrl(deliveryId),
   };
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: input.recipientEmail,
-    subject: renderTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
-    body: ensureEmailUnsubscribeFooter(renderTemplate(template.body, variables), variables.unsubscribe_url),
+    subject: renderMessageTemplate(template.subject, variables).replace(/\s+/gu, " ").trim(),
+    body: ensureEmailUnsubscribeFooter(renderMessageTemplate(template.body, variables), variables.unsubscribe_url),
     brand: input.emailBrand,
   }, { vendorId: input.vendorId, deliveryId });
   const db = getDb();
@@ -631,6 +650,7 @@ export async function processDuePostLiveFollowups(
         vendorId: rule.vendorId,
         vendorName: live.vendor.name,
         liveId: live.id,
+        liveSlug: live.slug,
         liveTitle: live.title,
         formSubmissionId: submission.id,
         recipientName: submission.name,
@@ -796,6 +816,7 @@ async function isCurrentLiveReminderDelivery(
     select: {
       id: true,
       vendorId: true,
+      slug: true,
       title: true,
       status: true,
       scheduledAt: true,
@@ -822,6 +843,7 @@ async function isCurrentLiveReminderDelivery(
   return stableLiveReminderDeliveryId({
     vendorId: delivery.vendorId,
     liveId: live.id,
+    liveSlug: live.slug,
     liveTitle: live.title,
     formSubmissionId: delivery.sourceFormSubmissionId,
     template: { id: template.id, subject: template.subject, body: template.body },
@@ -843,6 +865,7 @@ async function isCurrentPostLiveFollowupDelivery(
       select: {
         id: true,
         vendorId: true,
+        slug: true,
         title: true,
         scheduledAt: true,
         endedAt: true,
@@ -920,6 +943,7 @@ async function isCurrentPostLiveFollowupDelivery(
     return stablePostLiveFollowupDeliveryId({
       vendorId: delivery.vendorId,
       liveId: live.id,
+      liveSlug: live.slug,
       liveTitle: live.title,
       liveScheduledAt: live.scheduledAt,
       formSubmissionId: submission.id,
@@ -1074,7 +1098,8 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
     sent = await sendTransactionalEmail({
       to: payload.recipientEmail,
       subject: payload.subject,
-      text: payload.body,
+      text: richTextToPlainText(payload.body),
+      html: richTextToEmailHtml(payload.body),
       idempotencyKey: delivery.idempotencyKey,
       ...(payload.brand ? { brand: payload.brand } : {}),
     });

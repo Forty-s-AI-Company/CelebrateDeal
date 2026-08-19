@@ -25,6 +25,7 @@ export type LiveReminderTemplateSnapshot = {
 export type LiveReminderReconciliationSnapshot = {
   vendorId: string;
   liveId: string;
+  liveSlug: string;
   liveTitle: string;
   liveStatus: string;
   scheduledAt: Date;
@@ -68,6 +69,7 @@ type ReconciliationJob = {
 type CurrentLive = {
   id: string;
   vendorId: string;
+  slug: string;
   title: string;
   status: string;
   scheduledAt: Date;
@@ -121,12 +123,14 @@ function isValidTemplate(vendorId: string, template: LiveReminderTemplateSnapsho
 export function createLiveReminderReconciliationSnapshot(input: {
   vendorId: string;
   liveId: string;
+  liveSlug?: string;
   liveTitle: string;
   liveStatus: string;
   scheduledAt: Date;
   reminderOffsetMinutes: number;
   template: LiveReminderTemplateSnapshot | null;
 }, now = new Date()): LiveReminderReconciliationSnapshot {
+  const liveSlug = input.liveSlug?.trim() ?? "";
   const validTemplate = isValidTemplate(input.vendorId, input.template);
   const validOffset = REMINDER_OFFSETS.has(input.reminderOffsetMinutes);
   // `scheduled` and `live` use the same delivery identity. Keep the raw
@@ -141,6 +145,7 @@ export function createLiveReminderReconciliationSnapshot(input: {
   const configDigest = stableDigest([
     input.vendorId,
     input.liveId,
+    liveSlug,
     input.liveTitle,
     liveDeliverability,
     input.scheduledAt.toISOString(),
@@ -153,6 +158,7 @@ export function createLiveReminderReconciliationSnapshot(input: {
 
   return {
     ...input,
+    liveSlug,
     templateId: resolvedTemplateId,
     templateRevision: resolvedTemplateRevision,
     configDigest,
@@ -295,6 +301,7 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
     select: {
       id: true,
       vendorId: true,
+      slug: true,
       title: true,
       status: true,
       scheduledAt: true,
@@ -311,6 +318,7 @@ async function currentSnapshot(db: ReconciliationDb, vendorId: string, liveId: s
     snapshot: createLiveReminderReconciliationSnapshot({
       vendorId: live.vendorId,
       liveId: live.id,
+      liveSlug: live.slug,
       liveTitle: live.title,
       liveStatus: live.status,
       scheduledAt: live.scheduledAt,
@@ -409,6 +417,7 @@ async function processClaimedJob(db: ReconciliationDb, job: ReconciliationJob, b
         // never sourced from a stale client snapshot or left blank.
         vendorName: beforeWrite.live.vendor.name,
         liveId: job.liveId,
+        liveSlug: beforeWrite.live.slug,
         liveTitle: beforeWrite.live.title,
         formSubmissionId: submission.id,
         recipientName: submission.name,

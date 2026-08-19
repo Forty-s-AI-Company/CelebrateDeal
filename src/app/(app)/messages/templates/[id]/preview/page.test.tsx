@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 
 describe("message template preview", () => {
-  it("uses tenant-safe lookup with an explicit select and renders static text", async () => {
+  it("uses tenant-safe lookup with an explicit select and renders safe sample content", async () => {
     const html = renderToStaticMarkup(await MessageTemplatePreviewPage({ params: Promise.resolve({ id: "template/one" }) }));
     expect(mocks.templateFindFirst).toHaveBeenCalledWith({
       where: { id: "template/one", vendorId: "vendor-1" },
@@ -53,9 +53,9 @@ describe("message template preview", () => {
       },
     });
     expect(html).toContain("報名成功信");
-    expect(html).toContain("歡迎 {{name}}");
-    expect(html).toContain("{{live_title}}");
-    expect(html).toContain("靜態內容預覽");
+    expect(html).toContain("歡迎 王小明");
+    expect(html).toContain("一頁式研討會實戰");
+    expect(html).toContain("示範資料");
     expect(html).toContain("不會寄送 Email");
     expect(html).toContain('href="/messages/templates/template%2Fone/edit"');
     expect(html).not.toContain("<script>");
@@ -64,9 +64,8 @@ describe("message template preview", () => {
 
   it("preserves line breaks and safe wrapping classes for the body", async () => {
     const html = renderToStaticMarkup(await MessageTemplatePreviewPage({ params: Promise.resolve({ id: "template/one" }) }));
-    expect(html).toContain("whitespace-pre-wrap");
     expect(html).toContain("break-words");
-    expect(html).toContain("第一行\n第二行 {{live_title}}");
+    expect(html).toContain("第一行<br/>第二行 一頁式研討會實戰");
   });
 
   it("uses a subject fallback and keeps legacy trigger text safe", async () => {
@@ -77,7 +76,7 @@ describe("message template preview", () => {
     expect(html).toContain("停用");
   });
 
-  it("labels a post-live follow-up template without expanding its variables", async () => {
+  it("labels a post-live follow-up template and expands only sample variables", async () => {
     mocks.templateFindFirst.mockResolvedValue({
       ...baseTemplate,
       trigger: "post_live_followup",
@@ -88,8 +87,10 @@ describe("message template preview", () => {
     const html = renderToStaticMarkup(await MessageTemplatePreviewPage({ params: Promise.resolve({ id: "template/one" }) }));
 
     expect(html).toContain("課後通知");
-    expect(html).toContain("{{name}}");
-    expect(html).toContain("{{unsubscribe_url}}");
+    expect(html).toContain("嗨 王小明，謝謝參加。");
+    expect(html).toContain('href="https://example.com/unsubscribe"');
+    expect(html).not.toContain("{{name}}");
+    expect(html).not.toContain("{{unsubscribe_url}}");
   });
 
   it("calls notFound for a missing or foreign template", async () => {
@@ -98,11 +99,13 @@ describe("message template preview", () => {
     expect(mocks.notFound).toHaveBeenCalledExactlyOnceWith();
   });
 
-  it("does not render a form, send action, or variable substitution control", async () => {
+  it("does not render a form or send action while using only sample substitutions", async () => {
     const html = renderToStaticMarkup(await MessageTemplatePreviewPage({ params: Promise.resolve({ id: "template/one" }) }));
     expect(html).not.toContain("<form");
     expect(html).not.toContain("<button");
-    expect(html).toContain("{{name}}");
-    expect(html).toContain("{{live_title}}");
+    expect(html).toContain("王小明");
+    expect(html).toContain("示範研討會");
+    expect(html).not.toContain("{{name}}");
+    expect(html).not.toContain("{{live_title}}");
   });
 });

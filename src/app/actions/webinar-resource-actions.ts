@@ -254,13 +254,14 @@ export async function upsertTemplateAction(
 
       const linkedLives = await tx.live.findMany({
         where: { vendorId: vendor.id, liveReminderTemplateId: template.id },
-        select: { id: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
+        select: { id: true, slug: true, title: true, status: true, scheduledAt: true, liveReminderOffsetMinutes: true },
       });
       const reconciliationStatuses: string[] = [];
       for (const live of linkedLives) {
         const queued = await queueLiveReminderReconciliation(tx, createLiveReminderReconciliationSnapshot({
           vendorId: vendor.id,
           liveId: live.id,
+          liveSlug: live.slug,
           liveTitle: live.title,
           liveStatus: live.status,
           scheduledAt: live.scheduledAt,

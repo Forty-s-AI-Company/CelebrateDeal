@@ -6,6 +6,7 @@ const directUrl = process.env.DIRECT_URL;
 const schema = process.env.G7_COMMERCE_BROWSER_SCHEMA;
 const baseURL = process.env.E2E_BASE_URL;
 const e2eTarget = process.env.G7_COMMERCE_BROWSER_E2E_TARGET ?? "commerce";
+const chromiumExecutablePath = process.env.E2E_CHROMIUM_EXECUTABLE_PATH;
 
 assertLocalTestDatabase("DATABASE_URL", databaseUrl);
 assertLocalTestDatabase("DIRECT_URL", directUrl);
@@ -43,5 +44,11 @@ export default defineConfig({
     trace: e2eTarget === "wp7-one-stop" ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{
+    name: "chromium",
+    use: {
+      ...devices["Desktop Chrome"],
+      ...(chromiumExecutablePath ? { launchOptions: { executablePath: chromiumExecutablePath } } : {}),
+    },
+  }],
 });

@@ -9,10 +9,10 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 89 |
-| Migration directories | 53 |
+| Migration directories | 57 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 53/53 current chain；由 no-dotenv mirror 在 loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
+| Applied migrations in isolated DB | 57/57 current chain；由 no-dotenv mirror 在 loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -87,6 +87,7 @@
 | `20260815090000_g8_01_one_stop_webinar_domain` | webinar lifecycle、scheduled chat、notification rules and post-live delivery domain |
 | `20260815100000_g8_02_interaction_role_semantics` | official／audience interaction role semantics and scheduled-role marker |
 | `20260817120000_wp2_brand_sender_settings` | vendor sender identity、support Email and contact URL settings |
+| `20260818090000_custom_checkout_fields` | product custom checkout field definitions |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -166,7 +167,7 @@
 ## 驗收判定
 
 - 91/91 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support 或 supporting/telemetry 類別。
-- 56 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 57 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
