@@ -278,3 +278,16 @@ node scripts/validate-staging-migration-evidence.mjs docs/ai-team/evidence/stagi
 ```
 
 CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON，並用 canonical `realpath` 拒絕 symlink 指向 evidence root 外的檔案。輸出只包含固定 result、environment class、database identity class 與 sanitized flag；不得保存 migration name、connection string、raw Prisma output 或 credentials。
+
+## 11. Human owner acceptance sanitized receipt
+
+真人 owner 完成 CAT10 packet 後，只能提交去識別 receipt 給 `scripts/validate-human-owner-acceptance-evidence.mjs`。receipt 必須涵蓋 `merchant_owner`、`support_operator`、`finance_owner`、`privacy_policy_owner`、`release_owner` 五個責任角色，以及退款、隱私、retention、data request、客服 escalation 與 release decision checks。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
+node scripts/validate-human-owner-acceptance-evidence.mjs docs/ai-team/evidence/owner-acceptance-receipt.json
+```
+
+CLI 只讀 `docs/ai-team/evidence` 或 `.ai-team/reports` 下的 receipt，要求 opaque `holderRef`、`scopeRef`、`manualSignatureRef` 與 `evidenceRef`，拒絕 `synthetic:` reference、raw URL、Token、Cookie、個資、Production approval、缺角色、缺 check 或 `GO` 搭配未完成 evidence。`CANDIDATE` 只代表 receipt schema 完整，不代表法務意見、外部服務、PayUni reconciliation、staging readiness 或 `PRODUCTION_READY`。

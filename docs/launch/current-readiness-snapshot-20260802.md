@@ -56,7 +56,9 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 staging migration receipt validation checkpoint：source checkpoint `1ceb9a5` 新增 read-only `scripts/validate-staging-migration-evidence.mjs` 與對應測試，並補強 provider receipt validator 的 canonical `realpath` boundary；provider schema／CLI 與 staging migration CLI 合計 `29/29`，其中 staging migration receipt validator `9/9`、provider receipt validator `8/8`，完整 Node TAP 為 `792/792`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.49／64.15／70.64／69.36`，disposable database 與 cleanup 均 `PASS`。這是 local／synthetic receipt validation，沒有呼叫外部服務、PayUni、staging 或 Production；六個 external gates、四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
 
-同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `1ceb9a5` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
+最新 2026-08-21 CAT10 receipt validation checkpoint：source checkpoint `8e8fe08` 新增 read-only `scripts/validate-human-owner-acceptance-evidence.mjs`、對應 `10/10` tests 與 CI contract。完整 Node TAP 為 `802/802`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.56／64.24／70.77／69.44`。validator 要求五個 responsibility role、退款／隱私／retention／data request／客服 escalation checks、opaque holder／evidence references、法律 self-review boundary 與一致的 release decision；拒絕 synthetic reference、敏感欄位、Production approval、缺漏責任或不完整 `GO`。目前沒有真人 acceptance receipt，CAT10、四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
+
+同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `8e8fe08` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
 ## Scorecard
 
