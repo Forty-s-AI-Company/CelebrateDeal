@@ -1812,6 +1812,12 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：current handoff `1/1`、CI current handoff evidence consistency step `1/1`、Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3088 passed／1 skipped`、coverage=`64.65／64.34／70.91／69.54`、lint、typecheck、strict-index、secret scan、readiness truth、bundle validator 與 diff check 均通過。
 - Boundary：本 WP 只修正 local release evidence lineage 與 stale documentation；沒有呼叫 external provider、PayUni、staging 或 Production，不改變任何 readiness flags。
 
+## REL-20260821-CAT10-POLICY-REVIEW-MATRIX — Policy／refund／support acceptance preparation（2026-08-21）
+
+- Source RC：`8a043b4`；新增 [`cat10-policy-review-matrix-20260821.md`](./cat10-policy-review-matrix-20260821.md)，集中 Terms、Privacy、Refund、Retention／Data Request 與 Customer Support escalation 的必要 review 欄位。
+- Verification：matrix 明確要求版本、生效日、適用範圍、保存／刪除、退款例外、客服 escalation、owner reference、sanitized evidence、`legalComplianceSelfReview` 與 `notIndependentLegalCounsel`；結果維持 `PENDING_HUMAN`，沒有填造法律或真人 acceptance。
+- Boundary：只建立 local evidence-preparation 文件，沒有操作正式資料、資料刪除、資料匯出、付款、退款、外部 provider、staging 或 Production；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變。
+
 ## REL-20260821-EXTERNAL-SMOKE-OWNER-AUTHORIZATION — External smoke owner authorization gate（2026-08-21）
 
 - Source checkpoint：`7a9c996`；新增 `external-smoke` 對遠端 target 與 provider smoke route 的 owner authorization gate，並保留 loopback health／admin preflight 的診斷用途。此為前一個 source checkpoint 的歷史記錄。
