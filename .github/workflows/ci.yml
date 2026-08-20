@@ -76,6 +76,12 @@ jobs:
       - name: Strict production index access
         run: npm run typecheck:strict-index
 
+      - name: Release readiness contract
+        run: npm run test:release-readiness
+
+      - name: Readiness truth reconciliation
+        run: node scripts/readiness-truth-reconciliation.mjs
+
       - name: Backup tooling static checks
         shell: pwsh
         run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1
