@@ -82,6 +82,9 @@ jobs:
       - name: Readiness truth reconciliation
         run: node scripts/readiness-truth-reconciliation.mjs
 
+      - name: Staging migration evidence contract
+        run: npx vitest run scripts/staging-migration-evidence.test.mjs
+
       - name: Backup tooling static checks
         shell: pwsh
         run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1
