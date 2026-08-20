@@ -1694,3 +1694,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Evidence：`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md`
 - Result：staging `/api/health` HTTP `200`、`ok=true`、`database=ok`；公開 `/` HTTP `200`；未帶認證的 `/api/admin/preflight` HTTP `401`，protected boundary 正常。
 - Boundary：WP-187 lineage marker 回 HTTP `200` 但不是預期 JSON contract，current RC `b70539f` deployment identity 未證明；沒有執行 migration、backup／restore／rollback、外部 provider、PayUni、付款、退款、寄信或部署寫入。`SANDBOX_READY=false`、`PRODUCTION_READY=false`。
+
+## REL-20260821-COMPLETION-AUDIT — Requirement-by-requirement release audit（2026-08-21）
+
+- Audit：`docs/launch/current-release-completion-audit-20260821.md`
+- Result：逐項對照 local CI／RC、staging migration／recovery、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni reconciliation、政策、客服 escalation 與真人 owner acceptance；所有未完成項目保留 `NOT_PROVEN`、`PENDING_EXTERNAL` 或 `PENDING_HUMAN`，並附 provenance、風險與下一個安全動作。
+- Boundary：audit 明確維持 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO`；沒有新增外部、Production、付款、退款、寄信或部署 side effect。
