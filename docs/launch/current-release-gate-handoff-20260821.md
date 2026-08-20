@@ -2,7 +2,7 @@
 
 日期：2026-08-21（Asia/Taipei）  
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
-Source RC：`231bc84`
+Source RC：`d3b6462`
 權威 gap map：[`current-release-completion-audit-20260821.md`](./current-release-completion-audit-20260821.md)
 
 這份 handoff 把目前尚未完成的 staging、external provider、PayUni Sandbox 與人工 acceptance 工作整理成一次可控的 non-Production 執行包。它只授權準備與去識別 evidence 收集，不授權 Production、正式付款、退款、寄信、資料庫寫入或部署。
@@ -22,7 +22,7 @@ canonicalTotal=75.5/100
 
 ## Remote CI state
 
-2026-08-21 的唯讀查詢顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`。目前沒有 `231bc84` 的 GitHub Actions run，所以 current RC 的 remote CI 仍是 `NOT_PROVEN`。本次未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
+2026-08-21 的唯讀查詢顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`。目前沒有 `d3b6462` 的 GitHub Actions run，所以 current RC 的 remote CI 仍是 `NOT_PROVEN`。本次未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
 
 ## Owner authorization boundary
 

@@ -318,13 +318,13 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 ### Local release candidate
 
-- Release candidate：`231bc84`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
+- Release candidate：`d3b6462`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
 - ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
-`231bc84` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth 與 staging migration evidence contracts。這是設定邊界的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
+`d3b6462` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth 與 staging migration evidence contracts。這是設定邊界的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
-2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `231bc84` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
+2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `d3b6462` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
 
 ### Read-only staging probe
 
