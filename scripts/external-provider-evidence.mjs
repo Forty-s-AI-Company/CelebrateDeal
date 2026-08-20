@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 // This module is deliberately pure: it never reads environment variables,
 // calls a provider, starts a process, or writes an evidence artifact.
-const EXTERNAL_PROVIDER_EVIDENCE_SCHEMA = 'celebratedeal-external-provider-evidence/v1';
+const EXTERNAL_PROVIDER_EVIDENCE_SCHEMA = 'celebratedeal-external-provider-evidence/v2';
 
 const EXTERNAL_PROVIDERS = Object.freeze([
   'cloudflare_stream',
@@ -93,6 +93,7 @@ const CHECK_SPECS = Object.freeze({
 const ROOT_KEYS = new Set([
   'schemaVersion',
   'workPackage',
+  'sourceCommit',
   'provider',
   'result',
   'runId',
@@ -163,6 +164,7 @@ const SAFE_WORK_PACKAGE = /^(?:WP-[0-9]{2,4}|REL-[A-Z0-9][A-Z0-9._-]{2,79})$/;
 const SAFE_RUN_ID = /^run:[a-z0-9][a-z0-9._-]{0,79}$/;
 const SAFE_OPAQUE_REFERENCE = /^opaque:[a-z0-9][a-z0-9._-]{0,79}$/;
 const SAFE_EVIDENCE_REFERENCE = /^(?:opaque:[a-z0-9][a-z0-9._-]{0,79}|sha256:[a-f0-9]{64})$/;
+const SAFE_SOURCE_COMMIT = /^[a-f0-9]{7,40}$/;
 const UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 const BLOCKING_REASONS = new Set([
@@ -194,6 +196,7 @@ const FAILURE_CLASSES = new Set([
 const REQUIRED_ROOT_KEYS = Object.freeze([
   'schemaVersion',
   'workPackage',
+  'sourceCommit',
   'provider',
   'result',
   'runId',
@@ -297,6 +300,10 @@ function checkEnum(value, allowed, pathName, errors) {
 
 function checkSafeReference(value, pattern, pathName, errors) {
   if (typeof value !== 'string' || !pattern.test(value)) pushError(errors, `${pathName}:INVALID`);
+}
+
+function normalizeSourceCommit(value) {
+  return typeof value === 'string' && SAFE_SOURCE_COMMIT.test(value) ? value : 'unknown';
 }
 
 function checkUtcSeconds(value, pathName, errors) {
@@ -409,6 +416,7 @@ function validateResultSemantics(receipt, errors) {
   const result = receipt.result;
   const passPredicate = checksPass(receipt.provider, receipt.checks);
   if (result === 'PASS') {
+    if (!SAFE_SOURCE_COMMIT.test(receipt.sourceCommit)) pushError(errors, 'sourceCommit:PASS_REQUIRES_VALID_SOURCE_LINEAGE');
     if (!receipt.nonProduction) pushError(errors, 'nonProduction:MUST_BE_TRUE_FOR_PASS');
     if (!['preview', 'staging'].includes(receipt.environmentClass)) pushError(errors, 'environmentClass:PASS_REQUIRES_PREVIEW_OR_STAGING');
     if (receipt.providerEnvironmentClass === 'unknown') pushError(errors, 'providerEnvironmentClass:PASS_REQUIRES_VERIFIED_CLASS');
@@ -460,6 +468,7 @@ function validateFieldSemantics(receipt, errors) {
   checkSafeReference(receipt.runId, SAFE_RUN_ID, 'runId', errors);
   checkUtcSeconds(receipt.executedAtUtc, 'executedAtUtc', errors);
   checkSafeReference(receipt.authorizationRecordRef, SAFE_OPAQUE_REFERENCE, 'authorizationRecordRef', errors);
+  if (receipt.sourceCommit !== 'unknown' && !SAFE_SOURCE_COMMIT.test(receipt.sourceCommit)) pushError(errors, 'sourceCommit:INVALID');
   checkEnum(receipt.environmentClass, ENVIRONMENT_CLASSES, 'environmentClass', errors);
   checkEnum(receipt.providerEnvironmentClass, PROVIDER_ENVIRONMENT_CLASSES, 'providerEnvironmentClass', errors);
   if (receipt.nonProduction !== true) pushError(errors, 'nonProduction:MUST_BE_TRUE');
@@ -540,7 +549,7 @@ function parseAndValidateExternalProviderReceipt(json) {
 function createPendingExternalReceipt(provider, options = {}) {
   if (!EXTERNAL_PROVIDERS.includes(provider)) throw new Error('PROVIDER_INVALID');
   if (!isPlainObject(options)) throw new Error('OPTIONS_OBJECT_REQUIRED');
-  const optionKeys = new Set(['workPackage', 'runId', 'executedAtUtc', 'authorizationRecordRef', 'blockingReason']);
+  const optionKeys = new Set(['workPackage', 'sourceCommit', 'runId', 'executedAtUtc', 'authorizationRecordRef', 'blockingReason']);
   for (const key of Object.keys(options)) if (!optionKeys.has(key)) throw new Error('OPTIONS_KEY_INVALID');
   const spec = CHECK_SPECS[provider];
   const checks = Object.fromEntries(Object.entries(spec).map(([key, allowed]) => [key, key === 'eventName' ? allowed[0] : (allowed.includes('not_run') ? 'not_run' : 'unknown')]));
@@ -549,6 +558,7 @@ function createPendingExternalReceipt(provider, options = {}) {
   const receipt = {
     schemaVersion: EXTERNAL_PROVIDER_EVIDENCE_SCHEMA,
     workPackage: options.workPackage ?? 'REL-20260821-EXTERNAL-PROVIDER-CONTRACT',
+    sourceCommit: normalizeSourceCommit(options.sourceCommit),
     provider,
     result: 'PENDING_EXTERNAL',
     runId: options.runId ?? `run:pending-${provider}`,

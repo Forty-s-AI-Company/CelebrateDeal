@@ -98,6 +98,7 @@ function passReceipt(provider, overrides = {}) {
   return {
     schemaVersion: EXTERNAL_PROVIDER_EVIDENCE_SCHEMA,
     workPackage: 'REL-20260821-EXTERNAL-PROVIDER-CONTRACT',
+    sourceCommit: '318cd48',
     provider,
     result: 'PASS',
     runId: `run:synthetic-${provider}`,
@@ -128,6 +129,7 @@ test('pending factory creates a safe fail-closed receipt for every provider', ()
     const receipt = createPendingExternalReceipt(provider);
     assert.equal(validateExternalProviderReceipt(receipt).ok, true);
     assert.equal(receipt.result, 'PENDING_EXTERNAL');
+    assert.equal(receipt.sourceCommit, 'unknown');
     assert.equal(receipt.attemptCount, 0);
     assert.deepEqual(receipt.evidenceRefs, []);
     assert.equal(serializeExternalProviderReceipt(receipt).endsWith('\n'), true);
@@ -156,6 +158,7 @@ test('each provider requires every success check', () => {
 
 test('PASS requires verified non-Production identity, evidence and an attempt', () => {
   const cases = [
+    { sourceCommit: 'unknown' },
     { nonProduction: false },
     { environmentClass: 'isolated-restore-drill' },
     { providerEnvironmentClass: 'unknown' },
@@ -163,6 +166,16 @@ test('PASS requires verified non-Production identity, evidence and an attempt', 
     { evidenceRefs: [] },
   ];
   for (const overrides of cases) assert.equal(validateExternalProviderReceipt(passReceipt('resend', overrides)).ok, false);
+});
+
+test('PASS source lineage accepts only a short lowercase hexadecimal commit', () => {
+  assert.equal(validateExternalProviderReceipt(passReceipt('resend', { sourceCommit: '318CD48' })).ok, false);
+  assert.equal(validateExternalProviderReceipt(passReceipt('resend', { sourceCommit: 'short' })).ok, false);
+  assert.equal(validateExternalProviderReceipt(passReceipt('resend', { sourceCommit: 'a'.repeat(41) })).ok, false);
+  assert.equal(validateExternalProviderReceipt({
+    ...passReceipt('resend'),
+    schemaVersion: 'celebratedeal-external-provider-evidence/v1',
+  }).ok, false);
 });
 
 test('raw output, provider payloads, identifiers and unknown nested keys are rejected', () => {
@@ -239,6 +252,7 @@ test('canonical serialization is deterministic and digest changes with content',
     evidenceRefs: receipt.evidenceRefs,
     checks: receipt.checks,
     attemptCount: receipt.attemptCount,
+    sourceCommit: receipt.sourceCommit,
     nonProduction: receipt.nonProduction,
     providerEnvironmentClass: receipt.providerEnvironmentClass,
     environmentClass: receipt.environmentClass,
