@@ -1805,9 +1805,16 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：owner authorization contract `8/8`、PayUni runner suite `36/36`、完整 Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3086 passed／1 skipped`，statements／branches／functions／lines=`64.65／64.34／70.91／69.54`；ESLint、TypeScript、strict-index、controlled production build、secret scan、readiness truth、release readiness、local release verifier、`git diff --check` 與 targeted release contracts 均通過。
 - Boundary：缺少受控 authorization shape 時，callback-host health probe、browser checkout、provider query、payment／refund、staging、external provider 與 Production action 都不會開始。這只完成 local fail-closed safety contract，不代表 staging、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni reconciliation、政策或真人 acceptance 通過；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
 
+## REL-20260821-CURRENT-RC-EVIDENCE-CONSISTENCY — Current release evidence consistency guard（2026-08-21）
+
+- Source checkpoint：`8a043b4`；current release handoff contract 會從 current bundle 動態比對 source RC 與 13 個 gate lineage，並鎖定 coverage 摘要，防止 current-RC 文件回復到舊 coverage count。
+- Evidence：`docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json` 已更新為 source `8a043b4`，13 個 gate 的 source lineage 一致，結果維持 `INCOMPLETE` 與 `NO_GO`。
+- Verification：current handoff `1/1`、Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3088 passed／1 skipped`、coverage=`64.65／64.34／70.91／69.54`、lint、typecheck、strict-index、secret scan、readiness truth、bundle validator 與 diff check 均通過。
+- Boundary：本 WP 只修正 local release evidence lineage 與 stale documentation；沒有呼叫 external provider、PayUni、staging 或 Production，不改變任何 readiness flags。
+
 ## REL-20260821-EXTERNAL-SMOKE-OWNER-AUTHORIZATION — External smoke owner authorization gate（2026-08-21）
 
-- Source checkpoint：`7a9c996`；新增 `external-smoke` 對遠端 target 與 provider smoke route 的 owner authorization gate，並保留 loopback health／admin preflight 的診斷用途。
+- Source checkpoint：`7a9c996`；新增 `external-smoke` 對遠端 target 與 provider smoke route 的 owner authorization gate，並保留 loopback health／admin preflight 的診斷用途。此為前一個 source checkpoint 的歷史記錄。
 - Evidence：[`rel-20260821-external-smoke-owner-authorization.md`](../ai-team/evidence/rel-20260821-external-smoke-owner-authorization.md)。`AI_TEAM_PROVIDER_ENVIRONMENT` 必須與 `SMOKE_ENVIRONMENT` 精確匹配；缺少授權時固定輸出 `blocked_before_network` 或 `blocked_before_provider_request`，不輸出 refs、Secret、Token、Cookie、URL 或 raw provider response。
 - Verification：`npx vitest run scripts/external-smoke-safety.test.ts` 為 `14/14`；remote missing-authorization child run 在第一個 network request 前停止；Node TAP `822/822`、lint、TypeScript、strict-index、secret scan 與 diff check 均 PASS。
 - Boundary：本輪沒有呼叫任何外部 provider、PayUni、staging 或 Production，也沒有付款、退款、寄信、部署或 workflow dispatch。這只補強執行前安全 contract；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
