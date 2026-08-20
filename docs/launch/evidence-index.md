@@ -1725,3 +1725,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source candidate：`3d2b54c`；`src/lib/env.ts` 將 PayUni `PAYUNI_ENV` 與 deployment boundary 綁定，對應測試補上 Preview mismatch、Preview sandbox、Production mismatch 與 Production pass 的 synthetic matrix。
 - Verification：env targeted test `33/33`、full lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth 與 local release verifier 均通過。
 - Boundary：Preview 必須使用 PayUni `sandbox`、Production 必須使用 `production`；本次未呼叫 PayUni、未操作 staging／Production、未付款／退款／寄信，也未保存任何 environment value。PayUni account、order／provider reference binding、reconciliation、external provider 與人工 acceptance 仍 pending；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
+
+## REL-20260821-CI-PAYUNI-BOUNDARY — CI explicit PayUni binding gate（2026-08-21）
+
+- Release candidate：`10c7726`；`.github/workflows/ci.yml` 新增 `PayUni deployment environment binding contract` step，讓每次 push／pull request 的 CI 明確執行 `src/lib/env.test.ts`。
+- Verification：本機 CI-equivalent env test `33/33`、`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`、lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth、local release verifier 與 `git diff --check` 均通過。
+- Boundary：這是 CI contract wiring 與本機 evidence，尚未宣稱 GitHub Actions remote run PASS；沒有 staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
