@@ -1729,5 +1729,5 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 ## REL-20260821-CI-PAYUNI-BOUNDARY — CI explicit PayUni binding gate（2026-08-21）
 
 - Release candidate：`10c7726`；`.github/workflows/ci.yml` 新增 `PayUni deployment environment binding contract` step，讓每次 push／pull request 的 CI 明確執行 `src/lib/env.test.ts`。
-- Verification：本機 CI-equivalent env test `33/33`、`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`、lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth、local release verifier 與 `git diff --check` 均通過。
+- Verification：本機 CI-equivalent env test `33/33`、`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`、lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth、local release verifier、`git diff --check`、AI Team server `7/7`、AI resilience 與 backup tooling static checks 均通過。
 - Boundary：這是 CI contract wiring 與本機 evidence，尚未宣稱 GitHub Actions remote run PASS；沒有 staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。

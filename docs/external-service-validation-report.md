@@ -319,7 +319,7 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 ### Local release candidate
 
 - Release candidate：`10c7726`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate。
+- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
 `10c7726` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract。這是設定邊界的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
