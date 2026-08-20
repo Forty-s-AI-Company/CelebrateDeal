@@ -42,7 +42,9 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 frozen HEAD final gate rerun：以 RC source commit `b70539f` 為對象重新執行 lint、typecheck、contract、coverage、controlled production build、local release verifier、secret scan 與 diff check，全部 `PASS`。Node TAP 為 `762 passed / 0 failed / 0 skipped`；combined coverage 為 `403 files passed / 1 skipped`、`3073 passed / 1 skipped`，statements／branches／functions／lines=`64.13%／63.78%／70.09%／69.02%`，高於 `63／57／60／65` threshold。這是 local source-quality evidence；application environment availability 仍為 false，外部 provider、實際 staging、PayUni Sandbox reconciliation 與人工 acceptance 仍未完成，四個 readiness flags 與 canonical `75.5/100` 不變。
 
-同日 current release gate handoff contract 完成 `1/1`，完整 `npm run test:contracts` 為 `763 passed / 0 failed / 0 skipped`，`npm run test:coverage` exit `0`，combined statements／branches／functions／lines=`64.18%／63.80%／70.33%／69.04%`，threshold 維持 `63／57／60／65`。這只補強 current non-Production handoff 的 fail-closed evidence；external provider、actual staging recovery、PayUni Sandbox reconciliation、政策與真人 acceptance 仍未完成，四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 不變。詳見 `docs/launch/current-release-gate-handoff-20260821.md`。
+同日 current release gate handoff contract 完成 `1/1`，完整 `npm run test:contracts` 為 `763 passed / 0 failed / 0 skipped`，`npm run test:coverage` exit `0`，combined statements／branches／functions／lines=`64.18%／63.79%／70.33%／69.04%`，threshold 維持 `63／57／60／65`。這只補強 current non-Production handoff 的 fail-closed evidence；external provider、actual staging recovery、PayUni Sandbox reconciliation、政策與真人 acceptance 仍未完成，四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 不變。詳見 `docs/launch/current-release-gate-handoff-20260821.md`。
+
+同一 current source candidate `bc2e4ab` 另外補齊 local release verifier 的 release-critical presence-only inventory，涵蓋 `CRON_SECRET`、`LIVE_CHAT_INGRESS_SECRET`、PayUni、Cloudflare、Upstash 與 Sentry bindings。`release-local-readiness` targeted tests `5/5`、full lint、typecheck、strict-index、controlled production build、secret scan 與 readiness truth 均通過；`PAYMENT_PROVIDER=false` 與外部 provider availability 未被誤判為 ready。
 
 ## Scorecard
 

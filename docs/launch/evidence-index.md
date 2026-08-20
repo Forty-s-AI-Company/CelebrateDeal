@@ -1711,5 +1711,11 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 
 - Handoff：`docs/launch/current-release-gate-handoff-20260821.md`
 - Result：將 exact staging lineage、migration、backup／restore、rollback／forward、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox 與 CAT10 human acceptance 的最小 evidence、owner authorization、stop conditions 與 sanitized receipt boundary 集中整理。
-- Verification：handoff contract `1/1`、完整 `npm run test:contracts` `763 passed／0 failed／0 skipped`、`npm run test:coverage` exit `0`；combined statements／branches／functions／lines=`64.18／63.80／70.33／69.04`，threshold=`63／57／60／65`。
+- Verification：handoff contract `1/1`、完整 `npm run test:contracts` `763 passed／0 failed／0 skipped`、`npm run test:coverage` exit `0`；combined statements／branches／functions／lines=`64.18／63.79／70.33／69.04`，threshold=`63／57／60／65`。
 - Boundary：文件狀態為 `READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`，不代表任何外部 gate 已通過；禁止重跑 FIN-08AA、WP-196、WP-197 與既有 PayUni external smoke 失敗路徑，readiness flags 與 `releaseDecision=NO_GO` 維持不變。
+
+## REL-20260821-RELEASE-ENV-INVENTORY — Release verifier environment inventory（2026-08-21）
+
+- Source candidate：`bc2e4ab`；修改 `scripts/release-local-readiness.mjs` 與對應 test，讓 local release verifier 以 presence-only boolean 回報 preflight 需要的 `CRON_SECRET`、`LIVE_CHAT_INGRESS_SECRET`、PayUni、Cloudflare、Upstash、Sentry 與其他 release-critical bindings。
+- Verification：targeted `release-local-readiness` tests `5/5`、full lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage exit `0`（`64.18／63.79／70.33／69.04`）、controlled production build、secret scan、readiness truth 與 local release verifier 均通過；verifier 明確回報 `PAYMENT_PROVIDER=false`。
+- Boundary：只保存 presence boolean，不保存環境值；PayUni `PAYUNI_ENV=sandbox` 的 non-secret class 可辨識，但因 `PAYMENT_PROVIDER=false`、staging DB identity 缺失與 provider account／order binding 未驗證，`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 維持不變。
