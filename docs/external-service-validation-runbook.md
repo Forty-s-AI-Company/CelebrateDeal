@@ -291,3 +291,16 @@ node scripts/validate-human-owner-acceptance-evidence.mjs docs/ai-team/evidence/
 ```
 
 CLI 只讀 `docs/ai-team/evidence` 或 `.ai-team/reports` 下的 receipt，要求 opaque `holderRef`、`scopeRef`、`manualSignatureRef` 與 `evidenceRef`，拒絕 `synthetic:` reference、raw URL、Token、Cookie、個資、Production approval、缺角色、缺 check 或 `GO` 搭配未完成 evidence。`CANDIDATE` 只代表 receipt schema 完整，不代表法務意見、外部服務、PayUni reconciliation、staging readiness 或 `PRODUCTION_READY`。
+
+## 12. Release evidence bundle aggregation
+
+所有 release gate receipt 收集完成後，先建立 sanitized release evidence bundle，再執行 `scripts/validate-release-evidence-bundle.mjs`。bundle 必須固定包含 remote CI、staging lineage／migration／recovery／rollback、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、policy review 與 human owner acceptance 共 13 個 gate。每個 gate 必須綁定同一 `sourceCommit`，並提供 opaque `evidenceRef`、`ownerRef`、`scopeRef`、closed result 與 failure reason。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-release-evidence-bundle.test.mjs
+node scripts/validate-release-evidence-bundle.mjs docs/ai-team/evidence/release-evidence-bundle.json
+```
+
+CLI 只讀安全 evidence roots，拒絕 traversal、敏感路徑、symlink escape、synthetic reference、raw payload、Production approval 與 source lineage drift。`GO` 搭配任何非 `PASS` gate 會 fail closed；`CANDIDATE` 只表示 bundle schema 與聚合規則通過，仍需 current completion audit 對照實際 receipt，不能直接改寫 `SANDBOX_READY` 或 `PRODUCTION_READY`。
