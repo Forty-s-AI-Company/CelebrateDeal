@@ -1688,3 +1688,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source：RC source commit `b70539f`；evidence-only 文件更新前重新驗證，未操作 staging、Production、正式付款／退款／寄信或外部 provider。
 - Verification：ESLint `0 errors／0 warnings`、TypeScript、secret scan、`git diff --check`、controlled production build、local release verifier、Node TAP `762 passed／0 failed／0 skipped` 全部通過；combined coverage `403 files passed／1 skipped`、`3073 passed／1 skipped`，statements／branches／functions／lines=`64.13／63.78／70.09／69.02`，threshold=`63／57／60／65`。
 - Boundary：local release verifier 為 `verified` 但 application environment availability 全為 `false`。PayUni Sandbox reconciliation、Cloudflare／Resend／Sentry／PostHog／durable rate limit external evidence、實際 staging recovery、staging Browser matrix與法務／客服／退款／隱私／人工 owner acceptance仍 pending；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`，Goal remains active。
+
+## REL-20260821-STAGING-READONLY — Staging read-only health probe（2026-08-21）
+
+- Evidence：`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md`
+- Result：staging `/api/health` HTTP `200`、`ok=true`、`database=ok`；公開 `/` HTTP `200`；未帶認證的 `/api/admin/preflight` HTTP `401`，protected boundary 正常。
+- Boundary：WP-187 lineage marker 回 HTTP `200` 但不是預期 JSON contract，current RC `b70539f` deployment identity 未證明；沒有執行 migration、backup／restore／rollback、外部 provider、PayUni、付款、退款、寄信或部署寫入。`SANDBOX_READY=false`、`PRODUCTION_READY=false`。

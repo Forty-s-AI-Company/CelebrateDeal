@@ -1,6 +1,6 @@
 # CelebrateDeal External Service Validation Report
 
-最後更新：2026-07-09
+最後更新：2026-08-21
 
 ## 1. 本輪完成範圍
 
@@ -311,3 +311,32 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 - Cloudflare dashboard 修正 token / account 後，才能完成 direct upload、ready webhook、Live Input 真實驗收。
 - 真實 VOD webhook signing secret 需從 Cloudflare Stream webhook subscription 取得，不能使用 local smoke secret。
+
+## 11. 2026-08-21 current-state reconciliation
+
+本節 supersede 早期段落中的 current-state 描述；早期 smoke 結果保留為歷史 evidence，不重新宣稱為現況。
+
+### Local release candidate
+
+- RC source freeze：`b70539f`；最新 evidence-only documentation commit：`57703c8`。
+- ESLint `0 errors／0 warnings`、TypeScript、Node TAP `762/762`、combined coverage `64.13／63.78／70.09／69.02`、controlled production build、local release verifier、secret scan 與 diff check 均已通過。
+- 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
+
+### Read-only staging probe
+
+2026-08-21 對 `https://celebrate-deal-staging.carry-digital-nomad.in.net` 執行只讀 GET：`/api/health` 為 HTTP `200`、`ok=true`、`database=ok`；公開 `/` 為 HTTP `200`；未帶認證的 `/api/admin/preflight` 為 HTTP `401`。WP-187 lineage marker endpoint 回 HTTP `200`，但不是預期 lineage JSON contract，因此 current RC deployment identity 仍 `NOT_PROVEN`。完整 sanitized evidence：`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md`。
+
+本 probe 沒有讀取憑證、`.env*`、Cookie 或 token，沒有登入、資料庫寫入、付款、退款、寄信、部署或 Production side effect。
+
+### External gate status
+
+| Gate | Current status | Evidence boundary |
+|---|---|---|
+| Cloudflare Stream | `PENDING_EXTERNAL` | 歷史 direct upload 曾回 `code=10000 Authentication error`；current account／token scope／VOD webhook 未重新驗證 |
+| Resend | `PENDING_EXTERNAL` | repo wiring 與 local contract 有證據；真實 domain、寄件與 delivered receipt 未完成 |
+| Sentry | `PENDING_EXTERNAL` | local monitoring route／contract 有證據；外部 issue、alert、通知 delivery 未完成 |
+| PostHog | `PENDING_EXTERNAL` | local analytics route／contract 有證據；外部 project event receipt 未完成 |
+| Durable rate limit | `PENDING_EXTERNAL` | local provider contract 有證據；Cloudflare WAF／Upstash durable enforcement 未完成 |
+| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures 有證據；current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
+
+`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 保持不變。正式公開販售仍為 `NO-GO`；目前可維持 local、Sandbox 或不收真實款項的封閉試用。
