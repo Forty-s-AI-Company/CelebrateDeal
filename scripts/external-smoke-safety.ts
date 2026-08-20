@@ -1,5 +1,15 @@
 type SmokeEnvironment = "local" | "preview" | "staging";
 
+export type SmokePayloadClass = "empty" | "json" | "text" | "other";
+export type SmokeTransportClass = "success" | "redirect" | "client_error" | "server_error" | "unknown";
+export type SmokeApplicationClass = "ok" | "not_ok" | "unknown";
+
+export type SmokeResponseObservation = {
+  status: number;
+  ok: boolean;
+  payload: unknown;
+};
+
 type ResolveSmokeTargetOptions = {
   targetAppUrl?: string;
   smokeEnvironment?: string;
@@ -58,6 +68,89 @@ export function resolveSmokeTarget(options: ResolveSmokeTargetOptions) {
   }
 
   return normalizeBaseUrl(url);
+}
+
+/**
+ * Return a bounded classification for an untrusted provider response.
+ *
+ * The smoke runner may inspect response bodies to decide whether a check
+ * passed, but evidence output must never contain the body itself. Keeping
+ * this formatter pure makes that boundary easy to test without contacting a
+ * remote service.
+ */
+export function summarizeSmokeResponse(observation: SmokeResponseObservation) {
+  return [
+    `HTTP ${normalizeStatus(observation.status)}`,
+    `transport=${classifyTransport(observation.status, observation.ok)}`,
+    `payload=${classifyPayload(observation.payload)}`,
+    `application=${classifyApplication(observation.payload)}`,
+  ].join("; ");
+}
+
+/**
+ * Convert arbitrary runner errors into an allowlisted category.
+ *
+ * Error messages can contain URLs, request headers, provider identifiers, or
+ * other untrusted values, so they are deliberately discarded.
+ */
+export function summarizeSmokeFailure(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return "error=timeout";
+  }
+  if (error instanceof TypeError) {
+    return "error=network_failure";
+  }
+  return "error=runner_failure";
+}
+
+function normalizeStatus(status: number) {
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : "unknown";
+}
+
+function classifyTransport(status: number, ok: boolean): SmokeTransportClass {
+  if (!Number.isInteger(status) || status < 100 || status > 599) {
+    return "unknown";
+  }
+  if (status >= 200 && status <= 299 && ok) {
+    return "success";
+  }
+  if (status >= 300 && status <= 399) {
+    return "redirect";
+  }
+  if (status >= 400 && status <= 499) {
+    return "client_error";
+  }
+  if (status >= 500 && status <= 599) {
+    return "server_error";
+  }
+  return "unknown";
+}
+
+function classifyApplication(payload: unknown): SmokeApplicationClass {
+  if (isPlainRecord(payload) && payload.ok === true) {
+    return "ok";
+  }
+  if (isPlainRecord(payload) && payload.ok === false) {
+    return "not_ok";
+  }
+  return "unknown";
+}
+
+function classifyPayload(payload: unknown): SmokePayloadClass {
+  if (payload === null || payload === undefined || payload === "") {
+    return "empty";
+  }
+  if (typeof payload === "string") {
+    return "text";
+  }
+  if (isPlainRecord(payload)) {
+    return "json";
+  }
+  return "other";
+}
+
+function isPlainRecord(payload: unknown): payload is Record<string, unknown> {
+  return Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
 }
 
 function normalizeBaseUrl(url: URL) {
