@@ -72,6 +72,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 external provider source lineage checkpoint：current source RC `5607910` 將 `scripts/external-provider-evidence.mjs` receipt schema 提升為 v2，`PASS` receipt 必須帶有有效小寫 hexadecimal `sourceCommit`；`PENDING_EXTERNAL` 才可保留 `unknown`，舊 v1 receipt 會被拒絕。provider evidence contract `13/13`、receipt validator `8/8`、完整 Node TAP `823/823`、combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`，coverage=`64.60／64.33／70.68／69.53`，lint、typecheck、strict-index、secret scan、audit、controlled production build 與 current bundle validation 均通過。這仍是 local contract，不是外部 provider receipt；沒有呼叫 Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、staging 或 Production，五個 external provider gates 與 PayUni reconciliation、四個 readiness flags、canonical `75.5/100` 及 `NO_GO` 維持未變。
 
+最新 2026-08-21 staging release evidence checkpoint：current source RC `c7fa06a` 新增 `scripts/staging-release-evidence.mjs` 與 read-only `scripts/validate-staging-release-evidence.mjs`，將 `lineage`、`migration`、`recovery`、`rollback` 四個 staging component 綁定同一個 source lineage。aggregate contract `9/9`、receipt validator `9/9`、完整 Node TAP `841/841`、combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`，coverage=`64.75／64.49／71.04／69.65`，lint、typecheck、strict-index、secret scan、audit、controlled production build 與 current bundle validation 均通過；CI 已加入兩個 contract steps。這仍是 local／synthetic contract，不是 actual staging migration、backup、restore 或 rollback receipt；staging 四項 gate、remote CI、外部服務、PayUni reconciliation、政策與真人 acceptance，以及 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`NO_GO` 維持未變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |
