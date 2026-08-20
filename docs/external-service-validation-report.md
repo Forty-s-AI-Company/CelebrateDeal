@@ -318,9 +318,11 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 ### Local release candidate
 
-- Source candidate：`bc2e4ab`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.18／63.79／70.33／69.04`）、controlled production build、local release verifier、secret scan 與 diff check 均已通過。
+- Source candidate：`3d2b54c`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
+- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan 與 diff check 均已通過；PayUni deployment-boundary synthetic env test `33/33`。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
+
+`3d2b54c` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed。這是設定邊界的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
 ### Read-only staging probe
 
@@ -337,6 +339,6 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 | Sentry | `PENDING_EXTERNAL` | local monitoring route／contract 有證據；外部 issue、alert、通知 delivery 未完成 |
 | PostHog | `PENDING_EXTERNAL` | local analytics route／contract 有證據；外部 project event receipt 未完成 |
 | Durable rate limit | `PENDING_EXTERNAL` | local provider contract 有證據；Cloudflare WAF／Upstash durable enforcement 未完成 |
-| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures 有證據；current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
+| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures 與 deployment-boundary env preflight 有證據；current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
 
 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 保持不變。正式公開販售仍為 `NO-GO`；目前可維持 local、Sandbox 或不收真實款項的封閉試用。

@@ -46,6 +46,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 同一 current source candidate `bc2e4ab` 另外補齊 local release verifier 的 release-critical presence-only inventory，涵蓋 `CRON_SECRET`、`LIVE_CHAT_INGRESS_SECRET`、PayUni、Cloudflare、Upstash 與 Sentry bindings。`release-local-readiness` targeted tests `5/5`、full lint、typecheck、strict-index、controlled production build、secret scan 與 readiness truth 均通過；`PAYMENT_PROVIDER=false` 與外部 provider availability 未被誤判為 ready。
 
+最新 2026-08-21 PayUni deployment-boundary gate：source candidate `3d2b54c` 將 `PAYUNI_ENV` 納入 PayUni provider 的部署環境檢查，Preview／Production 的 `sandbox`／`production` mismatch 會 fail closed；synthetic env test `33/33`、full lint、typecheck、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`、controlled production build、secret scan、readiness truth 與 local release verifier 均通過。這只補強 local configuration safety，不增加 PayUni Sandbox reconciliation、staging 或 Production evidence；四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 不變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

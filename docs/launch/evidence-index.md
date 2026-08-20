@@ -1719,3 +1719,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source candidate：`bc2e4ab`；修改 `scripts/release-local-readiness.mjs` 與對應 test，讓 local release verifier 以 presence-only boolean 回報 preflight 需要的 `CRON_SECRET`、`LIVE_CHAT_INGRESS_SECRET`、PayUni、Cloudflare、Upstash、Sentry 與其他 release-critical bindings。
 - Verification：targeted `release-local-readiness` tests `5/5`、full lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage exit `0`（`64.18／63.79／70.33／69.04`）、controlled production build、secret scan、readiness truth 與 local release verifier 均通過；verifier 明確回報 `PAYMENT_PROVIDER=false`。
 - Boundary：只保存 presence boolean，不保存環境值；PayUni `PAYUNI_ENV=sandbox` 的 non-secret class 可辨識，但因 `PAYMENT_PROVIDER=false`、staging DB identity 缺失與 provider account／order binding 未驗證，`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 維持不變。
+
+## REL-20260821-PAYUNI-ENV-BINDING — PayUni deployment boundary gate（2026-08-21）
+
+- Source candidate：`3d2b54c`；`src/lib/env.ts` 將 PayUni `PAYUNI_ENV` 與 deployment boundary 綁定，對應測試補上 Preview mismatch、Preview sandbox、Production mismatch 與 Production pass 的 synthetic matrix。
+- Verification：env targeted test `33/33`、full lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth 與 local release verifier 均通過。
+- Boundary：Preview 必須使用 PayUni `sandbox`、Production 必須使用 `production`；本次未呼叫 PayUni、未操作 staging／Production、未付款／退款／寄信，也未保存任何 environment value。PayUni account、order／provider reference binding、reconciliation、external provider 與人工 acceptance 仍 pending；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。

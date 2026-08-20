@@ -2,7 +2,7 @@
 
 日期：2026-08-21（Asia/Taipei）  
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
-Source RC：`bc2e4ab`
+Source RC：`3d2b54c`
 權威 gap map：[`current-release-completion-audit-20260821.md`](./current-release-completion-audit-20260821.md)
 
 這份 handoff 把目前尚未完成的 staging、external provider、PayUni Sandbox 與人工 acceptance 工作整理成一次可控的 non-Production 執行包。它只授權準備與去識別 evidence 收集，不授權 Production、正式付款、退款、寄信、資料庫寫入或部署。
@@ -18,7 +18,7 @@ releaseDecision=NO_GO
 canonicalTotal=75.5/100
 ```
 
-目前已有 local／disposable 證據：source quality gates、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts 與 staging read-only health probe。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
+目前已有 local／disposable 證據：source quality gates、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
 
 ## Owner authorization boundary
 
@@ -56,7 +56,7 @@ canonicalTotal=75.5/100
 
 CAT04 預設採 read-only reconciliation。執行順序固定為：
 
-1. 證明 non-Production environment 與 PayUni test account binding。
+1. 證明 non-Production environment 與 PayUni test account binding；local preflight 也必須確認 Preview 使用 `sandbox`，Production 使用 `production`。
 2. 選擇可綁定 current environment 的既有 transaction；不足時才由 owner 明確核准建立一筆 test transaction。
 3. 只讀取站內去識別 projection。
 4. 執行 bounded provider read-only query，記錄 query type、attempt count 與 allowlisted result enum。
