@@ -319,7 +319,7 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 ### Local release candidate
 
 - RC source freeze：`b70539f`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、Node TAP `762/762`、combined coverage `64.13／63.78／70.09／69.02`、controlled production build、local release verifier、secret scan 與 diff check 均已通過。
+- ESLint `0 errors／0 warnings`、TypeScript、current release handoff contract `1/1`、Node TAP `763/763`、combined coverage exit `0`（statements／branches／functions／lines=`64.18／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan 與 diff check 均已通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
 ### Read-only staging probe
