@@ -1,9 +1,11 @@
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
 import {
+  isLoopbackSmokeTarget,
   resolveSmokeTarget,
   summarizeSmokeFailure,
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
+import { validateNonProductionOwnerAuthorization } from "./validate-non-production-owner-authorization.mjs";
 
 type SmokeResult = {
   name: string;
@@ -25,6 +27,19 @@ function record(result: SmokeResult) {
   results.push(result);
   const prefix = result.status === "pass" ? "PASS" : result.status === "skip" ? "SKIP" : "FAIL";
   console.log(`[${prefix}] ${result.name}: ${result.detail}`);
+}
+
+function ownerAuthorizationFailure(expectedEnvironment?: string): string | null {
+  const authorization = validateNonProductionOwnerAuthorization(process.env);
+  if (!authorization.ok) return authorization.reason;
+
+  const authorizedEnvironment = process.env.AI_TEAM_PROVIDER_ENVIRONMENT?.trim().toLowerCase();
+  return expectedEnvironment && expectedEnvironment !== authorizedEnvironment ? "scope_invalid" : null;
+}
+
+function remoteSmokeAuthorizationFailure(): string | null {
+  if (isLoopbackSmokeTarget(baseUrl)) return null;
+  return ownerAuthorizationFailure(process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase());
 }
 
 async function readResponsePayload(response: Response): Promise<unknown> {
@@ -79,28 +94,50 @@ async function checkJson(name: string, path: string, init?: RequestInit) {
 }
 
 async function main() {
+  const authorizationFailure = remoteSmokeAuthorizationFailure();
+  if (authorizationFailure) {
+    record({
+      name: "non-Production owner authorization",
+      status: "fail",
+      detail: "blocked_before_network",
+    });
+    process.exitCode = 1;
+    return;
+  }
+
   await checkJson("health", "/api/health");
   await checkJson("admin preflight", "/api/admin/preflight");
 
-  await checkJson("resend test email", "/api/admin/ops/test-email", {
-    method: "POST",
-    body: JSON.stringify(process.env.SMOKE_TEST_EMAIL ? { to: process.env.SMOKE_TEST_EMAIL } : {}),
-  });
-
-  await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
-  await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
-
-  if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
-    const vendorId = process.env.SMOKE_VENDOR_ID;
-    await runCloudflareSmoke(vendorId);
+  const providerAuthorizationFailure = ownerAuthorizationFailure(
+    isLoopbackSmokeTarget(baseUrl) ? undefined : process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase(),
+  );
+  if (providerAuthorizationFailure) {
+    record({
+      name: "external provider owner authorization",
+      status: "fail",
+      detail: "blocked_before_provider_request",
+    });
   } else {
-    record({ name: "cloudflare mutating smoke", status: "skip", detail: "Set RUN_CLOUDFLARE_SMOKE=true to create direct upload and live input" });
-  }
+    await checkJson("resend test email", "/api/admin/ops/test-email", {
+      method: "POST",
+      body: JSON.stringify(process.env.SMOKE_TEST_EMAIL ? { to: process.env.SMOKE_TEST_EMAIL } : {}),
+    });
 
-  if (process.env.RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE === "true") {
-    await runPayUniSmoke();
-  } else {
-    record({ name: "payuni sandbox webhook", status: "skip", detail: "Set RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true to replay paid / refunded / duplicate fixtures" });
+    await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
+    await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
+
+    if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
+      const vendorId = process.env.SMOKE_VENDOR_ID;
+      await runCloudflareSmoke(vendorId);
+    } else {
+      record({ name: "cloudflare mutating smoke", status: "skip", detail: "Set RUN_CLOUDFLARE_SMOKE=true to create direct upload and live input" });
+    }
+
+    if (process.env.RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE === "true") {
+      await runPayUniSmoke();
+    } else {
+      record({ name: "payuni sandbox webhook", status: "skip", detail: "Set RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true to replay paid / refunded / duplicate fixtures" });
+    }
   }
 
   if (process.env.RUN_DEMO_PAYMENT_WEBHOOK_SMOKE === "true") {

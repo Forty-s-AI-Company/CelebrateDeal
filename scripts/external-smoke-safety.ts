@@ -71,6 +71,18 @@ export function resolveSmokeTarget(options: ResolveSmokeTargetOptions) {
 }
 
 /**
+ * Classify an already-normalized smoke target without resolving or contacting it.
+ * Remote smoke must pass the owner-authorization gate before the first request.
+ */
+export function isLoopbackSmokeTarget(target: string) {
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(target).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Return a bounded classification for an untrusted provider response.
  *
  * The smoke runner may inspect response bodies to decide whether a check

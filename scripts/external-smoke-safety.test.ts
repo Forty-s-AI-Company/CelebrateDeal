@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  isLoopbackSmokeTarget,
   resolveSmokeTarget,
   summarizeSmokeFailure,
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 describe("external smoke safety", () => {
   it("defaults to the local smoke server without extra authorization", () => {
@@ -13,6 +16,13 @@ describe("external smoke safety", () => {
 
   it("accepts an explicit loopback target", () => {
     expect(resolveSmokeTarget({ targetAppUrl: "http://127.0.0.1:4000/" })).toBe("http://127.0.0.1:4000");
+  });
+
+  it("classifies only loopback smoke targets as local", () => {
+    expect(isLoopbackSmokeTarget("http://localhost:31023")).toBe(true);
+    expect(isLoopbackSmokeTarget("https://127.0.0.1:4000")).toBe(true);
+    expect(isLoopbackSmokeTarget("https://staging.example.test")).toBe(false);
+    expect(isLoopbackSmokeTarget("not-a-url")).toBe(false);
   });
 
   it("rejects credentials embedded in the target URL", () => {
@@ -117,8 +127,33 @@ describe("external smoke safety", () => {
 
     expect(runnerSource).toContain("summarizeSmokeResponse");
     expect(runnerSource).toContain("summarizeSmokeFailure");
+    expect(runnerSource).toContain("blocked_before_provider_request");
+    expect(runnerSource.indexOf("blocked_before_provider_request")).toBeLessThan(
+      runnerSource.indexOf('checkJson("resend test email"'),
+    );
     expect(runnerSource).not.toContain("formatPayload");
     expect(runnerSource).not.toContain("JSON.stringify(payload)");
     expect(runnerSource).not.toContain("error.message");
+  });
+
+  it("blocks remote smoke before the first network request when owner authorization is missing", () => {
+    const runner = fileURLToPath(new URL("./external-smoke.ts", import.meta.url));
+    const child = spawnSync(process.execPath, ["--import", "tsx", runner], {
+      cwd: process.cwd(),
+      env: {
+        PATH: process.env.PATH,
+        NODE_ENV: "test",
+        TARGET_APP_URL: "https://staging.example.test",
+        SMOKE_ENVIRONMENT: "staging",
+        ALLOW_STAGING_SMOKE: "true",
+        SMOKE_EXPECTED_HOSTNAME: "staging.example.test",
+      },
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+
+    expect(child.status).toBe(1);
+    expect(child.stdout).toBe("[FAIL] non-Production owner authorization: blocked_before_network\n");
+    expect(child.stderr).toBe("");
   });
 });

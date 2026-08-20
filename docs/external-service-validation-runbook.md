@@ -50,7 +50,7 @@ npm run preflight
 npm run external:smoke
 ```
 
-`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true` 與完全相符的 `SMOKE_EXPECTED_HOSTNAME`。不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
+`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true`、完全相符的 `SMOKE_EXPECTED_HOSTNAME`，以及先通過 `scripts/validate-non-production-owner-authorization.mjs` 的新 owner authorization。`AI_TEAM_PROVIDER_ENVIRONMENT` 也必須與 `SMOKE_ENVIRONMENT` 完全相符；缺少或不相符時，runner 會在第一個 network request 前停止。loopback target 的 health／admin preflight 可做本地診斷，但 Resend、PostHog、Sentry、Cloudflare、PayUni 等 provider smoke route 仍會在第一個 provider request 前要求同一份 authorization。不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
 
 Smoke runner 會在記憶體內讀取 response 以判斷結果，但 stdout 只輸出固定的 HTTP／transport／payload／application 分類與布林狀態，不輸出 raw provider response、URL、UID、stream key、order number、email、Token 或錯誤訊息。可保存的輸出仍只代表 sanitized local／non-Production evidence，不能直接升格為 provider PASS。
 
