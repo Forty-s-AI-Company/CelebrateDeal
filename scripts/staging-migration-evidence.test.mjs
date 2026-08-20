@@ -86,4 +86,3 @@ test("rejects a tampered PASS receipt", () => {
     appliedMigrationCount: 1,
   }), false);
 });
-

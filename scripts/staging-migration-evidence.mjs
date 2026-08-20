@@ -222,4 +222,3 @@ export function validateStagingMigrationReceipt(value) {
 
   return true;
 }
-
