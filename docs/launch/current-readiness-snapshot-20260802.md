@@ -40,6 +40,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 同一 checkpoint 的 local release candidate 已凍結於 commit `b70539f`；`git status --short`、staged index 與 `git diff HEAD` 均為 clean。這只代表 source tree 已形成可追蹤的 local RC，不代表已可正式販售。Cloudflare、Resend、Sentry、PostHog、durable rate limit 的 external evidence、PayUni Sandbox current reconciliation、實際 staging migration／backup／restore／rollback、staging Browser matrix，以及法務／退款／隱私／客服／人工 owner acceptance 仍未完成。`ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 保持不變；canonical total 維持 `75.5/100`，不因本機 drill、local Browser rerun 或 clean RC commit 加分。
 
+最新 2026-08-21 frozen HEAD final gate rerun：以 RC source commit `b70539f` 為對象重新執行 lint、typecheck、contract、coverage、controlled production build、local release verifier、secret scan 與 diff check，全部 `PASS`。Node TAP 為 `762 passed / 0 failed / 0 skipped`；combined coverage 為 `403 files passed / 1 skipped`、`3073 passed / 1 skipped`，statements／branches／functions／lines=`64.13%／63.78%／70.09%／69.02%`，高於 `63／57／60／65` threshold。這是 local source-quality evidence；application environment availability 仍為 false，外部 provider、實際 staging、PayUni Sandbox reconciliation 與人工 acceptance 仍未完成，四個 readiness flags 與 canonical `75.5/100` 不變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

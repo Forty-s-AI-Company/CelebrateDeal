@@ -1662,7 +1662,7 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Evidence：`docs/ai-team/evidence/goal-continuation-release-reconciliation-20260820.md`
 - Disposable receipt：`.ai-team/reports/staging-backup-restore-disposable-receipt.json`
 - Result：修正 contract drift、dead code 與 combined coverage merge 的重複 script placeholder；新增 tmpfs／loopback-only、explicit environment 的 disposable PostgreSQL schema/data backup／restore drill。58 migrations、migration status、aggregate／extension snapshot compare、source／target／temp cleanup 全部 `PASS`。
-- Verification：ESLint `0 errors／0 warnings`、TypeScript、controlled production build、local release verifier、local rollback rehearsal、backup tooling static checks 通過；Node TAP `762 passed／0 failed／0 skipped`；combined coverage `403 files passed／1 skipped`、`3073 passed／1 skipped`，statements／branches／functions／lines=`64.18／63.80／70.33／69.04`，threshold=`63／57／60／65`。
+- Verification：ESLint `0 errors／0 warnings`、TypeScript、controlled production build、local release verifier、local rollback rehearsal、backup tooling static checks 通過；Node TAP `762 passed／0 failed／0 skipped`；combined coverage `403 files passed／1 skipped`、`3073 passed／1 skipped`，初次 reconciliation 的 statements／branches／functions／lines=`64.18／63.80／70.33／69.04`，threshold=`63／57／60／65`。
 - Boundary：這是 local／disposable evidence，不代表 Supabase platform restore、實際 staging restore、PITR、Production recovery、PayUni Sandbox reconciliation 或 external provider evidence。Cloudflare、Resend、Sentry、PostHog、durable rate limit、staging Browser matrix、法務／客服／退款／隱私與人工 owner acceptance 仍 pending；Goal remains active，`SANDBOX_READY=false`、`PRODUCTION_READY=false`。
 
 ## REL-20260821-G7-55 — Email operations Browser rerun（2026-08-21）
@@ -1682,3 +1682,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Commit：`b70539f`，394 個可見 source／test／migration／evidence 檔案已用明確 inventory 凍結，未 push、merge 或 deploy。
 - Verification：`secret_scan_passed`、`git diff --check=PASS`；commit 後 `git status --short`、staged index 與 `git diff HEAD` 均 clean。
 - Boundary：這是 local RC source-tree freeze；PayUni Sandbox reconciliation、Cloudflare／Resend／Sentry／PostHog／durable rate limit external evidence、實際 staging recovery、staging Browser matrix與人工 owner acceptance仍未完成，`SANDBOX_READY=false`、`PRODUCTION_READY=false`。
+
+## REL-20260821-FINAL-GATES — Frozen HEAD final gate rerun（2026-08-21）
+
+- Source：RC source commit `b70539f`；evidence-only 文件更新前重新驗證，未操作 staging、Production、正式付款／退款／寄信或外部 provider。
+- Verification：ESLint `0 errors／0 warnings`、TypeScript、secret scan、`git diff --check`、controlled production build、local release verifier、Node TAP `762 passed／0 failed／0 skipped` 全部通過；combined coverage `403 files passed／1 skipped`、`3073 passed／1 skipped`，statements／branches／functions／lines=`64.13／63.78／70.09／69.02`，threshold=`63／57／60／65`。
+- Boundary：local release verifier 為 `verified` 但 application environment availability 全為 `false`。PayUni Sandbox reconciliation、Cloudflare／Resend／Sentry／PostHog／durable rate limit external evidence、實際 staging recovery、staging Browser matrix與法務／客服／退款／隱私／人工 owner acceptance仍 pending；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`，Goal remains active。

@@ -23,7 +23,7 @@
 | G7-55 and WP130 targeted tests | `1 file / 10 passed / 0 failed / 0 skipped` |
 | Combined coverage merge contract | `1 file / 6 passed / 0 failed / 0 skipped` |
 | Node TAP contract suite | `762 passed / 0 failed / 0 skipped` |
-| Combined coverage gate | `PASS`，`403 files passed / 1 skipped`、`3073 passed / 1 skipped` |
+| Combined coverage gate | `PASS`，`403 files passed / 1 skipped`、`3073 passed / 1 skipped`；frozen HEAD final rerun |
 | Disposable staging-style backup／restore drill | `PASS`，58 migrations；schema/data backup、restore、aggregate／extension compare、source／target／temp cleanup 全部 `PASS` |
 | Controlled production build | `PASS`，isolated no-dotenv mirror、synthetic allowlisted environment、mirror cleanup `PASS` |
 | Local release verifier | `verified`；只確認 artifact／source contract，application environment availability 全部為 `false` |
@@ -36,11 +36,17 @@
 - Vitest：`403 files passed / 1 skipped`、`3073 passed / 1 skipped`
 - Node TAP：`762 passed / 0 failed / 0 skipped`
 - Disposable PostgreSQL migration／backup／restore cleanup：migration count `58`；source container、target container、temp root 均 `PASS`
-- Combined coverage：statements `64.18%`、branches `63.80%`、functions `70.33%`、lines `69.04%`
+- Combined coverage：statements `64.13%`、branches `63.78%`、functions `70.09%`、lines `69.02%`
 - Existing threshold：`63 / 57 / 60 / 65`
 - 判定：`PASS`；本輪沒有降低 threshold、加入 skip 或使用 exclude 掩蓋缺口。
 
 修正前的 `47.87% / 52.34% / 56.50% / 64.40%` 是重複計入 Vitest 0-count script placeholder 的失真結果，已由 current-tree run supersede。修正後仍完整計入 `scripts/` inventory；尚未執行的 CLI／browser orchestration path 仍會如實反映為未覆蓋，沒有被隱藏。新增 disposable runner 後，coverage 仍高於既定門檻，沒有以 skip 或 exclude 掩蓋新增程式。
+
+## 2026-08-21 frozen HEAD final gate rerun
+
+以 local release candidate source commit `b70539f` 為驗證對象，在 evidence-only commit 前重新執行 frozen HEAD gates。ESLint 為 0 errors／0 warnings；TypeScript、Node TAP contract、combined coverage、controlled production build、local release verifier、secret scan 與 `git diff --check` 全部 `PASS`。最終 combined coverage 為 statements `64.13%`、branches `63.78%`、functions `70.09%`、lines `69.02%`；Vitest 為 `403 files passed / 1 skipped`、`3073 passed / 1 skipped`，Node TAP 為 `762 passed / 0 failed / 0 skipped`，threshold 維持 `63 / 57 / 60 / 65`。local release verifier 為 `verified`，但 application environment availability 仍全為 `false`；controlled build 只使用 no-dotenv mirror 與 synthetic allowlisted environment。
+
+這次 rerun 只更新 local evidence，不改變 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`，也不取代 PayUni Sandbox、實際 staging、external provider、法務／客服／退款／隱私與人工 owner acceptance gates。
 
 ## Disposable backup／restore receipt
 
