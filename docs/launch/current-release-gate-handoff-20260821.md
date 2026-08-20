@@ -18,7 +18,7 @@ releaseDecision=NO_GO
 canonicalTotal=75.5/100
 ```
 
-目前已有 local／disposable 證據：source quality gates、Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、statements／branches／functions／lines=`64.63／64.32／70.89／69.52`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
+目前已有 local／disposable 證據：source quality gates、Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、statements／branches／functions／lines=`64.63／64.32／70.89／69.52`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。另已保存 current-RC baseline bundle，CLI 結果為 `INCOMPLETE`，逐一保留 13 個 gate 的未完成狀態。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
 
 ## Remote CI state
 
@@ -45,7 +45,7 @@ canonicalTotal=75.5/100
 | Gate | 一次安全執行要取得的最小 evidence | 成功條件 | 目前結果 |
 |---|---|---|---|
 | Exact staging lineage | deployment／environment 的 names-only identity、短 source digest、`nonProduction=true` | 能證明 actual staging 使用 current RC lineage | `NOT_PROVEN` |
-| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC 的所有 gate receipts 均已驗證並完成一致聚合 | `NOT_PROVEN` |
+| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC baseline 已以 source `352a3dc` 驗證為 `INCOMPLETE`；所有 gate receipts 均已取得後才可形成完成聚合 | `INCOMPLETE_BASELINE` |
 | Staging migration | expected／applied migration count、status enum、DB identity class | current staging migration status 與 RC 一致 | `NOT_PROVEN` |
 | Staging backup／restore | platform／target 類型、checksum、migration status、aggregate compare、cleanup result | actual staging platform backup／restore 或明確核准的隔離 target drill 完成 | `PASS_LOCAL_ONLY` |
 | Staging rollback／forward | current／previous deployment opaque identity、rollback／forward result | staging rollback 後可回到 current RC，兩個 identity 可追溯 | `PASS_LOCAL_ONLY` |

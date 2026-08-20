@@ -1785,3 +1785,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Release candidate：`352a3dc`；Source：`scripts/validate-release-evidence-bundle.mjs`、`scripts/validate-release-evidence-bundle.test.mjs`、`.github/workflows/ci.yml`。
 - Verification：release evidence bundle validator `12/12`；targeted ESLint、Node syntax、full lint、TypeScript、strict-index、current release handoff、readiness truth、完整 Node TAP `814/814`；combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.63／64.32／70.89／69.52`，disposable database 與 cleanup 均 `PASS`。validator 固定要求 13 個 gate、同一 source lineage、non-Production boundary、opaque references、closed failure codes 與 `GO` fail-closed aggregation。
 - Boundary：這是 local contract evidence，不是 current-RC 實際 release bundle，也不代表 remote CI、actual staging、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox 或真人 acceptance 已完成。`PENDING_EXTERNAL`、`PENDING_HUMAN`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
+
+## REL-20260821-RELEASE-EVIDENCE-BUNDLE-CURRENT-STATUS — Current-RC 不完整基線 bundle（2026-08-21）
+
+- Evidence：[`release-evidence-bundle-current-status-20260821.json`](../ai-team/evidence/release-evidence-bundle-current-status-20260821.json)；source RC `352a3dc`。
+- Verification：CLI 實際輸出 `release_evidence_bundle_validation=PASS; result=INCOMPLETE`；13 個 gate、source lineage、opaque references、non-Production boundary、sanitized flags 與 `NO_GO` 均通過 schema validation。Gate 結果如實保留 remote CI／staging 為 `NOT_PROVEN`、五個外部服務與 PayUni 為 `PENDING_EXTERNAL`、政策與人工 acceptance 為 `PENDING_HUMAN`。
+- Boundary：這份檔案是 current status baseline，不是完成的 release evidence。它不會把 local contract、staging health、歷史 receipt 或 synthetic fixture 升格為外部／staging／PayUni／人工 `PASS`；readiness flags 與 `releaseDecision=NO_GO` 維持不變。

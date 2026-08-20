@@ -60,6 +60,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 release evidence bundle checkpoint：source checkpoint `352a3dc` 新增 read-only `scripts/validate-release-evidence-bundle.mjs`、對應 `12/12` tests 與 CI contract。完整 Node TAP 為 `814/814`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.63／64.32／70.89／69.52`。bundle 固定驗證 13 個必要 gate、current source lineage、non-Production boundary、opaque references、closed failure codes 與 `GO` fail-closed aggregation；目前沒有實際 current-RC bundle 或新的 external／staging／PayUni／human receipt，四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
 
+同一 source RC `352a3dc` 已保存 current status baseline bundle `docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json`；CLI 驗證結果為 `INCOMPLETE`。它只把目前 13 個 gate 的 `NOT_PROVEN`、`PENDING_EXTERNAL` 與 `PENDING_HUMAN` 固定保存，沒有新增 external／staging／PayUni／Production 或人工 evidence，四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
+
 同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `352a3dc` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
 ## Scorecard
