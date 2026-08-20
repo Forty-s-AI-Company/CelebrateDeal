@@ -66,6 +66,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `352a3dc` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
+最新 2026-08-21 non-Production owner authorization gate：current source RC `1e996b8` 新增 `scripts/validate-non-production-owner-authorization.mjs`、`8/8` deterministic tests、CI contract，以及 PayUni Sandbox runner 的執行前接線。缺少 authorization record、owner／scope references、non-Production boundary、new execution approval 或 forbidden-probe flag 時，會在任何 callback-host health probe、browser checkout、provider query、payment／refund action 前 fail closed。當前 CLI 真實結果為 `nonproduction_owner_authorization=BLOCKED; reason=authorization_missing`，沒有 network、provider、staging、PayUni 或 Production side effect。整合後 Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3086 passed／1 skipped`，statements／branches／functions／lines=`64.65／64.34／70.91／69.54`，controlled production build、secret scan、readiness truth 與 local release verifier 均通過。這只補強執行前安全邊界，不改變 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical total `75.5/100` 或 `releaseDecision=NO_GO`。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

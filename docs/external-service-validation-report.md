@@ -318,13 +318,13 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 ### Local release candidate
 
-- Release candidate：`352a3dc`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.63／64.32／70.89／69.52`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
+- Release candidate：`1e996b8`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
+- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3086 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.65／64.34／70.91／69.54`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；owner authorization contract `8/8`、PayUni Sandbox runner suite `36/36`、PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入對應 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
 `c088754` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth、staging migration evidence、external smoke output safety 與 provider-specific external evidence contracts。這是設定邊界與輸出安全的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
-2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `352a3dc` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
+2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `1e996b8` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
 
 ### Read-only staging probe
 
@@ -341,7 +341,7 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 | Sentry | `PENDING_EXTERNAL` | local monitoring route／contract 有證據；外部 issue、alert、通知 delivery 未完成 |
 | PostHog | `PENDING_EXTERNAL` | local analytics route／contract 有證據；外部 project event receipt 未完成 |
 | Durable rate limit | `PENDING_EXTERNAL` | local provider contract 有證據；Cloudflare WAF／Upstash durable enforcement 未完成 |
-| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures、deployment-boundary env preflight 與 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 有證據；最新只讀 callback-host preflight 為 `BLOCKED`，current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
+| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures、deployment-boundary env preflight、owner authorization fail-closed contract 與 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 有證據；最新只讀 callback-host preflight 為 `BLOCKED`，current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
 
 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 保持不變。正式公開販售仍為 `NO-GO`；目前可維持 local、Sandbox 或不收真實款項的封閉試用。
 
@@ -385,6 +385,14 @@ receipt validator 會遞迴拒絕 raw output、raw provider response、URL、Tok
 
 ## 18. 2026-08-21 PayUni callback-host preflight
 
-本輪只讀 preflight 使用目前 process environment 的 Sandbox 設定，執行 callback host `/api/health` reachability check。結果為 `BLOCKED`，觀察到的固定 error class 為 `PayUniCallbackHostError`；只發出 1 次 health GET，`paymentRequests=0`、`refundRequests=0`、`callbackReplays=0`、`productionOperations=0`。完整 sanitized evidence 見 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 與 machine-readable receipt `rel-20260821-payuni-callback-host-preflight-evidence.json`；既有 provider receipt validator 結果為 `PASS`，receipt result 保留為 `BLOCKED`。
+此前以 source RC `352a3dc` 執行的只讀 preflight 使用 process environment 的 Sandbox 設定，執行 callback host `/api/health` reachability check。結果為 `BLOCKED`，觀察到的固定 error class 為 `PayUniCallbackHostError`；只發出 1 次 health GET，`paymentRequests=0`、`refundRequests=0`、`callbackReplays=0`、`productionOperations=0`。完整 sanitized evidence 見 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 與 machine-readable receipt `rel-20260821-payuni-callback-host-preflight-evidence.json`；既有 provider receipt validator 結果為 `PASS`，receipt result 保留為 `BLOCKED`。current RC `1e996b8` 已把 owner authorization validator 接到 PayUni runner 的所有外部 preflight 之前。
 
 這次沒有建立 Sandbox 訂單、付款、退款或 callback replay，因此沒有產生 reconciliation receipt；PayUni Sandbox、staging lineage、migration、recovery 與 rollback gates 維持未完成。相同 callback-host 路徑不重試，需由 owner 提供可公開連線、明確 non-Production 的 staging callback host 與受控 authorization record 後再執行。
+
+## 19. 2026-08-21 Non-Production owner authorization gate
+
+`1e996b8` 新增 `scripts/validate-non-production-owner-authorization.mjs` 及 `8/8` deterministic tests，並在 CI 加入 `Non-Production owner authorization contract`。validator 只接受 allowlisted process-environment shape：opaque authorization／owner／scope references、`newExecutionApproved=true`、`nonProduction=true`、`forbiddenProbeReuse=false` 與 `providerEnvironment=preview|staging|sandbox`；`production`、缺漏欄位、非 opaque reference 或禁止 probe reuse 都會 fail closed。輸出只包含固定 result／reason 與 boolean availability，不輸出、hash、保存或傳送任何 reference、Secret、Cookie 或付款資料。
+
+PayUni Sandbox runner 現在會在 callback-host health probe、瀏覽器 checkout、provider query 或任何 payment／refund path 前先執行此 gate；對應 PayUni runner suite 為 `36/36`。目前本機 CLI 的真實結果為 `nonproduction_owner_authorization=BLOCKED; reason=authorization_missing`，因此沒有觸發 network、provider、staging、PayUni、付款、退款、callback replay、寄信、部署或 Production 操作。完整 sanitized evidence 見 `docs/ai-team/evidence/rel-20260821-owner-authorization-preflight.md`。
+
+本輪整合後的 local gate 結果為 ESLint、TypeScript、strict-index、controlled production build、secret scan、readiness truth、release readiness、Node TAP `822/822` 與 combined coverage `404 files passed／1 skipped`、`3086 passed／1 skipped`、statements／branches／functions／lines=`64.65／64.34／70.91／69.54` 全部通過。這只補強執行前的安全邊界，不改變 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、六個 external gates 的 `PENDING_EXTERNAL`、CAT10 `PENDING_HUMAN` 與正式販售 `NO-GO`。
