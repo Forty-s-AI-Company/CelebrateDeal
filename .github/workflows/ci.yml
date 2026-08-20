@@ -88,6 +88,9 @@ jobs:
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
+      - name: External provider evidence contract
+        run: node --test scripts/external-provider-evidence.test.mjs
+
       - name: Backup tooling static checks
         shell: pwsh
         run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1
