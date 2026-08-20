@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, test } from "vitest";
 
 import {
+  RELEASE_CRITICAL_ENVIRONMENT_KEYS,
   ReleaseReadinessError,
   environmentAvailability,
   manifestForArtifact,
@@ -91,5 +92,33 @@ test("environment availability preserves only key names and booleans", () => {
   const availability = environmentAvailability({ DATABASE_URL: sentinel, NEXT_PUBLIC_APP_URL: "" });
   assert.equal(availability.DATABASE_URL, true);
   assert.equal(availability.NEXT_PUBLIC_APP_URL, false);
+  assert.equal(JSON.stringify(availability).includes(sentinel), false);
+});
+
+test("reports every release-critical binding as presence-only metadata", () => {
+  const requiredDeploymentKeys = [
+    "CRON_SECRET",
+    "LIVE_CHAT_INGRESS_SECRET",
+    "PAYUNI_ENV",
+    "PAYUNI_HASH_KEY",
+    "PAYUNI_HASH_IV",
+    "PAYUNI_MERCHANT_ID",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_STREAM_TOKEN",
+    "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "SENTRY_AUTH_TOKEN",
+  ];
+  for (const key of requiredDeploymentKeys) {
+    assert.equal(RELEASE_CRITICAL_ENVIRONMENT_KEYS.includes(key), true, `missing inventory key: ${key}`);
+  }
+
+  const sentinel = "release-critical-synthetic-value";
+  const availability = environmentAvailability(Object.fromEntries(
+    RELEASE_CRITICAL_ENVIRONMENT_KEYS.map((key) => [key, sentinel]),
+  ));
+  assert.deepEqual(Object.keys(availability), [...RELEASE_CRITICAL_ENVIRONMENT_KEYS]);
+  assert.equal(Object.values(availability).every((value) => value === true), true);
   assert.equal(JSON.stringify(availability).includes(sentinel), false);
 });

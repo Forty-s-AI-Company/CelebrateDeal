@@ -16,17 +16,36 @@ const REQUIRED_SOURCE_FILES = Object.freeze([
   "vercel.json",
   "src/app/api/health/route.ts",
 ]);
-const ENVIRONMENT_KEYS = Object.freeze([
+// Keep this presence-only inventory aligned with the deployment preflight.
+// Values are never returned, hashed, or persisted by environmentAvailability.
+export const RELEASE_CRITICAL_ENVIRONMENT_KEYS = Object.freeze([
   "DATABASE_URL",
   "DIRECT_URL",
   "NEXT_PUBLIC_APP_URL",
   "JOB_SECRET",
+  "CRON_SECRET",
   "CSRF_SECRET",
+  "LIVE_CHAT_INGRESS_SECRET",
   "PAYMENT_PROVIDER",
+  "PAYUNI_ENV",
+  "PAYUNI_HASH_KEY",
+  "PAYUNI_HASH_IV",
+  "PAYUNI_MERCHANT_ID",
   "RATE_LIMIT_PROVIDER",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_STREAM_TOKEN",
+  "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
   "RESEND_API_KEY",
   "EMAIL_FROM",
   "SENTRY_DSN",
+  "NEXT_PUBLIC_SENTRY_DSN",
+  "SENTRY_ENVIRONMENT",
+  "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
+  "SENTRY_ORG",
+  "SENTRY_PROJECT",
+  "SENTRY_AUTH_TOKEN",
   "NEXT_PUBLIC_POSTHOG_KEY",
   "NEXT_PUBLIC_POSTHOG_HOST",
 ]);
@@ -82,7 +101,7 @@ async function collectFiles(root, current = root) {
 
 export function environmentAvailability(source = process.env) {
   return Object.freeze(Object.fromEntries(
-    ENVIRONMENT_KEYS.map((key) => [key, Boolean(String(source[key] ?? "").trim())]),
+    RELEASE_CRITICAL_ENVIRONMENT_KEYS.map((key) => [key, Boolean(String(source[key] ?? "").trim())]),
   ));
 }
 
