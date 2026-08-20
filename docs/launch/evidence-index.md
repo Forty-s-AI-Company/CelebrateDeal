@@ -1807,7 +1807,7 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 
 ## REL-20260821-CURRENT-RC-EVIDENCE-CONSISTENCY — Current release evidence consistency guard（2026-08-21）
 
-- Source checkpoint：`8a043b4`；current release handoff contract 會從 current bundle 動態比對 source RC 與 13 個 gate lineage，並鎖定 coverage 摘要，防止 current-RC 文件回復到舊 coverage count。
+- Source checkpoint：`8a043b4`；CI／documentation checkpoint：`9c65509`。current release handoff contract 會從 current bundle 動態比對 source RC 與 13 個 gate lineage，並鎖定 coverage 摘要，防止 current-RC 文件回復到舊 coverage count。
 - Evidence：`docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json` 已更新為 source `8a043b4`，13 個 gate 的 source lineage 一致，結果維持 `INCOMPLETE` 與 `NO_GO`。
 - Verification：current handoff `1/1`、CI current handoff evidence consistency step `1/1`、Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3088 passed／1 skipped`、coverage=`64.65／64.34／70.91／69.54`、lint、typecheck、strict-index、secret scan、readiness truth、bundle validator 與 diff check 均通過。
 - Boundary：本 WP 只修正 local release evidence lineage 與 stale documentation；沒有呼叫 external provider、PayUni、staging 或 Production，不改變任何 readiness flags。

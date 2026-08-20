@@ -2,6 +2,7 @@
 
 稽核時間：2026-08-21（Asia/Taipei）  
 Source RC：`8a043b4`
+CI／documentation checkpoint：`9c65509`
 Latest evidence documentation：本 audit 與 evidence index 的 2026-08-21 completion checkpoint
 Goal：`CELEBRATEDEAL-M2-M7`，狀態 `IN_PROGRESS`
 

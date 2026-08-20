@@ -2,6 +2,7 @@
 
 日期：2026-08-21（Asia/Taipei）  
 Source RC：`8a043b4`  
+CI／documentation checkpoint：`9c65509`
 工作包：`REL-20260821-CURRENT-RC-EVIDENCE-CONSISTENCY`
 
 ## 目的
@@ -11,6 +12,7 @@ Source RC：`8a043b4`
 ## 修正結果
 
 - current release completion audit 與 gate handoff 的 Source RC 更新為 `8a043b4`。
+- `9c65509` 只包含 CI workflow 與 evidence 文件變更；本 bundle 的 `sourceCommit=8a043b4` 仍代表最後的 runtime／test source checkpoint，兩者 provenance 已明確分開。
 - current release evidence bundle 的 root 與 13 個 gate source lineage 全部更新為 `8a043b4`；結果仍為 `INCOMPLETE`、`releaseDecision=NO_GO`、`productionApproval=false`。
 - handoff contract 新增 current source 與 coverage 摘要 assertion，拒絕舊的 `3086 passed／1 skipped`。
 - `.github/workflows/ci.yml` 新增 `Current release handoff evidence consistency` gate，讓 CI 直接執行同一份 current handoff contract。
