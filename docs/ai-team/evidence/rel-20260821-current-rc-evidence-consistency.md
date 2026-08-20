@@ -13,11 +13,13 @@ Source RC：`8a043b4`
 - current release completion audit 與 gate handoff 的 Source RC 更新為 `8a043b4`。
 - current release evidence bundle 的 root 與 13 個 gate source lineage 全部更新為 `8a043b4`；結果仍為 `INCOMPLETE`、`releaseDecision=NO_GO`、`productionApproval=false`。
 - handoff contract 新增 current source 與 coverage 摘要 assertion，拒絕舊的 `3086 passed／1 skipped`。
+- `.github/workflows/ci.yml` 新增 `Current release handoff evidence consistency` gate，讓 CI 直接執行同一份 current handoff contract。
 - evidence index 新增本工作包的 machine-readable bundle lineage 與驗證結果索引。
 
 ## 驗證
 
 - current release handoff contract：`1/1`。
+- CI gate command：`node --test scripts/current-release-gate-handoff.test.mjs`，`1/1`。
 - Node TAP contracts：`822/822`，0 failed、0 skipped。
 - combined coverage：`404 files passed／1 skipped`、`3088 passed／1 skipped`；statements／branches／functions／lines=`64.65／64.34／70.91／69.54`。
 - `npm run lint`：0 errors、0 warnings。

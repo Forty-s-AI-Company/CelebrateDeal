@@ -94,6 +94,9 @@ jobs:
       - name: Release evidence bundle contract
         run: node --test scripts/validate-release-evidence-bundle.test.mjs
 
+      - name: Current release handoff evidence consistency
+        run: node --test scripts/current-release-gate-handoff.test.mjs
+
       - name: Non-Production owner authorization contract
         run: node --test scripts/validate-non-production-owner-authorization.test.mjs
 
