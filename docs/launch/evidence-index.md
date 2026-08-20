@@ -1735,7 +1735,7 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 ## REL-20260821-CI-REMOTE-INSPECTION — Remote CI read-only inspection（2026-08-21）
 
 - Query：GitHub CLI `gh run list --workflow ci.yml --limit 10`，只保留 run metadata；未讀取 workflow logs、credentials 或 environment values。
-- Result：遠端 `codex/one-stop-webinar-flow` branch head 為舊提交 `c2aa2201`；最新列出的 run `32209974601` 的 `Production dependency audit` step 為 `failure`。沒有 current RC `ac7c2f5` 的 run。
+- Result：遠端 `codex/one-stop-webinar-flow` branch head 為舊提交 `c2aa2201`；最新列出的 run `32209974601` 的 `Production dependency audit` step 為 `failure`。沒有 current RC `231bc84` 的 run。
 - Boundary：current RC 的 remote CI 維持 `NOT_PROVEN`；沒有 push、workflow dispatch、staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。readiness flags 與 `releaseDecision=NO_GO` 維持不變，Goal remains active。
 
 ## REL-20260821-CI-READINESS-GATES — CI release readiness contracts（2026-08-21）
@@ -1743,3 +1743,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Release candidate：`ac7c2f5`；`.github/workflows/ci.yml` 新增 `Release readiness contract` 與 `Readiness truth reconciliation` steps。
 - Verification：本機 `npm run test:release-readiness` 為 `5/5`、`node scripts/readiness-truth-reconciliation.mjs` 為 `PASS`，current handoff contract `1/1`；既有 env `33/33`、lint、typecheck、strict-index、Node TAP、coverage、controlled build、secret scan、local release verifier 與 backup／resilience evidence 維持通過。
 - Boundary：新增 workflow gates 尚未取得 current RC 的 GitHub Actions remote run；沒有 staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。readiness flags 與 `releaseDecision=NO_GO` 維持不變，Goal remains active。
+
+## REL-20260821-STAGING-MIGRATION-CONTRACT — Sanitized staging migration evidence contract（2026-08-21）
+
+- Release candidate：`231bc84`；新增 `scripts/staging-migration-evidence.mjs` 與 `scripts/staging-migration-evidence.test.mjs`，並在 CI 加入 `Staging migration evidence contract` step。
+- Verification：targeted contract `5/5`、ESLint、`git diff --check` 通過；receipt 只保存 non-Production identity class、expected／applied migration count、allowlisted name digest、status enum 與零寫入 side-effect counters，不保存 raw Prisma output、connection string 或 credentials。
+- Boundary：這是 local evidence contract，不是 actual staging migration receipt。current staging DB identity、migration status、source lineage 與任何 staging write 仍未執行；`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
