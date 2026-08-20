@@ -16,6 +16,7 @@ function completeFacts(overrides = {}) {
     runId: "staging-migration-synthetic-01",
     executedAtUtc: "2026-08-21T00:00:00.000Z",
     authorizationRecordRef: "ticket-staging-01",
+    sourceCommit: "8a043b4",
     environmentClass: "staging",
     databaseIdentityClass: "staging-database",
     migrationStatus: "up-to-date",
@@ -45,6 +46,24 @@ test("fails closed when staging identity or authorization is missing", () => {
 
   assert.equal(receipt.result, "BLOCKED");
   assert.equal(validateStagingMigrationReceipt(receipt), true);
+});
+
+test("fails closed when current source lineage is missing", () => {
+  const receipt = createStagingMigrationReceipt(completeFacts({ sourceCommit: "" }));
+
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.sourceCommit, "unknown");
+  assert.equal(validateStagingMigrationReceipt(receipt), true);
+  assert.equal(validateStagingMigrationReceipt({ ...receipt, result: "PASS" }), false);
+});
+
+test("rejects the pre-lineage receipt schema", () => {
+  const receipt = createStagingMigrationReceipt(completeFacts());
+
+  assert.equal(validateStagingMigrationReceipt({
+    ...receipt,
+    schemaVersion: "celebratedeal-staging-migration-evidence/v1",
+  }), false);
 });
 
 test("classifies pending or divergent migration state as failed", () => {

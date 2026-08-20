@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 
-export const STAGING_MIGRATION_RECEIPT_SCHEMA = "celebratedeal-staging-migration-evidence/v1";
+export const STAGING_MIGRATION_RECEIPT_SCHEMA = "celebratedeal-staging-migration-evidence/v2";
 
 const SAFE_MIGRATION_NAME = /^\d{12,14}_[a-z0-9_]+$/iu;
 const SAFE_OPAQUE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/u;
+const SAFE_SOURCE_COMMIT = /^[a-f0-9]{7,40}$/u;
 const SAFE_DIGEST = /^[a-f0-9]{64}$/u;
 const ALLOWED_ENVIRONMENTS = new Set(["staging", "isolated-restore-drill"]);
 const ALLOWED_DATABASE_IDENTITIES = new Set(["staging-database", "isolated-restore-target"]);
@@ -20,6 +21,7 @@ const ALLOWED_STATUSES = new Set([
 const RECEIPT_KEYS = [
   "schemaVersion",
   "workPackage",
+  "sourceCommit",
   "result",
   "runId",
   "executedAtUtc",
@@ -72,6 +74,10 @@ function databaseIdentityClass(value) {
   return ALLOWED_DATABASE_IDENTITIES.has(value) ? value : "unknown";
 }
 
+function sourceCommit(value) {
+  return typeof value === "string" && SAFE_SOURCE_COMMIT.test(value) ? value : "unknown";
+}
+
 function canonicalNames(value) {
   if (!Array.isArray(value)) return { names: [], invalidCount: 1 };
   const names = [];
@@ -110,8 +116,9 @@ function safeUtc(value) {
   return Number.isNaN(Date.parse(value)) ? "unknown" : value;
 }
 
-function inferredResult({ authorizationRecordRef, environment, databaseIdentity, status, expected, applied, invalidExpectedCount, unallowlistedCount }) {
+function inferredResult({ authorizationRecordRef, sourceCommit: commit, environment, databaseIdentity, status, expected, applied, invalidExpectedCount, unallowlistedCount }) {
   const pass = authorizationRecordRef !== "unknown"
+    && commit !== "unknown"
     && environment === "staging"
     && databaseIdentity === "staging-database"
     && status === "up-to-date"
@@ -133,6 +140,7 @@ export function createStagingMigrationReceipt({
   runId,
   executedAtUtc,
   authorizationRecordRef,
+  sourceCommit: rawSourceCommit,
   environmentClass: rawEnvironmentClass,
   databaseIdentityClass: rawDatabaseIdentityClass,
   migrationStatus: rawMigrationStatus,
@@ -145,12 +153,15 @@ export function createStagingMigrationReceipt({
   const databaseIdentity = databaseIdentityClass(rawDatabaseIdentityClass);
   const status = ALLOWED_STATUSES.has(rawMigrationStatus) ? rawMigrationStatus : "unknown";
   const authRef = opaqueReference(authorizationRecordRef);
+  const commit = sourceCommit(rawSourceCommit);
 
   return Object.freeze({
     schemaVersion: STAGING_MIGRATION_RECEIPT_SCHEMA,
     workPackage: "STAGING_MIGRATION_EVIDENCE",
+    sourceCommit: commit,
     result: inferredResult({
       authorizationRecordRef: authRef,
+      sourceCommit: commit,
       environment,
       databaseIdentity,
       status,
@@ -191,6 +202,7 @@ export function createStagingMigrationReceipt({
 export function validateStagingMigrationReceipt(value) {
   if (!exactKeys(value, RECEIPT_KEYS)) return false;
   if (value.schemaVersion !== STAGING_MIGRATION_RECEIPT_SCHEMA || value.workPackage !== "STAGING_MIGRATION_EVIDENCE") return false;
+  if (value.sourceCommit !== "unknown" && !SAFE_SOURCE_COMMIT.test(value.sourceCommit)) return false;
   if (!["PASS", "FAILED", "BLOCKED"].includes(value.result)) return false;
   if (!SAFE_OPAQUE_REFERENCE.test(value.runId) && value.runId !== "unknown") return false;
   if (!SAFE_OPAQUE_REFERENCE.test(value.authorizationRecordRef) && value.authorizationRecordRef !== "unknown") return false;
@@ -211,6 +223,7 @@ export function validateStagingMigrationReceipt(value) {
     return value.runId !== "unknown"
       && value.executedAtUtc !== "unknown"
       && value.authorizationRecordRef !== "unknown"
+      && SAFE_SOURCE_COMMIT.test(value.sourceCommit)
       && value.environmentClass === "staging"
       && value.databaseIdentityClass === "staging-database"
       && value.migrationStatus === "up-to-date"

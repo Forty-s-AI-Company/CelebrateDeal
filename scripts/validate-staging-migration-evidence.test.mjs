@@ -24,6 +24,7 @@ function receiptJson(overrides = {}) {
     runId: 'staging-migration-synthetic-01',
     executedAtUtc: '2026-08-21T00:00:00.000Z',
     authorizationRecordRef: 'ticket-staging-01',
+    sourceCommit: '8a043b4',
     environmentClass: 'staging',
     databaseIdentityClass: 'staging-database',
     migrationStatus: 'up-to-date',
