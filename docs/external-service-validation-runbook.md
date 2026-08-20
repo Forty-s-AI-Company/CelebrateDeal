@@ -1,6 +1,6 @@
 # CelebrateDeal External Service Validation Runbook
 
-最後更新：2026-07-09
+最後更新：2026-08-21
 
 ## 1. Supabase
 

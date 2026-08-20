@@ -1749,3 +1749,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Release candidate：`d3b6462`；新增 `scripts/staging-migration-evidence.mjs` 與 `scripts/staging-migration-evidence.test.mjs`，並在 CI 加入 `Staging migration evidence contract` step。
 - Verification：targeted contract `5/5`、ESLint、`git diff --check` 通過；receipt 只保存 non-Production identity class、expected／applied migration count、allowlisted name digest、status enum 與零寫入 side-effect counters，不保存 raw Prisma output、connection string 或 credentials。
 - Boundary：這是 local evidence contract，不是 actual staging migration receipt。current staging DB identity、migration status、source lineage 與任何 staging write 仍未執行；`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
+
+## REL-20260821-EXTERNAL-SMOKE-SAFETY — External smoke sanitized output contract（2026-08-21）
+
+- Release candidate：`77dcef6`；`scripts/external-smoke.ts` 改為只輸出固定 HTTP／transport／payload／application 分類與 allowlisted boolean 狀態，`scripts/external-smoke-safety.ts` 提供 pure formatter 與 error classifier，CI 加入 `External smoke output safety contract` step。
+- Verification：`npx vitest run scripts/external-smoke-safety.test.ts` 為 `12/12`；與 release／staging targeted contracts 合併為 `22/22`；完整 coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，disposable database 與 cleanup 均 `PASS`。測試覆蓋 raw URL、Token、order number、email、provider payload 與錯誤訊息不會進入輸出；本輪沒有呼叫任何 external provider、PayUni、staging 或 Production。
+- Boundary：這是 local／non-Production evidence safety contract，不代表 Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox 或 actual staging gate 已通過；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
