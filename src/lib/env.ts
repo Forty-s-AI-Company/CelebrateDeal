@@ -123,6 +123,51 @@ function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
     || env.VERCEL_ENV === "production";
 }
 
+function payUniEnvironmentDeploymentCheck(
+  env: NodeJS.ProcessEnv,
+  deploymentSecurityRequired: boolean,
+): EnvCheck {
+  const configured = secretPresent(env.PAYUNI_ENV);
+  const value = env.PAYUNI_ENV?.trim().toLowerCase();
+  const expected = env.VERCEL_ENV === "preview"
+    ? "sandbox"
+    : env.VERCEL_ENV === "production" || env.NODE_ENV === "production"
+      ? "production"
+      : undefined;
+
+  if (!deploymentSecurityRequired) {
+    return {
+      key: "PAYUNI_ENV",
+      status: configured ? "pass" : "warning",
+      message: configured ? "已設定 PayUni environment" : "本機未設定 PayUni environment",
+    };
+  }
+
+  if (!configured) {
+    return {
+      key: "PAYUNI_ENV",
+      status: "fail",
+      message: "Preview／Production 使用 PayUni 時必須設定 PAYUNI_ENV",
+    };
+  }
+
+  if (!expected) {
+    return {
+      key: "PAYUNI_ENV",
+      status: "fail",
+      message: "無法判定 PayUni deployment environment",
+    };
+  }
+
+  return {
+    key: "PAYUNI_ENV",
+    status: value === expected ? "pass" : "fail",
+    message: value === expected
+      ? `PayUni environment 與 ${expected} deployment boundary 一致`
+      : `此 deployment 必須使用 PAYUNI_ENV=${expected}`,
+  };
+}
+
 const requiredKeys = [
   "DATABASE_URL",
   "DIRECT_URL",
@@ -147,6 +192,7 @@ const recommendedKeys = [
 export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   const parsed = ProductionEnvSchema.safeParse(env);
   const checks: EnvCheck[] = [];
+  const deploymentSecurityRequired = requiresDeploymentSecurity(env);
 
   for (const key of requiredKeys) {
     const value = env[key];
@@ -208,6 +254,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   }
 
   if (env.PAYMENT_PROVIDER === "payuni") {
+    checks.push(payUniEnvironmentDeploymentCheck(env, deploymentSecurityRequired));
     for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID"]) {
       const value = env[key];
       checks.push({
@@ -234,8 +281,6 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: "正式環境不可使用 SQLite file: URL",
     });
   }
-
-  const deploymentSecurityRequired = requiresDeploymentSecurity(env);
 
   if (env.NEXT_PUBLIC_APP_URL?.includes("localhost") && deploymentSecurityRequired) {
     checks.push({

@@ -209,6 +209,7 @@ describe("getEnvCheckReport", () => {
   it("does not require a non-standard PayUni webhook secret", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
+    env[envKey("PAYUNI", "ENV")] = "production";
     env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
     env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
     env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
@@ -217,6 +218,35 @@ describe("getEnvCheckReport", () => {
 
     expect(report.ok).toBe(true);
     expect(report.checks.some((item) => item.key === envKey("PAYUNI", "WEBHOOK", "SECRET"))).toBe(false);
+  });
+
+  it("binds PayUni environment to Preview and Production deployment boundaries", () => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = "payuni";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
+    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("VERCEL", "ENV")] = "preview";
+    env[envKey("PAYUNI", "ENV")] = "production";
+
+    let report = getEnvCheckReport(env);
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("PAYUNI", "ENV"), "fail")).toBeDefined();
+
+    env[envKey("PAYUNI", "ENV")] = "sandbox";
+    report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
+
+    env[envKey("VERCEL", "ENV")] = "production";
+    report = getEnvCheckReport(env);
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("PAYUNI", "ENV"), "fail")).toBeDefined();
+
+    env[envKey("PAYUNI", "ENV")] = "production";
+    report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
   });
 
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
