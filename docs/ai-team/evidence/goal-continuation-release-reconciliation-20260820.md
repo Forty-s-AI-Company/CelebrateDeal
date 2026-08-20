@@ -50,7 +50,7 @@
 
 ## Disposable backup／restore receipt
 
-`.ai-team/reports/staging-backup-restore-disposable-receipt.json` 經 `--verify-receipt` 驗證為 `PASS`。本 receipt 僅代表本機一次性 PostgreSQL 演練：`loopbackOnly=true`、`noPersistentVolume=true`、`productionOperations=false`，且 `sourceEnvContentsRead=false`、`rawDumpPersisted=false`、`rawOutputPersisted=false`。它不等同 Supabase platform restore、實際 staging restore、PITR 或 Production disaster-recovery proof。
+`.ai-team/reports/staging-backup-restore-disposable-receipt.json` 以 canonical absolute path 執行 `--verify-receipt` 驗證為 `PASS`。本 receipt 僅代表本機一次性 PostgreSQL 演練：`loopbackOnly=true`、`noPersistentVolume=true`、`productionOperations=false`，且 `sourceEnvContentsRead=false`、`rawDumpPersisted=false`、`rawOutputPersisted=false`。它不等同 Supabase platform restore、實際 staging restore、PITR 或 Production disaster-recovery proof。
 
 ## 2026-08-21 G7-55 Browser rerun
 
