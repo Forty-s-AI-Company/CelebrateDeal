@@ -11,7 +11,7 @@ Goal：`CELEBRATEDEAL-M2-M7`，狀態 `IN_PROGRESS`
 
 | Requirement | Status | Current evidence | Missing proof / risk | Provenance | Next safe action |
 |---|---|---|---|---|---|
-| Contract drift、coverage merge 與 build／CI blocker | `PASS_LOCAL_ONLY` | `docs/ai-team/evidence/goal-continuation-release-reconciliation-20260820.md`；current release handoff contract `1/1`；Node TAP `763/763`；combined coverage exit `0`，statements／branches／functions／lines=`64.19／63.80／70.33／69.04`，高於 `63／57／60／65`；PayUni deployment-boundary synthetic test `33/33`；CI workflow 已加入明確 PayUni binding step；`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`；AI Team server `7/7`、resilience 與 backup tooling static checks 通過 | 最新 GitHub Actions run 未由本 workspace 證明；CI workflow 仍需在遠端 runner 實際執行 | `TRACKED_PROJECT_REQUIREMENT` | 保留 `.github/workflows/ci.yml`；有遠端 CI run 時再附 sanitized check receipt |
+| Contract drift、coverage merge 與 build／CI blocker | `PASS_LOCAL_ONLY` | `docs/ai-team/evidence/goal-continuation-release-reconciliation-20260820.md`；current release handoff contract `1/1`；Node TAP `763/763`；combined coverage exit `0`，statements／branches／functions／lines=`64.19／63.80／70.33／69.04`，高於 `63／57／60／65`；PayUni deployment-boundary synthetic test `33/33`；CI workflow 已加入明確 PayUni binding step；`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`；AI Team server `7/7`、resilience 與 backup tooling static checks 通過 | 2026-08-21 唯讀檢查顯示遠端 branch head 仍是舊提交 `c2aa2201`；最新列出的 GitHub Actions run `32209974601` 為 `failure`，沒有 current RC `10c7726` 或 documentation checkpoint `ac6ba26` 的 run | `TRACKED_PROJECT_REQUIREMENT` | 由 owner 依核准流程觸發 current RC 的 remote CI；未取得 run 前維持 `PASS_LOCAL_ONLY` |
 | 乾淨 release candidate | `PASS_LOCAL_ONLY` | release candidate `10c7726`；current completion audit checkpoint；Git status、staged index、diff check clean | 未 push、未 merge、未部署；staging 尚未證明使用此 source lineage | `TRACKED_PROJECT_REQUIREMENT` | 以受控 non-Production deployment 流程重新建立 exact lineage，禁止貼出 credential |
 | Staging migration status | `NOT_PROVEN` | staging `/api/health` HTTP `200`、`database=ok`；`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md` | health check 不等於 migration status；沒有 current staging DB identity 或 migration receipt | `DIRECT_PRODUCTION_RISK` | staging owner 透過 approved broker 提供 non-Production DB identity，執行一次 read-only migration status |
 | Staging backup／restore | `PASS_LOCAL_ONLY` | `.ai-team/reports/staging-backup-restore-disposable-receipt.json`；58 migrations、schema/data restore、aggregate／extension compare、cleanup PASS | 實際 staging／Supabase platform backup、restore、PITR 與 recovery drill 未證明 | `DIRECT_PRODUCTION_RISK` | staging owner 授權受控 backup／restore drill，保存 sanitized receipt，不保存 dump 或連線值 |
@@ -40,6 +40,10 @@ canonicalTotal=75.5/100
 目前可支持的範圍是 local demo、Sandbox 測試與不收取真實款項的封閉試用。這份 audit 不把 staging health `200`、local backup／restore、local Browser、synthetic owner matrix 或歷史 PayUni webhook replay 擴大解讀為正式商業販售證據。
 
 最新 release candidate `10c7726` 包含 PayUni deployment boundary env preflight 與 CI 明確 gate：Vercel Preview 必須對應 `sandbox`，Production 必須對應 `production`；不一致會 fail closed。本次只使用 synthetic environment test，沒有呼叫 PayUni、staging 或 Production，因此不改變任何外部 readiness flag。
+
+## Remote CI inspection
+
+2026-08-21 以 GitHub CLI 進行唯讀查詢：遠端 `codex/one-stop-webinar-flow` branch head 為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 在該提交上以 `failure` 結束。查詢結果沒有 `10c7726` 或 `ac6ba26` 的 remote run，因此 current release candidate 的 GitHub Actions 狀態仍為 `NOT_PROVEN`。本次沒有 push、workflow dispatch、deployment 或任何外部 side effect。
 
 ## Safety and ownership boundary
 

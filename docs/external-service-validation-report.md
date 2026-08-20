@@ -324,6 +324,8 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 `10c7726` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract。這是設定邊界的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
+2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 為 `failure`，且沒有 `10c7726` 或 `ac6ba26` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
+
 ### Read-only staging probe
 
 2026-08-21 對 `https://celebrate-deal-staging.carry-digital-nomad.in.net` 執行只讀 GET：`/api/health` 為 HTTP `200`、`ok=true`、`database=ok`；公開 `/` 為 HTTP `200`；未帶認證的 `/api/admin/preflight` 為 HTTP `401`。WP-187 lineage marker endpoint 回 HTTP `200`，但不是預期 lineage JSON contract，因此 current RC deployment identity 仍 `NOT_PROVEN`。完整 sanitized evidence：`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md`。

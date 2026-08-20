@@ -20,6 +20,10 @@ canonicalTotal=75.5/100
 
 目前已有 local／disposable 證據：source quality gates、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
 
+## Remote CI state
+
+2026-08-21 的唯讀查詢顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 為 `failure`。目前沒有 `10c7726` 或 `ac6ba26` 的 GitHub Actions run，所以 current RC 的 remote CI 仍是 `NOT_PROVEN`。本次未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
+
 ## Owner authorization boundary
 
 執行前只在受控 broker 或 ticket 系統記錄下列去識別欄位。不要把 URL、connection string、credential、Token、Cookie、customer data、付款資料或 raw provider response 複製到 repository、聊天或 CI artifact。

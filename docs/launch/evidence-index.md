@@ -1731,3 +1731,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Release candidate：`10c7726`；`.github/workflows/ci.yml` 新增 `PayUni deployment environment binding contract` step，讓每次 push／pull request 的 CI 明確執行 `src/lib/env.test.ts`。
 - Verification：本機 CI-equivalent env test `33/33`、`npm audit --omit=dev --audit-level=high` 為 `0 vulnerabilities`、lint、TypeScript、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`（`64.19／63.80／70.33／69.04`）、controlled production build、secret scan、readiness truth、local release verifier、`git diff --check`、AI Team server `7/7`、AI resilience 與 backup tooling static checks 均通過。
 - Boundary：這是 CI contract wiring 與本機 evidence，尚未宣稱 GitHub Actions remote run PASS；沒有 staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
+
+## REL-20260821-CI-REMOTE-INSPECTION — Remote CI read-only inspection（2026-08-21）
+
+- Query：GitHub CLI `gh run list --workflow ci.yml --limit 10`，只保留 run metadata；未讀取 workflow logs、credentials 或 environment values。
+- Result：遠端 `codex/one-stop-webinar-flow` branch head 為舊提交 `c2aa2201`；最新列出的 run `32209974601` 為 `failure`。沒有 current RC `10c7726` 或 documentation checkpoint `ac6ba26` 的 run。
+- Boundary：current RC 的 remote CI 維持 `NOT_PROVEN`；沒有 push、workflow dispatch、staging、PayUni、外部 provider、Production、付款、退款、寄信或人工 acceptance side effect。readiness flags 與 `releaseDecision=NO_GO` 維持不變，Goal remains active。
