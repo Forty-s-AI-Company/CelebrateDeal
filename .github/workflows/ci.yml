@@ -91,6 +91,9 @@ jobs:
       - name: Human owner acceptance evidence contract
         run: node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
 
+      - name: Release evidence bundle contract
+        run: node --test scripts/validate-release-evidence-bundle.test.mjs
+
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
