@@ -2,7 +2,7 @@
 
 稽核時間：2026-08-21（Asia/Taipei）  
 Source RC：`b70539f`  
-Latest evidence documentation：`49955fa`  
+Latest evidence documentation：本 audit 與 evidence index 的 2026-08-21 completion checkpoint
 Goal：`CELEBRATEDEAL-M2-M7`，狀態 `IN_PROGRESS`
 
 這份 audit 逐項對照 active Goal 的完成條件。`PASS_LOCAL_ONLY` 只代表本機或 disposable 證據；它不能直接推導 staging、Sandbox 或 Production readiness。所有 `NOT_PROVEN`、`PENDING_EXTERNAL`、`PENDING_HUMAN` 都保留為 release gap。
@@ -12,7 +12,7 @@ Goal：`CELEBRATEDEAL-M2-M7`，狀態 `IN_PROGRESS`
 | Requirement | Status | Current evidence | Missing proof / risk | Provenance | Next safe action |
 |---|---|---|---|---|---|
 | Contract drift、coverage merge 與 build／CI blocker | `PASS_LOCAL_ONLY` | `docs/ai-team/evidence/goal-continuation-release-reconciliation-20260820.md`；Node TAP `762/762`；combined coverage `64.13／63.78／70.09／69.02`，高於 `63／57／60／65` | 最新 GitHub Actions run 未由本 workspace 證明；CI workflow 仍需在遠端 runner 實際執行 | `TRACKED_PROJECT_REQUIREMENT` | 保留 `.github/workflows/ci.yml`；有遠端 CI run 時再附 sanitized check receipt |
-| 乾淨 release candidate | `PASS_LOCAL_ONLY` | source freeze `b70539f`；文件 checkpoint `49955fa`；Git status、staged index、diff check clean | 未 push、未 merge、未部署；staging 尚未證明使用此 source lineage | `TRACKED_PROJECT_REQUIREMENT` | 以受控 non-Production deployment 流程重新建立 exact lineage，禁止貼出 credential |
+| 乾淨 release candidate | `PASS_LOCAL_ONLY` | source freeze `b70539f`；current completion audit checkpoint；Git status、staged index、diff check clean | 未 push、未 merge、未部署；staging 尚未證明使用此 source lineage | `TRACKED_PROJECT_REQUIREMENT` | 以受控 non-Production deployment 流程重新建立 exact lineage，禁止貼出 credential |
 | Staging migration status | `NOT_PROVEN` | staging `/api/health` HTTP `200`、`database=ok`；`docs/ai-team/evidence/rel-20260821-staging-readonly-health.md` | health check 不等於 migration status；沒有 current staging DB identity 或 migration receipt | `DIRECT_PRODUCTION_RISK` | staging owner 透過 approved broker 提供 non-Production DB identity，執行一次 read-only migration status |
 | Staging backup／restore | `PASS_LOCAL_ONLY` | `.ai-team/reports/staging-backup-restore-disposable-receipt.json`；58 migrations、schema/data restore、aggregate／extension compare、cleanup PASS | 實際 staging／Supabase platform backup、restore、PITR 與 recovery drill 未證明 | `DIRECT_PRODUCTION_RISK` | staging owner 授權受控 backup／restore drill，保存 sanitized receipt，不保存 dump 或連線值 |
 | Staging rollback | `PASS_LOCAL_ONLY` | local rollback rehearsal；readiness truth `STAGING_ROLLBACK_GATE=CLOSED_FOR_STAGING` | actual staging deployment rollback／forward identity 尚未以 current RC 證明；Production rollback 不在本 Goal 安全 scope | `DIRECT_PRODUCTION_RISK` | exact staging lineage 確認後，執行一次可回復的 staging rollback／forward drill |

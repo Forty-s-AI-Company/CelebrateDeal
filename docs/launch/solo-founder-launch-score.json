@@ -1,6 +1,7 @@
 {
   "schemaVersion": "celebratedeal-solo-founder-launch-score/v1",
-  "asOf": "2026-08-13",
+  "asOf": "2026-08-21",
+  "currentEvidenceAudit": "docs/launch/current-release-completion-audit-20260821.md",
   "previousCanonicalScore": 75.5,
   "soloFounderLaunchScore": 68.65,
   "scoreAppliedToCanonical": false,
