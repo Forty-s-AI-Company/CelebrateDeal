@@ -15,7 +15,7 @@ import {
 } from './validate-external-provider-evidence.mjs';
 
 const receiptJson = serializeExternalProviderReceipt(createPendingExternalReceipt('resend'));
-const readFixture = { readFile: async () => receiptJson };
+const readFixture = { realpath: async (candidate) => candidate, readFile: async () => receiptJson };
 
 test('CLI module imports without environment, network or child-process side effects', async () => {
   const source = await fs.readFile(new URL('./validate-external-provider-evidence.mjs', import.meta.url), 'utf8');
@@ -70,12 +70,14 @@ test('valid pending receipt is accepted and output states validation without cla
 test('read, JSON and receipt failures return fixed reasons without raw error text', async () => {
   assert.deepEqual(
     await validateExternalProviderReceiptFile('docs/ai-team/evidence/missing-receipt.json', {
+      realpath: async (candidate) => candidate,
       readFile: async () => { throw new Error('https://provider.invalid/token=secret'); },
     }, 'C:\\workspace'),
     { ok: false, reason: 'read_failed' },
   );
   assert.deepEqual(
     await validateExternalProviderReceiptFile('docs/ai-team/evidence/bad-receipt.json', {
+      realpath: async (candidate) => candidate,
       readFile: async () => '{bad json}',
     }, 'C:\\workspace'),
     { ok: false, reason: 'invalid_receipt' },
@@ -93,4 +95,14 @@ test('CLI requires exactly one receipt path and never exposes validator details'
 
 test('valid receipt shape remains bound to the external evidence schema', () => {
   assert.equal(JSON.parse(receiptJson).schemaVersion, EXTERNAL_PROVIDER_EVIDENCE_SCHEMA);
+});
+
+test('canonical path rejects a symlink target outside the sanitized evidence roots', async () => {
+  let readCalled = false;
+  const validation = await validateExternalProviderReceiptFile('docs/ai-team/evidence/synthetic-provider-receipt.json', {
+    realpath: async (candidate) => candidate.endsWith('synthetic-provider-receipt.json') ? 'C:\\outside\\secret.json' : candidate,
+    readFile: async () => { readCalled = true; return receiptJson; },
+  }, 'C:\\workspace');
+  assert.deepEqual(validation, { ok: false, reason: 'invalid_path' });
+  assert.equal(readCalled, false);
 });

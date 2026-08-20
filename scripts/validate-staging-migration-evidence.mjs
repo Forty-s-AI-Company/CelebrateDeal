@@ -1,21 +1,24 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  EXTERNAL_PROVIDERS,
-  EXTERNAL_PROVIDER_RESULTS,
-  parseAndValidateExternalProviderReceipt,
-} from './external-provider-evidence.mjs';
 
-// The CLI is intentionally read-only. It validates a receipt before an owner
-// attaches it to a non-Production evidence packet and never writes a result.
+import {
+  STAGING_MIGRATION_RECEIPT_SCHEMA,
+  validateStagingMigrationReceipt,
+} from './staging-migration-evidence.mjs';
+
+// This CLI only reads an already-sanitized receipt. It never runs migrations,
+// opens a database connection, calls a provider, or writes an evidence file.
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SAFE_RECEIPT_DIRECTORIES = Object.freeze([
   'docs/ai-team/evidence',
   '.ai-team/reports',
 ]);
-const SAFE_RECEIPT_FILENAME = /(?:receipt|evidence)\.json$/i;
-const SENSITIVE_PATH_SEGMENT = /(?:^|[._-])(?:env|secret|token|cookie|password|credential|private|connection)(?:$|[._-])/i;
+const SAFE_RECEIPT_FILENAME = /(?:receipt|evidence)\.json$/iu;
+const SENSITIVE_PATH_SEGMENT = /(?:^|[._-])(?:env|secret|token|cookie|password|credential|private|connection)(?:$|[._-])/iu;
+const STAGING_RESULTS = Object.freeze(['PASS', 'FAILED', 'BLOCKED']);
+const STAGING_ENVIRONMENTS = Object.freeze(['staging', 'isolated-restore-drill', 'unknown']);
+const STAGING_DATABASE_IDENTITIES = Object.freeze(['staging-database', 'isolated-restore-target', 'unknown']);
 const VALIDATION_FAILURE_REASONS = new Set([
   'receipt_path_required',
   'invalid_path',
@@ -63,7 +66,15 @@ async function resolveCanonicalReceiptPath(receiptPath, workspaceRoot, fsAdapter
   }
 }
 
-async function validateExternalProviderReceiptFile(inputPath, fsAdapter = fs, workspaceRoot = WORKSPACE_ROOT) {
+function parseReceipt(source) {
+  try {
+    return JSON.parse(source);
+  } catch {
+    return null;
+  }
+}
+
+async function validateStagingMigrationReceiptFile(inputPath, fsAdapter = fs, workspaceRoot = WORKSPACE_ROOT) {
   let receiptPath;
   try {
     receiptPath = resolveSafeReceiptPath(inputPath, workspaceRoot);
@@ -81,32 +92,36 @@ async function validateExternalProviderReceiptFile(inputPath, fsAdapter = fs, wo
     return { ok: false, reason: 'read_failed' };
   }
 
-  const parsed = parseAndValidateExternalProviderReceipt(source);
-  if (!parsed.ok) return { ok: false, reason: 'invalid_receipt' };
+  const receipt = parseReceipt(source);
+  if (!receipt || !validateStagingMigrationReceipt(receipt)) return { ok: false, reason: 'invalid_receipt' };
   return {
     ok: true,
-    provider: parsed.value.provider,
-    result: parsed.value.result,
-    sanitized: parsed.value.sanitized,
+    schemaVersion: receipt.schemaVersion,
+    result: receipt.result,
+    environmentClass: receipt.environmentClass,
+    databaseIdentityClass: receipt.databaseIdentityClass,
+    sanitized: receipt.safety.sanitized,
   };
 }
 
 function formatValidationResult(validation) {
   if (
     validation?.ok === true
-    && EXTERNAL_PROVIDERS.includes(validation.provider)
-    && EXTERNAL_PROVIDER_RESULTS.includes(validation.result)
+    && validation.schemaVersion === STAGING_MIGRATION_RECEIPT_SCHEMA
+    && STAGING_RESULTS.includes(validation.result)
+    && STAGING_ENVIRONMENTS.includes(validation.environmentClass)
+    && STAGING_DATABASE_IDENTITIES.includes(validation.databaseIdentityClass)
     && validation.sanitized === true
   ) {
-    return `receipt_validation=PASS; provider=${validation.provider}; result=${validation.result}; sanitized=true`;
+    return `staging_migration_validation=PASS; result=${validation.result}; environment=${validation.environmentClass}; database=${validation.databaseIdentityClass}; sanitized=true`;
   }
   const reason = VALIDATION_FAILURE_REASONS.has(validation?.reason) ? validation.reason : 'invalid_result';
-  return `receipt_validation=FAIL; reason=${reason}`;
+  return `staging_migration_validation=FAIL; reason=${reason}`;
 }
 
 async function runCli(argv = process.argv.slice(2), fsAdapter = fs, workspaceRoot = WORKSPACE_ROOT) {
   if (argv.length !== 1) return { ok: false, reason: 'receipt_path_required' };
-  return validateExternalProviderReceiptFile(argv[0], fsAdapter, workspaceRoot);
+  return validateStagingMigrationReceiptFile(argv[0], fsAdapter, workspaceRoot);
 }
 
 const invokedScript = process.argv[1] ? path.resolve(process.argv[1]) : null;
@@ -117,7 +132,7 @@ if (invokedScript === currentScript) {
     console.log(formatValidationResult(validation));
     process.exitCode = validation.ok ? 0 : 1;
   }).catch(() => {
-    console.log('receipt_validation=FAIL; reason=invalid_result');
+    console.log('staging_migration_validation=FAIL; reason=invalid_result');
     process.exitCode = 1;
   });
 }
@@ -127,5 +142,5 @@ export {
   normalizeRelativePath,
   resolveSafeReceiptPath,
   runCli,
-  validateExternalProviderReceiptFile,
+  validateStagingMigrationReceiptFile,
 };

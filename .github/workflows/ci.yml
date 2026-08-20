@@ -85,6 +85,9 @@ jobs:
       - name: Staging migration evidence contract
         run: npx vitest run scripts/staging-migration-evidence.test.mjs
 
+      - name: Staging migration receipt validation contract
+        run: node --test scripts/validate-staging-migration-evidence.test.mjs
+
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
