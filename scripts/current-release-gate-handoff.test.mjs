@@ -7,7 +7,7 @@ const handoff = fs.readFileSync(handoffPath, "utf8");
 
 test("current release gate handoff stays non-Production and fail-closed", () => {
   for (const requiredText of [
-    "Source RC：`7a9c996`",
+    "Source RC：`ec3bdb1`",
     "READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION",
     "PAYMENT_RECONCILIATION_READY=false",
     "SANDBOX_READY=false",
