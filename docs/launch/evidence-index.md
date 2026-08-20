@@ -1791,3 +1791,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Evidence：[`release-evidence-bundle-current-status-20260821.json`](../ai-team/evidence/release-evidence-bundle-current-status-20260821.json)；source RC `352a3dc`。
 - Verification：CLI 實際輸出 `release_evidence_bundle_validation=PASS; result=INCOMPLETE`；13 個 gate、source lineage、opaque references、non-Production boundary、sanitized flags 與 `NO_GO` 均通過 schema validation。Gate 結果如實保留 remote CI／staging 為 `NOT_PROVEN`、五個外部服務與 PayUni 為 `PENDING_EXTERNAL`、政策與人工 acceptance 為 `PENDING_HUMAN`。
 - Boundary：這份檔案是 current status baseline，不是完成的 release evidence。它不會把 local contract、staging health、歷史 receipt 或 synthetic fixture 升格為外部／staging／PayUni／人工 `PASS`；readiness flags 與 `releaseDecision=NO_GO` 維持不變。
+
+## REL-20260821-PAYUNI-CALLBACK-HOST-PREFLIGHT — PayUni callback-host 只讀 preflight（2026-08-21）
+
+- Evidence：[`rel-20260821-payuni-callback-host-preflight.md`](../ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md)、[`rel-20260821-payuni-callback-host-preflight-evidence.json`](../ai-team/evidence/rel-20260821-payuni-callback-host-preflight-evidence.json)；source RC `352a3dc`。
+- Verification：只讀 callback-host health preflight 實際結果為 `BLOCKED`，observed error class=`PayUniCallbackHostError`；network request `1`，payment／refund／callback replay／Production operations 均為 `0`，沒有保存 raw response、URL 或任何敏感資料。既有 provider receipt validator 輸出 `receipt_validation=PASS; provider=payuni_sandbox; result=BLOCKED; sanitized=true`。
+- Boundary：這次沒有建立 Sandbox 訂單或產生 PayUni reconciliation receipt。PayUni Sandbox gate 維持 `PENDING_EXTERNAL`；相同 callback-host 路徑不重試，需 owner 提供可公開連線的 non-Production staging host 與受控 authorization record。

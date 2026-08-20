@@ -18,7 +18,7 @@ releaseDecision=NO_GO
 canonicalTotal=75.5/100
 ```
 
-目前已有 local／disposable 證據：source quality gates、Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、statements／branches／functions／lines=`64.63／64.32／70.89／69.52`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。另已保存 current-RC baseline bundle，CLI 結果為 `INCOMPLETE`，逐一保留 13 個 gate 的未完成狀態。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
+目前已有 local／disposable 證據：source quality gates、Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、statements／branches／functions／lines=`64.63／64.32／70.89／69.52`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、release evidence bundle validator `12/12`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。另已保存 current-RC baseline bundle，CLI 結果為 `INCOMPLETE`，逐一保留 13 個 gate 的未完成狀態；最新只讀 PayUni callback-host preflight 為 `BLOCKED`，machine-readable receipt validator 為 `PASS`，receipt result 仍為 `BLOCKED`。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。
 
 ## Remote CI state
 
@@ -54,7 +54,7 @@ canonicalTotal=75.5/100
 | Sentry | issue／alert／notification 的 opaque references | synthetic issue 可見且 alert notification delivery 可驗證 | `PENDING_EXTERNAL` |
 | PostHog | project identity class、synthetic event name、PII boundary result | non-Production `production_smoke_test` event 可驗證且無敏感資料 | `PENDING_EXTERNAL` |
 | Durable rate limit | provider class、route class、bounded attempt count、429／edge block result | selected Cloudflare WAF 或 Upstash enforcement 實際生效，不使用 memory fallback | `PENDING_EXTERNAL` |
-| PayUni Sandbox | environment／provider binding、order／reference digest、amount／status／refund／callback match enums | local projection 與 provider read-only result exact match | `PENDING_EXTERNAL` |
+| PayUni Sandbox | environment／provider binding、order／reference digest、amount／status／refund／callback match enums | callback-host preflight `BLOCKED`；尚無 current order、provider read-only result 或 exact reconciliation | `PENDING_EXTERNAL` |
 | Policy／support／owner | role、holder ref、每項 check 結果、政策版本、release decision | 真人完成政策、客服、退款、財務與 release responsibility acceptance | `PENDING_HUMAN` |
 
 ## PayUni execution boundary

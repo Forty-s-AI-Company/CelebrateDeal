@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "celebratedeal-external-provider-evidence/v1",
+  "workPackage": "REL-20260821-PAYUNI-PREFLIGHT",
+  "provider": "payuni_sandbox",
+  "result": "BLOCKED",
+  "runId": "run:payuni-callback-preflight-20260821",
+  "executedAtUtc": "2026-08-20T20:51:02Z",
+  "authorizationRecordRef": "opaque:prelaunch-nonproduction",
+  "environmentClass": "staging",
+  "providerEnvironmentClass": "sandbox",
+  "nonProduction": true,
+  "attemptCount": 1,
+  "checks": {
+    "environmentBinding": "sandbox",
+    "orderIdentity": "unknown",
+    "referenceMatch": "unknown",
+    "amountMatch": "unknown",
+    "paymentStatus": "unknown",
+    "refundStatus": "unknown",
+    "callbackConsistency": "unknown"
+  },
+  "evidenceRefs": [],
+  "sideEffects": {
+    "databaseReads": 0,
+    "databaseWrites": 0,
+    "providerReadRequests": 0,
+    "providerWriteRequests": 0,
+    "emailsSent": 0,
+    "payments": 0,
+    "refunds": 0,
+    "callbackReplays": 0,
+    "deployments": 0,
+    "productionOperations": 0
+  },
+  "safety": {
+    "rawOutputPersisted": false,
+    "credentialsPersisted": false,
+    "tokensPersisted": false,
+    "cookiesPersisted": false,
+    "customerDataPersisted": false,
+    "sourceEnvContentsRead": false,
+    "productionIdentityObserved": false
+  },
+  "blockingReason": "provider_unavailable",
+  "sanitized": true
+}

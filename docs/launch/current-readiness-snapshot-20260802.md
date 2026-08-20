@@ -62,6 +62,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 同一 source RC `352a3dc` 已保存 current status baseline bundle `docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json`；CLI 驗證結果為 `INCOMPLETE`。它只把目前 13 個 gate 的 `NOT_PROVEN`、`PENDING_EXTERNAL` 與 `PENDING_HUMAN` 固定保存，沒有新增 external／staging／PayUni／Production 或人工 evidence，四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
 
+最新 PayUni Sandbox callback-host 只讀 preflight：`docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 記錄 `BLOCKED`、`PayUniCallbackHostError`、1 次 health GET、0 次 payment／refund／callback replay／Production operation。沒有建立訂單或取得 reconciliation receipt，PayUni gate、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與 `NO_GO` 維持不變；相同路徑不重試。
+
 同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `352a3dc` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
 ## Scorecard

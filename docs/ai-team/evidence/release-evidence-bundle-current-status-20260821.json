@@ -137,7 +137,7 @@
       "evidenceClass": "PAYMENT_RECONCILIATION",
       "result": "PENDING_EXTERNAL",
       "sourceCommit": "352a3dc",
-      "evidenceRef": "opaque:current-payuni-reconciliation-20260821",
+      "evidenceRef": "opaque:payuni-callback-host-preflight",
       "ownerRef": "opaque:solo-founder-release-owner",
       "scopeRef": "opaque:current-rc-nonproduction",
       "capturedAt": "2026-08-20T20:42:20Z",

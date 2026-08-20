@@ -341,7 +341,7 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 | Sentry | `PENDING_EXTERNAL` | local monitoring route／contract 有證據；外部 issue、alert、通知 delivery 未完成 |
 | PostHog | `PENDING_EXTERNAL` | local analytics route／contract 有證據；外部 project event receipt 未完成 |
 | Durable rate limit | `PENDING_EXTERNAL` | local provider contract 有證據；Cloudflare WAF／Upstash durable enforcement 未完成 |
-| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures 與 deployment-boundary env preflight 有證據；current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
+| PayUni Sandbox reconciliation | `PENDING_EXTERNAL` | local webhook／refund fixtures、deployment-boundary env preflight 與 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 有證據；最新只讀 callback-host preflight 為 `BLOCKED`，current staging order、provider reference、amount、status、refund／callback consistency 未完成 |
 
 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 保持不變。正式公開販售仍為 `NO-GO`；目前可維持 local、Sandbox 或不收真實款項的封閉試用。
 
@@ -381,4 +381,10 @@ receipt validator 會遞迴拒絕 raw output、raw provider response、URL、Tok
 
 `352a3dc` 新增 `scripts/validate-release-evidence-bundle.mjs` 與對應測試，並在 CI 加入 `Release evidence bundle contract`。bundle schema 固定要求 current source commit、non-Production boundary、13 個必要 gate：remote CI、staging lineage／migration／recovery／rollback、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、policy review 與 human owner acceptance。每個 gate 必須使用同一 source lineage、opaque evidence／owner／scope references、closed result／failure codes 與 `sanitized=true`；`GO` 遇到任何非 `PASS` gate 會 fail closed。
 
-本機 targeted 結果：release evidence bundle validator `12/12`、full lint、TypeScript、strict-index、current release handoff、readiness truth、完整 Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.63／64.32／70.89／69.52`，disposable database 與 cleanup 均 `PASS`。另已保存 `docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json`，以 current source `352a3dc` 實際驗證為 `PASS; result=INCOMPLETE`，如實固定 13 個 gate 的未完成狀態。這是 current status baseline 與 local contract evidence；它不代表所有 gate 已完成，也不改變 `PENDING_EXTERNAL`、`PENDING_HUMAN`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與正式販售 `NO-GO`。本輪沒有呼叫外部 provider、PayUni、staging 或 Production。
+本機 targeted 結果：release evidence bundle validator `12/12`、full lint、TypeScript、strict-index、current release handoff、readiness truth、完整 Node TAP `814/814`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.63／64.32／70.89／69.52`，disposable database 與 cleanup 均 `PASS`。另已保存 `docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json`，以 current source `352a3dc` 實際驗證為 `PASS; result=INCOMPLETE`，如實固定 13 個 gate 的未完成狀態。這是 current status baseline 與 local contract evidence；它不代表所有 gate 已完成，也不改變 `PENDING_EXTERNAL`、`PENDING_HUMAN`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與正式販售 `NO-GO`。這個 contract checkpoint 本身沒有呼叫外部 provider、PayUni、staging 或 Production；後續只讀 callback-host preflight 的結果見第 18 節。
+
+## 18. 2026-08-21 PayUni callback-host preflight
+
+本輪只讀 preflight 使用目前 process environment 的 Sandbox 設定，執行 callback host `/api/health` reachability check。結果為 `BLOCKED`，觀察到的固定 error class 為 `PayUniCallbackHostError`；只發出 1 次 health GET，`paymentRequests=0`、`refundRequests=0`、`callbackReplays=0`、`productionOperations=0`。完整 sanitized evidence 見 `docs/ai-team/evidence/rel-20260821-payuni-callback-host-preflight.md` 與 machine-readable receipt `rel-20260821-payuni-callback-host-preflight-evidence.json`；既有 provider receipt validator 結果為 `PASS`，receipt result 保留為 `BLOCKED`。
+
+這次沒有建立 Sandbox 訂單、付款、退款或 callback replay，因此沒有產生 reconciliation receipt；PayUni Sandbox、staging lineage、migration、recovery 與 rollback gates 維持未完成。相同 callback-host 路徑不重試，需由 owner 提供可公開連線、明確 non-Production 的 staging callback host 與受控 authorization record 後再執行。
