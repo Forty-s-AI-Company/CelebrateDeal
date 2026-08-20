@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   resolveSmokeTarget,
@@ -5,7 +6,7 @@ import {
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
 
-describe("resolveSmokeTarget", () => {
+describe("external smoke safety", () => {
   it("defaults to the local smoke server without extra authorization", () => {
     expect(resolveSmokeTarget({})).toBe("http://localhost:31023");
   });
@@ -109,5 +110,15 @@ describe("resolveSmokeTarget", () => {
     expect(summarizeSmokeFailure(error)).toBe("error=runner_failure");
     expect(summarizeSmokeFailure(new TypeError("customer@example.test"))).toBe("error=network_failure");
     expect(summarizeSmokeFailure({ message: "raw provider response" })).toBe("error=runner_failure");
+  });
+
+  it("keeps the runner wired to sanitized summaries instead of raw payload formatters", () => {
+    const runnerSource = readFileSync(new URL("./external-smoke.ts", import.meta.url), "utf8");
+
+    expect(runnerSource).toContain("summarizeSmokeResponse");
+    expect(runnerSource).toContain("summarizeSmokeFailure");
+    expect(runnerSource).not.toContain("formatPayload");
+    expect(runnerSource).not.toContain("JSON.stringify(payload)");
+    expect(runnerSource).not.toContain("error.message");
   });
 });
