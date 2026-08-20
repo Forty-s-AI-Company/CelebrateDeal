@@ -88,6 +88,12 @@ jobs:
       - name: Staging migration receipt validation contract
         run: node --test scripts/validate-staging-migration-evidence.test.mjs
 
+      - name: Staging release evidence aggregation contract
+        run: node --test scripts/staging-release-evidence.test.mjs
+
+      - name: Staging release evidence receipt validation contract
+        run: node --test scripts/validate-staging-release-evidence.test.mjs
+
       - name: Human owner acceptance evidence contract
         run: node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
 
