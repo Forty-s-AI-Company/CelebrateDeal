@@ -7,6 +7,7 @@ const handoff = fs.readFileSync(handoffPath, "utf8");
 
 test("current release gate handoff stays non-Production and fail-closed", () => {
   for (const requiredText of [
+    "Source RC：`7a9c996`",
     "READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION",
     "PAYMENT_RECONCILIATION_READY=false",
     "SANDBOX_READY=false",
@@ -28,6 +29,9 @@ test("current release gate handoff stays non-Production and fail-closed", () => 
   ]) {
     assert.match(handoff, new RegExp(requiredText, "u"));
   }
+
+  assert.match(handoff, /combined coverage `404 files passed／1 skipped`、`3088 passed／1 skipped`/u);
+  assert.doesNotMatch(handoff, /3086 passed／1 skipped/u);
 
   assert.doesNotMatch(handoff, /(?:SANDBOX_READY|PRODUCTION_READY)=true/u);
   assert.doesNotMatch(handoff, /releaseDecision=(?:GO|HOLD)(?:\b|`)/u);
