@@ -88,6 +88,9 @@ jobs:
       - name: Staging migration receipt validation contract
         run: node --test scripts/validate-staging-migration-evidence.test.mjs
 
+      - name: Human owner acceptance evidence contract
+        run: node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
+
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
