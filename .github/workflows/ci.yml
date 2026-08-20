@@ -70,6 +70,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: PayUni deployment environment binding contract
+        run: npx vitest run src/lib/env.test.ts
+
       - name: Strict production index access
         run: npm run typecheck:strict-index
 
