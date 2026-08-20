@@ -1676,3 +1676,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Receipt：`.ai-team/reports/rt01-live-chat-disposable-receipt.json`；fresh run 後以 canonical absolute path 執行 `--verify-receipt` 通過。
 - Result：current tree 的 58 migrations、validate／deploy／status／migration state、live-chat DB suite `1/1`、container／temp cleanup 全部 `PASS`；sourceEnv／raw output／persistent volume／Production side effect safety flags 全部保持安全值。
 - Boundary：這是 local disposable PostgreSQL evidence，只補強 live-chat data contract；不等同 actual staging restore、Production recovery、外部服務驗證、PayUni Sandbox reconciliation 或人工 acceptance，canonical total 不變。
+
+## REL-20260821-RC-FREEZE — Local release candidate freeze（2026-08-21）
+
+- Commit：`b70539f`，394 個可見 source／test／migration／evidence 檔案已用明確 inventory 凍結，未 push、merge 或 deploy。
+- Verification：`secret_scan_passed`、`git diff --check=PASS`；commit 後 `git status --short`、staged index 與 `git diff HEAD` 均 clean。
+- Boundary：這是 local RC source-tree freeze；PayUni Sandbox reconciliation、Cloudflare／Resend／Sentry／PostHog／durable rate limit external evidence、實際 staging recovery、staging Browser matrix與人工 owner acceptance仍未完成，`SANDBOX_READY=false`、`PRODUCTION_READY=false`。

@@ -62,6 +62,10 @@ G7-55 runner 在本機 disposable PostgreSQL、isolated no-dotenv mirror、loopb
 - Cloudflare、Resend、Sentry、PostHog、durable rate limit 的 production-level external evidence 未完成；
 - 實際 staging migration／backup／restore／rollback 與正式環境 identity 尚未完成；本輪新增的 disposable drill 不能取代它；
 - 法務、退款政策、客服 escalation 與 owner acceptance 尚未完成；
-- 工作樹仍不是乾淨 release candidate。
+- local release candidate 已於 commit `b70539f` 凍結；`git status --short`、staged index 與 `git diff HEAD` 均為 clean。這只代表 source tree checkpoint 完成，不代表 Production readiness。
+
+## Local release-candidate freeze
+
+Current-tree secret scan 為 `secret_scan_passed`，`git diff --check` 為 `PASS`。在檢查 107 tracked modifications 與 287 untracked files 的明確 inventory、檔名安全界線與總大小約 18.21 MiB 後，將 394 個可見 source／test／migration／evidence 檔案以 local commit `b70539f` 凍結。commit 後 `git status --short`、staged index 與 `git diff HEAD` 均為 clean；沒有 push、merge、Production deploy 或正式服務操作。Git 背景 auto-gc 仍因既有 `refs/codex/turn-diffs/...` bad object／Windows long-path refs 回報 housekeeping error，未影響 commit，也沒有刪除或修改未知 refs。
 
 因此目前最多維持 local／Sandbox／不收真實款項的封閉試用狀態，Goal 維持 `active`。
