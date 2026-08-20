@@ -2,7 +2,7 @@
 
 日期：2026-08-21（Asia/Taipei）  
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
-Source RC：`318cd48`
+Source RC：`5607910`
 CI／documentation checkpoint：`9c65509`
 權威 gap map：[`current-release-completion-audit-20260821.md`](./current-release-completion-audit-20260821.md)
 
@@ -19,11 +19,11 @@ releaseDecision=NO_GO
 canonicalTotal=75.5/100
 ```
 
-目前已有 local／disposable 證據：source quality gates、Node TAP `822/822`、combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`、statements／branches／functions／lines=`64.65／64.34／70.91／69.55`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `7/7`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、CAT10 policy／refund／support review matrix `PENDING_HUMAN`、release evidence bundle validator `12/12`、external smoke output safety `14/14`、external provider evidence `12/12`、provider receipt validator `8/8`、non-Production owner authorization contract `8/8`、PayUni runner suite `36/36`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。另已保存 current-RC baseline bundle，CLI 結果為 `INCOMPLETE`，逐一保留 13 個 gate 的未完成狀態；最新只讀 PayUni callback-host preflight 為 `BLOCKED`，machine-readable receipt validator 為 `PASS`，receipt result 仍為 `BLOCKED`；目前 owner authorization CLI 也依預期以 `authorization_missing` fail closed。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。受控 production build 也已在 source `318cd48` 上重新通過；staging migration receipt 現要求 schema v2 的有效 `sourceCommit`，缺少 source lineage 時會維持 `BLOCKED`。
+目前已有 local／disposable 證據：source quality gates、Node TAP `823/823`、combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`、statements／branches／functions／lines=`64.60／64.33／70.68／69.53`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `7/7`、staging migration receipt validator `9/9`、human owner acceptance evidence validator `10/10`、CAT10 policy／refund／support review matrix `PENDING_HUMAN`、release evidence bundle validator `12/12`、external smoke output safety `14/14`、external provider evidence `13/13`、provider receipt validator `8/8`、non-Production owner authorization contract `8/8`、PayUni runner suite `36/36`、58-migration disposable backup／restore、local rollback rehearsal、local provider contracts、PayUni deployment-boundary env preflight 與 staging read-only health probe。另已保存 current-RC baseline bundle，CLI 結果為 `INCOMPLETE`，逐一保留 13 個 gate 的未完成狀態；最新只讀 PayUni callback-host preflight 為 `BLOCKED`，machine-readable receipt validator 為 `PASS`，receipt result 仍為 `BLOCKED`；目前 owner authorization CLI 也依預期以 `authorization_missing` fail closed。這些證據不能直接升級為 actual staging、external provider、PayUni reconciliation 或人工 acceptance。受控 production build 已在 source `5607910` 上重新通過；staging migration receipt 與 external provider receipt 現要求 schema v2 的有效 `sourceCommit`，缺少 source lineage 時會維持 `BLOCKED`。
 
 ## Remote CI state
 
-2026-08-21 的唯讀查詢顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`。目前沒有 `318cd48` 的 GitHub Actions run，所以 current RC 的 remote CI 仍是 `NOT_PROVEN`。本次未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
+2026-08-21 的唯讀查詢顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`。目前沒有 `5607910` 的 GitHub Actions run，所以 current RC 的 remote CI 仍是 `NOT_PROVEN`。本次未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
 
 ## Owner authorization boundary
 
@@ -46,7 +46,7 @@ canonicalTotal=75.5/100
 | Gate | 一次安全執行要取得的最小 evidence | 成功條件 | 目前結果 |
 |---|---|---|---|
 | Exact staging lineage | deployment／environment 的 names-only identity、短 source digest、`nonProduction=true` | 能證明 actual staging 使用 current RC lineage | `NOT_PROVEN` |
-| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC baseline 已以 source `318cd48` 驗證為 `INCOMPLETE`；所有 gate receipts 均已取得後才可形成完成聚合 | `INCOMPLETE_BASELINE` |
+| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC baseline 已以 source `5607910` 驗證為 `INCOMPLETE`；所有 gate receipts 均已取得後才可形成完成聚合 | `INCOMPLETE_BASELINE` |
 | Staging migration | expected／applied migration count、status enum、DB identity class | local staging migration receipt schema v2 已要求有效 `sourceCommit`；actual staging migration status 與 RC 仍未取得 | `NOT_PROVEN` |
 | Staging backup／restore | platform／target 類型、checksum、migration status、aggregate compare、cleanup result | actual staging platform backup／restore 或明確核准的隔離 target drill 完成 | `PASS_LOCAL_ONLY` |
 | Staging rollback／forward | current／previous deployment opaque identity、rollback／forward result | staging rollback 後可回到 current RC，兩個 identity 可追溯 | `PASS_LOCAL_ONLY` |
