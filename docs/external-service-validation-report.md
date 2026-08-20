@@ -318,13 +318,13 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 ### Local release candidate
 
-- Release candidate：`77dcef6`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、external smoke output safety `12/12`、Node TAP `763/763`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.19／63.80／70.33／69.04`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
+- Release candidate：`c088754`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
+- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、external smoke output safety `12/12`、external provider evidence `12/12`、Node TAP `775/775`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.36／64.00／70.50／69.23`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
-`77dcef6` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth、staging migration evidence 與 external smoke output safety contracts。這是設定邊界與輸出安全的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
+`c088754` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth、staging migration evidence、external smoke output safety 與 provider-specific external evidence contracts。這是設定邊界與輸出安全的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
-2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `77dcef6` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
+2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `c088754` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
 
 ### Read-only staging probe
 
@@ -350,3 +350,11 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 本輪新增的 `scripts/external-smoke-safety.ts` 將 response 與 runner error 轉換成固定 allowlist 分類；`scripts/external-smoke.ts` 仍可在記憶體內讀取 response 來判斷檢查結果，但 stdout 不再輸出 raw response、Cloudflare UID／stream key reference、PayUni order／provider payload 或原始錯誤訊息。CI 已加入 `External smoke output safety contract` step。
 
 本機 targeted 結果：`npx vitest run scripts/external-smoke-safety.test.ts` 為 `12/12`；完整 coverage rerun 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，disposable database 與 cleanup 均 `PASS`；未呼叫 Cloudflare、Resend、Sentry、PostHog、rate-limit provider、PayUni、staging 或 Production。這是 `PASS_LOCAL_ONLY` 的 evidence safety contract，不改變前述六個 external gates 的 `PENDING_EXTERNAL` 狀態。
+
+## 13. 2026-08-21 provider-specific sanitized evidence contract
+
+本輪新增 `scripts/external-provider-evidence.mjs` 與 `scripts/external-provider-evidence.test.mjs`，把六個 external gate 的最小 receipt 收斂成固定 schema：Cloudflare Stream、Resend、Sentry、PostHog、durable rate limit 與 PayUni Sandbox 各自有明確的成功欄位與 closed enum。`PASS` 必須同時具備 non-Production identity、已驗證 provider environment、至少一次 bounded attempt、opaque evidence reference、provider operation evidence 與固定 side-effect budget；`PENDING_EXTERNAL`、`FAILED`、`BLOCKED`、`PENDING_HUMAN` 則需要對應的 closed reason，不可用未知值偽裝成成功。
+
+receipt validator 會遞迴拒絕 raw output、raw provider response、URL、Token、Cookie、email、order／trade number、provider reference、connection string、絕對路徑與未知 nested key；safety flags、Production operations、deployments、payments、refunds、callback replays 必須保持零。PayUni 額外要求 `providerWriteRequests=0`，因此這份契約不能授權付款、退款、callback replay 或 Production 操作。
+
+本機 targeted 結果：`node --test scripts/external-provider-evidence.test.mjs` 為 `12/12`；納入 combined coverage 後完整 Node TAP 為 `775/775`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.36／64.00／70.50／69.23`，disposable database 與 cleanup 均 `PASS`；CI 已加入 `External provider evidence contract` step。測試中的每個 `PASS` 都是 synthetic contract fixture，沒有呼叫或驗證任何 Cloudflare、Resend、Sentry、PostHog、rate-limit provider、PayUni、staging 或 Production；六個 external gates 仍為 `PENDING_EXTERNAL`，`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與正式販售 `NO-GO` 維持不變。

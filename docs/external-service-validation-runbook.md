@@ -252,3 +252,15 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 
 - `memory` 只適合本機與單節點 smoke test。
 - production 不建議只靠 app server in-memory rate limit。
+
+## 9. Provider-specific sanitized receipt
+
+每次受控 non-Production external validation 都要把結果轉成 `scripts/external-provider-evidence.mjs` 的 schema，再交給 `validateExternalProviderReceipt` 或 `parseAndValidateExternalProviderReceipt`。只保存 `PASS`／`FAILED`／`BLOCKED`／`PENDING_EXTERNAL`／`PENDING_HUMAN`、fixed check enums、opaque evidence reference 與 side-effect counters；不要把 raw response、完整 URL、Token、Cookie、email、order／trade number、provider reference 或 connection string 寫進 receipt 或 CI artifact。
+
+本機契約驗證：
+
+```bash
+node --test scripts/external-provider-evidence.test.mjs
+```
+
+`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。
