@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
 import { createPendingRefundHandoff, writePaymentHandoff } from "./payuni-sandbox-payment-handoff.mjs";
+import {
+  assertNonProductionOwnerAuthorization,
+  NonProductionOwnerAuthorizationError,
+} from "./validate-non-production-owner-authorization.mjs";
 
 const SCHEMA = "celebratedeal-payuni-sandbox-qa/v2";
 const QA_ARTIFACT_SCHEMA = "celebratedeal-ai-team-payuni-artifact/v1";
@@ -1245,6 +1249,9 @@ async function runCheckout(appUrl) {
 
 async function main() {
   const startedAt = new Date().toISOString();
+  // Owner authorization must be present before even the callback-host health
+  // probe. This keeps every external, staging, and Sandbox action fail-closed.
+  assertNonProductionOwnerAuthorization();
   assertSandboxExecutionEnvironment();
   const appUrl = resolvePayUniStagingAppUrl();
   await assertPublicPayUniCallbackHost(appUrl);
@@ -1298,7 +1305,9 @@ async function execute() {
     if (error instanceof CallbackTimeoutError) await cleanUpTimedOutPayment(error);
     const callbackTimeout = error instanceof CallbackTimeoutError ? error.diagnostic : null;
     const callbackHostError = error instanceof PayUniCallbackHostError ? error : null;
-    const executionBlocked = error instanceof SandboxExecutionBlockedError ? error : null;
+    const executionBlocked = error instanceof SandboxExecutionBlockedError || error instanceof NonProductionOwnerAuthorizationError
+      ? error
+      : null;
     const browserFlowError = error instanceof SandboxBrowserFlowError ? error : null;
     const errorClass = safeQaErrorClass(error);
     receipt = {
@@ -1378,6 +1387,8 @@ export {
   safeReceiptHostPath,
   sandboxEnvironmentAvailability,
   assertSandboxExecutionEnvironment,
+  assertNonProductionOwnerAuthorization,
+  NonProductionOwnerAuthorizationError,
   safeTradeStatus,
   writeQaArtifact,
   truncate,

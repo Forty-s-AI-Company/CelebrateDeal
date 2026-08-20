@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test, vi } from "vitest";
 
 import {
   PayUniQueryFailure,
   artifactTimestamp,
   assertExactHttpsHost,
+  assertNonProductionOwnerAuthorization,
   assertSandboxExecutionEnvironment,
   assertPublicPayUniCallbackHost,
   boundedQueryTimeout,
@@ -90,6 +92,13 @@ test("Sandbox execution preflight is process-env-only and missing values fail be
 
 test("Sandbox payment-only preflight does not require a separate finance login", () => {
   const environment = {
+    AI_TEAM_AUTHORIZATION_RECORD_REF: "opaque:authorization-record",
+    AI_TEAM_OWNER_REF: "opaque:owner-reference",
+    AI_TEAM_SCOPE_REF: "opaque:sandbox-scope",
+    AI_TEAM_NEW_EXECUTION_APPROVED: "true",
+    AI_TEAM_NON_PRODUCTION: "true",
+    AI_TEAM_FORBIDDEN_PROBE_REUSE: "false",
+    AI_TEAM_PROVIDER_ENVIRONMENT: "sandbox",
     PAYUNI_ENV: "sandbox",
     PAYUNI_SANDBOX_QA_ENABLED: "true",
     PAYUNI_SANDBOX_REFUND_ENABLED: "true",
@@ -103,6 +112,30 @@ test("Sandbox payment-only preflight does not require a separate finance login",
     PAYUNI_TEST_CVV: "123",
   };
   assert.doesNotThrow(() => assertSandboxExecutionEnvironment(environment));
+  assert.doesNotThrow(() => assertNonProductionOwnerAuthorization(environment));
+});
+
+test("PayUni Sandbox owner authorization fails closed before an external action", () => {
+  assert.throws(
+    () => assertNonProductionOwnerAuthorization({
+      AI_TEAM_PROVIDER_ENVIRONMENT: "sandbox",
+    }),
+    (error) => error?.name === "NonProductionOwnerAuthorizationError"
+      && error.status === "OWNER_AUTHORIZATION_REQUIRED"
+      && error.reason === "authorization_missing"
+      && Object.values(error.availability).every((value) => typeof value === "boolean"),
+  );
+});
+
+test("PayUni Sandbox runner places owner authorization before every external preflight", () => {
+  const source = readFileSync(new URL("./payuni-sandbox-external-qa.mjs", import.meta.url), "utf8");
+  const ownerGate = source.indexOf("assertNonProductionOwnerAuthorization();");
+  const sandboxGate = source.indexOf("assertSandboxExecutionEnvironment();", ownerGate);
+  const callbackHostProbe = source.indexOf("assertPublicPayUniCallbackHost(appUrl);", sandboxGate);
+
+  assert.ok(ownerGate >= 0);
+  assert.ok(sandboxGate > ownerGate);
+  assert.ok(callbackHostProbe > sandboxGate);
 });
 
 test("Sandbox failure artifact retains only the allowlisted browser stage", () => {

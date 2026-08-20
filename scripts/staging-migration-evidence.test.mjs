@@ -58,18 +58,19 @@ test("classifies pending or divergent migration state as failed", () => {
   assert.equal(validateStagingMigrationReceipt(receipt), true);
 });
 
-test("does not persist unallowlisted migration names or raw connection text", () => {
+test("does not persist unallowlisted migration names or untrusted connection text", () => {
   const untrusted = "20990101010101_untrusted_value";
+  const untrustedConnectionText = "untrusted database connection text";
   const receipt = createStagingMigrationReceipt(completeFacts({
     appliedMigrationNames: [...knownMigrations, untrusted],
-    runId: "postgresql://user:password@host/db",
+    runId: untrustedConnectionText,
   }));
   const serialized = JSON.stringify(receipt);
 
   assert.equal(receipt.result, "BLOCKED");
   assert.equal(receipt.unallowlistedMigrationCount, 1);
   assert.equal(serialized.includes(untrusted), false);
-  assert.equal(serialized.includes("postgresql://"), false);
+  assert.equal(serialized.includes(untrustedConnectionText), false);
   assert.equal(validateStagingMigrationReceipt(receipt), true);
 });
 

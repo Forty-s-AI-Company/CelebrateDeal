@@ -102,7 +102,7 @@ test('read and JSON failures return fixed reasons without raw details', async ()
   assert.deepEqual(
     await validateStagingMigrationReceiptFile('docs/ai-team/evidence/missing-receipt.json', {
       realpath: async (candidate) => candidate,
-      readFile: async () => { throw new Error('postgresql://user:password@host/db'); },
+      readFile: async () => { throw new Error('synthetic-database-connection-error'); },
     }, 'C:\\workspace'),
     { ok: false, reason: 'read_failed' },
   );

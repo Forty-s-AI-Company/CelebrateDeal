@@ -292,7 +292,20 @@ node scripts/validate-human-owner-acceptance-evidence.mjs docs/ai-team/evidence/
 
 CLI 只讀 `docs/ai-team/evidence` 或 `.ai-team/reports` 下的 receipt，要求 opaque `holderRef`、`scopeRef`、`manualSignatureRef` 與 `evidenceRef`，拒絕 `synthetic:` reference、raw URL、Token、Cookie、個資、Production approval、缺角色、缺 check 或 `GO` 搭配未完成 evidence。`CANDIDATE` 只代表 receipt schema 完整，不代表法務意見、外部服務、PayUni reconciliation、staging readiness 或 `PRODUCTION_READY`。
 
-## 12. Release evidence bundle aggregation
+## 12. Non-Production owner authorization
+
+所有新的 staging、Preview、Sandbox 或 external provider action，先由受控 broker 注入下列 allowlisted process-environment shape，再執行 authorization contract。validator 只輸出固定結果，不輸出 authorization reference、owner reference、scope reference 或任何 Secret；缺少授權時必須在任何 network／provider action 前停止。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-non-production-owner-authorization.test.mjs
+node scripts/validate-non-production-owner-authorization.mjs
+```
+
+必要欄位為 `AI_TEAM_AUTHORIZATION_RECORD_REF`、`AI_TEAM_OWNER_REF`、`AI_TEAM_SCOPE_REF`、`AI_TEAM_NEW_EXECUTION_APPROVED=true`、`AI_TEAM_NON_PRODUCTION=true`、`AI_TEAM_FORBIDDEN_PROBE_REUSE=false` 與 `AI_TEAM_PROVIDER_ENVIRONMENT=preview|staging|sandbox`。`production`、缺漏欄位、非 opaque reference 或重用禁止 probe 都會 fail closed。這個 contract 只證明執行前 authorization shape，不代表 staging、external provider、PayUni 或 release readiness 已通過。
+
+## 13. Release evidence bundle aggregation
 
 所有 release gate receipt 收集完成後，先建立 sanitized release evidence bundle，再執行 `scripts/validate-release-evidence-bundle.mjs`。bundle 必須固定包含 remote CI、staging lineage／migration／recovery／rollback、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、policy review 與 human owner acceptance 共 13 個 gate。每個 gate 必須綁定同一 `sourceCommit`，並提供 opaque `evidenceRef`、`ownerRef`、`scopeRef`、closed result 與 failure reason。
 

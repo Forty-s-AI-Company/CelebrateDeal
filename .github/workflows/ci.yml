@@ -94,6 +94,9 @@ jobs:
       - name: Release evidence bundle contract
         run: node --test scripts/validate-release-evidence-bundle.test.mjs
 
+      - name: Non-Production owner authorization contract
+        run: node --test scripts/validate-non-production-owner-authorization.test.mjs
+
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
