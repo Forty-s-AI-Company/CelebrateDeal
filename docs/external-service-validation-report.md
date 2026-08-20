@@ -318,13 +318,13 @@ TARGET_APP_URL=http://localhost:31023 CLOUDFLARE_STREAM_WEBHOOK_SECRET=stream-se
 
 ### Local release candidate
 
-- Release candidate：`75e5519`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
-- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `7/7`、Node TAP `782/782`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.39／64.04／70.52／69.25`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
+- Release candidate：`1ceb9a5`；current evidence checkpoint：`docs/launch/current-release-completion-audit-20260821.md` 與 `docs/launch/evidence-index.md`。文件 checkpoint 以目前 Git history 為準，避免沿用過期 commit reference。
+- ESLint `0 errors／0 warnings`、TypeScript、strict-index、current release handoff contract `1/1`、`test:release-readiness` `5/5`、readiness truth reconciliation `PASS`、staging migration evidence contract `5/5`、staging migration receipt validator `9/9`、external smoke output safety `12/12`、external provider evidence `12/12`、provider receipt validator `8/8`、Node TAP `792/792`、combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`、exit `0`（statements／branches／functions／lines=`64.49／64.15／70.64／69.36`）、controlled production build、local release verifier、secret scan、diff check 與 `npm audit --omit=dev --audit-level=high`（`0 vulnerabilities`）均已通過；PayUni deployment-boundary synthetic env test `33/33`，CI workflow 也已加入同一明確 gate；AI Team server `7/7`、resilience 與 backup tooling static checks 亦通過。
 - 這些結果只證明 local／disposable source quality，不取代外部 provider、實際 staging 或真人 acceptance。
 
 `c088754` 的 env preflight 會在 PayUni provider 被選用時，將 Vercel Preview 綁定到 `sandbox`、Production 綁定到 `production`；不一致或缺少設定會 fail closed，CI 會獨立執行這組 contract，並執行 release readiness、readiness truth、staging migration evidence、external smoke output safety 與 provider-specific external evidence contracts。這是設定邊界與輸出安全的本機 synthetic evidence，不代表 PayUni account、order、provider reference 或 reconciliation 已完成。
 
-2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `c088754` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
+2026-08-21 的 remote CI 唯讀查詢顯示 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，且沒有 `1ceb9a5` 的 run。current RC 的 remote workflow 狀態因此維持 `NOT_PROVEN`；本次沒有 push 或 workflow dispatch。
 
 ### Read-only staging probe
 
@@ -364,3 +364,9 @@ receipt validator 會遞迴拒絕 raw output、raw provider response、URL、Tok
 `75e5519` 新增 `scripts/validate-external-provider-evidence.mjs` 與對應的 `scripts/validate-external-provider-evidence.test.mjs`。CLI 僅能讀取 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、符合固定檔名規則的 receipt JSON，透過同一個 provider receipt schema 做 read-only validation，輸出只包含 `PASS／FAIL`、provider、result、sanitized 或固定 failure reason；它不呼叫 network、不讀取 environment、不啟動 child process、不寫檔，也不把 `PENDING_EXTERNAL` 轉成 provider PASS。
 
 本機 targeted 結果：provider contract 與 CLI contract 合計 `19/19`；完整 Node TAP `782/782`；combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.39／64.04／70.52／69.25`，disposable database 與 cleanup 均 `PASS`。這只提高 sanitized receipt 的輸入驗證與追溯性，沒有呼叫 Cloudflare、Resend、Sentry、PostHog、rate-limit provider、PayUni、staging 或 Production；六個 external gates、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與正式販售 `NO-GO` 維持不變。
+
+## 15. 2026-08-21 staging migration receipt validation CLI
+
+`1ceb9a5` 新增 `scripts/validate-staging-migration-evidence.mjs` 與對應測試，並補強 provider receipt validator 的 canonical `realpath` boundary。兩個 CLI 都只讀安全 evidence roots，拒絕 traversal、敏感檔名與 symlink 指向 root 外的檔案；不執行 migration、不連資料庫、不呼叫 provider、不讀取 environment、不啟動 child process，也不寫入 evidence。
+
+本機 targeted 結果：provider schema／CLI 與 staging migration CLI 合計 `29/29`，其中 staging migration receipt validator `9/9`、provider receipt validator `8/8`；完整 Node TAP `792/792`；combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.49／64.15／70.64／69.36`，disposable database 與 cleanup 均 `PASS`。這只補強 sanitized receipt 的輸入安全與追溯性，沒有呼叫 Cloudflare、Resend、Sentry、PostHog、rate-limit provider、PayUni、staging 或 Production；staging migration、六個 external gates、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false` 與正式販售 `NO-GO` 維持不變。

@@ -265,3 +265,16 @@ node scripts/validate-external-provider-evidence.mjs docs/ai-team/evidence/exter
 ```
 
 CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON；它只輸出 receipt schema validation 結果，不會把驗證結果升格成 provider readiness。`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。
+
+## 10. Staging migration sanitized receipt
+
+受控 staging migration status 執行完成後，只能把已去識別的 migration facts 轉成 `scripts/staging-migration-evidence.mjs` schema，再用 read-only CLI 驗證。CLI 不執行 migration、不連資料庫、不讀取 environment、不寫入 receipt；`BLOCKED` 或 `FAILED` receipt 可以通過 schema validation，但不能升格為 staging readiness。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-staging-migration-evidence.test.mjs
+node scripts/validate-staging-migration-evidence.mjs docs/ai-team/evidence/staging-migration-receipt.json
+```
+
+CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON，並用 canonical `realpath` 拒絕 symlink 指向 evidence root 外的檔案。輸出只包含固定 result、environment class、database identity class 與 sanitized flag；不得保存 migration name、connection string、raw Prisma output 或 credentials。
