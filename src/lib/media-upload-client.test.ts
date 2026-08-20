@@ -53,6 +53,10 @@ describe("media upload client validation", () => {
       videoId: "video-1",
       uploadUrl: "https://upload.videodelivery.net/one-time",
     });
+    expect(parseVideoProvision({ videoId: "video-2", uploadUrl: "https://upload.cloudflarestream.com/one-time", method: "POST" })).toEqual({
+      videoId: "video-2",
+      uploadUrl: "https://upload.cloudflarestream.com/one-time",
+    });
     expect(parseResumableVideoProvision({
       videoId: "video-1",
       uploadUrl: "https://upload.videodelivery.net/tus/one-time",
@@ -61,6 +65,16 @@ describe("media upload client validation", () => {
     })).toEqual({
       videoId: "video-1",
       uploadUrl: "https://upload.videodelivery.net/tus/one-time",
+      uploadTicket: "opaque-encrypted-upload-ticket",
+    });
+    expect(parseResumableVideoProvision({
+      videoId: "video-2",
+      uploadUrl: "https://upload.cloudflarestream.com/tus/one-time",
+      uploadTicket: "opaque-encrypted-upload-ticket",
+      method: "TUS",
+    })).toEqual({
+      videoId: "video-2",
+      uploadUrl: "https://upload.cloudflarestream.com/tus/one-time",
       uploadTicket: "opaque-encrypted-upload-ticket",
     });
     expect(parseResumableVideoComplete({ videoId: "video-1", status: "processing" })).toEqual({ videoId: "video-1" });

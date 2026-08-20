@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AnnouncementCenter } from "@/components/announcement-center";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { PersistentLivePlaybackProvider } from "@/components/persistent-live-playback";
 import "./globals.css";
 
@@ -18,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant" className="h-full">
       <body className="min-h-full flex flex-col">
+        <NavigationProgress />
         <PersistentLivePlaybackProvider>
           {children}
           {checkout}

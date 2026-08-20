@@ -56,8 +56,10 @@ export async function POST(request: Request) {
       maxBytes: MAX_BASIC_VIDEO_UPLOAD_BYTES,
     });
   } catch (reason) {
-    if (reason instanceof CloudflareResourceError && reason.code === "video_not_found") {
-      return error("VIDEO_NOT_FOUND", 404);
+    if (reason instanceof CloudflareResourceError) {
+      return reason.code === "video_archived"
+        ? error("VIDEO_ARCHIVED", 409)
+        : error("VIDEO_NOT_FOUND", 404);
     }
     return error("VIDEO_UPLOAD_SETUP_FAILED", 502);
   }

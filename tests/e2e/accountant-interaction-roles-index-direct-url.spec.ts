@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp65SyntheticPassword!";
@@ -122,42 +123,27 @@ test("active accountant is denied the interaction roles index before role data i
     const posts: string[] = [];
     const external: string[] = [];
     const path = "/interaction-roles";
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
       if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) external.push(request.url());
     });
-    await page.route("**/interaction-roles", async (route) => {
-      if (new URL(route.request().url()).pathname !== path) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [path],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+      forbiddenPayload: [".invalid", "2 個官方互動角色"],
     });
-
-    const rawRedirect = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === path && response.status() === 307,
-    );
-    const finalResponse = await page.goto(path);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe("/dashboard?error=insufficient_role");
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe("/dashboard?error=insufficient_role");
-    for (const canary of canaries) expect(intercepted.current?.body).not.toContain(canary);
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    expect(intercepted.current?.body).not.toContain("2 個官方互動角色");
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);

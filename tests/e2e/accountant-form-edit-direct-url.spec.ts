@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp54SyntheticPassword!";
@@ -23,14 +24,26 @@ test("active accountant is denied a same-vendor form edit route through direct U
     await expect(page).toHaveURL(/\/dashboard$/);
 
     const path = `/forms/${form.id}/edit`;
-    const originalResponse = page.waitForResponse((response) => new URL(response.url()).pathname === path && response.status() === 307);
-    const finalResponse = await page.goto(path);
-    const response = await originalResponse;
-    expect(response.status()).toBe(307);
+    const documentCanaries = [before.name, before.slug, before.headline, before.description ?? ""].filter(
+      (value): value is string => Boolean(value),
+    );
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [form.id, path],
+      protectedPayloadCanaries: documentCanaries,
+      documentCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
     expect(finalResponse?.status()).toBe(200);
-    const location = new URL(response.headers().location ?? "", "http://127.0.0.1");
-    expect(`${location.pathname}${location.search}`).toBe("/dashboard?error=insufficient_role");
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "編輯報名表" })).toHaveCount(0);
     for (const label of ["表單名稱", "公開網址", "公開標題", "說明文字", "顯示名稱", "送出按鈕文字", "成功訊息"]) await expect(page.getByLabel(label)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "新增欄位" })).toHaveCount(0);

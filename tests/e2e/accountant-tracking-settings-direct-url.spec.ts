@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp57SyntheticPassword!";
@@ -66,20 +67,31 @@ test("active accountant is denied same-vendor tracking settings through direct U
     });
 
     const path = "/settings/tracking";
-    const original = page.waitForResponse((response) => new URL(response.url()).pathname === path && response.status() === 307);
-    const final = await page.goto(path);
-    const response = await original;
-    expect(final?.status()).toBe(200);
-    expect(response.status()).toBe(307);
-    const location = new URL(response.headers().location ?? "", "http://127.0.0.1");
-    expect(`${location.pathname}${location.search}`).toBe("/dashboard?error=insufficient_role");
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    const canaries = [tracking.facebookPixelId, tracking.tiktokPixelId, tracking.googleTagManagerId].filter(
+      (value): value is string => Boolean(value),
+    );
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [path],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
 
     for (const name of ["追蹤設定", "Facebook Pixel ID", "TikTok Pixel ID", "Google Tag Manager ID", "記錄頁面瀏覽", "記錄名單送出", "記錄商品 CTA"]) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
     await expect(page.getByRole("button", { name: /儲存|提交|送出/ })).toHaveCount(0);
-    const canaries = [tracking.facebookPixelId, tracking.tiktokPixelId, tracking.googleTagManagerId].filter((value): value is string => Boolean(value));
     for (const value of canaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const content = await page.content();
     for (const value of canaries) expect(content).not.toContain(value);

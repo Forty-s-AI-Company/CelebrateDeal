@@ -16,7 +16,9 @@ const fixture = {
 };
 
 type PerformanceBudget = {
+  responseStartMs?: number;
   domContentLoadedMs: number;
+  domInteractiveMs?: number;
   loadMs: number;
   resourceCount: number;
   totalTransferBytes: number;
@@ -38,7 +40,9 @@ async function measurePage(page: Page, expectedPath?: string) {
 
     const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
     return {
+      responseStartMs: navigation.responseStart - navigation.startTime,
       domContentLoadedMs: navigation.domContentLoadedEventEnd - navigation.startTime,
+      domInteractiveMs: navigation.domInteractive - navigation.startTime,
       loadMs: navigation.loadEventEnd - navigation.startTime,
       resourceCount: resources.length,
       totalTransferBytes: resources.reduce((total, resource) => total + Math.max(resource.transferSize, 0), 0),
@@ -63,15 +67,49 @@ function expectWithinBudget(
 
 async function loginOwner(page: Page) {
   await page.goto("/login");
+  const announcement = page.getByRole("dialog", { name: "進站最新消息" });
+  if (await announcement.isVisible().catch(() => false)) {
+    await page.getByTestId("announcement-center-close").click();
+    await expect(announcement).toBeHidden();
+  }
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
+  await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
   // The performance test is not an MFA flow; mark this isolated local session
   // verified after the normal login so the protected billing page is measured.
   await db.userSession.updateMany({
     where: { userId: fixture.userId, revokedAt: null },
     data: { mfaVerifiedAt: new Date() },
+  });
+}
+
+async function installDashboardLifecycleObserver(page: Page) {
+  await page.addInitScript(() => {
+    const lifecycle = {
+      routeShellMs: null as number | null,
+      kpiRegionMs: null as number | null,
+      detailsRegionMs: null as number | null,
+      kpisMs: null as number | null,
+      detailsMs: null as number | null,
+    };
+    (window as Window & { __dashboardLifecycle?: typeof lifecycle }).__dashboardLifecycle = lifecycle;
+
+    const mark = (selector: string, key: keyof typeof lifecycle) => {
+      if (lifecycle[key] === null && document.querySelector(selector)) lifecycle[key] = performance.now();
+    };
+    const record = () => {
+      mark('[data-dashboard-scope="route-shell"]', "routeShellMs");
+      mark('[data-dashboard-region="kpis"]', "kpiRegionMs");
+      mark('[data-dashboard-region="details"]', "detailsRegionMs");
+      mark('[data-dashboard-scope="kpis"]', "kpisMs");
+      mark('[data-dashboard-scope="details"]', "detailsMs");
+    };
+
+    record();
+    new MutationObserver(record).observe(document, { childList: true, subtree: true });
   });
 }
 
@@ -226,6 +264,7 @@ test("public account routes stay within the release performance budget", async (
 });
 
 test("authenticated dashboard stays within the release performance budget", async ({ page }) => {
+  await installDashboardLifecycleObserver(page);
   await loginOwner(page);
   const dashboardBudget: PerformanceBudget = {
     domContentLoadedMs: 5_000,
@@ -235,7 +274,71 @@ test("authenticated dashboard stays within the release performance budget", asyn
     scriptTransferBytes: 2_500_000,
   };
 
-  expectWithinBudget(await measurePage(page, "/dashboard"), dashboardBudget, "/dashboard");
+  const detailsDiagnosticDelayMs = Number.parseInt(process.env.E2E_DASHBOARD_DETAILS_DELAY_MS ?? "", 10);
+  if (Number.isSafeInteger(detailsDiagnosticDelayMs) && detailsDiagnosticDelayMs > 0) {
+    // Use a fresh document while keeping the authenticated browser context so
+    // the slow probe cannot reuse lifecycle marks from the login redirect.
+    const slowProbePage = await page.context().newPage();
+    await installDashboardLifecycleObserver(slowProbePage);
+    await slowProbePage.goto(`/dashboard?e2eDashboardDetailsDelayMs=${detailsDiagnosticDelayMs}`, { waitUntil: "load" });
+    page = slowProbePage;
+    await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
+    await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
+  }
+  const timing = await measurePage(page, detailsDiagnosticDelayMs > 0 ? undefined : "/dashboard");
+  const lifecycle = await page.evaluate(() => {
+    const value = (window as Window & {
+      __dashboardLifecycle?: {
+        routeShellMs: number | null;
+        kpiRegionMs: number | null;
+        detailsRegionMs: number | null;
+        kpisMs: number | null;
+        detailsMs: number | null;
+      };
+    }).__dashboardLifecycle;
+    if (!value) throw new Error("Dashboard lifecycle marks are unavailable.");
+    return value;
+  });
+  const dashboardMeasurements = await page.locator('[data-dashboard-scope="kpis"], [data-dashboard-scope="details"]').evaluateAll((elements) => elements.map((element) => ({
+    scope: element.getAttribute("data-dashboard-scope"),
+    readOperationCount: Number(element.getAttribute("data-dashboard-read-operation-count")),
+    readOperationDurationMs: Number(element.getAttribute("data-dashboard-read-operation-duration-ms")),
+  })));
+  expect(dashboardMeasurements).toEqual(expect.arrayContaining([
+    expect.objectContaining({ scope: "kpis", readOperationCount: expect.any(Number), readOperationDurationMs: expect.any(Number) }),
+    expect.objectContaining({ scope: "details", readOperationCount: expect.any(Number), readOperationDurationMs: expect.any(Number) }),
+  ]));
+  for (const measurement of dashboardMeasurements) {
+    expect(measurement.readOperationCount, `${measurement.scope} read-operation count`).toBeGreaterThan(0);
+    expect(measurement.readOperationDurationMs, `${measurement.scope} read-operation duration`).toBeGreaterThanOrEqual(0);
+  }
+  expect(lifecycle.kpiRegionMs, "Dashboard KPI region mark").not.toBeNull();
+  expect(lifecycle.detailsRegionMs, "Dashboard details region mark").not.toBeNull();
+  expect(lifecycle.kpisMs, "Dashboard KPI content mark").not.toBeNull();
+  expect(lifecycle.detailsMs, "Dashboard details content mark").not.toBeNull();
+  expect(lifecycle.kpiRegionMs!, "KPI region before details region").toBeLessThanOrEqual(lifecycle.detailsRegionMs!);
+  expect(lifecycle.kpiRegionMs!, "KPI region before KPI content").toBeLessThanOrEqual(lifecycle.kpisMs!);
+  if (Number.isSafeInteger(detailsDiagnosticDelayMs) && detailsDiagnosticDelayMs > 0) {
+    expect(lifecycle.kpisMs!, "KPI content before diagnostically delayed details").toBeLessThan(lifecycle.detailsMs!);
+  }
+  expect(timing.responseStartMs, "Dashboard response start").toBeGreaterThanOrEqual(0);
+  expect(timing.domInteractiveMs, "Dashboard DOM interactive").toBeGreaterThanOrEqual(0);
+  console.log(`[dashboard-performance] ${JSON.stringify({ timing, lifecycle, dashboardMeasurements })}`);
+  expectWithinBudget(timing, dashboardBudget, "/dashboard");
+});
+
+test("dashboard isolates one failed KPI read without resubmitting other flows", async ({ page }) => {
+  await loginOwner(page);
+  const failureProbePage = await page.context().newPage();
+  const postRequests: string[] = [];
+  failureProbePage.on("request", (request) => {
+    if (request.method() === "POST") postRequests.push(request.url());
+  });
+
+  await failureProbePage.goto("/dashboard?e2eDashboardFailScope=analytics", { waitUntil: "load" });
+  await expect(failureProbePage.getByRole("alert").filter({ hasText: "Dashboard KPI 暫時無法載入" })).toBeVisible();
+  await expect(failureProbePage.locator('[data-dashboard-scope="details"]')).toBeVisible();
+  expect(postRequests, "Dashboard read failure must not resubmit a write flow").toEqual([]);
 });
 
 test("authenticated billing usage stays within the release performance budget", async ({ page }) => {
@@ -268,7 +371,8 @@ test("public live commerce stays within the release performance budget", async (
 
   const response = await page.goto(route, { waitUntil: "load" });
   expect(response?.status()).toBe(200);
-  await expect(page.getByText("Performance Test Live")).toBeVisible();
-  await expect(page.getByText("Performance Test Product")).toBeVisible();
+  const waitingRoom = page.getByTestId("live-waiting-room");
+  await expect(waitingRoom.getByText("Performance Test Live", { exact: false })).toBeVisible();
+  await expect(page.getByText("Performance Test Product", { exact: true })).toHaveCount(0);
   expectWithinBudget(await measurePage(page, route), liveBudget, route);
 });

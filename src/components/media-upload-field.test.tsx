@@ -2,8 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   MediaUploadField,
+  cropAspectRatio,
+  estimatedMinutesForDuration,
+  formatVideoDimensions,
   mediaUploadPersistedValue,
   mediaUploadReducer,
+  shouldAutoUploadThumbnail,
   type MediaUploadState,
 } from "./media-upload-field";
 
@@ -113,6 +117,34 @@ describe("MediaUploadField", () => {
     expect(markup).not.toContain('name="cloudflareStreamUid"');
     expect(markup).not.toContain('name="uploadUrl"');
     expect(markup).not.toContain("進階：使用既有圖片 URL");
+  });
+});
+
+describe("video metadata and thumbnail crop helpers", () => {
+  it("calculates provider usage minutes from the actual duration", () => {
+    expect(estimatedMinutesForDuration(0)).toBe(0);
+    expect(estimatedMinutesForDuration(1)).toBe(1);
+    expect(estimatedMinutesForDuration(61)).toBe(2);
+    expect(estimatedMinutesForDuration(Number.NaN)).toBe(0);
+  });
+
+  it("keeps the selected crop ratio independent from the source video ratio", () => {
+    expect(cropAspectRatio("16:9", 1)).toBeCloseTo(16 / 9);
+    expect(cropAspectRatio("1:1", 16 / 9)).toBe(1);
+    expect(cropAspectRatio("4:5", 16 / 9)).toBeCloseTo(4 / 5);
+    expect(cropAspectRatio("original", 4 / 3)).toBeCloseTo(4 / 3);
+  });
+
+  it("formats dimensions for the local preview status", () => {
+    expect(formatVideoDimensions(1920, 1080)).toBe("1920 × 1080");
+    expect(formatVideoDimensions(0, 0)).toBe("讀取影片尺寸中");
+  });
+
+  it("marks captured video frames for the automatic image upload flow", () => {
+    expect(shouldAutoUploadThumbnail({ autoUpload: true })).toBe(true);
+    expect(shouldAutoUploadThumbnail({ autoUpload: false })).toBe(false);
+    expect(shouldAutoUploadThumbnail({ file: "frame.jpg" })).toBe(false);
+    expect(shouldAutoUploadThumbnail(null)).toBe(false);
   });
 });
 

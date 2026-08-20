@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 
@@ -77,12 +78,21 @@ test("same-team non-owner cannot read another member's template edit URL", async
     nonOwnerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const nonOwnerPage = await nonOwnerContext.newPage();
     await login(nonOwnerPage, fixture.leader.email);
-    const response = await nonOwnerPage.goto(ownerUrl);
-
-    // The page implementation uses `notFound()` for a same-team member that
-    // is not the template-version content owner; Next's concrete contract is
-    // a 404 response, not a permissive collection of possible status codes.
-    expect(response?.status()).toBe(404);
+    const templateCanaries = [
+      `${TEAM_FUNNEL_TEST_ONLY.templateName} WP86 B`,
+      "TEST ONLY WP86 B 私有主標題",
+    ];
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page: nonOwnerPage,
+      path: ownerUrl,
+      routeIdentityCanaries: [template.id, ownerUrl],
+      protectedPayloadCanaries: templateCanaries,
+      documentCanaries: templateCanaries,
+      finalUrl: ownerUrl,
+      transport: { kind: "streaming-not-found", status: 200 },
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200);
     await expect(nonOwnerPage.getByText(`${TEAM_FUNNEL_TEST_ONLY.templateName} WP86 B`)).toHaveCount(0);
     await expect(nonOwnerPage.getByText("TEST ONLY WP86 B 私有主標題")).toHaveCount(0);
     await expect(nonOwnerPage.locator('select[name="webinarId"]')).toHaveCount(0);

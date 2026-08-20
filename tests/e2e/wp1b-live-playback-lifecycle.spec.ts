@@ -95,24 +95,63 @@ test.afterAll(async () => {
   }
 });
 
-test("keeps one persistent video node from waiting through playing into replay", async ({ page }) => {
+test("keeps one persistent video node from waiting through playing into replay", async ({ page }, testInfo) => {
   const livePath = `/live/${fixture.slug}`;
   const liveRouteRequests: string[] = [];
   const admissionResponses: number[] = [];
   const sourceResponses: number[] = [];
+  type LifecyclePhase = "pre-ended" | "post-ended";
+  type LifecycleEvidence = {
+    phase: LifecyclePhase;
+    kind: "request" | "response";
+    method: string;
+    pathname: string;
+    status?: number;
+    count: number;
+  };
+  let lifecyclePhase: LifecyclePhase = "pre-ended";
+  const requestPhases = new WeakMap<object, LifecyclePhase>();
+  const lifecycleEvidence: LifecycleEvidence[] = [];
+  const endpointCounts = new Map<string, number>();
+
+  const trackedEndpoint = (method: string, pathname: string) => (
+    (method === "GET" && pathname === livePath)
+    || (method === "POST" && pathname === "/api/live-admission")
+    || (method === "GET" && pathname === "/api/live-playback-source")
+  );
+  const recordLifecycleEvent = ({
+    phase,
+    kind,
+    method,
+    pathname,
+    status,
+  }: Omit<LifecycleEvidence, "count">) => {
+    const countKey = `${kind}:${method}:${pathname}`;
+    const count = (endpointCounts.get(countKey) ?? 0) + 1;
+    endpointCounts.set(countKey, count);
+    lifecycleEvidence.push({ phase, kind, method, pathname, ...(status === undefined ? {} : { status }), count });
+  };
 
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (request.method() === "GET" && url.pathname === livePath) {
-      liveRouteRequests.push(request.url());
-    }
+    const method = request.method();
+    if (!trackedEndpoint(method, url.pathname)) return;
+    const phase = lifecyclePhase;
+    requestPhases.set(request, phase);
+    recordLifecycleEvent({ phase, kind: "request", method, pathname: url.pathname });
+    if (method === "GET" && url.pathname === livePath) liveRouteRequests.push(url.pathname);
   });
   page.on("response", (response) => {
     const url = new URL(response.url());
-    if (url.pathname === "/api/live-admission" && response.request().method() === "POST") {
+    const request = response.request();
+    const method = request.method();
+    if (!trackedEndpoint(method, url.pathname)) return;
+    const phase = requestPhases.get(request) ?? lifecyclePhase;
+    recordLifecycleEvent({ phase, kind: "response", method, pathname: url.pathname, status: response.status() });
+    if (url.pathname === "/api/live-admission" && method === "POST") {
       admissionResponses.push(response.status());
     }
-    if (url.pathname === "/api/live-playback-source" && response.request().method() === "GET") {
+    if (url.pathname === "/api/live-playback-source" && method === "GET") {
       sourceResponses.push(response.status());
     }
   });
@@ -160,11 +199,37 @@ test("keeps one persistent video node from waiting through playing into replay",
     },
   });
 
+  const postEndedRouteResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    const url = new URL(response.url());
+    return requestPhases.get(request) === "post-ended"
+      && request.method() === "GET"
+      && url.pathname === livePath
+      && response.status() === 200;
+  });
+  const postEndedAdmissionResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    const url = new URL(response.url());
+    return requestPhases.get(request) === "post-ended"
+      && request.method() === "POST"
+      && url.pathname === "/api/live-admission"
+      && response.status() === 200;
+  });
+  const postEndedSourceResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    const url = new URL(response.url());
+    return requestPhases.get(request) === "post-ended"
+      && request.method() === "GET"
+      && url.pathname === "/api/live-playback-source"
+      && response.status() === 200;
+  });
+  lifecyclePhase = "post-ended";
   await video.evaluate((element) => {
     element.dispatchEvent(new Event("ended", { bubbles: true }));
     element.dispatchEvent(new Event("ended", { bubbles: true }));
   });
 
+  await Promise.all([postEndedRouteResponse, postEndedAdmissionResponse, postEndedSourceResponse]);
   await expect.poll(() => liveRouteRequests.length).toBe(routeCountBeforeEnded + 1);
   await expect.poll(() => admissionResponses.length).toBe(admissionCountBeforeEnded + 1);
   await expect.poll(() => sourceResponses.length).toBeGreaterThanOrEqual(sourceCountBeforeEnded + 1);
@@ -175,7 +240,11 @@ test("keeps one persistent video node from waiting through playing into replay",
   })).toBe(true);
   await expect.poll(() => page.locator("video").evaluate((element) => (element as HTMLVideoElement).currentTime)).toBe(0);
 
-  await page.waitForTimeout(750);
+  await page.waitForLoadState("networkidle", { timeout: 5_000 });
+  await testInfo.attach("wp1b-live-playback-lifecycle-sanitized-evidence", {
+    body: Buffer.from(JSON.stringify({ lifecycleEvidence }, null, 2)),
+    contentType: "application/json",
+  });
   expect(liveRouteRequests).toHaveLength(routeCountBeforeEnded + 1);
   expect(admissionResponses).toHaveLength(admissionCountBeforeEnded + 1);
   expect(sourceResponses.length).toBeLessThanOrEqual(sourceCountBeforeEnded + 2);

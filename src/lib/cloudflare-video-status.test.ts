@@ -16,6 +16,9 @@ describe("resolveCloudflareVideoStatusTransition", () => {
     ["ready", "processing"],
     ["ready", "error"],
     ["error", "processing"],
+    ["archived", "processing"],
+    ["archived", "ready"],
+    ["archived", "error"],
   ] as const)("rejects stale %s -> %s", (current, incoming) => {
     expect(resolveCloudflareVideoStatusTransition(current, incoming)).toBeNull();
   });

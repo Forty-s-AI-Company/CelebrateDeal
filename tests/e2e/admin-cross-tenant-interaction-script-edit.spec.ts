@@ -88,10 +88,10 @@ test("admin cannot open another vendor interaction-script editor through direct 
       documentCanaries: foreignDataCanaries,
       finalUrl: new RegExp(`${foreignPath}$`),
       transport: {
-        kind: "http-not-found",
-        status: 404,
+        kind: "streaming-not-found",
+        status: 200,
       },
-      finalStatus: 404,
+      finalStatus: 200,
     });
     await expect(page.getByRole("heading", { name: "編輯互動腳本" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "留言清單" })).toHaveCount(0);

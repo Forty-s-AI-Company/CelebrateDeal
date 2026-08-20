@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLiveVideoReady, liveReadyVideoWhere, type LiveVideoReadiness } from "./live-video-readiness";
+import { isExistingLiveVideoReady, isLiveVideoReady, liveReadyVideoWhere, type LiveVideoReadiness } from "./live-video-readiness";
 
 const base: LiveVideoReadiness = {
   sourceType: "cloudflare_stream",
@@ -35,5 +35,12 @@ describe("live video readiness", () => {
         { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
       ]),
     });
+  });
+
+  it("keeps an already referenced archived video playable without allowing new bindings", () => {
+    const archivedStream = { ...base, status: "archived", cloudflareReadyToStream: true };
+    expect(isLiveVideoReady(archivedStream)).toBe(false);
+    expect(isExistingLiveVideoReady(archivedStream)).toBe(true);
+    expect(isExistingLiveVideoReady({ ...base, sourceType: "url", status: "archived" })).toBe(true);
   });
 });

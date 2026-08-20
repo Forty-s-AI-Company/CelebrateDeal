@@ -48,7 +48,7 @@ const persistentPlayerContract = "public live keeps the same video node, playbac
 const wp7OneStopContract = "one stop webinar verifies registration, preserves live playback through demo checkout, and materializes one follow-up";
 const expectedBrowserContracts = [
   "desktop merchant can recover upload and validation errors, then publish and preview one product",
-  "mobile product catalog has no overflow, preserves keyboard entry and passes axe",
+  "mobile product upload has no overflow, preserves recovery actions and passes axe",
   productDeliveryContract,
   buyerOrdersContract,
   "desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
@@ -57,6 +57,12 @@ const expectedBrowserContracts = [
   checkoutRecoveryContract,
   "finance admin payout batch prevents duplicate submission and exposes accessible pending feedback",
   liveStudioContract,
+  onboardingContract,
+  streamQuotaContract,
+  streamRetryContract,
+  messageTemplateDraftContract,
+  interactionRoleContract,
+  persistentPlayerContract,
 ];
 const selectedBrowserContracts = focusDelivery
   ? [productDeliveryContract]
@@ -901,7 +907,7 @@ export async function main() {
       : focusWp7OneStop ? ["wp7Registration", "wp7RegistrationMobile", "wp7Live", "wp7LiveMobile", "wp7Checkout", "wp7CheckoutMobile", "wp7Order", "wp7OrderMobile"]
       : focusLiveStudio
         ? ["liveStudioDesktop", "liveStudioMobile"]
-        : ["desktop", "mobile", "productDesktop", "productMobile", "productDeliveryDesktop", "productDeliveryMobile", "paymentResult", "financePending", "emailTemplates", "buyerOrdersDesktop", "buyerOrdersMobile"];
+        : ["desktop", "mobile", "productDesktop", "productMobile", "productDeliveryDesktop", "productDeliveryMobile", "paymentResult", "financePending", "emailTemplates", "buyerOrdersDesktop", "buyerOrdersMobile", "onboardingDesktop", "onboardingMobile", "streamQuotaDesktop", "streamQuotaMobile", "streamRetryDesktop", "streamRetryMobile", "messageTemplateDraftDesktop", "messageTemplateDraftMobile", "interactionRoleDesktop", "interactionRoleMobile", "persistentPlayerDesktop", "persistentPlayerMobile", "checkoutRecoveryDesktop", "checkoutRecoveryMobile"];
     const browserPassed = result.exitCode === 0
       && receipt.browser.passed === receipt.browser.expected
       && receipt.browser.failed === 0

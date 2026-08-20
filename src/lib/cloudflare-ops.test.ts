@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   videoCreate: vi.fn(),
   videoFindFirst: vi.fn(),
   videoUpdate: vi.fn(),
+  videoUpdateMany: vi.fn(),
+  videoLockQueryRaw: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/lib/cloudflare-stream", async (importOriginal) => {
@@ -26,11 +29,13 @@ vi.mock("@/lib/cloudflare-stream", async (importOriginal) => {
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    $transaction: mocks.transaction,
     vendor: { findUnique: mocks.vendorFindUnique },
     video: {
       create: mocks.videoCreate,
       findFirst: mocks.videoFindFirst,
       update: mocks.videoUpdate,
+      updateMany: mocks.videoUpdateMany,
     },
     live: {
       findFirst: mocks.liveFindFirst,
@@ -70,6 +75,15 @@ beforeEach(() => {
   });
   mocks.videoCreate.mockResolvedValue({ id: "video-new" });
   mocks.videoUpdate.mockResolvedValue({ id: "video-1" });
+  mocks.videoUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.videoLockQueryRaw.mockResolvedValue([{ id: "video-1", status: "ready" }]);
+  mocks.transaction.mockImplementation(async (callback: (transaction: unknown) => unknown) => callback({
+    $queryRaw: mocks.videoLockQueryRaw,
+    video: {
+      updateMany: mocks.videoUpdateMany,
+      findFirst: mocks.videoFindFirst,
+    },
+  }));
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
 });
 
@@ -112,8 +126,36 @@ describe("Cloudflare tenant resource preflight", () => {
 
     expect(mocks.videoFindFirst).toHaveBeenCalledWith({
       where: { id: "other-tenant-video", vendorId: "vendor-1" },
-      select: { id: true },
+      select: { id: true, status: true },
     });
+    expect(mocks.createDirectCreatorUpload).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct replacement of an archived video before calling Cloudflare", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-archived", status: "archived" });
+
+    await expect(createDirectUploadMapping({
+      vendorId: "vendor-1",
+      videoId: "video-archived",
+      title: "Archived replacement",
+      maxDurationSeconds: 120,
+    })).rejects.toMatchObject({ code: "video_archived" });
+
+    expect(mocks.createDirectCreatorUpload).not.toHaveBeenCalled();
+    expect(mocks.videoUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the row lock before provisioning when archive wins the race", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-race", status: "ready" });
+    mocks.videoLockQueryRaw.mockResolvedValue([{ id: "video-race", status: "archived" }]);
+
+    await expect(createDirectUploadMapping({
+      vendorId: "vendor-1",
+      videoId: "video-race",
+      title: "Race replacement",
+      maxDurationSeconds: 120,
+    })).rejects.toMatchObject({ code: "video_archived" });
+
     expect(mocks.createDirectCreatorUpload).not.toHaveBeenCalled();
   });
 
@@ -141,8 +183,8 @@ describe("Cloudflare tenant resource preflight", () => {
       maxDurationSeconds: 120,
     })).resolves.toMatchObject({ video: { id: "video-1" } });
 
-    expect(mocks.videoUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "video-1", vendorId: "vendor-1" },
+    expect(mocks.videoUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-1", vendorId: "vendor-1", status: { not: "archived" } },
     }));
     expect(mocks.videoCreate).not.toHaveBeenCalled();
   });
@@ -181,13 +223,33 @@ describe("Cloudflare tenant resource preflight", () => {
     })).resolves.toMatchObject({ video: { id: "video-1" } });
 
     expect(mocks.getStreamVideoStatus).toHaveBeenCalledWith("resumable-1");
-    expect(mocks.videoUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "video-1", vendorId: "vendor-1" },
+    expect(mocks.videoUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-1", vendorId: "vendor-1", status: { not: "archived" } },
       data: expect.objectContaining({
         cloudflareStreamUid: "resumable-1",
         status: "processing",
       }),
     }));
+  });
+
+  it("rejects a resumable completion that became archived after ticket creation", async () => {
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", status: "ready" });
+    const session = await createResumableUploadSession({
+      vendorId: "vendor-1",
+      videoId: "video-1",
+      title: "Race replacement",
+      fileName: "race.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 250 * 1024 * 1024,
+      maxDurationSeconds: 600,
+    });
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", status: "archived", cloudflareStreamUid: "old-upload" });
+
+    await expect(completeResumableUploadMapping({
+      vendorId: "vendor-1",
+      uploadTicket: session.uploadTicket,
+    })).rejects.toMatchObject({ code: "video_archived" });
+    expect(mocks.getStreamVideoStatus).not.toHaveBeenCalled();
   });
 
   it("creates a deterministic local video id only after tus completion and is replay-safe", async () => {

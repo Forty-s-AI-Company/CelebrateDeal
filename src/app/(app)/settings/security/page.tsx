@@ -18,6 +18,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
 import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
+import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
 
@@ -68,6 +69,7 @@ export default async function SecuritySettingsPage({
 }: {
   searchParams: Promise<{ updated?: string; error?: string }>;
 }) {
+  await applyE2eLoadingDelay();
   const params = await searchParams;
   const auth = await requireAuth();
   const db = getDb();
@@ -79,23 +81,24 @@ export default async function SecuritySettingsPage({
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
-  const [members, sessions] = await Promise.all([
-    isOwner && vendorId
-      ? db.vendorMember.findMany({
-          where: { vendorId },
-          include: { user: true },
-          orderBy: [{ status: "asc" }, { createdAt: "asc" }],
-        })
-      : [],
-    db.userSession.findMany({
-      where: {
-        userId: auth.user.id,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-    }),
-  ]);
+  // The local and E2E PostgreSQL instances intentionally use a one-connection
+  // pool. Keep these independent reads serial so a Server Action cannot wait
+  // behind a sibling query while this page is still rendering.
+  const members = isOwner && vendorId
+    ? await db.vendorMember.findMany({
+        where: { vendorId },
+        include: { user: true },
+        orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+      })
+    : [];
+  const sessions = await db.userSession.findMany({
+    where: {
+      userId: auth.user.id,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 8,
+  });
 
   return (
     <>

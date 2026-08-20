@@ -75,10 +75,10 @@ test("admin cannot open another vendor video edit route through direct URL navig
       documentCanaries: foreignDataCanaries,
       finalUrl: new RegExp(`${foreignPath}$`),
       transport: {
-        kind: "http-not-found",
-        status: 404,
+        kind: "streaming-not-found",
+        status: 200,
       },
-      finalStatus: 404,
+      finalStatus: 200,
     });
     await expect(page.getByRole("heading", { name: "編輯影片" })).toHaveCount(0);
     for (const label of ["影片名稱", "影片描述", "影片 URL", "圖片 URL", "長度秒數", "估算用量分鐘", "狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);

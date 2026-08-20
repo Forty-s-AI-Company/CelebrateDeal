@@ -50,9 +50,29 @@ function requiredExternalUrl(formData: FormData, key: string, label: string) {
   return safeUrl;
 }
 
-function intValue(formData: FormData, key: string, fallback = 0) {
-  const parsed = Number.parseInt(text(formData, key, String(fallback)), 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+const MAX_MANUAL_VIDEO_DURATION_SECONDS = 24 * 60 * 60;
+const MAX_MANUAL_VIDEO_ESTIMATED_MINUTES = 24 * 60;
+
+function boundedNonNegativeIntValue(formData: FormData, key: string, maximum: number, fallback = 0) {
+  const raw = text(formData, key, String(fallback));
+  if (!/^\d+$/.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : null;
+}
+
+function manualVideoMetadata(formData: FormData, invalidVideoPath: string) {
+  const durationSec = boundedNonNegativeIntValue(
+    formData,
+    "durationSec",
+    MAX_MANUAL_VIDEO_DURATION_SECONDS,
+  );
+  const estimatedMinutes = boundedNonNegativeIntValue(
+    formData,
+    "estimatedMinutes",
+    MAX_MANUAL_VIDEO_ESTIMATED_MINUTES,
+  );
+  if (durationSec === null || estimatedMinutes === null) redirect(invalidVideoPath);
+  return { durationSec, estimatedMinutes };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
@@ -88,8 +108,6 @@ export async function upsertVideoAction(formData: FormData) {
     description: optionalText(formData, "description"),
     thumbnailUrl,
     thumbnailAssetId: thumbnailAsset?.id ?? null,
-    durationSec: intValue(formData, "durationSec"),
-    estimatedMinutes: intValue(formData, "estimatedMinutes"),
   };
 
   if (id) {
@@ -112,6 +130,7 @@ export async function upsertVideoAction(formData: FormData) {
     const data = existingVideo.sourceType === "url"
       ? {
           ...editableData,
+          ...manualVideoMetadata(formData, invalidVideoPath),
           videoUrl: requiredExternalUrl(formData, "videoUrl", "影片網址"),
           status: text(formData, "status") === "archived" ? "archived" : "ready",
         }
@@ -123,6 +142,7 @@ export async function upsertVideoAction(formData: FormData) {
     await db.video.create({
       data: {
         ...editableData,
+        ...manualVideoMetadata(formData, invalidVideoPath),
         vendorId: vendor.id,
         sourceType: "url",
         videoUrl: externalVideoUrl,
@@ -132,6 +152,113 @@ export async function upsertVideoAction(formData: FormData) {
   }
 
   redirect("/videos");
+}
+
+type ManagedVideoForArchive = {
+  id: string;
+  status: string;
+  sourceType: string;
+  cloudflareReadyToStream: boolean;
+  cloudflareLiveInputUid: string | null;
+  liveInputStatus: string | null;
+};
+
+const RESTORABLE_VIDEO_STATUSES = new Set(["ready", "processing", "error"]);
+
+function fallbackRestoredVideoStatus(video: ManagedVideoForArchive) {
+  if (video.sourceType === "url") return "ready";
+  if (video.sourceType === "cloudflare_stream") {
+    return video.cloudflareReadyToStream ? "ready" : "processing";
+  }
+  if (video.sourceType === "cloudflare_live") {
+    return video.cloudflareLiveInputUid && video.liveInputStatus === "created" ? "processing" : "processing";
+  }
+  return "ready";
+}
+
+function restoredVideoStatus(
+  video: ManagedVideoForArchive,
+  previousStatus: string | null | undefined,
+) {
+  return previousStatus && RESTORABLE_VIDEO_STATUSES.has(previousStatus)
+    ? previousStatus
+    : fallbackRestoredVideoStatus(video);
+}
+
+async function mutateVideoArchiveState(formData: FormData, action: "archive" | "restore") {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const id = optionalText(formData, "id");
+  if (!id || id.length > 128) redirect("/videos?error=not_found");
+
+  const db = getDb();
+  const result = await db.$transaction(async (tx) => {
+    const video = await tx.video.findFirst({
+      where: { id, vendorId: vendor.id },
+      select: {
+        id: true,
+        status: true,
+        sourceType: true,
+        cloudflareReadyToStream: true,
+        cloudflareLiveInputUid: true,
+        liveInputStatus: true,
+      },
+    });
+    if (!video) return { kind: "missing" as const };
+
+    if (action === "archive") {
+      if (video.status === "archived") return { kind: "noop" as const };
+
+      await tx.videoArchiveState.upsert({
+        where: { vendorId_videoId: { vendorId: vendor.id, videoId: video.id } },
+        create: {
+          vendorId: vendor.id,
+          videoId: video.id,
+          previousStatus: video.status,
+        },
+        update: { previousStatus: video.status },
+      });
+      await tx.video.update({
+        where: { id: video.id, vendorId: vendor.id },
+        data: { status: "archived" },
+      });
+      return { kind: "updated" as const, previousStatus: video.status, nextStatus: "archived" };
+    }
+
+    if (video.status !== "archived") return { kind: "noop" as const };
+    const archiveState = await tx.videoArchiveState.findUnique({
+      where: { vendorId_videoId: { vendorId: vendor.id, videoId: video.id } },
+      select: { previousStatus: true },
+    });
+    const nextStatus = restoredVideoStatus(video, archiveState?.previousStatus);
+    await tx.video.update({
+      where: { id: video.id, vendorId: vendor.id },
+      data: { status: nextStatus },
+    });
+    return { kind: "updated" as const, previousStatus: "archived", nextStatus };
+  });
+
+  if (result.kind === "missing") redirect("/videos?error=not_found");
+  if (result.kind === "updated") {
+    await writeAuditLog({
+      vendorId: vendor.id,
+      ...managerAuditIdentity(auth),
+      action: action === "archive" ? "video_archived" : "video_restored",
+      targetType: "Video",
+      targetId: id,
+      before: auditSnapshot({ status: result.previousStatus }),
+      after: auditSnapshot({ status: result.nextStatus }),
+    });
+  }
+  redirect("/videos");
+}
+
+export async function archiveVideoAction(formData: FormData) {
+  return mutateVideoArchiveState(formData, "archive");
+}
+
+export async function restoreVideoAction(formData: FormData) {
+  return mutateVideoArchiveState(formData, "restore");
 }
 
 export async function upsertFormAction(formData: FormData) {

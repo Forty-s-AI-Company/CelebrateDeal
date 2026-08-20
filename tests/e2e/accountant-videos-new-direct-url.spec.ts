@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp59SyntheticPassword!";
@@ -72,22 +73,33 @@ test("active accountant is denied video creation through direct URL navigation",
     });
 
     const path = "/videos/new";
-    const rawRedirect = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === path && response.status() === 307,
+    const documentCanaries = [video.title, video.description, video.videoUrl, video.thumbnailUrl].filter(
+      (value): value is string => Boolean(value),
     );
-    const finalResponse = await page.goto(path);
-    const redirectResponse = await rawRedirect;
-    const location = new URL(redirectResponse.headers().location ?? "", "http://127.0.0.1");
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [path],
+      protectedPayloadCanaries: documentCanaries,
+      documentCanaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
 
     expect(finalResponse?.status()).toBe(200);
-    expect(`${location.pathname}${location.search}`).toBe("/dashboard?error=insufficient_role");
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "新增影片" })).toHaveCount(0);
     for (const label of ["影片名稱", "影片描述", "影片 URL", "縮圖 URL", "長度秒數", "估算用量分鐘", "狀態"]) {
       await expect(page.getByLabel(label)).toHaveCount(0);
     }
     await expect(page.getByRole("button", { name: /儲存/ })).toHaveCount(0);
-    for (const canary of [video.title, video.description, video.videoUrl, video.thumbnailUrl].filter((value): value is string => Boolean(value))) {
+    for (const canary of documentCanaries) {
       await expect(page.getByText(canary, { exact: true })).toHaveCount(0);
     }
     expect(posts).toEqual([]);

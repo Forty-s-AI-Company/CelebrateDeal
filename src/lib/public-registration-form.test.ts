@@ -40,7 +40,16 @@ function formRecord(overrides: Record<string, unknown> = {}) {
     maxVisibleSessions: 0,
     hideExpiredSessions: true,
     vendor: { name: "測試商家" },
-    promoVideo: { vendorId: "vendor-1", title: "預告", videoUrl: "https://cdn.example.test/promo.m3u8", status: "ready" },
+    promoVideo: {
+      vendorId: "vendor-1",
+      title: "預告",
+      videoUrl: "https://cdn.example.test/promo.m3u8",
+      sourceType: "url",
+      status: "ready",
+      cloudflareReadyToStream: false,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    },
     ...overrides,
   };
 }

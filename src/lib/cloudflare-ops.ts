@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import {
   CloudflareStreamError,
   createDirectCreatorUpload,
@@ -13,6 +14,15 @@ import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-da
 const CLOUDFLARE_STREAM_KEY_PURPOSE = "cloudflare-live-stream-key";
 const CLOUDFLARE_UPLOAD_TICKET_PURPOSE = "cloudflare-resumable-upload-ticket";
 const RESUMABLE_UPLOAD_TICKET_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const VIDEO_UPLOAD_TRANSACTION_OPTIONS = {
+  maxWait: 5_000,
+  // Cloudflare requests are independently capped at 15 seconds. Leave
+  // enough room for the provider response plus the local mapping write, while
+  // avoiding Prisma's much shorter default interactive-transaction timeout.
+  timeout: 30_000,
+} as const;
+type CloudflareDatabase = ReturnType<typeof getDb>;
+type CloudflareDatabaseClient = CloudflareDatabase | Prisma.TransactionClient;
 
 export const DirectUploadRequest = z.object({
   vendorId: z.string().min(1),
@@ -34,7 +44,7 @@ export const LiveInputRequest = z.object({
   name: z.string().min(1).max(120),
 });
 
-type CloudflareResourceErrorCode = "vendor_not_found" | "video_not_found" | "live_not_found";
+type CloudflareResourceErrorCode = "vendor_not_found" | "video_not_found" | "video_archived" | "live_not_found";
 
 export class CloudflareResourceError extends Error {
   constructor(public readonly code: CloudflareResourceErrorCode) {
@@ -77,7 +87,11 @@ const ResumableUploadTicket = z.object({
 
 export function classifyCloudflareOperationError(error: unknown) {
   if (error instanceof CloudflareResourceError) {
-    return { code: error.code, providerStatus: null, status: 404 };
+    return {
+      code: error.code,
+      providerStatus: null,
+      status: error.code === "video_archived" ? 409 : 404,
+    };
   }
   if (error instanceof CloudflareStreamError) {
     return {
@@ -109,16 +123,24 @@ async function requireCloudflareMappingResources({
   vendorId,
   videoId,
   liveId,
+  rejectArchivedVideo = false,
 }: {
   vendorId: string;
   videoId?: string;
   liveId?: string;
+  rejectArchivedVideo?: boolean;
 }) {
   const db = getDb();
   const [vendor, video, live] = await Promise.all([
     db.vendor.findUnique({ where: { id: vendorId }, select: { id: true } }),
     videoId
-      ? db.video.findFirst({ where: { id: videoId, vendorId }, select: { id: true } })
+      ? db.video.findFirst({
+          where: {
+            id: videoId,
+            vendorId,
+          },
+          select: { id: true, status: true },
+        })
       : null,
     liveId
       ? db.live.findFirst({ where: { id: liveId, vendorId }, select: { id: true } })
@@ -127,39 +149,90 @@ async function requireCloudflareMappingResources({
 
   if (!vendor) throw new CloudflareResourceError("vendor_not_found");
   if (videoId && !video) throw new CloudflareResourceError("video_not_found");
+  if (videoId && rejectArchivedVideo && video?.status === "archived") {
+    throw new CloudflareResourceError("video_archived");
+  }
   if (liveId && !live) throw new CloudflareResourceError("live_not_found");
   return { db, video, live };
 }
 
+/**
+ * Serialize replacement provisioning with the archive action. The external
+ * provider call is intentionally inside the short transaction so a concurrent
+ * archive either wins before provisioning or waits until the local mapping is
+ * committed; it cannot leave a newly-created provider asset orphaned by a
+ * local archive race.
+ */
+async function withVideoUploadLock<T>(
+  db: CloudflareDatabase,
+  vendorId: string,
+  videoId: string,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+) {
+  return db.$transaction(async (transaction) => {
+    const rows = await transaction.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
+      SELECT "id", "status"
+      FROM "Video"
+      WHERE "id" = ${videoId} AND "vendorId" = ${vendorId}
+      FOR UPDATE
+    `);
+    const video = rows[0];
+    if (!video) throw new CloudflareResourceError("video_not_found");
+    if (video.status === "archived") throw new CloudflareResourceError("video_archived");
+    return operation(transaction);
+  }, VIDEO_UPLOAD_TRANSACTION_OPTIONS);
+}
+
 export async function createDirectUploadMapping(input: z.infer<typeof DirectUploadRequest>) {
-  const { db, video: existingVideo } = await requireCloudflareMappingResources(input);
+  const { db } = await requireCloudflareMappingResources({
+    ...input,
+    rejectArchivedVideo: Boolean(input.videoId),
+  });
+  const provision = async (database: CloudflareDatabaseClient, existingVideo: { id: string }) => {
+    const upload = await createDirectCreatorUpload(input.maxDurationSeconds);
+    const video = await persistStreamVideo({ db: database, existingVideo, input, uid: upload.uid });
+    return { video, upload, videoUrl: video.videoUrl };
+  };
+  if (input.videoId) {
+    return withVideoUploadLock(db, input.vendorId, input.videoId, (transaction) => (
+      provision(transaction, { id: input.videoId! })
+    ));
+  }
   const upload = await createDirectCreatorUpload(input.maxDurationSeconds);
-  const video = await persistStreamVideo({ db, existingVideo, input, uid: upload.uid });
+  const video = await persistStreamVideo({ db, existingVideo: null, input, uid: upload.uid });
   return { video, upload, videoUrl: video.videoUrl };
 }
 
 export async function createResumableUploadSession(input: z.infer<typeof ResumableUploadRequest>) {
-  const { video: existingVideo } = await requireCloudflareMappingResources(input);
-  const upload = await createResumableCreatorUpload({
-    fileName: input.fileName,
-    mimeType: input.mimeType,
-    sizeBytes: input.sizeBytes,
-    maxDurationSeconds: input.maxDurationSeconds,
+  const { db } = await requireCloudflareMappingResources({
+    ...input,
+    rejectArchivedVideo: Boolean(input.videoId),
   });
-  const videoId = existingVideo?.id ?? `upload_${randomUUID()}`;
-  const uploadTicket = encryptSensitiveValue(JSON.stringify({
-    version: 1,
-    vendorId: input.vendorId,
-    videoId,
-    mode: existingVideo ? "replace" : "create",
-    title: input.title,
-    maxDurationSeconds: input.maxDurationSeconds,
-    uid: upload.uid,
-    expiresAt: Date.now() + RESUMABLE_UPLOAD_TICKET_LIFETIME_MS,
-  }), CLOUDFLARE_UPLOAD_TICKET_PURPOSE);
-
+  const provision = async (existingVideoId: string | null) => {
+    const upload = await createResumableCreatorUpload({
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      maxDurationSeconds: input.maxDurationSeconds,
+    });
+    const videoId = existingVideoId ?? `upload_${randomUUID()}`;
+    const uploadTicket = encryptSensitiveValue(JSON.stringify({
+      version: 1,
+      vendorId: input.vendorId,
+      videoId,
+      mode: existingVideoId ? "replace" : "create",
+      title: input.title,
+      maxDurationSeconds: input.maxDurationSeconds,
+      uid: upload.uid,
+      expiresAt: Date.now() + RESUMABLE_UPLOAD_TICKET_LIFETIME_MS,
+    }), CLOUDFLARE_UPLOAD_TICKET_PURPOSE);
+    return { videoId, uploadURL: upload.uploadURL, uploadTicket };
+  };
+  if (input.videoId) {
+    return withVideoUploadLock(db, input.vendorId, input.videoId, () => provision(input.videoId!));
+  }
   // Provisioning must not mutate Video. The opaque ticket is completed only after tus succeeds.
-  return { videoId, uploadURL: upload.uploadURL, uploadTicket };
+  return provision(null);
 }
 
 export async function completeResumableUploadMapping({
@@ -186,12 +259,15 @@ export async function completeResumableUploadMapping({
     db.vendor.findUnique({ where: { id: vendorId }, select: { id: true } }),
     db.video.findFirst({
       where: { id: ticket.videoId, vendorId },
-      select: { id: true, cloudflareStreamUid: true },
+      select: { id: true, status: true, cloudflareStreamUid: true },
     }),
   ]);
   if (!vendor) throw new CloudflareResourceError("vendor_not_found");
   if (ticket.mode === "replace" && !existingVideo) {
     throw new CloudflareResourceError("video_not_found");
+  }
+  if (ticket.mode === "replace" && existingVideo?.status === "archived") {
+    throw new CloudflareResourceError("video_archived");
   }
   if (ticket.mode === "create" && existingVideo && existingVideo.cloudflareStreamUid !== ticket.uid) {
     throw new CloudflareUploadTicketError();
@@ -231,28 +307,35 @@ async function persistStreamVideo({
   uid,
   createId,
 }: {
-  db: ReturnType<typeof getDb>;
+  db: CloudflareDatabaseClient;
   existingVideo: { id: string } | null;
   input: z.infer<typeof DirectUploadRequest>;
   uid: string;
   createId?: string;
 }) {
   const videoUrl = `https://videodelivery.net/${uid}/manifest/video.m3u8`;
-  const video = existingVideo
-    ? await db.video.update({
-        where: { id: existingVideo.id, vendorId: input.vendorId },
-        data: {
-          title: input.title,
-          sourceType: "cloudflare_stream",
-          videoUrl,
-          status: "processing",
-          cloudflareStreamUid: uid,
-          cloudflarePlaybackId: uid,
-          cloudflareReadyToStream: false,
-          estimatedMinutes: Math.ceil(input.maxDurationSeconds / 60),
-        },
-      })
-    : await db.video.create({
+  if (existingVideo) {
+    const updated = await db.video.updateMany({
+      where: { id: existingVideo.id, vendorId: input.vendorId, status: { not: "archived" } },
+      data: {
+        title: input.title,
+        sourceType: "cloudflare_stream",
+        videoUrl,
+        status: "processing",
+        cloudflareStreamUid: uid,
+        cloudflarePlaybackId: uid,
+        cloudflareReadyToStream: false,
+        durationSec: 0,
+        estimatedMinutes: 0,
+      },
+    });
+    if (updated.count !== 1) throw new CloudflareResourceError("video_archived");
+    const video = await db.video.findFirst({ where: { id: existingVideo.id, vendorId: input.vendorId } });
+    if (!video) throw new CloudflareResourceError("video_not_found");
+    return video;
+  }
+
+  const video = await db.video.create({
         data: {
           ...(createId ? { id: createId } : {}),
           vendorId: input.vendorId,
@@ -263,7 +346,8 @@ async function persistStreamVideo({
           cloudflareStreamUid: uid,
           cloudflarePlaybackId: uid,
           cloudflareReadyToStream: false,
-          estimatedMinutes: Math.ceil(input.maxDurationSeconds / 60),
+          durationSec: 0,
+          estimatedMinutes: 0,
         },
       });
 
@@ -271,7 +355,10 @@ async function persistStreamVideo({
 }
 
 export async function createLiveInputMapping(input: z.infer<typeof LiveInputRequest>) {
-  const { db, video: existingVideo } = await requireCloudflareMappingResources(input);
+  const { db, video: existingVideo } = await requireCloudflareMappingResources({
+    ...input,
+    rejectArchivedVideo: Boolean(input.videoId),
+  });
   const liveInput = await createLiveInput(input.name);
   const videoUrl = `https://videodelivery.net/${liveInput.uid}/manifest/video.m3u8`;
   const encryptedStreamKey = liveInput.rtmps?.streamKey

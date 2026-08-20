@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a>,
 }));
-vi.mock("lucide-react", () => ({ Plus: () => <span>plus</span> }));
+vi.mock("lucide-react", () => ({ Plus: () => <span>plus</span>, Film: () => <span>film</span>, Archive: () => <span>archive</span>, RotateCcw: () => <span>restore</span> }));
+vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ video: { findMany: mocks.findMany } }) }));
 vi.mock("@/components/ui", () => ({
@@ -31,14 +32,16 @@ const videos = [{
   sourceType: "cloudflare_stream",
   durationSec: 92,
   status: "ready",
+  _count: { lives: 1, registrationFormPromoVideos: 0 },
 }, {
   id: "video-2",
   title: "處理中的影片",
   description: null,
-  videoUrl: "https://provider.example.test/private/processing.m3u8",
+  videoUrl: "https://cdn.example.test/private/processing.m3u8",
   sourceType: "url",
   durationSec: 0,
   status: "processing",
+  _count: { lives: 0, registrationFormPromoVideos: 1 },
 }];
 
 beforeEach(() => {
@@ -61,8 +64,10 @@ describe("/videos route", () => {
       },
       orderBy: { createdAt: "desc" },
       take: 100,
+      include: { _count: { select: { lives: true, registrationFormPromoVideos: true } } },
     });
     expect(html).toContain("夏季研討會");
+    expect(html).toContain("尚無縮圖");
     expect(html).toContain("可播放");
     expect(html).toContain("01:32");
     expect(html).toContain('href="/videos/video-1/edit"');
@@ -85,7 +90,12 @@ describe("/videos route", () => {
   it("uses the bounded default query when no filters are present", async () => {
     mocks.findMany.mockResolvedValue([]);
     const html = renderToStaticMarkup(await VideosPage({ searchParams: Promise.resolve({}) }));
-    expect(mocks.findMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1" }, orderBy: { createdAt: "desc" }, take: 100 });
+    expect(mocks.findMany).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1" },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { _count: { select: { lives: true, registrationFormPromoVideos: true } } },
+    });
     expect(html).toContain("還沒有影片");
     expect(html).toContain("/videos/new");
     expect(html).not.toContain("找不到符合條件的影片");

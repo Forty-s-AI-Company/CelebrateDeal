@@ -28,6 +28,13 @@ const VIDEO_MIME_TYPES = new Set([
   "video/x-msvideo",
 ]);
 
+// Cloudflare Stream 目前可能回傳兩個官方上傳網域；兩者都必須保留
+// HTTPS 與 exact-host 驗證，避免把一次性上傳 URL 開放給 lookalike domain。
+const CLOUDFLARE_UPLOAD_HOSTS = new Set([
+  "upload.videodelivery.net",
+  "upload.cloudflarestream.com",
+]);
+
 export type MediaUploadKind = "image" | "video";
 
 export class MediaUploadClientError extends Error {
@@ -112,7 +119,7 @@ function safeCloudflareVideoUploadUrl(value: unknown) {
   const safe = safeHttpsUrl(value);
   if (!safe) return null;
   const hostname = new URL(safe).hostname.toLowerCase();
-  return hostname === "upload.videodelivery.net" ? safe : null;
+  return CLOUDFLARE_UPLOAD_HOSTS.has(hostname) ? safe : null;
 }
 
 export function parseImageProvision(value: Record<string, unknown>) {

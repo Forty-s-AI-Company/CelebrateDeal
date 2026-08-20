@@ -58,6 +58,9 @@ async function gotoStableRoute(page: Page, expectedPath: string) {
 async function expectNoBlockingAxeViolations(page: Page) {
   await page.waitForLoadState("load");
   await expect(page.locator("main").first()).toBeVisible();
+  // Next can stream the page landmark before the root metadata title arrives.
+  // Wait for the real document title before running the accessibility scan.
+  await expect.poll(() => page.title()).toContain("CelebrateDeal");
   const blocking = await blockingAxeViolations(page);
   expect(blocking, "頁面不可出現 axe critical/serious 違規").toEqual([]);
 }
@@ -69,6 +72,10 @@ async function loginOwner(page: Page) {
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
   await waitForStableRoute(page, "/dashboard");
+  // App Router can finish the document load while the protected layout is
+  // still streaming its loading shell. Wait for the real AppShell landmark
+  // before asserting focus order or mobile navigation targets.
+  await expect(page.getByRole("link", { name: "跳至主要內容" })).toBeVisible();
 }
 
 async function enableOwnerMfa(page: Page) {
@@ -471,8 +478,28 @@ test("mobile shell has no horizontal page overflow and primary targets are touch
   await page.setViewportSize({ width: 390, height: 844 });
   await loginOwner(page);
 
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  const overflowDetails = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.right > viewportWidth + 1 || rect.left < -1)
+      .sort((left, right) => (right.rect.right - viewportWidth) - (left.rect.right - viewportWidth))
+      .slice(0, 5)
+      .map(({ element, rect }) => ({
+        tag: element.tagName,
+        id: element.id,
+        className: typeof element.className === "string" ? element.className : "",
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+      }));
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: viewportWidth,
+      innerWidth: window.innerWidth,
+      offenders,
+    };
+  });
+  expect(overflowDetails.scrollWidth - overflowDetails.clientWidth, JSON.stringify(overflowDetails)).toBeLessThanOrEqual(1);
 
   const mobileTargets = page.locator("header a, header button");
   const count = await mobileTargets.count();

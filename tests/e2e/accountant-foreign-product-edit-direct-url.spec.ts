@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp44SyntheticPassword!";
@@ -22,10 +23,24 @@ test("active accountant is denied a foreign product editor before tenant lookup"
   const before = await snapshot();
   try {
     await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
-    const requests: string[] = []; const responses: { url: string; status: number; location: string | undefined }[] = []; page.on("request", (request) => requests.push(request.url())); page.on("response", (response) => responses.push({ url: response.url(), status: response.status(), location: response.headers()["location"] }));
-    const foreignPath = `/products/${foreignProduct.id}/edit`; const response = await page.goto(foreignPath);
-    const guard = responses.find((entry) => new URL(entry.url).pathname === foreignPath);
-    expect(guard).toEqual(expect.objectContaining({ status: 307, location: "/dashboard?error=insufficient_role" })); expect(response?.status()).toBe(200); await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/); await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    const requests: string[] = []; page.on("request", (request) => requests.push(request.url()));
+    const foreignPath = `/products/${foreignProduct.id}/edit`;
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignProduct.id, foreignPath],
+      protectedPayloadCanaries: [ownProduct.name, ownProduct.slug, ownProduct.description ?? "", foreignProduct.name, foreignProduct.slug, foreignProduct.description ?? ""],
+      documentCanaries: [ownProduct.name, ownProduct.slug, ownProduct.description ?? "", foreignProduct.name, foreignProduct.slug, foreignProduct.description ?? ""],
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200); await expect(page).toHaveURL("/dashboard?error=insufficient_role"); await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯商品" })).toHaveCount(0); await expect(page.getByLabel("商品名稱")).toHaveCount(0); await expect(page.getByRole("button", { name: /儲存|更新/ })).toHaveCount(0);
     for (const value of [ownProduct.name, ownProduct.slug, ownProduct.description ?? "", foreignProduct.name, foreignProduct.slug, foreignProduct.description ?? ""]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     expect(requests.filter((url) => /https:\/\/(?!127\.0\.0\.1)|cloudflare|openai|resend|payuni|sentry|posthog/i.test(url))).toEqual([]); await expect.poll(snapshot).toEqual(before);

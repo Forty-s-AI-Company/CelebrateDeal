@@ -90,6 +90,7 @@ test.describe("進站最新消息／開發進度公告中心", () => {
       );
     }, latestAnnouncement.version);
     await page.goto("/");
+    await expect(page).toHaveURL(/\/login\?from=home$/u);
     await expect(page.getByTestId("announcement-center-backdrop")).toBeHidden();
     await page.evaluate(() => {
       const existing = document.createElement("div");

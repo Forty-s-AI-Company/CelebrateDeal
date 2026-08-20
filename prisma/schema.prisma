@@ -289,11 +289,28 @@ model Video {
 
   vendor                      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   thumbnailAsset              ImageAsset?        @relation("VideoThumbnailImageAsset", fields: [vendorId, thumbnailAssetId], references: [vendorId, id], onDelete: Restrict)
+  archiveState                VideoArchiveState?
   lives                       Live[]
   registrationFormPromoVideos RegistrationForm[] @relation("RegistrationFormPromoVideo")
 
   @@unique([vendorId, id])
   @@index([thumbnailAssetId])
+}
+
+/// Durable tenant-scoped state used to restore a video to the provider/local
+/// status it had immediately before a soft archive.
+model VideoArchiveState {
+  id             String   @id @default(cuid())
+  vendorId       String
+  videoId        String
+  previousStatus String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  video Video @relation(fields: [vendorId, videoId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, videoId])
+  @@index([vendorId, previousStatus])
 }
 
 model Product {

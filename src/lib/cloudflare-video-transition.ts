@@ -6,6 +6,8 @@ import {
 export type CloudflareVideoSnapshot = {
   id: string;
   status: string;
+  /** Provider webhooks have no tenant claim; the local mapping supplies it. */
+  vendorId?: string;
 };
 
 export type CloudflareVideoTransitionResult =
@@ -19,6 +21,7 @@ type CloudflareVideoTransitionOptions = {
   incomingStatus: CloudflareVideoStatus;
   claim: (input: {
     id: string;
+    vendorId?: string;
     expectedStatus: string;
     nextStatus: CloudflareVideoStatus;
   }) => Promise<boolean>;
@@ -48,6 +51,7 @@ export async function convergeCloudflareVideoTransition({
 
     const applied = await claim({
       id: current.id,
+      vendorId: current.vendorId,
       expectedStatus: current.status,
       nextStatus,
     });

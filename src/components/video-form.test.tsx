@@ -45,6 +45,14 @@ describe("VideoForm", () => {
     expect(markup).not.toContain('name="cloudflarePlaybackId"');
     expect(markup).not.toContain('name="cloudflareReadyToStream"');
     expect(markup).not.toContain('name="liveInputStatus"');
+    expect(markup).toContain('name="durationSec"');
+    expect(markup).toContain('name="estimatedMinutes"');
+    const durationInputStart = markup.lastIndexOf("<input", markup.indexOf('name="durationSec"'));
+    const durationInputEnd = markup.indexOf(">", durationInputStart);
+    const estimatedMinutesInputStart = markup.lastIndexOf("<input", markup.indexOf('name="estimatedMinutes"'));
+    const estimatedMinutesInputEnd = markup.indexOf(">", estimatedMinutesInputStart);
+    expect(markup.slice(durationInputStart, durationInputEnd + 1)).toMatch(/readonly/i);
+    expect(markup.slice(estimatedMinutesInputStart, estimatedMinutesInputEnd + 1)).toMatch(/readonly/i);
   });
 
   it("keeps URL and archive controls for an external URL video", () => {

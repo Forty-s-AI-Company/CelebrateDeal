@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
+import { archiveVideoAction, restoreVideoAction } from "@/app/actions";
+import { CsrfField } from "@/components/csrf-field";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { VideoLifecycleActions } from "@/components/video-lifecycle-actions";
+import { VideoThumbnail } from "@/components/video-thumbnail";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 
 const videoStatuses = ["ready", "processing", "error", "archived"] as const;
 type VideoStatus = (typeof videoStatuses)[number];
@@ -46,6 +51,7 @@ export default async function VideosPage({
 }: {
   searchParams: Promise<{ q?: string | string[]; status?: string | string[] }>;
 }) {
+  await applyE2eLoadingDelay();
   const vendor = await requireVendorManager();
   const query = await searchParams;
   const search = (firstQueryValue(query.q)?.trim() ?? "").slice(0, 128);
@@ -63,6 +69,14 @@ export default async function VideosPage({
     },
     orderBy: { createdAt: "desc" },
     take: 100,
+    include: {
+      _count: {
+        select: {
+          lives: true,
+          registrationFormPromoVideos: true,
+        },
+      },
+    },
   });
   const hasFilters = Boolean(search || status);
 
@@ -108,7 +122,8 @@ export default async function VideosPage({
             {videos.map((video) => {
               const knownStatus = parseStatus(video.status);
               return (
-                <article key={video.id} className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <article key={video.id} className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-[minmax(160px,220px)_minmax(0,1fr)_auto] sm:items-center">
+                  <VideoThumbnail title={video.title} thumbnailUrl={video.thumbnailUrl} />
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-semibold text-slate-950 [overflow-wrap:anywhere]">{video.title}</h2>
@@ -122,6 +137,18 @@ export default async function VideosPage({
                   <div className="flex flex-wrap gap-2 sm:justify-end">
                     <Link href={`/videos/${encodeURIComponent(video.id)}/edit`} className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition hover:bg-primary-dark">編輯</Link>
                     <Link href={`/videos/${encodeURIComponent(video.id)}/preview`} className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">預覽</Link>
+                    <VideoLifecycleActions
+                      archiveAction={archiveVideoAction}
+                      restoreAction={restoreVideoAction}
+                      csrfField={<CsrfField />}
+                      id={video.id}
+                      title={video.title}
+                      archived={video.status === "archived"}
+                      references={{
+                        liveCount: video._count.lives,
+                        registrationPageCount: video._count.registrationFormPromoVideos,
+                      }}
+                    />
                   </div>
                 </article>
               );

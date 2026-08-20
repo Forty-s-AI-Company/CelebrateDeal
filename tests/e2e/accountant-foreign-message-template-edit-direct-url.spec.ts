@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp48SyntheticPassword!";
@@ -34,10 +35,32 @@ test("active accountant is denied a foreign message-template editor before tenan
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    const requests: string[] = []; const responses: { url: string; status: number; location: string | null }[] = [];
-    page.on("request", (request) => requests.push(request.url())); page.on("response", (response) => responses.push({ url: response.url(), status: response.status(), location: response.headers()["location"] ?? null }));
-    const foreignPath = `/messages/templates/${foreignTemplate.id}/edit`; const response = await page.goto(foreignPath); const guard = responses.find((entry) => new URL(entry.url).pathname === foreignPath);
-    expect(guard).toMatchObject({ status: 307, location: "/dashboard?error=insufficient_role" }); expect(response?.status()).toBe(200); await expect(page).toHaveURL("/dashboard?error=insufficient_role"); await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    const requests: string[] = [];
+    page.on("request", (request) => requests.push(request.url()));
+    const foreignPath = `/messages/templates/${foreignTemplate.id}/edit`;
+    const canaries = [
+      foreignTemplate.name,
+      foreignTemplate.subject ?? "",
+      foreignTemplate.body,
+    ].filter((value): value is string => Boolean(value));
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignTemplate.id, foreignPath],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯訊息模板" })).toHaveCount(0);
     for (const label of ["模板名稱", "渠道", "觸發條件", "主旨", "內容"]) {
       await expect(page.getByLabel(label)).toHaveCount(0);

@@ -8,8 +8,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 89 |
-| Migration directories | 57 |
+| Prisma models | 92 |
+| Migration directories | 58 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 57/57 current chain；由 no-dotenv mirror 在 loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
@@ -20,7 +20,7 @@
 | 類別 | 數量 | Models |
 |---|---:|---|
 | Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 18 | `Video`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
+| Content／live／lead | 19 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
 | Affiliate／billing／payment／ops | 33 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
@@ -88,6 +88,7 @@
 | `20260815100000_g8_02_interaction_role_semantics` | official／audience interaction role semantics and scheduled-role marker |
 | `20260817120000_wp2_brand_sender_settings` | vendor sender identity、support Email and contact URL settings |
 | `20260818090000_custom_checkout_fields` | product custom checkout field definitions |
+| `20260819090000_wp1_video_archive_state` | tenant-scoped soft archive and restore state for videos; provider assets are retained |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -166,8 +167,8 @@
 
 ## 驗收判定
 
-- 91/91 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support 或 supporting/telemetry 類別。
-- 57 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 92/92 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support 或 supporting/telemetry 類別。
+- 58 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。

@@ -326,11 +326,12 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
       protectedPayloadCanaries: rawSensitiveCanaries,
       documentCanaries: deniedDashboardCanaries,
       transport: {
-        kind: "http-redirect",
-        status: 307,
-        location: "/dashboard?error=insufficient_role",
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
       },
-      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalUrl: "/dashboard?error=insufficient_role",
       finalStatus: 200,
       forbiddenPayload: [
         ".invalid",
@@ -341,7 +342,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     });
 
     expect(finalResponse?.status()).toBe(200);
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "聯盟來源摘要", exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.name, { exact: true })).toBeVisible();

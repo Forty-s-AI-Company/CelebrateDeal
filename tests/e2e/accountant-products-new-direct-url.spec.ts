@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp73SyntheticPassword!";
@@ -161,47 +162,31 @@ test("active accountant is denied products/new before the product form is render
     const external: string[] = [];
     const invalid: string[] = [];
     const path = "/products/new";
-    const intercepted: {
-      current?: { status: number; location: string | undefined; body: string };
-    } = {};
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "POST") posts.push(url.pathname);
       if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) external.push(request.url());
       if (url.hostname.endsWith(".invalid")) invalid.push(request.url());
     });
-    await page.route("**/products/new", async (route) => {
-      if (new URL(route.request().url()).pathname !== path) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch({ maxRedirects: 0 });
-      intercepted.current = {
-        status: response.status(),
-        location: response.headers().location,
-        body: await response.text(),
-      };
-      await route.fulfill({ response });
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [path],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+      forbiddenPayload: [".invalid", "新增商品", "建立可綁定到直播間的商品卡與 CTA。"],
     });
 
-    const rawRedirect = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === path && response.status() === 307,
-    );
-    const finalResponse = await page.goto(path);
-    const redirectResponse = await rawRedirect;
-
-    expect(redirectResponse.status()).toBe(307);
-    expect(redirectResponse.headers().location).toBe("/dashboard?error=insufficient_role");
-    expect(intercepted.current).toBeDefined();
-    expect(intercepted.current?.status).toBe(307);
-    expect(intercepted.current?.location).toBe("/dashboard?error=insufficient_role");
-    for (const canary of canaries) expect(intercepted.current?.body).not.toContain(canary);
-    expect(intercepted.current?.body).not.toContain(".invalid");
-    expect(intercepted.current?.body).not.toContain("新增商品");
-    expect(intercepted.current?.body).not.toContain("建立可綁定到直播間的商品卡與 CTA。");
-
     expect(finalResponse?.status()).toBe(200);
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("商品點擊", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "新增商品", exact: true })).toHaveCount(0);

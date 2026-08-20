@@ -418,7 +418,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
         redirectMarker: "NEXT_REDIRECT",
         redirectTargetMarker: "/dashboard?error=insufficient_role",
       },
-      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalUrl: "/dashboard?error=insufficient_role",
       finalStatus: 200,
       forbiddenPayload: [
         ".invalid",

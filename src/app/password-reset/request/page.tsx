@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requestPasswordResetAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 
 const errorMessages: Record<string, string> = {
   invalid: "請輸入有效的 Email。",
@@ -14,6 +15,7 @@ export default async function PasswordResetRequestPage({
 }: {
   searchParams: Promise<{ updated?: string; error?: string }>;
 }) {
+  await applyE2eLoadingDelay();
   const params = await searchParams;
 
   return (

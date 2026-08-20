@@ -51,6 +51,16 @@ import {
 } from "@/lib/message-template";
 import { emptyLiveStudioDraft } from "@/lib/live-studio-draft";
 
+function trackQuery<T>(tracker: { active: number; max: number }, result: T) {
+  return async () => {
+    tracker.active += 1;
+    tracker.max = Math.max(tracker.max, tracker.active);
+    await Promise.resolve();
+    tracker.active -= 1;
+    return result;
+  };
+}
+
 describe("NewLivePage data minimization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -170,6 +180,25 @@ describe("NewLivePage data minimization", () => {
       forms: [{ id: "form-ready", name: "有效表單" }],
       templates: [{ id: "template-ready", name: "可寄送", channel: "email", trigger: "registration_confirmed" }],
     }), undefined);
+  });
+
+  it("keeps create-live reads at one in-flight query", async () => {
+    const tracker = { active: 0, max: 0 };
+    mocks.videoFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.productFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.registrationFormFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.messageTemplateFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.interactionScriptFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.affiliateFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.teamMembershipFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.partnerFunnelPageFindMany.mockImplementation(trackQuery(tracker, []));
+    mocks.getCsrfToken.mockImplementation(trackQuery(tracker, "csrf-token"));
+    mocks.liveStudioDraftFindFirst.mockImplementation(trackQuery(tracker, null));
+    mocks.liveStudioDraftFindMany.mockImplementation(trackQuery(tracker, []));
+
+    await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1" }) });
+
+    expect(tracker.max).toBe(1);
   });
 
   it("restores only a current-vendor, unconsumed create draft", async () => {

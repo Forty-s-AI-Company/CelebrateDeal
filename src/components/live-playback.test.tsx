@@ -646,8 +646,14 @@ describe("LivePlayback checkout", () => {
     hookState.effectsEnabled = true;
     vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
     let sourceRequestCount = 0;
+    let admissionRequestCount = 0;
+    const renewal = deferred<{ ok: boolean }>();
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "DELETE") return Promise.resolve({ ok: true });
+      if (init?.method === "POST") {
+        admissionRequestCount += 1;
+        return admissionRequestCount === 1 ? Promise.resolve({ ok: true }) : renewal.promise;
+      }
       if (String(input).startsWith("/api/live-playback-source?")) {
         sourceRequestCount += 1;
         return Promise.resolve({
@@ -686,11 +692,16 @@ describe("LivePlayback checkout", () => {
     await flushHookEffects();
     tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
     await flushHookEffects();
+    renewal.resolve({ ok: true });
+    await renewal.promise;
+    await Promise.resolve();
     tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
     await flushHookEffects();
+    tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
 
     const secondVideo = findElements(tree, (element) => element.type === "video")[0];
     if (!secondVideo) throw new Error("Expected replacement HLS video element");
+    expect(secondVideo.props.ref).toBe(videoRef);
     expect(secondVideo.props.src).toBe("https://video.example.test/hls-b/manifest/video.m3u8");
     expect(currentTarget.currentTime).toBe(77);
 

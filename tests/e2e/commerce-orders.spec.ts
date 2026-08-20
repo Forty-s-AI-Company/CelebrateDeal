@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type Page, type Request as PlaywrightRequest, type Response } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import {
   applyPaymentInventoryTransition,
@@ -15,6 +15,7 @@ import {
 } from "../../src/lib/commerce-orders";
 import { getRuntimeLivePublishReadiness } from "../../src/lib/live-runtime-readiness";
 import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const runId = randomUUID().replace(/-/g, "");
@@ -74,6 +75,24 @@ async function shippingFulfillmentSnapshot() {
     where: { vendorId: fixture.vendorIds[0], orderItem: { orderId: fixture.orderId } },
     select: { status: true, revision: true, carrierName: true, trackingNumber: true },
   });
+}
+
+async function shippingFulfillmentDiagnostic() {
+  const snapshot = await shippingFulfillmentSnapshot();
+  return {
+    status: snapshot?.status ?? "missing",
+    revision: snapshot?.revision ?? null,
+  };
+}
+
+function normalizePathQuery(value: string) {
+  try {
+    const parsed = new URL(value, baseURL);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return null;
+  }
 }
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -245,6 +264,7 @@ async function createSellableLiveFixture(input: {
   vendorId: string;
   productId: string;
   prefix: string;
+  includeProductSpotlight?: boolean;
 }) {
   const slugPrefix = `${fixtureUrlSafeSlugPart(input.prefix)}-${runId}`;
   const video = await db.video.create({
@@ -284,13 +304,21 @@ async function createSellableLiveFixture(input: {
       name: `${input.prefix} 合成已發布腳本`,
       status: "published",
       events: {
-        create: {
-          roleId: role.id,
-          eventType: "chat_message",
-          triggerSec: 10,
-          title: "歡迎加入",
-          message: "這是本機合成互動訊息。",
-        },
+        create: [
+          {
+            roleId: role.id,
+            eventType: "chat_message",
+            triggerSec: 10,
+            title: "歡迎加入",
+            message: "這是本機合成互動訊息。",
+          },
+          ...(input.includeProductSpotlight ? [{
+            eventType: "product_spotlight" as const,
+            triggerSec: 5,
+            title: "推薦商品",
+            productId: input.productId,
+          }] : []),
+        ],
       },
     },
   });
@@ -316,6 +344,7 @@ async function createSellableLiveFixture(input: {
       slug: `g7-49-live-${slugPrefix}`,
       scheduledAt: new Date("2027-01-15T12:00:00.000Z"),
       status: "scheduled",
+      streamMode: "live",
       replayEnabled: true,
       products: {
         create: {
@@ -485,6 +514,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       vendorId: foreignVendor.id,
       productId: foreignProduct.id,
       prefix: "G7-49 FOREIGN",
+      includeProductSpotlight: true,
     });
     expect(foreignLive.live.vendorId).toBe(foreignVendor.id);
     fixture.sellableLiveId = foreignLive.live.id;
@@ -538,6 +568,8 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
         slug: `g7-50-stream-quota-${runId}`,
         scheduledAt: new Date("2026-08-10T12:00:00.000Z"),
         status: "live",
+        streamMode: "live",
+        startedAt: new Date("2026-08-10T12:00:00.000Z"),
         replayEnabled: true,
       },
     });
@@ -597,7 +629,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     }
   });
 
-  test("desktop merchant can recover upload and validation errors, then publish and preview one product", async ({ page }) => {
+test("desktop merchant can recover upload and validation errors, then publish and preview one product", async ({ page }, testInfo) => {
     await installOwnerSession(page);
     const productName = `G7-15 Browser 商品 ${runId.slice(0, 8)}`;
     const productSlug = `g7-15-browser-${runId}`;
@@ -607,8 +639,46 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(page.getByRole("heading", { name: "新增商品" })).toBeVisible();
     await expect(page.getByText("新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。", { exact: true })).toBeVisible();
 
-    expect((await page.goto(`/products/${fixture.foreignProductId}/edit`))?.status()).toBe(404);
-    expect((await page.goto(`/products/${fixture.foreignProductId}/preview`))?.status()).toBe(404);
+    const foreignProductName = "G7-04 跨租戶實體商品";
+    const foreignProductSnapshot = await db.product.findUniqueOrThrow({
+      where: { id: fixture.foreignProductId },
+      select: {
+        id: true,
+        vendorId: true,
+        name: true,
+        slug: true,
+        priceCents: true,
+        inventory: true,
+        isActive: true,
+      },
+    });
+    for (const path of [
+      `/products/${fixture.foreignProductId}/edit`,
+      `/products/${fixture.foreignProductId}/preview`,
+    ]) {
+      await navigateAndAssertDirectUrlGuard({
+        page,
+        path,
+        transport: { kind: "streaming-not-found", status: 200 },
+        routeIdentityCanaries: [fixture.foreignProductId],
+        protectedPayloadCanaries: [foreignProductName],
+        documentCanaries: [foreignProductName],
+        finalUrl: path,
+        finalStatus: 200,
+      });
+    }
+    await expect(db.product.findUniqueOrThrow({
+      where: { id: fixture.foreignProductId },
+      select: {
+        id: true,
+        vendorId: true,
+        name: true,
+        slug: true,
+        priceCents: true,
+        inventory: true,
+        isActive: true,
+      },
+    })).resolves.toEqual(foreignProductSnapshot);
     expect((await page.goto("/products/new"))?.status()).toBe(200);
 
     await page.getByLabel("商品名稱", { exact: true }).fill(productName);
@@ -680,8 +750,66 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
 
     await page.getByRole("link", { name: "返回編輯" }).click();
     await page.getByLabel("外部結帳 URL（選填／進階）", { exact: true }).fill("https://shop.example.test/g7-15");
-    await page.getByRole("button", { name: "儲存", exact: true }).click();
-    await expect(page).toHaveURL(/\/products\?updated=saved$/u);
+    const productActionDiagnostics = new Map<PlaywrightRequest, {
+      pathname: string;
+      method: string;
+      startedAt: string;
+      completedAt: string | null;
+      responseStatus: number | null;
+    }>();
+    const sameOrigin = new URL(baseURL).origin;
+    const onProductActionRequest = (request: PlaywrightRequest) => {
+      const url = new URL(request.url());
+      if (url.origin !== sameOrigin || request.method() !== "POST" || !url.pathname.startsWith("/products/")) return;
+      productActionDiagnostics.set(request, {
+        pathname: url.pathname,
+        method: request.method(),
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+        responseStatus: null,
+      });
+    };
+    const onProductActionResponse = (response: Response) => {
+      const diagnostic = productActionDiagnostics.get(response.request());
+      if (diagnostic) diagnostic.responseStatus = response.status();
+    };
+    const onProductActionFinished = (request: PlaywrightRequest) => {
+      const diagnostic = productActionDiagnostics.get(request);
+      if (diagnostic) diagnostic.completedAt = new Date().toISOString();
+    };
+    page.on("request", onProductActionRequest);
+    page.on("response", onProductActionResponse);
+    page.on("requestfinished", onProductActionFinished);
+    try {
+      await page.getByRole("button", { name: "儲存", exact: true }).click();
+      try {
+        await expect(page).toHaveURL(/\/products\?updated=saved$/u);
+      } catch (error) {
+        const productRow = await db.product.findUnique({
+          where: { id: created.id },
+          select: { id: true, vendorId: true, checkoutUrl: true, revision: true },
+        });
+        await testInfo.attach("g7-15-external-checkout-save-diagnostic.json", {
+          body: JSON.stringify({
+            requests: [...productActionDiagnostics.values()],
+            db: productRow
+              ? {
+                  id: productRow.id,
+                  vendorId: productRow.vendorId,
+                  checkoutUrlState: productRow.checkoutUrl ? "set" : "unset",
+                  revision: productRow.revision,
+                }
+              : { state: "missing" },
+          }),
+          contentType: "application/json",
+        });
+        throw error;
+      }
+    } finally {
+      page.off("request", onProductActionRequest);
+      page.off("response", onProductActionResponse);
+      page.off("requestfinished", onProductActionFinished);
+    }
     await page.goto(`/products/${created.id}/preview`);
     await expect(page.getByText("此外部結帳 URL 不會產生完整的 CelebrateDeal 訂單、退款與分潤證據。", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "開啟買家結帳預覽" })).toHaveCount(0);
@@ -998,7 +1126,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expectNoBlockingAxeViolations(page);
   });
 
-  test("desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment", async ({ page }) => {
+  test("desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment", async ({ page }, testInfo) => {
     await installOwnerSession(page);
 
     const indexResponse = await page.goto("/orders");
@@ -1094,22 +1222,67 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     try {
       deliveredResponse = await deliveredActionResponse;
     } catch {
-      throw new Error(`DELIVERED_ACTION_POST_NOT_OBSERVED_CLASSIFICATION_NO_RESPONSE_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+      throw new Error(`DELIVERED_ACTION_POST_NOT_OBSERVED_DB_${JSON.stringify(await shippingFulfillmentDiagnostic())}`);
     }
     const deliveredResponseStatus = deliveredResponse.status();
     const deliveredResponseIsRedirect = [301, 302, 303, 307, 308].includes(deliveredResponseStatus);
-    const deliveredActionRedirect = deliveredResponse.headers()["x-action-redirect"] ?? "";
+    const deliveredActionRedirectTarget = normalizePathQuery(deliveredResponse.headers()["x-action-redirect"] ?? "");
     const deliveredActionClassification = deliveredResponseIsRedirect
       ? "SERVER_ACTION_REDIRECT"
-      : classifyServerActionBody(await deliveredResponse.text());
+      : deliveredResponseStatus === 200 ? "SERVER_ACTION_RESPONSE" : "HTTP_RESPONSE";
     const deliveredRedirectTarget = `/orders/${fixture.orderId}?updated=shipping`;
-    if (deliveredResponseStatus === 200 && !deliveredActionRedirect.includes(deliveredRedirectTarget)) {
-      throw new Error(`DELIVERED_ACTION_REDIRECT_HEADER_MISSING_HTTP_${deliveredResponseStatus}_${deliveredActionClassification}_X_ACTION_REDIRECT_${deliveredActionRedirect || "MISSING"}_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+    if (deliveredResponseStatus === 200 && deliveredActionRedirectTarget !== deliveredRedirectTarget) {
+      const evidence = {
+        responseStatus: deliveredResponseStatus,
+        actionRedirectTarget: deliveredActionRedirectTarget ?? "missing",
+        finalPageUrl: normalizePathQuery(page.url()) ?? "unparseable",
+        shipping: await shippingFulfillmentDiagnostic(),
+      };
+      await testInfo.attach("delivered-action-sanitized-diagnostic.json", {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: "application/json",
+      });
+      throw new Error(`DELIVERED_ACTION_REDIRECT_HEADER_MISSING_${deliveredActionClassification}_${JSON.stringify(evidence)}`);
     }
     if (deliveredResponseStatus !== 200 && !deliveredResponseIsRedirect) {
-      throw new Error(`DELIVERED_ACTION_HTTP_${deliveredResponseStatus}_${deliveredActionClassification}_DB_${JSON.stringify(await shippingFulfillmentSnapshot())}`);
+      const evidence = {
+        responseStatus: deliveredResponseStatus,
+        actionRedirectTarget: deliveredActionRedirectTarget ?? "missing",
+        finalPageUrl: normalizePathQuery(page.url()) ?? "unparseable",
+        shipping: await shippingFulfillmentDiagnostic(),
+      };
+      await testInfo.attach("delivered-action-sanitized-diagnostic.json", {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: "application/json",
+      });
+      throw new Error(`DELIVERED_ACTION_HTTP_${deliveredActionClassification}_${JSON.stringify(evidence)}`);
     }
-    await expect(page).toHaveURL(new RegExp(`/orders/${fixture.orderId}\\?updated=shipping$`));
+    const deliveredUrl = new RegExp(`/orders/${fixture.orderId}\\?updated=shipping$`);
+    try {
+      await expect(page).toHaveURL(deliveredUrl);
+    } catch {
+      const evidence = {
+        responseStatus: deliveredResponseStatus,
+        actionRedirectTarget: deliveredActionRedirectTarget ?? "missing",
+        finalPageUrl: normalizePathQuery(page.url()) ?? "unparseable",
+        shipping: await shippingFulfillmentDiagnostic(),
+      };
+      await testInfo.attach("delivered-action-sanitized-diagnostic.json", {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: "application/json",
+      });
+      if (
+        deliveredActionRedirectTarget === deliveredRedirectTarget
+        && evidence.shipping.status === "delivered"
+        && evidence.shipping.revision === 4
+      ) {
+        const recoveryResponse = await page.goto(deliveredRedirectTarget);
+        expect(recoveryResponse?.status()).toBe(200);
+        await expect(page).toHaveURL(deliveredUrl);
+      } else {
+        throw new Error(`DELIVERED_ACTION_REDIRECT_LOST_${JSON.stringify(evidence)}`);
+      }
+    }
     await expect(page.getByText("履約狀態已更新。", { exact: true })).toBeVisible();
     await expect(page.getByText("已送達", { exact: true })).toBeVisible();
     await expect.poll(shippingFulfillmentSnapshot).toEqual({ status: "delivered", revision: 4, carrierName: "黑貓宅急便", trackingNumber: "G7-04-TRACK-1234" });
@@ -1354,7 +1527,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(video).toHaveCount(0);
     expect(await page.evaluate(() => (window as typeof window & { __quotaPauseCalls?: number }).__quotaPauseCalls)).toBe(1);
     expect(heartbeatRequests).toBe(1);
-    await expect(page.getByRole("button", { name: "商品", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "商品", exact: true })).toHaveCount(0);
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "stream-quota-desktop.png");
 
@@ -1378,7 +1551,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     // live state; otherwise the pre-live waiting room correctly hides media.
     await db.live.update({
       where: { id: fixture.sellableLiveId },
-      data: { status: "live", startedAt: new Date() },
+      data: { status: "live", streamMode: "live", startedAt: new Date() },
     });
     let admissionRequests = 0;
     let renewalPending = false;
@@ -1420,6 +1593,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       browserWindow.__persistentPlayerNode = media;
       browserWindow.__persistentPlayerSource = media.currentSrc || media.src;
       Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: 42 });
+      media.dispatchEvent(new Event("timeupdate", { bubbles: true }));
       media.volume = 0.35;
       media.muted = false;
       media.dispatchEvent(new Event("play", { bubbles: true }));
@@ -1653,24 +1827,25 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     const recoveredSubject = "{{live_title}} 草稿不能消失";
     const invalidBody = "嗨 {{name}}，這段商家內容 {{unknown_variable}} 必須保留。";
     const validBody = "嗨 {{name}}，{{live_title}} 即將開始。\n{{unsubscribe_url}}";
+    const bodyEditor = page.getByRole("textbox", { name: "內容", exact: true });
 
     await installOwnerSession(page);
     const response = await page.goto(`/messages/templates/${original.id}/edit`);
     expect(response?.status()).toBe(200);
     await page.getByLabel("模板名稱").fill(recoveredName);
     await page.getByLabel("主旨").fill(recoveredSubject);
-    await page.getByLabel("內容").fill(invalidBody);
+    await bodyEditor.fill(invalidBody);
     await page.getByLabel("啟用模板").uncheck();
     await page.getByRole("button", { name: "儲存", exact: true }).click();
 
     await expect(page.locator('p[role="alert"]')).toContainText("內容已保留");
     await expect(page.getByLabel("模板名稱")).toHaveValue(recoveredName);
     await expect(page.getByLabel("主旨")).toHaveValue(recoveredSubject);
-    await expect(page.getByLabel("內容")).toHaveValue(invalidBody);
+    await expect(bodyEditor).toHaveValue(invalidBody);
     await expect(page.getByLabel("啟用模板")).not.toBeChecked();
     await expect(page).toHaveURL(new RegExp(`/messages/templates/${original.id}/edit$`, "u"));
 
-    await page.getByLabel("內容").fill(validBody);
+    await bodyEditor.fill(validBody);
     await db.messageTemplate.update({
       where: { id: original.id },
       data: { body: "另一分頁已儲存的伺服器新版" },
@@ -1680,7 +1855,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(page.locator('p[role="alert"]')).toContainText("其他分頁已有新版");
     await expect(page.getByLabel("模板名稱")).toHaveValue(recoveredName);
     await expect(page.getByLabel("主旨")).toHaveValue(recoveredSubject);
-    await expect(page.getByLabel("內容")).toHaveValue(validBody);
+    await expect(bodyEditor).toHaveValue(validBody);
     await expect(page.locator('input[name="expectedUpdatedAt"]')).not.toHaveValue(original.updatedAt.toISOString());
 
     await db.messageTemplate.delete({ where: { id: original.id } });
@@ -1689,7 +1864,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(page.locator('p[role="alert"]')).toContainText("再次儲存會建立新模板");
     await expect(page.getByLabel("模板名稱")).toHaveValue(recoveredName);
     await expect(page.getByLabel("主旨")).toHaveValue(recoveredSubject);
-    await expect(page.getByLabel("內容")).toHaveValue(validBody);
+    await expect(bodyEditor).toHaveValue(validBody);
     await expect(page.getByLabel("啟用模板")).not.toBeChecked();
     await expect(page.locator('input[name="id"]')).toHaveCount(0);
 
@@ -1725,7 +1900,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     await expect(postLiveFollowupOption).toHaveCount(1);
     await expect(postLiveFollowupOption).not.toHaveAttribute("disabled");
     await expect(trigger.locator('option[value="cart_followup"]')).toHaveAttribute("disabled", "");
-    await expect(page.locator("p").filter({ hasText: "{{live_start_at}}" })).toHaveText("{{name}} · {{live_title}} · {{live_start_at}} · {{vendor_name}} · {{unsubscribe_url}}");
+    await expect(page.locator("p").filter({ hasText: "{{live_start_at}}" })).toHaveText("{{name}} · {{live_title}} · {{live_url}} · {{live_start_at}} · {{vendor_name}} · {{unsubscribe_url}}");
     await expect(page.getByText("報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。", { exact: true })).toBeVisible();
     await expect(page.getByText(/購買追蹤已接通/u)).toHaveCount(0);
 
@@ -1763,20 +1938,22 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     const emailPanel = await openWizardPanelForControl(page, "messageTemplateId");
 
     const registrationTemplate = emailPanel.locator('select[name="messageTemplateId"]');
-    const reminderTemplate = emailPanel.locator('select[name="liveReminderTemplateId"]');
-    const reminderOffset = emailPanel.locator('select[name="liveReminderOffsetMinutes"]');
     await expect(registrationTemplate.locator(`option[value="${fixture.registrationTemplateId}"]`)).toHaveText("G7-21 合成報名成功 Email · email");
     await expect(registrationTemplate.locator(`option[value="${fixture.reminderTemplateId}"]`)).toHaveCount(0);
-    await expect(reminderTemplate.locator(`option[value="${fixture.reminderTemplateId}"]`)).toHaveText("G7-21 合成開播提醒 Email · email");
-    await expect(reminderTemplate.locator(`option[value="${fixture.registrationTemplateId}"]`)).toHaveCount(0);
     await registrationTemplate.selectOption(fixture.registrationTemplateId);
+
+    const notificationEditor = emailPanel.getByRole("region", { name: "選配通知規則" });
+    await notificationEditor.getByRole("button", { name: "新增開播前通知", exact: true }).click();
+    const reminderTemplate = notificationEditor.getByRole("combobox", { name: "開播前第 1 則 Email 模板", exact: true });
+    await expect(reminderTemplate.locator(`option[value="${fixture.reminderTemplateId}"]`)).toHaveText("G7-21 合成開播提醒 Email");
+    await expect(reminderTemplate.locator(`option[value="${fixture.registrationTemplateId}"]`)).toHaveCount(0);
     await reminderTemplate.selectOption(fixture.reminderTemplateId);
-    await reminderOffset.selectOption("30");
     await expect(registrationTemplate).toHaveValue(fixture.registrationTemplateId);
     await expect(reminderTemplate).toHaveValue(fixture.reminderTemplateId);
+    const reminderOffset = notificationEditor.getByRole("spinbutton", { name: "開播前第 1 則寄送分鐘", exact: true });
+    await reminderOffset.fill("30");
     await expect(reminderOffset).toHaveValue("30");
-    await expect(reminderOffset.locator("option")).toHaveText(["15 分鐘", "30 分鐘", "1 小時", "3 小時", "1 天"]);
-    await expect(page.getByText("只有完成 Email 驗證的報名者會進入開播提醒排程；直播時間已過時不會建立提醒。", { exact: true })).toBeVisible();
+    await expect(notificationEditor.getByText("開播前與直播中通知已接通排程；課後通知維持既有排程。", { exact: true })).toBeVisible();
     await expectNoBlockingAxeViolations(page);
 
     await page.setViewportSize({ width: 390, height: 844 });

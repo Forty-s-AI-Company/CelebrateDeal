@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { processDuePostLiveFollowups } from "../../src/lib/email-delivery";
 
 const db = new PrismaClient();
 const runId = randomUUID();
+const e2ePort = process.env.E2E_PORT ?? "31023";
+process.env.NEXT_PUBLIC_APP_URL = `http://127.0.0.1:${e2ePort}`;
 const fixture = {
   vendorId: "",
   formId: "",
@@ -37,6 +39,11 @@ async function expectNoBlockingAxeViolations(page: Page) {
   if (blocking.length > 0) {
     throw new Error(`AXE_BLOCKING:${JSON.stringify(blocking)}`);
   }
+}
+
+function screenshotPath(testInfo: TestInfo, filename: string) {
+  const screenshotDirectory = process.env.G7_COMMERCE_SCREENSHOT_DIR;
+  return screenshotDirectory ? join(screenshotDirectory, filename) : testInfo.outputPath(filename);
 }
 
 test.beforeAll(async () => {
@@ -194,7 +201,7 @@ test.afterAll(async () => {
   }
 });
 
-test("one stop webinar verifies registration, preserves live playback through demo checkout, and materializes one follow-up", async ({ page }) => {
+test("one stop webinar verifies registration, preserves live playback through demo checkout, and materializes one follow-up", async ({ page }, testInfo) => {
   let pageErrorCount = 0;
   let liveAdmissionRequestCount = 0;
   let playbackSourceRequestCount = 0;
@@ -212,9 +219,12 @@ test("one stop webinar verifies registration, preserves live playback through de
   expect(formResponse?.status()).toBe(200);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-registration-mobile.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-registration-mobile.png"), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-registration.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-registration.png"), fullPage: true });
+  const announcementLauncher = page.getByTestId("announcement-center-launcher");
+  await expect(announcementLauncher).toBeVisible();
+  await announcementLauncher.click();
   const announcement = page.getByRole("dialog", { name: "進站最新消息" });
   await expect(announcement).toBeVisible();
   await announcement.getByRole("checkbox", { name: "今日不再提醒" }).check();
@@ -316,7 +326,7 @@ test("one stop webinar verifies registration, preserves live playback through de
   expect(liveAdmissionRequestCount).toBeLessThanOrEqual(2);
   expect(playbackSourceRequestCount).toBeGreaterThanOrEqual(1);
   expect(playbackSourceRequestCount).toBeLessThanOrEqual(2);
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-live.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-live.png"), fullPage: true });
   const video = page.locator("video");
   await expect.poll(async () => await page.getByTestId("persistent-live-player").evaluate((element) => ({
     sourceState: element.getAttribute("data-playback-source-state"),
@@ -343,12 +353,12 @@ test("one stop webinar verifies registration, preserves live playback through de
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await expectNoBlockingAxeViolations(page);
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-live-mobile.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-live-mobile.png"), fullPage: true });
 
   await page.getByRole("button", { name: "商品", exact: true }).click();
   await page.getByRole("article").filter({ hasText: "WP7 直播內商品" }).getByRole("button", { name: "購買", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/checkout/${fixture.vendorId}/${fixture.productId}$`, "u"));
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-checkout.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-checkout.png"), fullPage: true });
   await expect(page.getByRole("heading", { name: "確認購買資料", exact: true })).toBeVisible();
   await expect(page.locator("video")).toHaveCount(1);
   await expect.poll(() => page.locator("video").evaluate((current) => (
@@ -356,7 +366,7 @@ test("one stop webinar verifies registration, preserves live playback through de
   ))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await expectNoBlockingAxeViolations(page);
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-checkout-mobile.png"), fullPage: true });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-checkout-mobile.png"), fullPage: true });
 
   await page.getByLabel("姓名").fill("WP7 Buyer");
   await page.getByLabel("Email").fill(`wp7-buyer-${runId}@example.test`);
@@ -383,8 +393,8 @@ test("one stop webinar verifies registration, preserves live playback through de
       items: { some: { productId: fixture.productId } },
     },
   })).toBe(0);
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-order.png") });
-  await page.screenshot({ path: join(process.env.G7_COMMERCE_SCREENSHOT_DIR!, "wp7-order-mobile.png") });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-order.png") });
+  await page.screenshot({ path: screenshotPath(testInfo, "wp7-order-mobile.png") });
 
   const completedScheduledAt = new Date(Date.now() - 601_000);
   const completionAt = new Date(completedScheduledAt.getTime() + 600_000);

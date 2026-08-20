@@ -76,6 +76,10 @@ export default defineConfig({
   // this isolated browser server intentionally blanks external telemetry.
   expect: { timeout: 30_000 },
   fullyParallel: false,
+  // The local Docker test database intentionally uses a small connection
+  // pool. Serial browser workers keep tenant-boundary fixtures deterministic
+  // and avoid turning pool contention into false page-loading timeouts.
+  workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
@@ -83,10 +87,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npx prisma generate && npx next build && npx next start --port ${port}`,
+    command: `npx prisma generate && npx next build --webpack && npx next start --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 240_000,
     env: {
       ...process.env,
       // Playwright itself may run under NODE_ENV=test. The child process is a

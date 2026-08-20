@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp34SyntheticPassword!";
@@ -24,7 +25,21 @@ test("admin cannot open another vendor form edit route through direct URL naviga
   try {
     await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const ownPath = `/forms/${ownForm.id}/edit`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page).toHaveURL(new RegExp(`${ownPath}$`)); await expect(page.getByRole("heading", { name: "編輯報名表" })).toBeVisible(); await expect(page.getByLabel("表單名稱")).toHaveValue(ownBefore.name); await expect(page.getByLabel("公開網址")).toHaveValue(ownBefore.slug); await expect(page.getByLabel("公開標題")).toHaveValue(ownBefore.headline); await expect(page.getByText("欄位 JSON", { exact: true })).toHaveCount(0); await expect(page.getByLabel("顯示名稱")).toHaveCount(fields.length); await expect(page.getByText("核心欄位", { exact: true })).toHaveCount(2); expect(JSON.parse(await page.locator('input[name="fields"]').inputValue())).toEqual(ownBefore.fields);
-    const foreignPath = `/forms/${foreignForm.id}/edit`; const foreignResponse = await page.goto(foreignPath); expect(foreignResponse?.status()).toBe(404); await expect(page).toHaveURL(new RegExp(`${foreignPath}$`)); await expect(page.getByRole("heading", { name: "編輯報名表" })).toHaveCount(0); for (const label of ["表單名稱", "公開網址", "公開標題", "說明文字", "顯示名稱", "送出按鈕文字", "成功訊息"]) await expect(page.getByLabel(label)).toHaveCount(0); await expect(page.locator('input[name="fields"]')).toHaveCount(0); for (const value of [foreignBefore.name, foreignBefore.slug, foreignBefore.headline, foreignBefore.description ?? ""]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
+    const foreignPath = `/forms/${foreignForm.id}/edit`;
+    const foreignCanaries = [foreignBefore.name, foreignBefore.slug, foreignBefore.headline, foreignBefore.description ?? ""];
+    const { finalResponse: foreignResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignForm.id, foreignPath],
+      protectedPayloadCanaries: foreignCanaries,
+      documentCanaries: foreignCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: { kind: "streaming-not-found", status: 200 },
+      finalStatus: 200,
+    });
+    expect(foreignResponse?.status()).toBe(200);
+    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
+    await expect(page.getByRole("heading", { name: "編輯報名表" })).toHaveCount(0); for (const label of ["表單名稱", "公開網址", "公開標題", "說明文字", "顯示名稱", "送出按鈕文字", "成功訊息"]) await expect(page.getByLabel(label)).toHaveCount(0); await expect(page.locator('input[name="fields"]')).toHaveCount(0); for (const value of foreignCanaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     await expect.poll(async () => Promise.all([db.registrationForm.findUniqueOrThrow({ where: { id: ownForm.id } }), db.registrationForm.findUniqueOrThrow({ where: { id: foreignForm.id } }), db.registrationForm.count({ where: { vendorId: ownerVendor.id } }), db.registrationForm.count({ where: { vendorId: foreignVendor.id } })])).toEqual([ownBefore, foreignBefore, ownerCount, foreignCount]);
   } finally { await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } }); await db.user.deleteMany({ where: { id: user.id } }); await db.$disconnect(); }
 });

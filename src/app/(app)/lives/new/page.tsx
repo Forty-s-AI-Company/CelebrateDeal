@@ -60,84 +60,82 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
   const draftLookupAt = new Date();
-  const [videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft, resumableDraftRecords] = await Promise.all([
-    db.video.findMany({
-      where: liveReadyVideoWhere(vendor.id),
-      select: { id: true, title: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.product.findMany({
-      where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true, name: true, inventory: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.registrationForm.findMany({
-      where: { vendorId: vendor.id, isActive: true },
-      select: { id: true, name: true, fields: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.messageTemplate.findMany({
-      where: {
-        vendorId: vendor.id,
-        OR: [
-          REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
-          LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
-          { channel: "email", trigger: "post_live_followup", isActive: true },
-        ],
-      },
-      select: { id: true, name: true, channel: true, trigger: true, subject: true, body: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.interactionScript.findMany({
-      where: { vendorId: vendor.id, status: "published" },
-      select: { id: true, name: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.affiliate.findMany({
-      where: { vendorId: vendor.id, isActive: true },
-      select: { id: true, name: true, code: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.teamMembership.findMany({
-      where: { vendorId: vendor.id, status: "ACTIVE", leftAt: null },
-      select: {
-        id: true,
-        teamId: true,
-        team: { select: { name: true } },
-        vendorMember: { select: { user: { select: { name: true } } } },
-      },
-      orderBy: [{ teamId: "asc" }, { createdAt: "asc" }],
-    }),
-    db.partnerFunnelPage.findMany({
-      where: { vendorId: vendor.id },
-      select: { id: true, slug: true, headline: true },
-      orderBy: { updatedAt: "desc" },
-    }),
-    getCsrfToken(),
-    requestedDraftId
-      ? db.liveStudioDraft.findFirst({
-          where: {
-            id: requestedDraftId,
-            vendorId: vendor.id,
-            liveId: null,
-            consumedAt: null,
-            expiresAt: { gt: draftLookupAt },
-          },
-          select: { id: true, revision: true, payload: true, updatedAt: true },
-        })
-      : Promise.resolve(null),
-    db.liveStudioDraft.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: null,
-        consumedAt: null,
-        expiresAt: { gt: draftLookupAt },
-      },
-      select: { id: true, payload: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-      take: 3,
-    }),
-  ]);
+  const videos = await db.video.findMany({
+    where: liveReadyVideoWhere(vendor.id),
+    select: { id: true, title: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const products = await db.product.findMany({
+    where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
+    select: { id: true, name: true, inventory: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const formCandidates = await db.registrationForm.findMany({
+    where: { vendorId: vendor.id, isActive: true },
+    select: { id: true, name: true, fields: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const templateCandidates = await db.messageTemplate.findMany({
+    where: {
+      vendorId: vendor.id,
+      OR: [
+        REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+        LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+        { channel: "email", trigger: "post_live_followup", isActive: true },
+      ],
+    },
+    select: { id: true, name: true, channel: true, trigger: true, subject: true, body: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const scripts = await db.interactionScript.findMany({
+    where: { vendorId: vendor.id, status: "published" },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const affiliates = await db.affiliate.findMany({
+    where: { vendorId: vendor.id, isActive: true },
+    select: { id: true, name: true, code: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const streamMemberships = await db.teamMembership.findMany({
+    where: { vendorId: vendor.id, status: "ACTIVE", leftAt: null },
+    select: {
+      id: true,
+      teamId: true,
+      team: { select: { name: true } },
+      vendorMember: { select: { user: { select: { name: true } } } },
+    },
+    orderBy: [{ teamId: "asc" }, { createdAt: "asc" }],
+  });
+  const streamQuotaPages = await db.partnerFunnelPage.findMany({
+    where: { vendorId: vendor.id },
+    select: { id: true, slug: true, headline: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  const csrfToken = await getCsrfToken();
+  const savedDraft = requestedDraftId
+    ? await db.liveStudioDraft.findFirst({
+        where: {
+          id: requestedDraftId,
+          vendorId: vendor.id,
+          liveId: null,
+          consumedAt: null,
+          expiresAt: { gt: draftLookupAt },
+        },
+        select: { id: true, revision: true, payload: true, updatedAt: true },
+      })
+    : null;
+  const resumableDraftRecords = await db.liveStudioDraft.findMany({
+    where: {
+      vendorId: vendor.id,
+      liveId: null,
+      consumedAt: null,
+      expiresAt: { gt: draftLookupAt },
+    },
+    select: { id: true, payload: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: 3,
+  });
   const forms = formCandidates
     .filter((form) => parseRegistrationFormFields(form.fields).success)
     .map(({ id, name }) => ({ id, name }));

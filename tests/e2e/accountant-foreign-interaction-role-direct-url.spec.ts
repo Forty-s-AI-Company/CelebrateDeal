@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp43SyntheticPassword!";
@@ -22,13 +23,34 @@ test("active accountant is denied a foreign interaction-role editor before tenan
   const before = await snapshot();
   try {
     await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
-    const requests: string[] = []; const responses: { url: string; status: number; location: string | undefined }[] = []; page.on("request", (request) => requests.push(request.url())); page.on("response", (response) => responses.push({ url: response.url(), status: response.status(), location: response.headers()["location"] }));
+    const requests: string[] = [];
+    page.on("request", (request) => requests.push(request.url()));
     const foreignPath = `/interaction-roles/${foreignRole.id}/edit`;
-    const response = await page.goto(foreignPath);
-    const guardResponse = responses.find((entry) => new URL(entry.url).pathname === foreignPath);
-    expect(guardResponse).toEqual(expect.objectContaining({ status: 307, location: "/dashboard?error=insufficient_role" }));
-    expect(response?.status()).toBe(200);
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    const canaries = [
+      ownRole.name,
+      ownRole.label,
+      ownRole.tone ?? "",
+      foreignRole.name,
+      foreignRole.label,
+      foreignRole.tone ?? "",
+    ].filter((value): value is string => Boolean(value));
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignRole.id, foreignPath],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200);
+    await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     for (const text of ["互動角色", "使用者清單", "編輯使用者", "暱稱", "角色類型", "顯示標籤", "語氣設定", "啟用使用者", ownRole.name, ownRole.label, ownRole.tone ?? "", foreignRole.name, foreignRole.label, foreignRole.tone ?? ""]) await expect(page.getByText(text, { exact: true })).toHaveCount(0);
     const externalRequests = requests.filter((url) => /https:\/\/(?!127\.0\.0\.1)|cloudflare|openai|resend|payuni|sentry|posthog/i.test(url));

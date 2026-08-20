@@ -1519,7 +1519,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const visiblePlaybackSource = useLivePlaybackSource({
     ...live,
     admissionRequired: isPlayableRuntime && live.admissionRequired === true,
-  }, admissionStatus, admissionRefreshKey);
+  }, admissionStatus);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
   const playableUrl = playableSource?.playbackUrl ?? null;
   const playbackSourceState = playbackSourceStatus({

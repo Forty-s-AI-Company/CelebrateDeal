@@ -17,6 +17,7 @@ describe("PromoVideoPlayer", () => {
   it("fails closed for unsafe sources and recognises HLS manifests", () => {
     const html = renderToStaticMarkup(<PromoVideoPlayer src="javascript:alert(1)" title="不安全影片" />);
     expect(html).toContain('role="alert"');
+    expect(html).toContain("重試播放");
     expect(html).not.toContain("<video");
     expect(isHlsVideoUrl("https://cdn.example.test/path/manifest.m3u8?token=fixture")).toBe(true);
     expect(isHlsVideoUrl("https://cdn.example.test/promo.mp4")).toBe(false);

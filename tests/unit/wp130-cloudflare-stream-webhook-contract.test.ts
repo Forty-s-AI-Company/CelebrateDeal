@@ -48,15 +48,31 @@ function handler() {
 }
 
 function matchedVideo(initialStatus = "processing") {
-  let status = initialStatus;
-  fakeDb.video.findMany.mockImplementation(async () => [{ id: "video-wp130", status }]);
-  fakeDb.video.findUnique.mockImplementation(async () => ({ id: "video-wp130", status }));
+  const stored = {
+    id: "video-wp130",
+    vendorId: "vendor-wp130",
+    status: initialStatus,
+    cloudflareReadyToStream: initialStatus === "ready",
+    cloudflarePlaybackId: initialStatus === "ready" ? UID : null,
+    videoUrl: `https://videodelivery.net/${UID}/manifest/video.m3u8`,
+    thumbnailUrl: null,
+    durationSec: initialStatus === "ready" ? 43 : 0,
+    estimatedMinutes: initialStatus === "ready" ? 1 : 0,
+  };
+  fakeDb.video.findMany.mockImplementation(async () => [{ ...stored }]);
+  fakeDb.video.findUnique.mockImplementation(async () => ({
+    id: stored.id,
+    vendorId: stored.vendorId,
+    status: stored.status,
+  }));
   fakeDb.video.updateMany.mockImplementation(async ({ where, data }: {
-    where: { id: string; status: string };
-    data: { status: string };
+    where: { id: string; vendorId: string; status: string };
+    data: Record<string, unknown>;
   }) => {
-    if (where.id !== "video-wp130" || where.status !== status) return { count: 0 };
-    status = data.status;
+    if (where.id !== stored.id || where.vendorId !== stored.vendorId || where.status !== stored.status) {
+      return { count: 0 };
+    }
+    Object.assign(stored, data);
     return { count: 1 };
   });
 }
@@ -110,6 +126,10 @@ describe("WP-130 Cloudflare Stream webhook contract", () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({ ok: true, updated: 1, verificationMode: "official-signature" });
     expect(fakeDb.video.updateMany).toHaveBeenCalledTimes(1);
+    expect(fakeDb.video.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "processing" },
+      data: expect.objectContaining({ durationSec: 43, estimatedMinutes: 1 }),
+    }));
     expect(JSON.stringify(payload)).not.toContain(SECRET);
     expect(JSON.stringify(payload)).not.toContain(body);
   });
@@ -161,6 +181,26 @@ describe("WP-130 Cloudflare Stream webhook contract", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     await expect(second.json()).resolves.toMatchObject({ ok: true, updated: 0 });
+    expect(fakeDb.video.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an archived mapping archived while accepting ready metadata", async () => {
+    matchedVideo("archived");
+    const readyBody = JSON.stringify({ uid: UID, readyToStream: true, duration: 120.2 });
+    const readyResponse = await handler()(request(readyBody));
+    const duplicateReadyResponse = await handler()(request(readyBody));
+    const staleBody = JSON.stringify({ uid: UID, status: { state: "error" } });
+    const staleResponse = await handler()(request(staleBody));
+
+    expect(readyResponse.status).toBe(200);
+    await expect(readyResponse.json()).resolves.toMatchObject({ ok: true, updated: 1 });
+    await expect(duplicateReadyResponse.json()).resolves.toMatchObject({ ok: true, updated: 0 });
+    expect(fakeDb.video.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "video-wp130", vendorId: "vendor-wp130", status: "archived" },
+      data: expect.objectContaining({ durationSec: 121, estimatedMinutes: 3 }),
+    }));
+    expect(staleResponse.status).toBe(200);
+    await expect(staleResponse.json()).resolves.toMatchObject({ ok: true, updated: 0 });
     expect(fakeDb.video.updateMany).toHaveBeenCalledTimes(1);
   });
 

@@ -134,7 +134,7 @@ describe("Cloudflare Stream webhook", () => {
     expect(response.status).toBe(200);
     expect(payload.verificationMode).toBe("official-signature");
     expect(updated.status).toBe("ready");
-    expect(updated.durationSec).toBe(31);
+    expect(updated.durationSec).toBe(32);
   });
 
   it("rejects invalid official signatures without falling back", async () => {

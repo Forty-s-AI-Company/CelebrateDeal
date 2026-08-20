@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp31SyntheticPassword!";
@@ -38,8 +39,18 @@ test("admin cannot open another vendor product edit route through direct URL nav
     await expect(page.getByRole("heading", { name: "編輯商品" })).toBeVisible();
     await expect(page.getByLabel("商品名稱")).toHaveValue(ownProduct.name);
     const foreignPath = `/products/${foreignProduct.id}/edit`;
-    const foreignResponse = await page.goto(foreignPath);
-    expect(foreignResponse?.status()).toBe(404);
+    const foreignCanaries = [foreignProduct.name];
+    const { finalResponse: foreignResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignProduct.id, foreignPath],
+      protectedPayloadCanaries: foreignCanaries,
+      documentCanaries: foreignCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: { kind: "streaming-not-found", status: 200 },
+      finalStatus: 200,
+    });
+    expect(foreignResponse?.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
     await expect(page.getByRole("heading", { name: "編輯商品" })).toHaveCount(0);
     await expect(page.getByLabel("商品名稱")).toHaveCount(0);

@@ -3,8 +3,15 @@ import { z } from "zod";
 import { readTextBody } from "@/lib/api-security";
 import { convergeCloudflareVideoTransition } from "@/lib/cloudflare-video-transition";
 import { verifyCloudflareStreamWebhookRequest } from "@/lib/cloudflare-webhook-signature";
+import type { CloudflareVideoStatus } from "@/lib/cloudflare-video-status";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
+
+const MAX_CLOUDFLARE_DURATION_SECONDS = 6 * 60 * 60;
+
+function normalizedDurationSeconds(duration: number) {
+  return Math.ceil(duration);
+}
 
 const StreamWebhookPayload = z.object({
   uid: z.string().min(1),
@@ -14,14 +21,14 @@ const StreamWebhookPayload = z.object({
   }).optional(),
   readyToStream: z.boolean().optional(),
   thumbnail: z.string().optional(),
-  duration: z.number().optional(),
+  duration: z.number().finite().nonnegative().max(MAX_CLOUDFLARE_DURATION_SECONDS).optional(),
   playback: z.object({
     hls: z.string().optional(),
     dash: z.string().optional(),
   }).optional(),
 });
 
-function normalizedVideoStatus(payload: z.infer<typeof StreamWebhookPayload>) {
+function normalizedVideoStatus(payload: z.infer<typeof StreamWebhookPayload>): CloudflareVideoStatus | null {
   if (payload.readyToStream === true) return "ready";
 
   const providerState = payload.status?.state?.trim().toLowerCase();
@@ -30,6 +37,41 @@ function normalizedVideoStatus(payload: z.infer<typeof StreamWebhookPayload>) {
   }
   if (providerState === "error") return "error";
   return null;
+}
+
+function readyProviderMetadata(payload: z.infer<typeof StreamWebhookPayload>) {
+  const duration = payload.duration;
+  const base = {
+    cloudflareReadyToStream: true,
+    cloudflarePlaybackId: payload.uid,
+    videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
+    ...(payload.thumbnail !== undefined ? { thumbnailUrl: payload.thumbnail } : {}),
+  };
+  if (duration === undefined) return base;
+  const durationSec = normalizedDurationSeconds(duration);
+  return { ...base, durationSec, estimatedMinutes: Math.ceil(durationSec / 60) };
+}
+
+function readyMetadataChanged(
+  match: {
+    cloudflareReadyToStream: boolean;
+    cloudflarePlaybackId: string | null;
+    videoUrl: string;
+    thumbnailUrl: string | null;
+    durationSec: number;
+    estimatedMinutes: number;
+  },
+  payload: z.infer<typeof StreamWebhookPayload>,
+) {
+  const durationSec = payload.duration === undefined ? undefined : normalizedDurationSeconds(payload.duration);
+  return match.cloudflareReadyToStream !== true
+    || match.cloudflarePlaybackId !== payload.uid
+    || match.videoUrl !== `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`
+    || (payload.thumbnail !== undefined && match.thumbnailUrl !== payload.thumbnail)
+    || (durationSec !== undefined && (
+      match.durationSec !== durationSec
+      || match.estimatedMinutes !== Math.ceil(durationSec / 60)
+    ));
 }
 
 type StreamWebhookDependencies = {
@@ -86,7 +128,17 @@ export function createCloudflareStreamWebhookHandler({
           { cloudflarePlaybackId: payload.uid },
         ],
       },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        vendorId: true,
+        status: true,
+        cloudflareReadyToStream: true,
+        cloudflarePlaybackId: true,
+        videoUrl: true,
+        thumbnailUrl: true,
+        durationSec: true,
+        estimatedMinutes: true,
+      },
       take: 2,
     });
 
@@ -102,31 +154,63 @@ export function createCloudflareStreamWebhookHandler({
       return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
     }
 
+    if (!match.vendorId) {
+      return NextResponse.json({ error: "Ambiguous Cloudflare Stream mapping" }, { status: 409 });
+    }
+
+    if (match.status === "archived") {
+      // Keep the application-owned archive state terminal while still
+      // accepting authoritative provider metadata from a ready callback.
+      if (status !== "ready" || !readyMetadataChanged(match, payload)) {
+        return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+      }
+      const updated = await db.video.updateMany({
+        where: { id: match.id, vendorId: match.vendorId, status: "archived" },
+        data: readyProviderMetadata(payload),
+      });
+      return NextResponse.json({
+        ok: true,
+        updated: updated.count,
+        verificationMode: verification.mode,
+      });
+    }
+
     if (match.status === "ready" && status === "ready") {
-      return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+      if (!readyMetadataChanged(match, payload)) {
+        return NextResponse.json({ ok: true, updated: 0, verificationMode: verification.mode });
+      }
+      const updated = await db.video.updateMany({
+        where: { id: match.id, vendorId: match.vendorId, status: "ready" },
+        data: readyProviderMetadata(payload),
+      });
+      return NextResponse.json({
+        ok: true,
+        updated: updated.count,
+        verificationMode: verification.mode,
+      });
     }
 
     const transition = await converge({
       snapshot: match,
       incomingStatus: status,
-      claim: async ({ id, expectedStatus, nextStatus }) => {
+      claim: async ({ id, vendorId, expectedStatus, nextStatus }) => {
         const updated = await db.video.updateMany({
           // 狀態條件是 optimistic claim；若較新的 callback 已先完成，helper 會重新讀取狀態。
-          where: { id, status: expectedStatus },
+          where: { id, vendorId: vendorId ?? match.vendorId, status: expectedStatus },
           data: {
             status: nextStatus,
             cloudflareReadyToStream: payload.readyToStream ?? false,
             cloudflarePlaybackId: payload.uid,
             videoUrl: `https://videodelivery.net/${payload.uid}/manifest/video.m3u8`,
-            thumbnailUrl: payload.thumbnail,
-            durationSec: payload.duration ? Math.round(payload.duration) : undefined,
+            ...(payload.thumbnail !== undefined ? { thumbnailUrl: payload.thumbnail } : {}),
+            ...(nextStatus === "ready" ? readyProviderMetadata(payload) : {}),
           },
         });
         return updated.count === 1;
       },
       readLatest: async (id) => db.video.findUnique({
-        where: { id },
-        select: { id: true, status: true },
+        where: { id, vendorId: match.vendorId },
+        select: { id: true, vendorId: true, status: true },
       }),
     });
 

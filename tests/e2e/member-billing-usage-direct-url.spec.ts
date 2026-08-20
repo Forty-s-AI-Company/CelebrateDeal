@@ -507,7 +507,7 @@ test("active member is denied billing usage before finance queries or MFA", asyn
         redirectMarker: "NEXT_REDIRECT",
         redirectTargetMarker: "/dashboard?error=insufficient_role",
       },
-      finalUrl: /\/dashboard\?error=insufficient_role$/,
+      finalUrl: "/dashboard?error=insufficient_role",
       finalStatus: 200,
       forbiddenPayload: [
         ".invalid",

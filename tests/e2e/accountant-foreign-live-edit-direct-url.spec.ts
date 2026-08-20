@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp46SyntheticPassword!";
@@ -34,14 +35,29 @@ test("active accountant is denied a foreign live editor before tenant and asset 
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = [];
-    const responses: { url: string; status: number; location: string | null }[] = [];
     page.on("request", (request) => requests.push(request.url()));
-    page.on("response", (response) => responses.push({ url: response.url(), status: response.status(), location: response.headers()["location"] ?? null }));
     const foreignPath = `/lives/${foreignLive.id}/edit`;
-    const response = await page.goto(foreignPath);
-    const guard = responses.find((entry) => new URL(entry.url).pathname === foreignPath);
-    expect(guard).toMatchObject({ status: 307, location: "/dashboard?error=insufficient_role" });
-    expect(response?.status()).toBe(200);
+    const canaries = [
+      ownLive.description ?? "",
+      foreignLive.title,
+      foreignLive.description ?? "",
+    ].filter((value): value is string => Boolean(value));
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignLive.id, foreignPath],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+    });
+    expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯直播間" })).toHaveCount(0);

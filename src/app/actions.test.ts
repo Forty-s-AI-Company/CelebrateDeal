@@ -1930,8 +1930,21 @@ describe("upsertLiveAction", () => {
 
   it("allows a new live to schedule only through the explicit scheduled submitter", async () => {
     allowCurrentVendorLiveReferences();
+    mocks.messageTemplateFindMany.mockResolvedValue([{
+      id: "reminder-template-1",
+      vendorId: "vendor-1",
+      channel: "email",
+      trigger: "live_reminder",
+      subject: "{{live_title}} 即將開始",
+      body: "{{name}} {{unsubscribe_url}}",
+      isActive: true,
+      updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+    }]);
     const formData = liveFormData();
     formData.set("status", "scheduled");
+    formData.set("notificationRules", JSON.stringify([
+      { id: "", trigger: "before_live", messageTemplateId: "reminder-template-1", offsetMinutes: 10, sortOrder: 0, isActive: true },
+    ]));
 
     await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
 
@@ -1940,7 +1953,88 @@ describe("upsertLiveAction", () => {
         status: "scheduled",
         formId: "form-1",
         messageTemplateId: "template-1",
-        liveReminderTemplateId: null,
+        liveReminderTemplateId: "reminder-template-1",
+        liveReminderOffsetMinutes: 10,
+      }),
+    });
+  });
+
+  it("binds a new live to the first active before-live rule in normalized order", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.messageTemplateFindMany.mockResolvedValue([
+      {
+        id: "first-rule-template",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "live_reminder",
+        subject: "第一則",
+        body: "{{name}} {{unsubscribe_url}}",
+        isActive: true,
+        updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+      },
+      {
+        id: "second-rule-template",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "live_reminder",
+        subject: "第二則",
+        body: "{{name}} {{unsubscribe_url}}",
+        isActive: true,
+        updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+      },
+    ]);
+    const formData = liveFormData();
+    formData.set("notificationRules", JSON.stringify([
+      { id: "", trigger: "before_live", messageTemplateId: "first-rule-template", offsetMinutes: 1440, sortOrder: 7, isActive: true },
+      { id: "", trigger: "before_live", messageTemplateId: "second-rule-template", offsetMinutes: 10, sortOrder: 1, isActive: true },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        liveReminderTemplateId: "first-rule-template",
+        liveReminderOffsetMinutes: 1440,
+      }),
+    });
+  });
+
+  it("skips an inactive lower-order before-live rule when binding a new live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.messageTemplateFindMany.mockResolvedValue([
+      {
+        id: "inactive-rule-template",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "live_reminder",
+        subject: "已停用規則",
+        body: "{{name}} {{unsubscribe_url}}",
+        isActive: true,
+        updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+      },
+      {
+        id: "active-rule-template",
+        vendorId: "vendor-1",
+        channel: "email",
+        trigger: "live_reminder",
+        subject: "有效規則",
+        body: "{{name}} {{unsubscribe_url}}",
+        isActive: true,
+        updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+      },
+    ]);
+    const formData = liveFormData();
+    formData.set("notificationRules", JSON.stringify([
+      { id: "", trigger: "before_live", messageTemplateId: "inactive-rule-template", offsetMinutes: 10, sortOrder: 0, isActive: false },
+      { id: "", trigger: "before_live", messageTemplateId: "active-rule-template", offsetMinutes: 60, sortOrder: 1, isActive: true },
+    ]));
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        liveReminderTemplateId: "active-rule-template",
+        liveReminderOffsetMinutes: 60,
       }),
     });
   });
@@ -2117,14 +2211,17 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
   });
 
-  it("fails closed when a rule template is from another tenant or has the wrong trigger", async () => {
+  it.each([
+    ["another tenant", { id: "foreign-rule-template", vendorId: "vendor-2", channel: "email", trigger: "live_reminder", isActive: true }, { trigger: "before_live", offsetMinutes: 60 }],
+    ["wrong trigger", { id: "wrong-trigger-template", vendorId: "vendor-1", channel: "email", trigger: "post_live_followup", isActive: true }, { trigger: "before_live", offsetMinutes: 60 }],
+    ["non-email template", { id: "non-email-template", vendorId: "vendor-1", channel: "sms", trigger: "live_reminder", isActive: true }, { trigger: "before_live", offsetMinutes: 60 }],
+    ["inactive template", { id: "inactive-template", vendorId: "vendor-1", channel: "email", trigger: "live_reminder", isActive: false }, { trigger: "before_live", offsetMinutes: 60 }],
+  ])("fails closed for a notification template from %s", async (_reason, template, rule) => {
     allowCurrentVendorLiveReferences();
-    mocks.messageTemplateFindMany.mockResolvedValue([
-      { id: "followup-rule-template", vendorId: "vendor-2", channel: "email", trigger: "live_reminder", isActive: true },
-    ]);
+    mocks.messageTemplateFindMany.mockResolvedValue([template]);
     const formData = liveFormData();
     formData.set("notificationRules", JSON.stringify([
-      { id: "", trigger: "post_live_followup", messageTemplateId: "followup-rule-template", offsetMinutes: 15, sortOrder: 0, isActive: true },
+      { id: "", ...rule, messageTemplateId: template.id, sortOrder: 0, isActive: true },
     ]));
 
     await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/new?error=invalid_reference&draft=draft-1");

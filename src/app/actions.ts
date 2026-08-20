@@ -30,6 +30,7 @@ import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuot
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
 import {
+  expectedTemplateTrigger,
   haveValidLiveNotificationRuleTemplates,
   parseLiveNotificationRules,
   reconcileLiveNotificationRules,
@@ -85,6 +86,8 @@ import {
   upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
 } from "./actions/interaction-actions";
 import {
+  archiveVideoAction as archiveVideoActionImpl,
+  restoreVideoAction as restoreVideoActionImpl,
   upsertFormAction as upsertFormActionImpl,
   upsertTemplateAction as upsertTemplateActionImpl,
   upsertVideoAction as upsertVideoActionImpl,
@@ -567,6 +570,14 @@ export async function upsertVideoAction(formData: FormData) {
   return upsertVideoActionImpl(formData);
 }
 
+export async function archiveVideoAction(formData: FormData) {
+  return archiveVideoActionImpl(formData);
+}
+
+export async function restoreVideoAction(formData: FormData) {
+  return restoreVideoActionImpl(formData);
+}
+
 export async function upsertFormAction(formData: FormData) {
   return upsertFormActionImpl(formData);
 }
@@ -1004,7 +1015,16 @@ async function resolveSubmittedLiveReferences(input: {
         channel: "email",
         isActive: true,
       },
-      select: { id: true, vendorId: true, channel: true, trigger: true, isActive: true },
+      select: {
+        id: true,
+        vendorId: true,
+        channel: true,
+        trigger: true,
+        subject: true,
+        body: true,
+        isActive: true,
+        updatedAt: true,
+      },
     }) : Promise.resolve([]),
     input.interactionScriptId ? input.db.interactionScript.findFirst({ where: { id: input.interactionScriptId, vendorId: input.vendorId, status: "published" }, select: { id: true } }) : Promise.resolve(null),
     input.defaultAffiliateCode ? input.db.affiliate.findFirst({
@@ -1129,9 +1149,31 @@ async function resolveAuthoritativeLegacyReminder(input: {
     liveReminderOffsetMinutes: number;
   } | null;
   submittedOffsetMinutes: number;
+  notificationRules: LiveNotificationRuleInput[];
+  notificationTemplates: LiveReminderTemplateSnapshot[];
 }) {
   if (!input.existingLive) {
-    return { templateId: null, offsetMinutes: input.submittedOffsetMinutes, template: null, missing: false };
+    const firstActiveBeforeLiveRule = input.notificationRules
+      .filter((rule) => rule.trigger === "before_live" && rule.isActive)
+      .sort((left, right) => left.sortOrder - right.sortOrder)[0];
+    const reminderTemplate = firstActiveBeforeLiveRule
+      ? input.notificationTemplates.find((template) => (
+          template.id === firstActiveBeforeLiveRule.messageTemplateId
+          && template.vendorId === input.vendorId
+          && template.channel === "email"
+          && template.isActive
+          && template.trigger === expectedTemplateTrigger(firstActiveBeforeLiveRule.trigger)
+        ))
+      : undefined;
+
+    return reminderTemplate && firstActiveBeforeLiveRule
+      ? {
+          templateId: reminderTemplate.id,
+          offsetMinutes: firstActiveBeforeLiveRule.offsetMinutes,
+          template: reminderTemplate,
+          missing: false,
+        }
+      : { templateId: null, offsetMinutes: input.submittedOffsetMinutes, template: null, missing: false };
   }
   const templateId = input.existingLive.liveReminderTemplateId;
   const template = templateId
@@ -1225,6 +1267,8 @@ export async function upsertLiveAction(formData: FormData) {
     vendorId: vendor.id,
     existingLive,
     submittedOffsetMinutes: Number(submittedDraft.liveReminderOffsetMinutes),
+    notificationRules,
+    notificationTemplates,
   });
   const liveReminderTemplate = authoritativeReminder.template;
   const customMemberships = quotaMembershipIds.length > 0

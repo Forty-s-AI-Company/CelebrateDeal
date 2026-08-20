@@ -6,6 +6,7 @@ import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../
 import { createPasswordResetToken } from "../../src/lib/password-reset";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "../../src/lib/product-delivery";
 import { createTeamFunnelFixture, TEAM_FUNNEL_TEST_ONLY } from "../fixtures/team-funnel";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Password12345!";
@@ -1312,21 +1313,33 @@ test("public live page renders mobile-first commerce surface", async ({ page }, 
   // 因此它是 WP-08 唯一允許保留成功 screenshot／trace 的既有產品 gate。
   await page.context().tracing.start({ screenshots: true, snapshots: true, sources: false });
   await page.goto(`/live/${seed.liveSlug}`);
-  await expect(page.getByText("E2E 直播頁")).toBeVisible();
-  await expect(page.getByText("E2E 測試品牌")).toBeVisible();
-  await expect(page.getByText("即將直播")).toBeVisible();
-  await page.getByRole("button", { name: /商品/ }).click();
-  const productsPanel = page.getByRole("complementary", { name: "直播商品" });
-  await expect(productsPanel.getByRole("heading", { name: "E2E 導購商品" })).toBeVisible();
-  await expect(productsPanel.getByText("E2E 停用商品")).toHaveCount(0);
+  const waitingRoom = page.getByTestId("live-waiting-room");
+  await expect(waitingRoom).toBeVisible();
+  await expect(waitingRoom.getByText("品牌等候室", { exact: true })).toBeVisible();
+  await expect(waitingRoom.getByRole("heading", { name: "E2E 測試品牌", exact: true })).toBeVisible();
+  await expect(waitingRoom.getByText("E2E 直播頁 即將開始，請先留在這裡。", { exact: true })).toBeVisible();
+  await expect(waitingRoom.getByText(/^距離開播 \d{2}:\d{2}$/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E 導購商品", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /商品/ })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "直播商品" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("wp08-public-commerce.png"), fullPage: true });
   await page.context().tracing.stop({ path: testInfo.outputPath("wp08-public-commerce-trace.zip") });
 });
 
 test("public live page rejects an unpublished draft", async ({ page }) => {
-  const response = await page.goto(`/live/${seed.draftLiveSlug}`);
+  const draftPath = `/live/${seed.draftLiveSlug}`;
+  await page.goto("/");
+  await navigateAndAssertDirectUrlGuard({
+    page,
+    path: draftPath,
+    transport: { kind: "streaming-not-found", status: 200 },
+    routeIdentityCanaries: [seed.draftLiveSlug],
+    protectedPayloadCanaries: ["E2E 未發布直播"],
+    documentCanaries: ["E2E 未發布直播"],
+    finalUrl: draftPath,
+    finalStatus: 200,
+  });
 
-  expect(response?.status()).toBe(404);
   await expect(page.getByText("E2E 未發布直播")).toHaveCount(0);
 });
 
@@ -1379,7 +1392,8 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
     await page.getByRole("button", { name: "下一步" }).click();
 
     await page.getByLabel("報名成功 Email").selectOption(seed.registrationTemplateId);
-    await page.getByLabel("開播提醒 Email").selectOption(seed.reminderTemplateId);
+    await page.getByRole("button", { name: "套用建議設定", exact: true }).click();
+    await expect(page.getByLabel("開播前第 1 則 Email 模板", { exact: true })).toHaveValue(seed.reminderTemplateId);
     await page.getByRole("button", { name: "下一步" }).click();
 
     await page.getByRole("button", { name: "下一步" }).click();

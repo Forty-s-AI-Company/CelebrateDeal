@@ -108,6 +108,7 @@ export function Field({
   min,
   max,
   step,
+  readOnly,
 }: {
   label: string;
   name: string;
@@ -121,6 +122,7 @@ export function Field({
   min?: number;
   max?: number;
   step?: number;
+  readOnly?: boolean;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -137,6 +139,7 @@ export function Field({
         min={min}
         max={max}
         step={step}
+        readOnly={readOnly}
         defaultValue={defaultValue ?? ""}
       />
     </label>

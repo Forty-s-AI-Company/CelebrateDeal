@@ -40,7 +40,7 @@ test("active accountant is denied same-vendor form submissions through direct UR
           redirectMarker: "NEXT_REDIRECT",
           redirectTargetMarker: "/dashboard?error=insufficient_role",
         },
-        finalUrl: /\/dashboard\?error=insufficient_role$/,
+        finalUrl: "/dashboard?error=insufficient_role",
         finalStatus: 200,
       });
       expect(protectedDocumentHtml).not.toBeNull();

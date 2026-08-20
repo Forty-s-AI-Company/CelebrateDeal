@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "7c70740c495ff816",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-20T16:06:12.940Z",
+  "finishedAt": "2026-08-20T16:09:02.161Z",
+  "sourceDigest": "7efc8169fc3dec5d854b162df3e09cfe66bc3ccb642d2f69f63fa90ea9f099df",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 58,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 3,
+    "failed": 2,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 25,
+    "search": "PASS",
+    "filters": "PASS",
+    "pagination": "PASS",
+    "privacy": "PASS",
+    "requeue": "PASS",
+    "providerRejected": "PASS",
+    "pending": "PASS",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "PASS",
+      "mobile": "PASS"
+    },
+    "tests": [
+      {
+        "title": "desktop search filters reset pagination and URL privacy",
+        "status": "passed"
+      },
+      {
+        "title": "safe requeue preserves immutable provider identity and permanent rejection stays closed",
+        "status": "passed"
+      },
+      {
+        "title": "mobile RWD keyboard and Axe",
+        "status": "failed"
+      },
+      {
+        "title": "pending disables duplicate submit and expired CSRF does not echo query",
+        "status": "failed"
+      },
+      {
+        "title": "foreign tenant exact email search leaks no identity",
+        "status": "passed"
+      }
+    ],
+    "diagnostics": [
+      "mobile RWD keyboard and Axe: Error: EMAIL_OPERATIONS_UI_RESULT_MISMATCH expected=1 actual=25 freshness=current alerts= statuses=|||找到 55 筆寄送紀錄。",
+      "  16 | async function axe(page: any) { const result = await new AxeBuilder({ page }).withTags([\"wcag2a\", \"wcag2aa\", \"wcag21a\", \"wcag21aa\", \"wcag22aa\"]).analyze(); const blockers = result.violations.filter((item: any) => item.impact === \"critical\" || item.impact === \"serious\"); evidence.axeCriticalOrSerious += blockers.length; expect(blockers).toEqual([]); }",
+      "  17 | async function noOverflow(page: any, viewport: \"desktop\" | \"mobile\") { expect(await page.evaluate(() => document.documentElement.scrollWidth - <synthetic-value>); evidence.rwd[viewport] = \"PASS\"; }",
+      "> 18 | async function expectResultCount(page: any, expected: number) { try { await <synthetic-value>); } catch { const alerts = await <synthetic-value>(); const statuses = await <synthetic-value>(); const freshness = await <synthetic-value>\"); const actual = await page.locator(\"article\").count(); throw new Error(\"EMAIL_OPERATIONS_UI_RESULT_MISMATCH expected=\" + expected + \" actual=\" + actual + \" freshness=\" + freshness + \" alerts=\" + alerts.join(\"|\") + \" statuses=\" + statuses.slice(0, 4).join(\"|\")); } }",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ^",
+      "  19 |",
+      "  20 | test.beforeAll(async () => { const vendor = await db.vendor.create({ data: { name: \"G7-55 Owner\", slug: \"g7-55-owner-\" + suffix, email: \"owner-\" + suffix + \"@celebratedeal.test\", passwordHash: \"synthetic\", tracking: { create: {} } } }); const foreign = await db.vendor.create({ data: { name: \"G7-55 Foreign\", slug: \"g7-55-foreign-\" + suffix, email: \"foreign-\" + suffix + \"@celebratedeal.test\", passwordHash: \"synthetic\", tracking: { create: {} } } }); const user = await db.user.create({ data: { email: \"operator-\" + suffix + \"@celebratedeal.test\", name: \"G7-55 operator\", passwordHash: \"synthetic\", status: \"active\", memberships: { create: { vendorId: vendor.id, role: \"owner\", status: \"active\" } } } }); fixture.vendorId = vendor.id; fixture.foreignVendorId = foreign.id; fixture.token = crypto.randomBytes(32).toString(\"base64url\"); await db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash: <synthetic-value>\"), expiresAt: new Date(Date.now() + 3600000) } }); const rows = Array.from({ length: 55 }, (_, index) => ({ id: \"g755_\" + suffix + \"_\" + index, vendorId: vendor.id, sourceTemplateId: \"template-\" + suffix, trigger: index === 3 ? \"registration_confirmed\" : index % 2 ? \"live_reminder\" : \"registration_confirmed\", payloadEncryptedEnvelope: \"synthetic-envelope\", recipientHash: index === 0 ? createEmailRecipientHash(targetEmail, vendor.id) : crypto.createHash(\"sha256\").update(\"row-\" + index + suffix).digest(\"hex\"), recipientMaskedEmail: \"u***\" + index + \"@example.test\", idempotencyKey: \"g755-\" + suffix + \"-\" + index, status: index === 1 || index === 2 ? \"exhausted\" : index === 3 || index === 5 ? \"failed\" : \"sent\", attemptCount: index === 1 || index === 2 ? 5 : 1, maxAttempts: 5, lastErrorCode: index === 2 ? \"provider_rejected\" : index === 1 || index === 3 || index === 5 ? \"network\" : null, createdAt: new Date(Date.UTC(2026, 7, 10, 0, index)) })); await db.emailDelivery.createMany({ data: rows }); fixture.rejectedId = rows[2].id; fixture.failedId = rows[3].id; fixture.liveReminderFailedId = rows[5].id; await db.emailDelivery.create({ data: { ...rows[0], id: \"g755_foreign_\" + suffix, vendorId: foreign.id, idempotencyKey: \"foreign-\" + suffix, recipientHash: createEmailRecipientHash(foreignEmail, foreign.id), recipientMaskedEmail: foreignCanary } }); });",
+      "  21 | test.beforeEach(async () => { evidence = freshEvidence(); });",
+      "    at expectResultCount (<<synthetic-value>)",
+      "    at <<synthetic-value>",
+      "pending disables duplicate submit and expired CSRF does not echo query: Error: \u001b[<synthetic-value> failed",
+      "Locator: getByRole('alert')",
+      "Expected substring: \u001b[32m\"安全驗證已失效\"\u001b[39m",
+      "Error: strict mode violation: getByRole('alert') resolved to 2 elements:",
+      "    1) <p role=\"alert\" aria-live=\"polite\" class=\"rounded-md px-4 py-3 text-sm bg-red-50 text-red-800\">安全驗證已失效，請重新整理頁面後再操作。 以下仍顯示上次成功載入的資料，本次條件尚未套用。</p> aka getByText('安全驗證已失效，請重新整理頁面後再操作。 以下仍顯示上次成功載入的資料，本次條件尚未套用。')",
+      "    2) <div role=\"alert\" aria-live=\"assertive\" id=\"__next-route-announcer__\"></div> aka locator('[id=\"__next-route-announcer__\"]')",
+      "Call log:",
+      "\u001b[2m  - Expect \"toContainText\" with timeout 10000ms\u001b[22m",
+      "\u001b[2m  - waiting for getByRole('alert')\u001b[22m",
+      "  29 | test(\"mobile RWD keyboard and Axe\", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto(\"/messages/deliveries\"); await expectResultCount(page, 25); await noOverflow(page, \"mobile\"); await axe(page); await page.screenshot({ path: join(screenshotDir, \"mobile.png\"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel(\"完整收件 Email 或寄送編號\"); const status = page.getByLabel(\"寄送狀態\"); const trigger = page.getByLabel(\"通知類型\"); const submit = page.getByRole(\"button\", { name: \"查詢\", exact: true }); await expect(query).toBeVisible(); await expect(query).toBeEnabled(); await query.click(); await expect(query).toBeFocused(); await page.keyboard.press(\"Tab\"); await expect(status).toBeFocused(); await page.keyboard.press(\"Tab\"); await expect(trigger).toBeFocused(); await page.keyboard.press(\"Tab\"); await expect(submit).toBeFocused(); await page.keyboard.press(\"Enter\"); await expectResultCount(page, 1); evidence.keyboard = \"PASS\"; });",
+      "  30 |",
+      "> 31 | test(\"pending disables duplicate submit and expired CSRF does not echo query\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route(\"**/messages/deliveries\", async (route) => { if (route.request().method() === \"POST\" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole(\"button\", { name: \"查詢\", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole(\"button\", { name: \"查詢中…\" })).toBeDisabled(); await <synthetic-value>(); expect(intercepted).toBe(true); evidence.pending = \"PASS\"; release?.(); await click; await page.unroute(\"**/messages/deliveries\"); await <synthetic-value>(); const privateQuery = \"private-\" + suffix + \"@example.test\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(privateQuery); await page.locator('#email-delivery-operations-form input[name=\"_csrf\"]').evaluate((element) => { (element as HTMLInputElement).value = \"invalid\"; }); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const alert = page.getByRole(\"alert\"); await expect(alert).toContainText(\"安全驗證已失效\"); await expect(alert).toContainText(\"本次條件尚未套用\"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = \"PASS\"; });",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ^",
+      "  32 |",
+      "  33 | test(\"foreign tenant exact email search leaks no identity\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(foreignEmail); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 0); await expect(page.getByRole(\"status\").filter({ hasText: \"共\" })).toContainText(\"0\"); await expect(page.getByText(foreignCanary, { exact: true })).toHaveCount(0); expect(await page.content()).not.toContain(foreignCanary); expect(page.url()).toBe(baseURL + \"/messages/deliveries\"); evidence.tenantIsolation = \"PASS\"; });",
+      "  34 |",
+      "    at <<synthetic-value>"
+    ]
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      "browser-contract-failed:"
+    ]
+  }
+}

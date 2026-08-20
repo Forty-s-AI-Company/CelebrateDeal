@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp37SyntheticPassword!";
@@ -43,19 +44,38 @@ test("owner cannot open another vendor message-template edit route through direc
     await expect(page.getByLabel("渠道")).toHaveValue(ownTemplate.channel);
     await expect(page.getByLabel("觸發條件")).toHaveValue(ownTemplate.trigger);
     await expect(page.getByLabel("主旨")).toHaveValue(ownTemplate.subject ?? "");
-    await expect(page.getByLabel("內容")).toHaveValue(ownTemplate.body);
+    await expect(page.getByRole("textbox", { name: "內容", exact: true })).toHaveValue(ownTemplate.body);
 
     const foreignPath = `/messages/templates/${foreignTemplate.id}/edit`;
-    const foreignResponse = await page.goto(foreignPath);
-    expect(foreignResponse?.status()).toBe(404);
-    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
+    const foreignCanaries = [foreignTemplate.name, foreignTemplate.subject ?? "", foreignTemplate.body];
+    const posts: string[] = [];
+    const externalRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (request.method() === "POST") posts.push(url.pathname);
+      if (!new Set(["127.0.0.1", "localhost"]).has(url.hostname)) externalRequests.push(url.origin);
+    });
+    const { finalResponse: foreignResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignTemplate.id],
+      protectedPayloadCanaries: foreignCanaries,
+      documentCanaries: foreignCanaries,
+      transport: { kind: "streaming-not-found", status: 200 },
+      finalUrl: foreignPath,
+      finalStatus: 200,
+    });
+    expect(foreignResponse?.status()).toBe(200);
     await expect(page.getByRole("heading", { name: "編輯訊息模板" })).toHaveCount(0);
-    for (const label of ["模板名稱", "渠道", "觸發條件", "主旨", "內容"]) {
+    for (const label of ["模板名稱", "渠道", "觸發條件", "主旨"]) {
       await expect(page.getByLabel(label)).toHaveCount(0);
     }
-    for (const value of [foreignTemplate.id, foreignTemplate.name, foreignTemplate.subject ?? "", foreignTemplate.body]) {
+    await expect(page.getByRole("textbox", { name: "內容", exact: true })).toHaveCount(0);
+    for (const value of [foreignTemplate.id, ...foreignCanaries]) {
       await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     }
+    expect(posts).toEqual([]);
+    expect(externalRequests).toEqual([]);
     await expect.poll(snapshot).toEqual(before);
   } finally {
     await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } });

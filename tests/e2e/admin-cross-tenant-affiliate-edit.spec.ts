@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp36SyntheticPassword!";
@@ -29,7 +30,21 @@ test("admin cannot open another vendor affiliate edit route through direct URL n
   try {
     await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const ownPath = `/affiliates/${ownAffiliate.id}/edit`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page).toHaveURL(new RegExp(`${ownPath}$`)); await expect(page.getByRole("heading", { name: "編輯聯盟夥伴" })).toBeVisible(); await expect(page.getByLabel("夥伴名稱")).toHaveValue(ownAffiliate.name); await expect(page.getByRole("textbox", { name: "推廣碼", exact: true })).toHaveValue(ownAffiliate.code); await expect(page.getByLabel("來源渠道")).toHaveValue(ownAffiliate.source ?? ""); await expect(page.getByLabel("聯絡 Email")).toHaveValue(ownAffiliate.contactEmail ?? ""); await expect(page.getByLabel("佣金 BPS")).toHaveValue(String(ownAffiliate.commissionRateBps)); await expect(page.getByText(ownPathCanary, { exact: true })).toBeVisible();
-    const foreignPath = `/affiliates/${foreignAffiliate.id}/edit`; const foreignResponse = await page.goto(foreignPath); expect(foreignResponse?.status()).toBe(404); await expect(page).toHaveURL(new RegExp(`${foreignPath}$`)); for (const heading of ["編輯聯盟夥伴", "最近來源事件"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0); for (const label of ["夥伴名稱", "來源渠道", "聯絡 Email", "佣金 BPS"]) await expect(page.getByLabel(label)).toHaveCount(0); await expect(page.getByRole("textbox", { name: "推廣碼", exact: true })).toHaveCount(0); for (const value of [foreignAffiliate.name, foreignAffiliate.code, foreignAffiliate.source ?? "", foreignAffiliate.contactEmail ?? "", foreignPathCanary]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
+    const foreignPath = `/affiliates/${foreignAffiliate.id}/edit`;
+    const foreignCanaries = [foreignAffiliate.name, foreignAffiliate.code, foreignAffiliate.source ?? "", foreignAffiliate.contactEmail ?? "", foreignPathCanary];
+    const { finalResponse: foreignResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path: foreignPath,
+      routeIdentityCanaries: [foreignAffiliate.id, foreignPath],
+      protectedPayloadCanaries: foreignCanaries,
+      documentCanaries: foreignCanaries,
+      finalUrl: new RegExp(`${foreignPath}$`),
+      transport: { kind: "streaming-not-found", status: 200 },
+      finalStatus: 200,
+    });
+    expect(foreignResponse?.status()).toBe(200);
+    await expect(page).toHaveURL(new RegExp(`${foreignPath}$`));
+    for (const heading of ["編輯聯盟夥伴", "最近來源事件"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0); for (const label of ["夥伴名稱", "來源渠道", "聯絡 Email", "佣金 BPS"]) await expect(page.getByLabel(label)).toHaveCount(0); await expect(page.getByRole("textbox", { name: "推廣碼", exact: true })).toHaveCount(0); for (const value of foreignCanaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     await expect.poll(snapshot).toEqual(before);
   } finally { await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } }); await db.user.deleteMany({ where: { id: user.id } }); await db.$disconnect(); }
 });

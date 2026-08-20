@@ -39,3 +39,19 @@ export function isLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
   }
   return false;
 }
+
+/**
+ * Existing Live and registration-page references may keep playing after a
+ * soft archive. New bindings must continue using isLiveVideoReady above.
+ */
+export function isExistingLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
+  if (!video) return false;
+  if (video.sourceType === "url") return video.status === "ready" || video.status === "archived";
+  if (video.sourceType === "cloudflare_stream") {
+    return (video.status === "ready" || video.status === "archived") && video.cloudflareReadyToStream;
+  }
+  if (video.sourceType === "cloudflare_live") {
+    return Boolean(video.cloudflareLiveInputUid) && video.liveInputStatus === "created";
+  }
+  return false;
+}

@@ -3,6 +3,7 @@ import { cache } from "react";
 
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 
 const PUBLIC_REGISTRATION_FORM_SELECT = {
@@ -32,7 +33,11 @@ const PUBLIC_REGISTRATION_FORM_SELECT = {
       vendorId: true,
       title: true,
       videoUrl: true,
+      sourceType: true,
       status: true,
+      cloudflareReadyToStream: true,
+      cloudflareLiveInputUid: true,
+      liveInputStatus: true,
     },
   },
 } satisfies Prisma.RegistrationFormSelect;
@@ -157,7 +162,7 @@ function publicFormFromRecord(
   const parsedFields = parseRegistrationFormFields(form.fields);
   const promoVideo = form.promoVideo
     && form.promoVideo.vendorId === form.vendorId
-    && form.promoVideo.status === "ready"
+    && isExistingLiveVideoReady(form.promoVideo)
     ? parseSafeExternalHttpUrl(form.promoVideo.videoUrl)
     : null;
 

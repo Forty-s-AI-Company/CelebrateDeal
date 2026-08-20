@@ -74,10 +74,10 @@ test("owner cannot open another vendor live analytics route through direct URL n
       documentCanaries: foreignCanaries,
       finalUrl: new RegExp(`${foreignPath}$`),
       transport: {
-        kind: "http-not-found",
-        status: 404,
+        kind: "streaming-not-found",
+        status: 200,
       },
-      finalStatus: 404,
+      finalStatus: 200,
     });
     for (const heading of [`${foreignLive.title} 分析`, "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0);
     for (const value of foreignCanaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);

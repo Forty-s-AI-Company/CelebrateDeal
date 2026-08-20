@@ -9,6 +9,7 @@ import {
   writeSuppression,
   type Announcement,
 } from "@/lib/announcement-feed";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const SECTION_DEFINITIONS = [
@@ -109,6 +110,13 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
   const announcements = useMemo(() => sortAnnouncements(feed), [feed]);
   const latestAnnouncement = announcements[0];
   const latestVersion = latestAnnouncement?.version;
+  const pathname = usePathname();
+  // 根入口會把未登入訪客導向 /login?from=home。只在這個入口情境
+  // 自動開啟，避免使用者直接前往登入頁時被公告視窗擋住表單。
+  const autoOpenAllowed = pathname === "/"
+    || (pathname === "/login"
+      && typeof window !== "undefined"
+      && new URLSearchParams(window.location.search).get("from") === "home");
   const [isOpen, setIsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(latestAnnouncement?.id ?? null);
   const [suppressOnClose, setSuppressOnClose] = useState(false);
@@ -146,6 +154,7 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
   };
 
   useEffect(() => {
+    if (!autoOpenAllowed) return;
     const evaluatedVersions = autoOpenEvaluatedVersionsRef.current;
     if (!latestVersion || evaluatedVersions.has(latestVersion)) return;
     evaluatedVersions.add(latestVersion);
@@ -164,7 +173,7 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
       window.clearTimeout(openTimer);
       if (!timerFired) evaluatedVersions.delete(latestVersion);
     };
-  }, [latestVersion]);
+  }, [autoOpenAllowed, latestVersion]);
 
   useEffect(() => {
     if (!isOpen || !dialogRef.current) return;

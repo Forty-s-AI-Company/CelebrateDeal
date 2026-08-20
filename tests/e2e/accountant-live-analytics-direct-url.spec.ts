@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
 const password = "Wp56SyntheticPassword!";
@@ -64,22 +65,39 @@ test("active accountant is denied same-vendor live analytics through direct URL 
     await expect(page).toHaveURL(/\/dashboard$/);
 
     const path = `/lives/${live.id}/analytics`;
-    const original = page.waitForResponse((response) => new URL(response.url()).pathname === path && response.status() === 307);
-    const final = await page.goto(path);
-    const response = await original;
-    expect(final?.status()).toBe(200);
-    expect(response.status()).toBe(307);
-    const location = new URL(response.headers().location ?? "", "http://127.0.0.1");
-    expect(`${location.pathname}${location.search}`).toBe("/dashboard?error=insufficient_role");
-    await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
+    const canaries = [
+      visitorId,
+      referralCode,
+      canary,
+      `${canary}@example.test`,
+      "0900000056",
+      event.id,
+      click.id,
+      submission.id,
+    ];
+    const { finalResponse } = await navigateAndAssertDirectUrlGuard({
+      page,
+      path,
+      routeIdentityCanaries: [live.id, path],
+      protectedPayloadCanaries: canaries,
+      documentCanaries: canaries,
+      transport: {
+        kind: "streaming-redirect",
+        status: 200,
+        redirectMarker: "NEXT_REDIRECT",
+        redirectTargetMarker: "/dashboard?error=insufficient_role",
+      },
+      finalUrl: "/dashboard?error=insufficient_role",
+      finalStatus: 200,
+      forbiddenPayload: [`${live.title} 分析`],
+    });
+    expect(finalResponse?.status()).toBe(200);
 
-    // Dashboard has generic funnel, event, and affiliate widgets. The exact
-    // 307 above proves this route never rendered; only the live-specific title
-    // is safe to assert absent after the redirect lands on Dashboard.
+    // Dashboard has generic funnel, event, and affiliate widgets. The live-specific
+    // analytics title and payload values must remain absent after the streaming redirect.
     await expect(page.getByRole("heading", { name: `${live.title} 分析` })).toHaveCount(0);
     // Dashboard may legitimately list a same-vendor live by title. Analytics
     // payload values and the analytics-specific title must never appear there.
-    const canaries = [visitorId, referralCode, canary, `${canary}@example.test`, "0900000056", event.id, click.id, submission.id];
     for (const value of canaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const documentContent = await page.content();
     for (const value of canaries) expect(documentContent).not.toContain(value);

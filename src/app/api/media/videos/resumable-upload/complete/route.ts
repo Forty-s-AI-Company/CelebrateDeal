@@ -33,7 +33,11 @@ export async function POST(request: Request) {
     if (reason instanceof CloudflareUploadTicketError) return error("INVALID_UPLOAD_TICKET", 400);
     if (reason instanceof CloudflareUploadNotCompleteError) return error("VIDEO_UPLOAD_NOT_COMPLETE", 409);
     if (reason instanceof CloudflareUploadFailedError) return error("VIDEO_UPLOAD_FAILED", 409);
-    if (reason instanceof CloudflareResourceError) return error("VIDEO_NOT_FOUND", 404);
+    if (reason instanceof CloudflareResourceError) {
+      return reason.code === "video_archived"
+        ? error("VIDEO_ARCHIVED", 409)
+        : error("VIDEO_NOT_FOUND", 404);
+    }
     return error("VIDEO_UPLOAD_COMPLETE_FAILED", 502);
   }
 }

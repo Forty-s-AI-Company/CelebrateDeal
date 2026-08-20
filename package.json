@@ -66,6 +66,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
+    "deepmerge-ts": "8.0.1",
     "fast-uri": "^3.1.5",
     "js-yaml": "^4.3.1",
     "nanoid": "^3.3.17",

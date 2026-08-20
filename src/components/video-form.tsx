@@ -2,6 +2,7 @@ import type { Video } from "@prisma/client";
 import { upsertVideoAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { MediaUploadField } from "@/components/media-upload-field";
+import { VideoProviderStatus } from "@/components/video-provider-status";
 import { Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 
 type VideoWithImageAsset = Video & { thumbnailAssetId?: string | null };
@@ -24,6 +25,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           resourceIdInputName="id"
           titleInputName="title"
           durationInputName="durationSec"
+          estimatedMinutesInputName="estimatedMinutes"
         />
         {isExternalVideo ? (
           <details className="rounded-lg border border-border bg-slate-50 p-3">
@@ -44,7 +46,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
         <MediaUploadField
           kind="image"
           label="影片縮圖"
-          description="直接上傳縮圖並預覽；若已有外部 CDN，可在進階區保留 URL。"
+          description="可上傳縮圖，或從影片時間軸擷取畫面；裁切只會套用到縮圖，不會剪輯影片。"
           defaultUrl={video?.thumbnailUrl}
           defaultAssetId={video?.thumbnailAssetId}
           urlInputName="thumbnailUrl"
@@ -52,8 +54,8 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           allowExternalUrlFallback
         />
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="長度秒數" name="durationSec" type="number" defaultValue={video?.durationSec ?? 0} />
-          <Field label="估算用量分鐘" name="estimatedMinutes" type="number" defaultValue={video?.estimatedMinutes ?? 0} />
+          <Field label="長度秒數" name="durationSec" type="number" defaultValue={video?.durationSec ?? 0} readOnly />
+          <Field label="估算用量分鐘" name="estimatedMinutes" type="number" defaultValue={video?.estimatedMinutes ?? 0} readOnly />
           <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
             <p className="text-sm font-semibold text-slate-700">Stream Key</p>
             <p className="mt-1 text-xs text-slate-500">
@@ -67,12 +69,20 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
             <option value="archived">archived</option>
           </SelectField>
         ) : (
-          <div className="rounded-lg border border-border bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="font-semibold">Provider 狀態：{video?.status ?? "processing"}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {video?.cloudflareReadyToStream ? "Cloudflare 已可播放" : "等待 Cloudflare 狀態回呼"}
-            </p>
-          </div>
+          <VideoProviderStatus
+            videoId={video.id}
+            initial={{
+              resourceId: video.id,
+              status: video.status,
+              cloudflareReadyToStream: video.cloudflareReadyToStream,
+              durationSec: video.durationSec ?? 0,
+              estimatedMinutes: video.estimatedMinutes ?? 0,
+              thumbnailUrl: video.thumbnailUrl,
+              videoUrl: video.videoUrl,
+            }}
+            durationInputName="durationSec"
+            estimatedMinutesInputName="estimatedMinutes"
+          />
         )}
         <SubmitButton />
       </form>

@@ -179,7 +179,7 @@ test("evaluateBrowserContracts rejects a renamed or missing required browser con
 test("G7-21 keeps the Email reminder contract named and required alongside the existing commerce contracts", () => {
   const contracts = [
     "desktop merchant can recover upload and validation errors, then publish and preview one product",
-    "mobile product catalog has no overflow, preserves keyboard entry and passes axe",
+    "mobile product upload has no overflow, preserves recovery actions and passes axe",
     "merchant configures encrypted digital delivery and checkout keeps an immutable order snapshot",
     "buyer order capability shows only exact safe fulfillment projection on desktop and mobile",
     "desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
@@ -188,15 +188,21 @@ test("G7-21 keeps the Email reminder contract named and required alongside the e
     "public checkout recovers one committed order after response loss and page refresh",
     "finance admin payout batch prevents duplicate submission and exposes accessible pending feedback",
     "merchant Email templates keep live reminders scoped, then Live Studio separates registration and reminder templates",
+    "merchant onboarding shows exact sales-live blockers and skips deferred payment work",
+    "public playback stops once on exact Stream quota exhaustion and keeps recovery guidance accessible",
+    "public playback retries an ambiguous Stream heartbeat with one stable event identity",
+    "merchant message template keeps every field after server validation and can recover as a new template",
+    "merchant interaction role previews transparent identity and exact script impact before disabling",
+    "public live keeps the same video node, playback state and controls through internal checkout",
   ];
   const results = contracts.map((title) => ({ title: `commerce-orders.spec.ts > G7-04 商家訂單 UI > ${title}`, status: "passed" }));
   const complete = evaluateBrowserContracts(results);
 
-  assert.equal(Object.keys(complete.statuses).length, 10);
+  assert.equal(Object.keys(complete.statuses).length, 16);
   assert.equal(complete.statuses[contracts[9]], "PASS");
   assert.equal(complete.passed, true);
 
-  const missingEmail = evaluateBrowserContracts(results.slice(0, -1));
+  const missingEmail = evaluateBrowserContracts(results.filter((_, index) => index !== 9));
   assert.equal(missingEmail.statuses[contracts[9]], "MISSING");
   assert.equal(missingEmail.passed, false);
 });

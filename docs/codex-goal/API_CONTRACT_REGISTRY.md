@@ -68,6 +68,7 @@
 | 49 | `POST /api/live-chat/messages` | same-origin + client marker + rate limit | bounded message JSON | verified viewer、blacklist and exact live binding | 建立 viewer message；scheduled source 不可由 client 偽造 | bounded JSON；400／403／404／429 | 同路徑 route unit |
 | 50 | `POST /api/media/videos/resumable-upload` | active merchant session + same-origin/client boundary | bounded file metadata and chunk contract | authenticated vendor video ownership | 建立 resumable provider upload session | bounded upload contract；400／404／502 | 同路徑 route unit；Cloudflare binding 為外部 gate |
 | 51 | `POST /api/media/videos/resumable-upload/complete` | active merchant session + same-origin/client boundary | bounded video/upload identity | authenticated vendor mapping | 確認 provider upload 並更新處理狀態 | bounded completion contract；400／404／409／502 | 同路徑 route unit；Cloudflare ready 為外部 gate |
+| 52 | `GET /api/media/videos/status` | active merchant session + same-origin/client boundary | bounded video id query | authenticated vendor video ownership；foreign id 共用 404 | 只讀 provider processing／ready／error 與必要 metadata；不回傳 token、stream key 或原始 provider payload | private no-store JSON；400／401／403／404 | 同路徑 route unit；Cloudflare ready 為外部 gate |
 
 ## 已確認的 contract 缺口
 

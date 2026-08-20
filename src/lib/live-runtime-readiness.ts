@@ -1,5 +1,5 @@
 import { getLivePublishReadiness } from "@/lib/live-publish-readiness";
-import { isLiveVideoReady } from "@/lib/live-video-readiness";
+import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { hasUsableMessageTemplateContent } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
@@ -47,7 +47,7 @@ export function getRuntimeLivePublishReadiness(live: RuntimeLivePublishCandidate
   return getLivePublishReadiness({
     productCount: live.products.length,
     productsReady,
-    videoReady: Boolean(live.video?.vendorId === live.vendorId && isLiveVideoReady(live.video)),
+    videoReady: Boolean(live.video?.vendorId === live.vendorId && isExistingLiveVideoReady(live.video)),
     formReady: Boolean(
       live.form?.vendorId === live.vendorId
       && live.form.isActive

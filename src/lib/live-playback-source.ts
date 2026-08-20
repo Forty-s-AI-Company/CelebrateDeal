@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
-import { isLiveVideoReady } from "@/lib/live-video-readiness";
+import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 
 type PlaybackSourceInput = {
@@ -58,7 +58,7 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   }, now);
   if (runtime.state === "unavailable" || runtime.state === "waiting") return null;
   if (live?.video?.vendorId !== input.vendorId) return null;
-  if (!isLiveVideoReady(live?.video)) return null;
+  if (!isExistingLiveVideoReady(live?.video)) return null;
   const playbackUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
   if (!playbackUrl) return null;
   return runtime.playbackStartSeconds === null

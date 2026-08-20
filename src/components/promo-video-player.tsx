@@ -19,6 +19,7 @@ export function shouldRenderPromoVideo(safeSrc: string | null, failedSrc: string
 export function PromoVideoPlayer({ src, title }: { src: string; title: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const safeSrc = parseSafeExternalHttpUrl(src);
 
   useEffect(() => {
@@ -68,10 +69,24 @@ export function PromoVideoPlayer({ src, title }: { src: string; title: string })
       video.removeAttribute("src");
       video.load();
     };
-  }, [safeSrc]);
+  }, [retryNonce, safeSrc]);
 
   if (!shouldRenderPromoVideo(safeSrc, failedSrc)) {
-    return <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">影片目前無法播放。</p>;
+    return (
+      <div role="alert" className="grid gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p>影片目前無法播放，請確認網路或稍後重試。</p>
+        <button
+          type="button"
+          onClick={() => {
+            setFailedSrc(null);
+            setRetryNonce((value) => value + 1);
+          }}
+          className="inline-flex min-h-10 w-fit items-center justify-center rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900 hover:bg-amber-100"
+        >
+          重試播放
+        </button>
+      </div>
+    );
   }
 
   return (
