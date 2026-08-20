@@ -48,9 +48,9 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 PayUni deployment-boundary gate：source candidate `3d2b54c` 將 `PAYUNI_ENV` 納入 PayUni provider 的部署環境檢查，Preview／Production 的 `sandbox`／`production` mismatch 會 fail closed；synthetic env test `33/33`、full lint、typecheck、strict-index、Node TAP `763/763`、combined coverage `3075 passed／1 skipped`、controlled production build、secret scan、readiness truth 與 local release verifier 均通過。這只補強 local configuration safety，不增加 PayUni Sandbox reconciliation、staging 或 Production evidence；四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 不變。
 
-最新 2026-08-21 CI binding checkpoint：release candidate `10c7726` 在 `.github/workflows/ci.yml` 加入獨立 PayUni deployment environment binding contract；本機以相同 `33/33` synthetic env tests、`npm audit --omit=dev --audit-level=high` 的 `0 vulnerabilities`、lint、typecheck、strict-index、contract、coverage、controlled build、secret scan、readiness truth、local release verifier、AI Team server `7/7`、AI resilience 與 backup tooling static checks 驗證通過。這只讓遠端 CI 在後續 push／PR 明確執行設定邊界，不代表遠端 workflow 已實際完成，也不改變 staging、PayUni reconciliation、外部服務或人工 acceptance 狀態。
+最新 2026-08-21 CI binding checkpoint：release candidate `ac7c2f5` 在 `.github/workflows/ci.yml` 加入獨立 PayUni deployment environment binding contract、`test:release-readiness` 與 readiness truth reconciliation；本機以相同 `33/33` synthetic env tests、`test:release-readiness` `5/5`、readiness truth `PASS`、`npm audit --omit=dev --audit-level=high` 的 `0 vulnerabilities`、lint、typecheck、strict-index、contract、coverage、controlled build、secret scan、local release verifier、AI Team server `7/7`、AI resilience 與 backup tooling static checks 驗證通過。這只讓遠端 CI 在後續 push／PR 明確執行設定邊界，不代表遠端 workflow 已實際完成，也不改變 staging、PayUni reconciliation、外部服務或人工 acceptance 狀態。
 
-同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 結果為 `failure`，沒有 current RC `10c7726` 或 documentation checkpoint `ac6ba26` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
+同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `ac7c2f5` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
 ## Scorecard
 
