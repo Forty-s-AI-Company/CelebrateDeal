@@ -260,7 +260,8 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 本機契約驗證：
 
 ```bash
-node --test scripts/external-provider-evidence.test.mjs
+node --test scripts/external-provider-evidence.test.mjs scripts/validate-external-provider-evidence.test.mjs
+node scripts/validate-external-provider-evidence.mjs docs/ai-team/evidence/external-provider-receipt.json
 ```
 
-`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。
+CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON；它只輸出 receipt schema validation 結果，不會把驗證結果升格成 provider readiness。`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。

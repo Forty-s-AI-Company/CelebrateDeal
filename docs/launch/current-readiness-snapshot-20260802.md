@@ -52,7 +52,9 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 provider evidence checkpoint：release candidate `c088754` 新增 Cloudflare Stream、Resend、Sentry、PostHog、durable rate limit 與 PayUni Sandbox 的 provider-specific sanitized evidence contract；`node --test scripts/external-provider-evidence.test.mjs` 為 `12/12`，完整 Node TAP 為 `775/775`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.36／64.00／70.50／69.23`，disposable database 與 cleanup 均 `PASS`。validator 對 PASS 要求 non-Production identity、closed provider predicates、opaque evidence refs 與 side-effect budget，並拒絕 raw provider payload；這是 local／synthetic contract evidence，沒有外部服務、PayUni、staging 或 Production side effect，六個 external gates、四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
 
-同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `77dcef6` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
+最新 2026-08-21 provider receipt validation checkpoint：source checkpoint `75e5519` 新增 read-only `scripts/validate-external-provider-evidence.mjs` 與 `scripts/validate-external-provider-evidence.test.mjs`；provider contract 與 CLI contract 合計 `19/19`，完整 Node TAP 為 `782/782`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.39／64.04／70.52／69.25`，disposable database 與 cleanup 均 `PASS`。CLI 僅接受安全 evidence roots／filename，拒絕 raw output、敏感欄位、絕對路徑與未知 schema；這是 local／synthetic receipt validation，不會把 `PENDING_EXTERNAL` 轉成 provider `PASS`，也沒有呼叫外部服務、PayUni、staging 或 Production。六個 external gates、四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
+
+同一日的 GitHub Actions 唯讀檢查顯示遠端 `codex/one-stop-webinar-flow` branch head 仍為舊提交 `c2aa2201`；最新列出的 `ci.yml` run `32209974601` 的 `Production dependency audit` step 為 `failure`，沒有 current RC `75e5519` 的 run。這只補充 remote CI 的未驗證狀態，不改變四個 readiness flags、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
 ## Scorecard
 

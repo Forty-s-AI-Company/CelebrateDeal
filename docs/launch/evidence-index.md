@@ -1761,3 +1761,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Release candidate：`c088754`；Source：`scripts/external-provider-evidence.mjs`、`scripts/external-provider-evidence.test.mjs`、`.github/workflows/ci.yml`。
 - Verification：`node --test scripts/external-provider-evidence.test.mjs` 為 `12/12`；完整 Node TAP 為 `775/775`，combined coverage 為 `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.36／64.00／70.50／69.23`。涵蓋六個 provider 的 synthetic PASS predicate、pending／failed／blocked／human-pending state、opaque reference、raw payload rejection、side-effect budget、PayUni read-only boundary 與 canonical round-trip。
 - Boundary：這是 local contract evidence，不是外部 provider receipt。沒有呼叫 Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、staging 或 Production；六個 external gates 維持 `PENDING_EXTERNAL`，`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO`，Goal remains active。
+
+## REL-20260821-EXTERNAL-PROVIDER-RECEIPT-VALIDATOR — Read-only provider receipt validation CLI（2026-08-21）
+
+- Release candidate：`75e5519`；Source：`scripts/validate-external-provider-evidence.mjs`、`scripts/validate-external-provider-evidence.test.mjs`、`.github/workflows/ci.yml`。
+- Verification：provider contract 與 CLI contract 合計 `19/19`；其中 CLI targeted `7/7`、完整 Node TAP `782/782`；combined coverage `404 files passed／1 skipped`、`3084 passed／1 skipped`，statements／branches／functions／lines=`64.39／64.04／70.52／69.25`，disposable database 與 cleanup 均 `PASS`。CLI 只讀安全 evidence roots 下的 receipt，並以既有 provider schema 做固定輸出 validation。
+- Boundary：這是 local／synthetic receipt validation，不是外部 provider receipt，也不會把 `PENDING_EXTERNAL` 升格成 `PASS`。本輪沒有呼叫 Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、staging 或 Production；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變，Goal remains active。
