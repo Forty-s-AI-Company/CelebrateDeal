@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "4d9c1276b5dc9719",
+  "workPackage": "G7-55",
+  "status": "PASS",
+  "startedAt": "2026-08-20T16:10:07.615Z",
+  "finishedAt": "2026-08-20T16:12:45.155Z",
+  "sourceDigest": "7efc8169fc3dec5d854b162df3e09cfe66bc3ccb642d2f69f63fa90ea9f099df",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 0
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 58,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "browser": {
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 25,
+    "search": "PASS",
+    "filters": "PASS",
+    "pagination": "PASS",
+    "privacy": "PASS",
+    "requeue": "PASS",
+    "providerRejected": "PASS",
+    "pending": "PASS",
+    "csrf": "PASS",
+    "keyboard": "PASS",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "PASS",
+      "mobile": "PASS"
+    },
+    "tests": [
+      {
+        "title": "desktop search filters reset pagination and URL privacy",
+        "status": "passed"
+      },
+      {
+        "title": "safe requeue preserves immutable provider identity and permanent rejection stays closed",
+        "status": "passed"
+      },
+      {
+        "title": "mobile RWD keyboard and Axe",
+        "status": "passed"
+      },
+      {
+        "title": "pending disables duplicate submit and expired CSRF does not echo query",
+        "status": "passed"
+      },
+      {
+        "title": "foreign tenant exact email search leaks no identity",
+        "status": "passed"
+      }
+    ],
+    "diagnostics": []
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "418b6f683409130b36bacd29503e11c3ebb426d5ea42a8c4d12304bc93ebe25d"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "659a96a145ae2e63e269a0542d4b4f40dffe63f2a40b88d80e8df47a07367340"
+    }
+  },
+  "failure": null
+}

@@ -138,6 +138,7 @@ export function EmailDeliveryOperationsWorkbench({
 
   return (
     <form
+      id="email-delivery-operations-form"
       key={filterKey}
       action={formAction}
       aria-busy={pending}

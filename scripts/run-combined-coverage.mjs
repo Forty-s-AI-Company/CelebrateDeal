@@ -230,11 +230,27 @@ async function cleanupDisposableDatabase(disposable) {
 export function isProductionScriptCoverage(result, root = workspaceRoot) {
   if (!result.url.startsWith("file:")) return false;
   const filename = fileURLToPath(result.url.split("?")[0]);
+  return isNodeTapOwnedCoveragePath(filename, root);
+}
+
+export function isNodeTapOwnedCoveragePath(filename, root = workspaceRoot) {
   const relativePath = path.relative(root, filename).split(path.sep).join("/");
   return relativePath.startsWith("scripts/")
     && /\.(?:mjs|ts)$/.test(relativePath)
     && !relativePath.endsWith(".test.mjs")
     && !relativePath.endsWith(".test.ts");
+}
+
+/**
+ * Vitest includes the full scripts inventory so the combined gate can see it,
+ * but Node TAP is the runner that actually owns script execution coverage.
+ * Remove Vitest's zero-count placeholders before merging the Node TAP map so
+ * the same production script is not represented twice in the final report.
+ */
+export function stripNodeTapOwnedVitestCoverage(vitestCoverage, root = workspaceRoot) {
+  return Object.fromEntries(
+    Object.entries(vitestCoverage).filter(([filename]) => !isNodeTapOwnedCoveragePath(filename, root)),
+  );
 }
 
 async function collectNodeTapCoverage() {
@@ -304,7 +320,7 @@ async function main() {
     if (!existsSync(coverageFinalPath)) throw new Error("Vitest did not write coverage-final.json.");
 
     const vitestCoverage = JSON.parse(await fs.readFile(coverageFinalPath, "utf8"));
-    const coverageMap = libCoverage.createCoverageMap(vitestCoverage);
+    const coverageMap = libCoverage.createCoverageMap(stripNodeTapOwnedVitestCoverage(vitestCoverage));
     coverageMap.merge(await collectNodeTapCoverage());
     const context = libReport.createContext({ dir: reportsDirectory, coverageMap });
     reports.create("text-summary").execute(context);

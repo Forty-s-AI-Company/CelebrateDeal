@@ -13,6 +13,7 @@ const image = "postgres:16-alpine";
 const runNamePattern = /^celebratedeal-g7-email-operations-browser-[a-f0-9]{16}$/u;
 const schemaPattern = /^g7_55_browser_[a-f0-9]{16}$/u;
 const migrationPattern = /^\d{12,14}_[a-z0-9_]+$/u;
+export const EXPECTED_CANONICAL_MIGRATIONS = 58;
 const sourceDigestPaths = [
   "prisma/schema.prisma",
   "prisma/migrations/20260810060000_g7_55_email_delivery_operations/migration.sql",
@@ -227,7 +228,7 @@ export function validateReceipt(receipt) {
     && /^[a-f0-9]{64}$/u.test(receipt.sourceDigest)
     && Array.isArray(receipt.commands)
     && receipt.commands.every((command) => command && typeof command.name === "string" && command.exitCode === 0)
-    && receipt.expected?.canonicalMigrations === 53
+    && receipt.expected?.canonicalMigrations === EXPECTED_CANONICAL_MIGRATIONS
     && receipt.expected?.emailDeliveries >= 55
     && receipt.expected?.browserTests === 5
     && receipt.browser?.passed === 5
@@ -245,37 +246,6 @@ export function validateReceipt(receipt) {
 }
 
 export function assertStaticSafety(source) { const inspected = String(source).replace(/export function assertStaticSafety[^\n]*\n/u, ""); return !/(?:require|import)[^(;]*\(?\s*["']do[t]env|do[t]env\s*\.\s*config|launchPersistentContext|userDataDir|(?:fetch|request|goto)\(\s*["']https:\/\/(?!localhost|127\.0\.0\.1)/u.test(inspected); }
-
-function writeBrowserSpec(mirror) {
-  const spec = path.join(mirror, "tests", "e2e", "g7-email-operations.spec.ts"); fs.mkdirSync(path.dirname(spec), { recursive: true });
-  fs.writeFileSync(spec, `import crypto from "node:crypto";
-import { PrismaClient } from "@prisma/client";
-import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
-const baseURL = process.env.E2E_BASE_URL!;
-const dir = process.env.G7_EMAIL_OPERATIONS_SCREENSHOT_DIR!;
-const db = new PrismaClient(); const suffix = crypto.randomBytes(8).toString("hex"); const emailHash = crypto.createHash("sha256").update("owner-" + suffix).digest("hex");
-const fixture: { vendorId: string; foreignVendorId: string; token: string; failedId: string; rejectedId: string } = { vendorId: "", foreignVendorId: "", token: "", failedId: "", rejectedId: "" };
-async function noBlockingAxe(page: any) { const r = await new AxeBuilder({ page }).analyze(); const blockers = r.violations.filter((v: any) => v.impact === "critical" || v.impact === "serious"); expect(blockers).toEqual([]); }
-async function owner(page: any) { await page.context().addCookies([{ name: "celebrate_session", value: fixture.token, url: baseURL, httpOnly: true, sameSite: "Lax" }]); }
-test.beforeAll(async () => { const vendor = await db.vendor.create({ data: { name: "G7-55 Owner", slug: "g7-55-owner-" + suffix, email: "owner-" + suffix + "@celebratedeal.test", passwordHash: "scrypt:fixture", primaryColor: "#2563eb", ctaColor: "#f97316", tracking: { create: {} } } }); const foreign = await db.vendor.create({ data: { name: "G7-55 Foreign", slug: "g7-55-foreign-" + suffix, email: "foreign-" + suffix + "@celebratedeal.test", passwordHash: "scrypt:fixture", primaryColor: "#2563eb", ctaColor: "#f97316", tracking: { create: {} } } }); const user = await db.user.create({ data: { email: "operator-" + suffix + "@celebratedeal.test", name: "G7-55 operator", passwordHash: "scrypt:fixture", status: "active", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } }); fixture.vendorId = vendor.id; fixture.foreignVendorId = foreign.id; fixture.token = crypto.randomBytes(32).toString("base64url"); await db.userSession.create({ data: { userId: user.id, vendorId: vendor.id, tokenHash: crypto.createHash("sha256").update(fixture.token).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) } }); const rows = Array.from({ length: 55 }, (_, i) => ({ id: "g755_" + suffix + "_" + i, vendorId: vendor.id, sourceTemplateId: "template-" + suffix, trigger: i % 2 ? "live_reminder" : "registration_confirmed", payloadEncryptedEnvelope: "fixture", recipientHash: i === 0 ? emailHash : crypto.createHash("sha256").update("row-" + i + suffix).digest("hex"), recipientMaskedEmail: "u***" + i + "@example.test", idempotencyKey: "g755-" + suffix + "-" + i, status: i === 1 ? "exhausted" : i === 2 ? "exhausted" : i === 3 ? "failed" : "sent", attemptCount: i === 1 || i === 2 ? 5 : 1, maxAttempts: 5, lastErrorCode: i === 2 ? "provider_rejected" : i === 1 ? "network" : i === 3 ? "network" : null })); await db.emailDelivery.createMany({ data: rows }); fixture.rejectedId = rows[2].id; fixture.failedId = rows[3].id; await db.emailDelivery.create({ data: { ...rows[0], id: "g755_foreign_" + suffix, vendorId: foreign.id, idempotencyKey: "foreign-" + suffix, recipientHash: emailHash } }); });
-test.afterAll(async () => { await db.vendor.deleteMany({ where: { id: { in: [fixture.vendorId, fixture.foreignVendorId] } } }); await db.$disconnect(); });
-test("G7-55 email merchant operations is private, accessible, and durable", async ({ page }) => {
-  await owner(page); await page.goto(baseURL + "/messages/deliveries"); await expect(page).toHaveURL(/\\/messages\\/deliveries/); await expect(page.getByText("25 筆")).toBeVisible();
-  await page.getByLabel(/Email 雜湊|收件/i).fill(emailHash); await page.getByRole("button", { name: "查詢", exact: true }).click();
-  await expect(page).not.toHaveURL(new RegExp(emailHash)); // exact hash never enters URL/history.
-  await page.getByLabel(/狀態/i).selectOption("failed"); await page.getByLabel(/觸發/i).selectOption("live_reminder"); await page.getByRole("button", { name: "查詢", exact: true }).click();
-  await page.getByRole("button", { name: /清除|重設/ }).click();
-  const submit = page.getByRole("button", { name: "查詢", exact: true }); await submit.focus(); await page.keyboard.press("Enter"); await expect(page.locator("form[aria-busy]")).toBeVisible(); await expect(submit).toBeEnabled();
-  await noBlockingAxe(page); await page.screenshot({ path: dir + "/desktop.png", fullPage: true });
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(baseURL + "/messages/deliveries");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1); await noBlockingAxe(page); await page.screenshot({ path: dir + "/mobile.png", fullPage: true });
-  await page.goto(baseURL + "/messages/deliveries"); await expect(page.getByText(fixture.rejectedId)).toBeVisible(); await expect(page.getByText(fixture.rejectedId).locator("..").getByRole("button", { name: "重新排程" })).toHaveCount(0);
-  await expect(db.emailDelivery.findUnique({ where: { id: fixture.rejectedId } })).resolves.toMatchObject({ status: "exhausted", lastErrorCode: "provider_rejected" });
-  // The action is CSRF-gated; successful retry only updates this durable record and never calls an email provider.
-});\n`);
-  return spec;
-}
 
 function writeVerifiedBrowserFiles(mirror) {
   const specPath = path.join(mirror, "tests", "e2e", "g7-email-operations-verified.spec.ts");
@@ -312,9 +282,9 @@ test("desktop search filters reset pagination and URL privacy", async ({ page })
 
 test("safe requeue preserves immutable provider identity and permanent rejection stays closed", async ({ page }) => { await owner(page); await page.goto("/messages/deliveries"); await page.getByLabel("完整收件 Email 或寄送編號").fill(fixture.failedId); await page.getByRole("button", { name: "查詢", exact: true }).click(); await expectResultCount(page, 1); const before = await db.emailDelivery.findUniqueOrThrow({ where: { id: fixture.failedId }, select: { idempotencyKey: true, payloadEncryptedEnvelope: true } }); page.once("dialog", (dialog) => dialog.accept()); await page.getByRole("button", { name: "重新排程" }).click(); await expect(page.getByRole("status").filter({ hasText: "重新排入寄送佇列" })).toBeVisible(); await expect(db.emailDelivery.findUnique({ where: { id: fixture.failedId } })).resolves.toMatchObject({ status: "queued", manualRetryCount: 1, idempotencyKey: before.idempotencyKey, payloadEncryptedEnvelope: before.payloadEncryptedEnvelope }); evidence.requeue = "PASS"; await page.getByLabel("完整收件 Email 或寄送編號").fill(fixture.rejectedId); await page.getByRole("button", { name: "查詢", exact: true }).click(); await expectResultCount(page, 1); const rejected = page.locator("article").filter({ hasText: fixture.rejectedId }); await expect(rejected).toBeVisible(); await expect(rejected.getByRole("button", { name: "重新排程" })).toHaveCount(0); await expect(db.emailDelivery.findUnique({ where: { id: fixture.rejectedId } })).resolves.toMatchObject({ status: "exhausted", lastErrorCode: "provider_rejected" }); evidence.providerRejected = "PASS"; });
 
-test("mobile RWD keyboard and Axe", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/messages/deliveries"); await expectResultCount(page, 25); await noOverflow(page, "mobile"); await axe(page); await page.screenshot({ path: join(screenshotDir, "mobile.png"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel("完整收件 Email 或寄送編號"); const status = page.getByLabel("寄送狀態"); const trigger = page.getByLabel("通知類型"); const submit = page.getByRole("button", { name: "查詢", exact: true }); await query.focus(); await expect(query).toBeFocused(); await query.press("Control+A"); await query.press("Backspace"); await status.focus(); await expect(status).toBeFocused(); await status.selectOption("failed"); await trigger.focus(); await expect(trigger).toBeFocused(); await trigger.selectOption("live_reminder"); await submit.focus(); await expect(submit).toBeFocused(); await page.keyboard.press("Enter"); await expectResultCount(page, 1); evidence.keyboard = "PASS"; });
+test("mobile RWD keyboard and Axe", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/messages/deliveries"); await expectResultCount(page, 25); await noOverflow(page, "mobile"); await axe(page); await page.screenshot({ path: join(screenshotDir, "mobile.png"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel("完整收件 Email 或寄送編號"); const status = page.getByLabel("寄送狀態"); const trigger = page.getByLabel("通知類型"); const submit = page.getByRole("button", { name: "查詢", exact: true }); await expect(query).toBeVisible(); await expect(query).toBeEnabled(); await query.click(); await expect(query).toBeFocused(); await page.keyboard.press("Tab"); await expect(status).toBeFocused(); await page.keyboard.press("Tab"); await expect(trigger).toBeFocused(); await page.keyboard.press("Tab"); await expect(submit).toBeFocused(); await query.fill(""); await status.selectOption("failed"); await trigger.selectOption("live_reminder"); await submit.focus(); await expect(submit).toBeFocused(); await page.keyboard.press("Enter"); await expectResultCount(page, 1); evidence.keyboard = "PASS"; });
 
-test("pending disables duplicate submit and expired CSRF does not echo query", async ({ page }) => { await owner(page); await page.goto("/messages/deliveries"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route("**/messages/deliveries", async (route) => { if (route.request().method() === "POST" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole("button", { name: "查詢", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole("button", { name: "查詢中…" })).toBeDisabled(); await expect(page.locator("form[aria-busy=true]")).toBeVisible(); expect(intercepted).toBe(true); evidence.pending = "PASS"; release?.(); await click; await page.unroute("**/messages/deliveries"); await expect(page.locator("form[aria-busy=false]")).toBeVisible(); const privateQuery = "private-" + suffix + "@example.test"; await page.getByLabel("完整收件 Email 或寄送編號").fill(privateQuery); await page.locator('input[name="_csrf"]').evaluate((element) => { (element as HTMLInputElement).value = "invalid"; }); await page.getByRole("button", { name: "查詢", exact: true }).click(); const alert = page.getByRole("alert"); await expect(alert).toContainText("安全驗證已失效"); await expect(alert).toContainText("本次條件尚未套用"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = "PASS"; });
+test("pending disables duplicate submit and expired CSRF does not echo query", async ({ page }) => { await owner(page); await page.goto("/messages/deliveries"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route("**/messages/deliveries", async (route) => { if (route.request().method() === "POST" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole("button", { name: "查詢", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole("button", { name: "查詢中…" })).toBeDisabled(); await expect(page.locator("form[aria-busy=true]")).toBeVisible(); expect(intercepted).toBe(true); evidence.pending = "PASS"; release?.(); await click; await page.unroute("**/messages/deliveries"); await expect(page.locator("form[aria-busy=false]")).toBeVisible(); const privateQuery = "private-" + suffix + "@example.test"; await page.getByLabel("完整收件 Email 或寄送編號").fill(privateQuery); await page.locator('#email-delivery-operations-form input[name="_csrf"]').evaluate((element) => { (element as HTMLInputElement).value = "invalid"; }); await page.getByRole("button", { name: "查詢", exact: true }).click(); const alert = page.locator('#email-delivery-operations-form p[role="alert"]'); await expect(alert).toContainText("安全驗證已失效"); await expect(alert).toContainText("本次條件尚未套用"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = "PASS"; });
 
 test("foreign tenant exact email search leaks no identity", async ({ page }) => { await owner(page); await page.goto("/messages/deliveries"); await page.getByLabel("完整收件 Email 或寄送編號").fill(foreignEmail); await page.getByRole("button", { name: "查詢", exact: true }).click(); await expectResultCount(page, 0); await expect(page.getByRole("status").filter({ hasText: "共" })).toContainText("0"); await expect(page.getByText(foreignCanary, { exact: true })).toHaveCount(0); expect(await page.content()).not.toContain(foreignCanary); expect(page.url()).toBe(baseURL + "/messages/deliveries"); evidence.tenantIsolation = "PASS"; });
 `);
@@ -338,29 +308,6 @@ function stopServer(server) {
   return "PASS";
 }
 
-async function legacyMainUnused() {
-  const runId = crypto.randomBytes(8).toString("hex"); const name = `celebratedeal-g7-email-operations-browser-${runId}`; const marker = `g7-55-browser:${runId}`;
-  const tempRoot = path.join(os.tmpdir(), name); const schema = `g7_55_browser_${runId}`; const receiptPath = path.join(evidenceRoot, `g7-55-email-operations-${runId}.json`); const screenshots = path.join(evidenceRoot, `g7-55-email-operations-${runId}-screenshots`);
-  const receipt = { schemaVersion: "celebratedeal-g7-55-email-operations-browser-qa/v1", runId, workPackage: "G7-55", status: "BLOCKED_OR_FAILED", startedAt: new Date().toISOString(), finishedAt: null, sourceDigest: safeSourceDigest(), commands: [], expected: { canonicalMigrations: 53, emailDeliveries: 55, pageSize: 25, operations: ["exact-hash-search", "url-privacy", "status-trigger-filter", "reset", "pending", "disabled", "aria-busy", "csrf", "keyboard", "axe", "rwd", "tenant-isolation", "durable-requeue", "provider-rejected-no-retry"] }, phases: {}, browser: { axeCriticalOrSerious: -1, pageSize: 25, requeue: "NOT_RUN", tenantIsolation: "NOT_RUN" }, cleanup: { syntheticRows: "FAIL", server: "FAIL", container: "FAIL", tempRoot: "FAIL" }, safety: { dotenvContentsRead: false, userBrowserProfileRead: false, externalOperations: false, productionOperations: false }, screenshots: { desktop: null, mobile: null } };
-  let server; let containerId; let env; try {
-    if (canonicalMigrations().length !== 53) throw new Error("canonical-migrations-not-53");
-    fs.mkdirSync(tempRoot, { recursive: true }); fs.writeFileSync(path.join(tempRoot, ".marker"), marker); const mirror = path.join(tempRoot, "mirror"); copySourceTree(root, mirror); linkNodeModules(mirror); writePrismaConfig(mirror); writeBrowserSpec(mirror);
-    const port = await allocatePort(); const databasePort = await allocatePort(); if (!port || !databasePort) throw new Error("loopback-port-unavailable"); const browsers = process.env.PLAYWRIGHT_BROWSERS_PATH; if (!browsers || !fs.existsSync(browsers)) throw new Error("playwright-cache-missing");
-    const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${databasePort}/celebratedeal_test?schema=${schema}`; env = safeEnvironment({ tempRoot, port, databaseUrl, schema, screenshotDirectory: path.join(tempRoot, "screenshots"), networkGuard: writeNetworkGuard(tempRoot), playwrightBrowsersPath: browsers });
-    // Docker container is labelled with the exact runId and uses tmpfs; no production or external service is reachable.
-    const started = run("docker", ["run", "-d", "--rm", "--name", name, "--label", `g7.runId=${runId}`, "--label", `g7.marker=${marker}`, "--tmpfs", "/var/lib/postgresql/data", "-p", `127.0.0.1:${databasePort}:5432`, "-e", "POSTGRES_PASSWORD=postgres", "-e", "POSTGRES_DB=celebratedeal_test", image], env); if (started.exitCode) throw new Error(started.stderr); containerId = started.stdout.trim(); await waitForPostgres(containerId, env);
-    receipt.commands.push("prisma generate", "prisma validate", "prisma migrate deploy", "next build", "playwright test");
-    for (const [command, args] of [["npx", ["prisma", "generate"]], ["npx", ["prisma", "validate"]], ["npx", ["prisma", "migrate", "deploy"]], ["npx", ["next", "build"]]]) { const result = run(command, args, env, mirror); if (result.exitCode) throw new Error(`${command}:${result.stderr}`); }
-    server = spawn("npx", ["next", "start", "-p", String(port)], { cwd: mirror, env, windowsHide: true, shell: process.platform === "win32" }); await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error("server-start-timeout")), 20_000); const probe = () => { const request = net.connect(port, "127.0.0.1"); request.once("connect", () => { request.destroy(); clearTimeout(timer); resolve(); }); request.once("error", () => setTimeout(probe, 150)); }; probe(); }); const browserResult = run("npx", ["playwright", "test", "tests/e2e/g7-email-operations.spec.ts"], env, mirror); if (browserResult.exitCode) throw new Error(browserResult.stderr);
-    // The generated spec's fixture provisions owner/foreign vendor/session and >=55 EmailDelivery rows, then verifies only durable requeue state; it never dispatches an email provider.
-    const tempScreenshots = path.join(tempRoot, "screenshots"); for (const kind of ["desktop", "mobile"]) if (!fs.existsSync(path.join(tempScreenshots, `${kind}.png`))) throw new Error(`screenshot-missing:${kind}`);
-    fs.mkdirSync(screenshots, { recursive: true }); for (const kind of ["desktop", "mobile"]) { const target = path.join(screenshots, `${kind}.png`); fs.copyFileSync(path.join(tempScreenshots, `${kind}.png`), target); receipt.screenshots[kind] = { filename: `${kind}.png`, sha256: hashFile(target) }; }
-    receipt.phases = { mirror: "PASS", prismaGenerate: "PASS", prismaValidate: "PASS", prismaDeploy: "PASS", nextBuild: "PASS", server: "PASS", browser: "PASS" }; receipt.browser = { axeCriticalOrSerious: 0, pageSize: 25, requeue: "PASS", tenantIsolation: "PASS", csrf: "PASS", keyboard: "PASS", rwd: { desktop: "PASS", mobile: "PASS" } }; receipt.status = "PASS";
-  } catch (error) { receipt.failure = { classification: classifyFailure(error instanceof Error ? error.message : error), details: sanitize(error instanceof Error ? error.message : error, tempRoot) }; }
-  finally { stopServer(server); receipt.cleanup.server = "PASS"; if (containerId) { const removed = run("docker", ["rm", "-f", containerId], env); receipt.cleanup.container = removed.exitCode === 0 ? "PASS" : "FAIL"; } else receipt.cleanup.container = "PASS"; receipt.cleanup.syntheticRows = "PASS"; receipt.cleanup.tempRoot = fs.existsSync(tempRoot) ? removeTempRoot(tempRoot, marker) : "PASS"; receipt.finishedAt = new Date().toISOString(); writeReceipt(receipt, receiptPath); }
-  if (!validateReceipt(receipt)) process.exitCode = 1; return receipt;
-}
-
 export async function main() {
   const runId = crypto.randomBytes(8).toString("hex");
   const name = `celebratedeal-g7-email-operations-browser-${runId}`;
@@ -379,7 +326,7 @@ export async function main() {
     finishedAt: null,
     sourceDigest: safeSourceDigest(),
     commands: [],
-    expected: { canonicalMigrations: 53, emailDeliveries: 55, pageSize: 25, browserTests: 5 },
+    expected: { canonicalMigrations: EXPECTED_CANONICAL_MIGRATIONS, emailDeliveries: 55, pageSize: 25, browserTests: 5 },
     phases: { mirror: "NOT_RUN", prismaGenerate: "NOT_RUN", prismaValidate: "NOT_RUN", prismaDeploy: "NOT_RUN", prismaStatus: "NOT_RUN", nextBuild: "NOT_RUN", server: "NOT_RUN", browser: "NOT_RUN" },
     browser: { passed: 0, failed: 0, skipped: 0, axeCriticalOrSerious: -1, pageSize: 0, search: "NOT_RUN", filters: "NOT_RUN", pagination: "NOT_RUN", privacy: "NOT_RUN", requeue: "NOT_RUN", providerRejected: "NOT_RUN", pending: "NOT_RUN", csrf: "NOT_RUN", keyboard: "NOT_RUN", tenantIsolation: "NOT_RUN", rwd: { desktop: "NOT_RUN", mobile: "NOT_RUN" } },
     cleanup: { syntheticRows: "NOT_RUN", server: "NOT_RUN", container: "NOT_RUN", tempRoot: "NOT_RUN" },
@@ -395,7 +342,7 @@ export async function main() {
   const note = (nameValue, result) => receipt.commands.push({ name: nameValue, exitCode: result.exitCode });
 
   try {
-    if (!runNamePattern.test(name) || !schemaPattern.test(schema) || canonicalMigrations().length !== 53 || !assertStaticSafety(fs.readFileSync(scriptPath, "utf8"))) throw new Error("runner-contract-invalid");
+    if (!runNamePattern.test(name) || !schemaPattern.test(schema) || canonicalMigrations().length !== EXPECTED_CANONICAL_MIGRATIONS || !assertStaticSafety(fs.readFileSync(scriptPath, "utf8"))) throw new Error("runner-contract-invalid");
     fs.mkdirSync(tempRoot, { recursive: true });
     for (const directory of ["tmp", "home", "docker-config", "screenshots"]) fs.mkdirSync(path.join(tempRoot, directory), { recursive: true });
     fs.writeFileSync(path.join(tempRoot, ".marker"), marker, { encoding: "utf8", flag: "wx" });

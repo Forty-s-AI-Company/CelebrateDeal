@@ -1656,3 +1656,23 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：53 migrations、4/4 disposable DB、10 files／40 tests、runner contracts 6/6、TypeScript、scoped ESLint、受控 production build與cleanup通過。Browser已證明search、URL privacy、pagination、requeue、provider rejection、pending、tenant isolation、mobile RWD與Axe 0；filter／keyboard／CSRF runner時序已修但未重跑。
 - Score：Email固定功能8.2→8.6；canonical維持75.5，CAT04=6.0、CAT10=4.5。
 - Pause：依使用者要求不再開下一個WP；Goal保持active。完整進度見`docs/ai-team/evidence/goal-progress-pause-20260810.md`。
+
+## REL-20260820 — Current-tree release reconciliation and disposable backup／restore（2026-08-20）
+
+- Evidence：`docs/ai-team/evidence/goal-continuation-release-reconciliation-20260820.md`
+- Disposable receipt：`.ai-team/reports/staging-backup-restore-disposable-receipt.json`
+- Result：修正 contract drift、dead code 與 combined coverage merge 的重複 script placeholder；新增 tmpfs／loopback-only、explicit environment 的 disposable PostgreSQL schema/data backup／restore drill。58 migrations、migration status、aggregate／extension snapshot compare、source／target／temp cleanup 全部 `PASS`。
+- Verification：ESLint `0 errors／0 warnings`、TypeScript、controlled production build、local release verifier、local rollback rehearsal、backup tooling static checks 通過；Node TAP `762 passed／0 failed／0 skipped`；combined coverage `403 files passed／1 skipped`、`3073 passed／1 skipped`，statements／branches／functions／lines=`64.18／63.80／70.33／69.04`，threshold=`63／57／60／65`。
+- Boundary：這是 local／disposable evidence，不代表 Supabase platform restore、實際 staging restore、PITR、Production recovery、PayUni Sandbox reconciliation 或 external provider evidence。Cloudflare、Resend、Sentry、PostHog、durable rate limit、staging Browser matrix、法務／客服／退款／隱私與人工 owner acceptance 仍 pending；Goal remains active，`SANDBOX_READY=false`、`PRODUCTION_READY=false`。
+
+## REL-20260821-G7-55 — Email operations Browser rerun（2026-08-21）
+
+- Receipt：`docs/ai-team/evidence/g7-55-email-operations-browser-qa-4d9c1276b5dc9719.json`
+- Result：修正 keyboard focus／Tab 流程、保留 failed／live reminder filters，並將 expired CSRF assertion 限定在 Email delivery 主表單；fresh local runner 為 `PASS`，5/5 Browser、0 failed、0 skipped、Axe critical／serious `0`、desktop／mobile RWD、filters、keyboard、CSRF、tenant isolation 與 exact cleanup 全通過。
+- Boundary：此 receipt 只證明 local disposable Browser flow；Resend 真實寄信、staging Browser matrix、Cloudflare、PayUni Sandbox、Production 與人工 owner acceptance 仍未驗證。Goal remains active，canonical total 維持 `75.5`。
+
+## REL-20260821-RT01 — RT-01-D2 live-chat disposable refresh（2026-08-21）
+
+- Receipt：`.ai-team/reports/rt01-live-chat-disposable-receipt.json`；fresh run 後以 canonical absolute path 執行 `--verify-receipt` 通過。
+- Result：current tree 的 58 migrations、validate／deploy／status／migration state、live-chat DB suite `1/1`、container／temp cleanup 全部 `PASS`；sourceEnv／raw output／persistent volume／Production side effect safety flags 全部保持安全值。
+- Boundary：這是 local disposable PostgreSQL evidence，只補強 live-chat data contract；不等同 actual staging restore、Production recovery、外部服務驗證、PayUni Sandbox reconciliation 或人工 acceptance，canonical total 不變。

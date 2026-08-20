@@ -97,7 +97,7 @@
   ],
   "allFixedFunctionsAtLeast7": true,
   "canonical": {
-    "source": { "path": "docs/launch/current-readiness-snapshot-20260802.json", "sha256": "1466ea4095d18ddf13c5657e16aa65b87e956cfbcc1dd90f12531276b1780055" },
+    "source": { "path": "docs/launch/current-readiness-snapshot-20260802.json", "sha256": "f67a42235d3dda97e3fc9d2d78e0e579a96492cce6b3ca2d48ae147ff0d843ad" },
     "total": 75.5,
     "categories": { "CAT01": 8.5, "CAT02": 8.5, "CAT03": 8, "CAT04": 6, "CAT05": 8.5, "CAT06": 7, "CAT07": 9, "CAT08": 8, "CAT09": 7.5, "CAT10": 4.5 },
     "allAtLeast7": false

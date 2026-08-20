@@ -7,6 +7,7 @@ import {
   isProductionScriptCoverage,
   parseCoverageContainerInspection,
   selectedCoverageEnvironment,
+  stripNodeTapOwnedVitestCoverage,
 } from "./run-combined-coverage.mjs";
 
 const workspaceRoot = process.cwd();
@@ -28,6 +29,23 @@ test("strips V8 query strings before applying the source boundary", () => {
   const url = `${fileUrl("scripts/run-combined-coverage.mjs")}?source-map`;
   assert.equal(isProductionScriptCoverage({ url }, workspaceRoot), true);
   assert.equal(path.isAbsolute(workspaceRoot), true);
+});
+
+test("removes only Node TAP-owned production script placeholders before coverage merge", () => {
+  const productionScript = path.join(workspaceRoot, "scripts", "runner.mjs");
+  const scriptTest = path.join(workspaceRoot, "scripts", "runner.test.mjs");
+  const applicationSource = path.join(workspaceRoot, "src", "app.ts");
+  const vitestCoverage = {
+    [productionScript]: { source: "vitest-zero-placeholder" },
+    [scriptTest]: { source: "vitest-test-entry" },
+    [applicationSource]: { source: "vitest-application-coverage" },
+  };
+
+  const stripped = stripNodeTapOwnedVitestCoverage(vitestCoverage, workspaceRoot);
+
+  assert.deepEqual(Object.keys(stripped).sort(), [applicationSource, scriptTest].sort());
+  assert.equal(stripped[applicationSource].source, "vitest-application-coverage");
+  assert.equal(stripped[scriptTest].source, "vitest-test-entry");
 });
 
 test("selects a hermetic environment without inheriting developer secrets", () => {
