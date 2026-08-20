@@ -89,7 +89,7 @@ jobs:
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
       - name: External provider evidence contract
-        run: node --test scripts/external-provider-evidence.test.mjs
+        run: node --test scripts/external-provider-evidence.test.mjs scripts/validate-external-provider-evidence.test.mjs
 
       - name: Backup tooling static checks
         shell: pwsh
