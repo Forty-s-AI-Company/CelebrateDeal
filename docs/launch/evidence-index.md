@@ -1875,3 +1875,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：相關 route／component unit tests `40/40`；`npm run typecheck`、`npm run typecheck:strict-index`、`npm run lint` 均 PASS；完整 Node TAP `841/841`；combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`，statements／branches／functions／lines=`64.80／64.48／71.01／69.71`；`npm run e2e -- --workers=1` `138 passed／0 failed／0 skipped`（138 tests）；coverage disposable database marker、58 migrations 與 cleanup 均 PASS。
 - Current result：local Browser release gate 為 `PASS_LOCAL_ONLY`，本機 engineering gates 已全綠。這不等於 remote CI、actual staging Browser matrix、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、Production preflight、政策或真人 acceptance 通過。
 - Boundary：本輪只使用 loopback／disposable PostgreSQL、Chromium 與 synthetic fixtures；沒有 staging、Production、外部 provider、PayUni、付款、退款、寄信、部署或 workflow dispatch。`ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
+
+## REL-20260821-CONTROLLED-PRODUCTION-BUILD — Current RC controlled build 重驗（2026-08-21）
+
+- Source RC：`9cd7473`；Documentation checkpoint：`f9628ee`；Evidence：[`rel-20260821-controlled-production-build.md`](../ai-team/evidence/rel-20260821-controlled-production-build.md)。
+- Verification：`node scripts/build/controlled-production-build.mjs` 實際輸出 `controlled production build: PASS`；exitCode `0`、failureCategory `NOT_APPLICABLE`、`inheritedApplicationEnvironment=false`、mirror cleanup `PASS`。
+- Boundary：runner 只使用 allowlisted synthetic build config 與 no-env mirror，沒有讀取或輸出 `.env*`，也沒有 staging、Production、外部 provider、PayUni、付款、退款、寄信、部署或 workflow dispatch side effect。這只證明 local controlled build；GitHub Actions current-RC run、actual staging 與 Production preflight 仍未證明，四個 readiness flags 與 `releaseDecision=NO_GO` 維持不變。

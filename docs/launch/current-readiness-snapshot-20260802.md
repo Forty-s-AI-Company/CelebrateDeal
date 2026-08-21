@@ -87,6 +87,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 current-RC Browser／engineering gate revalidation：source `9cd7473` 將 Team Funnel template 與 partner page 表單改為 native same-origin JSON transport，保留既有 Server Action、CSRF／Origin、登入、tenant、owner、field-lock 與 publish policy，並保留 fallback。相關 unit tests `40/40`；完整 Node TAP `841/841`；combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`，statements／branches／functions／lines=`64.80／64.48／71.01／69.71`；strict-index typecheck、lint 與完整 `npm run e2e -- --workers=1` `138 passed／0 failed／0 skipped` 均通過，coverage disposable database 與 cleanup PASS。因此 local Browser gate 已由 `BLOCKED` 更新為 `PASS_LOCAL_ONLY`。這是本機／disposable evidence，不代表 remote CI、actual staging matrix、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、Production preflight、政策或真人 acceptance 完成；四個 readiness flags、canonical `75.5/100`、`NO_GO` 與 Goal active 維持不變。
 
+最新 2026-08-21 controlled production build revalidation：current source `9cd7473` 用 `node scripts/build/controlled-production-build.mjs` 完成 no-env mirror、synthetic production build 與 cleanup；結果 `PASS`、exitCode `0`、`inheritedApplicationEnvironment=false`、`mirrorCleanup=PASS`。這補齊 local controlled build evidence，但不代表 GitHub Actions current-RC run、actual staging build、正式 preflight 或 Production readiness 完成；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 與 `NO_GO` 維持不變。詳見 `docs/ai-team/evidence/rel-20260821-controlled-production-build.md`。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |
