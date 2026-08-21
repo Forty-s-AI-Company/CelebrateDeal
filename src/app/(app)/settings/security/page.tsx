@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import {
-  confirmMfaEnrollmentAction,
   createVendorMemberAction,
   deactivateVendorMemberAction,
   dismissRecoveryCodesAction,
@@ -15,6 +14,7 @@ import {
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
 import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
@@ -154,11 +154,7 @@ export default async function SecuritySettingsPage({
                 <p className="mt-3 text-xs text-slate-500">若你的驗證器 App 支援手動輸入，Issuer 請填 `CelebrateDeal`。</p>
                 {mfaUri ? <p className="mt-3 break-all text-xs text-slate-500">{mfaUri}</p> : null}
               </div>
-              <form action={confirmMfaEnrollmentAction} className="grid gap-3">
-                <CsrfField />
-                <Field label="6 位數驗證碼" name="code" placeholder="123456" required />
-                <SubmitButton>啟用 MFA</SubmitButton>
-              </form>
+              <MfaEnrollmentForm csrfField={<CsrfField />} />
             </div>
           ) : (
             <form action={startMfaEnrollmentAction} className="grid gap-3">

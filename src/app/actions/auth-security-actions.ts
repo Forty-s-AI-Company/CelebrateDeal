@@ -21,13 +21,11 @@ import { getDb } from "@/lib/db";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
 import {
   decryptMfaSecret,
-  encryptMfaSecret,
   generateRecoveryCodes,
   generateTotpSecret,
   hashRecoveryCodeAsync,
   MFA_RECOVERY_COOKIE,
   MFA_SETUP_COOKIE,
-  parsePendingMfaSetup,
   serializePendingMfaSetup,
   serializeRecoveryCodes,
   verifyRecoveryCodeAsync,
@@ -36,6 +34,7 @@ import {
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
@@ -249,39 +248,8 @@ export async function startMfaEnrollmentAction(formData: FormData) {
 }
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  const code = text(formData, "code");
-  const cookieStore = await cookies();
-  const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
-  if (!pending || pending.userId !== auth.user.id || !verifyTotpCode(pending.secret, code)) redirect(`${destination}?error=mfa_code`);
-
-  const recoveryCodes = generateRecoveryCodes();
-  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
-  const secretEncrypted = encryptMfaSecret(pending.secret);
-  await getDb().$transaction([
-    getDb().userMfaFactor.upsert({
-      where: { userId: auth.user.id },
-      create: { userId: auth.user.id, factorType: "totp", label: "CelebrateDeal Authenticator", secretEncrypted },
-      update: { factorType: "totp", label: "CelebrateDeal Authenticator", secretEncrypted, enabledAt: new Date(), lastUsedAt: new Date() },
-    }),
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({ data: recoveryCodes.map((codeValue, index) => ({ userId: auth.user.id, codeHash: recoveryCodeHashes[index]! })) }),
-  ]);
-  await markCurrentSessionMfaVerified();
-  cookieStore.delete(MFA_SETUP_COOKIE);
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_enabled",
-    targetType: "UserMfaFactor",
-    targetId: auth.user.id,
-    after: auditSnapshot({ factorType: "totp" }),
-  });
-  redirect(`${destination}?updated=mfa_enabled`);
+  const result = await completeMfaEnrollment(formData);
+  redirect(`${result.destination}?${result.ok ? "updated=mfa_enabled" : "error=mfa_code"}`);
 }
 
 export async function verifyMfaAction(formData: FormData) {
