@@ -1,7 +1,8 @@
 # REL-20260821-LOCAL-BROWSER-RELEASE-GATE
 
 日期：2026-08-21（Asia/Taipei）  
-Current Source RC：`9cd7473`
+Current Source RC：`c308363`
+Application/runtime verification source：`9cd7473`（parent source；本次後續 checkpoint 只修改 controlled build runner、synthetic build config 與其 contract tests）
 Previous Source RC：`99373cf`
 Environment：`non-production loopback`  
 Result：`PASS`
@@ -120,6 +121,8 @@ npm run e2e -- --workers=1：138 passed、0 failed、0 skipped（138 tests）
 ```
 
 因此 current local Browser release gate 已為 `PASS`。這是 loopback／disposable evidence，不等於 actual staging Browser matrix、remote CI、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、Production 或人工 acceptance 已完成。
+
+本次 `c308363` 只變更 no-env controlled production build 的 preflight／build orchestration 與 synthetic contract tests，沒有變更 application runtime source；因此保留 `9cd7473` 的完整 Browser evidence，並明確標示沒有在 build-only checkpoint 上重跑 Browser。這不會把 inherited local evidence 擴大解讀為 staging、remote CI 或 Production evidence。
 
 ## Boundary
 
