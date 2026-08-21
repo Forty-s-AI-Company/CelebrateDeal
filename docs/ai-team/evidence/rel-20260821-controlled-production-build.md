@@ -1,8 +1,8 @@
 # REL-20260821-CONTROLLED-PRODUCTION-BUILD
 
 日期：2026-08-21（Asia/Taipei）  
-Source RC：`c308363`
-Documentation checkpoint：`c308363`
+Source RC：`5fd1c61`
+Documentation checkpoint：`4f68efd`
 Environment：`local disposable no-env mirror`  
 Result：`PASS`  
 sanitized：`true`  
@@ -25,6 +25,8 @@ mirrorCleanup=PASS
 ```
 
 Runner 只載入 `config/build-env.controlled.json` 的 allowlisted synthetic values，建立排除 `.env*`、`.git`、`node_modules`、`.next` 與 `coverage` 的隔離鏡像；先在鏡像內以 `preflight.ts --production` 執行 production-mode preflight，成功後才執行 `next build --webpack`。child process 不繼承 application environment，build 完成後鏡像已清理。preflight 與 Next build 都是本次 source checkpoint 的實際執行結果。
+
+本次 source checkpoint 也把 `node scripts/build/controlled-production-build.mjs` 加入 `.github/workflows/ci.yml` 的 `Controlled production preflight and build` step；Windows 使用 junction、POSIX 使用 directory symlink，避免 CI runner 的 mirror link type 依平台失效。workflow contract 會固定檢查這個 step 存在。
 
 ## Boundary
 

@@ -1814,7 +1814,7 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 
 ## REL-20260821-CAT10-POLICY-REVIEW-MATRIX — Policy／refund／support acceptance preparation（2026-08-21）
 
-- Source RC：`a28bf33`；新增 [`cat10-policy-review-matrix-20260821.md`](./cat10-policy-review-matrix-20260821.md)，集中 Terms、Privacy、Refund、Retention／Data Request 與 Customer Support escalation 的必要 review 欄位，並由 current handoff contract 綁定 current bundle source lineage。
+- Source RC：`5fd1c61`；新增 [`cat10-policy-review-matrix-20260821.md`](./cat10-policy-review-matrix-20260821.md)，集中 Terms、Privacy、Refund、Retention／Data Request 與 Customer Support escalation 的必要 review 欄位，並由 current handoff contract 綁定 current bundle source lineage。
 - Verification：matrix 明確要求版本、生效日、適用範圍、保存／刪除、退款例外、客服 escalation、owner reference、sanitized evidence、`legalComplianceSelfReview` 與 `notIndependentLegalCounsel`；current handoff contract `1/1`；結果維持 `PENDING_HUMAN`，沒有填造法律或真人 acceptance。
 - Boundary：只建立 local evidence-preparation 文件，沒有操作正式資料、資料刪除、資料匯出、付款、退款、外部 provider、staging 或 Production；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO` 維持不變。
 
@@ -1887,3 +1887,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source RC：`c308363`；Documentation checkpoint：`c308363`；Evidence：[`rel-20260821-controlled-production-build.md`](../ai-team/evidence/rel-20260821-controlled-production-build.md)。controlled runner 現在會在 no-env mirror 內先執行 `preflight.ts --production`，只有 preflight 成功才執行 `next build --webpack`；preflight failure 會 fail closed 且不啟動 Next build。
 - Verification：controlled production build 實際結果為 `PASS`；`preflightExitCode=0`、`nextBuildExitCode=0`、`inheritedApplicationEnvironment=false`、mirror cleanup `PASS`；runner contract tests `6/6`、preflight build contract `2/2`、lint、typecheck、strict-index、combined coverage、Node TAP `843/843` 與 diff check 均通過。synthetic controlled environment 新增 `CRON_SECRET` 與 `LIVE_CHAT_INGRESS_SECRET` allowlist，沒有輸出值。
 - Boundary：這是 local／disposable synthetic preflight 與 build evidence，不是實際 Production binding、GitHub Actions current-RC run、staging build、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni reconciliation、政策或真人 acceptance。沒有讀取或輸出 `.env*`，沒有 staging、Production、付款、退款、寄信、部署或 workflow dispatch side effect；四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
+
+## REL-20260821-CI-CONTROLLED-PRODUCTION-BUILD — Controlled production build 納入 CI（2026-08-21）
+
+- Source RC：`5fd1c61`；Evidence：[`rel-20260821-controlled-production-build.md`](../ai-team/evidence/rel-20260821-controlled-production-build.md)。`.github/workflows/ci.yml` 新增 `Controlled production preflight and build` step，執行 no-env mirror、production preflight 與 `next build --webpack`；POSIX 使用 directory symlink，Windows 使用 junction。
+- Verification：runner contract `7/7`、preflight build contract `2/2`、完整 Node TAP `844/844`、combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`，coverage=`64.79／64.51／70.80／69.74`；real controlled runner `PASS`，preflight `0`、Next build `0`、environment inherited `false`、cleanup `PASS`；typecheck、lint、strict-index、diff check 均通過。
+- Boundary：CI workflow 尚未對 current RC 執行，因 branch 未 push；這是 local/source contract evidence，不是 remote CI PASS。actual staging、external provider、PayUni Sandbox、policy／human acceptance 與 Production 仍未完成，四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
