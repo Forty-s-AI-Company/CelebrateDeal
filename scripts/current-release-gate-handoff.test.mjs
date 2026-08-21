@@ -6,6 +6,8 @@ const handoffPath = "docs/launch/current-release-gate-handoff-20260821.md";
 const handoff = fs.readFileSync(handoffPath, "utf8");
 const bundlePath = "docs/ai-team/evidence/release-evidence-bundle-current-status-20260821.json";
 const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
+const policyMatrixPath = "docs/launch/cat10-policy-review-matrix-20260821.md";
+const policyMatrix = fs.readFileSync(policyMatrixPath, "utf8");
 
 test("current release gate handoff stays non-Production and fail-closed", () => {
   for (const requiredText of [
@@ -34,6 +36,10 @@ test("current release gate handoff stays non-Production and fail-closed", () => 
   const sourceMatch = handoff.match(/^Source RC：`([0-9a-f]{7,40})`$/mu);
   assert.ok(sourceMatch, "handoff must declare a short hexadecimal source RC");
   assert.equal(sourceMatch[1], bundle.sourceCommit);
+  const policySourceMatch = policyMatrix.match(/^Source RC：`([0-9a-f]{7,40})`$/mu);
+  assert.ok(policySourceMatch, "CAT10 policy matrix must declare a short hexadecimal source RC");
+  assert.equal(policySourceMatch[1], bundle.sourceCommit);
+  assert.match(policyMatrix, /狀態：`PENDING_HUMAN`/u);
   assert.equal(bundle.gates.length, 13);
   assert.ok(bundle.gates.every((gate) => gate.sourceCommit === bundle.sourceCommit));
   assert.match(handoff, /combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`/u);
