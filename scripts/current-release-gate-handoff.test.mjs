@@ -36,8 +36,8 @@ test("current release gate handoff stays non-Production and fail-closed", () => 
   assert.equal(sourceMatch[1], bundle.sourceCommit);
   assert.equal(bundle.gates.length, 13);
   assert.ok(bundle.gates.every((gate) => gate.sourceCommit === bundle.sourceCommit));
-  assert.match(handoff, /combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`/u);
-  assert.doesNotMatch(handoff, /3088 passed／1 skipped/u);
+  assert.match(handoff, /combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`/u);
+  assert.doesNotMatch(handoff, /3090 passed／1 skipped/u);
 
   assert.doesNotMatch(handoff, /(?:SANDBOX_READY|PRODUCTION_READY)=true/u);
   assert.doesNotMatch(handoff, /releaseDecision=(?:GO|HOLD)(?:\b|`)/u);

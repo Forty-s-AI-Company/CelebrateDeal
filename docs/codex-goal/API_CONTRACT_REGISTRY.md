@@ -2,7 +2,7 @@
 
 最後更新：2026-08-21（Asia/Taipei）
 
-基準 revision：`35d8f59341bc`
+基準 revision：`9cd7473`
 
 ## 共用契約
 

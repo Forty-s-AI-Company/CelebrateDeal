@@ -1,10 +1,10 @@
 # REL-20260821-LOCAL-BROWSER-RELEASE-GATE
 
 日期：2026-08-21（Asia/Taipei）  
-Current Source RC：`99373cf`
-Previous Source RC：`6e3eddb`
+Current Source RC：`9cd7473`
+Previous Source RC：`99373cf`
 Environment：`non-production loopback`  
-Result：`BLOCKED`  
+Result：`PASS`
 sanitized：`true`  
 productionOperations：`0`
 
@@ -76,7 +76,7 @@ result: 126 passed、1 failed、11 did not run；138 tests；約 9.6 分鐘
 
 唯一失敗改為 `tests/e2e/commerce-orders.spec.ts` 的 G7-04 出貨流程：資料庫已完成出貨狀態更新，但瀏覽器在 30 秒內沒有導向預期的 `?updated=shipping` URL。該案例單獨重跑為 `1 passed`；之後整個 commerce-orders suite 的另一輪執行在 fixture 建立階段遇到 PostgreSQL `40P01 deadlock detected`，未取得新的完整 suite PASS。這些結果只能證明原 MFA blocker 已被修正，不能把 current Browser gate 改為 `PASS`。
 
-## Shipping transport and current-RC verification
+## Shipping transport previous-RC verification
 
 Current source RC `99373cf` 將 G7-04 出貨流程改為共用安全 helper 加上 native POST route。helper 仍執行相同的 CSRF／Origin、登入、vendor manager MFA、tenant scope 與 serializable CAS transaction；route 只使用已驗證的 browser `Origin` 建立 303 redirect，沒有放寬訂單狀態或 revision assertion。
 
@@ -100,7 +100,26 @@ result: 136 passed、2 failed、0 skipped；138 tests；約 11.2 分鐘
 
 目前兩個失敗為：`tests/e2e/smoke.spec.ts` team-funnel browser acceptance 的 Server Action 狀態文字未在單次 action 後出現，以及 `tests/e2e/webinar-owner-boundary.spec.ts` member A 初始建立狀態文字未出現。webinar case 孤立重跑為 `1 passed`；team-funnel 孤立重跑曾兩次在不同 action 出現相同類型的狀態傳輸漂移，第三次為 `1 passed`。這只能分類為尚未穩定的 Next 16 `useActionState`／Server Action transport residual，不能以 focused PASS、retry、reload 或放寬 assertion 取代完整 Browser gate。
 
-因此 G7-04 與 fixture deadlock 已關閉，但 current-RC Browser gate 仍為 `BLOCKED`；沒有修改 readiness flags，也沒有執行 staging、外部 provider、PayUni、Production 或正式付款／寄信操作。
+因此在 source RC `99373cf` 上，G7-04 與 fixture deadlock 已關閉，但當時 current-RC Browser gate 仍為 `BLOCKED`；沒有修改 readiness flags，也沒有執行 staging、外部 provider、PayUni、Production 或正式付款／寄信操作。
+
+## Latest current-RC revalidation
+
+Current source RC `9cd7473` 將 Team Funnel template 與 partner page 的表單 transport 改為 native same-origin JSON POST；route 只委派既有 Server Action 與 domain policy，保留 CSRF／Origin、登入、tenant、owner、field-lock 與 publish 驗證，並保留 Server Action fallback。這次修正只處理瀏覽器 transport，不放寬產品權限或資料狀態 assertion。
+
+本次實際驗證：
+
+```text
+Team Funnel／partner page route、component 與相關 unit tests：40 passed（6 files）
+npm run typecheck：PASS
+npm run typecheck:strict-index：PASS
+npm run lint：PASS
+npm run test:contracts：841 passed、0 failed、0 skipped
+npm run test:coverage：410 files passed、1 skipped；3106 passed、1 skipped
+coverage：statements 64.80%、branches 64.48%、functions 71.01%、lines 69.71%
+npm run e2e -- --workers=1：138 passed、0 failed、0 skipped（138 tests）
+```
+
+因此 current local Browser release gate 已為 `PASS`。這是 loopback／disposable evidence，不等於 actual staging Browser matrix、remote CI、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、Production 或人工 acceptance 已完成。
 
 ## Boundary
 
@@ -111,4 +130,4 @@ result: 136 passed、2 failed、0 skipped；138 tests；約 11.2 分鐘
 
 ## Next safe action
 
-保留目前 Browser blocker 的真實 evidence；下一個安全工作是取得 team-funnel／webinar Server Action 狀態傳輸的最小可重現案例，再進行最小 source-scoped 修正。不得以放寬 URL／狀態 assertion、reload、skip 或無界 retry 掩蓋。staging lineage、migration、recovery、rollback 與外部 provider 工作仍需先取得核准的 non-Production authorization，不得因 local focused case 通過而提前執行或升級 readiness。
+保留目前 local Browser `PASS` 的完整 evidence；下一個安全工作是由 owner 依核准流程補齊 remote CI、actual staging lineage／migration／recovery／rollback、外部 provider、PayUni Sandbox、政策與人工 acceptance。這些 gate 未完成前，不得升級 readiness 或 release decision。
