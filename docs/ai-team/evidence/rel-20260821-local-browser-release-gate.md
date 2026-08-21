@@ -1,7 +1,7 @@
 # REL-20260821-LOCAL-BROWSER-RELEASE-GATE
 
 日期：2026-08-21（Asia/Taipei）  
-Current Source RC：`96407f8`
+Current Source RC：`99373cf`
 Previous Source RC：`6e3eddb`
 Environment：`non-production loopback`  
 Result：`BLOCKED`  
@@ -53,7 +53,7 @@ standalone accessibility suite 這次通過，完整 E2E 仍在相同 owner MFA 
 
 ## MFA transport resolution and current-RC verification
 
-Current source RC `96407f8` 將 owner MFA confirmation 拆成共用的 enrollment helper 與 native POST route。route 會先經過相同的 CSRF／Origin 驗證，再以已驗證的 browser `Origin` 建立 303 redirect，避免 Next 16 internal request URL 將 loopback host 改成 canonical host而使 session cookie 不匹配。沒有放寬 assertion、跳過 MFA、改變交易邏輯或輸出 cookie／credential。
+Previous source RC `96407f8` 將 owner MFA confirmation 拆成共用的 enrollment helper 與 native POST route。route 會先經過相同的 CSRF／Origin 驗證，再以已驗證的 browser `Origin` 建立 303 redirect，避免 Next 16 internal request URL 將 loopback host 改成 canonical host而使 session cookie 不匹配。沒有放寬 assertion、跳過 MFA、改變交易邏輯或輸出 cookie／credential。
 
 修正後的本機驗證：
 
@@ -76,6 +76,32 @@ result: 126 passed、1 failed、11 did not run；138 tests；約 9.6 分鐘
 
 唯一失敗改為 `tests/e2e/commerce-orders.spec.ts` 的 G7-04 出貨流程：資料庫已完成出貨狀態更新，但瀏覽器在 30 秒內沒有導向預期的 `?updated=shipping` URL。該案例單獨重跑為 `1 passed`；之後整個 commerce-orders suite 的另一輪執行在 fixture 建立階段遇到 PostgreSQL `40P01 deadlock detected`，未取得新的完整 suite PASS。這些結果只能證明原 MFA blocker 已被修正，不能把 current Browser gate 改為 `PASS`。
 
+## Shipping transport and current-RC verification
+
+Current source RC `99373cf` 將 G7-04 出貨流程改為共用安全 helper 加上 native POST route。helper 仍執行相同的 CSRF／Origin、登入、vendor manager MFA、tenant scope 與 serializable CAS transaction；route 只使用已驗證的 browser `Origin` 建立 303 redirect，沒有放寬訂單狀態或 revision assertion。
+
+本次修正後的本機驗證：
+
+```text
+shipping helper／route／action／component targeted tests：14 passed
+修改檔案 ESLint：0 errors
+TypeScript typecheck：PASS
+npx playwright test tests/e2e/commerce-orders.spec.ts --workers=1：16 passed
+```
+
+commerce suite 的 fixture 建立改為 sequential，避免兩個 disposable serializable transaction 同時觸碰共用 commerce tables 造成 synthetic PostgreSQL `40P01 deadlock`；這是測試 fixture 穩定化，不是降低產品交易併發保證。
+
+修正後完整 E2E 的最新實際結果仍不是全綠：
+
+```text
+npm run e2e -- --workers=1
+result: 136 passed、2 failed、0 skipped；138 tests；約 11.2 分鐘
+```
+
+目前兩個失敗為：`tests/e2e/smoke.spec.ts` team-funnel browser acceptance 的 Server Action 狀態文字未在單次 action 後出現，以及 `tests/e2e/webinar-owner-boundary.spec.ts` member A 初始建立狀態文字未出現。webinar case 孤立重跑為 `1 passed`；team-funnel 孤立重跑曾兩次在不同 action 出現相同類型的狀態傳輸漂移，第三次為 `1 passed`。這只能分類為尚未穩定的 Next 16 `useActionState`／Server Action transport residual，不能以 focused PASS、retry、reload 或放寬 assertion 取代完整 Browser gate。
+
+因此 G7-04 與 fixture deadlock 已關閉，但 current-RC Browser gate 仍為 `BLOCKED`；沒有修改 readiness flags，也沒有執行 staging、外部 provider、PayUni、Production 或正式付款／寄信操作。
+
 ## Boundary
 
 - 只使用 loopback PostgreSQL、Chromium 與 isolated E2E fixtures。
@@ -85,4 +111,4 @@ result: 126 passed、1 failed、11 did not run；138 tests；約 9.6 分鐘
 
 ## Next safe action
 
-保留目前 Browser blocker 的真實 evidence；下一個安全工作是釐清 G7-04 出貨 Server Action 的 order-sensitive redirect，以及 fixture 階段的 PostgreSQL deadlock，不得以放寬 URL assertion、reload、skip 或無界 retry 掩蓋。staging lineage、migration、recovery、rollback 與外部 provider 工作仍需先取得核准的 non-Production authorization，不得因 local focused case 通過而提前執行或升級 readiness。
+保留目前 Browser blocker 的真實 evidence；下一個安全工作是取得 team-funnel／webinar Server Action 狀態傳輸的最小可重現案例，再進行最小 source-scoped 修正。不得以放寬 URL／狀態 assertion、reload、skip 或無界 retry 掩蓋。staging lineage、migration、recovery、rollback 與外部 provider 工作仍需先取得核准的 non-Production authorization，不得因 local focused case 通過而提前執行或升級 readiness。

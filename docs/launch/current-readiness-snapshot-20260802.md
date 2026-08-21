@@ -83,6 +83,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 同一 current RC 的完整 Browser 執行實際為 `126 passed／1 failed／11 did not run`（138 tests）。失敗改為 G7-04 出貨流程在資料庫更新後未完成預期 `?updated=shipping` URL commit；單獨重跑該案例為 `1/1`。另一輪 commerce-orders suite 在 fixture 建立階段遇到 PostgreSQL `40P01 deadlock detected`，因此目前仍沒有穩定的 full Browser PASS。local Browser gate 維持 `BLOCKED`，不變更 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 
+最新 2026-08-21 G7-04 shipping transport reconciliation：current source RC `99373cf` 將出貨狀態表單改為共用安全 helper 加上 native POST route，保留 CSRF／Origin、登入、vendor manager MFA、tenant scope 與 serializable CAS transaction；shipping helper／route／action／component targeted tests `14/14`、修改檔案 ESLint／typecheck 與 commerce-orders Browser `16/16` 通過。disposable fixture 改為 sequential 以避免共享 commerce tables 的 synthetic `40P01 deadlock`，不代表放寬產品交易併發保證。完整 `npm run e2e -- --workers=1` 最新為 `136 passed／2 failed／0 skipped`（138 tests），兩個失敗是 team-funnel／webinar owner 的 Server Action 狀態傳輸漂移；孤立 webinar `1/1`、team-funnel 第三次 `1/1`，但完整 Browser gate 仍 `BLOCKED`。本輪沒有 staging、外部 provider、PayUni、Production、付款、退款、寄信或部署 side effect；`ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 與 `NO_GO` 維持不變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

@@ -1862,3 +1862,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：helper `2/2`、route `2/2`、MFA action focused `7 passed`、修改檔案 ESLint／typecheck PASS、static authenticated owner case `1/1`、standalone accessibility rerun `8/8`；原 MFA URL commit blocker 已關閉。
 - Current Browser result：完整 `npm run e2e -- --workers=1` 為 `126 passed／1 failed／11 did not run`；G7-04 出貨流程的 `?updated=shipping` URL commit assertion 失敗，單獨重跑該案例 `1/1`，另一輪 commerce-orders suite 在 fixture 建立時遇到 PostgreSQL `40P01 deadlock detected`。Browser gate 仍 `BLOCKED`，不能以 focused／standalone PASS 取代穩定 full PASS。
 - Boundary：只使用 loopback PostgreSQL／Chromium 與 isolated fixtures；沒有 staging、Production、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、付款、退款、寄信或 deployment side effect。四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
+
+## REL-20260821-G7-04-SHIPPING-NATIVE-TRANSPORT — G7-04 出貨 transport 修正與 current Browser rerun（2026-08-21）
+
+- Source RC：`99373cf`；Evidence：[`rel-20260821-local-browser-release-gate.md`](../ai-team/evidence/rel-20260821-local-browser-release-gate.md)。出貨流程改為共用安全 helper 加 native POST route，保留 CSRF／Origin、登入、MFA、tenant scope 與 serializable CAS transaction；disposable commerce fixture 改為 sequential，避免 synthetic shared-table deadlock。
+- Verification：shipping helper／route／action／component targeted tests `14/14`、修改檔案 ESLint／typecheck PASS、`npx playwright test tests/e2e/commerce-orders.spec.ts --workers=1` `16/16`；完整 `npm run e2e -- --workers=1` 最新為 `136 passed／2 failed／0 skipped`（138 tests）。兩個 failure 為 team-funnel／webinar owner Server Action 狀態文字漂移；webinar 孤立 `1/1`、team-funnel 第三次孤立 `1/1`，但 Browser gate 仍 `BLOCKED`。
+- Boundary：fixture sequential 化只處理 disposable setup deadlock，不降低產品併發 assertion；沒有 staging、Production、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、付款、退款、寄信或 deployment side effect。四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
