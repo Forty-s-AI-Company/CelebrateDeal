@@ -74,6 +74,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 staging release evidence checkpoint：current source RC `c7fa06a` 新增 `scripts/staging-release-evidence.mjs` 與 read-only `scripts/validate-staging-release-evidence.mjs`，將 `lineage`、`migration`、`recovery`、`rollback` 四個 staging component 綁定同一個 source lineage。aggregate contract `9/9`、receipt validator `9/9`、完整 Node TAP `841/841`、combined coverage `404 files passed／1 skipped`、`3090 passed／1 skipped`，coverage=`64.75／64.49／71.04／69.65`，lint、typecheck、strict-index、secret scan、audit、controlled production build 與 current bundle validation 均通過；CI 已加入兩個 contract steps。這仍是 local／synthetic contract，不是 actual staging migration、backup、restore 或 rollback receipt；staging 四項 gate、remote CI、外部服務、PayUni reconciliation、政策與真人 acceptance，以及 `PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`NO_GO` 維持未變。
 
+最新 2026-08-21 local Browser performance checkpoint：current source RC `6e3eddb` 修正 `tests/e2e/performance.spec.ts` 的 resource measurement，只計算 document `load` 前開始的資源，避免 Next.js background prefetch 在 load 後的競速污染 initial navigation budget；原有 budget 數值未下修。修正後 Dashboard focused case `1/1`、Loading＋影片＋Dashboard focused suite `11/11`、`npm run e2e:performance` `5/5`；`npm run lint`、`npm run typecheck` 與 `git diff --check` 均通過。這是 loopback Docker PostgreSQL／Chromium 的 local evidence，不是 staging Browser matrix 或 Production evidence；四個 readiness flags 與 `releaseDecision=NO_GO` 維持未變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |
