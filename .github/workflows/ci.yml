@@ -152,5 +152,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Controlled production preflight and build
+        run: node scripts/build/controlled-production-build.mjs
+
       - name: Preflight
         run: NODE_ENV=production npm run preflight

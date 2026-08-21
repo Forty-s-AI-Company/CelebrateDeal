@@ -7,12 +7,19 @@ import {
   createControlledChildEnvironment,
   classifyBuildFailure,
   loadControlledEnvironment,
+  nodeModulesSymlinkType,
   runControlledProductionBuild,
   runChild,
   validateControlledEnvironment,
 } from "./controlled-production-build.mjs";
 
 const controlled = await loadControlledEnvironment();
+
+test("controlled mirror uses a platform-safe node_modules link", () => {
+  assert.equal(nodeModulesSymlinkType("win32"), "junction");
+  assert.equal(nodeModulesSymlinkType("linux"), "dir");
+  assert.equal(nodeModulesSymlinkType("darwin"), "dir");
+});
 
 test("controlled child environment excludes host application values", () => {
   const environment = createControlledChildEnvironment(controlled, {

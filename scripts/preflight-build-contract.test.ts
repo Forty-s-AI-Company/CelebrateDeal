@@ -9,6 +9,7 @@ describe("production build preflight contract", () => {
       scripts?: Record<string, string>;
     };
     const preflightSource = fs.readFileSync(path.join(root, "scripts", "preflight.ts"), "utf8");
+    const ciWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
     const controlledConfig = JSON.parse(fs.readFileSync(path.join(root, "config", "build-env.controlled.json"), "utf8")) as {
       environment?: Record<string, string>;
     };
@@ -20,6 +21,8 @@ describe("production build preflight contract", () => {
     expect(preflightSource).toContain('NODE_ENV: "production"');
     expect(controlledConfig.environment).toHaveProperty("CRON_SECRET");
     expect(controlledConfig.environment).toHaveProperty("LIVE_CHAT_INGRESS_SECRET");
+    expect(ciWorkflow).toContain("name: Controlled production preflight and build");
+    expect(ciWorkflow).toContain("node scripts/build/controlled-production-build.mjs");
   });
 
   it("keeps the production-mode Playwright server self-contained with synthetic runtime keys", () => {

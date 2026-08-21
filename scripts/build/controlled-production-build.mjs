@@ -90,6 +90,10 @@ export function createControlledChildEnvironment(controlledEnvironment, hostEnvi
   return childEnvironment;
 }
 
+export function nodeModulesSymlinkType(platform = process.platform) {
+  return platform === "win32" ? "junction" : "dir";
+}
+
 function mirrorFilter(sourceRoot) {
   return (source) => {
     const relativePath = relative(sourceRoot, source);
@@ -102,7 +106,7 @@ function mirrorFilter(sourceRoot) {
 export async function createNoEnvMirror(sourceRoot = defaultSourceRoot) {
   const uniqueRoot = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(join(tmpdir(), "celebratedeal-controlled-build-")));
   await cp(sourceRoot, uniqueRoot, { recursive: true, filter: mirrorFilter(sourceRoot) });
-  await symlink(join(sourceRoot, "node_modules"), join(uniqueRoot, "node_modules"), "junction");
+  await symlink(join(sourceRoot, "node_modules"), join(uniqueRoot, "node_modules"), nodeModulesSymlinkType());
   return uniqueRoot;
 }
 
