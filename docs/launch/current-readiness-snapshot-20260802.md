@@ -89,6 +89,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 controlled production build revalidation：current source `c308363` 用 `node scripts/build/controlled-production-build.mjs` 在 no-env mirror 內先完成 production preflight，再完成 synthetic production build 與 cleanup；結果 `PASS`、`preflightExitCode=0`、`nextBuildExitCode=0`、`inheritedApplicationEnvironment=false`、`mirrorCleanup=PASS`。這補強 local controlled build evidence，但不代表 GitHub Actions current-RC run、actual staging build、正式 binding 或 Production readiness 完成；`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 與 `NO_GO` 維持不變。詳見 `docs/ai-team/evidence/rel-20260821-controlled-production-build.md`。
 
+最新 2026-08-21 CAT10 evidence lineage revalidation：current source `a28bf33` 將 `cat10-policy-review-matrix-20260821.md` 綁定 current status bundle source，並由 `scripts/current-release-gate-handoff.test.mjs` fail closed 檢查；handoff contract `1/1` 通過，matrix 狀態仍為 `PENDING_HUMAN`。這只修正文件 lineage consistency，不代表 Terms、Privacy、Refund、Retention、客服 SLA 或真人 owner acceptance 已完成；四個 readiness flags、canonical `75.5/100` 與 `NO_GO` 維持不變。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |
