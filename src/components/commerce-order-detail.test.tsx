@@ -5,7 +5,6 @@ vi.mock("@/app/actions/support-case-actions", () => ({ createSupportCaseAction: 
 vi.mock("@/app/actions/commerce-order-actions", () => ({
   grantCommerceEntitlementAction: vi.fn(),
   transitionServiceFulfillmentAction: vi.fn(),
-  transitionShippingFulfillmentAction: vi.fn(),
 }));
 vi.mock("@/components/csrf-field", () => ({
   CsrfField: () => <input type="hidden" name="_csrf" value="synthetic" />,
@@ -80,6 +79,8 @@ describe("CommerceOrderDetail support workflow", () => {
     })} pii={null} />);
 
     expect(html).toContain("退款後待物流確認");
+    expect(html).toContain('action="/api/orders/shipping"');
+    expect(html).toContain('method="post"');
     expect(html).toContain("這筆訂單已全額退款，但包裹先前已出貨");
     expect(html).toContain('name="nextStatus" value="returned"');
     expect(html).toContain('name="nextStatus" value="delivered"');

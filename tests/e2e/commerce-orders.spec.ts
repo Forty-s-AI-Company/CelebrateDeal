@@ -576,10 +576,11 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     fixture.foreignLiveId = streamQuotaLive.id;
     fixture.foreignLiveSlug = streamQuotaLive.slug;
 
-    const [ownOrder, foreignOrder] = await Promise.all([
-      createPaidPhysicalOrder({ vendorId: vendor.id, productId: product.id, orderPrefix: "OWNER" }),
-      createPaidPhysicalOrder({ vendorId: foreignVendor.id, productId: foreignProduct.id, orderPrefix: "FOREIGN" }),
-    ]);
+    // These orders use separate tenants, but both serializable transactions
+    // touch shared commerce tables. Keep fixture creation deterministic so a
+    // disposable PostgreSQL deadlock cannot obscure the browser assertions.
+    const ownOrder = await createPaidPhysicalOrder({ vendorId: vendor.id, productId: product.id, orderPrefix: "OWNER" });
+    const foreignOrder = await createPaidPhysicalOrder({ vendorId: foreignVendor.id, productId: foreignProduct.id, orderPrefix: "FOREIGN" });
     fixture.orderId = ownOrder.order.id;
     fixture.orderNumber = ownOrder.orderNumber;
     fixture.productId = product.id;
@@ -1169,7 +1170,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(startPacking).toBeEnabled();
     const packingActionResponse = page.waitForResponse((candidate) => {
       const request = candidate.request();
-      return request.method() === "POST" && new URL(candidate.url()).pathname === `/orders/${fixture.orderId}`;
+      return request.method() === "POST" && new URL(candidate.url()).pathname === "/api/orders/shipping";
     }, { timeout: 15_000 });
     await startPacking.click();
     let packingResponse: Response;
@@ -1215,7 +1216,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(markDelivered).toBeEnabled();
     const deliveredActionResponse = page.waitForResponse((candidate) => {
       const request = candidate.request();
-      return request.method() === "POST" && new URL(candidate.url()).pathname === `/orders/${fixture.orderId}`;
+      return request.method() === "POST" && new URL(candidate.url()).pathname === "/api/orders/shipping";
     }, { timeout: 15_000 });
     await markDelivered.click();
     let deliveredResponse: Response;

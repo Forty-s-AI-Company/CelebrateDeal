@@ -7,22 +7,17 @@ import { z } from "zod";
 import {
   grantCommerceEntitlement,
   transitionServiceFulfillment,
-  transitionShippingFulfillment,
 } from "@/lib/commerce-order-fulfillment";
+import { completeShippingFulfillment } from "@/lib/commerce-shipping-action";
 import { requireVendorManagerMfa } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
-const ShippingActionStatus = z.enum(["packing", "shipped", "delivered", "returned"]);
 const ServiceActionStatus = z.enum(["scheduled", "completed"]);
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function optionalText(formData: FormData, key: string) {
-  return text(formData, key) || null;
 }
 
 function positiveRevision(formData: FormData) {
@@ -55,34 +50,7 @@ function refreshOrder(orderId: string) {
 }
 
 export async function transitionShippingFulfillmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const orderId = text(formData, "orderId");
-  const context = await requireVendorManagerMfa(orderPath(orderId));
-  const fulfillmentId = text(formData, "fulfillmentId");
-  const revision = positiveRevision(formData);
-  const nextStatus = ShippingActionStatus.safeParse(text(formData, "nextStatus"));
-  if (!orderId || !fulfillmentId || revision === null || !nextStatus.success) {
-    redirect(orderPath(orderId || "invalid", "error=invalid_fulfillment"));
-  }
-
-  try {
-    const result = await runFulfillmentTransaction((tx) => transitionShippingFulfillment(tx, {
-      vendorId: context.vendor.id,
-      fulfillmentId,
-      expectedRevision: revision,
-      nextStatus: nextStatus.data,
-      carrierName: optionalText(formData, "carrierName"),
-      trackingNumber: optionalText(formData, "trackingNumber"),
-      trackingUrl: optionalText(formData, "trackingUrl"),
-      actor: { id: context.member.id },
-    }));
-    if (result.orderId !== orderId) throw new Error("Order identity mismatch.");
-  } catch {
-    redirect(orderPath(orderId, "error=fulfillment_conflict"));
-  }
-
-  refreshOrder(orderId);
-  redirect(orderPath(orderId, "updated=shipping"));
+  redirect(await completeShippingFulfillment(formData));
 }
 
 export async function grantCommerceEntitlementAction(formData: FormData) {

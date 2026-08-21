@@ -4,7 +4,6 @@ import { createSupportCaseAction } from "@/app/actions/support-case-actions";
 import {
   grantCommerceEntitlementAction,
   transitionServiceFulfillmentAction,
-  transitionShippingFulfillmentAction,
 } from "@/app/actions/commerce-order-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
@@ -38,6 +37,8 @@ const fulfillmentLabels: Record<string, string> = {
   completed: "已完成",
   cancelled: "已取消",
 };
+
+const SHIPPING_FULFILLMENT_ACTION = "/api/orders/shipping";
 
 function statusTone(status: string): "blue" | "orange" | "gray" | "green" | "red" {
   if (["paid", "delivered", "granted", "completed"].includes(status)) return "green";
@@ -80,7 +81,7 @@ function ShippingActions({ orderId, fulfillment }: {
   if (fulfillment.status === "pending") {
     return (
       <div className="grid gap-3 lg:grid-cols-[auto_1fr]">
-        <form action={transitionShippingFulfillmentAction} className="self-end">
+        <form action={SHIPPING_FULFILLMENT_ACTION} method="post" className="self-end">
           <HiddenFulfillmentIdentity orderId={orderId} id={fulfillment.id} revision={fulfillment.revision} />
           <input type="hidden" name="nextStatus" value="packing" />
           <SubmitButton pendingChildren="更新中…">開始備貨</SubmitButton>
@@ -92,7 +93,7 @@ function ShippingActions({ orderId, fulfillment }: {
   if (fulfillment.status === "packing") return <ShippingForm orderId={orderId} fulfillment={fulfillment} />;
   if (fulfillment.status === "shipped") {
     return (
-      <form action={transitionShippingFulfillmentAction}>
+      <form action={SHIPPING_FULFILLMENT_ACTION} method="post">
         <HiddenFulfillmentIdentity orderId={orderId} id={fulfillment.id} revision={fulfillment.revision} />
         <input type="hidden" name="nextStatus" value="delivered" />
         <SubmitButton pendingChildren="更新中…">標記已送達</SubmitButton>
@@ -104,12 +105,12 @@ function ShippingActions({ orderId, fulfillment }: {
       <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
         <p className="text-sm font-medium text-amber-950">這筆訂單已全額退款，但包裹先前已出貨。請依實際物流結果結案，系統會保留原出貨與追蹤紀錄。</p>
         <div className="mt-3 flex flex-wrap gap-3">
-          <form action={transitionShippingFulfillmentAction}>
+          <form action={SHIPPING_FULFILLMENT_ACTION} method="post">
             <HiddenFulfillmentIdentity orderId={orderId} id={fulfillment.id} revision={fulfillment.revision} />
             <input type="hidden" name="nextStatus" value="returned" />
             <SubmitButton pendingChildren="結案中…" pendingMessage="正在記錄包裹退回結果，請勿重複送出。">標記包裹已退回</SubmitButton>
           </form>
-          <form action={transitionShippingFulfillmentAction}>
+          <form action={SHIPPING_FULFILLMENT_ACTION} method="post">
             <HiddenFulfillmentIdentity orderId={orderId} id={fulfillment.id} revision={fulfillment.revision} />
             <input type="hidden" name="nextStatus" value="delivered" />
             <SubmitButton pendingChildren="更新中…" pendingMessage="正在記錄包裹送達結果，請勿重複送出。">標記仍已送達</SubmitButton>
@@ -126,7 +127,7 @@ function ShippingForm({ orderId, fulfillment }: {
   fulfillment: NonNullable<CommerceOrderDetailRecord["items"][number]["shippingFulfillment"]>;
 }) {
   return (
-    <form action={transitionShippingFulfillmentAction} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+    <form action={SHIPPING_FULFILLMENT_ACTION} method="post" className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
       <HiddenFulfillmentIdentity orderId={orderId} id={fulfillment.id} revision={fulfillment.revision} />
       <input type="hidden" name="nextStatus" value="shipped" />
       <Field label="物流／交付方式" name="carrierName" required maxLength={120} defaultValue={fulfillment.carrierName} placeholder="例如：黑貓、自取" />
