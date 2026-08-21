@@ -7,6 +7,7 @@ import {
   createControlledChildEnvironment,
   classifyBuildFailure,
   loadControlledEnvironment,
+  runControlledProductionBuild,
   runChild,
   validateControlledEnvironment,
 } from "./controlled-production-build.mjs";
@@ -26,6 +27,42 @@ test("controlled child environment excludes host application values", () => {
   assert.equal(environment.NODE_ENV, "production");
   assert.equal(environment.PATH, "synthetic-path");
   assert.equal(environment.NEXT_PUBLIC_APP_URL, "https://build.invalid");
+  assert.ok(environment.CRON_SECRET);
+  assert.ok(environment.LIVE_CHAT_INGRESS_SECRET);
+});
+
+test("controlled build runs production preflight before Next build", async () => {
+  const calls = [];
+  const result = await runControlledProductionBuild({
+    createMirror: async () => join(tmpdir(), "celebratedeal-controlled-build-test-mirror"),
+    run: async (invocation) => {
+      calls.push(invocation);
+      return { code: 0, signal: null, output: "" };
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].args[1], /preflight\.ts$/u);
+  assert.deepEqual(calls[0].args.at(-1), "--production");
+  assert.deepEqual(calls[1].args.slice(-2), ["build", "--webpack"]);
+  assert.equal(result.preflightExitCode, 0);
+  assert.equal(result.nextBuildExitCode, 0);
+});
+
+test("controlled preflight failure stops before Next build", async () => {
+  const calls = [];
+  const result = await runControlledProductionBuild({
+    createMirror: async () => join(tmpdir(), "celebratedeal-controlled-build-test-failing-mirror"),
+    run: async (invocation) => {
+      calls.push(invocation);
+      return { code: calls.length === 1 ? 1 : 0, signal: null, output: calls.length === 1 ? "[FAIL] CSRF_SECRET: missing" : "" };
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.nextBuildExitCode, null);
+  assert.equal(result.failureCategory, "CONTROLLED_ENV_INCOMPLETE");
 });
 
 test("controlled config rejects non-synthetic or incomplete values before build", () => {

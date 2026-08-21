@@ -9,12 +9,17 @@ describe("production build preflight contract", () => {
       scripts?: Record<string, string>;
     };
     const preflightSource = fs.readFileSync(path.join(root, "scripts", "preflight.ts"), "utf8");
+    const controlledConfig = JSON.parse(fs.readFileSync(path.join(root, "config", "build-env.controlled.json"), "utf8")) as {
+      environment?: Record<string, string>;
+    };
 
     expect(packageJson.scripts?.build).toBe(
       "node --import tsx scripts/preflight.ts --production && prisma generate && next build",
     );
     expect(preflightSource).toContain('process.argv.includes("--production")');
     expect(preflightSource).toContain('NODE_ENV: "production"');
+    expect(controlledConfig.environment).toHaveProperty("CRON_SECRET");
+    expect(controlledConfig.environment).toHaveProperty("LIVE_CHAT_INGRESS_SECRET");
   });
 
   it("keeps the production-mode Playwright server self-contained with synthetic runtime keys", () => {

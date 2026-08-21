@@ -13,7 +13,9 @@ const requiredKeys = new Set([
   "DIRECT_URL",
   "NEXT_PUBLIC_APP_URL",
   "JOB_SECRET",
+  "CRON_SECRET",
   "CSRF_SECRET",
+  "LIVE_CHAT_INGRESS_SECRET",
   "RATE_LIMIT_PROVIDER",
   "PAYMENT_PROVIDER",
   "RESEND_API_KEY",
@@ -124,7 +126,7 @@ export function runChild({ executable, args, cwd, environment }) {
 
 export function classifyBuildFailure(output) {
   if (/database|prisma|econnrefused|connection refused/i.test(output)) return "DATABASE_ACCESS_DURING_BUILD";
-  if (/environment|env validation|required.*(?:key|variable)|missing.*(?:key|variable)/i.test(output)) return "CONTROLLED_ENV_INCOMPLETE";
+  if (/(?:environment|env validation|required.*(?:key|variable)|missing.*(?:key|variable)|CRON_SECRET|CSRF_SECRET|LIVE_CHAT_INGRESS_SECRET|RATE_LIMIT_PROVIDER|PAYMENT_PROVIDER)/i.test(output)) return "CONTROLLED_ENV_INCOMPLETE";
   if (/fetch failed|network|enotfound|timeout/i.test(output)) return "EXTERNAL_NETWORK_DEPENDENCY";
   if (/module not found|cannot find module/i.test(output)) return "MIRROR_MODULE_RESOLUTION";
   if (/type error|typescript|eslint/i.test(output)) return "SOURCE_QUALITY_FAILURE";
@@ -143,6 +145,27 @@ export async function runControlledProductionBuild({
   const mirrorRoot = await createMirror(sourceRoot);
   let cleanup = false;
   try {
+    const preflightCli = join(mirrorRoot, "node_modules", "tsx", "dist", "cli.mjs");
+    const preflightScript = join(mirrorRoot, "scripts", "preflight.ts");
+    const preflight = await run({
+      executable: process.execPath,
+      args: [preflightCli, preflightScript, "--production"],
+      cwd: mirrorRoot,
+      environment: childEnvironment,
+    });
+    if (preflight.code !== 0) {
+      return {
+        exitCode: preflight.code,
+        signal: preflight.signal,
+        failureCategory: classifyBuildFailure(preflight.output),
+        preflightExitCode: preflight.code,
+        preflightFailureCategory: classifyBuildFailure(preflight.output),
+        nextBuildExitCode: null,
+        inheritedApplicationEnvironment: false,
+        controlledKeyNames: Object.keys(controlledEnvironment).sort(),
+      };
+    }
+
     const nextCli = join(mirrorRoot, "node_modules", "next", "dist", "bin", "next");
     const result = await run({
       executable: process.execPath,
@@ -157,6 +180,9 @@ export async function runControlledProductionBuild({
       exitCode: result.code,
       signal: result.signal,
       failureCategory: result.code === 0 ? "NOT_APPLICABLE" : classifyBuildFailure(result.output),
+      preflightExitCode: preflight.code,
+      preflightFailureCategory: "NOT_APPLICABLE",
+      nextBuildExitCode: result.code,
       inheritedApplicationEnvironment: false,
       controlledKeyNames: Object.keys(controlledEnvironment).sort(),
     };
@@ -182,6 +208,9 @@ async function main() {
       exitCode: result.exitCode,
       signal: result.signal,
       failureCategory: result.failureCategory,
+      preflightExitCode: result.preflightExitCode,
+      preflightFailureCategory: result.preflightFailureCategory,
+      nextBuildExitCode: result.nextBuildExitCode,
       inheritedApplicationEnvironment: result.inheritedApplicationEnvironment,
       controlledKeyNames: result.controlledKeyNames,
       mirrorCleanup: "PASS",
@@ -199,6 +228,9 @@ async function main() {
       status: "BLOCKED",
       exitCode: 1,
       failureCategory: "RUNNER_BLOCKED",
+      preflightExitCode: null,
+      preflightFailureCategory: "RUNNER_BLOCKED",
+      nextBuildExitCode: null,
       inheritedApplicationEnvironment: false,
       mirrorCleanup: "NOT_CONFIRMED",
     });
