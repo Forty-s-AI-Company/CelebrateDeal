@@ -1893,3 +1893,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source RC：`5fd1c61`；Evidence：[`rel-20260821-controlled-production-build.md`](../ai-team/evidence/rel-20260821-controlled-production-build.md)。`.github/workflows/ci.yml` 新增 `Controlled production preflight and build` step，執行 no-env mirror、production preflight 與 `next build --webpack`；POSIX 使用 directory symlink，Windows 使用 junction。
 - Verification：runner contract `7/7`、preflight build contract `2/2`、完整 Node TAP `844/844`、combined coverage `410 files passed／1 skipped`、`3106 passed／1 skipped`，coverage=`64.79／64.51／70.80／69.74`；real controlled runner `PASS`，preflight `0`、Next build `0`、environment inherited `false`、cleanup `PASS`；typecheck、lint、strict-index、diff check 均通過。
 - Boundary：CI workflow 尚未對 current RC 執行，因 branch 未 push；這是 local/source contract evidence，不是 remote CI PASS。actual staging、external provider、PayUni Sandbox、policy／human acceptance 與 Production 仍未完成，四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
+
+## REL-20260821-CURRENT-RC-DEPENDENCY-AUDIT — Current RC production dependency audit（2026-08-21）
+
+- Source RC：`5fd1c61`；Receipt：[`wp99-current-rc-dependency-audit-receipt.json`](../../.ai-team/reports/wp99-current-rc-dependency-audit-receipt.json)；Evidence：[`rel-20260821-current-rc-dependency-audit.md`](../ai-team/evidence/rel-20260821-current-rc-dependency-audit.md)。
+- Verification：`npm audit --omit=dev --audit-level=high` 實際結果為 `found 0 vulnerabilities`，total／critical／high／moderate／low 全部為 `0`；沒有 dependency mutation。
+- Boundary：舊 remote run `32209974601` 在 `c2aa2201` 的 3 個 high 仍保留為歷史 failure；current RC 尚無 remote CI run，因此本 evidence 只代表 `PASS_LOCAL_ONLY`，不升格為 remote CI、staging、external provider、PayUni 或 Production readiness。四個 readiness flags、`75.5/100`、`NO_GO` 與 Goal active 維持不變。
