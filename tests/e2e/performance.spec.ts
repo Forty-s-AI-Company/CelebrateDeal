@@ -38,7 +38,12 @@ async function measurePage(page: Page, expectedPath?: string) {
     const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     if (!navigation) throw new Error("Navigation timing is unavailable.");
 
-    const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+    // AppShell links may begin Next.js background prefetches after the
+    // document load event. Keep the release budget focused on the initial
+    // navigation, otherwise the result depends on when the assertion happens
+    // to race those non-blocking prefetches.
+    const resources = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+      .filter((resource) => resource.startTime <= navigation.loadEventEnd);
     return {
       responseStartMs: navigation.responseStart - navigation.startTime,
       domContentLoadedMs: navigation.domContentLoadedEventEnd - navigation.startTime,
