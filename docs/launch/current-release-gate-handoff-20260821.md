@@ -28,6 +28,8 @@ canonicalTotal=75.5/100
 
 ## Owner authorization boundary
 
+執行 packet：[`current-release-owner-action-packet-20260822.md`](./current-release-owner-action-packet-20260822.md)。
+
 執行前只在受控 broker 或 ticket 系統記錄下列去識別欄位。不要把 URL、connection string、credential、Token、Cookie、customer data、付款資料或 raw provider response 複製到 repository、聊天或 CI artifact。
 
 | 欄位 | 必要值／限制 |

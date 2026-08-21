@@ -1896,6 +1896,12 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 
 ## REL-20260821-CURRENT-RC-DEPENDENCY-AUDIT — Current RC production dependency audit（2026-08-21）
 
-- Source RC：`5fd1c61`；Receipt：[`wp99-current-rc-dependency-audit-receipt.json`](../../.ai-team/reports/wp99-current-rc-dependency-audit-receipt.json)；Evidence：[`rel-20260821-current-rc-dependency-audit.md`](../ai-team/evidence/rel-20260821-current-rc-dependency-audit.md)。
+- Source RC：`5fd1c61`；Receipt：[`rel-20260821-current-rc-dependency-audit-receipt.json`](../ai-team/evidence/rel-20260821-current-rc-dependency-audit-receipt.json)；Evidence：[`rel-20260821-current-rc-dependency-audit.md`](../ai-team/evidence/rel-20260821-current-rc-dependency-audit.md)。
 - Verification：`npm audit --omit=dev --audit-level=high` 實際結果為 `found 0 vulnerabilities`，total／critical／high／moderate／low 全部為 `0`；沒有 dependency mutation。
 - Boundary：舊 remote run `32209974601` 在 `c2aa2201` 的 3 個 high 仍保留為歷史 failure；current RC 尚無 remote CI run，因此本 evidence 只代表 `PASS_LOCAL_ONLY`，不升格為 remote CI、staging、external provider、PayUni 或 Production readiness。四個 readiness flags、`75.5/100`、`NO_GO` 與 Goal active 維持不變。
+
+## REL-20260822-CURRENT-RELEASE-OWNER-ACTION-PACKET — Owner 授權與 resume packet（2026-08-22）
+
+- Source RC：`5fd1c61`；Packet：[`current-release-owner-action-packet-20260822.md`](./current-release-owner-action-packet-20260822.md)。
+- Scope：固定 non-Production authorization、exact staging identity、provider sandbox binding、callback host 與 resume 指示；不保存或要求在 repository／聊天中提供任何 Secret。
+- Boundary：這不是 staging／provider／PayUni／human acceptance evidence，也不改變 `SANDBOX_READY=false`、`PRODUCTION_READY=false` 或 `releaseDecision=NO_GO`；Goal 目前因缺少 owner authorization 與 external state 維持 blocked。
