@@ -76,6 +76,8 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 
 最新 2026-08-21 local Browser performance checkpoint：current source RC `6e3eddb` 修正 `tests/e2e/performance.spec.ts` 的 resource measurement，只計算 document `load` 前開始的資源，避免 Next.js background prefetch 在 load 後的競速污染 initial navigation budget；原有 budget 數值未下修。修正後 Dashboard focused case `1/1`、Loading＋影片＋Dashboard focused suite `11/11`、`npm run e2e:performance` `5/5`；`npm run lint`、`npm run typecheck` 與 `git diff --check` 均通過。這是 loopback Docker PostgreSQL／Chromium 的 local evidence，不是 staging Browser matrix 或 Production evidence；四個 readiness flags 與 `releaseDecision=NO_GO` 維持未變。
 
+最新 2026-08-21 current-RC full Browser gate：`npm run e2e -- --workers=1` 實際為 `137 passed／1 failed`；有序 accessibility spec 為 `7 passed／1 failed`。唯一失敗是 owner MFA Server Action redirect transport：兩次 action 都回 `303` 並帶有預期 redirect header，但瀏覽器未完成 URL commit。孤立 static owner case 的 `1/1` 通過不能抵銷有序與完整 suite 的 failure；完整 evidence 見 `docs/ai-team/evidence/rel-20260821-local-browser-release-gate.md`。這是 local Browser `BLOCKED`，不變更 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

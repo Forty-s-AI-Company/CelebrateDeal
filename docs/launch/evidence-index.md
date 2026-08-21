@@ -1848,3 +1848,9 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Source RC：`6e3eddb`；新增 [`rel-20260821-local-browser-performance-stabilization.md`](../ai-team/evidence/rel-20260821-local-browser-performance-stabilization.md)，修正 performance measurement 將 load 後 Next.js background prefetch 誤算入初始導覽資源的競速問題；原有 performance budget 未下修。
 - Verification：Dashboard focused `1/1`、Loading＋影片＋Dashboard focused suite `11/11`、`npm run e2e:performance` `5/5`；`npm run lint`、`npm run typecheck` 與 `git diff --check` 均通過。
 - Boundary：只使用 loopback Docker PostgreSQL／Chromium 與 isolated test fixtures，沒有 staging、Production、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、付款、退款、寄信或 deployment side effect；staging Browser matrix、外部 provider、PayUni reconciliation、政策與真人 acceptance 仍未完成，四個 readiness flags 與 `releaseDecision=NO_GO` 維持不變。
+
+## REL-20260821-LOCAL-BROWSER-RELEASE-GATE — Current-RC 完整 Browser gate 與 MFA transport blocker（2026-08-21）
+
+- Source RC：`6e3eddb`；Evidence：[`rel-20260821-local-browser-release-gate.md`](../ai-team/evidence/rel-20260821-local-browser-release-gate.md)。
+- Verification：完整 `npm run e2e -- --workers=1` 為 `137 passed／1 failed`；有序 accessibility spec 為 `7 passed／1 failed`。owner MFA flow 的兩次 Server Action 都回 `303`，並帶有預期 `mfa_started`／`mfa_enabled` redirect header，但 browser 沒有完成 URL commit；孤立 static case 的 `1/1` 通過不能抵銷有序與完整 suite 的失敗。
+- Boundary：這是 loopback local Browser evidence，結果保持 `BLOCKED`；沒有使用 reload、skip、放寬 assertion、增加 retry 或只驗證 response header 來替代真正導航。沒有 staging、Production、external provider、PayUni、付款、退款、寄信或 deployment side effect；四個 readiness flags 與 `releaseDecision=NO_GO` 維持不變，Goal remains active。
