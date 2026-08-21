@@ -44,6 +44,7 @@ canonicalTotal=75.5/100
 ## Current Browser release gate
 
 current source RC 的完整 Browser release gate 尚未通過。`npm run e2e -- --workers=1` 實際結果為 `137 passed／1 failed`；有序執行 `tests/e2e/accessibility.spec.ts` 為 `7 passed／1 failed`。唯一失敗為 owner MFA flow 的 Next 16 Server Action redirect transport：diagnostic run 只記錄到兩個 `303` response 與預期的 `mfa_started`／`mfa_enabled` redirect header，瀏覽器仍未完成 URL commit。孤立 static owner case 曾通過，不能抵銷有序 spec 與完整 suite 的失敗。完整 evidence 見 [`rel-20260821-local-browser-release-gate.md`](../ai-team/evidence/rel-20260821-local-browser-release-gate.md)。
+同一 source RC 的後續 standalone accessibility rerun 為 `8 passed`，但再次執行完整 E2E 仍為 `137 passed／1 failed`，且仍是相同 MFA URL commit failure；這表示 failure 具 order-sensitive／間歇性，不能以 focused 或 standalone PASS 取代 full Browser gate。
 
 這個 blocker 不以放寬 `toHaveURL`、reload、skip、增加 retry 或只驗證 response header 處理；在取得最小可重現的 framework transport 修正前，Browser gate 保持 `BLOCKED`。這不改變 13-gate release bundle 的外部／staging／PayUni／人工狀態，`releaseDecision=NO_GO` 維持不變。
 

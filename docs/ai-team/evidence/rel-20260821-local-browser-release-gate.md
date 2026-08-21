@@ -36,6 +36,20 @@ result: 7 passed、1 failed
 
 孤立執行 owner static case 曾得到 `1 passed`，但這不能抵銷有序 accessibility spec 與完整 Browser suite 的失敗。現況應記為 order-sensitive local Browser blocker，不能以 focused PASS 取代完整 gate。
 
+## Follow-up verification
+
+同一個 current source RC 的後續執行補充如下：
+
+```text
+npx playwright test tests/e2e/accessibility.spec.ts --workers=1
+result: 8 passed；約 4.7 分鐘
+
+npm run e2e -- --workers=1
+result: 137 passed、1 failed；138 tests；約 10.1 分鐘
+```
+
+standalone accessibility suite 這次通過，完整 E2E 仍在相同 owner MFA confirm URL commit 失敗；因此它只能證明 failure 具 order-sensitive／間歇性，不能把 current-RC Browser gate 改成 `PASS`。本 follow-up 沒有修改測試 assertion、加入 retry、reload、skip 或讀取敏感資料。
+
 ## Boundary
 
 - 只使用 loopback PostgreSQL、Chromium 與 isolated E2E fixtures。
