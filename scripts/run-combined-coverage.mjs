@@ -130,6 +130,16 @@ function psql(containerId, sql, environment, database = "celebratedeal_test") {
   ], environment);
 }
 
+function writeOwnershipMarkers(containerId, marker, environment) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const databaseMarker = psql(containerId, `COMMENT ON DATABASE celebratedeal_test IS '${marker}';`, environment, "postgres");
+    const schemaMarker = psql(containerId, `COMMENT ON SCHEMA public IS '${marker}';`, environment);
+    if (databaseMarker.exitCode === 0 && schemaMarker.exitCode === 0) return true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+  }
+  return false;
+}
+
 async function createDisposableDatabase() {
   const runId = crypto.randomBytes(8).toString("hex");
   const name = `celebratedeal-combined-coverage-${runId}`;
@@ -168,9 +178,7 @@ async function createDisposableDatabase() {
     if (!waitForPostgres(id, baseEnvironment)) throw new Error("Disposable PostgreSQL did not become ready.");
     const port = dockerPort(id, baseEnvironment);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Disposable PostgreSQL loopback port is invalid.");
-    const databaseMarker = psql(id, `COMMENT ON DATABASE celebratedeal_test IS '${marker}';`, baseEnvironment, "postgres");
-    const schemaMarker = psql(id, `COMMENT ON SCHEMA public IS '${marker}';`, baseEnvironment);
-    if (databaseMarker.exitCode !== 0 || schemaMarker.exitCode !== 0) throw new Error("Disposable PostgreSQL ownership marker could not be written.");
+    if (!writeOwnershipMarkers(id, marker, baseEnvironment)) throw new Error("Disposable PostgreSQL ownership marker could not be written.");
 
     const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/celebratedeal_test?schema=public`;
     const migrations = listCanonicalMigrations();

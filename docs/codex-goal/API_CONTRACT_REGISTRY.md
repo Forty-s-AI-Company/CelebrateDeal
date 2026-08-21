@@ -1,6 +1,6 @@
 # CelebrateDeal API Contract Registry
 
-最後更新：2026-08-09（Asia/Taipei）
+最後更新：2026-08-21（Asia/Taipei）
 
 基準 revision：`35d8f59341bc`
 
@@ -69,6 +69,10 @@
 | 50 | `POST /api/media/videos/resumable-upload` | active merchant session + same-origin/client boundary | bounded file metadata and chunk contract | authenticated vendor video ownership | 建立 resumable provider upload session | bounded upload contract；400／404／502 | 同路徑 route unit；Cloudflare binding 為外部 gate |
 | 51 | `POST /api/media/videos/resumable-upload/complete` | active merchant session + same-origin/client boundary | bounded video/upload identity | authenticated vendor mapping | 確認 provider upload 並更新處理狀態 | bounded completion contract；400／404／409／502 | 同路徑 route unit；Cloudflare ready 為外部 gate |
 | 52 | `GET /api/media/videos/status` | active merchant session + same-origin/client boundary | bounded video id query | authenticated vendor video ownership；foreign id 共用 404 | 只讀 provider processing／ready／error 與必要 metadata；不回傳 token、stream key 或原始 provider payload | private no-store JSON；400／401／403／404 | 同路徑 route unit；Cloudflare ready 為外部 gate |
+| 53 | `POST /api/orders/shipping` | native same-origin form；Server Action security、CSRF、Origin、MFA、tenant 與 CAS 由 shared helper 統一驗證 | bounded FormData；order、status、tracking 與 CSRF 欄位 | authenticated vendor／canonical order／fulfillment ownership | conditional shipping fulfillment update；重送以 CAS fail closed；成功後 303 回同源訂單頁 | 303 或安全 action error；不回傳 PII／原始錯誤 | 同路徑 route unit + commerce Browser acceptance |
+| 54 | `POST /api/settings/security/mfa/confirm` | native same-origin form；shared enrollment helper 驗證 CSRF、Origin、session 與 MFA code | bounded FormData；6 位 code 與 CSRF 欄位 | current authenticated platform admin session | enable MFA／consume enrollment state；成功或失敗都 303 回安全設定頁 | 303 到固定 query state；不回傳 secret／recovery code | 同路徑 route unit + MFA Browser acceptance |
+| 55 | `POST /api/team-funnel/template-actions` | native same-origin form；delegates to `manageTeamFunnelTemplateAction`，沿用 CSRF、Origin、tenant 與 owner policy | bounded FormData；create／publish／create-share／disable-share action state | template、source page、team、webinar、share ownership 由既有 domain service 驗證 | create／immutable publish／share mutation；replay/conflict 由既有 service contract 處理；action-level error 以 safe JSON state 回 200，避免正常表單驗證污染 Browser console | private no-store JSON `{ status, message, ...safe fields }`；unexpected transport error 500 | 同路徑 route unit + component unit + full Browser acceptance |
+| 56 | `POST /api/team-funnel/partner-page-actions` | native same-origin form；delegates to save／publish Server Actions，沿用 CSRF、Origin、tenant、field-lock 與 publish policy | bounded FormData；`operation=save|publish` 與 page content／slot fields | authenticated promoter page、template locks、team ownership 由既有 domain service 驗證 | save editable content／slot overrides／public visibility；action-level error 以 safe JSON state 回 200 | private no-store JSON `{ status, message }`；unknown operation safe error | 同路徑 route unit + component unit + full Browser acceptance |
 
 ## 已確認的 contract 缺口
 
@@ -82,8 +86,8 @@
 
 ## 驗收判定
 
-- Static inventory：45/45 route handlers 已登錄。
-- Same-path test：45/45。
+- Static inventory：56/56 route handlers 已登錄。
+- Same-path test：56/56。
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。

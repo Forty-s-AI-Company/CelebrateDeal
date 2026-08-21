@@ -67,14 +67,16 @@ test("template owner cannot publish a payload tampered with another member's web
     let publishRequestEvidence: { method: string; status: number | null; pathname: string; requestFailedReason: string | null } | null = null;
     const isPublishActionRequest = (request: Request) => {
       const url = new URL(request.url());
-      return request.method() === "POST" && url.pathname === editPath && Boolean(request.headers()["next-action"]);
+      return request.method() === "POST"
+        && url.pathname === "/api/team-funnel/template-actions"
+        && request.headers().accept === "application/json";
     };
     page.on("request", (request) => {
       if (!isPublishActionRequest(request)) return;
       publishRequestEvidence = { method: request.method(), status: null, pathname: new URL(request.url()).pathname, requestFailedReason: null };
     });
     page.on("response", (response) => {
-      if (response.request().method() !== "POST" || !response.request().headers()["next-action"]) return;
+      if (!isPublishActionRequest(response.request())) return;
       responses.push(response.status());
       if (isPublishActionRequest(response.request()) && publishRequestEvidence) publishRequestEvidence.status = response.status();
     });

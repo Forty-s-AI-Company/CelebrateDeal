@@ -32,5 +32,5 @@ export default async function EditPartnerPage({ params }: { params: Promise<{ id
       return { key, available: Boolean(templateSlot), productId: override?.productId ?? null, overrideUrl: override?.overrideUrl ?? null };
     }),
   };
-  return <><PageHeader title="編輯夥伴頁" description={`/p/${page.slug} 的內容、個人資料、商品槽與公開狀態。`} /><PartnerPageEditor page={editorPage} products={products} csrfToken={csrfToken} saveAction={savePartnerPageAction} publishAction={setPartnerPagePublishAction} /></>;
+  return <><PageHeader title="編輯夥伴頁" description={`/p/${page.slug} 的內容、個人資料、商品槽與公開狀態。`} /><PartnerPageEditor page={editorPage} products={products} csrfToken={csrfToken} saveAction={savePartnerPageAction} publishAction={setPartnerPagePublishAction} nativeAction="/api/team-funnel/partner-page-actions" /></>;
 }

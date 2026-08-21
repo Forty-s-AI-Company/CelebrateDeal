@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { CheckCircle2, LockKeyhole, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui";
+import { selectNativeTransport, useNativeActionState } from "@/components/use-native-action-state";
 
 const locks = [
   ["HEADLINE", "主標題"],
@@ -68,6 +69,7 @@ export function TeamTemplateForm({
   webinars,
   csrfToken,
   action,
+  nativeAction,
 }: {
   template?: TeamTemplateFormData;
   teams: TeamTemplateFormOption[];
@@ -75,8 +77,12 @@ export function TeamTemplateForm({
   webinars: TeamTemplateWebinarOption[];
   csrfToken: string;
   action: TemplateAction;
+  nativeAction?: string;
 }) {
-  const [state, formAction, pending] = useActionState(action, initialActionState);
+  const [serverState, formAction, serverPending] = useActionState(action, initialActionState);
+  const nativeState = useNativeActionState(initialActionState, nativeAction);
+  const state = selectNativeTransport(nativeAction, nativeState.state, serverState);
+  const pending = selectNativeTransport(nativeAction, nativeState.pending, serverPending);
   const [activeField, setActiveField] = useState<"headline" | "subheadline" | "body" | "ctaLabel" | "ctaUrl">("body");
   const isPublishing = Boolean(template?.id);
 
@@ -94,6 +100,7 @@ export function TeamTemplateForm({
     <Card>
       <form
         action={formAction}
+        onSubmit={selectNativeTransport(nativeAction, nativeState.submit, undefined)}
         aria-busy={pending}
         className="grid gap-6"
       >

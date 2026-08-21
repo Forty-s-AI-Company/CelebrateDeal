@@ -61,6 +61,7 @@ export default async function EditTeamTemplatePage({ params }: { params: Promise
         webinars={webinars.map((webinar) => ({ ...webinar, scheduledAt: webinar.scheduledAt.toLocaleString("zh-TW") }))}
         csrfToken={csrfToken}
         action={manageTeamFunnelTemplateAction}
+        nativeAction="/api/team-funnel/template-actions"
       />
     </>
   );

@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 import { Copy, ExternalLink, Link2Off, Plus, Users } from "lucide-react";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState } from "@/components/ui";
+import { selectNativeTransport, useNativeActionState } from "@/components/use-native-action-state";
 
 export type TeamTemplateListItem = {
   id: string;
@@ -25,15 +26,25 @@ export function TeamTemplateShareActions({
   sourcePage,
   csrfToken,
   action,
+  nativeAction,
 }: {
   template: Pick<TeamTemplateListItem, "id" | "name" | "teamId">;
   sourcePage: NonNullable<TeamTemplateListItem["sourcePage"]>;
   csrfToken: string;
   action: TemplateAction;
+  nativeAction?: string;
 }) {
-  const [state, formAction] = useActionState(action, initialActionState);
+  const [serverState, formAction] = useActionState(action, initialActionState);
+  const nativeState = useNativeActionState<TeamTemplateActionState>(initialActionState, nativeAction);
+  const state = selectNativeTransport(nativeAction, nativeState.state, serverState);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
-  const isDisableAction = sourcePage.shareEnabled;
+  const [shareEnabled, setShareEnabled] = useState(sourcePage.shareEnabled);
+  const isDisableAction = shareEnabled;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    const result = await nativeState.submit(event);
+    if (result?.status === "success") setShareEnabled(Boolean(result.shareUrl));
+  }
 
   async function copyShareUrl() {
     if (!state.shareUrl) return;
@@ -49,13 +60,14 @@ export function TeamTemplateShareActions({
 
   return (
     <div className="grid gap-2">
-      <form action={formAction}>
+      <form action={formAction} onSubmit={selectNativeTransport(nativeAction, handleSubmit, undefined)}>
         <input type="hidden" name="_csrf" value={csrfToken} />
         <input type="hidden" name="operation" value={isDisableAction ? "disable-share" : "create-share"} />
         <input type="hidden" name="teamId" value={template.teamId} />
         <input type="hidden" name="pageId" value={sourcePage.id} />
         <FormSubmitButton
           pendingChildren={isDisableAction ? "處理中…" : "建立中…"}
+          pendingOverride={selectNativeTransport(nativeAction, nativeState.pending, undefined)}
           pendingMessage={isDisableAction
             ? `正在停用「${template.name}」的分享連結。`
             : `正在建立「${template.name}」的分享連結。`}
@@ -102,7 +114,7 @@ export function TeamTemplateShareActions({
   );
 }
 
-export function TeamTemplateList({ templates, csrfToken, action }: { templates: TeamTemplateListItem[]; csrfToken: string; action: TemplateAction }) {
+export function TeamTemplateList({ templates, csrfToken, action, nativeAction }: { templates: TeamTemplateListItem[]; csrfToken: string; action: TemplateAction; nativeAction?: string }) {
   if (templates.length === 0) {
     return (
       <EmptyState
@@ -139,6 +151,7 @@ export function TeamTemplateList({ templates, csrfToken, action }: { templates: 
                     sourcePage={template.sourcePage}
                     csrfToken={csrfToken}
                     action={action}
+                    nativeAction={nativeAction}
                   />
                 ) : null}
               </div>

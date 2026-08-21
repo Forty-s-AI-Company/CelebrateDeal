@@ -7,6 +7,7 @@ type FormSubmitButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "chil
   children: ReactNode;
   pendingChildren: ReactNode;
   pendingMessage: string;
+  pendingOverride?: boolean;
   confirmMessage?: string;
   className?: string;
 };
@@ -18,6 +19,7 @@ export function FormSubmitButton({
   children,
   pendingChildren,
   pendingMessage,
+  pendingOverride = false,
   confirmMessage,
   className,
   disabled = false,
@@ -38,8 +40,8 @@ export function FormSubmitButton({
   const submittedByAction = !hasSubmitterName && formAction && action
     ? formAction === action
     : null;
-  const isActivePending = pending && (submittedByName ?? submittedByAction ?? true);
-  const isDisabled = pending || disabled;
+  const isActivePending = (pending || pendingOverride) && (submittedByName ?? submittedByAction ?? true);
+  const isDisabled = pending || pendingOverride || disabled;
 
   return (
     <>
