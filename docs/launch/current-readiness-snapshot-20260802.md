@@ -79,6 +79,10 @@ G7-24 再關閉 checkout current source 的兩個 P1：付款失敗／逾期沒�
 最新 2026-08-21 current-RC full Browser gate：`npm run e2e -- --workers=1` 實際為 `137 passed／1 failed`；有序 accessibility spec 為 `7 passed／1 failed`。唯一失敗是 owner MFA Server Action redirect transport：兩次 action 都回 `303` 並帶有預期 redirect header，但瀏覽器未完成 URL commit。孤立 static owner case 的 `1/1` 通過不能抵銷有序與完整 suite 的 failure；完整 evidence 見 `docs/ai-team/evidence/rel-20260821-local-browser-release-gate.md`。這是 local Browser `BLOCKED`，不變更 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
 同日 follow-up 的 standalone accessibility suite 曾為 `8 passed`，但再次執行完整 E2E 仍為 `137 passed／1 failed`，相同 MFA URL commit blocker 持續；此結果保留為 order-sensitive／間歇性 local Browser failure，不升級 readiness。
 
+最新 2026-08-21 MFA transport follow-up：current source RC `96407f8` 將 owner MFA confirmation 改為共用 enrollment helper 加上 native POST route，並以已驗證的 browser Origin 維持 loopback session host。helper／route targeted tests、修改檔案 ESLint／typecheck、static owner case `1/1` 與 standalone accessibility rerun `8/8` 通過；原 MFA URL commit blocker 已關閉。
+
+同一 current RC 的完整 Browser 執行實際為 `126 passed／1 failed／11 did not run`（138 tests）。失敗改為 G7-04 出貨流程在資料庫更新後未完成預期 `?updated=shipping` URL commit；單獨重跑該案例為 `1/1`。另一輪 commerce-orders suite 在 fixture 建立階段遇到 PostgreSQL `40P01 deadlock detected`，因此目前仍沒有穩定的 full Browser PASS。local Browser gate 維持 `BLOCKED`，不變更 `ENGINEERING_READY=true`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`、canonical `75.5/100` 或 `releaseDecision=NO_GO`。
+
 ## Scorecard
 
 | 類別 | 分數 | 目前狀態 |

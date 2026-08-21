@@ -1,7 +1,8 @@
 # REL-20260821-LOCAL-BROWSER-RELEASE-GATE
 
 日期：2026-08-21（Asia/Taipei）  
-Source RC：`6e3eddb`  
+Current Source RC：`96407f8`
+Previous Source RC：`6e3eddb`
 Environment：`non-production loopback`  
 Result：`BLOCKED`  
 sanitized：`true`  
@@ -9,7 +10,7 @@ productionOperations：`0`
 
 ## Verification
 
-以 current source RC 執行：
+以 previous source RC `6e3eddb` 執行的 baseline：
 
 ```text
 npm run e2e -- --workers=1
@@ -18,7 +19,7 @@ result: 137 passed、1 failed；138 tests；約 10.1 分鐘
 
 唯一失敗是 `tests/e2e/accessibility.spec.ts:302` 的 `static authenticated owner routes have no blocking axe violations`。owner MFA helper 的完整 browser flow 在 30 秒內沒有完成 URL commit，畫面仍停留在 `/settings/security?updated=mfa_started`，submit button 維持 pending。這不能列為 Browser gate PASS。
 
-同一份 accessibility spec 的有序重跑結果為：
+同一份 accessibility spec 的有序 baseline 重跑結果為：
 
 ```text
 npx playwright test tests/e2e/accessibility.spec.ts --workers=1
@@ -38,7 +39,7 @@ result: 7 passed、1 failed
 
 ## Follow-up verification
 
-同一個 current source RC 的後續執行補充如下：
+同一個 previous source RC 的後續執行補充如下：
 
 ```text
 npx playwright test tests/e2e/accessibility.spec.ts --workers=1
@@ -50,6 +51,31 @@ result: 137 passed、1 failed；138 tests；約 10.1 分鐘
 
 standalone accessibility suite 這次通過，完整 E2E 仍在相同 owner MFA confirm URL commit 失敗；因此它只能證明 failure 具 order-sensitive／間歇性，不能把 current-RC Browser gate 改成 `PASS`。本 follow-up 沒有修改測試 assertion、加入 retry、reload、skip 或讀取敏感資料。
 
+## MFA transport resolution and current-RC verification
+
+Current source RC `96407f8` 將 owner MFA confirmation 拆成共用的 enrollment helper 與 native POST route。route 會先經過相同的 CSRF／Origin 驗證，再以已驗證的 browser `Origin` 建立 303 redirect，避免 Next 16 internal request URL 將 loopback host 改成 canonical host而使 session cookie 不匹配。沒有放寬 assertion、跳過 MFA、改變交易邏輯或輸出 cookie／credential。
+
+修正後的本機驗證：
+
+```text
+ESLint（修改檔案）：0 errors
+TypeScript typecheck：PASS
+src/lib/mfa-enrollment.test.ts：2 passed
+src/app/api/settings/security/mfa/confirm/route.test.ts：2 passed
+MFA action focused tests：7 passed、315 skipped（testNamePattern 篩選）
+static authenticated owner browser case：1 passed
+full accessibility rerun：8 passed
+```
+
+修正後完整 E2E 的實際結果仍不是全綠：
+
+```text
+npm run e2e -- --workers=1
+result: 126 passed、1 failed、11 did not run；138 tests；約 9.6 分鐘
+```
+
+唯一失敗改為 `tests/e2e/commerce-orders.spec.ts` 的 G7-04 出貨流程：資料庫已完成出貨狀態更新，但瀏覽器在 30 秒內沒有導向預期的 `?updated=shipping` URL。該案例單獨重跑為 `1 passed`；之後整個 commerce-orders suite 的另一輪執行在 fixture 建立階段遇到 PostgreSQL `40P01 deadlock detected`，未取得新的完整 suite PASS。這些結果只能證明原 MFA blocker 已被修正，不能把 current Browser gate 改為 `PASS`。
+
 ## Boundary
 
 - 只使用 loopback PostgreSQL、Chromium 與 isolated E2E fixtures。
@@ -59,4 +85,4 @@ standalone accessibility suite 這次通過，完整 E2E 仍在相同 owner MFA 
 
 ## Next safe action
 
-保留目前 Browser blocker 的真實 evidence；不重試同一個完整 suite 死路。若要修復，需另開明確 scope 的 Next 16 Server Action navigation transport work package，先建立最小可重現測試，再由 source owner 審核任何 client navigation 或 action transport 改動。staging lineage、migration、recovery、rollback 與外部 provider 工作仍需先取得核准的 non-Production authorization，不得因 local Browser focused case 通過而提前執行或升級 readiness。
+保留目前 Browser blocker 的真實 evidence；下一個安全工作是釐清 G7-04 出貨 Server Action 的 order-sensitive redirect，以及 fixture 階段的 PostgreSQL deadlock，不得以放寬 URL assertion、reload、skip 或無界 retry 掩蓋。staging lineage、migration、recovery、rollback 與外部 provider 工作仍需先取得核准的 non-Production authorization，不得因 local focused case 通過而提前執行或升級 readiness。

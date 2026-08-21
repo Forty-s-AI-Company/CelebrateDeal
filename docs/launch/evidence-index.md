@@ -1855,3 +1855,10 @@ CAT10 local deterministic contract 40/40 passed／0 failed／0 skipped：WP-122 
 - Verification：完整 `npm run e2e -- --workers=1` 為 `137 passed／1 failed`；有序 accessibility spec 為 `7 passed／1 failed`。owner MFA flow 的兩次 Server Action 都回 `303`，並帶有預期 `mfa_started`／`mfa_enabled` redirect header，但 browser 沒有完成 URL commit；孤立 static case 的 `1/1` 通過不能抵銷有序與完整 suite 的失敗。
 - Boundary：這是 loopback local Browser evidence，結果保持 `BLOCKED`；沒有使用 reload、skip、放寬 assertion、增加 retry 或只驗證 response header 來替代真正導航。沒有 staging、Production、external provider、PayUni、付款、退款、寄信或 deployment side effect；四個 readiness flags 與 `releaseDecision=NO_GO` 維持不變，Goal remains active。
 - Follow-up：同一 source RC 的 standalone accessibility rerun 為 `8 passed`，但再次執行完整 `npm run e2e -- --workers=1` 仍為 `137 passed／1 failed`，相同 owner MFA URL commit failure 持續；此 order-sensitive／間歇性結果不改變 `BLOCKED`、readiness flags 或 `NO_GO`。
+
+## REL-20260821-MFA-NATIVE-ORIGIN-FIX — Owner MFA native confirmation transport 修正（2026-08-21）
+
+- Source RC：`96407f8`；Evidence：[`rel-20260821-local-browser-release-gate.md`](../ai-team/evidence/rel-20260821-local-browser-release-gate.md)。將 owner MFA confirmation 拆成共用 enrollment helper 與 native POST route，沿用 CSRF／Origin 驗證，並以已驗證的 browser Origin 建立 redirect，修正 Next 16 internal request URL 導致 loopback session host 不一致的問題。
+- Verification：helper `2/2`、route `2/2`、MFA action focused `7 passed`、修改檔案 ESLint／typecheck PASS、static authenticated owner case `1/1`、standalone accessibility rerun `8/8`；原 MFA URL commit blocker 已關閉。
+- Current Browser result：完整 `npm run e2e -- --workers=1` 為 `126 passed／1 failed／11 did not run`；G7-04 出貨流程的 `?updated=shipping` URL commit assertion 失敗，單獨重跑該案例 `1/1`，另一輪 commerce-orders suite 在 fixture 建立時遇到 PostgreSQL `40P01 deadlock detected`。Browser gate 仍 `BLOCKED`，不能以 focused／standalone PASS 取代穩定 full PASS。
+- Boundary：只使用 loopback PostgreSQL／Chromium 與 isolated fixtures；沒有 staging、Production、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni、付款、退款、寄信或 deployment side effect。四個 readiness flags、canonical `75.5/100`、`releaseDecision=NO_GO` 與 Goal active 維持不變。
