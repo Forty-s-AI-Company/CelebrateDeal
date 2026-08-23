@@ -34,6 +34,14 @@
     { "path": ".ai-team/reports/wp88-g1-direct-url-matrix-receipt.json", "sha256": "sha256:b9ad2d4963e2fdbf68787ec134b008725c3de3d9671373958408598776b8cef2", "bytes": 2502, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
     { "path": ".ai-team/reports/wp89-migration-drift-receipt.json", "sha256": "sha256:1d63a8defa26e9e219fc1a946cf6e1b01a79824fbc1d35d08a23819e35744f40", "bytes": 23680, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" }
   ],
+  "ignoredProvenanceArtifacts": [
+    {
+      "path": "docs/ai-team/current-work-package.md",
+      "sha256": "sha256:e9f55cc12afdb0868e361a5728ba4e4cbf6268f75e574a46cc282f7411b99002",
+      "bytes": 41670,
+      "sourceClass": "SANITIZED_LOCAL_IGNORED_PROVENANCE_ARTIFACT"
+    }
+  ],
   "wp148Summary": {
     "classification": "LOCAL_RELIABILITY_DIAGNOSTIC_CONTRACT_VERIFIED",
     "state": "LOCAL_VERIFIED",

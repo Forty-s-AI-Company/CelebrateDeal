@@ -41,6 +41,20 @@ for (const artifact of runtimeArtifacts) {
     assert.equal(fs.statSync(absolutePath).size, artifact.bytes, `Runtime artifact size drifted: ${artifact.path}`);
   }
 }
+assert.ok(Array.isArray(provenanceManifest.ignoredProvenanceArtifacts));
+const ignoredProvenanceArtifacts = [...provenanceManifest.ignoredProvenanceArtifacts].sort((left, right) => left.path.localeCompare(right.path));
+const ignoredProvenanceByPath = new Map(ignoredProvenanceArtifacts.map((artifact) => [artifact.path, artifact]));
+for (const artifact of ignoredProvenanceArtifacts) {
+  assert.ok(allSnapshotProvenance.includes(artifact.path), `Ignored provenance is not referenced by snapshot: ${artifact.path}`);
+  assert.equal(artifact.sourceClass, "SANITIZED_LOCAL_IGNORED_PROVENANCE_ARTIFACT");
+  assert.match(artifact.sha256, /^sha256:[0-9a-f]{64}$/);
+  assert.ok(Number.isInteger(artifact.bytes) && artifact.bytes > 0);
+  const absolutePath = path.join(root, artifact.path);
+  if (fs.existsSync(absolutePath)) {
+    assert.equal(sha256File(absolutePath), artifact.sha256, `Ignored provenance digest drifted: ${artifact.path}`);
+    assert.equal(fs.statSync(absolutePath).size, artifact.bytes, `Ignored provenance size drifted: ${artifact.path}`);
+  }
+}
 const wp148Receipt = provenanceManifest.wp148Summary;
 assert.deepEqual(Object.keys(wp148Receipt).sort(), ["classification", "externalTelemetry", "labels", "rawOutputExposed", "rawOutputPersisted", "sanitized", "scoreImpact", "state"]);
 assert.equal(snapshot.status, "CURRENT_TRUTH");
@@ -112,10 +126,7 @@ assert.ok(snapshot.categories.CAT09.provenance.includes(".ai-team/reports/wp192-
 assert.ok(snapshot.categories.CAT10.provenance.includes(".ai-team/reports/wp175-sales-to-support-operational-rehearsal-receipt.json"));
 assert.ok(snapshot.categories.CAT10.provenance.includes(".ai-team/reports/wp195-launch-owner-acceptance.json"));
 const assertProvenance = (relativePath, label) => {
-  if (relativePath.startsWith(".ai-team/reports/")) {
-    assert.ok(runtimeArtifactByPath.has(relativePath), `Missing tracked runtime provenance: ${label}`);
-    return;
-  }
+  if (runtimeArtifactByPath.has(relativePath) || ignoredProvenanceByPath.has(relativePath)) return;
   assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing provenance: ${label}`);
 };
 for (const category of categories) {
