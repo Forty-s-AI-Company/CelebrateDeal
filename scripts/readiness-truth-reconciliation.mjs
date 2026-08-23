@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -5,11 +6,43 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const snapshotPath = path.join(root, "docs/launch/current-readiness-snapshot-20260802.json");
+const snapshotMarkdownPath = path.join(root, "docs/launch/current-readiness-snapshot-20260802.md");
+const provenanceManifestPath = path.join(root, "docs/launch/current-readiness-provenance-manifest.json");
 const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
-const wp148Receipt = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp148-local-reliability-contract.json"), "utf8"));
+const provenanceManifest = JSON.parse(fs.readFileSync(provenanceManifestPath, "utf8"));
 const expectedScores = [8.5, 8.5, 8, 6, 8.5, 7, 9, 8, 7.5, 4.5];
 const categories = Object.values(snapshot.categories);
 const total = categories.reduce((sum, category) => sum + category.score, 0);
+
+const sha256File = (absolutePath) => `sha256:${crypto.createHash("sha256").update(fs.readFileSync(absolutePath)).digest("hex")}`;
+const allSnapshotProvenance = [
+  ...categories.flatMap((category) => category.provenance),
+  ...Object.values(snapshot.gates).flatMap((gate) => gate.provenance),
+  ...Object.values(snapshot.staging_gates).flatMap((gate) => gate.provenance),
+  ...snapshot.superseded_legacy_sources,
+];
+const runtimeProvenancePaths = [...new Set(allSnapshotProvenance.filter((relativePath) => relativePath.startsWith(".ai-team/reports/")))].sort();
+assert.equal(provenanceManifest.schemaVersion, "current-readiness-provenance/v1");
+assert.equal(provenanceManifest.sourceSnapshot.json.path, "docs/launch/current-readiness-snapshot-20260802.json");
+assert.equal(provenanceManifest.sourceSnapshot.json.sha256, sha256File(snapshotPath));
+assert.equal(provenanceManifest.sourceSnapshot.markdown.path, "docs/launch/current-readiness-snapshot-20260802.md");
+assert.equal(provenanceManifest.sourceSnapshot.markdown.sha256, sha256File(snapshotMarkdownPath));
+assert.ok(Array.isArray(provenanceManifest.runtimeArtifacts));
+const runtimeArtifacts = [...provenanceManifest.runtimeArtifacts].sort((left, right) => left.path.localeCompare(right.path));
+assert.deepEqual(runtimeArtifacts.map((artifact) => artifact.path), runtimeProvenancePaths);
+const runtimeArtifactByPath = new Map(runtimeArtifacts.map((artifact) => [artifact.path, artifact]));
+for (const artifact of runtimeArtifacts) {
+  assert.equal(artifact.sourceClass, "SANITIZED_LOCAL_RUNTIME_ARTIFACT");
+  assert.match(artifact.sha256, /^sha256:[0-9a-f]{64}$/);
+  assert.ok(Number.isInteger(artifact.bytes) && artifact.bytes > 0);
+  const absolutePath = path.join(root, artifact.path);
+  if (fs.existsSync(absolutePath)) {
+    assert.equal(sha256File(absolutePath), artifact.sha256, `Runtime artifact digest drifted: ${artifact.path}`);
+    assert.equal(fs.statSync(absolutePath).size, artifact.bytes, `Runtime artifact size drifted: ${artifact.path}`);
+  }
+}
+const wp148Receipt = provenanceManifest.wp148Summary;
+assert.deepEqual(Object.keys(wp148Receipt).sort(), ["classification", "externalTelemetry", "labels", "rawOutputExposed", "rawOutputPersisted", "sanitized", "scoreImpact", "state"]);
 assert.equal(snapshot.status, "CURRENT_TRUTH");
 assert.equal(categories.length, 10);
 assert.deepEqual(categories.map((category) => category.score), expectedScores);
@@ -78,17 +111,24 @@ assert.ok(snapshot.categories.CAT09.provenance.includes(".ai-team/reports/wp187-
 assert.ok(snapshot.categories.CAT09.provenance.includes(".ai-team/reports/wp192-staging-alias-propagation-verification.json"));
 assert.ok(snapshot.categories.CAT10.provenance.includes(".ai-team/reports/wp175-sales-to-support-operational-rehearsal-receipt.json"));
 assert.ok(snapshot.categories.CAT10.provenance.includes(".ai-team/reports/wp195-launch-owner-acceptance.json"));
+const assertProvenance = (relativePath, label) => {
+  if (relativePath.startsWith(".ai-team/reports/")) {
+    assert.ok(runtimeArtifactByPath.has(relativePath), `Missing tracked runtime provenance: ${label}`);
+    return;
+  }
+  assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing provenance: ${label}`);
+};
 for (const category of categories) {
   assert.ok(category.provenance.length > 0, `Missing provenance for ${category.name}`);
-  for (const relativePath of category.provenance) assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing provenance: ${relativePath}`);
+  for (const relativePath of category.provenance) assertProvenance(relativePath, relativePath);
 }
 for (const gate of Object.values(snapshot.gates)) {
-  for (const relativePath of gate.provenance) assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing gate provenance: ${relativePath}`);
+  for (const relativePath of gate.provenance) assertProvenance(relativePath, relativePath);
 }
 for (const gate of Object.values(snapshot.staging_gates)) {
-  for (const relativePath of gate.provenance) assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing staging gate provenance: ${relativePath}`);
+  for (const relativePath of gate.provenance) assertProvenance(relativePath, relativePath);
 }
-for (const relativePath of snapshot.superseded_legacy_sources) assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing superseded source: ${relativePath}`);
+for (const relativePath of snapshot.superseded_legacy_sources) assertProvenance(relativePath, relativePath);
 
 const currentMarkdown = fs.readFileSync(path.join(root, "docs/launch/current-readiness-snapshot-20260802.md"), "utf8");
 assert.match(currentMarkdown, /75\.5\/100/);
