@@ -21,6 +21,11 @@ const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_PATH = "/api/trade/query";
 const MARKER_PATH = "/__celebratedeal_wp187_fingerprint.json";
 const CHILD_PREFIX = "FIN08T_CHILD_RESULT:";
+
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 const TARGET_KEYS = Object.freeze(["DATABASE_URL", "DIRECT_URL", "STAGING_DATABASE_URL", "PAYUNI_ENV", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SUPABASE_URL"]);
 const SYSTEM_KEYS = Object.freeze(["SystemRoot", "WINDIR", "PATH", "PATHEXT", "ComSpec", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "ProgramData", "SystemDrive", "NVM_HOME"]);
 const SAFE_DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -61,7 +66,7 @@ export function validateReceipt(receipt) {
   return { ok: errors.length === 0, errors };
 }
 
-export function buildBrokerArgs(tsxCli, tsconfig, temp) { if (![tsxCli, tsconfig, temp].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED"); return ["env", "run", "-e", "preview", "--project", PROJECT, "--", process.execPath, tsxCli, "--tsconfig", tsconfig, RUNNER, "--live-child", temp]; }
+export function buildBrokerArgs(tsxCli, tsconfig, temp) { if (![tsxCli, tsconfig, temp].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED"); return ["env", "run", "-e", "preview", "--project", PROJECT, "--", process.execPath, tsxCli, "--tsconfig", tsconfig, RUNNER, "--live-child", temp]; }
 
 function initialReceipt() {
   return { schemaVersion: "fin08t-staging-payuni-reconciliation/v1", workPackage: "FIN-08T", status: "FIN08T_ATTEMPT_RESERVED", attemptReserved: true, isolation: { beforeCount: null, afterCount: null, childCount: null, coordinatorCount: null }, freshness: { metadataReads: 0, markerReads: 0, healthProbes: 0, projectMatched: false, preview: false, ready: false, identityPresent: false, deploymentDigest: null, notOldDeployment: false, markerMatched: false, sourceMatched: false, healthStatus: null, noRedirect: false }, broker: { attempts: 0, exitCode: null, childValid: false, autoloadDetected: false, assignmentDetected: false, rawOutputPersisted: false }, candidate: { count: null, bucket: "not_run", synthetic: false, provider: "UNCONFIRMED", localStatus: "UNCONFIRMED", requestReservation: false, identityDigest: null, referenceDigest: null, beforePending: null, beforeProcessed: null, beforeAudit: null }, provider: { officialSandbox: false, queryAttempts: 0, retries: 0, redirects: 0, referenceMatched: false, orderMatched: false, amountMatched: false, terminalRefundState: false, refundedAmountMatched: false, normalizedStatus: null }, reconciliation: { firstDisposition: "NOT_RUN", refundRecordWrites: 0, paymentTransactionWrites: 0, auditWrites: 0, serializable: false, finalDelta: false }, replay: { providerQueries: 0, databaseWrites: 0, auditWrites: 0, disposition: "NOT_RUN" }, sideEffects: { databaseConnections: 0, databaseQueries: 0, databaseWrites: 0, auditWrites: 0, providerQueries: 0, providerWrites: 0, payments: 0, refunds: 0, callbacks: 0, deployments: 0, environmentMutations: 0, gitMutations: 0, production: 0 }, cleanup: { pass: false, residualSafe: false, childDisconnected: false, tempOutsideWorkspace: false, tempMarkerSafe: false }, scoreImpact: { CAT04: { before: 6, candidateAfter: 7.5 }, applied: false, SANDBOX_READY: false, PRODUCTION_READY: false }, safety: { dotenvRead: false, valuesPersisted: false, rawProviderResponsePersisted: false, credentialsPersisted: false, tokensPersisted: false, cookiesPersisted: false }, sanitized: true, canonicalDigest: null };

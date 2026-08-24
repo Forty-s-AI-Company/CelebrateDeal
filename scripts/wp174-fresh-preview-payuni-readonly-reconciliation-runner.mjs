@@ -17,6 +17,10 @@ const STAGING_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const EXPECTED_DEPLOYMENT = "dpl_9KrvwFKkGKAVEzVZdm5Tc9iiQqCg";
 const CHILD_PREFIX = "WP170_CHILD_RESULT:";
 export const TARGET_KEYS = Object.freeze(["STAGING_DATABASE_URL", "PAYUNI_ENV", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SUPABASE_URL"]);
+
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
 const SUCCESS = new Set([
   "WP174_READ_ONLY_RECONCILIATION_CONSISTENT",
   "WP174_READ_ONLY_RECONCILIATION_DIVERGENCE_DETECTED",
@@ -46,7 +50,7 @@ export function canonical(value) {
 }
 
 export function buildBrokerArgs(nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath) {
-  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   return ["env", "run", "-e", "preview", "--project", PROJECT, "--", nodePath, tsxCliPath, "--tsconfig", tsconfigPath, runnerPath, "--live-child", tempPath, "preview"];
 }
 

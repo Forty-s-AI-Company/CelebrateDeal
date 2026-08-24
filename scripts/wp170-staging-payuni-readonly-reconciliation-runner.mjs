@@ -18,6 +18,11 @@ const EXPECTED_DEPLOYMENT = "dpl_CguykaCpikDEFjLWKUZrkPwFygbL";
 const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_PATH = "/api/trade/query";
 const CHILD_PREFIX = "WP170_CHILD_RESULT:";
+
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 const SAFE_REFERENCE = /^[A-Za-z0-9_-]{6,96}$/u;
 const SAFE_ORDER = /^(?:cd_sandbox_|CD-)[A-Za-z0-9_-]{6,96}$/iu;
 export const TARGET_KEYS = Object.freeze([
@@ -89,7 +94,7 @@ export function parseFreshness(stdout, exitCode) {
 }
 
 export function buildBrokerArgs(nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath) {
-  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   return [
     "env", "run", "-e", "preview", "--project", PROJECT, "--",
     nodePath, tsxCliPath, "--tsconfig", tsconfigPath, runnerPath,

@@ -20,6 +20,11 @@ const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_PATH = "/api/trade/query";
 const MARKER_PATH = "/__celebratedeal_wp187_fingerprint.json";
 const CHILD_PREFIX = "FIN08R_CHILD_RESULT:";
+
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 const TARGET_KEYS = Object.freeze([
   "DATABASE_URL", "DIRECT_URL", "STAGING_DATABASE_URL", "PAYUNI_ENV", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY",
   "PAYUNI_HASH_IV", "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SUPABASE_URL",
@@ -116,7 +121,7 @@ export function validateReceipt(receipt) {
 }
 
 export function buildBrokerArgs(nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath) {
-  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, tsxCliPath, tsconfigPath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   return ["env", "run", "-e", "preview", "--project", PROJECT, "--", nodePath, tsxCliPath, "--tsconfig", tsconfigPath, runnerPath, "--live-child", tempPath];
 }
 

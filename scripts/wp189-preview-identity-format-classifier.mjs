@@ -18,6 +18,11 @@ const EXPECTED_DEPLOYMENT = "dpl_E3g7ZjYLMd8JDsPybA2Hxz4bKE6W";
 const EXPECTED_SOURCE_DIGEST = "cfa1b2d8841957dd071e9945a1770d01bff09081210f2fbdc820669edf339f34";
 const CHILD_PREFIX = "WP189_CHILD_RESULT:";
 const URL_KEYS = ["STAGING_DATABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_APP_URL"];
+
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 const BINDING_ORDER = [...URL_KEYS, "PAYUNI_ENV", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV"];
 const CLASSIFICATIONS = new Set([
   "MISSING_BINDING",
@@ -41,13 +46,13 @@ function quotePowerShellLiteral(value) {
 }
 
 export function buildIsolationCommand(nodePath, runnerPath) {
-  if (!path.isAbsolute(nodePath) || !path.isAbsolute(runnerPath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (!isAbsolutePath(nodePath) || !isAbsolutePath(runnerPath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   const removals = TARGET_KEYS.map((key) => `Remove-Item -LiteralPath ${quotePowerShellLiteral(`Env:${key}`)} -ErrorAction SilentlyContinue`).join("; ");
   return `$ErrorActionPreference='Stop'; ${removals}; & ${quotePowerShellLiteral(nodePath)} ${quotePowerShellLiteral(runnerPath)} '--isolated-live'; exit $LASTEXITCODE`;
 }
 
 export function buildBrokerArgs(nodePath, runnerPath, tempPath) {
-  if (![nodePath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   return ["env", "run", "-e", "preview", "--project", PROJECT, "--", nodePath, runnerPath, "--identity-child", tempPath];
 }
 

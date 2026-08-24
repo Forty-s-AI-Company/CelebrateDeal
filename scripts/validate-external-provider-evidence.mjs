@@ -24,15 +24,20 @@ const VALIDATION_FAILURE_REASONS = new Set([
   'invalid_result',
 ]);
 
+function pathApiFor(value) {
+  return /^[A-Za-z]:[\\/]/u.test(value) || value.includes('\\') ? path.win32 : path;
+}
+
 function normalizeRelativePath(inputPath, workspaceRoot = WORKSPACE_ROOT) {
   if (typeof inputPath !== 'string' || inputPath.length === 0 || inputPath.includes('\0')) return null;
-  if (path.isAbsolute(inputPath) || inputPath.startsWith('\\') || inputPath.startsWith('/')) return null;
+  const pathApi = pathApiFor(workspaceRoot);
+  if (pathApi.isAbsolute(inputPath) || inputPath.startsWith('\\') || inputPath.startsWith('/')) return null;
 
-  const resolvedRoot = path.resolve(workspaceRoot);
-  const resolvedPath = path.resolve(resolvedRoot, inputPath);
-  const relativePath = path.relative(resolvedRoot, resolvedPath);
-  const normalized = relativePath.split(path.sep).join('/');
-  if (!normalized || normalized === '..' || normalized.startsWith('../') || path.isAbsolute(relativePath)) return null;
+  const resolvedRoot = pathApi.resolve(workspaceRoot);
+  const resolvedPath = pathApi.resolve(resolvedRoot, inputPath);
+  const relativePath = pathApi.relative(resolvedRoot, resolvedPath);
+  const normalized = relativePath.split(pathApi.sep).join('/');
+  if (!normalized || normalized === '..' || normalized.startsWith('../') || pathApi.isAbsolute(relativePath)) return null;
 
   const directoryAllowed = SAFE_RECEIPT_DIRECTORIES.some((directory) => normalized.startsWith(`${directory}/`));
   if (!directoryAllowed || !SAFE_RECEIPT_FILENAME.test(path.posix.basename(normalized))) return null;
@@ -51,12 +56,13 @@ async function resolveCanonicalReceiptPath(receiptPath, workspaceRoot, fsAdapter
   try {
     const canonicalRoot = await fsAdapter.realpath(workspaceRoot);
     const canonicalPath = await fsAdapter.realpath(receiptPath);
-    const relative = path.relative(canonicalRoot, canonicalPath);
-    const normalized = relative.split(path.sep).join('/');
+    const pathApi = pathApiFor(canonicalRoot);
+    const relative = pathApi.relative(canonicalRoot, canonicalPath);
+    const normalized = relative.split(pathApi.sep).join('/');
     const allowedDirectory = SAFE_RECEIPT_DIRECTORIES.some((directory) => normalized.startsWith(`${directory}/`));
     const safeFilename = SAFE_RECEIPT_FILENAME.test(path.posix.basename(normalized));
     const sensitiveSegment = normalized.split('/').some((segment) => segment.startsWith('.env') || SENSITIVE_PATH_SEGMENT.test(segment));
-    if (!normalized || normalized === '..' || normalized.startsWith('../') || path.isAbsolute(relative) || !allowedDirectory || !safeFilename || sensitiveSegment) return null;
+    if (!normalized || normalized === '..' || normalized.startsWith('../') || pathApi.isAbsolute(relative) || !allowedDirectory || !safeFilename || sensitiveSegment) return null;
     return canonicalPath;
   } catch {
     return null;

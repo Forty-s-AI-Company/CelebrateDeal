@@ -19,6 +19,10 @@ export const TARGET_KEYS = Object.freeze([
   "NEXT_PUBLIC_SUPABASE_URL",
 ]);
 
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 function isEnvName(name) {
   return /^\.env(?:\.|$)/iu.test(name);
 }
@@ -52,7 +56,7 @@ export async function inspectTempBoundary(candidate, workspace = ROOT) {
 }
 
 export function buildBrokerArgs(nodePath, runnerPath, tempPath) {
-  if (![nodePath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   return [
     "env", "run", "-e", "preview", "--project", PROJECT, "--",
     nodePath, runnerPath, "--presence-child", tempPath,
