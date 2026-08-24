@@ -12,11 +12,17 @@ import {
 import {
   buildWp151FixtureScript,
   buildWp152FixtureReceipt,
+  makeReceipt,
   normalizeWp151FixtureScript,
   validateWp152FixtureReceipt,
 } from "./wp151-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const terminalReceiptPath = ".ai-team/reports/wp151-public-unavailable-browser-receipt.json";
+const wp151TerminalReceipt = makeReceipt();
+wp151TerminalReceipt.status = "FIXTURE_CONTRACT_EXACT_NO_GO";
+const syntheticReceiptFixture = createSyntheticJsonFixture("wp151-public-unavailable-browser-receipt.json", wp151TerminalReceipt);
+const terminalReceiptPath = syntheticReceiptFixture.path;
+test.after(() => syntheticReceiptFixture.cleanup());
 
 test("WP-151 fixture normalization repairs exactly the generated closing boundary", () => {
   const normalized = buildWp151FixtureScript();

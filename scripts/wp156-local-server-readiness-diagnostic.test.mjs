@@ -26,8 +26,12 @@ import {
   validateReceipt,
   writeReceipt,
 } from "./wp156-local-server-readiness-diagnostic.mjs";
+import { makeReceipt as makeWp155Receipt } from "./wp155-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp155ReceiptPath = ".ai-team/reports/wp155-public-unavailable-browser-receipt.json";
+const wp155Fixture = createSyntheticJsonFixture("wp155-public-unavailable-browser-receipt.json", makeWp155Receipt());
+const wp155ReceiptPath = wp155Fixture.path;
+test.after(() => wp155Fixture.cleanup());
 
 test("diagnostic enums are closed and receipt starts fail-closed", () => {
   assert.deepEqual(PHASES, ["PREFLIGHT", "SPAWN", "PROCESS_RUNNING", "LOOPBACK_BIND", "READINESS_PROBE", "TERMINAL"]);

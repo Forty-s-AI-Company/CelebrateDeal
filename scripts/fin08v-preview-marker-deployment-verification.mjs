@@ -108,8 +108,12 @@ export function isAllowedMirrorFile(relativePath) {
   return ROOT_FILES.includes(normalized);
 }
 
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 export function buildDeployArgs(mirror, project = PROJECT, scope = SCOPE) {
-  if (!path.isAbsolute(mirror)) throw new Error("MIRROR_PATH_MUST_BE_ABSOLUTE");
+  if (!isAbsolutePath(mirror)) throw new Error("MIRROR_PATH_MUST_BE_ABSOLUTE");
   return ["deploy", mirror, "--yes", "--target", "preview", "--project", project, "--scope", scope, "--skip-domain", "--json", "--no-color"];
 }
 

@@ -17,9 +17,18 @@ import {
   runDiagnostic,
   validateReceipt,
 } from "./wp158-local-server-readiness-diagnostic.mjs";
+import { makeReceipt as makeWp155Receipt } from "./wp155-public-unavailable-browser-runner.mjs";
+import { makeReceipt as makeWp156Receipt } from "./wp156-local-server-readiness-diagnostic.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp155ReceiptPath = ".ai-team/reports/wp155-public-unavailable-browser-receipt.json";
-const wp156ReceiptPath = ".ai-team/reports/wp156-local-server-readiness-diagnostic-receipt.json";
+const wp155Fixture = createSyntheticJsonFixture("wp155-public-unavailable-browser-receipt.json", makeWp155Receipt());
+const wp156Fixture = createSyntheticJsonFixture("wp156-local-server-readiness-diagnostic-receipt.json", makeWp156Receipt());
+const wp155ReceiptPath = wp155Fixture.path;
+const wp156ReceiptPath = wp156Fixture.path;
+test.after(() => {
+  wp155Fixture.cleanup();
+  wp156Fixture.cleanup();
+});
 
 test("WP-158 diagnostic enums and receipt are closed fail-closed", () => {
   assert.deepEqual(PHASES, ["PREFLIGHT", "SPAWN", "PROCESS_RUNNING", "LOOPBACK_BIND", "READINESS_PROBE", "TERMINAL"]);

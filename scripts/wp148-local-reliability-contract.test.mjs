@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import test from "node:test";
 
 import {
@@ -14,9 +12,10 @@ import {
 } from "./wp148-local-reliability-contract.mjs";
 
 const repoRoot = process.cwd();
+const syntheticArtifactDigest = (relativePath) => canonicalDigest({ source: "NODE_TAP_SYNTHETIC_ARTIFACT", relativePath });
 
 test("WP148 local contract covers rubric dimensions without external effects", () => {
-  const receipt = buildReceipt({ repoRoot, evidence: defaultFixtures() });
+  const receipt = buildReceipt({ repoRoot, evidence: defaultFixtures(), artifactDigest: syntheticArtifactDigest });
   assert.equal(receipt.classification, "LOCAL_RELIABILITY_DIAGNOSTIC_CONTRACT_VERIFIED");
   assert.equal(receipt.coverage.timeout, "FAIL_CLOSED");
   assert.equal(receipt.coverage.retry, "FAIL_CLOSED");
@@ -61,8 +60,17 @@ test("forbidden keys and sensitive-like values fail closed without returning the
 });
 
 test("canonical digest is stable and input artifacts stay readable-only", () => {
-  const first = buildReceipt({ repoRoot, evidence: defaultFixtures() });
-  const second = buildReceipt({ repoRoot, evidence: defaultFixtures() });
+  const observed = [];
+  const artifactDigest = (relativePath) => {
+    observed.push(relativePath);
+    return syntheticArtifactDigest(relativePath);
+  };
+  const first = buildReceipt({ repoRoot, evidence: defaultFixtures(), artifactDigest });
+  const second = buildReceipt({ repoRoot, evidence: defaultFixtures(), artifactDigest });
   assert.equal(canonicalDigest(first), canonicalDigest(second));
-  assert.equal(fs.existsSync(path.join(repoRoot, ".ai-team/reports/wp147-hermetic-next-build-receipt.json")), true);
+  assert.deepEqual([...new Set(observed)].sort(), [
+    ".ai-team/reports/wp-116-payment-failure-observability-receipt.json",
+    ".ai-team/reports/wp123-observability-rehearsal-receipt.json",
+    ".ai-team/reports/wp147-hermetic-next-build-receipt.json",
+  ]);
 });

@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildWp151FixtureScript } from "./wp151-public-unavailable-browser-runner.mjs";
+import { buildWp151FixtureScript, makeReceipt as makeWp151Receipt } from "./wp151-public-unavailable-browser-runner.mjs";
 import {
   attachSanitizedStream,
   isAllowedLoopbackUrl,
@@ -20,8 +20,13 @@ import {
   waitForServer,
   writeReceipt,
 } from "./wp153-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp151ReceiptPath = ".ai-team/reports/wp151-public-unavailable-browser-receipt.json";
+const wp151TerminalReceipt = makeWp151Receipt();
+wp151TerminalReceipt.status = "FIXTURE_CONTRACT_EXACT_NO_GO";
+const syntheticReceiptFixture = createSyntheticJsonFixture("wp151-public-unavailable-browser-receipt.json", wp151TerminalReceipt);
+const wp151ReceiptPath = syntheticReceiptFixture.path;
+test.after(() => syntheticReceiptFixture.cleanup());
 
 test("WP-152 normalization is imported side-effect-free and keeps the repaired fixture identity", () => {
   const script = buildWp151FixtureScript();

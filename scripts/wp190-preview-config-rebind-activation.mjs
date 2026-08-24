@@ -32,13 +32,17 @@ const SECRETISH_KEYS = new Set(["STAGING_DATABASE_URL", "PAYUNI_MERCHANT_ID", "P
 
 function quotePs(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 
+function isAbsolutePath(value) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 export function buildIsolationCommand(nodePath, runnerPath) {
   const removals = ISOLATION_KEYS.map((key) => `Remove-Item -LiteralPath ${quotePs(`Env:${key}`)} -ErrorAction SilentlyContinue`).join("; ");
   return `$ErrorActionPreference='Stop'; ${removals}; & ${quotePs(nodePath)} ${quotePs(runnerPath)} '--isolated-live'; exit $LASTEXITCODE`;
 }
 
 export function buildEnvRunArgs(environment, nodePath, runnerPath, mode, tempPath) {
-  if (![nodePath, runnerPath, tempPath].every(path.isAbsolute)) throw new Error("ABSOLUTE_PATH_REQUIRED");
+  if (![nodePath, runnerPath, tempPath].every(isAbsolutePath)) throw new Error("ABSOLUTE_PATH_REQUIRED");
   if (!new Set(["development", "preview"]).has(environment)) throw new Error("ENVIRONMENT_NOT_ALLOWED");
   return ["env", "run", "-e", environment, "--project", PROJECT, "--scope", SCOPE, "--", nodePath, runnerPath, mode, tempPath];
 }

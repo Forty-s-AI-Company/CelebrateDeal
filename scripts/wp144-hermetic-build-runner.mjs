@@ -139,8 +139,19 @@ export function exclusionReason(relativePath) {
   return null;
 }
 
+function isWindowsAbsolutePath(value) {
+  return typeof value === 'string' && path.win32.isAbsolute(value);
+}
+
 export function safeResolveUnder(base, relativePath) {
   const baseResolved = path.resolve(base);
+  if (isWindowsAbsolutePath(relativePath)) {
+    const baseWindows = path.win32.resolve(String(base));
+    const candidateWindows = path.win32.resolve(relativePath);
+    const relativeWindows = path.win32.relative(baseWindows, candidateWindows);
+    if (relativeWindows.startsWith('..') || path.win32.isAbsolute(relativeWindows)) throw new Error('PATH_ESCAPE');
+    return candidateWindows;
+  }
   const candidate = path.resolve(baseResolved, relativePath);
   if (candidate !== baseResolved && !candidate.startsWith(`${baseResolved}${path.sep}`)) throw new Error('PATH_ESCAPE');
   return candidate;

@@ -22,10 +22,23 @@ import {
   waitForServer,
   writeReceipt,
 } from "./wp155-public-unavailable-browser-runner.mjs";
-import { READINESS_STATES } from "./wp153-public-unavailable-browser-runner.mjs";
+import { makeReceipt as makeWp153Receipt, READINESS_STATES } from "./wp153-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp153ReceiptPath = ".ai-team/reports/wp153-public-unavailable-browser-receipt.json";
-const wp154ReportPath = ".ai-team/reports/wp154-wp153-readiness-contract-remediation.json";
+const wp153SourceReceipt = makeWp153Receipt();
+wp153SourceReceipt.attempt = 1;
+wp153SourceReceipt.server.started = 1;
+const wp153Fixture = createSyntheticJsonFixture("wp153-public-unavailable-browser-receipt.json", wp153SourceReceipt);
+const wp154Fixture = createSyntheticJsonFixture("wp154-wp153-readiness-contract-remediation.json", {
+  solAcceptance: "ACCEPT",
+  classification: "WP154_WP153_READINESS_CONTRACT_REMEDIATED_READY",
+});
+const wp153ReceiptPath = wp153Fixture.path;
+const wp154ReportPath = wp154Fixture.path;
+test.after(() => {
+  wp153Fixture.cleanup();
+  wp154Fixture.cleanup();
+});
 
 test("WP-152 fixture normalization remains exact and side-effect-free", () => {
   const script = buildWp151FixtureScript();

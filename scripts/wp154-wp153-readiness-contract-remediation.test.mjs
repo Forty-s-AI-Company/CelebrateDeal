@@ -6,13 +6,20 @@ import test from "node:test";
 import {
   READINESS_STATES,
   isAllowedLoopbackUrl,
+  makeReceipt as makeWp153Receipt,
   normalizeLoopbackEndpoint,
   normalizeWp154ReadinessReceipt,
   runSyntheticReadiness,
   validateWp154ReadinessReceipt,
 } from "./wp153-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp153ReceiptPath = ".ai-team/reports/wp153-public-unavailable-browser-receipt.json";
+const wp153SourceReceipt = makeWp153Receipt();
+wp153SourceReceipt.attempt = 1;
+wp153SourceReceipt.server.started = 1;
+const syntheticReceiptFixture = createSyntheticJsonFixture("wp153-public-unavailable-browser-receipt.json", wp153SourceReceipt);
+const wp153ReceiptPath = syntheticReceiptFixture.path;
+test.after(() => syntheticReceiptFixture.cleanup());
 
 test("valid synthetic spawn and readiness sequence reaches READY then CLEANED", () => {
   const ready = runSyntheticReadiness(["SPAWN_REQUEST", "SPAWN_ACCEPTED", "READY_MARKER", "PROBE_READY"]);

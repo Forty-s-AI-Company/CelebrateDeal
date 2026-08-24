@@ -220,7 +220,7 @@ function readArtifactDigest(repoRoot, relativePath) {
   return canonicalDigest(value);
 }
 
-function buildReceipt({ repoRoot, evidence }) {
+function buildReceipt({ repoRoot, evidence, artifactDigest = (relativePath) => readArtifactDigest(repoRoot, relativePath) }) {
   const normalized = evidence.map(normalizeEvidence);
   const unique = deduplicateEvidence(normalized);
   const unknownBuild = normalized.find((item) => item.provenance.workPackage === "WP-147");
@@ -253,9 +253,9 @@ function buildReceipt({ repoRoot, evidence }) {
       unknownRootCausePreserved: "PASS",
     },
     evidenceLineage: {
-      WP116: `sha256:${readArtifactDigest(repoRoot, ".ai-team/reports/wp-116-payment-failure-observability-receipt.json").slice(7)}`,
-      WP123: `sha256:${readArtifactDigest(repoRoot, ".ai-team/reports/wp123-observability-rehearsal-receipt.json").slice(7)}`,
-      WP147: `sha256:${readArtifactDigest(repoRoot, ".ai-team/reports/wp147-hermetic-next-build-receipt.json").slice(7)}`,
+      WP116: `sha256:${artifactDigest(".ai-team/reports/wp-116-payment-failure-observability-receipt.json").slice(7)}`,
+      WP123: `sha256:${artifactDigest(".ai-team/reports/wp123-observability-rehearsal-receipt.json").slice(7)}`,
+      WP147: `sha256:${artifactDigest(".ai-team/reports/wp147-hermetic-next-build-receipt.json").slice(7)}`,
     },
     states: {
       localVerified: normalized.filter((item) => item.state === STATES.LOCAL_VERIFIED).length,

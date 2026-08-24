@@ -7,11 +7,18 @@ import {
   FIXTURE_STATES,
   buildFixtureLifecycleReceipt,
   cleanupFixtureIdempotently,
+  makeReceipt,
   runPureFixtureLifecycle,
   validateFixtureLifecycleReceipt,
 } from "./wp149-public-unavailable-browser-runner.mjs";
+import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const receiptPath = ".ai-team/reports/wp149-public-unavailable-browser-receipt.json";
+const syntheticReceiptFixture = createSyntheticJsonFixture(
+  "wp149-public-unavailable-browser-receipt.json",
+  makeReceipt(),
+);
+const receiptPath = syntheticReceiptFixture.path;
+test.after(() => syntheticReceiptFixture.cleanup());
 
 test("create success and cleanup success reach CLEANED without external calls", () => {
   const calls = [];
