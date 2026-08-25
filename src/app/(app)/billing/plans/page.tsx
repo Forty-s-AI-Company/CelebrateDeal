@@ -8,8 +8,7 @@ import { PLATFORM_REFERRAL_COOKIE } from "@/lib/platform-referral";
 import { allowedPaymentUrl, checkoutSessionFromMetadata, metadataObject } from "@/lib/payment-checkout-presentation";
 import { DirectEntryAttributionReset } from "@/components/direct-entry-attribution-reset";
 import { ExternalPaymentForm } from "@/components/external-payment-form";
-import { selectBillingPlanAction } from "./actions";
-import { PlanSubmitButton } from "./plan-submit-button";
+import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
 
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };
 
@@ -223,12 +222,12 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
                 目前方案
               </button>
             ) : canManageBilling ? (
-              <form action={selectBillingPlanAction}>
-                <input type="hidden" name="_csrf" value={csrfToken} />
-                <input type="hidden" name="planId" value={plan.id} />
-                {referralPresentation.status === "recorded" ? <input type="hidden" name="platformReferralClickId" value={referralPresentation.clickId ?? ""} /> : null}
-                <PlanSubmitButton label={currentSubscription ? "變更方案" : "選擇方案"} />
-              </form>
+              <BillingPlanCheckoutForm
+                csrfToken={csrfToken}
+                planId={plan.id}
+                referralClickId={referralPresentation.status === "recorded" ? referralPresentation.clickId : null}
+                label={currentSubscription ? "變更方案" : "選擇方案"}
+              />
             ) : (
               <button type="button" disabled className="inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-100 px-4 text-sm font-semibold text-slate-500">
                 僅限商店擁有者異動

@@ -93,7 +93,6 @@ export function PromoVideoPlayer({ src, title }: { src: string; title: string })
     <video
       key={safeSrc}
       ref={videoRef}
-      src={safeSrc ?? undefined}
       controls
       playsInline
       preload="metadata"
