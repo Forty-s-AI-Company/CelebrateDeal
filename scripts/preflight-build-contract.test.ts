@@ -23,6 +23,13 @@ describe("production build preflight contract", () => {
     expect(controlledConfig.environment).toHaveProperty("LIVE_CHAT_INGRESS_SECRET");
     expect(ciWorkflow).toContain("name: Controlled production preflight and build");
     expect(ciWorkflow).toContain("node scripts/build/controlled-production-build.mjs");
+
+    const concurrencySchemaCreates = ciWorkflow
+      .split(/\r?\n/)
+      .filter((line) => line.includes("CREATE SCHEMA wp17_ci") || line.includes("CREATE SCHEMA wp18_ci"));
+    expect(ciWorkflow).toContain('base_url="${DATABASE_URL%\\?schema=public}"');
+    expect(concurrencySchemaCreates).toHaveLength(2);
+    expect(concurrencySchemaCreates.every((line) => line.includes('psql "$base_url"'))).toBe(true);
   });
 
   it("keeps the production-mode Playwright server self-contained with synthetic runtime keys", () => {
