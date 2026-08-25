@@ -32,12 +32,20 @@ const wp153Fixture = createSyntheticJsonFixture("wp153-public-unavailable-browse
 const wp154Fixture = createSyntheticJsonFixture("wp154-wp153-readiness-contract-remediation.json", {
   solAcceptance: "ACCEPT",
   classification: "WP154_WP153_READINESS_CONTRACT_REMEDIATED_READY",
+  realServerReadiness: "NOT_VERIFIED",
+  browserEvidence: "NOT_VERIFIED",
+});
+const wp152Fixture = createSyntheticJsonFixture("wp152-wp151-fixture-contract-remediation.json", {
+  solAcceptance: "ACCEPT",
+  classification: "WP152_WP151_FIXTURE_CONTRACT_REMEDIATED_READY",
 });
 const wp153ReceiptPath = wp153Fixture.path;
 const wp154ReportPath = wp154Fixture.path;
+const wp152ReportPath = wp152Fixture.path;
 test.after(() => {
   wp153Fixture.cleanup();
   wp154Fixture.cleanup();
+  wp152Fixture.cleanup();
 });
 
 test("WP-152 fixture normalization remains exact and side-effect-free", () => {
@@ -215,7 +223,8 @@ test("COV-09 WP155 receipt writer round-trips only a sanitized disposable receip
 
 test("COV-09 WP155 preflight accepts the preserved local prerequisites without external execution", () => {
   const receipt = makeReceipt();
-  preflightDependencyBoundary(receipt);
+  // These are explicitly synthetic disposable inputs; production defaults remain repository evidence paths.
+  preflightDependencyBoundary(receipt, { wp153ReceiptPath, wp154ReportPath, wp152ReportPath });
   assert.equal(receipt.quality.wp152Acceptance, "ACCEPT");
   assert.equal(receipt.quality.wp154Acceptance, "ACCEPT");
 });

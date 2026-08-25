@@ -349,11 +349,20 @@ function createCleanupCoordinator(options) {
   };
 }
 
-export function preflight(receipt) {
+function resolveDependencyPath(relativePath, overrides, key) {
+  const candidate = overrides?.[key];
+  if (candidate === undefined) return path.join(root, relativePath);
+  if (typeof candidate !== "string" || !path.isAbsolute(candidate) || path.basename(candidate) !== path.basename(relativePath)) throw new Error("PREFLIGHT_DEPENDENCY_PATH_INVALID");
+  return candidate;
+}
+
+export function preflight(receipt, dependencyPaths = {}) {
   if (runQuiet("git", ["diff", "--cached", "--name-only"], process.env).stdoutBytes > 0) throw new Error("PREFLIGHT_STAGED_INDEX_NOT_EMPTY");
-  const wp155 = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp155-public-unavailable-browser-receipt.json"), "utf8"));
+  const wp155ReceiptPath = resolveDependencyPath(".ai-team/reports/wp155-public-unavailable-browser-receipt.json", dependencyPaths, "wp155ReceiptPath");
+  const wp154ReportPath = resolveDependencyPath(".ai-team/reports/wp154-wp153-readiness-contract-remediation.json", dependencyPaths, "wp154ReportPath");
+  const wp155 = JSON.parse(fs.readFileSync(wp155ReceiptPath, "utf8"));
   if (wp155.status !== "WP155_EXACT_NO_GO_NO_RETRY" || wp155.attempt !== 1 || wp155.server?.ready !== false || wp155.browser?.desktop?.passed !== 0 || wp155.browser?.mobile390?.passed !== 0) throw new Error("PREFLIGHT_WP155_TERMINAL_INVALID");
-  const wp154 = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp154-wp153-readiness-contract-remediation.json"), "utf8"));
+  const wp154 = JSON.parse(fs.readFileSync(wp154ReportPath, "utf8"));
   if (wp154.solAcceptance !== "ACCEPT" || wp154.classification !== "WP154_WP153_READINESS_CONTRACT_REMEDIATED_READY") throw new Error("PREFLIGHT_WP154_ACCEPTANCE_INVALID");
   if (!fs.existsSync(path.join(root, "node_modules", "next", "dist", "bin", "next"))) throw new Error("PREFLIGHT_NEXT_BINARY_MISSING");
   receipt.quality.wp155Terminal = "PRESERVE_ONLY_TERMINAL";

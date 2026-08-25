@@ -273,13 +273,23 @@ function writeReceipt(targetPath, receipt) {
   }
 }
 
-function preflightDependencyBoundary(receipt) {
+function resolveDependencyPath(relativePath, overrides, key) {
+  const candidate = overrides?.[key];
+  if (candidate === undefined) return path.join(root, relativePath);
+  if (typeof candidate !== "string" || !path.isAbsolute(candidate) || path.basename(candidate) !== path.basename(relativePath)) throw new Error("PREFLIGHT_DEPENDENCY_PATH_INVALID");
+  return candidate;
+}
+
+function preflightDependencyBoundary(receipt, dependencyPaths = {}) {
   if (runQuiet("git", ["diff", "--cached", "--name-only"], process.env).stdoutBytes > 0) throw new Error("PREFLIGHT_STAGED_INDEX_NOT_EMPTY");
-  const wp153Receipt = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp153-public-unavailable-browser-receipt.json"), "utf8"));
+  const wp153ReceiptPath = resolveDependencyPath(".ai-team/reports/wp153-public-unavailable-browser-receipt.json", dependencyPaths, "wp153ReceiptPath");
+  const wp154ReportPath = resolveDependencyPath(".ai-team/reports/wp154-wp153-readiness-contract-remediation.json", dependencyPaths, "wp154ReportPath");
+  const wp152ReportPath = resolveDependencyPath(".ai-team/reports/wp152-wp151-fixture-contract-remediation.json", dependencyPaths, "wp152ReportPath");
+  const wp153Receipt = JSON.parse(fs.readFileSync(wp153ReceiptPath, "utf8"));
   if (wp153Receipt.status !== "WP153_EXACT_NO_GO_NO_RETRY" || wp153Receipt.attempt !== 1 || wp153Receipt.server?.started !== 1 || wp153Receipt.browser?.desktop?.passed !== 0 || wp153Receipt.browser?.mobile390?.passed !== 0) throw new Error("PREFLIGHT_WP153_TERMINAL_INVALID");
-  const wp154Report = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp154-wp153-readiness-contract-remediation.json"), "utf8"));
+  const wp154Report = JSON.parse(fs.readFileSync(wp154ReportPath, "utf8"));
   if (wp154Report.solAcceptance !== "ACCEPT" || wp154Report.classification !== "WP154_WP153_READINESS_CONTRACT_REMEDIATED_READY" || wp154Report.realServerReadiness !== "NOT_VERIFIED" || wp154Report.browserEvidence !== "NOT_VERIFIED") throw new Error("PREFLIGHT_WP154_ACCEPTANCE_INVALID");
-  const wp152Report = JSON.parse(fs.readFileSync(path.join(root, ".ai-team/reports/wp152-wp151-fixture-contract-remediation.json"), "utf8"));
+  const wp152Report = JSON.parse(fs.readFileSync(wp152ReportPath, "utf8"));
   if (wp152Report.solAcceptance !== "ACCEPT" || wp152Report.classification !== "WP152_WP151_FIXTURE_CONTRACT_REMEDIATED_READY") throw new Error("PREFLIGHT_WP152_ACCEPTANCE_INVALID");
   if (!fs.existsSync(path.join(root, "node_modules", "next", "dist", "bin", "next")) || !fs.existsSync(path.join(root, "node_modules", "@playwright", "test"))) throw new Error("PREFLIGHT_DEPENDENCY_MISSING");
   receipt.quality.wp152Acceptance = "ACCEPT";

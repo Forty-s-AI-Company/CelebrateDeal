@@ -29,9 +29,20 @@ import {
 import { makeReceipt as makeWp155Receipt } from "./wp155-public-unavailable-browser-runner.mjs";
 import { createSyntheticJsonFixture } from "./test-contract-synthetic-fixtures.mjs";
 
-const wp155Fixture = createSyntheticJsonFixture("wp155-public-unavailable-browser-receipt.json", makeWp155Receipt());
+const wp155SourceReceipt = makeWp155Receipt();
+wp155SourceReceipt.attempt = 1;
+wp155SourceReceipt.server.started = 1;
+const wp155Fixture = createSyntheticJsonFixture("wp155-public-unavailable-browser-receipt.json", wp155SourceReceipt);
+const wp154Fixture = createSyntheticJsonFixture("wp154-wp153-readiness-contract-remediation.json", {
+  solAcceptance: "ACCEPT",
+  classification: "WP154_WP153_READINESS_CONTRACT_REMEDIATED_READY",
+});
 const wp155ReceiptPath = wp155Fixture.path;
-test.after(() => wp155Fixture.cleanup());
+const wp154ReportPath = wp154Fixture.path;
+test.after(() => {
+  wp155Fixture.cleanup();
+  wp154Fixture.cleanup();
+});
 
 test("diagnostic enums are closed and receipt starts fail-closed", () => {
   assert.deepEqual(PHASES, ["PREFLIGHT", "SPAWN", "PROCESS_RUNNING", "LOOPBACK_BIND", "READINESS_PROBE", "TERMINAL"]);
@@ -276,7 +287,8 @@ test("diagnostic transition and preflight cover spawn failure, timeout and bound
   assert.equal(diagnosticTransition(timeout, "INVALID_EVENT").events.at(-1), "IGNORED:INVALID_EVENT");
 
   const receipt = makeReceipt();
-  preflight(receipt);
+  // These are explicitly synthetic disposable inputs; production defaults remain repository evidence paths.
+  preflight(receipt, { wp155ReceiptPath, wp154ReportPath });
   assert.equal(receipt.quality.wp155Terminal, "PRESERVE_ONLY_TERMINAL");
   assert.equal(receipt.quality.wp154Acceptance, "ACCEPT");
 });
