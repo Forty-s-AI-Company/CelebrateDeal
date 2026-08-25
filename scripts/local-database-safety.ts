@@ -1,5 +1,6 @@
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-const ISOLATED_DATABASE_NAME = /^celebratedeal_(?:dev|test|e2e|ci)$/i;
+const ISOLATED_DATABASE_NAME =
+  /^celebratedeal_(?:dev|test|e2e|ci|wp17_ci|wp18_ci)$/i;
 
 export type LocalDatabaseSafety =
   | { safe: true }

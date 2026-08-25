@@ -11,6 +11,8 @@ describe("local test database safety", () => {
     "postgres://user:password@127.0.0.1:54329/celebratedeal_test?schema=public",
     "postgresql://user:password@[::1]:5432/celebratedeal_e2e",
     "postgresql://user:password@localhost:5432/celebratedeal_ci",
+    "postgresql://user:password@localhost:5432/celebratedeal_wp17_ci",
+    "postgresql://user:password@localhost:5432/celebratedeal_wp18_ci",
   ])("accepts an isolated loopback database", (value) => {
     expect(classifyLocalTestDatabase(value)).toEqual({ safe: true });
   });
@@ -21,6 +23,7 @@ describe("local test database safety", () => {
     ["file:./local.db", "unsupported-protocol"],
     ["postgresql://user:password@database.example/celebratedeal_test", "non-loopback"], // secret-scan: allow-test-fixture
     ["postgresql://user:password@localhost:5432/postgres", "unsafe-database"], // secret-scan: allow-test-fixture
+    ["postgresql://user:password@localhost:5432/celebratedeal_wp19_ci", "unsafe-database"], // secret-scan: allow-test-fixture
   ] as const)("rejects unsafe metadata without returning connection details", (value, category) => {
     expect(classifyLocalTestDatabase(value)).toEqual({ safe: false, category });
   });
