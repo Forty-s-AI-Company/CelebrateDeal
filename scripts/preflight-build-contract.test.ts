@@ -28,11 +28,16 @@ describe("production build preflight contract", () => {
       .split(/\r?\n/)
       .filter((line) => line.includes("CREATE SCHEMA wp17_ci") || line.includes("CREATE SCHEMA wp18_ci"));
     expect(ciWorkflow).toContain('base_url="${DATABASE_URL%\\?schema=public}"');
-    expect(ciWorkflow).toContain('wp17_url="${base_url}?schema=wp17_ci&options=-c%20search_path%3D%22wp17_ci%22%2Cpublic"');
-    expect(ciWorkflow).toContain('wp18_url="${base_url}?schema=wp18_ci&options=-c%20search_path%3D%22wp18_ci%22%2Cpublic"');
+    expect(ciWorkflow).toContain('wp17_base_url="${base_url%/*}/celebratedeal_wp17_ci"');
+    expect(ciWorkflow).toContain('wp18_base_url="${base_url%/*}/celebratedeal_wp18_ci"');
+    expect(ciWorkflow).toContain('wp17_url="${wp17_base_url}?schema=wp17_ci"');
+    expect(ciWorkflow).toContain('wp18_url="${wp18_base_url}?schema=wp18_ci"');
+    expect(ciWorkflow).toContain("CREATE DATABASE celebratedeal_wp17_ci");
+    expect(ciWorkflow).toContain("CREATE DATABASE celebratedeal_wp18_ci");
     expect(concurrencySchemaCreates).toHaveLength(2);
-    expect(concurrencySchemaCreates.every((line) => line.includes('psql "$base_url"'))).toBe(true);
-    expect(ciWorkflow).toContain("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public");
+    expect(concurrencySchemaCreates.every((line) => line.includes('psql "$wp17_base_url"') || line.includes('psql "$wp18_base_url"'))).toBe(true);
+    expect(ciWorkflow).toContain("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA wp17_ci");
+    expect(ciWorkflow).toContain("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA wp18_ci");
   });
 
   it("keeps the production-mode Playwright server self-contained with synthetic runtime keys", () => {
