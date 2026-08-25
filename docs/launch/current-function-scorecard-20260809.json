@@ -1,7 +1,7 @@
 {
   "schemaVersion": "celebratedeal-fixed-function-scorecard/v1",
-  "asOf": "2026-08-10",
-  "status": "LOCAL_FUNCTION_INVENTORY_AT_OR_ABOVE_7",
+  "asOf": "2026-08-25",
+  "status": "FRESH_LOCAL_FUNCTION_INVENTORY_AT_OR_ABOVE_7",
   "rubric": {
     "core": 3,
     "recovery": 2,
@@ -22,7 +22,7 @@
       "name": "商品管理",
       "score": 8.5,
       "dimensions": { "core": 2.7, "recovery": 1.7, "ux": 1.6, "integritySecurity": 1, "freshEvidence": 1.5 },
-      "evidence": { "path": "docs/ai-team/evidence/g7-48-product-delivery-buyer-access-20260809.md", "sha256": "3cb62c3ae8172114e6fad7e03fd679efd1fa549c25c49fed615ddf22a4143c81" }
+      "evidence": { "path": "docs/ai-team/evidence/g7-48a-product-delivery-browser-qa-525a1de1b01f9bbc.json", "sha256": "ab10131a20506322a390717326ab7742df4cd232bc254e711700f2058f3b0cce" }
     },
     {
       "id": "image_video_media",
@@ -57,21 +57,21 @@
       "name": "Email 通知",
       "score": 8.6,
       "dimensions": { "core": 2.7, "recovery": 1.9, "ux": 1.6, "integritySecurity": 1, "freshEvidence": 1.4 },
-      "evidence": { "path": "docs/ai-team/evidence/g7-55-email-merchant-operations-20260810.md", "sha256": "fe0b0a3bbee529fe677af1193a9aa7585839af96692514a3ed08ba2cc3076c94" }
+      "evidence": { "path": "docs/ai-team/evidence/g7-04-browser-qa-4f223139252eae35.json", "sha256": "c39c2ab2e809cea8c4e98c9868bf01987e00c4fd2136b59b5a585d1c24d67118" }
     },
     {
       "id": "checkout_payment",
       "name": "Checkout／付款",
       "score": 9.2,
       "dimensions": { "core": 2.8, "recovery": 2.0, "ux": 1.8, "integritySecurity": 1, "freshEvidence": 1.6 },
-      "evidence": { "path": "docs/ai-team/evidence/g7-57-checkout-response-loss-recovery-20260810.md", "sha256": "4e934f24a373fbc2960db35d42946da51bdbfa5f105457e667017c2f6839ba50" }
+      "evidence": { "path": "docs/ai-team/evidence/g7-04-browser-qa-4f223139252eae35.json", "sha256": "c39c2ab2e809cea8c4e98c9868bf01987e00c4fd2136b59b5a585d1c24d67118" }
     },
     {
       "id": "orders_fulfillment",
       "name": "訂單／履約",
       "score": 9.2,
       "dimensions": { "core": 3, "recovery": 1.9, "ux": 1.7, "integritySecurity": 1, "freshEvidence": 1.6 },
-      "evidence": { "path": "docs/ai-team/evidence/g7-48-product-delivery-buyer-access-20260809.md", "sha256": "3cb62c3ae8172114e6fad7e03fd679efd1fa549c25c49fed615ddf22a4143c81" }
+      "evidence": { "path": "docs/ai-team/evidence/g7-04-browser-qa-4f223139252eae35.json", "sha256": "c39c2ab2e809cea8c4e98c9868bf01987e00c4fd2136b59b5a585d1c24d67118" }
     },
     {
       "id": "refund_support",
@@ -106,6 +106,6 @@
     { "category": "CAT04", "kind": "AUTHORIZED_EXTERNAL", "status": "PENDING", "requires": "fresh staging／PayUni Sandbox provider and reconciliation evidence", "forbiddenRetry": ["FIN-08AA", "WP-196", "WP-197"] },
     { "category": "CAT10", "kind": "HUMAN_AND_EXTERNAL", "status": "PENDING", "requires": "human legal／privacy／refund／finance／support SLA／release acceptance and external monitoring delivery" }
   ],
-  "nextAutonomousLane": "FUNC_CLOSURE",
+  "nextAutonomousLane": "STAGING_AND_SANDBOX_AUTHORIZATION_BOUNDARY",
   "goalStatus": "ACTIVE"
 }

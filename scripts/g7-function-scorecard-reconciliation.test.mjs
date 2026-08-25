@@ -70,6 +70,6 @@ test("canonical truth is 75.5 and only CAT04 and CAT10 are below seven", () => {
 test("external blockers stay explicit and autonomous work remains product-first", () => {
   assert.deepEqual(scorecard.externalOrHumanBlockers.map((entry) => entry.category), ["CAT04", "CAT10"]);
   assert.deepEqual(scorecard.externalOrHumanBlockers[0].forbiddenRetry, ["FIN-08AA", "WP-196", "WP-197"]);
-  assert.equal(scorecard.nextAutonomousLane, "FUNC_CLOSURE");
+  assert.equal(scorecard.nextAutonomousLane, "STAGING_AND_SANDBOX_AUTHORIZATION_BOUNDARY");
   assert.equal(scorecard.goalStatus, "ACTIVE");
 });

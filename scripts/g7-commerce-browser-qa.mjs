@@ -22,6 +22,7 @@ const diagnosticDev = process.argv.includes("--diagnostic-dev");
 const diagnosticDevFast = isDiagnosticDevFast(process.argv);
 const focusBuyerDelivery = process.argv.includes("--focus-buyer-delivery");
 const focusProductDelivery = process.argv.includes("--focus-product-delivery");
+const repeatProductDeliveryTen = process.argv.includes("--repeat-product-delivery-ten");
 const focusBuyerOrders = process.argv.includes("--focus-buyer-orders");
 const focusOnboarding = process.argv.includes("--focus-onboarding");
 const focusStreamQuota = process.argv.includes("--focus-stream-quota");
@@ -46,6 +47,7 @@ const checkoutRecoveryContract = "public checkout recovers one committed order a
 const messageTemplateDraftContract = "merchant message template keeps every field after server validation and can recover as a new template";
 const persistentPlayerContract = "public live keeps the same video node, playback state and controls through internal checkout";
 const wp7OneStopContract = "one stop webinar verifies registration, preserves live playback through demo checkout, and materializes one follow-up";
+const platformBillingContract = "owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice";
 const expectedBrowserContracts = [
   "desktop merchant can recover upload and validation errors, then publish and preview one product",
   "mobile product upload has no overflow, preserves recovery actions and passes axe",
@@ -63,6 +65,7 @@ const expectedBrowserContracts = [
   messageTemplateDraftContract,
   interactionRoleContract,
   persistentPlayerContract,
+  platformBillingContract,
 ];
 const selectedBrowserContracts = focusDelivery
   ? [productDeliveryContract]
@@ -91,6 +94,8 @@ const attestedSourcePaths = [
   "src/lib/product-delivery.ts",
   "src/lib/external-url.ts",
   "src/app/actions/product-actions.ts",
+  "src/app/actions/product-server-actions.ts",
+  "src/app/api/products/upsert/route.ts",
   "src/components/product-form-client.tsx",
   "src/components/product-form.tsx",
   "src/components/ui.tsx",
@@ -127,6 +132,14 @@ const attestedSourcePaths = [
   "src/app/admin/billing/error.tsx",
   "src/app/(app)/billing/loading.tsx",
   "src/app/(app)/billing/error.tsx",
+  "src/app/(app)/billing/plans/page.tsx",
+  "src/app/(app)/billing/plans/actions.ts",
+  "src/app/actions/invoice-actions.ts",
+  "src/lib/payment-webhooks.ts",
+  "src/lib/commerce-order-email.ts",
+  "src/lib/payment-providers/demo.ts",
+  "src/lib/payment-providers/types.ts",
+  "src/lib/app-url.ts",
   "src/app/admin/billing/course-payouts/page.tsx",
   "src/app/admin/billing/platform-referral-payouts/page.tsx",
   "src/app/(app)/billing/payment-methods/page.tsx",
@@ -705,7 +718,7 @@ export async function main() {
     sourceLineage: { algorithm: "sha256", files: {} },
     phases: { mirror: "NOT_STARTED", prismaGenerate: "NOT_STARTED", prismaValidate: "NOT_STARTED", prismaDeploy: "NOT_STARTED", prismaStatus: "NOT_STARTED", nextBuild: "NOT_STARTED", server: "NOT_STARTED", browser: "NOT_STARTED" },
     migrations: { count: migrations.length, applied: false },
-    browser: { expected: selectedBrowserContracts.length, passed: 0, failed: 0, skipped: 0, contracts: Object.fromEntries(selectedBrowserContracts.map((name) => [name, "NOT_RUN"])), axeCriticalOrSerious: null, rwd: "NOT_RUN", tenantIsolation: "NOT_RUN", piiEnvelopeLeak: "NOT_RUN", productCatalog: "NOT_RUN", productDelivery: "NOT_RUN", buyerDelivery: "NOT_RUN", emailReminder: "NOT_RUN", liveStudio: "NOT_RUN", buyerOrders: "NOT_RUN", onboarding: "NOT_RUN", streamQuota: "NOT_RUN", streamRetry: "NOT_RUN", checkoutRecovery: "NOT_RUN", messageTemplateDraft: "NOT_RUN", interactionRole: "NOT_RUN", persistentPlayer: "NOT_RUN", wp7OneStop: "NOT_RUN" },
+    browser: { expected: selectedBrowserContracts.length * (repeatProductDeliveryTen ? 10 : 1), passed: 0, failed: 0, skipped: 0, contracts: Object.fromEntries(selectedBrowserContracts.map((name) => [name, "NOT_RUN"])), axeCriticalOrSerious: null, rwd: "NOT_RUN", tenantIsolation: "NOT_RUN", piiEnvelopeLeak: "NOT_RUN", productCatalog: "NOT_RUN", productDelivery: "NOT_RUN", buyerDelivery: "NOT_RUN", emailReminder: "NOT_RUN", liveStudio: "NOT_RUN", buyerOrders: "NOT_RUN", onboarding: "NOT_RUN", streamQuota: "NOT_RUN", streamRetry: "NOT_RUN", checkoutRecovery: "NOT_RUN", messageTemplateDraft: "NOT_RUN", interactionRole: "NOT_RUN", persistentPlayer: "NOT_RUN", wp7OneStop: "NOT_RUN" },
     screenshots: { desktop: null, mobile: null, productDesktop: null, productMobile: null, productDeliveryDesktop: null, productDeliveryMobile: null, buyerDeliveryDesktop: null, buyerDeliveryMobile: null, paymentResult: null, financePending: null, emailTemplates: null, buyerOrdersDesktop: null, buyerOrdersMobile: null, onboardingDesktop: null, onboardingMobile: null, streamQuotaDesktop: null, streamQuotaMobile: null, streamRetryDesktop: null, streamRetryMobile: null, checkoutRecoveryDesktop: null, checkoutRecoveryMobile: null, messageTemplateDraftDesktop: null, messageTemplateDraftMobile: null, interactionRoleDesktop: null, interactionRoleMobile: null, persistentPlayerDesktop: null, persistentPlayerMobile: null, wp7Registration: null, wp7Live: null, wp7Checkout: null, wp7Order: null },
     cleanup: { server: "NOT_STARTED", container: "NOT_STARTED", tempRoot: "NOT_STARTED" },
     safety: { dotenvContentsRead: false, mirrorExcludesDotenv: true, loopbackOnly: true, loopbackTlsCookieBridge: true, postgresTmpfs: true, sourceNodeModulesWritten: false, rawOutputPersisted: false, externalOperations: false, productionOperations: false, playwrightBrowserCacheReuseOnly: true, userBrowserProfileRead: false },
@@ -828,6 +841,7 @@ export async function main() {
     const playwrightSpec = focusWp7OneStop ? "tests/e2e/wp7-one-stop-webinar-flow.spec.ts" : "tests/e2e/commerce-orders.spec.ts";
     const playwrightArgs = [playwrightCli, "test", playwrightSpec, "--config", "playwright.g7-commerce.config.ts", "--project", "chromium", "--reporter", "json"];
     if (focused) playwrightArgs.push("--grep", selectedBrowserContracts[0]);
+    if (repeatProductDeliveryTen) playwrightArgs.push("--repeat-each", "10", "--fail-on-flaky-tests");
     const result = run(process.execPath, playwrightArgs, env, mirror);
     let parsed = {};
     try {

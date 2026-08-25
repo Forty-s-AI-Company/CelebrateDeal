@@ -93,6 +93,7 @@ export default defineConfig({
             DATABASE_URL: wp18.databaseUrl,
             DIRECT_URL: wp18.directUrl,
             WP18_DISPOSABLE_SCHEMA: wp18.schema,
+            RT01_D2_DISPOSABLE_DB: "true",
           },
         },
       },

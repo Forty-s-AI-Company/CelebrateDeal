@@ -39,6 +39,7 @@ jobs:
       SENTRY_DSN: https://ci@sentry.invalid/1
       NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
       NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
+      RT01_D2_DISPOSABLE_DB: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -151,7 +152,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Release browser gates
-        run: npm run e2e
+        run: npm run e2e -- --fail-on-flaky-tests
         env:
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
 

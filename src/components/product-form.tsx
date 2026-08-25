@@ -67,6 +67,7 @@ export async function ProductForm({
         csrfToken={csrfToken}
         product={serializedProduct}
         memberships={memberships}
+        nativeAction="/api/products/upsert"
         initialError={error as Parameters<typeof ProductFormClient>[0]["initialError"]}
       />
     </Card>

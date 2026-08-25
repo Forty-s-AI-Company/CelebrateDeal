@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorFinance } from "@/lib/auth";
-import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
@@ -151,7 +151,11 @@ export async function payInvoiceAction(formData: FormData) {
 
         const currentProvider = ensureProvider();
         try {
-          if (!checkoutReadinessAllowsNewTransaction(currentProvider.checkoutReadiness())) {
+          if (!checkoutReadinessAllowsNewTransaction(
+            currentProvider.checkoutReadiness(),
+            process.env.NODE_ENV,
+            isExplicitLocalE2eRuntime(),
+          )) {
             return { outcome: "provider_unavailable" as const, invoice };
           }
         } catch {

@@ -24,7 +24,10 @@ vi.mock("@/lib/audit", () => ({
   writeAuditLog: mocks.writeAuditLog,
 }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
-vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: mocks.getCanonicalAppUrl }));
+vi.mock("@/lib/app-url", () => ({
+  getCanonicalAppUrl: mocks.getCanonicalAppUrl,
+  isExplicitLocalE2eRuntime: () => false,
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({

@@ -194,11 +194,12 @@ test("G7-21 keeps the Email reminder contract named and required alongside the e
     "merchant message template keeps every field after server validation and can recover as a new template",
     "merchant interaction role previews transparent identity and exact script impact before disabling",
     "public live keeps the same video node, playback state and controls through internal checkout",
+    "owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice",
   ];
   const results = contracts.map((title) => ({ title: `commerce-orders.spec.ts > G7-04 商家訂單 UI > ${title}`, status: "passed" }));
   const complete = evaluateBrowserContracts(results);
 
-  assert.equal(Object.keys(complete.statuses).length, 16);
+  assert.equal(Object.keys(complete.statuses).length, 17);
   assert.equal(complete.statuses[contracts[9]], "PASS");
   assert.equal(complete.passed, true);
 

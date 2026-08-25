@@ -13,6 +13,7 @@ import {
   reconcileCommerceOrderPaymentTransition,
   reconcileCommerceOrderRefund,
 } from "../../src/lib/commerce-orders";
+import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/payment-webhooks";
 import { getRuntimeLivePublishReadiness } from "../../src/lib/live-runtime-readiness";
 import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
@@ -68,6 +69,7 @@ const fixture = {
   foreignBuyerGrantId: "",
   buyerEncryptedEnvelope: "",
   shippingEncryptedEnvelope: "",
+  billingPlanIds: [] as string[],
 };
 
 async function shippingFulfillmentSnapshot() {
@@ -447,6 +449,36 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       },
     });
 
+    const billingPlans = await Promise.all([
+      db.billingPlan.create({
+        data: {
+          name: `G7 商業方案 ${runId.slice(0, 8)}`,
+          code: `G7-PLAN-${runId}`,
+          description: "僅供本機付款閉環驗收",
+          monthlyPriceCents: 99_000,
+          includedStreamMinutes: 6_000,
+          includedStorageMinutes: 1_000,
+          includedCredits: 500,
+          includedEvents: 20,
+          includedAffiliates: 50,
+        },
+      }),
+      db.billingPlan.create({
+        data: {
+          name: `G7 商業方案升級 ${runId.slice(0, 8)}`,
+          code: `G7-PLAN-UPGRADE-${runId}`,
+          description: "僅供本機失敗付款驗收",
+          monthlyPriceCents: 129_000,
+          includedStreamMinutes: 9_000,
+          includedStorageMinutes: 2_000,
+          includedCredits: 800,
+          includedEvents: 30,
+          includedAffiliates: 80,
+        },
+      }),
+    ]);
+    fixture.billingPlanIds.push(...billingPlans.map((plan) => plan.id));
+
     const [product, foreignProduct] = await Promise.all([
       db.product.create({
         data: {
@@ -625,6 +657,9 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       // this file; vendor cascades remove the commerce graph.
       await db.vendor.deleteMany({ where: { id: { in: fixture.vendorIds } } });
       if (fixture.userId) await db.user.deleteMany({ where: { id: fixture.userId } });
+      if (fixture.billingPlanIds.length > 0) {
+        await db.billingPlan.deleteMany({ where: { id: { in: fixture.billingPlanIds } } });
+      }
     } finally {
       await db.$disconnect();
     }
@@ -708,11 +743,11 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(page.getByLabel("Slug", { exact: true })).toHaveValue(fixture.productSlug);
     const duplicateResponse = page.waitForResponse((candidate) => {
       const request = candidate.request();
-      return request.method() === "POST" && new URL(candidate.url()).pathname === "/products/new";
+      return request.method() === "POST" && new URL(candidate.url()).pathname === "/api/products/upsert";
     });
     await page.getByRole("button", { name: "儲存", exact: true }).click();
     const duplicateHttpResponse = await duplicateResponse;
-    if (duplicateHttpResponse.status() !== 200) {
+    if (duplicateHttpResponse.status() !== 409) {
       const classification = classifyServerActionBody(await duplicateHttpResponse.text());
       throw new Error(`PRODUCT_ACTION_HTTP_${duplicateHttpResponse.status()}_${classification}`);
     }
@@ -761,7 +796,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     const sameOrigin = new URL(baseURL).origin;
     const onProductActionRequest = (request: PlaywrightRequest) => {
       const url = new URL(request.url());
-      if (url.origin !== sameOrigin || request.method() !== "POST" || !url.pathname.startsWith("/products/")) return;
+      if (url.origin !== sameOrigin || request.method() !== "POST" || url.pathname !== "/api/products/upsert") return;
       productActionDiagnostics.set(request, {
         pathname: url.pathname,
         method: request.method(),
@@ -878,7 +913,14 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(await db.product.count({ where: { vendorId: fixture.vendorIds[0], slug: productSlug } })).toBe(0);
 
     await page.getByLabel("付款後入口 URL", { exact: true }).fill(firstDestination);
+    const createResponsePromise = page.waitForResponse((candidate) => (
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/products/upsert"
+    ));
     await page.getByRole("button", { name: "儲存", exact: true }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status(), "native product create must return a 303 redirect").toBe(303);
+    expect(createResponse.headers().location).toMatch(/\/products\?updated=created$/u);
     await expect(page).toHaveURL(/\/products\?updated=created$/u);
     const created = await db.product.findFirstOrThrow({
       where: { vendorId: fixture.vendorIds[0], slug: productSlug },
@@ -943,7 +985,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     const purchasedItem = await db.commerceOrderItem.findFirstOrThrow({
       where: { vendorId: fixture.vendorIds[0], productId: created.id },
       orderBy: { createdAt: "desc" },
-      include: { deliverySnapshot: true, order: { select: { status: true } } },
+      include: { deliverySnapshot: true, order: { select: { status: true, orderNumber: true } } },
     });
     expect(purchasedItem.order.status).toBe("pending_payment");
     expect(purchasedItem.deliverySnapshot).toMatchObject({
@@ -967,29 +1009,33 @@ test("desktop merchant can recover upload and validation errors, then publish an
       select: { primaryPaymentTransactionId: true },
     });
     expect(payment.primaryPaymentTransactionId).toBeTruthy();
-    const paidAt = new Date("2026-08-09T15:00:00.000Z");
-    await db.$transaction(async (tx) => {
-      const paidTransaction = await tx.paymentTransaction.update({
-        where: { id: payment.primaryPaymentTransactionId! },
-        data: { status: "paid", occurredAt: paidAt },
-      });
-      await applyPaymentInventoryTransition(tx, {
-        transaction: paidTransaction,
-        eventType: "paid",
-        trustedCheckoutMetadata: { productId: created.id },
-        now: paidAt,
-      });
-      await reconcileCommerceOrderPaymentTransition(tx, {
-        vendorId: fixture.vendorIds[0],
-        paymentTransactionId: paidTransaction.id,
-        eventIdentity: `g7-48-paid-${runId}`,
-        transition: "paid",
-        occurredAt: paidAt,
-      });
+    const paidAt = "2026-08-09T15:00:00.000Z";
+    const paidPayload = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `g7-48-paid-${runId}`,
+      eventType: "paid",
+      vendorId: fixture.vendorIds[0],
+      orderNumber: purchasedItem.order.orderNumber,
+      grossAmountCents: created.priceCents,
+      currency: created.currency,
+      occurredAt: paidAt,
     });
+    await processPaymentWebhook(paidPayload);
+    await processPaymentWebhook(paidPayload);
     await expect(db.commerceEntitlement.findUniqueOrThrow({
       where: { vendorId_orderItemId: { vendorId: fixture.vendorIds[0], orderItemId: purchasedItem.id } },
     })).resolves.toMatchObject({ status: "granted", revokedAt: null });
+    await expect(db.commerceEntitlement.count({
+      where: { vendorId: fixture.vendorIds[0], orderItemId: purchasedItem.id },
+    })).resolves.toBe(1);
+    await expect(db.emailDelivery.count({
+      where: {
+        vendorId: fixture.vendorIds[0],
+        trigger: "order_paid",
+        idempotencyKey: `order-paid:v1:${purchasedItem.orderId}`,
+        status: "queued",
+      },
+    })).resolves.toBe(1);
 
     await page.context().clearCookies();
     await installOwnerSession(page);
@@ -997,7 +1043,14 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(page.getByLabel("付款後入口 URL", { exact: true })).toHaveValue(firstDestination);
     await expect(page.getByLabel("我確認這是商家授權的公開 HTTPS 交付網域")).toBeChecked();
     await page.getByLabel("付款後入口 URL", { exact: true }).fill(secondDestination);
+    const updateResponsePromise = page.waitForResponse((candidate) => (
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/products/upsert"
+    ));
     await page.getByRole("button", { name: "儲存", exact: true }).click();
+    const updateResponse = await updateResponsePromise;
+    expect(updateResponse.status(), "native product update must return a 303 redirect").toBe(303);
+    expect(updateResponse.headers().location).toMatch(/\/products\?updated=saved$/u);
     await expect(page).toHaveURL(/\/products\?updated=saved$/u);
 
     const [updatedConfig, persistedSnapshot] = await Promise.all([
@@ -1086,6 +1139,135 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(await page.locator("body").innerText()).not.toContain(firstDestination);
     expect((await page.goto(`/support/orders/${buyerGrant.id}`))?.status()).toBe(200);
     await expect(page.getByText(/目前已停止提供/u)).toBeVisible();
+  });
+
+  test("owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice", async ({ page }) => {
+    test.setTimeout(90_000);
+    await installOwnerSession(page);
+    expect((await page.goto("/billing/plans"))?.status()).toBe(200);
+
+    const firstPlan = await db.billingPlan.findUniqueOrThrow({ where: { id: fixture.billingPlanIds[0] } });
+    const firstCard = page.locator("article, section, div").filter({
+      has: page.getByRole("heading", { name: firstPlan.name, exact: true }),
+    }).filter({ has: page.getByRole("button", { name: "選擇方案", exact: true }) }).last();
+    await firstCard.getByRole("button", { name: "選擇方案", exact: true }).click();
+    await expect(page).toHaveURL(/\/billing\/plans\?status=checkout&transactionId=/u);
+    await expect(page.getByText("方案付款已建立，請完成付款以啟用新方案。", { exact: true })).toBeVisible();
+
+    const firstTransaction = await db.paymentTransaction.findFirstOrThrow({
+      where: {
+        vendorId: fixture.vendorIds[0],
+        status: "pending",
+        metadata: { path: ["billingPlanId"], equals: firstPlan.id },
+      },
+    });
+    const firstSubscriptionId = (firstTransaction.metadata as { platformSubscriptionId?: string }).platformSubscriptionId;
+    expect(firstSubscriptionId).toBeTruthy();
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: firstSubscriptionId! } }))
+      .resolves.toMatchObject({ status: "pending_payment", planId: firstPlan.id });
+
+    const paid = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `g7-plan-paid-${runId}`,
+      eventType: "paid",
+      vendorId: fixture.vendorIds[0],
+      orderNumber: firstTransaction.orderNumber,
+      grossAmountCents: firstPlan.monthlyPriceCents,
+      currency: firstTransaction.currency,
+    });
+    await processPaymentWebhook(paid);
+    await processPaymentWebhook(paid);
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: firstSubscriptionId! } }))
+      .resolves.toMatchObject({ status: "active", planId: firstPlan.id });
+    await expect(db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: fixture.vendorIds[0] } }))
+      .resolves.toMatchObject({
+        billingPlanId: firstPlan.id,
+        streamMinutesLimit: firstPlan.includedStreamMinutes,
+        storageMinutesLimit: firstPlan.includedStorageMinutes,
+        creditsLimit: firstPlan.includedCredits,
+      });
+    await expect(db.vendorSubscription.count({
+      where: { vendorId: fixture.vendorIds[0], status: "active", planId: firstPlan.id },
+    })).resolves.toBe(1);
+
+    const secondPlan = await db.billingPlan.findUniqueOrThrow({ where: { id: fixture.billingPlanIds[1] } });
+    await page.goto("/billing/plans");
+    const secondCard = page.locator("article, section, div").filter({
+      has: page.getByRole("heading", { name: secondPlan.name, exact: true }),
+    }).filter({ has: page.getByRole("button", { name: "變更方案", exact: true }) }).last();
+    await secondCard.getByRole("button", { name: "變更方案", exact: true }).click();
+    await expect(page).toHaveURL(/\/billing\/plans\?status=checkout&transactionId=/u);
+    const failedTransaction = await db.paymentTransaction.findFirstOrThrow({
+      where: {
+        vendorId: fixture.vendorIds[0],
+        status: "pending",
+        metadata: { path: ["billingPlanId"], equals: secondPlan.id },
+      },
+    });
+    const failedSubscriptionId = (failedTransaction.metadata as { platformSubscriptionId?: string }).platformSubscriptionId;
+    const failed = PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `g7-plan-failed-${runId}`,
+      eventType: "failed",
+      vendorId: fixture.vendorIds[0],
+      orderNumber: failedTransaction.orderNumber,
+      grossAmountCents: secondPlan.monthlyPriceCents,
+      currency: failedTransaction.currency,
+    });
+    await processPaymentWebhook(failed);
+    await processPaymentWebhook(failed);
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: failedSubscriptionId! } }))
+      .resolves.toMatchObject({ status: "payment_failed" });
+    await expect(db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: fixture.vendorIds[0] } }))
+      .resolves.toMatchObject({ billingPlanId: firstPlan.id });
+
+    const invoice = await db.invoice.create({
+      data: {
+        vendorId: fixture.vendorIds[0],
+        monthKey: "2026-08",
+        invoiceNumber: `G7-INV-${runId}`,
+        monthlyFeeCents: 10_000,
+        subtotalCents: 10_000,
+        totalCents: 10_000,
+        status: "issued",
+      },
+    });
+    const invoiceTransaction = await db.paymentTransaction.create({
+      data: {
+        vendorId: fixture.vendorIds[0],
+        providerName: "demo",
+        orderNumber: `G7-INVOICE-${runId}`,
+        paymentMode: "platform",
+        grossAmountCents: invoice.totalCents,
+        netAmountCents: invoice.totalCents,
+        currency: "TWD",
+        status: "pending",
+        metadata: { billingPurpose: "invoice_payment", invoiceId: invoice.id, invoiceTotalCents: invoice.totalCents },
+      },
+    });
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `g7-invoice-paid-${runId}`,
+      eventType: "paid",
+      vendorId: fixture.vendorIds[0],
+      orderNumber: invoiceTransaction.orderNumber,
+      grossAmountCents: invoice.totalCents,
+      currency: "TWD",
+    }));
+    await expect(db.invoice.findUniqueOrThrow({ where: { id: invoice.id } }))
+      .resolves.toMatchObject({ status: "paid", paidAt: expect.any(Date) });
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `g7-plan-refund-${runId}`,
+      eventType: "refunded",
+      vendorId: fixture.vendorIds[0],
+      orderNumber: firstTransaction.orderNumber,
+      refundAmountCents: firstPlan.monthlyPriceCents,
+      currency: firstTransaction.currency,
+    }));
+    await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: firstSubscriptionId! } }))
+      .resolves.toMatchObject({ status: "payment_refunded" });
   });
 
   test("buyer order capability shows only exact safe fulfillment projection on desktop and mobile", async ({ page }) => {

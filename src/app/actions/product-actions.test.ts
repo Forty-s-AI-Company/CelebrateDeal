@@ -33,7 +33,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { initialProductActionState } from "@/lib/product-action-state";
-import { upsertProductAction } from "./product-actions";
+import { upsertProductAction } from "./product-server-actions";
 
 function formData(fields: Record<string, string> = {}) {
   const data = new FormData();

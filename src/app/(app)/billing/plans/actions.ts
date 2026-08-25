@@ -8,7 +8,7 @@ import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
 import { requireVendorOwnerFinance } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import {
   checkoutReadinessAllowsNewTransaction,
@@ -211,7 +211,11 @@ export async function selectBillingPlanAction(formData: FormData) {
 
         if (requiresPayment) {
           try {
-            if (!checkoutReadinessAllowsNewTransaction(provider.checkoutReadiness())) {
+            if (!checkoutReadinessAllowsNewTransaction(
+              provider.checkoutReadiness(),
+              process.env.NODE_ENV,
+              isExplicitLocalE2eRuntime(),
+            )) {
               return { outcome: "provider_unavailable" as const };
             }
           } catch {

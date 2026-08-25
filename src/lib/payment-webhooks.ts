@@ -27,6 +27,7 @@ import {
 } from "@/lib/platform-referral-commission";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
+import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import {
@@ -1043,6 +1044,13 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
         vendorId: vendor.id, transactionId: savedTransaction.id,
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
       });
+      if (payload.eventType === "paid") {
+        await ensureCommerceOrderPaidDelivery(tx, {
+          vendorId: vendor.id,
+          paymentTransactionId: savedTransaction.id,
+          occurredAt,
+        });
+      }
     }
 
     const { refundCommission, platformReferralRefund, courseRefundAllocations, commerceOrderRefund } = await applyPaymentRefundsInWebhook(tx, {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { upsertProductAction } from "@/app/actions/product-actions";
+import { useActionState, useState, type FormEvent } from "react";
+import { upsertProductAction } from "@/app/actions/product-server-actions";
 import { MediaUploadField } from "@/components/media-upload-field";
 import { Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
 import {
@@ -96,7 +96,20 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "duplicate_slug") return "這個 Slug 已被目前商家的另一個商品使用，請更換後再儲存。";
   if (error === "conflict") return "商品在你編輯期間已被更新（可能包含新訂單扣庫存）。請重新整理確認最新資料後再修改。";
   if (error === "not_found") return "找不到這個商品，或你沒有權限修改。";
+  if (error === "unavailable") return "商品暫時無法儲存，請稍後再試一次。";
   return null;
+}
+
+const PRODUCT_ACTION_ERRORS = new Set<ProductActionError>([
+  "invalid_product", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner",
+  "invalid_fulfillment", "invalid_delivery", "invalid_custom_checkout_fields",
+  "media_upload_incomplete", "duplicate_slug", "conflict", "not_found", "unavailable",
+]);
+
+function safeProductError(value: unknown): ProductActionError {
+  return typeof value === "string" && PRODUCT_ACTION_ERRORS.has(value as ProductActionError)
+    ? value as ProductActionError
+    : "unavailable";
 }
 
 function nextFieldKey(fields: CustomCheckoutFields) {
@@ -201,24 +214,70 @@ export function ProductFormClient({
   product,
   memberships = [],
   initialError,
+  nativeAction = "/api/products/upsert",
 }: {
   csrfToken: string;
   product?: ProductFormProduct;
   memberships?: CourseMembershipOption[];
   initialError?: ProductActionError;
+  nativeAction?: string;
 }) {
   const initialState: ProductActionState = initialError
     ? { ...initialProductActionState, error: initialError }
     : initialProductActionState;
   const [state, formAction, pending] = useActionState(upsertProductAction, initialState);
+  const [nativeError, setNativeError] = useState<ProductActionError>();
+  const [nativePending, setNativePending] = useState(false);
   const [mediaBlocked, setMediaBlocked] = useState(false);
   const draft = state.draft ?? initialDraft(product);
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
   const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
-  const error = errorMessage(state.error);
+  const error = errorMessage(nativeError ?? state.error);
+
+  async function submitNatively(event: FormEvent<HTMLFormElement>) {
+    if (!nativeAction) return;
+    event.preventDefault();
+    if (nativePending || pending) return;
+    setNativePending(true);
+    setNativeError(undefined);
+    try {
+      const submitted = new FormData(event.currentTarget);
+      const response = await fetch(nativeAction, {
+        method: "POST",
+        body: submitted,
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+        redirect: "manual",
+      });
+      if (response.type === "opaqueredirect" || response.status === 303) {
+        const destination = submitted.get("id")
+          ? "/products?updated=saved"
+          : "/products?updated=created";
+        window.location.assign(new URL(destination, window.location.origin).href);
+        return;
+      }
+      if (response.redirected) {
+        const destination = new URL(response.url, window.location.origin);
+        if (destination.origin === window.location.origin && destination.pathname === "/products") {
+          window.location.assign(destination.href);
+          return;
+        }
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      const value = typeof payload === "object" && payload !== null && "error" in payload
+        ? (payload as { error?: unknown }).error
+        : undefined;
+      setNativeError(safeProductError(value));
+    } catch {
+      setNativeError("unavailable");
+    } finally {
+      setNativePending(false);
+    }
+  }
 
   return (
-    <form key={state.version} action={formAction} className="grid gap-4" aria-busy={pending}>
+    <form key={state.version} action={formAction} onSubmit={submitNatively} className="grid gap-4" aria-busy={pending || nativePending}>
       <input type="hidden" name="_csrf" value={csrfToken} />
       {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /></> : null}
       {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{error}</p> : null}
@@ -324,7 +383,7 @@ export function ProductFormClient({
         <span>上架商品<span className="mt-1 block text-xs font-normal text-slate-500">勾選後，符合價格、庫存與交付條件的商品可進入販售流程。</span></span>
       </label>
       {mediaBlocked ? <p role="status" className="text-sm font-medium text-orange-800">請先完成圖片上傳，或移除尚未上傳的檔案。</p> : null}
-      <SubmitButton disabled={mediaBlocked} />
+      <SubmitButton disabled={mediaBlocked || nativePending} />
     </form>
   );
 }

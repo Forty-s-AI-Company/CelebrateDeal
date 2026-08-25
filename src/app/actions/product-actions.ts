@@ -1,13 +1,8 @@
-"use server";
-
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { redirect } from "next/navigation";
-import { assertServerActionSecurity } from "@/lib/csrf";
 import { CourseCommerceDomain } from "@/lib/course-commission";
 import { getDb } from "@/lib/db";
-import { requireVendorManager } from "@/lib/auth";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
 import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
@@ -398,14 +393,25 @@ async function persistProductDelivery(
   if (updated.count !== 1) throw new ProductDeliveryConflictError();
 }
 
-export async function upsertProductAction(previousState: ProductActionState, formData: FormData): Promise<ProductActionState> {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+export type ProductMutationResult =
+  | { ok: true; destination: "/products?updated=created" | "/products?updated=saved" }
+  | { ok: false; state: ProductActionState };
+
+/**
+ * Transport-neutral product mutation. HTTP and Server Action adapters own
+ * request security/authentication, while this service owns validation and the
+ * tenant-scoped transaction.
+ */
+export async function mutateProduct(
+  vendorId: string,
+  previousState: ProductActionState,
+  formData: FormData,
+): Promise<ProductMutationResult> {
   const request = parseProductRequest(previousState, formData);
-  if (!request.success) return request.state;
+  if (!request.success) return { ok: false, state: request.state };
   const db = getDb();
-  const dependencies = await loadProductDependencies(db, vendor.id, request);
-  if (!dependencies.success) return productFailure(previousState, formData, dependencies.error);
+  const dependencies = await loadProductDependencies(db, vendorId, request);
+  if (!dependencies.success) return { ok: false, state: productFailure(previousState, formData, dependencies.error) };
   const { existingProduct, imageAsset } = dependencies;
   const policyChanged = request.commerceDomain === "course" && existingProduct !== null
     && (
@@ -417,7 +423,7 @@ export async function upsertProductAction(previousState: ProductActionState, for
   const data = {
     ...request.productInput,
     id: productId,
-    vendorId: vendor.id,
+    vendorId,
     imageUrl: imageAsset?.publicUrl ?? request.productInput.imageUrl,
     imageAssetId: imageAsset?.id ?? null,
     commerceDomain: request.commerceDomain,
@@ -431,10 +437,10 @@ export async function upsertProductAction(previousState: ProductActionState, for
   let persistenceError: ProductActionError | null;
   try {
     persistenceError = await db.$transaction(async (tx) => {
-      const productError = await persistProduct(tx, vendor.id, request, data);
+      const productError = await persistProduct(tx, vendorId, request, data);
       if (productError) return productError;
       await persistProductDelivery(tx, {
-        vendorId: vendor.id,
+        vendorId,
         productId,
         fulfillmentType: request.fulfillmentType,
         delivery: request.delivery,
@@ -450,6 +456,6 @@ export async function upsertProductAction(previousState: ProductActionState, for
       throw error;
     }
   }
-  if (persistenceError) return productFailure(previousState, formData, persistenceError);
-  redirect(`/products?updated=${request.id ? "saved" : "created"}`);
+  if (persistenceError) return { ok: false, state: productFailure(previousState, formData, persistenceError) };
+  return { ok: true, destination: request.id ? "/products?updated=saved" : "/products?updated=created" };
 }

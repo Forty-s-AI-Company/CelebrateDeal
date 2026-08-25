@@ -6,16 +6,9 @@ import { buildViewerChatMessageId, createViewerChatMessage } from "@/lib/live-ch
 import { hashLiveViewerToken } from "@/lib/live-quota-admission";
 
 const enabled = process.env.RT01_D2_DISPOSABLE_DB === "true";
-const databaseIsDisposable = (() => {
-  const value = process.env.DATABASE_URL;
-  if (!classifyLocalTestDatabase(value).safe || !value) return false;
-  try {
-    const databaseName = decodeURIComponent(new URL(value).pathname.replace(/^\/+/, ""));
-    return /^celebratedeal_(?:test|e2e|ci)$/iu.test(databaseName);
-  } catch {
-    return false;
-  }
-})();
+// The shared safety classifier is the canonical allowlist for disposable
+// loopback databases, including the isolated wp17/wp18 CI databases.
+const databaseIsDisposable = classifyLocalTestDatabase(process.env.DATABASE_URL).safe;
 const createdVendorIds: string[] = [];
 
 afterEach(async () => {

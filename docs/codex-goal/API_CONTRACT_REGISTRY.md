@@ -1,6 +1,6 @@
 # CelebrateDeal API Contract Registry
 
-最後更新：2026-08-21（Asia/Taipei）
+最後更新：2026-08-25（Asia/Taipei）
 
 基準 revision：`9cd7473`
 
@@ -73,6 +73,7 @@
 | 54 | `POST /api/settings/security/mfa/confirm` | native same-origin form；shared enrollment helper 驗證 CSRF、Origin、session 與 MFA code | bounded FormData；6 位 code 與 CSRF 欄位 | current authenticated platform admin session | enable MFA／consume enrollment state；成功或失敗都 303 回安全設定頁 | 303 到固定 query state；不回傳 secret／recovery code | 同路徑 route unit + MFA Browser acceptance |
 | 55 | `POST /api/team-funnel/template-actions` | native same-origin form；delegates to `manageTeamFunnelTemplateAction`，沿用 CSRF、Origin、tenant 與 owner policy | bounded FormData；create／publish／create-share／disable-share action state | template、source page、team、webinar、share ownership 由既有 domain service 驗證 | create／immutable publish／share mutation；replay/conflict 由既有 service contract 處理；action-level error 以 safe JSON state 回 200，避免正常表單驗證污染 Browser console | private no-store JSON `{ status, message, ...safe fields }`；unexpected transport error 500 | 同路徑 route unit + component unit + full Browser acceptance |
 | 56 | `POST /api/team-funnel/partner-page-actions` | native same-origin form；delegates to save／publish Server Actions，沿用 CSRF、Origin、tenant、field-lock 與 publish policy | bounded FormData；`operation=save|publish` 與 page content／slot fields | authenticated promoter page、template locks、team ownership 由既有 domain service 驗證 | save editable content／slot overrides／public visibility；action-level error 以 safe JSON state 回 200 | private no-store JSON `{ status, message }`；unknown operation safe error | 同路徑 route unit + component unit + full Browser acceptance |
+| 57 | `POST /api/products/upsert` | native same-origin FormData；shared CSRF／Origin boundary、active merchant session、MFA 與 owner/admin policy | bounded product fields、revision、delivery metadata 與既有 CSRF token | authenticated vendor 由 session 綁定；edit target、delivery 與 product ownership 由 transport-neutral mutation service 驗證 | create／update 使用既有 transaction、revision conflict 與 delivery encryption 規則；成功 303 到固定商品列表 | 400／401／403／404／409／422 僅回 allowlisted error enum；不回 DB／delivery plaintext／credential／exception detail | 同路徑 route unit + product create/edit 10 次 Browser acceptance |
 
 ## 已確認的 contract 缺口
 
@@ -86,8 +87,8 @@
 
 ## 驗收判定
 
-- Static inventory：56/56 route handlers 已登錄。
-- Same-path test：56/56。
+- Static inventory：57/57 route handlers 已登錄。
+- Same-path test：57/57。
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。

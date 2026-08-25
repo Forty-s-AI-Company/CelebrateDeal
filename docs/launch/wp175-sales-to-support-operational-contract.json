@@ -115,7 +115,8 @@
   ],
   "boundaries": {
     "billingMode": "MONTH_END_POSTPAID",
-    "plansPageTriggersPayment": false,
+    "plansPageTriggersPayment": true,
+    "plansPagePaymentSemantics": "paid_plan_creates_pending_subscription_and_server_owned_transaction; trusted_paid_callback_required_for_activation",
     "externalNetwork": false,
     "databaseReads": 0,
     "databaseWrites": 0,

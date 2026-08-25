@@ -184,7 +184,13 @@ async function createDisposableDatabase() {
     const migrations = listCanonicalMigrations();
     if (migrations.length === 0) throw new Error("Canonical migration inventory is empty.");
     const mirrorRoot = writeMirror(tempRoot, migrations);
-    const environment = selectedCoverageEnvironment(tempRoot, { DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl });
+    const environment = selectedCoverageEnvironment(tempRoot, {
+      DATABASE_URL: databaseUrl,
+      DIRECT_URL: databaseUrl,
+      // This flag is set only after this runner has created, marked, migrated,
+      // and ownership-verified its isolated loopback PostgreSQL container.
+      RT01_D2_DISPOSABLE_DB: "true",
+    });
     const prismaCli = path.join(workspaceRoot, "node_modules", "prisma", "build", "index.js");
     if (!existsSync(prismaCli)) throw new Error("Prisma CLI is unavailable.");
     for (const args of [["validate"], ["migrate", "deploy"], ["migrate", "status"]]) {

@@ -11,7 +11,8 @@ export type ProductActionError =
   | "media_upload_incomplete"
   | "duplicate_slug"
   | "conflict"
-  | "not_found";
+  | "not_found"
+  | "unavailable";
 
 export type ProductFormDraft = {
   name: string;

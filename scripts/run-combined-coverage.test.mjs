@@ -61,6 +61,15 @@ test("selects a hermetic environment without inheriting developer secrets", () =
   }
 });
 
+test("does not enable disposable DB tests without an explicit owned database addition", () => {
+  const tempRoot = "C:\\Temp\\celebratedeal-combined-coverage-0123456789abcdef";
+  assert.equal(selectedCoverageEnvironment(tempRoot).RT01_D2_DISPOSABLE_DB, undefined);
+  assert.equal(
+    selectedCoverageEnvironment(tempRoot, { RT01_D2_DISPOSABLE_DB: "true" }).RT01_D2_DISPOSABLE_DB,
+    "true",
+  );
+});
+
 test("requires exact container identity, labels, and ephemeral data mount", () => {
   const expected = {
     id: "a".repeat(64),
