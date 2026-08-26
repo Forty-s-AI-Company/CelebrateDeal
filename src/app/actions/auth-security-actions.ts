@@ -22,11 +22,8 @@ import { isAllowedSmokeTestRecipient } from "@/lib/email";
 import {
   decryptMfaSecret,
   generateRecoveryCodes,
-  generateTotpSecret,
   hashRecoveryCodeAsync,
   MFA_RECOVERY_COOKIE,
-  MFA_SETUP_COOKIE,
-  serializePendingMfaSetup,
   serializeRecoveryCodes,
   verifyRecoveryCodeAsync,
   verifyTotpCode,
@@ -34,7 +31,7 @@ import {
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
+import { completeMfaEnrollment, startMfaEnrollment } from "@/lib/mfa-enrollment";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
@@ -62,16 +59,6 @@ function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>
     if (value) rateLimitHeaders.set(headerName, value);
   }
   return rateLimitHeaders;
-}
-
-function longLivedCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 15,
-  };
 }
 
 function recoveryCookieOptions() {
@@ -236,15 +223,8 @@ export async function confirmPasswordResetAction(formData: FormData) {
 }
 
 export async function startMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  if (auth.user.mfaFactor) redirect(`${destination}?updated=mfa_exists`);
-  const cookieStore = await cookies();
-  const secret = generateTotpSecret();
-  cookieStore.set(MFA_SETUP_COOKIE, serializePendingMfaSetup(secret, auth.user.id), longLivedCookieOptions());
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(`${destination}?updated=mfa_started`);
+  const result = await startMfaEnrollment(formData);
+  redirect(`${result.destination}?updated=${result.updated}`);
 }
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {

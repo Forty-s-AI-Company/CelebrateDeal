@@ -6,13 +6,48 @@ import { getDb } from "@/lib/db";
 import {
   encryptMfaSecret,
   generateRecoveryCodes,
+  generateTotpSecret,
   hashRecoveryCodeAsync,
   MFA_RECOVERY_COOKIE,
   MFA_SETUP_COOKIE,
   parsePendingMfaSetup,
+  serializePendingMfaSetup,
   serializeRecoveryCodes,
   verifyTotpCode,
 } from "@/lib/mfa";
+
+function longLivedCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 15,
+  };
+}
+
+export type MfaEnrollmentStartResult = {
+  destination: string;
+  updated: "mfa_started" | "mfa_exists";
+};
+
+/**
+ * Starts MFA enrollment without choosing the caller's navigation transport.
+ * Server Actions and native POST routes share the same CSRF, session and
+ * cookie state transition so a browser retry cannot change the security rules.
+ */
+export async function startMfaEnrollment(formData: FormData): Promise<MfaEnrollmentStartResult> {
+  await assertServerActionSecurity(formData);
+  const auth = await requireAuth();
+  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  if (auth.user.mfaFactor) return { destination, updated: "mfa_exists" };
+
+  const cookieStore = await cookies();
+  const secret = generateTotpSecret();
+  cookieStore.set(MFA_SETUP_COOKIE, serializePendingMfaSetup(secret, auth.user.id), longLivedCookieOptions());
+  cookieStore.delete(MFA_RECOVERY_COOKIE);
+  return { destination, updated: "mfa_started" };
+}
 
 export type MfaEnrollmentResult =
   | { ok: true; destination: string }

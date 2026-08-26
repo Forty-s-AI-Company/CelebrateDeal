@@ -9,7 +9,6 @@ import {
   revokeOtherSessionsAction,
   resendVendorMemberInvitationAction,
   sendPasswordResetSmokeAction,
-  startMfaEnrollmentAction,
   updatePasswordAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
@@ -157,7 +156,7 @@ export default async function SecuritySettingsPage({
               <MfaEnrollmentForm csrfField={<CsrfField />} />
             </div>
           ) : (
-            <form action={startMfaEnrollmentAction} className="grid gap-3">
+            <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
               <CsrfField />
               <p className="rounded-lg border border-orange-100 bg-orange-50 p-4 text-sm text-orange-800">
                 尚未啟用 MFA。若這個帳號需要進入 `/admin/*`，啟用後才能繼續操作財務與 webhook 後台。

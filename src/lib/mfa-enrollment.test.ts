@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   parsePendingMfaSetup: vi.fn(),
   verifyTotpCode: vi.fn(),
+  generateTotpSecret: vi.fn(),
   generateRecoveryCodes: vi.fn(),
   hashRecoveryCodeAsync: vi.fn(),
   encryptMfaSecret: vi.fn(),
+  serializePendingMfaSetup: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
@@ -27,16 +29,18 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerAct
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/mfa", () => ({
   encryptMfaSecret: mocks.encryptMfaSecret,
+  generateTotpSecret: mocks.generateTotpSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,
   hashRecoveryCodeAsync: mocks.hashRecoveryCodeAsync,
   MFA_RECOVERY_COOKIE: "mfa_recovery_codes",
   MFA_SETUP_COOKIE: "mfa_setup",
   parsePendingMfaSetup: mocks.parsePendingMfaSetup,
+  serializePendingMfaSetup: mocks.serializePendingMfaSetup,
   serializeRecoveryCodes: vi.fn((codes: string[]) => JSON.stringify(codes)),
   verifyTotpCode: mocks.verifyTotpCode,
 }));
 
-import { completeMfaEnrollment } from "./mfa-enrollment";
+import { completeMfaEnrollment, startMfaEnrollment } from "./mfa-enrollment";
 
 describe("completeMfaEnrollment", () => {
   const cookieStore = {
@@ -61,6 +65,8 @@ describe("completeMfaEnrollment", () => {
       isPlatformAdmin: false,
     });
     mocks.parsePendingMfaSetup.mockReturnValue({ userId: "owner-1", secret: "synthetic-totp-secret" });
+    mocks.generateTotpSecret.mockReturnValue("new-synthetic-totp-secret");
+    mocks.serializePendingMfaSetup.mockReturnValue("serialized-pending-cookie");
     mocks.verifyTotpCode.mockReturnValue(true);
     mocks.generateRecoveryCodes.mockReturnValue(["recovery-1", "recovery-2"]);
     mocks.hashRecoveryCodeAsync.mockImplementation(async (code: string) => `hash:${code}`);
@@ -85,6 +91,36 @@ describe("completeMfaEnrollment", () => {
     );
     expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "mfa_enabled" }));
+  });
+
+  it("starts owner enrollment through the shared security and cookie transition", async () => {
+    const result = await startMfaEnrollment(new FormData());
+
+    expect(result).toEqual({ destination: "/settings/security", updated: "mfa_started" });
+    expect(mocks.generateTotpSecret).toHaveBeenCalledOnce();
+    expect(mocks.serializePendingMfaSetup).toHaveBeenCalledWith("new-synthetic-totp-secret", "owner-1");
+    expect(cookieStore.set).toHaveBeenCalledWith(
+      "mfa_setup",
+      "serialized-pending-cookie",
+      expect.any(Object),
+    );
+    expect(cookieStore.delete).toHaveBeenCalledWith("mfa_recovery_codes");
+  });
+
+  it("does not replace an existing factor and returns a bounded state", async () => {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "owner-1", mfaFactor: { id: "factor-1" } },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin: false,
+    });
+
+    const result = await startMfaEnrollment(new FormData());
+
+    expect(result).toEqual({ destination: "/settings/security", updated: "mfa_exists" });
+    expect(mocks.generateTotpSecret).not.toHaveBeenCalled();
+    expect(cookieStore.set).not.toHaveBeenCalled();
+    expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 
   it("returns an error without mutating MFA state for an invalid code", async () => {

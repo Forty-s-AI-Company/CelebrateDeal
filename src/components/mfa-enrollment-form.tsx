@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 /**
- * Completes owner MFA enrollment through a native POST so the final
+ * Completes MFA enrollment through a native POST so the final
  * navigation does not depend on Next 16's same-route Server Action reducer.
  */
 export function MfaEnrollmentForm({ csrfField }: { csrfField: ReactNode }) {

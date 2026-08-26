@@ -3,14 +3,13 @@ import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import {
-  confirmMfaEnrollmentAction,
   dismissRecoveryCodesAction,
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
-  startMfaEnrollmentAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { Badge, Card } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
@@ -103,7 +102,7 @@ export default async function MfaSetupPage({
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">無法掃描 QR Code？顯示手動密鑰</summary>
                   <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
                 </details>
-                <form action={startMfaEnrollmentAction} className="justify-self-start">
+                <form action="/api/settings/security/mfa/start" method="post" className="justify-self-start">
                   <CsrfField />
                   <FormSubmitButton
                     className="text-sm font-semibold text-primary underline underline-offset-4"
@@ -113,23 +112,10 @@ export default async function MfaSetupPage({
                     重新建立 TOTP 設定
                   </FormSubmitButton>
                 </form>
-                <form action={confirmMfaEnrollmentAction} className="grid gap-3">
-                  <CsrfField />
-                  <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                    6 位數驗證碼
-                    <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
-                  </label>
-                  <FormSubmitButton
-                    className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
-                    pendingChildren="啟用中…"
-                    pendingMessage="正在啟用 MFA，請勿重複送出。"
-                  >
-                    啟用 MFA
-                  </FormSubmitButton>
-                </form>
+                <MfaEnrollmentForm csrfField={<CsrfField />} />
               </div>
             ) : (
-              <form action={startMfaEnrollmentAction} className="grid gap-3">
+              <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
                 <CsrfField />
                 <FormSubmitButton
                   className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
