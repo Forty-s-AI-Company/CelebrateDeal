@@ -2,16 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   captureException: vi.fn(),
+  flush: vi.fn(),
 }));
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: mocks.captureException,
+  flush: mocks.flush,
 }));
 
-import { captureOperationalError } from "./monitoring";
+import { captureOperationalError, captureSyntheticMonitoringError } from "./monitoring";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.captureException.mockReturnValue("event-id");
+  mocks.flush.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -106,5 +110,59 @@ describe("captureOperationalError", () => {
     });
     expect(JSON.stringify(errorLog.mock.calls)).not.toContain(sensitiveMessage);
     expect(JSON.stringify(errorLog.mock.calls)).not.toContain("test-fixture-password");
+  });
+
+  it("isolates a fatal synthetic issue and waits for Sentry transport flush", async () => {
+    vi.stubEnv("SENTRY_DSN", "test-fixture-dsn");
+
+    await expect(captureSyntheticMonitoringError({
+      source: "admin_ops",
+      checkedAt: "2026-08-27T15:00:00.000Z",
+    })).resolves.toEqual({ captured: true, flushed: true });
+
+    expect(mocks.captureException).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        name: "OperationalError",
+        message: "Operational error",
+      }),
+      {
+        extra: {
+          event: "operational_error",
+          category: "unknown",
+          code: "unavailable",
+          source: "admin_ops",
+          checkedAt: "2026-08-27T15:00:00.000Z",
+        },
+        fingerprint: [
+          "celebratedeal-ops-smoke",
+          expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+        ],
+        level: "fatal",
+      },
+    );
+    expect(mocks.flush).toHaveBeenCalledExactlyOnceWith(5_000);
+  });
+
+  it("reports a missing monitoring provider without attempting a flush", async () => {
+    vi.stubEnv("SENTRY_DSN", undefined);
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", undefined);
+
+    await expect(captureSyntheticMonitoringError({ source: "admin_ops" })).resolves.toEqual({
+      captured: false,
+      flushed: false,
+    });
+
+    expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.flush).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed transport flush", async () => {
+    vi.stubEnv("SENTRY_DSN", "test-fixture-dsn");
+    mocks.flush.mockResolvedValue(false);
+
+    await expect(captureSyntheticMonitoringError({ source: "admin_ops" })).resolves.toEqual({
+      captured: true,
+      flushed: false,
+    });
   });
 });

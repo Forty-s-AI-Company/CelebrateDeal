@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { randomUUID } from "node:crypto";
 
 export type OperationalErrorCategory =
   | "authentication"
@@ -12,6 +13,18 @@ type SafeOperationalDiagnostic = {
   category: OperationalErrorCategory;
   code: string;
 };
+
+type CaptureOperationalErrorOptions = {
+  fingerprint?: string[];
+  level?: "error" | "fatal";
+};
+
+export type SyntheticMonitoringResult = {
+  captured: boolean;
+  flushed: boolean;
+};
+
+const SYNTHETIC_MONITORING_FLUSH_TIMEOUT_MS = 5_000;
 
 const SAFE_CONTEXT_KEYS = new Set([
   "source",
@@ -74,7 +87,11 @@ function getSafeContext(context: Record<string, unknown> | undefined) {
   );
 }
 
-export function captureOperationalError(error: unknown, context?: Record<string, unknown>) {
+export function captureOperationalError(
+  error: unknown,
+  context?: Record<string, unknown>,
+  options?: CaptureOperationalErrorOptions,
+) {
   const safePayload = {
     event: "operational_error",
     ...getSafeDiagnostic(error),
@@ -84,11 +101,39 @@ export function captureOperationalError(error: unknown, context?: Record<string,
   if (process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN) {
     const safeError = new Error("Operational error");
     safeError.name = "OperationalError";
-    Sentry.captureException(safeError, { extra: safePayload });
-    return;
+    return Sentry.captureException(safeError, {
+      extra: safePayload,
+      ...(options?.fingerprint ? { fingerprint: options.fingerprint } : {}),
+      ...(options?.level ? { level: options.level } : {}),
+    });
   }
 
   if (process.env.NODE_ENV !== "test") {
     console.error("operational_error", safePayload);
   }
+
+  return undefined;
+}
+
+/**
+ * Emit an isolated smoke issue and wait for transport delivery before the
+ * serverless request ends. The random UUID is used only as a Sentry grouping
+ * fingerprint; it contains no request, customer, or credential data.
+ */
+export async function captureSyntheticMonitoringError(
+  context: Record<string, unknown>,
+): Promise<SyntheticMonitoringResult> {
+  const eventId = captureOperationalError(
+    new Error("CelebrateDeal synthetic monitoring smoke test"),
+    context,
+    {
+      fingerprint: ["celebratedeal-ops-smoke", randomUUID()],
+      level: "fatal",
+    },
+  );
+
+  if (!eventId) return { captured: false, flushed: false };
+
+  const flushed = await Sentry.flush(SYNTHETIC_MONITORING_FLUSH_TIMEOUT_MS);
+  return { captured: true, flushed };
 }
