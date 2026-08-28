@@ -210,6 +210,8 @@ function waitingCountdownLabel(seconds: number | null) {
   return `距離開播 ${secondsLabel(seconds)}`;
 }
 
+const WAITING_ROOM_REFRESH_RETRY_MS = 2_000;
+
 function useWaitingRoomCountdown({
   liveId,
   runtimeState,
@@ -227,7 +229,10 @@ function useWaitingRoomCountdown({
   const initialSeconds = getWaitingCountdownSeconds(scheduledAt, serverNow);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(() => initialSeconds);
   const countdownRef = useRef<{ identity: string; deadlineMs: number | null }>({ identity: "", deadlineMs: null });
-  const refreshRef = useRef<{ identity: string; triggered: boolean }>({ identity: "", triggered: false });
+  const refreshRef = useRef<{ identity: string; lastTriggeredAtMs: number | null }>({
+    identity: "",
+    lastTriggeredAtMs: null,
+  });
 
   useEffect(() => {
     if (runtimeState !== "waiting") return;
@@ -238,7 +243,7 @@ function useWaitingRoomCountdown({
         identity: waitingIdentity,
         deadlineMs: remainingMs === null ? null : Date.now() + remainingMs,
       };
-      refreshRef.current = { identity: waitingIdentity, triggered: false };
+      refreshRef.current = { identity: waitingIdentity, lastTriggeredAtMs: null };
       setRemainingSeconds(remainingMs === null ? null : Math.ceil(remainingMs / 1_000));
     } else if (countdownRef.current.deadlineMs === null && remainingMs !== null) {
       countdownRef.current.deadlineMs = Date.now() + remainingMs;
@@ -252,8 +257,13 @@ function useWaitingRoomCountdown({
       if (disposed) return;
       const nextSeconds = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1_000));
       setRemainingSeconds((current) => current === null ? nextSeconds : Math.min(current, nextSeconds));
-      if (nextSeconds <= 0 && !refreshRef.current.triggered) {
-        refreshRef.current.triggered = true;
+      const nowMs = Date.now();
+      const lastTriggeredAtMs = refreshRef.current.lastTriggeredAtMs;
+      if (
+        nextSeconds <= 0
+        && (lastTriggeredAtMs === null || nowMs - lastTriggeredAtMs >= WAITING_ROOM_REFRESH_RETRY_MS)
+      ) {
+        refreshRef.current.lastTriggeredAtMs = nowMs;
         onRefresh();
       }
     };

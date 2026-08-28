@@ -523,7 +523,7 @@ describe("LivePlayback checkout", () => {
     expect(renderAdmissionPlayback()).toEqual({ admissionStatus: "checking", playbackSource: null });
   });
 
-  it("renders a waiting brand room without admission, source, or media requests and refreshes once at zero", async () => {
+  it("keeps refreshing a waiting brand room after zero until the server advances the lifecycle", async () => {
     vi.useFakeTimers();
     hookState.effectsEnabled = true;
     const serverNow = new Date(Date.now()).toISOString();
@@ -556,7 +556,7 @@ describe("LivePlayback checkout", () => {
     await vi.advanceTimersByTimeAsync(2_500);
     expect(navigation.refresh).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(navigation.refresh).toHaveBeenCalledOnce();
+    expect(navigation.refresh.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
   it("renders unavailable as a lifecycle state without admission, source, or media requests", async () => {

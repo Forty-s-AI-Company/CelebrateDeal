@@ -1,7 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
-  hashPassword,
-  hashPasswordAsync,
   verifyPassword,
   verifyPasswordAsync,
 } from "@/lib/password";
@@ -11,6 +9,9 @@ const TOTP_DIGITS = 6;
 const TOTP_PERIOD_SECONDS = 30;
 const TOTP_WINDOW = 1;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const RECOVERY_CODE_BYTES = 10;
+const RECOVERY_CODE_HASH_VERSION = "hmac-sha256-v1";
+const RECOVERY_CODE_HASH_PURPOSE = "mfa-recovery-code-authentication";
 
 export const MFA_SETUP_COOKIE = "celebrate_mfa_setup";
 export const MFA_RECOVERY_COOKIE = "celebrate_mfa_recovery";
@@ -145,28 +146,46 @@ export function verifyTotpCode(secret: string, code: string, timestamp = Date.no
 }
 
 function rawRecoveryCode() {
-  const bytes = randomBytes(5).toString("hex").toUpperCase();
-  return `${bytes.slice(0, 5)}-${bytes.slice(5, 10)}`;
+  const encoded = randomBytes(RECOVERY_CODE_BYTES).toString("hex").toUpperCase();
+  return encoded.match(/.{5}/g)?.join("-") ?? encoded;
 }
 
 export function generateRecoveryCodes(count = 8) {
   return Array.from({ length: count }, () => rawRecoveryCode());
 }
 
+function recoveryCodeDigest(code: string) {
+  return createHmac("sha256", deriveSensitiveDataKey(RECOVERY_CODE_HASH_PURPOSE))
+    .update(normalizeCode(code))
+    .digest();
+}
+
+function parseRecoveryCodeDigest(codeHash: string) {
+  const [version, encodedDigest, unexpected] = codeHash.split(":");
+  if (version !== RECOVERY_CODE_HASH_VERSION || !encodedDigest || unexpected) return null;
+  if (!/^[A-Za-z0-9_-]{43}$/.test(encodedDigest)) return null;
+  const digest = Buffer.from(encodedDigest, "base64url");
+  return digest.length === 32 ? digest : null;
+}
+
 export function hashRecoveryCode(code: string) {
-  return hashPassword(normalizeCode(code));
+  return `${RECOVERY_CODE_HASH_VERSION}:${recoveryCodeDigest(code).toString("base64url")}`;
 }
 
 export function verifyRecoveryCode(code: string, codeHash: string) {
-  return verifyPassword(normalizeCode(code), codeHash);
+  const expectedDigest = parseRecoveryCodeDigest(codeHash);
+  if (!expectedDigest) return verifyPassword(normalizeCode(code), codeHash);
+  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
 }
 
-export function hashRecoveryCodeAsync(code: string) {
-  return hashPasswordAsync(normalizeCode(code));
+export async function hashRecoveryCodeAsync(code: string) {
+  return hashRecoveryCode(code);
 }
 
-export function verifyRecoveryCodeAsync(code: string, codeHash: string) {
-  return verifyPasswordAsync(normalizeCode(code), codeHash);
+export async function verifyRecoveryCodeAsync(code: string, codeHash: string) {
+  const expectedDigest = parseRecoveryCodeDigest(codeHash);
+  if (!expectedDigest) return verifyPasswordAsync(normalizeCode(code), codeHash);
+  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
 }
 
 export function serializePendingMfaSetup(secret: string, userId: string) {
