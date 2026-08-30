@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "f04eda78a6cb70c5",
+  "startedAt": "2026-08-08T04:09:33.673Z",
+  "finishedAt": "2026-08-08T04:10:20.905Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "FAIL",
+    "server": "NOT_STARTED",
+    "browser": "NOT_STARTED"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": null,
+    "rwd": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "piiEnvelopeLeak": "NOT_RUN"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": "MODULE_RESOLUTION_FAILED",
+    "nextBuildDetails": [
+      "at <unknown> (./src/lib/blacklist-identifiers.ts:2:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/cloudflare-ops.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/cloudflare-stream.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/commerce-checkout.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/commerce-order-pii.ts:2:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/course-commission-accounting.ts:3:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/course-commission.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/env.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/live-studio-draft.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/payment-webhooks.ts:2:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/payout-state.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)",
+      "at <unknown> (./src/lib/registration-form-fields.ts:1:1)",
+      "at <unknown> (https://nextjs.org/docs/messages/module-not-found)"
+    ]
+  },
+  "failure": "next-build-failed"
+}

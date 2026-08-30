@@ -10,19 +10,25 @@ export async function captureProductEvent(input: CaptureEventInput) {
 
   if (!key) return { skipped: true };
 
-  const response = await fetch(`${host.replace(/\/$/, "")}/capture/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: key,
-      distinct_id: input.distinctId,
-      event: input.event,
-      properties: input.properties ?? {},
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${host.replace(/\/$/, "")}/capture/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: key,
+        distinct_id: input.distinctId,
+        event: input.event,
+        properties: input.properties ?? {},
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw new Error("PostHog capture failed (network).");
+  }
 
   if (!response.ok) {
-    throw new Error(`PostHog capture failed: ${await response.text()}`);
+    throw new Error(`PostHog capture failed (provider_rejected:${response.status}).`);
   }
 
   return { skipped: false };

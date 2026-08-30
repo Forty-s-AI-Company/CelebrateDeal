@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "b54eb90777a12786",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-09T21:46:19.003Z",
+  "finishedAt": "2026-08-09T21:49:35.818Z",
+  "sourceDigest": "95b016b8719782e1719e5d06937e9419ce66db1cdefef4912e96cc36b03cb72a",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 53,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 1,
+    "failed": 4,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 0,
+    "search": "NOT_RUN",
+    "filters": "NOT_RUN",
+    "pagination": "NOT_RUN",
+    "privacy": "NOT_RUN",
+    "requeue": "NOT_RUN",
+    "providerRejected": "NOT_RUN",
+    "pending": "NOT_RUN",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "NOT_RUN"
+    }
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      "browser-contract-failed:"
+    ]
+  }
+}

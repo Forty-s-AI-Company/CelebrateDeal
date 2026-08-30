@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "celebratedeal-ai-team-wp123-fixtures/v1",
+  "scenarios": [
+    {
+      "id": "healthy_flow",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-healthy-1", "event": { "event": "payment_webhook_request_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 200, "timestamp": "2026-08-02T15:10:00.000Z" } }
+      ]
+    },
+    {
+      "id": "reconciliation_mismatch",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-mismatch-1", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "code": "amount_mismatch", "timestamp": "2026-08-02T15:11:00.000Z" } }
+      ]
+    },
+    {
+      "id": "duplicate_delivery",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-duplicate-1", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "code": "processing_claim_lost", "timestamp": "2026-08-02T15:12:00.000Z" } },
+        { "action": "observe", "evidenceId": "evidence-duplicate-2", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "code": "processing_claim_lost", "timestamp": "2026-08-02T15:12:00.000Z" } }
+      ]
+    },
+    {
+      "id": "matched_recovery",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-recovery-1", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "return", "status": 500, "code": "processing_failed", "timestamp": "2026-08-02T15:13:00.000Z" } },
+        { "action": "recover", "evidenceId": "evidence-recovery-2", "target": "last_open_correlation", "timestamp": "2026-08-02T15:14:00.000Z" }
+      ]
+    },
+    {
+      "id": "unmatched_recovery",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "recover", "evidenceId": "evidence-unmatched-1", "target": "unrelated_correlation", "timestamp": "2026-08-02T15:15:00.000Z" },
+        { "action": "observe", "evidenceId": "evidence-unmatched-2", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "code": "processing_failed", "timestamp": "2026-08-02T15:16:00.000Z" } }
+      ]
+    },
+    {
+      "id": "out_of_order_timeline",
+      "expected": "PASS",
+      "timeline": [
+        { "action": "recover", "evidenceId": "evidence-order-2", "target": "last_open_correlation", "timestamp": "2026-08-02T15:18:00.000Z" },
+        { "action": "observe", "evidenceId": "evidence-order-1", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "code": "amount_mismatch", "timestamp": "2026-08-02T15:17:00.000Z" } }
+      ]
+    },
+    {
+      "id": "missing_required_field",
+      "expected": "FAIL_CLOSED",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-invalid-1", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "timestamp": "2026-08-02T15:19:00.000Z" } }
+      ]
+    },
+    {
+      "id": "invalid_event_status",
+      "expected": "FAIL_CLOSED",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-invalid-2", "event": { "event": "payment_webhook_failure_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 418, "code": "processing_failed", "timestamp": "2026-08-02T15:20:00.000Z" } }
+      ]
+    },
+    {
+      "id": "unknown_event_type",
+      "expected": "FAIL_CLOSED",
+      "timeline": [
+        { "action": "observe", "evidenceId": "evidence-invalid-3", "event": { "event": "payment_webhook_unknown_v1", "method": "POST", "path": "/api/webhooks/payments", "source": "notify", "status": 500, "timestamp": "2026-08-02T15:21:00.000Z" } }
+      ]
+    }
+  ]
+}

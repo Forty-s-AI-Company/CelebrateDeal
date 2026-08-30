@@ -1,0 +1,13 @@
+fb8d16671266d3e1942906d51687adada9403e778f34ac91114e7fe9428846eb  src/lib/merchant-onboarding.ts
+4a454d3a3f1cccd1c986826d64f648c13b75c24b1d3ab235a0fcec83da2b31d9  src/lib/merchant-onboarding.test.ts
+1a6f98b98a29871c8f0b7c48d3a959ab531605f4026d9d2b5d75f3b691f20fe7  src/lib/sellable-live.ts
+170f18581a7217c3bf64ba61ad242e1b928251108c97eab92b2269af62a301ad  src/lib/sellable-live.test.ts
+95d6dd7e5f4b3e911568ee6bc9cbfaab62963e86992b5fdcbc41a99b454f84e1  src/app/(app)/onboarding/page.tsx
+ee49eda2fa4b0649cbc543387df13fca698cb247e2d8576eb55d3c3db639d113  src/app/(app)/onboarding/page.test.tsx
+a4e53d09783ae7e7a21bcca4f4f5f8d26360b51284335c17b67147f811540d4b  src/app/(app)/dashboard/page.tsx
+15bc5b0ea6c1d0636ac062e24f63b8ee6273c964b8385b7aa240c33f04d6a32e  src/app/(app)/dashboard/page.test.tsx
+6e9b230a219e05f340edc1c0ecb70b14c915a525099a772d066e2dc3dbb286ea  src/lib/dashboard-checklist.ts
+bfcb2135195d6fc265cc9f65f8a494ffc81be133870c8c59757365de379fb40c  src/lib/dashboard-checklist.test.ts
+da4e4b77527a38d0c828610a1c07a84205c6e8be546d03027905273a0c07c115  src/components/app-shell.tsx
+84997975f3afe6c2482a4f0f1dad26173515a100489e3fce8b1be71f9199d2ca  src/components/app-shell.test.ts
+703af62595ca40261032666cc1f5f0d7eea3566a639e19cf30119ab670ac0329  src/app/live/[slug]/page.tsx

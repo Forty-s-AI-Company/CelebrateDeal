@@ -1,33 +1,59 @@
 import { z } from "zod";
+import { isValidSentryEnvironment } from "@/lib/sentry-environment";
+import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
+import {
+  LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
+  LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
+} from "@/lib/request-client-ip";
 
 const RequiredUrl = z.string().url();
-const OptionalUrl = z.string().url().optional().or(z.literal(""));
 const OptionalSecret = z.string().optional();
+const OptionalSentryEnvironment = z.string().refine(
+  (value) => !value || isValidSentryEnvironment(value),
+  "Sentry environment 只能使用 1–64 個英數字、點、底線或連字號",
+).optional();
+const EmailFrom = z.string().min(3).refine((value) => {
+  if (/[\r\n]/.test(value)) return false;
+  const trimmed = value.trim();
+  const bracketed = /^[^<>]{1,100}<([^<>]+)>$/.exec(trimmed);
+  const address = bracketed?.[1]?.trim() ?? trimmed;
+  return z.string().email().safeParse(address).success;
+}, "EMAIL_FROM 必須是單一有效寄件地址，可使用「名稱 <email>」格式");
 
 export const ProductionEnvSchema = z.object({
   DATABASE_URL: z.string().startsWith("postgresql://"),
   DIRECT_URL: z.string().startsWith("postgresql://"),
   NEXT_PUBLIC_APP_URL: RequiredUrl,
   JOB_SECRET: z.string().min(16),
+  CRON_SECRET: z.string().min(16),
   CSRF_SECRET: OptionalSecret,
+  LIVE_CHAT_INGRESS_SECRET: z.string()
+    .min(LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH)
+    .max(LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH)
+    .refine(
+      (value) => Buffer.byteLength(value, "utf8") <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
+      `LIVE_CHAT_INGRESS_SECRET 的 UTF-8 bytes 不得超過 ${LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH}`,
+    )
+    .optional(),
   RATE_LIMIT_PROVIDER: z.enum(["memory", "cloudflare_waf", "upstash_redis"]).default("memory"),
   UPSTASH_REDIS_REST_URL: OptionalSecret,
   UPSTASH_REDIS_REST_TOKEN: OptionalSecret,
-  CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
-  CLOUDFLARE_STREAM_TOKEN: z.string().min(1),
-  CLOUDFLARE_STREAM_WEBHOOK_SECRET: z.string().min(1),
+  CLOUDFLARE_ACCOUNT_ID: OptionalSecret,
+  CLOUDFLARE_STREAM_TOKEN: OptionalSecret,
+  CLOUDFLARE_STREAM_WEBHOOK_SECRET: OptionalSecret,
   PAYMENT_PROVIDER: z.enum(["demo", "payuni", "ecpay-like", "platform-ecpay"]).default("demo"),
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
   PAYUNI_MERCHANT_ID: OptionalSecret,
-  PAYUNI_WEBHOOK_SECRET: OptionalSecret,
   PAYUNI_ENV: z.enum(["sandbox", "production"]).optional(),
-  PAYUNI_API_BASE_URL: OptionalUrl,
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
-  EMAIL_FROM: z.string().min(3),
+  EMAIL_FROM: EmailFrom,
+  SMOKE_TEST_EMAIL: OptionalSecret,
   SENTRY_DSN: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: OptionalSecret,
+  SENTRY_ENVIRONMENT: OptionalSentryEnvironment,
+  NEXT_PUBLIC_SENTRY_ENVIRONMENT: OptionalSentryEnvironment,
   SENTRY_ORG: OptionalSecret,
   SENTRY_PROJECT: OptionalSecret,
   SENTRY_AUTH_TOKEN: OptionalSecret,
@@ -45,14 +71,109 @@ function secretPresent(value: string | undefined) {
   return Boolean(value && value.trim() && !value.includes("...") && !value.includes("example"));
 }
 
+function strongEncryptionSecret(value: string | undefined) {
+  return secretPresent(value)
+    && Buffer.byteLength(value!.trim(), "utf8") >= MINIMUM_ENCRYPTION_SECRET_BYTES;
+}
+
+function csrfSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const csrfConfigured = secretPresent(env.CSRF_SECRET);
+  const csrfSecretStrong = strongEncryptionSecret(env.CSRF_SECRET);
+  const csrfSecretIsDistinct = csrfConfigured
+    && secretPresent(env.JOB_SECRET)
+    && env.CSRF_SECRET !== env.JOB_SECRET;
+  let message = "已設定獨立且至少 32 bytes 的 CSRF／MFA 加密密鑰";
+  if (!csrfConfigured) {
+    message = "production 必須使用獨立 CSRF_SECRET，不得與 JOB_SECRET 共用";
+  } else if (!csrfSecretStrong) {
+    message = "CSRF_SECRET 作為 MFA／敏感資料加密來源時必須至少 32 bytes";
+  } else if (!csrfSecretIsDistinct) {
+    message = "CSRF_SECRET 不得與 JOB_SECRET 共用";
+  }
+
+  return {
+    key: "CSRF_SECRET",
+    status: csrfSecretStrong && csrfSecretIsDistinct ? "pass" : "fail",
+    message,
+  };
+}
+
+function liveChatIngressSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck {
+  const value = env.LIVE_CHAT_INGRESS_SECRET;
+  const strong = secretPresent(value)
+    && value!.trim() === value
+    && value!.length >= LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH
+    && value!.length <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH
+    && Buffer.byteLength(value!, "utf8") >= LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH
+    && Buffer.byteLength(value!, "utf8") <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH
+    && !/[\r\n]/.test(value!);
+
+  return {
+    key: "LIVE_CHAT_INGRESS_SECRET",
+    status: strong ? "pass" : "fail",
+    message: strong
+      ? "已設定至少 32 字元的直播入口 proof secret"
+      : "Preview／Production 必須設定至少 32 字元的 LIVE_CHAT_INGRESS_SECRET",
+  };
+}
+
+function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
+  return env.NODE_ENV === "production"
+    || env.VERCEL_ENV === "preview"
+    || env.VERCEL_ENV === "production";
+}
+
+function payUniEnvironmentDeploymentCheck(
+  env: NodeJS.ProcessEnv,
+  deploymentSecurityRequired: boolean,
+): EnvCheck {
+  const configured = secretPresent(env.PAYUNI_ENV);
+  const value = env.PAYUNI_ENV?.trim().toLowerCase();
+  const expected = env.VERCEL_ENV === "preview"
+    ? "sandbox"
+    : env.VERCEL_ENV === "production" || env.NODE_ENV === "production"
+      ? "production"
+      : undefined;
+
+  if (!deploymentSecurityRequired) {
+    return {
+      key: "PAYUNI_ENV",
+      status: configured ? "pass" : "warning",
+      message: configured ? "已設定 PayUni environment" : "本機未設定 PayUni environment",
+    };
+  }
+
+  if (!configured) {
+    return {
+      key: "PAYUNI_ENV",
+      status: "fail",
+      message: "Preview／Production 使用 PayUni 時必須設定 PAYUNI_ENV",
+    };
+  }
+
+  if (!expected) {
+    return {
+      key: "PAYUNI_ENV",
+      status: "fail",
+      message: "無法判定 PayUni deployment environment",
+    };
+  }
+
+  return {
+    key: "PAYUNI_ENV",
+    status: value === expected ? "pass" : "fail",
+    message: value === expected
+      ? `PayUni environment 與 ${expected} deployment boundary 一致`
+      : `此 deployment 必須使用 PAYUNI_ENV=${expected}`,
+  };
+}
+
 const requiredKeys = [
   "DATABASE_URL",
   "DIRECT_URL",
   "NEXT_PUBLIC_APP_URL",
   "JOB_SECRET",
-  "CLOUDFLARE_ACCOUNT_ID",
-  "CLOUDFLARE_STREAM_TOKEN",
-  "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
+  "CRON_SECRET",
   "PAYMENT_PROVIDER",
   "RESEND_API_KEY",
   "EMAIL_FROM",
@@ -71,6 +192,7 @@ const recommendedKeys = [
 export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   const parsed = ProductionEnvSchema.safeParse(env);
   const checks: EnvCheck[] = [];
+  const deploymentSecurityRequired = requiresDeploymentSecurity(env);
 
   for (const key of requiredKeys) {
     const value = env[key];
@@ -90,8 +212,50 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
+  const cloudflareKeys = [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_STREAM_TOKEN",
+    "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
+  ] as const;
+  const configuredCloudflareKeys = cloudflareKeys.filter((key) => secretPresent(env[key]));
+  const cloudflareDisabled = configuredCloudflareKeys.length === 0;
+  const cloudflarePartiallyConfigured = configuredCloudflareKeys.length > 0
+    && configuredCloudflareKeys.length < cloudflareKeys.length;
+  for (const key of cloudflareKeys) {
+    const configured = secretPresent(env[key]);
+    let status: EnvCheck["status"] = "pass";
+    let message = "已設定";
+    if (cloudflareDisabled) {
+      status = "warning";
+      message = "未設定；Cloudflare Stream 功能將安全停用";
+    } else if (cloudflarePartiallyConfigured) {
+      status = configured ? "pass" : "fail";
+      message = configured
+        ? "已設定；Cloudflare Stream 三項設定必須同時存在"
+        : "Cloudflare Stream 已部分啟用，三項設定必須同時存在";
+    }
+    checks.push({
+      key,
+      status,
+      message,
+    });
+  }
+
+  for (const key of ["SENTRY_ENVIRONMENT", "NEXT_PUBLIC_SENTRY_ENVIRONMENT"] as const) {
+    const value = env[key];
+    const configured = secretPresent(value);
+    checks.push({
+      key,
+      status: configured ? (isValidSentryEnvironment(value) ? "pass" : "fail") : "warning",
+      message: configured
+        ? (isValidSentryEnvironment(value) ? "已設定安全的監控環境標籤" : "監控環境標籤格式不安全")
+        : "建議明確區分 staging 與 production 監控事件",
+    });
+  }
+
   if (env.PAYMENT_PROVIDER === "payuni") {
-    for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID", "PAYUNI_WEBHOOK_SECRET"]) {
+    checks.push(payUniEnvironmentDeploymentCheck(env, deploymentSecurityRequired));
+    for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID"]) {
       const value = env[key];
       checks.push({
         key,
@@ -118,7 +282,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
-  if (env.NEXT_PUBLIC_APP_URL?.includes("localhost") && env.NODE_ENV === "production") {
+  if (env.NEXT_PUBLIC_APP_URL?.includes("localhost") && deploymentSecurityRequired) {
     checks.push({
       key: "NEXT_PUBLIC_APP_URL",
       status: "fail",
@@ -126,19 +290,37 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     });
   }
 
-  if (!env.RATE_LIMIT_PROVIDER) {
-    checks.push({
-      key: "RATE_LIMIT_PROVIDER",
-      status: "warning",
-      message: "未設定時預設 memory；production 建議明確設定 cloudflare_waf 或 upstash_redis",
-    });
+  if (deploymentSecurityRequired && env.NEXT_PUBLIC_APP_URL) {
+    let isHttps = false;
+    try {
+      isHttps = new URL(env.NEXT_PUBLIC_APP_URL).protocol === "https:";
+    } catch {}
+    if (!isHttps) {
+      checks.push({
+        key: "NEXT_PUBLIC_APP_URL",
+        status: "fail",
+        message: "Preview／Production 的公開網址必須使用 HTTPS",
+      });
+    }
   }
 
-  if ((env.RATE_LIMIT_PROVIDER ?? "memory") === "memory" && env.NODE_ENV === "production") {
+  if (deploymentSecurityRequired) {
+    checks.push(csrfSecretDeploymentCheck(env));
+    checks.push(liveChatIngressSecretDeploymentCheck(env));
+  }
+
+  const rateLimitProvider = env.RATE_LIMIT_PROVIDER ?? "memory";
+  if (rateLimitProvider === "memory" && deploymentSecurityRequired) {
+    checks.push({
+      key: "RATE_LIMIT_PROVIDER",
+      status: "fail",
+      message: "production 必須使用 Cloudflare WAF 或 Upstash Redis；in-memory 無法跨部署節點持久控流",
+    });
+  } else if (!env.RATE_LIMIT_PROVIDER) {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
       status: "warning",
-      message: "production 建議使用 Cloudflare WAF 或 Upstash Redis，in-memory 無法跨部署節點持久控流",
+      message: "未設定時預設 memory；正式部署前必須明確設定 cloudflare_waf 或 upstash_redis",
     });
   }
 
@@ -152,6 +334,18 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       });
     }
   }
+
+  const smokeTestEmailConfigured = secretPresent(env.SMOKE_TEST_EMAIL);
+  const smokeTestEmailValid = smokeTestEmailConfigured && z.string().email().safeParse(env.SMOKE_TEST_EMAIL?.trim()).success;
+  checks.push({
+    key: "SMOKE_TEST_EMAIL",
+    status: smokeTestEmailValid ? "pass" : "warning",
+    message: smokeTestEmailValid
+      ? "已設定受限的測試收件人"
+      : smokeTestEmailConfigured
+        ? "格式不是單一有效 Email；smoke test 將安全地拒絕寄送，請在 Staging 驗證前修正"
+        : "未設定；Email smoke test 將安全地拒絕寄送，需在 Staging 驗證前補齊",
+  });
 
   const schemaIssues = parsed.success
     ? []

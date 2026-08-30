@@ -16,7 +16,10 @@ vi.mock("@/lib/db", () => ({
     },
   }),
 }));
-vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.writeAuditLog }));
+vi.mock("@/lib/audit", () => ({
+  auditSnapshot: (value: unknown) => value,
+  writeAuditLog: mocks.writeAuditLog,
+}));
 
 import { GET } from "./route";
 
@@ -24,13 +27,16 @@ const batch = {
   id: "batch-1",
   batchNumber: "PAYOUT-2026-07-001",
   items: [{
+    vendorId: "vendor-current",
     vendor: { name: "示範商家" },
     settlement: { monthKey: "2026-07" },
-    bankCode: "812",
-    bankAccountNumber: "12345678901234",
-    bankAccountName: "王小明",
+    bankCodeDisplay: "812",
+    bankAccountDisplayNumber: "12345678901234",
+    bankAccountDisplayName: "王小明",
+    bankAccountEncrypted: null,
     payoutAmountCents: 12345,
-    status: "pending",
+    status: "paid",
+    outcomeReference: "manual-ref-2026-07",
   }],
 };
 
@@ -41,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("/admin/billing/payouts/[id]/csv route", () => {
-  it("authorizes a finance admin, queries the batch, and returns its CSV without changing state", async () => {
+  it("authorizes and audits a finance-admin CSV download without exposing it to caches", async () => {
     const response = await GET(new Request("https://app.example.test/admin/billing/payouts/batch-1/csv"), {
       params: Promise.resolve({ id: batch.id }),
     });
@@ -55,12 +61,33 @@ describe("/admin/billing/payouts/[id]/csv route", () => {
     });
     expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
     expect(response.headers.get("content-disposition")).toBe('attachment; filename="PAYOUT-2026-07-001.csv"');
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(csv).toBe(
-      '"批次編號","商家","月結月份","銀行代碼","銀行帳號","戶名","出款金額","狀態"\n"PAYOUT-2026-07-001","示範商家","2026-07","812","12345678901234","王小明","123.45","pending"',
+      '"批次編號","商家","月結月份","銀行代碼","銀行帳號","戶名","出款金額","狀態","出款 reference"\n"PAYOUT-2026-07-001","示範商家","2026-07","812","12345678901234","王小明","123.45","paid","manual-ref-2026-07"',
     );
     expect(mocks.payoutBatchUpdate).not.toHaveBeenCalled();
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith({
+      actorId: "finance-1",
+      actorLabel: "finance_admin",
+      action: "download_payout_csv",
+      targetType: "PayoutBatch",
+      targetId: "batch-1",
+      after: { batchNumber: "PAYOUT-2026-07-001", itemCount: 1 },
+    });
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("12345678901234");
+  });
+
+  it("sanitizes a persisted batch number before using it as a download filename", async () => {
+    mocks.findUnique.mockResolvedValue({ ...batch, batchNumber: "PAYOUT\r\nunsafe/name" });
+
+    const response = await GET(new Request("https://app.example.test/admin/billing/payouts/batch-1/csv"), {
+      params: Promise.resolve({ id: batch.id }),
+    });
+
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="PAYOUT__unsafe_name.csv"');
   });
 
   it("does not query or mutate a batch when finance-admin authorization is denied", async () => {

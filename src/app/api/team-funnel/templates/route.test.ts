@@ -25,6 +25,15 @@ const payload = {
     ctaUrl: "https://example.test/checkout",
   },
   lockedFields: ["HEADLINE"] as const,
+  productSlots: [
+    { slotKey: "main_product" as const, productId: "product-main", offerLabel: "主打方案" },
+    { slotKey: "consultation" as const, productId: "product-consultation", offerLabel: null },
+  ],
+  sourcePage: {
+    pageId: "source-page-1",
+    slug: "summer-offer",
+    webinarId: "live-1",
+  },
 };
 const publishedVersion = {
   templateId: "template-1",
@@ -70,12 +79,67 @@ describe("POST /api/team-funnel/templates", () => {
     expect(publishTeamFunnelTemplateVersion).not.toHaveBeenCalled();
   });
 
+  it("rejects duplicate product slots before publishing", async () => {
+    const response = await POST(templatesRequest({
+      ...payload,
+      productSlots: [
+        { slotKey: "main_product", productId: "product-main" },
+        { slotKey: "main_product", productId: "product-backup" },
+      ],
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_REQUEST" } });
+    expect(publishTeamFunnelTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid source-page slug before publishing", async () => {
+    const response = await POST(templatesRequest({
+      ...payload,
+      sourcePage: { ...payload.sourcePage, slug: "Not A Safe Slug" },
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_REQUEST" } });
+    expect(publishTeamFunnelTemplateVersion).not.toHaveBeenCalled();
+  });
+
   it("publishes a template version with a 201 response", async () => {
     const response = await POST(templatesRequest());
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({ data: publishedVersion });
     expect(publishTeamFunnelTemplateVersion).toHaveBeenCalledWith(payload);
+  });
+
+  it("rejects a legacy payload that omits product slots instead of silently clearing them", async () => {
+    const legacyPayload = {
+      action: payload.action,
+      teamId: payload.teamId,
+      templateId: payload.templateId,
+      content: payload.content,
+      lockedFields: payload.lockedFields,
+    };
+    const response = await POST(templatesRequest(legacyPayload));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_REQUEST" } });
+    expect(publishTeamFunnelTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("normalizes blank optional labels and webinar IDs before publishing", async () => {
+    const response = await POST(templatesRequest({
+      ...payload,
+      productSlots: [{ slotKey: "main_product", productId: "product-main", offerLabel: "   " }],
+      sourcePage: { ...payload.sourcePage, webinarId: "   " },
+    }));
+
+    expect(response.status).toBe(201);
+    expect(publishTeamFunnelTemplateVersion).toHaveBeenCalledWith({
+      ...payload,
+      productSlots: [{ slotKey: "main_product", productId: "product-main", offerLabel: null }],
+      sourcePage: { ...payload.sourcePage, webinarId: null },
+    });
   });
 
   it("maps access denial to an indistinguishable 404 response", async () => {

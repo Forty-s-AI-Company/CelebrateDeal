@@ -106,7 +106,12 @@ export default async function AdminCloudflareVideosPage() {
       </Card>
 
       <Card className="overflow-hidden p-0">
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Cloudflare 影片表格，可水平捲動"
+        >
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
@@ -141,7 +146,7 @@ export default async function AdminCloudflareVideosPage() {
                         {video.videoUrl}
                       </a>
                     ) : (
-                      <span className="text-xs text-slate-400">尚未建立</span>
+                      <span className="text-xs text-slate-600">尚未建立</span>
                     )}
                   </td>
                   <td className="px-4 py-4 text-xs text-slate-500">{formatDateTime(video.updatedAt)}</td>

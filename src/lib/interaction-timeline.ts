@@ -60,9 +60,13 @@ export function reorderInteractionEvents<T extends TimedInteractionEvent>(
   }
 
   const reordered = [...events];
-  const [event] = reordered.splice(fromIndex, 1);
+  // The bounds check above proves both indexed values exist.
+  const event = reordered.splice(fromIndex, 1)[0]!;
   reordered.splice(toIndex, 0, event);
 
   const triggerSecSlots = events.map((item) => item.triggerSec).sort((first, second) => first - second);
-  return reordered.map((item, index) => ({ ...item, triggerSec: triggerSecSlots[index] }));
+  return reordered.map((item, index) => ({
+    ...item,
+    triggerSec: triggerSecSlots[index]!,
+  }));
 }

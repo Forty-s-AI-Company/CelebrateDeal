@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CLIENT_REQUEST_HEADER,
   CLIENT_REQUEST_HEADER_VALUE,
+  MAX_JSON_BODY_BYTES,
+  isAuthorizedBearer,
+  readFormDataBody,
+  readJsonBody,
+  readTextBody,
   requireSameOriginRequest,
 } from "@/lib/api-security";
 
@@ -44,6 +49,13 @@ describe("requireSameOriginRequest", () => {
     await expect(response?.json()).resolves.toEqual({ error: "Missing trusted client header" });
   });
 
+  it("rejects a trusted client marker when both Origin and Referer are missing", async () => {
+    const response = requireSameOriginRequest(trustedRequest(), { requireClientHeader: true });
+
+    expect(response?.status).toBe(403);
+    await expect(response?.json()).resolves.toEqual({ error: "Missing request origin" });
+  });
+
   it("rejects a cross-origin Origin even with the trusted client marker", async () => {
     const response = requireSameOriginRequest(trustedRequest({ origin: "https://attacker.example.test" }), {
       requireClientHeader: true,
@@ -76,14 +88,135 @@ describe("requireSameOriginRequest", () => {
     expect(requireSameOriginRequest(trustedRequest({ [header]: value }), { requireClientHeader: true })).toBeNull();
   });
 
-  it.each([
-    { header: "origin", value: "https://public.example.test" },
-    { header: "referer", value: "https://public.example.test/form" },
-  ])("allows a $header matching the forwarded request origin", ({ header, value }) => {
-    expect(requireSameOriginRequest(trustedRequest({
-      [header]: value,
-      "x-forwarded-host": "public.example.test",
+  it("allows the browser origin matching the actual Host when request.url uses an internal origin", () => {
+    const response = requireSameOriginRequest(new Request("https://internal-loopback.test/api/test", {
+      method: "POST",
+      headers: {
+        [CLIENT_REQUEST_HEADER]: CLIENT_REQUEST_HEADER_VALUE,
+        host: "127.0.0.1:31124",
+        origin: "http://127.0.0.1:31124",
+      },
+    }), { requireClientHeader: true });
+
+    expect(response).toBeNull();
+  });
+
+  it("does not let forwarded host headers expand the origin allowlist", async () => {
+    const response = requireSameOriginRequest(trustedRequest({
+      origin: "https://attacker.example.test",
+      "x-forwarded-host": "attacker.example.test",
       "x-forwarded-proto": "https",
-    }), { requireClientHeader: true })).toBeNull();
+    }), { requireClientHeader: true });
+
+    expect(response?.status).toBe(403);
+    await expect(response?.json()).resolves.toEqual({ error: "Invalid request origin" });
+  });
+});
+
+describe("isAuthorizedBearer", () => {
+  const secret = "test-fixture-job-secret";
+
+  it.each([
+    ["Bearer test-fixture-job-secret", true],
+    ["bearer test-fixture-job-secret", true],
+    ["Bearer test-fixture-job-secret trailing", false],
+    ["Bearer", false],
+    ["Basic test-fixture-job-secret", false],
+  ])("accepts only an exact two-part Bearer authorization value", (authorization, expected) => {
+    const request = new Request("https://request.example.test/api/test", {
+      headers: { authorization },
+    });
+
+    expect(isAuthorizedBearer(request, secret)).toBe(expected);
+  });
+});
+
+describe("readJsonBody", () => {
+  it("parses valid JSON within the request-size limit", async () => {
+    const body = { event: "page_view", payload: { slug: "demo" } };
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }));
+
+    expect(parsed).toEqual(body);
+  });
+
+  it("rejects a declared oversized request before parsing it", async () => {
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-length": String(MAX_JSON_BODY_BYTES + 1) },
+      body: "{}",
+    }));
+
+    expect(parsed).toEqual({});
+  });
+
+  it("stops streaming an oversized request even when content-length is absent", async () => {
+    const parsed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: JSON.stringify({ payload: "x".repeat(MAX_JSON_BODY_BYTES) }),
+    }));
+
+    expect(parsed).toEqual({});
+  });
+
+  it("normalizes malformed or empty JSON to an empty object", async () => {
+    const malformed = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+      body: "{not-json}",
+    }));
+    const empty = await readJsonBody(new Request("https://request.example.test/api/test", {
+      method: "POST",
+    }));
+
+    expect(malformed).toEqual({});
+    expect(empty).toEqual({});
+  });
+});
+
+describe("readFormDataBody", () => {
+  it("parses a bounded native form request", async () => {
+    const request = new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ formId: "form-1", email: "lead@example.test" }),
+    });
+
+    const formData = await readFormDataBody(request);
+
+    expect(formData?.get("formId")).toBe("form-1");
+    expect(formData?.get("email")).toBe("lead@example.test");
+  });
+
+  it("rejects an oversized native form before parsing", async () => {
+    const request = new Request("https://request.example.test/api/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ payload: "x".repeat(MAX_JSON_BODY_BYTES) }),
+    });
+
+    await expect(readFormDataBody(request)).resolves.toBeNull();
+  });
+});
+
+describe("readTextBody", () => {
+  it("preserves a bounded webhook body for signature verification", async () => {
+    const body = '{"event":"ready"}';
+
+    await expect(readTextBody(new Request("https://request.example.test/api/webhook", {
+      method: "POST",
+      body,
+    }))).resolves.toBe(body);
+  });
+
+  it("rejects oversized webhook bodies without returning partial content", async () => {
+    const request = new Request("https://request.example.test/api/webhook", {
+      method: "POST",
+      headers: { "content-length": String(MAX_JSON_BODY_BYTES + 1) },
+      body: "signed-body",
+    });
+
+    await expect(readTextBody(request)).resolves.toBeNull();
   });
 });

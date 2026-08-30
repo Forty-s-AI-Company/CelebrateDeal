@@ -1,0 +1,4 @@
+984721fcd452a8776f2849af220c5c3d24a0ee222b5cf017e7424c1253267e6d  docs/ai-team/evidence/g7-22-onboarding-ready-media-20260809.md
+bf92b9322183d95f3a8cbc25eb57e4d49e2046798794d9f5dc7ee00276cd4e64  .ai-team/reports/g7-22-onboarding-ready-media-20260809.json
+50e5f9fa6d03740d9b58bde64cb16bb34f3d3122197f0da08581f17f9aa0f6d6  docs/ai-team/evidence/g7-22-source-manifest-20260809.txt
+f5f570f8cfeefa5765132caf626ed89bd8bf67c757337b7825fbb62bcaf78db3  docs/launch/current-function-scorecard-20260809.json

@@ -75,7 +75,7 @@ export function buildPayUniSandboxWebhookFixture({
   const hashInfo = createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase();
   return new URLSearchParams({
     MerID: merchantId,
-    Version: "1.0",
+    Version: "2.0",
     EncryptInfo: encryptInfo,
     HashInfo: hashInfo,
   }).toString();

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { RotateCcw } from "lucide-react";
 import { retryWebhookEventAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -102,7 +103,18 @@ export default async function AdminBillingWebhookDetailPage({ params }: { params
       <PageHeader
         title="Webhook 詳情"
         description={`${event.provider} · ${event.eventId}`}
-        action={<Link href="/admin/billing/webhooks" className="text-sm font-semibold text-primary hover:underline">返回列表</Link>}
+        action={(
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href={`/admin/billing/webhooks/${event.id}/reconciliation`}
+              download
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              匯出對帳 JSON
+            </a>
+            <Link href="/admin/billing/webhooks" className="text-sm font-semibold text-primary hover:underline">返回列表</Link>
+          </div>
+        )}
       />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
@@ -134,10 +146,10 @@ export default async function AdminBillingWebhookDetailPage({ params }: { params
             <form action={retryWebhookEventAction}>
               <CsrfField />
               <input type="hidden" name="id" value={event.id} />
-              <button className="inline-flex h-10 items-center gap-2 rounded-md bg-orange-600 px-4 text-sm font-semibold text-white hover:bg-orange-700">
+              <FormSubmitButton pendingChildren="重送中…" pendingMessage="正在重新處理這筆 webhook，請勿重複送出。" className="inline-flex h-10 items-center gap-2 rounded-md bg-orange-600 px-4 text-sm font-semibold text-white hover:bg-orange-700">
                 <RotateCcw size={16} />
                 手動重送
-              </button>
+              </FormSubmitButton>
             </form>
           </div>
         </Card>

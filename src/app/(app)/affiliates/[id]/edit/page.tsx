@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { AffiliateForm } from "@/components/affiliate-form";
 import { Card, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
 export default async function EditAffiliatePage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const affiliate = await getDb().affiliate.findFirst({ where: { id, vendorId: vendor.id }, include: { clicks: { orderBy: { createdAt: "desc" }, take: 10 } } });
   if (!affiliate) notFound();

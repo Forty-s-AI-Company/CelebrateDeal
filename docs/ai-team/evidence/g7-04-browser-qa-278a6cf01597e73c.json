@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "278a6cf01597e73c",
+  "startedAt": "2026-08-08T04:11:11.397Z",
+  "finishedAt": "2026-08-08T04:11:25.189Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "NOT_STARTED",
+    "prismaValidate": "NOT_STARTED",
+    "prismaDeploy": "NOT_STARTED",
+    "prismaStatus": "NOT_STARTED",
+    "nextBuild": "NOT_STARTED",
+    "server": "NOT_STARTED",
+    "browser": "NOT_STARTED"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": false
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": null,
+    "rwd": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "piiEnvelopeLeak": "NOT_RUN"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "CLEANUP_BLOCKED",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": []
+  },
+  "failure": "database-marker-failed"
+}

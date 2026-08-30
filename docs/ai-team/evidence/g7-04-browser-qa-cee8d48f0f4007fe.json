@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "PASS",
+  "runId": "cee8d48f0f4007fe",
+  "startedAt": "2026-08-08T04:57:39.225Z",
+  "finishedAt": "2026-08-08T04:59:58.043Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "rwd": "PASS",
+    "tenantIsolation": "PASS",
+    "piiEnvelopeLeak": "PASS"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "06bff794b4da85bc7fa7e60afafc646647b6c8be6956dbefaca26e2cbc160015"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "0ca07e1431b0179295900b4efad54d1c3867ee50cf69848889e6c9b6f9be67cb"
+    }
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": null,
+    "browserDetails": [],
+    "browserGlobalErrors": []
+  },
+  "failure": null
+}

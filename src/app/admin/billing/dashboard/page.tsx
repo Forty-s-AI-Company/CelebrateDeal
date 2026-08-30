@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, ReceiptText, RotateCcw, ShieldCheck, WalletCards } from "lucide-react";
 import { refundPaymentTransactionAction, retryWebhookEventAction, voidAffiliateCommissionAction } from "@/app/actions";
+import { RefundResultNotice } from "@/components/billing/refund-result-notice";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -20,21 +22,83 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
+type RecentCommissionReadModel = {
+  id: string;
+  referralCode: string | null;
+  monthKey: string;
+  commissionAmountCents: number;
+  vendorName: string;
+  affiliateName: string | null;
+};
+
 export default async function AdminBillingDashboardPage() {
   await requireFinanceAdmin();
   const db = getDb();
   const start = sevenDaysAgo();
-  const [subscriptions, unlockedSettlements, readySettlements, failedPayouts, recentTransactions, recentCommissions, webhookEvents, failedWebhookCount, auditLogs] = await Promise.all([
-    db.vendorSubscription.findMany({ where: { status: "active" }, include: { plan: true, vendor: true } }),
-    db.settlement.findMany({ where: { lockedAt: null }, include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.settlement.findMany({ where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, include: { vendor: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
-    db.payoutItem.findMany({ where: { status: "failed" }, include: { vendor: true, payoutBatch: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
-    db.paymentTransaction.findMany({ where: { occurredAt: { gte: start } }, include: { vendor: true, refunds: true }, orderBy: { occurredAt: "desc" }, take: 10 }),
-    db.affiliateCommission.findMany({ where: { status: { in: ["pending", "approved", "locked"] } }, include: { vendor: true, affiliate: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    db.webhookEvent.count({ where: { status: "failed" } }),
-    db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
-  ]);
+  // Staging 的 Transaction Pooler 設為單連線；此頁同時發出九個查詢會造成
+  // Prisma P2024 pool timeout。依序讀取可維持同一條可用連線，避免 MFA 成功後
+  // 進入後台卻因頁面載入失敗而看似沒有反應。
+  const subscriptions = await db.vendorSubscription.findMany({
+    where: { status: "active" },
+    select: { plan: { select: { monthlyPriceCents: true } } },
+  });
+  const unlockedSettlements = await db.settlement.findMany({
+    where: { lockedAt: null }, orderBy: { createdAt: "desc" }, take: 8,
+    select: { id: true, status: true, monthKey: true, finalPayoutAmountCents: true, vendor: { select: { name: true } } },
+  });
+  const readySettlements = await db.settlement.findMany({
+    where: { lockedAt: { not: null }, payoutBatchId: null, finalPayoutAmountCents: { gt: 0 } }, orderBy: { updatedAt: "desc" }, take: 8,
+    select: { id: true, status: true, monthKey: true, finalPayoutAmountCents: true, vendor: { select: { name: true } } },
+  });
+  // The dashboard only displays the failed-item total. Count it directly so
+  // this read model neither selects nor serializes encrypted payout-bank data.
+  // It also keeps this operational summary compatible with a safely detected
+  // local schema drift while the migration gate remains fail-closed elsewhere.
+  const failedPayoutCount = await db.payoutItem.count({ where: { status: "failed" } });
+  const recentTransactions = await db.paymentTransaction.findMany({
+    where: { occurredAt: { gte: start } }, orderBy: { occurredAt: "desc" }, take: 10,
+    select: {
+      id: true,
+      orderNumber: true,
+      providerTradeNo: true,
+      providerName: true,
+      status: true,
+      occurredAt: true,
+      refundedAmountCents: true,
+      grossAmountCents: true,
+      vendor: { select: { name: true } },
+      _count: { select: { refunds: { where: { status: "pending" } } } },
+    },
+  });
+  // This fixed, field-limited query intentionally compares status as text.
+  // Older local development schemas predate AffiliateCommissionStatus, while
+  // the dashboard needs only this operational summary—not the newer enum or
+  // any other commission fields. The migration drift rehearsal remains the
+  // gate that reports schema divergence instead of concealing it.
+  const recentCommissions = await db.$queryRaw<RecentCommissionReadModel[]>`
+    SELECT
+      commission."id",
+      commission."referralCode",
+      commission."monthKey",
+      commission."commissionAmountCents",
+      vendor."name" AS "vendorName",
+      affiliate."name" AS "affiliateName"
+    FROM public."AffiliateCommission" AS commission
+    INNER JOIN public."Vendor" AS vendor ON vendor."id" = commission."vendorId"
+    LEFT JOIN public."Affiliate" AS affiliate ON affiliate."id" = commission."affiliateId"
+    WHERE commission."status"::text IN ('pending', 'approved', 'locked')
+    ORDER BY commission."createdAt" DESC
+    LIMIT 8
+  `;
+  const webhookEvents = await db.webhookEvent.findMany({
+    orderBy: { createdAt: "desc" }, take: 8,
+    select: { id: true, provider: true, eventId: true, eventType: true, status: true, errorMessage: true, nextRetryAt: true, createdAt: true, vendor: { select: { name: true } } },
+  });
+  const failedWebhookCount = await db.webhookEvent.count({ where: { status: "failed" } });
+  const auditLogs = await db.auditLog.findMany({
+    orderBy: { createdAt: "desc" }, take: 10,
+    select: { id: true, action: true, targetType: true, targetId: true, actorLabel: true, createdAt: true },
+  });
 
   const mrr = subscriptions.reduce((sum, subscription) => sum + subscription.plan.monthlyPriceCents, 0);
   const pendingPayoutAmount = readySettlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
@@ -46,6 +110,7 @@ export default async function AdminBillingDashboardPage() {
         description="平台月費收入、月結狀態、出款異常、退款調整與稽核紀錄集中檢視。"
         action={<Link href="/admin/billing/settlements" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">月結管理</Link>}
       />
+      <RefundResultNotice />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card className="bg-gradient-to-br from-white to-blue-50">
@@ -62,7 +127,7 @@ export default async function AdminBillingDashboardPage() {
         </Card>
         <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><AlertTriangle size={16} />出款異常</p>
-          <p className="mt-2 text-3xl font-bold text-slate-950">{failedPayouts.length}</p>
+          <p className="mt-2 text-3xl font-bold text-slate-950">{failedPayoutCount}</p>
         </Card>
         <Card>
           <p className="flex items-center gap-2 text-sm font-medium text-slate-500"><AlertTriangle size={16} />Webhook 異常</p>
@@ -76,7 +141,12 @@ export default async function AdminBillingDashboardPage() {
             <h2 className="text-lg font-semibold text-slate-950">近 7 天金流交易</h2>
           </div>
           <div className="divide-y divide-border">
-            {recentTransactions.map((transaction) => (
+            {recentTransactions.map((transaction) => {
+              const hasPendingRefund = transaction._count.refunds > 0;
+              const canRefund = !hasPendingRefund
+                && (transaction.status === "paid" || transaction.status === "partially_refunded")
+                && transaction.refundedAmountCents < transaction.grossAmountCents;
+              return (
               <div key={transaction.id} className="grid gap-4 px-5 py-4 lg:grid-cols-[1fr_auto] lg:items-start">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -89,26 +159,44 @@ export default async function AdminBillingDashboardPage() {
                 </div>
                 <div className="min-w-[280px]">
                   <p className="text-right text-lg font-bold text-slate-950">{formatCurrency(transaction.grossAmountCents)}</p>
-                  <form action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
+                  {hasPendingRefund && transaction.providerName === "payuni" ? (
+                    <div data-testid={`billing-refund-reconciliation-${transaction.id}`} className="mt-3 grid gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+                      <p>退款結果尚未確認，系統已停止再次送出。</p>
+                      <Link href={`/admin/billing/refund-reconciliation/${transaction.id}`} className="font-semibold underline">
+                        開啟退款終態對帳
+                      </Link>
+                    </div>
+                  ) : canRefund ? (
+                  <form data-testid={`billing-refund-${transaction.id}`} action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
                     <CsrfField />
                     <input type="hidden" name="id" value={transaction.id} />
-                    <input name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
+                    <input aria-label="退款月份" name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
                     <div className="grid grid-cols-3 gap-2">
-                      <input name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <input name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <input name="platformFeeRefund" type="number" step="1" placeholder="退平台費" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退款金額" name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退金流費" name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <input aria-label="退平台費" name="platformFeeRefund" type="number" step="1" placeholder="退平台費" className="h-9 rounded-md border border-border px-2 text-xs" />
                     </div>
                     <div className="grid grid-cols-[1fr_auto] gap-2">
-                      <input name="reason" placeholder="退款原因" className="h-9 rounded-md border border-border px-2 text-xs" />
-                      <button className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700">
+                      <input aria-label="退款原因" name="reason" placeholder="退款原因" className="h-9 rounded-md border border-border px-2 text-xs" />
+                      <FormSubmitButton
+                        className="inline-flex h-9 items-center gap-1 rounded-md bg-orange-700 px-3 text-xs font-semibold text-white hover:bg-orange-800"
+                        pendingChildren="退款處理中…"
+                        pendingMessage="正在建立退款，請勿重複送出。"
+                      >
                         <RotateCcw size={13} />
                         退款
-                      </button>
+                      </FormSubmitButton>
                     </div>
                   </form>
+                  ) : (
+                    <p data-testid={`billing-refund-unavailable-${transaction.id}`} className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                      此交易目前不可建立新退款。
+                    </p>
+                  )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
@@ -141,8 +229,8 @@ export default async function AdminBillingDashboardPage() {
                 <div key={commission.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-950">{commission.affiliate?.name ?? commission.referralCode ?? "未綁定推廣者"}</p>
-                      <p className="mt-1 text-sm text-slate-500">{commission.vendor.name} · {commission.monthKey}</p>
+                      <p className="font-semibold text-slate-950">{commission.affiliateName ?? commission.referralCode ?? "未綁定推廣者"}</p>
+                      <p className="mt-1 text-sm text-slate-500">{commission.vendorName} · {commission.monthKey}</p>
                     </div>
                     <p className="font-bold text-slate-950">{formatCurrency(commission.commissionAmountCents)}</p>
                   </div>
@@ -150,7 +238,7 @@ export default async function AdminBillingDashboardPage() {
                     <CsrfField />
                     <input type="hidden" name="id" value={commission.id} />
                     <input name="reason" placeholder="作廢原因" className="h-9 rounded-md border border-border px-2 text-xs" />
-                    <button className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</button>
+                    <FormSubmitButton pendingChildren="作廢中…" pendingMessage="正在作廢聯盟佣金並寫入沖回紀錄，請勿重複送出。" confirmMessage="確認作廢這筆聯盟佣金？系統會依 immutable ledger 寫入沖回紀錄。" className="h-9 rounded-md border border-orange-200 px-3 text-xs font-semibold text-orange-700 hover:bg-orange-50">作廢佣金</FormSubmitButton>
                   </form>
                 </div>
               ))}
@@ -197,7 +285,7 @@ export default async function AdminBillingDashboardPage() {
                       <form action={retryWebhookEventAction}>
                         <CsrfField />
                         <input type="hidden" name="id" value={event.id} />
-                        <button className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</button>
+                        <FormSubmitButton pendingChildren="重送中…" pendingMessage="正在重新處理 webhook，請勿重複送出。" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</FormSubmitButton>
                       </form>
                     ) : (
                       <span className="text-xs text-slate-400">-</span>

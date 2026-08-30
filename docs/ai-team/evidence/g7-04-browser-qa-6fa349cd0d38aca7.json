@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "6fa349cd0d38aca7",
+  "startedAt": "2026-08-08T05:01:01.472Z",
+  "finishedAt": "2026-08-08T05:03:23.468Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 1,
+    "failed": 1,
+    "skipped": 0,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "d05642f03ce17e04776e158ffc92ddf7e7a05fecc928641212683ba8a35e92fb"
+    },
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_ASSERTION_FAILED",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > mobile order detail has no horizontal overflow, keeps keyboard focus visible, and passes axe",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_ASSERTION_FAILED",
+        "details": [
+          "Error: 手機版訂單頁不可有水平捲動",
+          "expect(received).toBeLessThanOrEqual(expected)",
+          "Expected: <= 1",
+          "Received:    60",
+          "Error: 手機版訂單頁不可有水平捲動",
+          "expect(received).toBeLessThanOrEqual(expected)",
+          "Expected: <= 1",
+          "Received:    60",
+          "347 |",
+          "348 |     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);",
+          "> 349 |     expect(overflow, \"手機版訂單頁不可有水平捲動\").toBeLessThanOrEqual(1);",
+          "|                                       ^"
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

@@ -1,10 +1,17 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  verifyPassword,
+  verifyPasswordAsync,
+} from "@/lib/password";
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOTP_DIGITS = 6;
 const TOTP_PERIOD_SECONDS = 30;
 const TOTP_WINDOW = 1;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const RECOVERY_CODE_BYTES = 10;
+const RECOVERY_CODE_HASH_VERSION = "hmac-sha256-v1";
+const RECOVERY_CODE_HASH_PURPOSE = "mfa-recovery-code-authentication";
 
 export const MFA_SETUP_COOKIE = "celebrate_mfa_setup";
 export const MFA_RECOVERY_COOKIE = "celebrate_mfa_recovery";
@@ -53,11 +60,7 @@ function base32Decode(input: string) {
 }
 
 function mfaKeyMaterial() {
-  const seed = process.env.CSRF_SECRET?.trim() || process.env.JOB_SECRET?.trim();
-  if (!seed) {
-    throw new Error("CSRF_SECRET or JOB_SECRET is required for MFA encryption.");
-  }
-  return createHash("sha256").update(seed).digest();
+  return deriveSensitiveDataKey("mfa-encryption");
 }
 
 function encryptText(value: string) {
@@ -91,13 +94,8 @@ function hotp(secret: string, counter: number) {
   const counterBytes = Buffer.alloc(8);
   counterBytes.writeBigUInt64BE(BigInt(counter));
   const digest = createHmac("sha1", secretBytes).update(counterBytes).digest();
-  const offset = digest[digest.length - 1] & 15;
-  const binary = (
-    ((digest[offset] & 127) << 24)
-    | ((digest[offset + 1] & 255) << 16)
-    | ((digest[offset + 2] & 255) << 8)
-    | (digest[offset + 3] & 255)
-  );
+  const offset = digest.readUInt8(digest.length - 1) & 15;
+  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
   return String(binary % (10 ** TOTP_DIGITS)).padStart(TOTP_DIGITS, "0");
 }
 
@@ -148,32 +146,64 @@ export function verifyTotpCode(secret: string, code: string, timestamp = Date.no
 }
 
 function rawRecoveryCode() {
-  const bytes = randomBytes(5).toString("hex").toUpperCase();
-  return `${bytes.slice(0, 5)}-${bytes.slice(5, 10)}`;
+  const encoded = randomBytes(RECOVERY_CODE_BYTES).toString("hex").toUpperCase();
+  return encoded.match(/.{5}/g)?.join("-") ?? encoded;
 }
 
 export function generateRecoveryCodes(count = 8) {
   return Array.from({ length: count }, () => rawRecoveryCode());
 }
 
+function recoveryCodeDigest(code: string) {
+  return createHmac("sha256", deriveSensitiveDataKey(RECOVERY_CODE_HASH_PURPOSE))
+    .update(normalizeCode(code))
+    .digest();
+}
+
+function parseRecoveryCodeDigest(codeHash: string) {
+  const [version, encodedDigest, unexpected] = codeHash.split(":");
+  if (version !== RECOVERY_CODE_HASH_VERSION || !encodedDigest || unexpected) return null;
+  if (!/^[A-Za-z0-9_-]{43}$/.test(encodedDigest)) return null;
+  const digest = Buffer.from(encodedDigest, "base64url");
+  return digest.length === 32 ? digest : null;
+}
+
 export function hashRecoveryCode(code: string) {
-  return hashPassword(normalizeCode(code));
+  return `${RECOVERY_CODE_HASH_VERSION}:${recoveryCodeDigest(code).toString("base64url")}`;
 }
 
 export function verifyRecoveryCode(code: string, codeHash: string) {
-  return verifyPassword(normalizeCode(code), codeHash);
+  const expectedDigest = parseRecoveryCodeDigest(codeHash);
+  if (!expectedDigest) return verifyPassword(normalizeCode(code), codeHash);
+  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
 }
 
-export function serializePendingMfaSetup(secret: string) {
-  return encryptText(JSON.stringify({ secret, createdAt: Date.now() }));
+export async function hashRecoveryCodeAsync(code: string) {
+  return hashRecoveryCode(code);
 }
 
-export function parsePendingMfaSetup(payload: string | undefined | null): { secret: string; createdAt: number } | null {
+export async function verifyRecoveryCodeAsync(code: string, codeHash: string) {
+  const expectedDigest = parseRecoveryCodeDigest(codeHash);
+  if (!expectedDigest) return verifyPasswordAsync(normalizeCode(code), codeHash);
+  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
+}
+
+export function serializePendingMfaSetup(secret: string, userId: string) {
+  return encryptText(JSON.stringify({ secret, userId, createdAt: Date.now() }));
+}
+
+export function parsePendingMfaSetup(
+  payload: string | undefined | null,
+): { secret: string; userId: string; createdAt: number } | null {
   if (!payload) return null;
   try {
-    const parsed = JSON.parse(decryptText(payload)) as { secret?: string; createdAt?: number };
-    if (!parsed.secret || typeof parsed.createdAt !== "number") return null;
-    return { secret: parsed.secret, createdAt: parsed.createdAt };
+    const parsed = JSON.parse(decryptText(payload)) as {
+      secret?: string;
+      userId?: string;
+      createdAt?: number;
+    };
+    if (!parsed.secret || !parsed.userId || typeof parsed.createdAt !== "number") return null;
+    return { secret: parsed.secret, userId: parsed.userId, createdAt: parsed.createdAt };
   } catch {
     return null;
   }

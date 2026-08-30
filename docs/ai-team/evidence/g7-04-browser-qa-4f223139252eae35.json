@@ -1,0 +1,328 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "PASS",
+  "runId": "4f223139252eae35",
+  "startedAt": "2026-08-25T11:42:59.289Z",
+  "finishedAt": "2026-08-25T11:47:39.894Z",
+  "serverMode": "PRODUCTION",
+  "sourceLineage": {
+    "algorithm": "sha256",
+    "files": {
+      "scripts/g7-commerce-browser-qa.mjs": "819e2e0655adacd27bc3415b04fb7805cf094e7b0bcd60ef86ade06a2ebdcd9d",
+      "playwright.g7-commerce.config.ts": "a7933ea8b8885cd10cd0283f6facfe39a1c8fcdf2ed4511d32fe256383f1d139",
+      "tests/e2e/commerce-orders.spec.ts": "20c3cb1b85e765379e453d5f673b1eac745c11ace148786a203c5fefa4c80a3c",
+      "tests/e2e/wp7-one-stop-webinar-flow.spec.ts": "2d1660a8c7f788820b15d0db63d9da1c90ce25c5e70c7bb45e3ed9d100a44cfd",
+      "src/lib/email-delivery-pii.ts": "393bf1aa7457aaad00c8692f61e5256f71ff09b35bcf5be41874814bb316fb79",
+      "src/lib/form-submission-verification-domain.ts": "222b1979b3df346ea97e63b82d52ec4e4cff2a1dfff2092bc28dc47841edc530",
+      "src/lib/form-submission-verification.ts": "a0b0a552c7c7011440cdb1fc0617a2e8794fc3d51fcce846904876e4c7857917",
+      "src/lib/post-live-followup.ts": "77307b630bc4dc98d185153cf054c541a660ffdec860c9825519896ea3e5ccb0",
+      "src/lib/post-live-followup-identity.ts": "7385d7f569f523d592adc4e13584048d04a819680d449932d7d67164af8df693",
+      "src/lib/live-chat-contract.ts": "3207429ac7ed7a38a90000d83ffa016d80add1dfc4c797ee3e9d8a245b2b4be5",
+      "src/lib/product-action-state.ts": "250784a87fff1d7791ea0881399ee763831dda4c9dd55b1da02e77b8f918446e",
+      "src/lib/product-delivery.ts": "b0e516fc585fdb745876299bc4bf76cdd5508cd9941b99bfb6863aaf77c30301",
+      "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+      "src/app/actions/product-actions.ts": "7ba538b704fee1cb8fd45cdef64d6594b1e9df7218ed505b32587d25e1efb3fd",
+      "src/app/actions/product-server-actions.ts": "67caed10bc9c7adf749fc56e669c57307618cf8c18006ccc3b58d2db5ea06a23",
+      "src/app/api/products/upsert/route.ts": "5ccc7004676bec543e4175a4d059db455c4ee1fcb76d9724a35c9c997c9266da",
+      "src/components/product-form-client.tsx": "4cb0495e70c199195ab502ebeb109b97dbb49a4766fa916365fa688e0f5c3040",
+      "src/components/product-form.tsx": "18b27cacad5113a781b2dd207111b5bbb5122ec2ee2d687da646f7f5a3a07c58",
+      "src/components/ui.tsx": "6a130f08cda43097ccd8cd4363e52eb42f91081a5d09572e12f7442804ad8ff7",
+      "src/components/media-upload-field.tsx": "5c10dd95dba0f456363ce79f3c55c6025e6b8b45b0ec4a1350763d2b7703b2d3",
+      "src/app/(app)/products/page.tsx": "74bd4875552933bd74e949402a7099ee3390ac1e111290e9871055433e6415ea",
+      "src/app/(app)/products/new/page.tsx": "2f6def1af7eda843341385c9f91be852c619822b483b9778ab813fa6548c9863",
+      "src/app/(app)/products/[id]/edit/page.tsx": "e841d2ddf89d20db6cf500e31053f7522e532a02e24c614fdeade65ea061f7f3",
+      "src/app/(app)/products/[id]/preview/page.tsx": "cb174f9fbaefd35de71acbfea3a06cd7e3c4b223d71eb6d4e7c5882ede47e239",
+      "src/app/checkout/[vendorId]/[productId]/page.tsx": "2181b73fa1f2b305d9c6325ee9054ef0e67113ace60ab7a8844d75e737cc5a72",
+      "src/app/@checkout/default.tsx": "36ffe5b94ccf871f58b9f597d77687e53852b28ab6b5990eb8b046403882a306",
+      "src/app/@checkout/page.tsx": "f3a102235e0d5d563073656fcddc70f14084b80c234ce8ae42d9b5c83ea06d87",
+      "src/app/@checkout/[...catchAll]/page.tsx": "f850b53e043e64d84f409ccb68a24aa29508121a9fda795aaf20cf538a36ad1b",
+      "src/app/layout.tsx": "521f50c8b17d5f2795a46887b653fba367efaf1922edf86c9872a6db4b9d864d",
+      "src/app/@checkout/(.)checkout/[vendorId]/[productId]/page.tsx": "82a820d6c1b31c4f355d58fcdd2dc02d1ae95fd166fba1524832ba92b8799073",
+      "src/app/(viewer)/live/[slug]/page.tsx": "eb684845753e1a7a0a435285ec9b96a25842b20eb7a3078db84cd39a26f8d936",
+      "src/components/checkout-overlay.tsx": "489dd7af034e764025357bbb267aa30fa65f6740d0095ccb12e3aa1b7e46725a",
+      "src/components/live-playback.tsx": "0fb3139a415bf60b8e07cd0dd24a115e8497ff439bf2470423987d6a293cb9ff",
+      "src/components/persistent-live-playback.tsx": "44a113f0cd126e2822d87b96cb449b2fb39a53e7fba8570566593d5ab39f9b15",
+      "src/app/api/payments/checkout/route.ts": "fe1cd67aa8caa6e6570b358b75efce8ac0c04f5277b0c628bb99ee7df47d7380",
+      "src/app/api/payments/checkout/admission/route.ts": "b6145bf46b47cae3f28f08358c1dbe0a98669518d9ab198ed0e2782a472c7cb6",
+      "src/lib/checkout-admission.ts": "9f512d1b3f0a1ec2237103f78f0f94fb731f848c5715ce2978cbf02909c69e2f",
+      "src/lib/checkout-idempotency.ts": "2704d74977647452506e6d2c7333c0a676feb5e6b2d0641d074b8e3e80e6ce9b",
+      "src/components/commerce-checkout-form.tsx": "3cebd318c0ce92afedac66383671170e66ae2631aa3ab4e13aecbf5fc11391ea",
+      "src/lib/commerce-orders.ts": "dbeaeb92ee9c7ffbc79357e82c4833949a44debe255edfd5b5128bee608889a9",
+      "prisma/schema.prisma": "7e19882654ca3924ab0b6bb8ee1ae1581004cb47facb5bcc90b0110daa1b954f",
+      "prisma/migrations/20260809072000_g7_48_product_delivery_snapshot/migration.sql": "4e4eb804ade4b104050a400fb1e01aafb6c4af17c42313b09eff2e5b1a3cb3f4",
+      "src/app/api/webhooks/payments/route.ts": "e054aba9a7c8a5d303b2e92e05648cbe21b404f40d4523b8d73c9993408af493",
+      "src/app/checkout/result/page.tsx": "158bf1fe52e8486eac07fba397c782727081da09745a9436e90a421edd51abd3",
+      "src/app/checkout/result/loading.tsx": "3c6477c893fea5bb3c2a4ba9a5e8b0b0618bce61a624be27b15adde99e24233d",
+      "src/app/checkout/result/error.tsx": "103b53f03eb2993b845f65e7f7998c88a1b556cf9314071b4f1a869e1d4c536d",
+      "src/components/public-policy.tsx": "c40a78a228eafb499d4707b0ab239431395c382e8dec81e60120d2f34231aed4",
+      "src/components/form-submit-button.tsx": "e9d42f115952aaa5bdbba7a8c669813c88497228fa2a7207f61f18cb5af12dd5",
+      "src/app/admin/billing/loading.tsx": "175ce5f75f181dac45d9ccd3671fcaade9afbd114fa0c761e81b7664da69db33",
+      "src/app/admin/billing/error.tsx": "b57dcc9702af463a99c0a617092cdc346e384e7177f0becc667303611ef090b2",
+      "src/app/(app)/billing/loading.tsx": "36b30aa6ad0ae06834a5ee107c2831e5e1b3e111377ab6382d4b6441881a7b66",
+      "src/app/(app)/billing/error.tsx": "a0944aac6298f1316c484cd247f3acb8d9b3f7b05fc983447dd160bf0f3b3fe8",
+      "src/app/(app)/billing/plans/page.tsx": "7d6e1b71b88a5b09a64146aea2106b176a7c60b382a3fdd442dbc50984f51aa3",
+      "src/app/(app)/billing/plans/actions.ts": "e30f64c229da0d9e9c85398c1752fc4451f8ac8d52fdc5f9eab2a119d85ff0b7",
+      "src/app/actions/invoice-actions.ts": "ee49aa877f3c0456101825e4f096692f70759cf8d22e60a91c191dbb5007ac73",
+      "src/lib/payment-webhooks.ts": "e09b54b65188be23e392b1f89e2a1d8872124afba3c14cadc10264e32fd1e50a",
+      "src/lib/commerce-order-email.ts": "f4a61537950552846a3df71dd875d06bb6034e11c037740a7ab6882250ff8cf4",
+      "src/lib/payment-providers/demo.ts": "6556eeede734c71ca43df83dc26e6b3ca170a0a2e1857125e0c780565373073e",
+      "src/lib/payment-providers/types.ts": "991957772045b21894d226851125f94ab03ee56f549cd34134010a2f6e5622bc",
+      "src/lib/app-url.ts": "446c22aecca78d5ebfdd2755d0cd4ea9028670cc8e02582e79603c072c998490",
+      "src/app/admin/billing/course-payouts/page.tsx": "fa46c45556c9eef6d5d8bf3e9c194538d08fed04e1e799b8a973d3ed45228478",
+      "src/app/admin/billing/platform-referral-payouts/page.tsx": "a0d91c94cd35bc94035e1d54668dab4eb11b21c4812745bf01c17d19b6c9a536",
+      "src/app/(app)/billing/payment-methods/page.tsx": "70ecb2b582e1f53b84ba6626345c9da8cc36e0c131e16ee24ca9ab181e2fe268",
+      "src/app/admin/billing/webhooks/page.tsx": "8106508d2326ea0a63634ee191d22f485456d557caf42636fa8e131899fb871d",
+      "src/app/admin/billing/webhooks/[id]/page.tsx": "0a69bfcd27eaed8d909903aceffdf10b040736a1e607203e84371f3f5203969c",
+      "src/app/admin/billing/dashboard/page.tsx": "e3313a078dc1a5aecb524630ce47e7b2edf84390b2e439fbe1bdb0b66693928e",
+      "src/lib/buyer-support-access.ts": "dffc4ec536502ccca9d0823a0c85263ff014ed9f7e421ee6ef3ede5a214478c4",
+      "src/app/support/page.tsx": "568c408c455428a36552978f2b96814f6e48a480e0ebf1ae1fcb7d16e61e9288",
+      "src/app/support/orders/page.tsx": "5263507f132427e0300daee082dbcb2476a3be0d3f027c741b7bfdbddcf324b2",
+      "src/app/support/orders/loading.tsx": "32255d529b9f6bda23521de820dab954298247c6a4b40d96d92dedc890d7f291",
+      "src/app/support/orders/[grantId]/page.tsx": "0e47ec61e41f09d0c30c32f212f6dd0bacd89b2794f23ee8f832854b9438af71",
+      "src/app/support/orders/[grantId]/delivery/[itemId]/page.tsx": "a20f3e57ebda7dcc9d60f850eded6aff743f0544a91781b422b615131b68f2ee",
+      "src/app/support/orders/[grantId]/delivery/[itemId]/not-found.tsx": "e7905de7a6aaf3da93da19b96f7bff294dc40799c584c52bc5cb3ff723396920",
+      "src/lib/payment-return-outcome.ts": "0bd7542477dc5900d85c881b4816d7e219f55fb196800f5dc7b2f13c1eb0f67d",
+      "vercel.json": "0d8956c91cb3270aca23787cecc50cb4ac5cf256c7643c2c0648332e03140da0",
+      "prisma/migrations/20260809030000_g7_21_live_reminder_email/migration.sql": "9af5626356988fdb745749698cb4287165968a78bef10f753ad6ec71d64ac21d",
+      "src/lib/message-template.ts": "3f2e9c4b00ee3cb1524da04490b006ce7d1f42a856117218d4cae68f8938e0b1",
+      "src/app/actions.ts": "30dcdbd3513bc0632fa39c268d9466a4a0d53fb3dc92641d94168229cd570fd0",
+      "src/lib/email-delivery.ts": "1691e7794086456d7a0bea432fa69519480370861dcc282557dc7d35a5ae8fcf",
+      "src/lib/rich-text.ts": "32c299ac4630c90c8d1debfd06bd0403469e59c88f3df244db0ade32c200a1f3",
+      "src/app/api/jobs/email-deliveries/route.ts": "eddce0f80478046a74c0a516d5f6f5790f6ae1cb27b2f274d9a6bf2ddd2cbe79",
+      "src/components/message-template-form.tsx": "2a9186a3ca7ad9d28e3bf4e711a24552de3a1a207d9ea4b37a6aa6fa7bcca178",
+      "src/components/message-template-form-client.tsx": "9e6d2adb2178c34e80819ce155fed9487f663c955eca84bc98dffa6b92a1bfa4",
+      "src/app/(app)/messages/templates/new/page.tsx": "489ef9b816877caaaa6342c4d020cf6026cb1042aa3f02ad907576599778fc18",
+      "src/app/(app)/messages/templates/[id]/edit/page.tsx": "f0e228b716762cf66fdae64af55cbb32f218e02bae330f8e5c881c4db06388cd",
+      "src/components/live-stepper-form.tsx": "da8d3f533332d27b60281459594617ff99145e06defb1521ce6e1bd4662cd5fc",
+      "src/components/use-live-studio-draft.ts": "c4aa62917a25d56adeee5d74c623c11c28871a8ae187295a52a80e2f7cfe71a1",
+      "src/lib/live-studio-draft.ts": "45563e8e84aa53c5a045f9773950b89f926a1748acf1beb285299e7a16b635ca",
+      "src/lib/live-studio-draft-client.ts": "a18ec1402efb497851241ca70967f5337515436eaf6b5c753b356cda4aa181da",
+      "src/app/(app)/messages/templates/page.tsx": "59135741da55e510da5ccf282da331b84e20c9a748eda6c2620b4a0da1b84160",
+      "src/app/(app)/messages/deliveries/page.tsx": "c135465459317c33a5751e8d0ec842bae007740dc66781d1a548cdafff4cf990",
+      "src/app/(app)/lives/new/page.tsx": "3fb6a01bc2749935c7aa841662f12ad47728713c56483f2e98ce38d3bf67c601",
+      "src/app/(app)/onboarding/page.tsx": "ba2ac03497a62316b78913077e0916bf1455a2e7bd4921a7395eddbe6cddec8c",
+      "src/lib/merchant-onboarding.ts": "935e8bccbad5b54e07939eb13bec5bb1e00841a6b5ac6b5b6f43440897513202",
+      "src/lib/live-publish-readiness.ts": "28855b23642839e8bcf4077b41077bbc7789e893942c62ae1a5094725489479a",
+      "src/lib/sellable-live.ts": "f299163254743cd979108001eb031d61e38ceaff3e683abf25ce5a765332a688",
+      "src/lib/stream-usage-client.ts": "ab82a9787b4eefc98a16939b631fce1b11126345c78edc6106616be0609af952",
+      "src/app/api/stream-usage/route.ts": "baab2fa35d1c458bf4b8fc0a86bcc81ee25030f34e0982661ad5f20bc7ba2b95",
+      "src/lib/interaction-role-usage.ts": "eb57665b33d3284a6d82c666508d1dd2c658a3df06c057632b515ad4de60c17c",
+      "src/components/interaction-roles-workbench.tsx": "47a2e2b627cab402082c939cefeff4fc436c455d97ccc714d1e1cf52f17bb51c",
+      "src/app/(app)/interaction-roles/[id]/edit/page.tsx": "b4ac934f62f23bfb62d53137e9b859bb1812496496e412bf5d9787fb64fd1978"
+    }
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "PASS"
+  },
+  "migrations": {
+    "count": 58,
+    "applied": true
+  },
+  "browser": {
+    "expected": 17,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "contracts": {
+      "desktop merchant can recover upload and validation errors, then publish and preview one product": "PASS",
+      "mobile product upload has no overflow, preserves recovery actions and passes axe": "PASS",
+      "merchant configures encrypted digital delivery and checkout keeps an immutable order snapshot": "PASS",
+      "buyer order capability shows only exact safe fulfillment projection on desktop and mobile": "PASS",
+      "desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment": "PASS",
+      "mobile order detail has no horizontal overflow, keeps keyboard focus visible, and passes axe": "PASS",
+      "public buyer receives a server admission, creates exactly one reserved order, and safely reviews payment status": "PASS",
+      "public checkout recovers one committed order after response loss and page refresh": "PASS",
+      "finance admin payout batch prevents duplicate submission and exposes accessible pending feedback": "PASS",
+      "merchant Email templates keep live reminders scoped, then Live Studio separates registration and reminder templates": "PASS",
+      "merchant onboarding shows exact sales-live blockers and skips deferred payment work": "PASS",
+      "public playback stops once on exact Stream quota exhaustion and keeps recovery guidance accessible": "PASS",
+      "public playback retries an ambiguous Stream heartbeat with one stable event identity": "PASS",
+      "merchant message template keeps every field after server validation and can recover as a new template": "PASS",
+      "merchant interaction role previews transparent identity and exact script impact before disabling": "PASS",
+      "public live keeps the same video node, playback state and controls through internal checkout": "PASS",
+      "owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice": "PASS"
+    },
+    "axeCriticalOrSerious": 0,
+    "rwd": "PASS",
+    "tenantIsolation": "PASS",
+    "piiEnvelopeLeak": "PASS",
+    "productCatalog": "PASS",
+    "productDelivery": "PASS",
+    "buyerDelivery": "NOT_VERIFIED",
+    "emailReminder": "PASS",
+    "liveStudio": "PASS",
+    "buyerOrders": "PASS",
+    "onboarding": "NOT_VERIFIED",
+    "streamQuota": "NOT_VERIFIED",
+    "streamRetry": "NOT_VERIFIED",
+    "checkoutRecovery": "NOT_VERIFIED",
+    "messageTemplateDraft": "NOT_VERIFIED",
+    "interactionRole": "NOT_VERIFIED",
+    "persistentPlayer": "NOT_VERIFIED",
+    "wp7OneStop": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "0f51c246e487896196625936ce8063ed68c41fc64f9a610f302f0deec22448f3"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "1af59b50c85c10bbaf5e082d86bbe27cc57bcd9121afceb24b9a62c109d3f627"
+    },
+    "productDesktop": {
+      "filename": "product-desktop.png",
+      "sha256": "d9f420d8cf236f24c6d69d2753398965731a84c9d370e0e0746f8b3dd10604ab"
+    },
+    "productMobile": {
+      "filename": "product-mobile.png",
+      "sha256": "0cd786a9d432a4e571df6b7e6abc40decc2f8464dc02c41894af03024f8bff25"
+    },
+    "productDeliveryDesktop": {
+      "filename": "product-delivery-desktop.png",
+      "sha256": "cd1465a74d414e7acd20ad3f777568ebc981ba9b9215b0dc4eaca7624a602080"
+    },
+    "productDeliveryMobile": {
+      "filename": "product-delivery-mobile.png",
+      "sha256": "408af55015c6df44c0babc7b38b03d1ae72f60c065fbcaa0cdcc27bffa2fc08a"
+    },
+    "buyerDeliveryDesktop": {
+      "filename": "buyer-delivery-desktop.png",
+      "sha256": "c9916d9c2bfbc0aee1cc05e6ee2cfcd3cbb76399ab98ad8e3a16f8a20fed86eb"
+    },
+    "buyerDeliveryMobile": {
+      "filename": "buyer-delivery-mobile.png",
+      "sha256": "ee11f28d2233977e08f4ffd219e95aac8fbf987810ee15d4ec8b898592ec56b8"
+    },
+    "paymentResult": {
+      "filename": "payment-result.png",
+      "sha256": "c10e2a2cd70ef9280353a8cf7e19ba59f24b66cee49ac85981d3fa3abe32bc15"
+    },
+    "financePending": {
+      "filename": "finance-pending.png",
+      "sha256": "3e97f4333f33b7eb6b7f8ce607d1cadd09ec9f1fe1d51127fe22a3712651f6dd"
+    },
+    "emailTemplates": {
+      "filename": "email-templates.png",
+      "sha256": "ab2d251a347324b2d0e99e95921f5d40319d19342db3be0f912915aa1e357940"
+    },
+    "buyerOrdersDesktop": {
+      "filename": "buyer-orders-desktop.png",
+      "sha256": "c77245dcdf16931815f67b7d4a343a2cc7b22239721a9648a461088da2eb7ba1"
+    },
+    "buyerOrdersMobile": {
+      "filename": "buyer-orders-mobile.png",
+      "sha256": "248495796507238233ce3e147bf300de0eb98cacdced24e9552acb529b38538d"
+    },
+    "onboardingDesktop": {
+      "filename": "onboarding-desktop.png",
+      "sha256": "3283db0b9ed44e511834f1c1a8621f98ee612e1202e71799104309ea99226a19"
+    },
+    "onboardingMobile": {
+      "filename": "onboarding-mobile.png",
+      "sha256": "832671cebc2ecf7ccc64d837ed28efd48fef8e6578a64f07bfc3207f886b5e4e"
+    },
+    "streamQuotaDesktop": {
+      "filename": "stream-quota-desktop.png",
+      "sha256": "3846027fc644767effde3c36cafa7a49ed2275785c34703427e82abbc854d875"
+    },
+    "streamQuotaMobile": {
+      "filename": "stream-quota-mobile.png",
+      "sha256": "2b4b14a0ecfb678ed5490de33dc666036d8ade092aa456bc6d149e67c2b4805b"
+    },
+    "streamRetryDesktop": {
+      "filename": "stream-retry-desktop.png",
+      "sha256": "16840f5c188a80be71552276bebaaaa734057e6b333c1616a1f70f3bb0b90b1a"
+    },
+    "streamRetryMobile": {
+      "filename": "stream-retry-mobile.png",
+      "sha256": "9ceb33edbaae1edbb5a5ee8b9e7c14f8dcdd43715706fa4774accb36dddc2929"
+    },
+    "checkoutRecoveryDesktop": {
+      "filename": "checkout-recovery-desktop.png",
+      "sha256": "12c91b2f07b32491907f567e4588dfb2e21be347362b92515958019af03809ab"
+    },
+    "checkoutRecoveryMobile": {
+      "filename": "checkout-recovery-mobile.png",
+      "sha256": "e3d95dbb6884f68849ff3c8e395fbb42fdda7668b89b12f909e41b8c4df73429"
+    },
+    "messageTemplateDraftDesktop": {
+      "filename": "message-template-draft-desktop.png",
+      "sha256": "a08ef7196680f32a6ee8c4e753c4219754d90110ee04fc8fa9c62a252c32ec04"
+    },
+    "messageTemplateDraftMobile": {
+      "filename": "message-template-draft-mobile.png",
+      "sha256": "c5890544838e67156a7ed0cca0f472fb00b887b429b4ea406b70f27f5938a7fd"
+    },
+    "interactionRoleDesktop": {
+      "filename": "interaction-role-desktop.png",
+      "sha256": "f9878941ea3e7b5ac672e728b5444e953eeb552f33f1fe3675b02a4300f4842c"
+    },
+    "interactionRoleMobile": {
+      "filename": "interaction-role-mobile.png",
+      "sha256": "c3cfe5634d211c6e69886ef0733338219063c08a50f75cac3861b65bd61f161a"
+    },
+    "persistentPlayerDesktop": {
+      "filename": "persistent-player-desktop.png",
+      "sha256": "98c507ab39ab02f5f7850ba05ce6caebd58def790c943df159a4099f543ebf99"
+    },
+    "persistentPlayerMobile": {
+      "filename": "persistent-player-mobile.png",
+      "sha256": "62629a698ae0a5ef7aabbfadc3b12df88ded3198d46b82dcdf9dd6b7b7eec439"
+    },
+    "wp7Registration": null,
+    "wp7Live": null,
+    "wp7Checkout": null,
+    "wp7Order": null,
+    "liveStudioDesktop": {
+      "filename": "live-studio-desktop.png",
+      "sha256": "e6d45c4dc2e9910b2cdb6877f9f77bfa57c4a79b662475fdf967188cdd1ad9d5"
+    },
+    "liveStudioMobile": {
+      "filename": "live-studio-mobile.png",
+      "sha256": "da4181e4d2fee5ea687a18a1a6b56ee5768e5c93da27b72c337a69bb91bb180a"
+    }
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "loopbackTlsCookieBridge": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildExecution": {
+      "exitCode": 0,
+      "signal": null,
+      "spawnErrorCode": null,
+      "timedOut": false,
+      "outcome": "EXITED"
+    },
+    "nextBuildDetails": [],
+    "browser": null,
+    "browserDetails": [],
+    "browserGlobalErrors": [],
+    "serverRuntimeDetails": []
+  },
+  "failure": null
+}

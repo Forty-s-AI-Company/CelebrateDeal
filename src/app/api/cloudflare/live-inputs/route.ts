@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { createLiveInputMapping, LiveInputRequest } from "@/lib/cloudflare-ops";
+import { classifyCloudflareOperationError, createLiveInputMapping, LiveInputRequest } from "@/lib/cloudflare-ops";
 
 export async function POST(request: Request) {
   if (!requireJobSecret(request)) {
@@ -12,16 +12,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid live input request" }, { status: 400 });
   }
 
-  const { video, liveInput } = await createLiveInputMapping(parsed.data);
+  try {
+    const { video, liveInput } = await createLiveInputMapping(parsed.data);
 
-  return NextResponse.json({
-    ok: true,
-    videoId: video.id,
-    liveInput: {
-      uid: liveInput.uid,
-      rtmpsUrl: liveInput.rtmps?.url ?? null,
-      webRTCUrl: liveInput.webRTC?.url ?? null,
-      streamKeyRef: video.id,
-    },
-  });
+    return NextResponse.json({
+      ok: true,
+      videoId: video.id,
+      liveInput: {
+        uid: liveInput.uid,
+        rtmpsUrl: liveInput.rtmps?.url ?? null,
+        webRTCUrl: liveInput.webRTC?.url ?? null,
+        streamKeyRef: video.id,
+      },
+    });
+  } catch (error) {
+    const diagnostic = classifyCloudflareOperationError(error);
+    return NextResponse.json(
+      { ok: false, error: "Cloudflare live input failed", diagnostic: diagnostic.code },
+      { status: diagnostic.status },
+    );
+  }
 }

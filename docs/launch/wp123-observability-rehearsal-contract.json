@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "celebratedeal-ai-team-wp123-observability-contract/v1",
+  "workPackage": "WP-123",
+  "sourceWorkPackage": "WP-116",
+  "status": "LOCAL_REHEARSAL_ONLY",
+  "eventSchemas": {
+    "payment_webhook_request_v1": {
+      "requiredFields": ["event", "method", "path", "source", "status", "timestamp"],
+      "allowedMethods": ["POST", "HEAD", "OTHER"],
+      "allowedSources": ["return", "notify", "unknown"],
+      "allowedStatuses": [200, 400, 401, 403, 405, 413, 500]
+    },
+    "payment_webhook_failure_v1": {
+      "requiredFields": ["event", "method", "path", "source", "status", "code", "timestamp"],
+      "allowedMethods": ["POST"],
+      "allowedSources": ["return", "notify", "unknown"],
+      "allowedStatuses": [500],
+      "allowedCodes": ["scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_claim_lost", "processing_failed"]
+    }
+  },
+  "fixedFields": { "path": "/api/webhooks/payments" },
+  "incidentMapping": {
+    "amount_mismatch": { "incidentCode": "payment_reconciliation_mismatch", "severity": "high" },
+    "processing_claim_lost": { "incidentCode": "payment_processing_claim_lost", "severity": "high" },
+    "processing_failed": { "incidentCode": "payment_processing_failed", "severity": "medium" },
+    "scope_missing": { "incidentCode": "payment_webhook_scope_failure", "severity": "high" },
+    "scope_invalid": { "incidentCode": "payment_webhook_scope_failure", "severity": "high" },
+    "scope_mismatch": { "incidentCode": "payment_webhook_scope_failure", "severity": "high" },
+    "order_ambiguous": { "incidentCode": "payment_webhook_scope_failure", "severity": "high" },
+    "inventory_conflict": { "incidentCode": "payment_inventory_conflict", "severity": "high" }
+  },
+  "correlationPolicy": {
+    "derivedFrom": ["event", "method", "path", "source", "status", "code", "timestamp"],
+    "algorithm": "sha256-canonical-allowlisted-fields-prefix16",
+    "purpose": "LOCAL_REHEARSAL_ONLY_NOT_A_PRODUCTION_LOG_FIELD"
+  },
+  "dedupePolicy": {
+    "fingerprint": "sha256-canonical-event-prefix24",
+    "duplicateEffect": "suppress_additional_incident_trigger",
+    "purpose": "LOCAL_REHEARSAL_ONLY"
+  },
+  "recoveryPolicy": {
+    "control": "LOCAL_REHEARSAL_CONTROL_ONLY",
+    "matchingTarget": "last_open_correlation",
+    "unmatchedEffect": "recovery_rejected_and_incident_remains_open"
+  },
+  "receiptPolicy": {
+    "localIncidentRehearsal": "PASS",
+    "externalTelemetry": "PENDING",
+    "SANDBOX_READY": false,
+    "PRODUCTION_READY": false,
+    "rawEventPayload": false,
+    "sensitiveValues": false
+  }
+}

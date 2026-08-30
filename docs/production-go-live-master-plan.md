@@ -2,6 +2,8 @@
 
 最後更新：2026-07-09
 
+治理補充（2026-08-13）：採用 [Solo Founder Launch Standard](launch/solo-founder-launch-standard.md)。角色可重疊；只有 provider、法律、tracked requirement、accepted security decision 或 direct production risk 才能要求第二位真人。Score 不覆蓋 hard blocker，`ENGINEERING_READY`、`SANDBOX_READY`、`PRODUCTION_READY` 分開判定。
+
 ## 0. 原則
 
 這份文件把 Phase 0 到 Phase 6 合併成一次性上線總控表。後續不再用「每次只做一個 Phase」的節奏，而是照本文件一路推到可收費 MVP。

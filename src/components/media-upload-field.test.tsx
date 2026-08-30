@@ -1,0 +1,266 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import {
+  MediaUploadField,
+  cropAspectRatio,
+  estimatedMinutesForDuration,
+  formatVideoDimensions,
+  mediaUploadPersistedValue,
+  mediaUploadReducer,
+  shouldAutoUploadThumbnail,
+  type MediaUploadState,
+} from "./media-upload-field";
+
+const baseState: MediaUploadState = {
+  phase: "idle",
+  file: null,
+  previewUrl: "",
+  progress: 0,
+  errorCode: "",
+  remoteUrl: "https://media.example.test/existing.webp",
+  assetId: "asset-1",
+  resourceId: "",
+  resumableUploadUrl: "",
+  resumableUploadTicket: "",
+};
+
+describe("MediaUploadField", () => {
+  it("renders an accessible image drop zone, provider-backed hidden fields, preview, and legacy URL fallback", () => {
+    const markup = renderToStaticMarkup(
+      <form>
+        <input type="hidden" name="_csrf" value="csrf-test" />
+        <MediaUploadField
+          kind="image"
+          label="商品圖片"
+          description="直接上傳商品主圖。"
+          defaultUrl="https://media.example.test/existing.webp"
+          defaultAssetId="asset-1"
+          urlInputName="imageUrl"
+          assetIdInputName="imageAssetId"
+          statusInputName="imageUploadPhase"
+          allowExternalUrlFallback
+        />
+      </form>,
+    );
+
+    expect(markup).toContain("拖拉檔案到這裡，或點擊選檔");
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain('<label for=');
+    expect(markup).toContain('aria-labelledby=');
+    expect(markup).toContain('name="imageUrl"');
+    expect(markup).toContain('name="imageAssetId"');
+    expect(markup).toContain('name="imageUploadPhase"');
+    expect(markup.match(/name="imageUrl"/g)).toHaveLength(1);
+    expect(markup).toContain("進階：使用既有圖片 URL");
+    expect(markup).toContain("開始上傳");
+    expect(markup).toContain('aria-busy="false"');
+  });
+
+  it("associates a server error with both image controls", () => {
+    const markup = renderToStaticMarkup(
+      <MediaUploadField
+        kind="image"
+        label="報名頁海報"
+        description="直接上傳主視覺。"
+        urlInputName="heroImageUrl"
+        allowExternalUrlFallback
+        invalid
+        errorId="form-hero-media-error"
+      />,
+    );
+
+    expect(markup).toContain('aria-invalid="true"');
+    expect(markup).toContain('aria-describedby="form-hero-media-error"');
+    expect(markup).toContain("description form-hero-media-error");
+  });
+
+  it("keeps a legacy image URL preview and hidden value without showing a URL input by default", () => {
+    const markup = renderToStaticMarkup(
+      <form>
+        <MediaUploadField
+          kind="image"
+          label="商品圖片"
+          description="直接上傳商品主圖。"
+          defaultUrl="https://media.example.test/legacy.webp"
+          urlInputName="imageUrl"
+        />
+      </form>,
+    );
+
+    expect(markup).toContain('name="imageUrl"');
+    expect(markup).toContain('value="https://media.example.test/legacy.webp"');
+    expect(markup.match(/name="imageUrl"/g)).toHaveLength(1);
+    expect(markup).toContain("legacy.webp");
+    expect(markup).not.toContain("進階：使用既有圖片 URL");
+    expect(markup).not.toContain('type="url"');
+  });
+
+  it("renders video upload without a writable provider URL or UID", () => {
+    const markup = renderToStaticMarkup(
+      <form>
+        <input name="title" defaultValue="新品介紹" />
+        <MediaUploadField
+          kind="video"
+          label="影片檔案"
+          description="直接上傳到 Stream。"
+          defaultResourceId="video-1"
+          resourceIdInputName="id"
+          titleInputName="title"
+          durationInputName="durationSec"
+        />
+      </form>,
+    );
+
+    expect(markup).toContain('name="id"');
+    expect(markup).toContain('value="video-1"');
+    expect(markup).toContain("最多 30 GB；大型檔案會自動分段續傳");
+    expect(markup).not.toContain('name="cloudflareStreamUid"');
+    expect(markup).not.toContain('name="uploadUrl"');
+    expect(markup).not.toContain("進階：使用既有圖片 URL");
+  });
+});
+
+describe("video metadata and thumbnail crop helpers", () => {
+  it("calculates provider usage minutes from the actual duration", () => {
+    expect(estimatedMinutesForDuration(0)).toBe(0);
+    expect(estimatedMinutesForDuration(1)).toBe(1);
+    expect(estimatedMinutesForDuration(61)).toBe(2);
+    expect(estimatedMinutesForDuration(Number.NaN)).toBe(0);
+  });
+
+  it("keeps the selected crop ratio independent from the source video ratio", () => {
+    expect(cropAspectRatio("16:9", 1)).toBeCloseTo(16 / 9);
+    expect(cropAspectRatio("1:1", 16 / 9)).toBe(1);
+    expect(cropAspectRatio("4:5", 16 / 9)).toBeCloseTo(4 / 5);
+    expect(cropAspectRatio("original", 4 / 3)).toBeCloseTo(4 / 3);
+  });
+
+  it("formats dimensions for the local preview status", () => {
+    expect(formatVideoDimensions(1920, 1080)).toBe("1920 × 1080");
+    expect(formatVideoDimensions(0, 0)).toBe("讀取影片尺寸中");
+  });
+
+  it("marks captured video frames for the automatic image upload flow", () => {
+    expect(shouldAutoUploadThumbnail({ autoUpload: true })).toBe(true);
+    expect(shouldAutoUploadThumbnail({ autoUpload: false })).toBe(false);
+    expect(shouldAutoUploadThumbnail({ file: "frame.jpg" })).toBe(false);
+    expect(shouldAutoUploadThumbnail(null)).toBe(false);
+  });
+});
+
+describe("mediaUploadReducer", () => {
+  it("hydrates restored draft media and clears stale completed upload state", () => {
+    const restored = mediaUploadReducer(
+      {
+        ...baseState,
+        phase: "success",
+        file: { name: "old.webp" } as File,
+        previewUrl: "blob:old",
+      },
+      {
+        type: "hydrate",
+        url: "https://media.example.test/draft.webp",
+        assetId: "draft-asset",
+        resourceId: "",
+      },
+    );
+
+    expect(restored).toMatchObject({
+      phase: "idle",
+      file: null,
+      previewUrl: "",
+      remoteUrl: "https://media.example.test/draft.webp",
+      assetId: "draft-asset",
+    });
+    expect(mediaUploadPersistedValue(restored)).toEqual({
+      url: "https://media.example.test/draft.webp",
+      assetId: "draft-asset",
+      resourceId: "",
+    });
+  });
+
+  it("tracks progress and binds a completed image asset", () => {
+    const uploading = mediaUploadReducer(baseState, { type: "progress", progress: 42 });
+    const completed = mediaUploadReducer(uploading, { type: "image-success", assetId: "asset-2", publicUrl: "https://media.example.test/new.webp" });
+
+    expect(completed).toMatchObject({ phase: "success", progress: 100, assetId: "asset-2", remoteUrl: "https://media.example.test/new.webp" });
+    const persisted = mediaUploadPersistedValue(completed);
+    expect(persisted).toEqual({
+      url: "https://media.example.test/new.webp",
+      assetId: "asset-2",
+      resourceId: "",
+    });
+    expect(Object.keys(persisted)).toEqual(["url", "assetId", "resourceId"]);
+  });
+
+  it("removes an image reference but preserves the server-owned video resource id", () => {
+    const removedImage = mediaUploadReducer(baseState, { type: "remove", kind: "image" });
+    expect(removedImage).toMatchObject({ remoteUrl: "", assetId: "" });
+    expect(mediaUploadPersistedValue(removedImage)).toEqual({ url: "", assetId: "", resourceId: "" });
+
+    const removedVideo = mediaUploadReducer({ ...baseState, resourceId: "video-1" }, { type: "remove", kind: "video" });
+    expect(removedVideo.resourceId).toBe("video-1");
+    expect(mediaUploadPersistedValue(removedVideo)).toEqual({
+      url: baseState.remoteUrl,
+      assetId: baseState.assetId,
+      resourceId: "video-1",
+    });
+  });
+
+  it("switches from a provider asset to one external URL without retaining stale upload state", () => {
+    const changed = mediaUploadReducer(
+      { ...baseState, phase: "error", errorCode: "network_error" },
+      { type: "external-url", value: "https://media.example.test/migrated.webp" },
+    );
+
+    expect(changed).toMatchObject({
+      phase: "idle",
+      errorCode: "",
+      remoteUrl: "https://media.example.test/migrated.webp",
+      assetId: "",
+      previewUrl: "",
+      file: null,
+    });
+    expect(mediaUploadPersistedValue(changed)).toEqual({
+      url: "https://media.example.test/migrated.webp",
+      assetId: "",
+      resourceId: "",
+    });
+  });
+
+  it("keeps a provisioned Stream row id available for a safe retry after upload failure", () => {
+    const provisioned = mediaUploadReducer(baseState, {
+      type: "video-provisioned",
+      resourceId: "video-retry-1",
+      resumableUploadUrl: "https://upload.videodelivery.net/tus/retry-1",
+      resumableUploadTicket: "opaque-ticket-that-is-long-enough",
+    });
+    const failed = mediaUploadReducer(provisioned, { type: "error", code: "network_error" });
+
+    expect(failed).toMatchObject({
+      phase: "error",
+      resourceId: "video-retry-1",
+      resumableUploadUrl: "https://upload.videodelivery.net/tus/retry-1",
+      resumableUploadTicket: "opaque-ticket-that-is-long-enough",
+      errorCode: "network_error",
+    });
+  });
+
+  it("keeps a resumable session for cancellation but discards a provider-rejected session", () => {
+    const resumable = {
+      ...baseState,
+      resourceId: "video-retry-1",
+      resumableUploadUrl: "https://upload.videodelivery.net/tus/retry-1",
+      resumableUploadTicket: "opaque-ticket-that-is-long-enough",
+    };
+
+    expect(mediaUploadReducer(resumable, { type: "error", code: "cancelled" }).resumableUploadUrl)
+      .toBe("https://upload.videodelivery.net/tus/retry-1");
+    expect(mediaUploadReducer(resumable, { type: "error", code: "provider_rejected" }).resumableUploadUrl)
+      .toBe("");
+    expect(mediaUploadReducer(resumable, { type: "error", code: "provider_rejected" }).resumableUploadTicket)
+      .toBe("");
+    expect(mediaUploadReducer(resumable, { type: "error", code: "video_upload_failed" }).resumableUploadTicket)
+      .toBe("");
+  });
+});

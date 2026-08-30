@@ -1,0 +1,24 @@
+G7-24 production source
+src/lib/payment-providers/types.ts
+src/lib/payment-providers/demo.ts
+src/lib/payment-providers/ecpay-like.ts
+src/lib/payment-providers/payuni.ts
+src/app/api/payments/checkout/route.ts
+src/app/actions/invoice-actions.ts
+src/app/(app)/billing/plans/actions.ts
+src/lib/buyer-support-access.ts
+src/app/checkout/result/page.tsx
+
+G7-24 deterministic tests
+src/lib/payment-providers/payuni.test.ts
+src/lib/payment-providers/ecpay-like.test.ts
+src/lib/payment-providers/demo.test.ts
+src/app/api/payments/checkout/route.test.ts
+src/app/api/live-share-commercial-flow.test.ts
+src/app/actions/invoice-actions.test.ts
+src/app/(app)/billing/plans/actions.test.ts
+src/lib/buyer-support-access.test.ts
+src/app/checkout/result/page.test.tsx
+
+G7-24 controlled build runner
+scripts/g7-checkout-recovery-controlled-build-qa.mjs

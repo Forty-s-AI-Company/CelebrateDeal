@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { after } from "next/server";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendPasswordResetEmail } from "@/lib/email";
-import { hashPassword } from "@/lib/password";
+import { hashPasswordAsync } from "@/lib/password";
 
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
@@ -27,7 +28,7 @@ export async function createPasswordResetToken({
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
 
-  await getDb().$transaction([
+  const [, createdToken] = await getDb().$transaction([
     getDb().passwordResetToken.updateMany({
       where: {
         userId: user.id,
@@ -47,7 +48,7 @@ export async function createPasswordResetToken({
     }),
   ]);
 
-  return { user, token, expiresAt };
+  return { user, token, tokenId: createdToken.id, expiresAt };
 }
 
 export async function sendPasswordResetLink({
@@ -73,55 +74,120 @@ export async function sendPasswordResetLink({
   }
 
   const resetUrl = `${appUrl.replace(/\/$/, "")}/password-reset/confirm?token=${encodeURIComponent(reset.token)}`;
-  await sendPasswordResetEmail({
-    to: reset.user.email,
-    resetUrl,
-  });
+  try {
+    await sendPasswordResetEmail({
+      to: reset.user.email,
+      resetUrl,
+    });
+  } catch (error) {
+    // 外部寄信失敗時不能留下收件人從未取得的有效 token。
+    await getDb().passwordResetToken.updateMany({
+      where: { id: reset.tokenId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    await writeAuditLog({
+      actorId: reset.user.id,
+      actorLabel: "password_reset_request",
+      action: "password_reset_email_failed",
+      targetType: "PasswordResetToken",
+      targetId: reset.tokenId,
+      after: auditSnapshot({ email: reset.user.email, tokenRevoked: true }),
+    });
+    throw error;
+  }
   await writeAuditLog({
     actorId: reset.user.id,
     actorLabel: "password_reset_request",
     action: "password_reset_requested",
     targetType: "PasswordResetToken",
-    targetId: reset.user.id,
+    targetId: reset.tokenId,
     after: auditSnapshot({ email: reset.user.email, expiresAt: reset.expiresAt.toISOString() }),
   });
 
-  return { ...reset, resetUrl };
+  // Callers only need to know whether delivery was scheduled. Keeping the raw
+  // token and reset URL inside this module prevents accidental API, redirect,
+  // telemetry, or Server Component disclosure.
+  return { sent: true as const };
+}
+
+export function schedulePasswordResetLink(
+  input: Parameters<typeof sendPasswordResetLink>[0],
+) {
+  // Account lookup, token creation, audit work, and email delivery all happen
+  // after the generic response. This removes their observable workload
+  // difference from anonymous reset requests.
+  after(async () => {
+    try {
+      await sendPasswordResetLink(input);
+    } catch {
+      // sendPasswordResetLink revokes a token that was not delivered and writes
+      // a safe audit record. Anonymous callers always keep the same response.
+    }
+  });
 }
 
 export async function consumePasswordResetToken(token: string, password: string) {
-  const resetToken = await getDb().passwordResetToken.findUnique({
-    where: { tokenHash: tokenHash(token) },
-    include: { user: true },
-  });
+  const now = new Date();
+  const passwordHash = await hashPasswordAsync(password);
+  const consumed = await getDb().$transaction(
+    async (tx) => {
+      const resetToken = await tx.passwordResetToken.findUnique({
+        where: { tokenHash: tokenHash(token) },
+        include: { user: true },
+      });
 
-  if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= new Date() || resetToken.user.status !== "active") {
+      if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= now || resetToken.user.status !== "active") {
+        return null;
+      }
+
+      const claim = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetToken.id,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { usedAt: now },
+      });
+
+      if (claim.count !== 1) {
+        return null;
+      }
+
+      await tx.user.update({
+        where: { id: resetToken.userId },
+        data: { passwordHash },
+      });
+      await tx.userSession.updateMany({
+        where: { userId: resetToken.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+
+      return {
+        tokenId: resetToken.id,
+        userId: resetToken.userId,
+      };
+    },
+    {
+      // Production uses a deliberately small serverless pool. Allow a second
+      // password-reset claim to wait for the first atomic transaction rather
+      // than surfacing Prisma's default two-second P2028 admission timeout.
+      maxWait: 5_000,
+      timeout: 10_000,
+    },
+  );
+
+  if (!consumed) {
     return { ok: false as const, reason: "invalid_or_expired" as const };
   }
 
-  await getDb().$transaction([
-    getDb().user.update({
-      where: { id: resetToken.userId },
-      data: { passwordHash: hashPassword(password) },
-    }),
-    getDb().passwordResetToken.update({
-      where: { id: resetToken.id },
-      data: { usedAt: new Date() },
-    }),
-    getDb().userSession.updateMany({
-      where: { userId: resetToken.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    }),
-  ]);
-
   await writeAuditLog({
-    actorId: resetToken.userId,
+    actorId: consumed.userId,
     actorLabel: "password_reset_confirm",
     action: "password_reset_completed",
     targetType: "PasswordResetToken",
-    targetId: resetToken.id,
-    after: auditSnapshot({ userId: resetToken.userId }),
+    targetId: consumed.tokenId,
+    after: auditSnapshot({ userId: consumed.userId }),
   });
 
-  return { ok: true as const, userId: resetToken.userId };
+  return { ok: true as const, userId: consumed.userId };
 }

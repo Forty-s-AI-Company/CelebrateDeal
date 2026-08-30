@@ -2,76 +2,360 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import type { InteractionRole } from "@prisma/client";
-import { ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
-import { deleteInteractionRoleAction, upsertInteractionRoleAction } from "@/app/actions";
+import { AlertTriangle, ChevronLeft, ChevronRight, MessageCircle, Plus, Radio, Save, Trash2 } from "lucide-react";
+import {
+  deleteInteractionRoleAction,
+  upsertInteractionRoleActionState,
+} from "@/app/actions";
+import {
+  initialInteractionRoleActionState,
+  type InteractionRoleActionState,
+} from "@/lib/interaction-role-action-state";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { FormSubmitButton } from "@/components/form-submit-button";
+import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
+import {
+  INTERACTION_AVATAR_SEEDS,
+  isCanonicalInteractionRolePresetUrl,
+  interactionRoleAvatarGender,
+  interactionRoleAvatarUrl,
+  interactionRoleLabelAfterTypeChange,
+  interactionRoleTypeLabel,
+  normalizePresentationRole,
+  type InteractionRoleAvatarMode,
+  type InteractionRoleType,
+  type InteractionAvatarGender,
+} from "@/lib/interaction-role";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import type { InteractionRoleUsage } from "@/lib/interaction-role-usage";
 
-const avatarGroups = {
-  male: [
-    "host-blue",
-    "support-green",
-    "advisor-cyan",
-    "sales-amber",
-    "guide-slate",
-    "stream-navy",
-    "helper-gold",
-    "official-mint",
-    "promo-red",
-    "qa-indigo",
-  ],
-  female: [
-    "host-orange",
-    "editor-purple",
-    "reminder-rose",
-    "care-teal",
-    "assistant-lime",
-    "planner-pink",
-    "studio-rose",
-    "brand-violet",
-    "live-coral",
-    "chat-mint",
-  ],
-};
+const DEFAULT_INTERACTION_AVATAR_SEED = "host-blue";
 
-function avatarUrl(seed: string) {
-  return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
+type RoleStatusFilter = "all" | "active" | "inactive";
+type RolePresentationFilter = "all" | "official" | "audience";
+type RoleScheduledFilter = "all" | "scheduled" | "manual";
+
+function normalizeRoleSearchQuery(value: string) {
+  return value.trim().slice(0, 120).toLowerCase();
 }
 
-function roleTypeLabel(roleType: string) {
-  if (roleType === "ai_host") return "AI 主持人";
-  if (roleType === "system_assistant") return "系統助手";
-  if (roleType === "support") return "客服助手";
-  return "官方角色";
+function normalizeRoleSearchText(value: string) {
+  return value.trim().toLowerCase();
 }
 
+function safeNormalizePresentationRole(roleType: string): InteractionRoleType | null {
+  try {
+    return normalizePresentationRole(roleType);
+  } catch {
+    return null;
+  }
+}
+
+function roleMatchesFilters(
+  role: InteractionRole,
+  query: string,
+  status: RoleStatusFilter,
+  presentation: RolePresentationFilter,
+  scheduled: RoleScheduledFilter,
+) {
+  const normalizedQuery = normalizeRoleSearchQuery(query);
+  const searchableText = [role.name, role.label, role.tone]
+    .map((value) => normalizeRoleSearchText(value ?? ""))
+    .join(" ");
+  const normalizedPresentation = safeNormalizePresentationRole(role.roleType);
+
+  if (normalizedQuery && !searchableText.includes(normalizedQuery)) return false;
+  if (status === "active" && !role.isActive) return false;
+  if (status === "inactive" && role.isActive) return false;
+  if (presentation !== "all" && normalizedPresentation !== presentation) return false;
+  if (scheduled === "scheduled" && !role.isScheduled) return false;
+  if (scheduled === "manual" && role.isScheduled) return false;
+  return true;
+}
+
+function InteractionRolePreview({
+  avatarUrl,
+  name,
+  label,
+  tone,
+  isActive,
+  presentationRole,
+  isScheduled,
+}: {
+  avatarUrl: string;
+  name: string;
+  label: string;
+  tone: string;
+  isActive: boolean;
+  presentationRole: InteractionRoleType;
+  isScheduled: boolean;
+}) {
+  return (
+    <section aria-labelledby="interaction-role-preview-title" className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950 p-5 text-white lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]">
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">公開直播外觀</p>
+            <h3 id="interaction-role-preview-title" className="mt-1 text-lg font-bold">角色即時預覽</h3>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${isActive ? "bg-emerald-400/20 text-emerald-100" : "bg-amber-300/20 text-amber-100"}`}>
+            {isActive ? "啟用" : "停用，不會顯示公開留言"}
+          </span>
+        </div>
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-white/15 bg-white/10 p-4">
+          <Image src={avatarUrl} alt="" width={52} height={52} unoptimized className="h-13 w-13 shrink-0 rounded-full bg-white/10 object-cover" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-bold">{name}</p>
+              <span className="rounded-full bg-blue-400/20 px-2 py-0.5 text-xs font-semibold text-blue-100">{label}</span>
+              <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-white/75">
+                {presentationRole === "official" ? "官方外觀" : "一般觀眾外觀"}
+              </span>
+              {isScheduled ? <span className="rounded-full bg-violet-400/20 px-2 py-0.5 text-xs font-semibold text-violet-100">排程角色</span> : null}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-white/90">歡迎來到直播！實際訊息內容會在互動腳本的時間軸中設定。</p>
+          </div>
+        </div>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-black/25 p-4 text-sm text-white/80">
+        <p className="flex items-center gap-2 font-semibold text-white"><MessageCircle size={16} aria-hidden="true" />商家設定摘要</p>
+        <p className="mt-3 leading-6">語氣：{tone || "尚未設定"}</p>
+        <p className="mt-3 text-xs leading-5 text-white/60">這個預覽不會發布訊息，也不會建立觀看、報名、訂單、付款、評論或成效資料。</p>
+      </div>
+    </section>
+  );
+}
+
+function InteractionRoleUsageImpact({
+  roleUsage,
+  isActive,
+}: {
+  roleUsage: InteractionRoleUsage[];
+  isActive: boolean;
+}) {
+  const affectedPublicMessages = roleUsage.reduce((sum, usage) => sum + usage.publicMessageCount, 0);
+  const attachedLives = roleUsage.reduce((sum, usage) => sum + usage.liveCount, 0);
+
+  return (
+    <section aria-labelledby="interaction-role-usage-title" className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">變更前先確認</p>
+          <h3 id="interaction-role-usage-title" className="mt-1 text-lg font-bold text-slate-950">腳本與直播使用狀況</h3>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 shadow-sm">
+          {roleUsage.length} 個腳本 · {attachedLives} 場直播
+        </span>
+      </div>
+
+      {!isActive && affectedPublicMessages > 0 ? (
+        <p role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-900">
+          <AlertTriangle className="mt-0.5 shrink-0" size={17} aria-hidden="true" />
+          停用後，下列腳本中 {affectedPublicMessages} 個官方留言／提醒事件不會出現在公開直播。商品聚焦與 CTA 仍依各自腳本規則執行。
+        </p>
+      ) : null}
+
+      {roleUsage.length === 0 ? (
+        <p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-600">這個角色尚未被任何互動腳本使用，可以安全調整或刪除。</p>
+      ) : (
+        <>
+          <p className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            刪除後，目前有 {roleUsage.length} 個腳本引用的事件會改顯示為官方系統；可先逐一檢查腳本再決定。
+          </p>
+          <ul className="mt-3 grid gap-3">
+            {roleUsage.map((usage) => (
+              <li key={usage.scriptId} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-950">{usage.scriptName}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                    <span>{usage.scriptStatus === "published" ? "已發布" : "草稿"}</span>
+                    <span>· {usage.eventCount} 個引用事件</span>
+                    <span>· {usage.liveCount} 場直播綁定</span>
+                  </p>
+                </div>
+                <Link href={`/interaction-scripts/${usage.scriptId}/edit`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                  <Radio size={16} aria-hidden="true" />檢查腳本
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+// 這個工作台同時承載清單、預覽、上傳與表單狀態；保留單一表單可避免切換角色時遺失草稿。
+// eslint-disable-next-line max-lines-per-function, complexity
 export function InteractionRolesWorkbench({
   roles,
   selectedRole,
+  roleUsage = [],
   csrfToken,
+  error,
+  initialAvatarAssetId,
 }: {
   roles: InteractionRole[];
   selectedRole?: InteractionRole | null;
+  roleUsage?: InteractionRoleUsage[];
   csrfToken: string;
+  error?: string | null;
+  initialAvatarAssetId?: string | null;
 }) {
-  const [gender, setGender] = useState<"male" | "female">("male");
-  const allSeeds = useMemo(() => avatarGroups[gender], [gender]);
-  const initialIndex = Math.max(
-    0,
-    allSeeds.findIndex((seed) => avatarUrl(seed) === selectedRole?.avatarUrl),
+  const selectedAvatarMode: InteractionRoleAvatarMode = isCanonicalInteractionRolePresetUrl(selectedRole?.avatarUrl)
+    ? "preset"
+    : "custom";
+  const selectedPresentationRole = selectedRole
+    ? safeNormalizePresentationRole(selectedRole.roleType)
+    : "official";
+  const isLegacyRole = Boolean(selectedRole && selectedPresentationRole && selectedRole.roleType !== selectedPresentationRole);
+  const initialSelectedRoleType = selectedRole ? selectedPresentationRole ?? "" : "official";
+  const initialState: InteractionRoleActionState = {
+    ...initialInteractionRoleActionState,
+    values: {
+      ...initialInteractionRoleActionState.values,
+      id: selectedRole?.id ?? "",
+      name: selectedRole?.name ?? "",
+      avatarUrl: selectedRole?.avatarUrl ?? "",
+      avatarMode: selectedAvatarMode,
+      label: selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
+      roleType: initialSelectedRoleType,
+      tone: selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
+      isActive: selectedRole?.isActive ?? true,
+      isScheduled: selectedRole?.isScheduled ?? false,
+    },
+  };
+  const [actionState, formAction, pending] = useActionState(upsertInteractionRoleActionState, initialState);
+  const actionStateValues = actionState.status === "error" ? actionState.values : null;
+  const [actionStateEdited, setActionStateEdited] = useState(false);
+  const visibleActionStateValues = actionStateValues && !actionStateEdited ? actionStateValues : null;
+  const [roleQuery, setRoleQuery] = useState("");
+  const [roleStatusFilter, setRoleStatusFilter] = useState<RoleStatusFilter>("all");
+  const [rolePresentationFilter, setRolePresentationFilter] = useState<RolePresentationFilter>("all");
+  const [roleScheduledFilter, setRoleScheduledFilter] = useState<RoleScheduledFilter>("all");
+  const filteredRoles = useMemo(
+    () => roles.filter((role) => roleMatchesFilters(
+      role,
+      roleQuery,
+      roleStatusFilter,
+      rolePresentationFilter,
+      roleScheduledFilter,
+    )),
+    [rolePresentationFilter, roleQuery, roleScheduledFilter, roleStatusFilter, roles],
   );
-  const [avatarIndex, setAvatarIndex] = useState(initialIndex === -1 ? 0 : initialIndex);
-  const selectedAvatar = avatarUrl(allSeeds[avatarIndex] ?? allSeeds[0]);
+  const hasRoleFilters = Boolean(
+    normalizeRoleSearchQuery(roleQuery)
+      || roleStatusFilter !== "all"
+      || rolePresentationFilter !== "all"
+      || roleScheduledFilter !== "all",
+  );
+  const clearRoleFilters = () => {
+    setRoleQuery("");
+    setRoleStatusFilter("all");
+    setRolePresentationFilter("all");
+    setRoleScheduledFilter("all");
+  };
+  const [gender, setGender] = useState<InteractionAvatarGender>(() => interactionRoleAvatarGender(selectedRole?.avatarUrl));
+  const allSeeds = useMemo(() => INTERACTION_AVATAR_SEEDS[gender], [gender]);
+  const [selectedAvatar, setSelectedAvatar] = useState(
+    () => actionStateValues?.avatarMode === "preset"
+      ? actionStateValues.avatarUrl
+      : selectedRole?.avatarUrl ?? interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED),
+  );
+  const [roleType, setRoleType] = useState<string>(actionStateValues?.roleType ?? initialSelectedRoleType);
+  const [label, setLabel] = useState(
+    actionStateValues?.label ?? selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
+  );
+  const [name, setName] = useState(actionStateValues?.name ?? selectedRole?.name ?? "");
+  const [tone, setTone] = useState(
+    actionStateValues?.tone ?? selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
+  );
+  const [isActive, setIsActive] = useState(actionStateValues?.isActive ?? selectedRole?.isActive ?? true);
+  const [isScheduled, setIsScheduled] = useState(actionStateValues?.isScheduled ?? selectedRole?.isScheduled ?? false);
+  const initialAvatarMode: InteractionRoleAvatarMode = actionStateValues?.avatarMode === "preset" || actionStateValues?.avatarMode === "custom"
+    ? actionStateValues.avatarMode
+    : selectedAvatarMode;
+  const [avatarMode, setAvatarMode] = useState<InteractionRoleAvatarMode>(initialAvatarMode);
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(
+    initialAvatarMode === "custom" ? actionStateValues?.avatarUrl ?? selectedRole?.avatarUrl ?? "" : "",
+  );
+  const [customAvatarAssetId, setCustomAvatarAssetId] = useState(
+    initialAvatarMode === "custom" ? actionStateValues?.avatarAssetId ?? initialAvatarAssetId ?? "" : "",
+  );
+  const [avatarUploadBlocked, setAvatarUploadBlocked] = useState(false);
+  const avatarHydrationKey = 0;
   const isEditing = Boolean(selectedRole);
+  const displayedAvatarMode: InteractionRoleAvatarMode = visibleActionStateValues?.avatarMode === "preset" || visibleActionStateValues?.avatarMode === "custom"
+    ? visibleActionStateValues.avatarMode
+    : avatarMode;
+  const displayedAvatarUrl = visibleActionStateValues?.avatarUrl ?? customAvatarUrl;
+  const displayedSelectedAvatarCandidate = visibleActionStateValues?.avatarUrl ?? selectedAvatar;
+  const displayedSelectedAvatar = isCanonicalInteractionRolePresetUrl(displayedSelectedAvatarCandidate)
+    ? displayedSelectedAvatarCandidate
+    : interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED);
+  const displayedCustomAvatarAssetId = visibleActionStateValues?.avatarAssetId ?? customAvatarAssetId;
+  const displayedName = visibleActionStateValues?.name ?? name;
+  const displayedRoleType = safeNormalizePresentationRole(visibleActionStateValues?.roleType || roleType || "");
+  const displayedLabel = visibleActionStateValues?.label ?? label;
+  const displayedTone = visibleActionStateValues?.tone ?? tone;
+  const displayedIsActive = visibleActionStateValues?.isActive ?? isActive;
+  const displayedSafeCustomAvatarUrl = parseSafeExternalHttpUrl(displayedAvatarUrl) ?? "";
+  const displayedPreviewAvatarUrl = displayedAvatarMode === "custom"
+    ? displayedSafeCustomAvatarUrl || interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED)
+    : displayedSelectedAvatar;
+  const previewName = displayedName.trim() || "未命名角色";
+  const previewLabel = displayedLabel.trim() || (displayedRoleType ? interactionRoleTypeLabel(displayedRoleType) : "");
 
   function shiftAvatar(direction: -1 | 1) {
-    setAvatarIndex((current) => (current + direction + allSeeds.length) % allSeeds.length);
+    setActionStateEdited(true);
+    setAvatarMode("preset");
+    const currentIndex = allSeeds.findIndex((seed) => interactionRoleAvatarUrl(seed) === selectedAvatar);
+    const nextIndex = ((currentIndex >= 0 ? currentIndex : 0) + direction + allSeeds.length) % allSeeds.length;
+    setSelectedAvatar(interactionRoleAvatarUrl(allSeeds[nextIndex] ?? DEFAULT_INTERACTION_AVATAR_SEED));
   }
 
-  function switchGender(nextGender: "male" | "female") {
+  function switchGender(nextGender: InteractionAvatarGender) {
+    setActionStateEdited(true);
+    setAvatarMode("preset");
     setGender(nextGender);
-    setAvatarIndex(0);
+    setSelectedAvatar(interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS[nextGender][0] ?? DEFAULT_INTERACTION_AVATAR_SEED));
+  }
+
+  function switchAvatarMode(nextMode: InteractionRoleAvatarMode) {
+    setActionStateEdited(true);
+    setAvatarMode(nextMode);
+    if (nextMode === "preset" && !isCanonicalInteractionRolePresetUrl(selectedAvatar)) {
+      setSelectedAvatar(interactionRoleAvatarUrl(INTERACTION_AVATAR_SEEDS.male[0] ?? DEFAULT_INTERACTION_AVATAR_SEED));
+    }
+  }
+
+  function updateCustomAvatar(value: MediaUploadPersistedValue) {
+    setActionStateEdited(true);
+    setCustomAvatarUrl(value.url);
+    setCustomAvatarAssetId(value.assetId);
+  }
+
+  function switchRoleType(nextType: string) {
+    setActionStateEdited(true);
+    setLabel((currentLabel) => interactionRoleLabelAfterTypeChange(currentLabel, roleType, nextType));
+    setRoleType(nextType);
+  }
+
+  if (!displayedRoleType || (selectedRole && !selectedPresentationRole)) {
+    return (
+      <section role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">互動角色無法安全編輯</p>
+        <h2 className="mt-1 text-xl font-bold">此角色使用尚未支援的角色類型</h2>
+        <p className="mt-3 text-sm leading-6">
+          「{selectedRole?.name || "目前角色"}」的角色類型「{selectedRole?.roleType || "未知"}」無法安全正規化。為避免誤改資料，這個角色目前不可編輯、預覽或一般儲存。
+        </p>
+        <Link href="/interaction-roles" className="mt-4 inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+          返回互動角色清單
+        </Link>
+      </section>
+    );
   }
 
   return (
@@ -79,14 +363,86 @@ export function InteractionRolesWorkbench({
       <aside className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-border bg-slate-50 p-4">
           <div>
-            <h2 className="font-semibold text-slate-950">使用者清單</h2>
-            <p className="text-sm text-slate-500">{roles.length} 個官方互動角色</p>
+            <h2 className="font-semibold text-slate-950">互動角色清單</h2>
+            <p className="text-sm text-slate-500">{roles.length} 個互動角色</p>
           </div>
-          <Link href="/interaction-roles/new" className="grid h-9 w-9 place-items-center rounded-md bg-primary text-white shadow-sm hover:bg-primary-dark">
-            <Plus size={17} />
+          <Link
+            href="/interaction-roles/new"
+            aria-label="新增互動角色"
+            className="grid h-11 w-11 place-items-center rounded-md bg-primary text-white shadow-sm hover:bg-primary-dark"
+          >
+            <Plus size={17} aria-hidden="true" />
           </Link>
         </div>
         <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-3">
+          <div className="mb-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label htmlFor="interaction-role-search" className="grid gap-1 text-xs font-semibold text-slate-700">
+              搜尋互動角色
+              <input
+                id="interaction-role-search"
+                name="q"
+                type="search"
+                value={roleQuery}
+                onChange={(event) => setRoleQuery(normalizeRoleSearchQuery(event.target.value))}
+                placeholder="搜尋名稱、標籤或語氣"
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <label htmlFor="interaction-role-status" className="grid gap-1 text-xs font-semibold text-slate-700">
+              狀態
+              <select
+                id="interaction-role-status"
+                name="status"
+                value={roleStatusFilter}
+                onChange={(event) => setRoleStatusFilter(event.target.value as RoleStatusFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部狀態</option>
+                <option value="active">啟用</option>
+                <option value="inactive">停用</option>
+              </select>
+            </label>
+            <label htmlFor="interaction-role-presentation" className="grid gap-1 text-xs font-semibold text-slate-700">
+              呈現角色
+              <select
+                id="interaction-role-presentation"
+                name="presentation"
+                value={rolePresentationFilter}
+                onChange={(event) => setRolePresentationFilter(event.target.value as RolePresentationFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部角色</option>
+                <option value="official">官方角色</option>
+                <option value="audience">一般觀眾</option>
+              </select>
+            </label>
+            <label htmlFor="interaction-role-scheduled" className="grid gap-1 text-xs font-semibold text-slate-700">
+              排程方式
+              <select
+                id="interaction-role-scheduled"
+                name="scheduled"
+                value={roleScheduledFilter}
+                onChange={(event) => setRoleScheduledFilter(event.target.value as RoleScheduledFilter)}
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">全部方式</option>
+                <option value="scheduled">排程角色</option>
+                <option value="manual">手動角色</option>
+              </select>
+            </label>
+            {hasRoleFilters ? (
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                清除條件
+              </button>
+            ) : null}
+            <p aria-live="polite" className="text-xs font-semibold text-slate-600">
+              顯示 {filteredRoles.length} / {roles.length} 個互動角色
+            </p>
+          </div>
           <Link
             href="/interaction-roles/new"
             className={`mb-2 flex items-center gap-3 rounded-lg border p-3 transition ${
@@ -94,30 +450,47 @@ export function InteractionRolesWorkbench({
             }`}
           >
             <span className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 text-white">
-              <Plus size={18} />
+              <Plus size={18} aria-hidden="true" />
             </span>
             <span>
-              <span className="block text-sm font-semibold text-slate-950">新增使用者</span>
-              <span className="block text-xs text-slate-500">選頭像、輸入暱稱即可</span>
+              <span className="block text-sm font-semibold text-slate-950">新增互動角色</span>
+              <span className="block text-xs text-slate-600">選頭像、輸入暱稱即可</span>
             </span>
           </Link>
-          <div className="grid gap-2">
-            {roles.map((role) => (
-              <Link
-                key={role.id}
-                href={`/interaction-roles/${role.id}/edit`}
-                className={`flex items-center gap-3 rounded-lg border p-3 transition ${
-                  selectedRole?.id === role.id ? "border-blue-200 bg-blue-50 shadow-sm" : "border-transparent hover:bg-slate-50"
-                }`}
+          {roles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-600">
+              還沒有互動角色，建立第一個角色來安排直播互動。
+            </div>
+          ) : filteredRoles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-600">
+              <p>找不到符合條件的互動角色</p>
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="mt-3 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               >
-                {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
-                  <span className="block truncate text-xs text-slate-500">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
+                清除條件
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {filteredRoles.map((role) => (
+                <Link
+                  key={role.id}
+                  href={`/interaction-roles/${role.id}/edit`}
+                  className={`flex items-center gap-3 rounded-lg border p-3 transition ${
+                    selectedRole?.id === role.id ? "border-blue-200 bg-blue-50 shadow-sm" : "border-transparent hover:bg-slate-50"
+                  }`}
+                >
+                  {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
+                    <span className="block truncate text-xs text-slate-600">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -125,24 +498,100 @@ export function InteractionRolesWorkbench({
         <div className="flex flex-col gap-2 border-b border-border bg-gradient-to-r from-slate-950 via-blue-800 to-blue-600 p-5 text-white md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold text-blue-100">互動角色</p>
-            <h2 className="mt-1 text-2xl font-bold">{isEditing ? "編輯使用者" : "新增使用者"}</h2>
+            <h2 className="mt-1 text-2xl font-bold">{isEditing ? "編輯互動角色" : "新增互動角色"}</h2>
           </div>
           <p className="text-sm text-blue-50">向量插畫頭像，不使用真實人臉照。</p>
         </div>
 
-        <form action={upsertInteractionRoleAction} className="grid gap-6 p-5">
+        <form
+          action={formAction}
+          aria-busy={pending}
+          onSubmit={(event) => {
+            const submitter = event.nativeEvent.submitter;
+            const isDelete = submitter instanceof HTMLButtonElement && submitter.value === "delete";
+            if (avatarUploadBlocked && !isDelete) event.preventDefault();
+          }}
+          className="grid gap-6 p-5"
+        >
           <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
           {selectedRole ? <input type="hidden" name="id" value={selectedRole.id} /> : null}
-          <input type="hidden" name="avatarUrl" value={selectedAvatar} />
+          <input type="hidden" name="avatarMode" value={displayedAvatarMode} />
+          {displayedAvatarMode === "preset" ? (
+            <>
+              <input type="hidden" name="avatarUrl" value={displayedSelectedAvatar} />
+              <input type="hidden" name="avatarAssetId" value="" />
+              <input type="hidden" name="avatarUploadPhase" value="" />
+            </>
+          ) : null}
+
+          {error === "invalid_role" ? (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              角色資料無效，請檢查暱稱、角色類型、標籤與語氣後再試一次。
+            </p>
+          ) : null}
+          {error === "missing_role" ? (
+            <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              這個角色已不存在或不屬於目前商店，請從清單重新選擇或建立新角色。
+            </p>
+          ) : null}
+          {actionState.status === "error" ? (
+            <p role="alert" aria-live="assertive" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {actionState.message}
+            </p>
+          ) : null}
+
+          {isLegacyRole ? (
+            <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-900">
+              這個角色原本使用舊角色類型「{interactionRoleTypeLabel(selectedRole?.roleType ?? "official")}」，目前以官方角色呈現；儲存後會轉為官方角色，不會再寫回舊類型。
+            </p>
+          ) : null}
+
+          <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            互動角色會以商家預先設定的腳本出現在直播中；前台會明確標示。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
+          </p>
+
+          {selectedRole && !filteredRoles.some((role) => role.id === selectedRole.id) ? (
+            <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              <p>
+                目前正在編輯「{selectedRole.name}」，但它不符合目前篩選條件。篩選只影響左側清單，不會變更或捨棄編輯內容。
+              </p>
+              <button
+                type="button"
+                onClick={clearRoleFilters}
+                className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                清除條件
+              </button>
+            </div>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center shadow-inner">
+              <div className="mb-4 flex justify-center rounded-lg bg-white p-1 shadow-sm">
+                {(["preset", "custom"] as const).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => switchAvatarMode(item)}
+                    aria-pressed={displayedAvatarMode === item}
+                    className={`h-9 flex-1 rounded-md text-sm font-semibold transition ${
+                      displayedAvatarMode === item ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {item === "preset" ? "預設頭像" : "上傳頭像"}
+                  </button>
+                ))}
+              </div>
+
+              {displayedAvatarMode === "preset" ? (
+                <>
               <div className="mb-4 flex justify-center rounded-lg bg-white p-1 shadow-sm">
                 {(["male", "female"] as const).map((item) => (
                   <button
                     key={item}
                     type="button"
                     onClick={() => switchGender(item)}
+                    aria-pressed={gender === item}
                     className={`h-9 flex-1 rounded-md text-sm font-semibold transition ${
                       gender === item ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"
                     }`}
@@ -153,23 +602,35 @@ export function InteractionRolesWorkbench({
               </div>
 
               <div className="flex items-center justify-center gap-3">
-                <button type="button" onClick={() => shiftAvatar(-1)} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50">
-                  <ChevronLeft size={18} />
+                <button
+                  type="button"
+                  onClick={() => shiftAvatar(-1)}
+                  aria-label="上一個頭像"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                >
+                  <ChevronLeft size={18} aria-hidden="true" />
                 </button>
-                <Image src={selectedAvatar} alt="目前選取頭像" width={150} height={150} unoptimized className="h-36 w-36 rounded-3xl bg-white p-3 shadow-lg" />
-                <button type="button" onClick={() => shiftAvatar(1)} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50">
-                  <ChevronRight size={18} />
+                <Image src={displayedSelectedAvatar} alt="目前選取頭像" width={150} height={150} unoptimized className="h-36 w-36 rounded-3xl bg-white p-3 shadow-lg" />
+                <button
+                  type="button"
+                  onClick={() => shiftAvatar(1)}
+                  aria-label="下一個頭像"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                >
+                  <ChevronRight size={18} aria-hidden="true" />
                 </button>
               </div>
 
               <div className="mt-4 grid grid-cols-5 gap-2">
                 {allSeeds.map((seed, index) => {
-                  const url = avatarUrl(seed);
+                  const url = interactionRoleAvatarUrl(seed);
                   return (
                     <button
                       key={seed}
                       type="button"
-                      onClick={() => setAvatarIndex(index)}
+                      onClick={() => { setActionStateEdited(true); setSelectedAvatar(url); }}
+                      aria-label={`選擇頭像 ${index + 1}`}
+                      aria-pressed={selectedAvatar === url}
                       className={`rounded-xl border bg-white p-1 transition hover:-translate-y-0.5 hover:shadow-sm ${
                         selectedAvatar === url ? "border-blue-500 ring-2 ring-blue-100" : "border-slate-200"
                       }`}
@@ -179,53 +640,106 @@ export function InteractionRolesWorkbench({
                   );
                 })}
               </div>
+                </>
+              ) : (
+                <div className="grid gap-3 text-left">
+                  <MediaUploadField
+                    key={avatarHydrationKey}
+                    kind="image"
+                    label="角色頭像"
+                    description="直接上傳角色頭像；完成後儲存表單即可套用。"
+                    defaultUrl={displayedSafeCustomAvatarUrl}
+                    defaultAssetId={displayedCustomAvatarAssetId}
+                    urlInputName="avatarUrl"
+                    assetIdInputName="avatarAssetId"
+                    statusInputName="avatarUploadPhase"
+                    allowExternalUrlFallback
+                    hydrationKey={avatarHydrationKey}
+                    onValueChange={updateCustomAvatar}
+                    onBlockingChange={setAvatarUploadBlocked}
+                  />
+                  {avatarUploadBlocked ? (
+                    <p role="alert" aria-live="assertive" className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      頭像上傳尚未完成，請完成上傳或移除未完成的檔案後再儲存。
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4">
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 暱稱
-                <input name="name" required defaultValue={selectedRole?.name ?? ""} placeholder="Ex: 王小明" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                <input name="name" required maxLength={160} value={displayedName} onChange={(event) => { setActionStateEdited(true); setName(event.target.value); }} placeholder="例如：直播小編" className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
               </label>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   角色類型
-                  <select name="roleType" defaultValue={selectedRole?.roleType ?? "official"} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
+                  <select name="roleType" value={displayedRoleType} onChange={(event) => switchRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
                     <option value="official">官方角色</option>
-                    <option value="ai_host">AI 主持人</option>
-                    <option value="system_assistant">系統助手</option>
-                    <option value="support">客服助手</option>
+                    <option value="audience">一般觀眾</option>
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   顯示標籤
-                  <input name="label" defaultValue={selectedRole?.label ?? roleTypeLabel(selectedRole?.roleType ?? "official")} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                  <input name="label" required maxLength={80} value={displayedLabel} onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 語氣設定
-                <textarea name="tone" defaultValue={selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。"} rows={4} className="rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                <textarea name="tone" maxLength={500} value={displayedTone} onChange={(event) => { setActionStateEdited(true); setTone(event.target.value); }} rows={4} className="rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
               </label>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input name="isActive" type="checkbox" defaultChecked={selectedRole?.isActive ?? true} className="h-4 w-4 accent-blue-600" />
-                啟用使用者
+                <input name="isActive" type="checkbox" checked={displayedIsActive} onChange={(event) => { setActionStateEdited(true); setIsActive(event.target.checked); }} className="h-4 w-4 accent-blue-600" />
+                啟用角色
+              </label>
+              <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
+                <input name="isScheduled" type="checkbox" value="true" checked={visibleActionStateValues?.isScheduled ?? isScheduled} onChange={(event) => { setActionStateEdited(true); setIsScheduled(event.target.checked); }} className="mt-0.5 h-4 w-4 accent-violet-600" />
+                <span>
+                  <span className="block">排程角色</span>
+                  <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">標記此角色供直播排程與後續分析辨識；前台呈現與數據排除將在直播互動流程完成後生效。</span>
+                </span>
               </label>
             </div>
           </div>
 
+          <InteractionRolePreview
+            avatarUrl={displayedPreviewAvatarUrl}
+            name={previewName}
+            label={previewLabel}
+            tone={displayedTone.trim()}
+            isActive={displayedIsActive}
+            presentationRole={displayedRoleType}
+            isScheduled={visibleActionStateValues?.isScheduled ?? isScheduled}
+          />
+
+          {selectedRole ? <InteractionRoleUsageImpact roleUsage={roleUsage} isActive={isActive} /> : null}
+
           <div className="flex justify-end gap-2 border-t border-border pt-4">
             {selectedRole ? (
-              <button
+              <FormSubmitButton
                 formAction={deleteInteractionRoleAction}
+                name="intent"
+                value="delete"
+                formNoValidate
+                confirmMessage={`確定刪除「${selectedRole.name}」？${roleUsage.length > 0 ? `目前有 ${roleUsage.length} 個腳本引用；` : ""}既有事件中的角色會改顯示為官方系統。`}
+                pendingChildren={<>刪除中…</>}
+                pendingMessage="正在刪除互動角色"
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
               >
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
                 刪除
-              </button>
+              </FormSubmitButton>
             ) : null}
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark">
-              {selectedRole ? <Save size={16} /> : <Plus size={16} />}
+            <FormSubmitButton
+              disabled={avatarUploadBlocked}
+              pendingChildren={<>儲存中…</>}
+              pendingMessage={selectedRole ? "正在儲存互動角色" : "正在新增互動角色"}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark"
+            >
+              {selectedRole ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
               {selectedRole ? "儲存" : "新增"}
-            </button>
+            </FormSubmitButton>
           </div>
         </form>
       </section>

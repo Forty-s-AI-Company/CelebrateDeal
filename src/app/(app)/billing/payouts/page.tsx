@@ -1,6 +1,7 @@
 import { Landmark } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorFinance } from "@/lib/auth";
+import { maskBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -12,7 +13,7 @@ function statusTone(status: string) {
 }
 
 export default async function BillingPayoutsPage() {
-  const vendor = await requireVendor();
+  const { vendor } = await requireVendorFinance("/billing/payouts");
   const batches = await getDb().payoutBatch.findMany({
     where: { items: { some: { vendorId: vendor.id } } },
     orderBy: { batchDate: "desc" },
@@ -80,19 +81,26 @@ export default async function BillingPayoutsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {batch.items.map((item) => (
+                    {batch.items.map((item) => {
+                      const bankAccount = maskBankAccount({
+                        accountName: item.bankAccountDisplayName,
+                        bankCode: item.bankCodeDisplay,
+                        accountNumber: item.bankAccountDisplayNumber,
+                      });
+                      return (
                       <tr key={item.id} className="hover:bg-slate-50/70">
                         <td className="px-5 py-4 font-semibold text-slate-950">{item.vendor.name}</td>
                         <td className="px-5 py-4">
                           <Landmark className="mr-2 inline text-slate-400" size={16} />
-                          {item.bankCode} / {item.bankAccountNumber}
+                          {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
-                        <td className="px-5 py-4">{item.bankAccountName}</td>
+                        <td className="px-5 py-4">{bankAccount.accountName}</td>
                         <td className="px-5 py-4 font-bold text-slate-950">{formatCurrency(item.payoutAmountCents)}</td>
                         <td className="px-5 py-4"><Badge tone={statusTone(item.status)}>{item.status}</Badge></td>
                         <td className="px-5 py-4 text-slate-500">{item.failReason ?? "-"}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

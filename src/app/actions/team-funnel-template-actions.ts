@@ -1,9 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAuth, requireVendor } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { getDb } from "@/lib/db";
 import { TeamFunnelAccessDeniedError } from "@/lib/team-funnel-access";
 import {
   createTeamFunnelOriginalPage,
@@ -13,8 +11,7 @@ import {
   type TeamFunnelPageField,
 } from "@/lib/team-funnel-pages";
 import {
-  createTeamFunnelTemplateProductSlot,
-  TeamFunnelProductSlotConflictError,
+  teamFunnelProductSlotKeys,
   type TeamFunnelProductSlotKey,
 } from "@/lib/team-funnel-product-slots";
 import {
@@ -24,7 +21,6 @@ import {
 } from "@/lib/team-funnel-sharing";
 
 const fields = ["HEADLINE", "SUBHEADLINE", "BODY", "CTA_LABEL", "CTA_URL", "PRODUCT_SLOTS"] as const;
-const slotKeys = ["main_product", "bundle_product", "join_member", "consultation"] as const;
 
 type TeamTemplateActionState = {
   status: "idle" | "success" | "error";
@@ -75,86 +71,22 @@ function lockedFields(formData: FormData): TeamFunnelPageField[] {
     .filter((field): field is TeamFunnelPageField => typeof field === "string" && (fields as readonly string[]).includes(field));
 }
 
-async function addSelectedProductSlots(formData: FormData, teamId: string, templateVersionId: string) {
-  for (const slotKey of slotKeys) {
+function selectedProductSlots(formData: FormData) {
+  return teamFunnelProductSlotKeys.flatMap((slotKey) => {
     const productId = value(formData, `product_${slotKey}`);
-    if (!productId) continue;
-    await createTeamFunnelTemplateProductSlot({
-      teamId,
-      templateVersionId,
+    return productId ? [{
       slotKey: slotKey as TeamFunnelProductSlotKey,
       productId,
       offerLabel: optionalValue(formData, `offerLabel_${slotKey}`),
-    });
-  }
-}
-
-/**
- * `liveId` belongs to the source page rather than a template version. The
- * template services intentionally own template/version writes; this scoped
- * lookup only allows the selected team's existing webinar to be attached to
- * that source page.
- */
-async function selectedWebinarId(formData: FormData, vendorId: string, teamId: string) {
-  const webinarId = optionalValue(formData, "webinarId");
-  if (!webinarId) return null;
-
-  const webinar = await getDb().live.findFirst({
-    where: { id: webinarId, vendorId, teamId },
-    select: { id: true },
+    }] : [];
   });
-  if (!webinar) throw new TeamFunnelAccessDeniedError("missing_resource");
-  return webinar.id;
-}
-
-async function updateSourcePage({
-  pageId,
-  vendorId,
-  teamId,
-  templateId,
-  templateVersionId,
-  vendorMemberId,
-  slug,
-  content,
-  webinarId,
-}: {
-  pageId: string;
-  vendorId: string;
-  teamId: string;
-  templateId?: string;
-  templateVersionId?: string;
-  vendorMemberId: string;
-  slug: string;
-  content: TeamFunnelPageContent;
-  webinarId: string | null;
-}) {
-  const result = await getDb().partnerFunnelPage.updateMany({
-    where: {
-      id: pageId,
-      vendorId,
-      teamId,
-      promoter: { vendorMemberId },
-      ...(templateId ? { templateVersion: { templateId } } : {}),
-    },
-    data: {
-      ...(templateVersionId ? { templateVersionId } : {}),
-      slug,
-      liveId: webinarId,
-      headline: content.headline,
-      subheadline: content.subheadline ?? null,
-      body: content.body ?? null,
-      ctaLabel: content.ctaLabel,
-      ctaUrl: content.ctaUrl ?? null,
-    },
-  });
-  if (result.count !== 1) throw new TeamFunnelAccessDeniedError("missing_resource");
 }
 
 function actionError(error: unknown): TeamTemplateActionState {
   if (error instanceof TeamFunnelAccessDeniedError) {
     return { status: "error", message: "你沒有管理這個團隊模板的權限，或該資源已不存在。" };
   }
-  if (error instanceof TeamFunnelConflictError || error instanceof TeamFunnelProductSlotConflictError || error instanceof TeamFunnelShareConflictError) {
+  if (error instanceof TeamFunnelConflictError || error instanceof TeamFunnelShareConflictError) {
     return { status: "error", message: "這項設定與既有資料衝突，請更新頁面後再試一次。" };
   }
   if (error instanceof Error && error.message === "Invalid CSRF token.") {
@@ -205,29 +137,17 @@ export async function manageTeamFunnelTemplateAction(
     if (validationError) return { status: "error", message: validationError };
     if (!isSlug(value(formData, "slug"))) return { status: "error", message: "原始頁網址只能使用小寫英數與連字號。" };
 
-    const [vendor, auth] = await Promise.all([requireVendor(), requireAuth()]);
-    if (!auth.member) return { status: "error", message: "你沒有管理這個團隊模板的權限，或該資源已不存在。" };
-    const webinarId = await selectedWebinarId(formData, vendor.id, teamId);
-
     if (operation === "create") {
       const name = value(formData, "name");
       if (!name) return { status: "error", message: "請填寫模板名稱。" };
-      const result = await createTeamFunnelOriginalPage({
+      await createTeamFunnelOriginalPage({
         teamId,
         name,
         slug: value(formData, "slug"),
         content,
         lockedFields: lockedFields(formData),
-      });
-      await addSelectedProductSlots(formData, teamId, result.version.id);
-      await updateSourcePage({
-        pageId: result.page.id,
-        vendorId: vendor.id,
-        teamId,
-        vendorMemberId: auth.member.id,
-        slug: value(formData, "slug"),
-        content,
-        webinarId,
+        productSlots: selectedProductSlots(formData),
+        webinarId: optionalValue(formData, "webinarId"),
       });
       revalidatePath("/team-templates");
       return { status: "success", message: "原始頁與第一個模板版本已建立。" };
@@ -243,18 +163,12 @@ export async function manageTeamFunnelTemplateAction(
         templateId,
         content,
         lockedFields: lockedFields(formData),
-      });
-      await addSelectedProductSlots(formData, teamId, result.version.id);
-      await updateSourcePage({
-        pageId: sourcePageId,
-        vendorId: vendor.id,
-        teamId,
-        templateId,
-        templateVersionId: result.version.id,
-        vendorMemberId: auth.member.id,
-        slug: value(formData, "slug"),
-        content,
-        webinarId,
+        productSlots: selectedProductSlots(formData),
+        sourcePage: {
+          pageId: sourcePageId,
+          slug: value(formData, "slug"),
+          webinarId: optionalValue(formData, "webinarId"),
+        },
       });
       revalidatePath("/team-templates");
       return { status: "success", message: `版本 v${result.version.version} 已發布。既有夥伴副本不會被覆寫。` };

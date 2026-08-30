@@ -4,7 +4,6 @@ import { trackClientAnalytics, type ClientAnalyticsEvent, type ClientAnalyticsFe
 const event: ClientAnalyticsEvent = {
   liveId: "live-1",
   vendorId: "vendor-1",
-  visitorId: "visitor-1",
   eventType: "product_click",
   payload: { productId: "product-1", ref: "partner-1" },
 };

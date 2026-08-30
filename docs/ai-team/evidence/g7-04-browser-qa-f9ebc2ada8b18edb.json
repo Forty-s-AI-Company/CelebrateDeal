@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "f9ebc2ada8b18edb",
+  "startedAt": "2026-08-08T04:17:28.725Z",
+  "finishedAt": "2026-08-08T04:19:12.871Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "FAIL",
+    "server": "NOT_STARTED",
+    "browser": "NOT_STARTED"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": null,
+    "rwd": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "piiEnvelopeLeak": "NOT_RUN"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": "NEXT_TYPECHECK_FAILED",
+    "nextBuildDetails": [
+      "⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache",
+      "▲ Next.js 16.2.11 (webpack)",
+      "- Experiments (use with caution):",
+      "· clientTraceMetadata",
+      "Creating an optimized production build ...",
+      "✓ Compiled successfully in 44s",
+      "Running TypeScript ...",
+      "Failed to type check.",
+      ".next/types/app/(app)/billing/payment-methods/page.ts:37:29",
+      "Type error: Type 'PaymentMethodsPageProps | undefined' does not satisfy the constraint 'PageProps'.",
+      "Type 'undefined' is not assignable to type 'PageProps'.",
+      "35 |",
+      "36 | // Check the prop type of the entry function",
+      "> 37 | checkFields<Diff<PageProps, FirstArg<TEntry['default']>, 'default'>>()",
+      "|                             ^",
+      "38 |",
+      "39 | // Check the arguments and return type of the generateMetadata function",
+      "40 | if ('generateMetadata' in entry) {",
+      "Next.js build worker exited with code: 1 and signal: null"
+    ]
+  },
+  "failure": "next-build-failed"
+}

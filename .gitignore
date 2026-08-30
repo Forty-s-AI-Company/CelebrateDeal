@@ -17,6 +17,14 @@
 /reports/playwright-results
 /reports/playwright-html
 /reports/lighthouse
+/reports/ai-team/
+/reports/quality/
+/reports/security/
+/reports/night-review/**
+!/reports/night-review/20260725T194948Z/
+!/reports/night-review/20260725T194948Z/NIGHT_FINAL_REPORT.md
+!/reports/night-review/20260725T194948Z/CLOUD_FINAL_AUDIT.md
+!/reports/night-review/20260725T194948Z/GEMINI_COVERAGE_REVIEW.md
 
 # next.js
 /.next/
@@ -69,3 +77,47 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Local encrypted backup runtime artifacts (never commit archives, checksums, logs, or keys)
+/ops/backup/runtime/
+/ops/backup/logs/
+/ops/backup/*.dump
+/ops/backup/*.age
+/ops/backup/*.sha256
+/ops/backup/keys/*.agekey
+/ops/backup/rclone/
+/ops/backup/*.rclone.conf
+.ai-team/.venv/
+.ai-team/logs/
+.ai-team/backups/
+.ai-team/tmp/
+.ai-team/state/
+.ai-team/worktrees/
+
+# Legacy AI-team prompts and agent descriptors are preserved in the external
+# backlog-liquidation archive. They are not part of the maintained runtime.
+/.ai-team-migration-analysis.md
+/.ai-team/scripts/Invoke-WP06MigrationReview.ps1
+/.ai-team/scripts/Invoke-WP07AuthTriage.ps1
+/.ai-team/scripts/Invoke-WP12BankKeyLifecycleReview.ps1
+/.ai-team/scripts/Invoke-WP13CommissionReview.ps1
+/.ai-team/scripts/Invoke-WP13LegacyProbe.ps1
+/.ai-team/scripts/Invoke-WP14CommissionAccountingReview.ps1
+/.ai-team/scripts/Invoke-WP14OpeningSnapshotProbe.ps1
+/.codex/agents/analyst.toml
+/.codex/agents/explorer.toml
+/.codex/agents/planner.toml
+/.codex/agents/reviewer.toml
+/.codex/agents/worker-deep.toml
+/.codex/agents/worker.toml
+/GOAL-AI-TEAM-PROMPT.md
+/docs/ai-team/current-work-package.md
+/docs/ai-team/recovery-audit-20260727.md
+/docs/codex-goal/CELEBRATEDEAL_PLAN.md
+/docs/codex-goal/COMMAND_LOG.md
+/docs/codex-goal/GOAL_MANUAL_RESUME_PROMPT.md
+/docs/codex-goal/GOAL_RESUME_PROMPT.md
+/docs/codex-goal/GOAL_RUNBOOK.md
+/docs/codex-goal/GOAL_START_PROMPT.md
+/docs/codex-goal/README.md
+/docs/codex-goal/REPOSITORY_HYGIENE.md

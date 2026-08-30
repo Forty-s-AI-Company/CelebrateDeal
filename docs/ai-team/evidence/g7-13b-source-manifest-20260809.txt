@@ -1,0 +1,37 @@
+# G7-13B source manifest
+# UTC: 2026-08-08T18:30:39.473Z
+# Algorithm: SHA-256
+a0af470f43a1b7ee88402f2a9fb5bf511ed92da6784eaa64e635f22a4121b2eb  prisma/schema.prisma
+0d6ce5f12a21ff5588c5fc4c939cc768ef4f49b53088106462f585e4005e70c4  prisma/migrations/20260809020000_g7_13b_form_submission_verification/migration.sql
+3595a589c9330810c0c79d193ebf73fd24a0b0786ab7f743f5fbbff9ee693c9d  prisma.g7-form-verification-disposable.config.mjs
+cbc059bda79b6500db44ec46209093d3c3250727247972c2be370248ee5db365  vitest.g7-form-verification-db.config.ts
+aa3ce199bcdfc03982d7393ba1e3803cd2cc6136c6b88f71caa98456e728ccb9  src/app/api/form-submissions/route.ts
+bb6be3302c6da8b5a037c7cdcf56af58e8f21be425ac82ca600a074bda65172e  src/app/api/form-submissions/route.test.ts
+17a43040b82e20b2a28308d1a6891e547a224cc0dd2f52343d8465405e5fbbac  src/app/api/form-submissions/route.db.test.ts
+05975e2f562e877b903e7519aec9e40929e3fa6d365e543f039dd0c0cf625a34  src/app/api/form-submissions/verify/route.ts
+422fda39d6572066ac4ebea0fe0d08a413862d9c1d107c69c5a628437784c444  src/app/api/form-submissions/verify/route.test.ts
+daa094e0c6e23e706fcbebf9f28abed58a80abacf931bb28b1e8f5805ce00e20  src/app/verify-registration/page.tsx
+ad74ad30b7dcc52e90956133223bcc095123cbe07424ec789a8152112c9d836a  src/app/verify-registration/page.test.tsx
+a0b0a552c7c7011440cdb1fc0617a2e8794fc3d51fcce846904876e4c7857917  src/lib/form-submission-verification.ts
+99368a4d19cfe64162aed805b692162a88a6e4236e2030c8a37db49c17fce7e5  src/lib/form-submission-verification.test.ts
+d8ec2742eafa1524c727c23c6c9eb872527802ab734c01ee30128434ce04f590  src/lib/form-submission-verification-domain.ts
+fa2626f3de861cc10907b0b04da14847c46c8efdf881cf7e8c720cf7644835d4  src/lib/form-submission-verification.db.test.ts
+4073a2907698ea99b552b797d0d26b7fe8dc56e2d6a0a1765565d8e018f1d64d  src/lib/email-delivery.ts
+fc265c9d66699e7dd3d6ee0a3d8b705e7fef417d672b844ef67652ddfed4993f  src/lib/email-delivery.test.ts
+38ac203330f31242e47ee06b5b922ec850e93c9281f2f2b7e55947a62bc84a17  src/lib/team-funnel-attribution.ts
+4eb2791ea7922d2d11439762762f07f3b778a2bb570ed87fe3c32efde9a51ab2  src/lib/team-funnel-attribution.test.ts
+5c35e4109c60630216987e348f8df5380504fe80cf13d518e9b25fe39d86a9a1  src/lib/team-funnel-attribution-source-attribution.test.ts
+8a7148266a3eda14835a7071814070528b3fe990a3aa685b44d29b55a2375ff0  src/lib/team-funnel-performance.ts
+ef931c7fe6269feb20338081237073a55f08c08880dc9614e6af22cf0645416a  src/lib/team-funnel-performance.test.ts
+0b601c7e29f4480ae745793e9b7d5ca35ff258638af37adac6984c48696ba949  src/components/lead-form.tsx
+7ff7ca76cedea61845dec110f6df1d0f63f629a75bde998c84b8866d8bc0aa6a  src/components/lead-form.test.tsx
+29c67e0ac6d114b8c60e4001ea4c8dcf7b3dcd21b5d51c7190ec22a480064fd1  src/app/(app)/dashboard/page.tsx
+c6130f9fc0e60a10fe73af52b92b4189e7f4092fb686b8127a94dba844552e74  src/app/(app)/dashboard/page.test.tsx
+1405786a42071873b518d4ab95cd31d1aed191e9c3d678bc0a1e24eac1847995  src/app/(app)/forms/page.tsx
+78c24482f8a9ea99924a151558613916910e18929f35634872337d423dd87cf0  src/app/(app)/forms/page.test.tsx
+9fa4ab3a1c0a374161f5e7ce2de8569a1b9d792dcd9299f7cd102ae29a384c01  src/app/(app)/forms/[id]/submissions/page.tsx
+efba7dd512a581505d3fe16ac5f93eed6a10bcd12c6e5f425daf8f00892e0390  src/app/(app)/forms/[id]/submissions/page.test.tsx
+75c0a1b27b8781cd9c41516f459a44ca466fc1babb791eb2e2d24cf6812db176  src/app/(app)/lives/[id]/analytics/page.tsx
+2a1c73f05bfc8deb3f5b6b9afe3fb8d1c03458bbb129ab5a044d5fa4913e0cc6  src/app/(app)/lives/[id]/analytics/page.test.tsx
+6f28f0ccf1de552875bd3bfbd4f030dbe98b7f5f3fd6bf441e2a789363f9e136  src/app/form/[slug]/page.tsx
+0383b431ee52f5cdab3d240c19b1b784fc72370c0be4aec2a840d4c44956c1c9  src/app/form/[slug]/page.test.tsx

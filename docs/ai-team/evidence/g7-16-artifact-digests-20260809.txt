@@ -1,0 +1,5 @@
+c42eaadf45dee47a2bbbcf475dfb15287a045e45e08f9721a079404c748c3e66  docs/launch/current-function-scorecard-20260809.json
+10a302e238e675c4c3d7965f1d8652dae394076ed5b39ea036b070d982c27c27  scripts/g7-function-scorecard-reconciliation.test.mjs
+859ab1e4af52e2a09cc3b45f0a59cb2c90c3b327f4ff70e76db1f7a38739c9f9  docs/ai-team/evidence/g7-16-function-scorecard-reconciliation-20260809.md
+075ae5c3fdb250d9c144dc2badeae81daaf7aea2daff6f2d00ab87d84e4adeef  .ai-team/reports/g7-16-function-scorecard-reconciliation-20260809.json
+d6c14cf7d884788cc9c78c9cacf854170f42ef33062a6c717171bb01a329e1c7  docs/ai-team/evidence/g7-16-source-manifest-20260809.txt

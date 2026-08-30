@@ -1,6 +1,6 @@
 # CelebrateDeal External Service Validation Runbook
 
-最後更新：2026-07-09
+最後更新：2026-08-21
 
 ## 1. Supabase
 
@@ -49,6 +49,10 @@ vercel env pull .env.production.local --environment=production --yes
 npm run preflight
 npm run external:smoke
 ```
+
+`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true`、完全相符的 `SMOKE_EXPECTED_HOSTNAME`，以及先通過 `scripts/validate-non-production-owner-authorization.mjs` 的新 owner authorization。`AI_TEAM_PROVIDER_ENVIRONMENT` 也必須與 `SMOKE_ENVIRONMENT` 完全相符；缺少或不相符時，runner 會在第一個 network request 前停止。loopback target 的 health／admin preflight 可做本地診斷，但 Resend、PostHog、Sentry、Cloudflare、PayUni 等 provider smoke route 仍會在第一個 provider request 前要求同一份 authorization。不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
+
+Smoke runner 會在記憶體內讀取 response 以判斷結果，但 stdout 只輸出固定的 HTTP／transport／payload／application 分類與布林狀態，不輸出 raw provider response、URL、UID、stream key、order number、email、Token 或錯誤訊息。可保存的輸出仍只代表 sanitized local／non-Production evidence，不能直接升格為 provider PASS。
 
 - `/api/health` 正常。
 - `/api/admin/preflight` 正常。
@@ -248,3 +252,68 @@ RATE_LIMIT_PROVIDER=cloudflare_waf
 
 - `memory` 只適合本機與單節點 smoke test。
 - production 不建議只靠 app server in-memory rate limit。
+
+## 9. Provider-specific sanitized receipt
+
+每次受控 non-Production external validation 都要把結果轉成 `scripts/external-provider-evidence.mjs` 的 schema，再交給 `validateExternalProviderReceipt` 或 `parseAndValidateExternalProviderReceipt`。只保存 `PASS`／`FAILED`／`BLOCKED`／`PENDING_EXTERNAL`／`PENDING_HUMAN`、fixed check enums、opaque evidence reference 與 side-effect counters；不要把 raw response、完整 URL、Token、Cookie、email、order／trade number、provider reference 或 connection string 寫進 receipt 或 CI artifact。
+
+本機契約驗證：
+
+```bash
+node --test scripts/external-provider-evidence.test.mjs scripts/validate-external-provider-evidence.test.mjs
+node scripts/validate-external-provider-evidence.mjs docs/ai-team/evidence/external-provider-receipt.json
+```
+
+CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON；它只輸出 receipt schema validation 結果，不會把驗證結果升格成 provider readiness。`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。
+
+## 10. Staging migration sanitized receipt
+
+受控 staging migration status 執行完成後，只能把已去識別的 migration facts 轉成 `scripts/staging-migration-evidence.mjs` schema，再用 read-only CLI 驗證。CLI 不執行 migration、不連資料庫、不讀取 environment、不寫入 receipt；`BLOCKED` 或 `FAILED` receipt 可以通過 schema validation，但不能升格為 staging readiness。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-staging-migration-evidence.test.mjs
+node scripts/validate-staging-migration-evidence.mjs docs/ai-team/evidence/staging-migration-receipt.json
+```
+
+CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON，並用 canonical `realpath` 拒絕 symlink 指向 evidence root 外的檔案。輸出只包含固定 result、environment class、database identity class 與 sanitized flag；不得保存 migration name、connection string、raw Prisma output 或 credentials。
+
+## 11. Human owner acceptance sanitized receipt
+
+真人 owner 完成 CAT10 packet 後，只能提交去識別 receipt 給 `scripts/validate-human-owner-acceptance-evidence.mjs`。receipt 必須涵蓋 `merchant_owner`、`support_operator`、`finance_owner`、`privacy_policy_owner`、`release_owner` 五個責任角色，以及退款、隱私、retention、data request、客服 escalation 與 release decision checks。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
+node scripts/validate-human-owner-acceptance-evidence.mjs docs/ai-team/evidence/owner-acceptance-receipt.json
+```
+
+CLI 只讀 `docs/ai-team/evidence` 或 `.ai-team/reports` 下的 receipt，要求 opaque `holderRef`、`scopeRef`、`manualSignatureRef` 與 `evidenceRef`，拒絕 `synthetic:` reference、raw URL、Token、Cookie、個資、Production approval、缺角色、缺 check 或 `GO` 搭配未完成 evidence。`CANDIDATE` 只代表 receipt schema 完整，不代表法務意見、外部服務、PayUni reconciliation、staging readiness 或 `PRODUCTION_READY`。
+
+## 12. Non-Production owner authorization
+
+所有新的 staging、Preview、Sandbox 或 external provider action，先由受控 broker 注入下列 allowlisted process-environment shape，再執行 authorization contract。validator 只輸出固定結果，不輸出 authorization reference、owner reference、scope reference 或任何 Secret；缺少授權時必須在任何 network／provider action 前停止。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-non-production-owner-authorization.test.mjs
+node scripts/validate-non-production-owner-authorization.mjs
+```
+
+必要欄位為 `AI_TEAM_AUTHORIZATION_RECORD_REF`、`AI_TEAM_OWNER_REF`、`AI_TEAM_SCOPE_REF`、`AI_TEAM_NEW_EXECUTION_APPROVED=true`、`AI_TEAM_NON_PRODUCTION=true`、`AI_TEAM_FORBIDDEN_PROBE_REUSE=false` 與 `AI_TEAM_PROVIDER_ENVIRONMENT=preview|staging|sandbox`。`production`、缺漏欄位、非 opaque reference 或重用禁止 probe 都會 fail closed。這個 contract 只證明執行前 authorization shape，不代表 staging、external provider、PayUni 或 release readiness 已通過。
+
+## 13. Release evidence bundle aggregation
+
+所有 release gate receipt 收集完成後，先建立 sanitized release evidence bundle，再執行 `scripts/validate-release-evidence-bundle.mjs`。bundle 必須固定包含 remote CI、staging lineage／migration／recovery／rollback、Cloudflare、Resend、Sentry、PostHog、durable rate limit、PayUni Sandbox reconciliation、policy review 與 human owner acceptance 共 13 個 gate。每個 gate 必須綁定同一 `sourceCommit`，並提供 opaque `evidenceRef`、`ownerRef`、`scopeRef`、closed result 與 failure reason。
+
+本機契約驗證：
+
+```bash
+node --test scripts/validate-release-evidence-bundle.test.mjs
+node scripts/validate-release-evidence-bundle.mjs docs/ai-team/evidence/release-evidence-bundle.json
+```
+
+CLI 只讀安全 evidence roots，拒絕 traversal、敏感路徑、symlink escape、synthetic reference、raw payload、Production approval 與 source lineage drift。`GO` 搭配任何非 `PASS` gate 會 fail closed；`CANDIDATE` 只表示 bundle schema 與聚合規則通過，仍需 current completion audit 對照實際 receipt，不能直接改寫 `SANDBOX_READY` 或 `PRODUCTION_READY`。

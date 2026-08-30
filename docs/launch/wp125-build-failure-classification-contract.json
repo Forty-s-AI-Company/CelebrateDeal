@@ -1,0 +1,79 @@
+{
+  "work_package": "WP-125",
+  "title": "Sanitized No-dotenv Build Failure Classifier",
+  "timebox_minutes": 90,
+  "scope": "LOCAL_ONLY",
+  "objective": "對 WP-124 hermetic build exit 1 做不保存 raw log 的 deterministic 分類；只有根因完全落在 WP-125 新檔才可 remediation。",
+  "classifications": [
+    "SYNTHETIC_ENV_CONTRACT",
+    "MIRROR_COMPLETENESS",
+    "NODE_MODULES_JUNCTION",
+    "NEXT_WEBPACK_BOUNDARY",
+    "MANIFESTED_WORKSPACE_COMPILE",
+    "UNKNOWN_FAIL_CLOSED"
+  ],
+  "owned_remediation": [
+    "mirror safe source allowlist",
+    "junction/module-resolution probe",
+    "synthetic-safe environment name contract",
+    "classifier/runner argument passing"
+  ],
+  "synthetic_environment_allowlist": [
+    "NODE_ENV",
+    "VERCEL_ENV",
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "JOB_SECRET",
+    "CSRF_SECRET",
+    "RATE_LIMIT_PROVIDER",
+    "PAYMENT_PROVIDER",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "SENTRY_DSN",
+    "SENTRY_DISABLE_AUTO_UPLOAD",
+    "NEXT_PUBLIC_POSTHOG_KEY",
+    "NEXT_PUBLIC_POSTHOG_HOST",
+    "NEXT_TELEMETRY_DISABLED",
+    "NPM_CONFIG_OFFLINE",
+    "npm_config_offline",
+    "NPM_CONFIG_AUDIT",
+    "npm_config_audit",
+    "NPM_CONFIG_FUND",
+    "npm_config_fund"
+  ],
+  "preserve_only": [
+    "WP-124 artifacts",
+    "application source",
+    "Next.js configuration",
+    "package scripts and lockfile",
+    "Prisma schema and migrations",
+    "all existing dirty entries",
+    ".env*"
+  ],
+  "receipt_policy": {
+    "raw_stdout": false,
+    "raw_stderr": false,
+    "environment_values": false,
+    "dotenv_content": false,
+    "absolute_paths": false,
+    "output": "allowlisted classification, stage, exit code, counts and digest only"
+  },
+  "score_gate": {
+    "category": "CAT09",
+    "before": 6.5,
+    "target_if_remediated_build_pass": 7.0,
+    "total_before": 70.5,
+    "target_if_remediated_build_pass": 71.0,
+    "preawarded": false
+  },
+  "stop_conditions": [
+    "target path exists or is dirty",
+    "classification remains UNKNOWN_FAIL_CLOSED",
+    "raw output or dotenv content is required",
+    "remediation needs application/config/package/lockfile or existing dirty files",
+    "real secret, URL, network, dependency install, DB, provider, staging or Production is required",
+    "workspace preservation cannot be proven",
+    "timebox exceeds 90 minutes"
+  ]
+}

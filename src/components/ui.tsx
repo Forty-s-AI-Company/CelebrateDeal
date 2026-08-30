@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { clsx } from "clsx";
+import { FormSubmitButton } from "@/components/form-submit-button";
 
 export function PageHeader({
   title,
@@ -11,10 +12,10 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p> : null}
+    <div className="mb-6 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold text-slate-950 [overflow-wrap:anywhere]">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl text-sm text-slate-600 [overflow-wrap:anywhere]">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -35,16 +36,20 @@ export function ButtonLink({
   href,
   children,
   tone = "primary",
+  prefetch,
 }: {
   href: string;
   children: React.ReactNode;
   tone?: "primary" | "secondary" | "cta";
+  /** Keeps the Next.js default unless a caller explicitly opts out. */
+  prefetch?: boolean;
 }) {
   return (
     <Link
       href={href}
+      prefetch={prefetch}
       className={clsx(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition",
         tone === "primary" && "bg-primary text-white hover:bg-primary-dark",
         tone === "cta" && "bg-cta text-white hover:bg-cta-dark",
         tone === "secondary" && "border border-border bg-white text-slate-700 hover:bg-slate-50",
@@ -55,19 +60,38 @@ export function ButtonLink({
   );
 }
 
-export function SubmitButton({ children = "儲存" }: { children?: React.ReactNode }) {
+export function SubmitButton({
+  children = "儲存",
+  pendingChildren = "儲存中…",
+  pendingMessage = "正在儲存，請勿重複送出。",
+  disabled = false,
+}: {
+  children?: React.ReactNode;
+  pendingChildren?: React.ReactNode;
+  pendingMessage?: string;
+  disabled?: boolean;
+}) {
   return (
-    <button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">
+    <FormSubmitButton
+      pendingChildren={pendingChildren}
+      pendingMessage={pendingMessage}
+      disabled={disabled}
+      className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark"
+    >
       {children}
-    </button>
+    </FormSubmitButton>
   );
 }
 
 export function DangerButton({ children }: { children: React.ReactNode }) {
   return (
-    <button className="inline-flex h-10 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700">
+    <FormSubmitButton
+      pendingChildren="處理中…"
+      pendingMessage="正在處理，請勿重複送出。"
+      className="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700"
+    >
       {children}
-    </button>
+    </FormSubmitButton>
   );
 }
 
@@ -78,6 +102,13 @@ export function Field({
   type = "text",
   required,
   placeholder,
+  autoComplete,
+  minLength,
+  maxLength,
+  min,
+  max,
+  step,
+  readOnly,
 }: {
   label: string;
   name: string;
@@ -85,16 +116,30 @@ export function Field({
   type?: string;
   required?: boolean;
   placeholder?: string;
+  autoComplete?: string;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  readOnly?: boolean;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <input
-        className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         type={type}
         required={required}
         placeholder={placeholder}
+        autoComplete={autoComplete}
+        minLength={minLength}
+        maxLength={maxLength}
+        min={min}
+        max={max}
+        step={step}
+        readOnly={readOnly}
         defaultValue={defaultValue ?? ""}
       />
     </label>
@@ -107,12 +152,16 @@ export function TextArea({
   defaultValue,
   rows = 4,
   placeholder,
+  required,
+  maxLength,
 }: {
   label: string;
   name: string;
   defaultValue?: string | null;
   rows?: number;
   placeholder?: string;
+  required?: boolean;
+  maxLength?: number;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -122,6 +171,8 @@ export function TextArea({
         name={name}
         rows={rows}
         placeholder={placeholder}
+        required={required}
+        maxLength={maxLength}
         defaultValue={defaultValue ?? ""}
       />
     </label>
@@ -132,20 +183,25 @@ export function SelectField({
   label,
   name,
   defaultValue,
+  value,
+  onChange,
   children,
 }: {
   label: string;
   name: string;
   defaultValue?: string | null;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLSelectElement>;
   children: React.ReactNode;
 }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <select
-        className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
-        defaultValue={defaultValue ?? ""}
+        onChange={onChange}
+        {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}
       >
         {children}
       </select>
@@ -153,7 +209,7 @@ export function SelectField({
   );
 }
 
-export function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: "blue" | "orange" | "gray" | "green" }) {
+export function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: "blue" | "orange" | "gray" | "green" | "red" }) {
   return (
     <span
       className={clsx(
@@ -161,6 +217,7 @@ export function Badge({ children, tone = "blue" }: { children: React.ReactNode; 
         tone === "blue" && "bg-blue-50 text-blue-700",
         tone === "orange" && "bg-orange-50 text-orange-700",
         tone === "green" && "bg-emerald-50 text-emerald-700",
+        tone === "red" && "bg-red-50 text-red-700",
         tone === "gray" && "bg-slate-100 text-slate-600",
       )}
     >
@@ -173,7 +230,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
   return (
     <Card className="flex flex-col items-center justify-center py-12 text-center">
       <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      <p className="mt-2 max-w-md text-sm text-slate-500">{description}</p>
+      <p className="mt-2 max-w-md text-sm text-slate-600">{description}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </Card>
   );

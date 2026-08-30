@@ -1,0 +1,7 @@
+G7-18 source manifest
+Evidence UTC: 2026-08-08T21:15:58.806Z
+SHA-256  path
+439addd4261dbc5b86e0394b5bb20082831cb46abc7eaf3183d658345b27e2c8  scripts/g7-commerce-browser-qa.mjs
+250ad5a3e8bd5868832e902230de47e1721c20a9069c96c18855aa859c6ecc60  scripts/g7-commerce-browser-qa.test.mjs
+e52871b0aab1e081e95c0b1d613777151d4495056349f152d0e8fcf12c8d1fc0  scripts/g7-form-builder-browser-qa.mjs
+84d98f9226b1cac20128cd3871eff088eba3bf96163aee02e4a3279666a6f820  scripts/g7-form-builder-browser-qa.test.mjs

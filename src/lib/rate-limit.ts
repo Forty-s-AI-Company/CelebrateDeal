@@ -8,6 +8,7 @@ type Bucket = {
 };
 
 const buckets = new Map<string, Bucket>();
+const UPSTASH_REQUEST_TIMEOUT_MS = 3_000;
 const UPSTASH_RATE_LIMIT_SCRIPT = `
 local current = redis.call("INCR", KEYS[1])
 if current == 1 then
@@ -52,7 +53,10 @@ export function getRateLimitProviderStatus() {
     provider,
     durable: provider !== "memory",
     externalRequired: provider !== "memory",
-    configured: provider === "upstash_redis" ? upstashConfigured : provider !== "cloudflare_waf",
+    // Cloudflare enforcement lives in front of the application and has no
+    // in-process credential to probe. Selecting the provider is the local
+    // configuration signal; external WAF evidence remains a release concern.
+    configured: provider === "upstash_redis" ? upstashConfigured : true,
   };
 }
 
@@ -117,6 +121,7 @@ async function upstashDecision(request: Request, key: string, limit: number, win
     },
     body: JSON.stringify(["EVAL", UPSTASH_RATE_LIMIT_SCRIPT, 1, bucketKey, String(limit), String(windowMs)]),
     cache: "no-store",
+    signal: AbortSignal.timeout(UPSTASH_REQUEST_TIMEOUT_MS),
   });
   const json = await response.json() as { result?: unknown; error?: string };
   if (!response.ok || json.error) {

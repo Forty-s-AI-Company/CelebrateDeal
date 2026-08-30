@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createDirectUploadMapping: vi.fn(),
+  videoFindUnique: vi.fn(),
 }));
 
 vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
@@ -9,7 +10,11 @@ vi.mock("@/lib/cloudflare-ops", async (importOriginal) => {
   return { ...actual, createDirectUploadMapping: mocks.createDirectUploadMapping };
 });
 
-import { POST } from "./route";
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({ video: { findUnique: mocks.videoFindUnique } }),
+}));
+
+import { GET, POST } from "./route";
 
 const jobSecret = "test-fixture-job-secret";
 
@@ -79,6 +84,24 @@ describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
     expect(mocks.createDirectUploadMapping).not.toHaveBeenCalled();
   });
 
+  it("uses the configured fixture vendor when a Preview smoke omits vendorId", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("SMOKE_VENDOR_ID", "vendor-preview");
+    mocks.createDirectUploadMapping.mockResolvedValue({
+      video: { id: "video-1", status: "processing", videoUrl: "https://videodelivery.net/video-1/manifest/video.m3u8" },
+      upload: { uid: "upload-1", uploadURL: "https://upload.videodelivery.net/upload-1" },
+    });
+
+    const response = await POST(authorizedRequest({ title: "Preview smoke" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.createDirectUploadMapping).toHaveBeenCalledWith({
+      vendorId: "vendor-preview",
+      title: "Preview smoke",
+      maxDurationSeconds: 3600,
+    });
+  });
+
   it("returns only the allowed upload fields without a plaintext upload key", async () => {
     mocks.createDirectUploadMapping.mockResolvedValue({
       video: {
@@ -119,6 +142,51 @@ describe("POST /api/admin/ops/cloudflare/direct-upload", () => {
       vendorId: "vendor-1",
       title: "Test upload",
       maxDurationSeconds: 120,
+    });
+  });
+
+  it("returns a closed diagnostic without exposing raw external errors", async () => {
+    mocks.createDirectUploadMapping.mockRejectedValue(new Error("provider-token-and-response"));
+
+    const response = await POST(authorizedRequest({ vendorId: "vendor-1", title: "Test upload" }));
+    const body = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(body).toContain('"diagnostic":"internal_failure"');
+    expect(body).not.toContain("provider-token-and-response");
+  });
+});
+
+describe("GET /api/admin/ops/cloudflare/direct-upload", () => {
+  it("returns 401 without querying status when JOB_SECRET is invalid", async () => {
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+    ));
+
+    expect(response.status).toBe(401);
+    expect(mocks.videoFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded webhook-updated video status", async () => {
+    mocks.videoFindUnique.mockResolvedValue({
+      status: "ready",
+      cloudflareReadyToStream: true,
+      durationSec: 10,
+      cloudflareStreamUid: "must-not-be-returned",
+    });
+    const response = await GET(new Request(
+      "https://app.example.test/api/admin/ops/cloudflare/direct-upload?videoId=video-1",
+      { headers: { authorization: `Bearer ${jobSecret}` } },
+    ));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      video: { status: "ready", readyToStream: true, durationSec: 10 },
+    });
+    expect(mocks.videoFindUnique).toHaveBeenCalledWith({
+      where: { id: "video-1" },
+      select: { status: true, cloudflareReadyToStream: true, durationSec: true },
     });
   });
 });

@@ -1,0 +1,3 @@
+b2c4f3150e2eac8bb383fb3fb32949e296b6d8bd55f031b07a6ac4c4cce27744  docs/ai-team/evidence/g7-41-team-template-api-parity-20260809.md
+965fe532f8f2f4dbbddfa9285c898d2471169a953f3c185c378b0ac37df56f7c  docs/ai-team/evidence/g7-41-source-manifest-20260809.txt
+0412a3839d012651785c5ee12b4ac14856564d2cc0558e50ab646397ebec8437  docs/launch/current-function-scorecard-20260809.json

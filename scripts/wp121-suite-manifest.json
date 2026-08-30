@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "celebratedeal-ai-team-wp121-suite-manifest/v1",
+  "workPackage": "WP-121",
+  "requiredSuites": [
+    "src/app/api/webhooks/payments/route.test.ts",
+    "src/lib/payment-webhooks.test.ts",
+    "src/lib/payment-webhook-invariants.test.ts",
+    "src/lib/payment-providers/payuni.test.ts",
+    "scripts/payuni-sandbox-external-qa.test.mjs",
+    "scripts/payuni-sandbox-payment-handoff.test.mjs"
+  ]
+}

@@ -1,47 +1,112 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { cookies, headers } from "next/headers";
+import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
-  AUTH_COOKIE,
-  LEGACY_VENDOR_COOKIE,
-  authenticateUser,
-  createUserSession,
-  markCurrentSessionMfaVerified,
-  requireAuth,
   requireFinanceAdmin,
-  requireVendor,
-  requireVendorOwner,
-  revokeCurrentSession,
-  sessionCookieOptions,
+  requireVendorFinance,
+  requireVendorManager,
 } from "@/lib/auth";
-import { auditSnapshot, writeAuditLog } from "@/lib/audit";
-import { calculateSettlement, invoiceNumber, payoutBatchNumber } from "@/lib/billing";
+import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
+import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
+import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
+import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
+import { monthRange, payoutBatchNumber } from "@/lib/billing";
+import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
+import { getPaymentProvider } from "@/lib/payment-providers";
+import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
-  decryptMfaSecret,
-  encryptMfaSecret,
-  generateRecoveryCodes,
-  generateTotpSecret,
-  hashRecoveryCode,
-  MFA_RECOVERY_COOKIE,
-  MFA_SETUP_COOKIE,
-  parsePendingMfaSetup,
-  serializePendingMfaSetup,
-  serializeRecoveryCodes,
-  verifyRecoveryCode,
-  verifyTotpCode,
-} from "@/lib/mfa";
-import { hashPassword } from "@/lib/password";
-import { sendPasswordResetLink } from "@/lib/password-reset";
-import { checkRateLimit } from "@/lib/rate-limit";
+  applyPaymentRefundAccounting,
+  calculateNetReferenceAmountCents,
+} from "@/lib/payment-refund-accounting";
 import { toSlug } from "@/lib/format";
-import { INTERACTION_TIME_FORMAT_ERROR, parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
+import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
+import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
+import {
+  expectedTemplateTrigger,
+  haveValidLiveNotificationRuleTemplates,
+  parseLiveNotificationRules,
+  reconcileLiveNotificationRules,
+  type LiveNotificationRuleInput,
+} from "@/lib/live-notification-rules";
+import {
+  createLiveReminderReconciliationSnapshot,
+  queueLiveReminderReconciliation,
+  type LiveReminderReconciliationSnapshot,
+  type LiveReminderTemplateSnapshot,
+} from "@/lib/live-reminder-reconciliation";
+import {
+  materializeLiveNotificationRules,
+  supersedeLiveNotificationDeliveriesForLifecycle,
+} from "@/lib/live-notification-delivery";
+import { captureOperationalError } from "@/lib/monitoring";
+import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
+import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
+import {
+  hasUsableMessageTemplateContent,
+  LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+  REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+  type MessageTemplateActionState,
+} from "@/lib/message-template";
+import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import {
+  getLivePublishReadiness,
+  requiresLivePublishReadiness,
+} from "@/lib/live-publish-readiness";
+import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
+import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
+import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
+import { selectPayoutAccount } from "@/lib/payout-account";
+import { CoursePayoutMutationConflict, syncCoursePayoutsForSettlement } from "@/lib/course-payout-accounting";
+import {
+  createVendorMemberAction as createVendorMemberActionImpl,
+  deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
+  resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
+} from "./actions/vendor-member-actions";
+import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import {
+  deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
+  deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
+  duplicateInteractionScriptAction as duplicateInteractionScriptActionImpl,
+  importSystemRolesAction as importSystemRolesActionImpl,
+  unblockBlacklistAction as unblockBlacklistActionImpl,
+  unbindInteractionScriptFromLiveAction as unbindInteractionScriptFromLiveActionImpl,
+  upsertBlacklistAction as upsertBlacklistActionImpl,
+  upsertInteractionRoleAction as upsertInteractionRoleActionImpl,
+  upsertInteractionRoleActionState as upsertInteractionRoleActionStateImpl,
+  upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
+} from "./actions/interaction-actions";
+import {
+  archiveVideoAction as archiveVideoActionImpl,
+  restoreVideoAction as restoreVideoActionImpl,
+  upsertFormAction as upsertFormActionImpl,
+  upsertTemplateAction as upsertTemplateActionImpl,
+  upsertVideoAction as upsertVideoActionImpl,
+} from "./actions/webinar-resource-actions";
+import {
+  confirmMfaEnrollmentAction as confirmMfaEnrollmentActionImpl,
+  confirmPasswordResetAction as confirmPasswordResetActionImpl,
+  dismissRecoveryCodesAction as dismissRecoveryCodesActionImpl,
+  loginAction as loginActionImpl,
+  logoutAction as logoutActionImpl,
+  regenerateRecoveryCodesAction as regenerateRecoveryCodesActionImpl,
+  requestPasswordResetAction as requestPasswordResetActionImpl,
+  revokeAllSessionsAction as revokeAllSessionsActionImpl,
+  revokeOtherSessionsAction as revokeOtherSessionsActionImpl,
+  sendPasswordResetSmokeAction as sendPasswordResetSmokeActionImpl,
+  startMfaEnrollmentAction as startMfaEnrollmentActionImpl,
+  updatePasswordAction as updatePasswordActionImpl,
+  verifyMfaAction as verifyMfaActionImpl,
+} from "./actions/auth-security-actions";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -53,9 +118,12 @@ function optionalText(formData: FormData, key: string) {
   return value.length > 0 ? value : null;
 }
 
-function intValue(formData: FormData, key: string, fallback = 0) {
-  const parsed = Number.parseInt(text(formData, key, String(fallback)), 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function safeExternalUrl(value: string | null, label: string) {
+  if (!value) return null;
+
+  const safeUrl = parseSafeExternalHttpUrl(value);
+  if (!safeUrl) throw new Error(`${label}必須是有效的 HTTP 或 HTTPS 完整網址。`);
+  return safeUrl;
 }
 
 function moneyToCents(formData: FormData, key: string, fallback = 0) {
@@ -66,148 +134,350 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
 }
 
 class RefundValidationError extends Error {}
+class PayoutBatchClaimConflict extends Error {}
+class SettlementMutationConflict extends Error {}
+class AffiliatePayoutMutationConflict extends Error {}
 
-function isRefundTransactionConflict(error: unknown) {
+function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2025" || error.code === "P2034");
 }
 
-function isRefundSerializationConflict(error: unknown) {
+function isSettlementMutationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
+}
+
+function isAffiliatePayoutMutationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
+}
+
+function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
-const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_SOURCE_LIMIT = 20;
-const LOGIN_SOURCE_EMAIL_LIMIT = 5;
+
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
-const MEMBER_ROLES = new Set(["owner", "admin", "accountant"]);
 
-function normalizedEmail(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  return value.startsWith("/") && !value.startsWith("//") ? value : fallback;
-}
-
+// Keep the legacy public action surface stable while the auth/security domain
+// owns its implementation in a dedicated file-level `use server` module.
 export async function loginAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const email = normalizedEmail(text(formData, "email"));
-  const password = text(formData, "password");
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimitRequest = new Request(appUrl, { headers: rateLimitHeaders });
-
-  const sourceRateLimited = await checkRateLimit(
-    rateLimitRequest,
-    "login-source",
-    LOGIN_SOURCE_LIMIT,
-    LOGIN_RATE_LIMIT_WINDOW_MS,
-  );
-  if (sourceRateLimited) {
-    redirect(`/login?error=${sourceRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const sourceEmailRateLimited = await checkRateLimit(
-    rateLimitRequest,
-    `login-source-email:${email}`,
-    LOGIN_SOURCE_EMAIL_LIMIT,
-    LOGIN_RATE_LIMIT_WINDOW_MS,
-  );
-  if (sourceEmailRateLimited) {
-    redirect(`/login?error=${sourceEmailRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const auth = await authenticateUser(email, password);
-  if (!auth) {
-    await writeAuditLog({
-      actorLabel: "anonymous",
-      action: "login_failed",
-      targetType: "Auth",
-      targetId: email,
-      after: { email },
-    });
-    redirect("/login?error=1");
-  }
-
-  if (!auth.isPlatformAdmin && !auth.vendor) {
-    await writeAuditLog({
-      actorId: auth.user.id,
-      actorLabel: "user_without_vendor",
-      action: "login_without_active_vendor",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: { email: auth.user.email },
-    });
-    redirect("/login?error=no_vendor");
-  }
-
-  const { token, expiresAt } = await createUserSession({
-    userId: auth.user.id,
-    vendorId: auth.vendor?.id ?? null,
-    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-    userAgent: headerStore.get("user-agent"),
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? "user",
-    action: "login_success",
-    targetType: "User",
-    targetId: auth.user.id,
-    after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
-  });
-
-  if (auth.isPlatformAdmin) {
-    if (!auth.user.mfaFactor) {
-      redirect("/mfa/setup");
-    }
-    redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
-  }
-
-  redirect("/dashboard");
+  return loginActionImpl(formData);
 }
 
 export async function logoutAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  await revokeCurrentSession();
-  const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-  redirect("/login");
+  return logoutActionImpl(formData);
 }
 
-export async function saveBrandSettingsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+export type BrandSettingsFormValues = {
+  name: string;
+  slug: string;
+  primaryColor: string;
+  ctaColor: string;
+  timezone: string;
+  supportEmail: string;
+  senderName: string;
+  contactUrl: string;
+  logoUrl: string;
+  /** 只在表單與 action state 中傳遞 opaque asset id；page 可省略此欄位。 */
+  logoAssetId?: string;
+};
+
+export type BrandSettingsActionState = {
+  status: "idle" | "error";
+  message: string;
+  values: BrandSettingsFormValues;
+};
+
+const INVALID_BRAND_TIMEZONE_MESSAGE = "時區格式無效，請輸入有效的 IANA 時區，例如 Asia/Taipei。";
+const INVALID_BRAND_LOGO_MESSAGE = "品牌 Logo 來源無效，請完成上傳、移除未完成的檔案，或改用有效的 HTTP/HTTPS 圖片網址。";
+const INVALID_BRAND_LOGO_ASSET_MESSAGE = "品牌 Logo 圖片資產無效，請重新上傳。";
+const INVALID_BRAND_LOGO_PHASE_MESSAGE = "品牌 Logo 上傳尚未完成，請完成上傳或移除未完成的檔案。";
+const INVALID_BRAND_SENDER_NAME_MESSAGE = "寄件人名稱無效，請輸入 80 字元以內且不含控制字元的文字。";
+const INVALID_BRAND_CONTACT_URL_MESSAGE = "聯絡網址無效，請輸入不含帳密、非本機或內部 IP 的 HTTPS 絕對網址。";
+const BRAND_LOGO_URL_MAX_LENGTH = 2048;
+const BRAND_CONTACT_URL_MAX_LENGTH = 2048;
+const BRAND_SENDER_NAME_MAX_LENGTH = 80;
+
+type BrandSettingsValidationCode = "invalid_timezone" | "invalid_logo" | "invalid_sender_name" | "invalid_contact_url";
+
+class BrandSettingsValidationError extends Error {
+  constructor(
+    readonly code: BrandSettingsValidationCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BrandSettingsValidationError";
+  }
+}
+
+function submittedBrandSettingsValues(formData: FormData): BrandSettingsFormValues {
+  const boundedValue = (key: string, maxLength: number) => {
+    const submitted = formData.get(key);
+    return typeof submitted === "string" ? submitted.slice(0, maxLength) : "";
+  };
+
+  return {
+    name: boundedValue("name", 160),
+    slug: boundedValue("slug", 160),
+    primaryColor: boundedValue("primaryColor", 32),
+    ctaColor: boundedValue("ctaColor", 32),
+    timezone: boundedValue("timezone", 128),
+    supportEmail: boundedValue("supportEmail", 320),
+    senderName: rawSubmittedValue(formData, "senderName"),
+    contactUrl: rawSubmittedValue(formData, "contactUrl"),
+    logoUrl: boundedValue("logoUrl", BRAND_LOGO_URL_MAX_LENGTH),
+    logoAssetId: boundedValue("logoAssetId", 128),
+  };
+}
+
+function rawSubmittedValue(formData: FormData, key: string) {
+  const submitted = formData.get(key);
+  return submitted === null ? "" : typeof submitted === "string" ? submitted : "__invalid__";
+}
+
+function isPrivateOrSpecialIpv4(value: string) {
+  const octets = value.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
+  const [first = Number.NaN, second = Number.NaN] = octets;
+  return first === 0
+    || first === 10
+    || first === 127
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168);
+}
+
+function parseIpv6Segments(value: string) {
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parseHalf = (half: string) => half ? half.split(":") : [];
+  const left = parseHalf(halves[0] ?? "");
+  const right = parseHalf(halves[1] ?? "");
+  const rawSegments = [...left, ...right];
+  if (rawSegments.some((segment) => segment === "")) return null;
+
+  const segments = rawSegments.flatMap((segment, index) => {
+    if (!segment.includes(".")) return [/^[0-9a-f]{1,4}$/iu.test(segment) ? Number.parseInt(segment, 16) : Number.NaN];
+    if (index !== rawSegments.length - 1 || isPrivateOrSpecialIpv4(segment)) return [Number.NaN, Number.NaN];
+    const octets = segment.split(".").map(Number);
+    const [
+      firstOctet = Number.NaN,
+      secondOctet = Number.NaN,
+      thirdOctet = Number.NaN,
+      fourthOctet = Number.NaN,
+    ] = octets;
+    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+      ? [(firstOctet << 8) | secondOctet, (thirdOctet << 8) | fourthOctet]
+      : [Number.NaN, Number.NaN];
+  });
+  const zeroCount = halves.length === 2 ? 8 - segments.length : 0;
+  if (zeroCount < (halves.length === 2 ? 1 : 0) || segments.length + zeroCount !== 8) return null;
+  const expanded = halves.length === 2
+    ? [...segments.slice(0, left.length), ...Array.from({ length: zeroCount }, () => 0), ...segments.slice(left.length)]
+    : segments;
+  return expanded.every((segment) => Number.isInteger(segment) && segment >= 0 && segment <= 0xffff) ? expanded : null;
+}
+
+function isUnsafeContactHostname(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.+$/u, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+
+  const ipVersion = isIP(host);
+  if (ipVersion === 4) return isPrivateOrSpecialIpv4(host);
+  if (ipVersion !== 6) return false;
+
+  const segments = parseIpv6Segments(host);
+  if (!segments) return true;
+  const [
+    firstSegment = Number.NaN,
+    secondSegment = Number.NaN,
+    thirdSegment = Number.NaN,
+    fourthSegment = Number.NaN,
+    fifthSegment = Number.NaN,
+    sixthSegment = Number.NaN,
+    seventhSegment = Number.NaN,
+    eighthSegment = Number.NaN,
+  ] = segments;
+  const isAllZero = segments.every((segment) => segment === 0);
+  const isLoopback = isAllZero === false && [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment, sixthSegment, seventhSegment].every((segment) => segment === 0) && eighthSegment === 1;
+  const isUniqueLocal = (firstSegment & 0xfe00) === 0xfc00;
+  const isLinkLocal = (firstSegment & 0xffc0) === 0xfe80;
+  const isIpv4Mapped = [firstSegment, secondSegment, thirdSegment, fourthSegment, fifthSegment].every((segment) => segment === 0) && sixthSegment === 0xffff;
+  if (!isIpv4Mapped) return isAllZero || isLoopback || isUniqueLocal || isLinkLocal;
+
+  const mappedIpv4 = [seventhSegment >> 8, seventhSegment & 0xff, eighthSegment >> 8, eighthSegment & 0xff].join(".");
+  return isPrivateOrSpecialIpv4(mappedIpv4);
+}
+
+function parseSafeBrandContactUrl(value: string | null) {
+  const candidate = value?.trim();
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" || url.username || url.password || isUnsafeContactHostname(url.hostname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function validateBrandSenderName(formData: FormData) {
+  const input = rawSubmittedValue(formData, "senderName");
+  if (input === "") return null;
+  if (input === "__invalid__") throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
+  const normalized = input.trim().normalize("NFC");
+  if (!normalized) return null;
+  if (Array.from(normalized).length > BRAND_SENDER_NAME_MAX_LENGTH || /\p{Cc}/u.test(normalized)) {
+    throw new BrandSettingsValidationError("invalid_sender_name", INVALID_BRAND_SENDER_NAME_MESSAGE);
+  }
+  return normalized;
+}
+
+type ValidatedBrandSettings = {
+  timezone: string;
+  senderName: string | null;
+  contactUrl: string | null;
+  logoUrl: string | null;
+  logoAssetId: string | null;
+};
+
+async function validateBrandSettings(vendorId: string, formData: FormData): Promise<ValidatedBrandSettings> {
+  const senderName = validateBrandSenderName(formData);
+  const contactUrlInput = rawSubmittedValue(formData, "contactUrl");
+  if (contactUrlInput === "__invalid__") {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+  if (contactUrlInput.length > BRAND_CONTACT_URL_MAX_LENGTH || /\p{Cc}/u.test(contactUrlInput)) {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+  const contactUrl = contactUrlInput.trim() === "" ? null : parseSafeBrandContactUrl(contactUrlInput);
+  if (contactUrlInput.trim() !== "" && !contactUrl) {
+    throw new BrandSettingsValidationError("invalid_contact_url", INVALID_BRAND_CONTACT_URL_MESSAGE);
+  }
+
+  const timezone = text(formData, "timezone", "Asia/Taipei");
+  try {
+    assertIanaTimeZone(timezone);
+  } catch {
+    throw new BrandSettingsValidationError("invalid_timezone", INVALID_BRAND_TIMEZONE_MESSAGE);
+  }
+
+  const submittedPhase = formData.get("logoUploadPhase");
+  const logoUploadPhase = submittedPhase === null
+    ? ""
+    : typeof submittedPhase === "string"
+      ? submittedPhase.trim()
+      : "__invalid__";
+  if (!["", "idle", "success"].includes(logoUploadPhase)) {
+    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_PHASE_MESSAGE);
+  }
+
+  const submittedAssetId = formData.get("logoAssetId");
+  const logoAssetId = submittedAssetId === null
+    ? null
+    : typeof submittedAssetId === "string"
+      ? submittedAssetId.trim() || null
+      : "__invalid__";
+  if (logoAssetId === "__invalid__") {
+    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
+  }
+
+  if (logoAssetId) {
+    try {
+      const logoAsset = await resolveReadyImageAsset(getDb(), { vendorId, assetId: logoAssetId });
+      if (!logoAsset) throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
+      return { timezone, senderName, contactUrl, logoUrl: logoAsset.publicUrl, logoAssetId: logoAsset.id };
+    } catch (error) {
+      if (error instanceof ImageAssetReferenceError) {
+        throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_ASSET_MESSAGE);
+      }
+      throw error;
+    }
+  }
+
+  const submittedLogoUrl = formData.get("logoUrl");
+  const logoUrlInput = submittedLogoUrl === null
+    ? ""
+    : typeof submittedLogoUrl === "string"
+      ? submittedLogoUrl.trim()
+      : "__invalid__";
+  if (logoUrlInput.length > BRAND_LOGO_URL_MAX_LENGTH) {
+    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_MESSAGE);
+  }
+  const logoUrl = logoUrlInput === ""
+    ? null
+    : parseSafeExternalHttpUrl(logoUrlInput === "__invalid__" ? null : logoUrlInput);
+  if (logoUrlInput !== "" && !logoUrl) {
+    throw new BrandSettingsValidationError("invalid_logo", INVALID_BRAND_LOGO_MESSAGE);
+  }
+
+  return { timezone, senderName, contactUrl, logoUrl, logoAssetId: null };
+}
+
+async function updateBrandSettings(vendorId: string, formData: FormData, validated: ValidatedBrandSettings) {
   await getDb().vendor.update({
-    where: { id: vendor.id },
+    where: { id: vendorId },
     data: {
       name: text(formData, "name"),
       slug: toSlug(text(formData, "slug")),
-      logoUrl: optionalText(formData, "logoUrl"),
+      logoUrl: validated.logoUrl,
       primaryColor: text(formData, "primaryColor", "#2563eb"),
       ctaColor: text(formData, "ctaColor", "#f97316"),
-      timezone: text(formData, "timezone", "Asia/Taipei"),
+      timezone: validated.timezone,
       supportEmail: optionalText(formData, "supportEmail"),
+      senderName: validated.senderName,
+      contactUrl: validated.contactUrl,
     },
   });
+}
+
+/**
+ * 保留既有直接呼叫的 Server Action 介面；新品牌頁使用下方 state action，
+ * 讓可修正的驗證錯誤不需要把表單內容塞進 URL。
+ */
+export async function saveBrandSettingsAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  let validated: ValidatedBrandSettings;
+  try {
+    validated = await validateBrandSettings(vendor.id, formData);
+  } catch (error) {
+    if (error instanceof BrandSettingsValidationError) {
+      redirect(`/settings/brand?error=${error.code}`);
+    }
+    throw error;
+  }
+  await updateBrandSettings(vendor.id, formData, validated);
   revalidatePath("/settings/brand");
+}
+
+export async function saveBrandSettingsActionState(
+  _previousState: BrandSettingsActionState,
+  formData: FormData,
+): Promise<BrandSettingsActionState> {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  const values = submittedBrandSettingsValues(formData);
+  let validated: ValidatedBrandSettings;
+  try {
+    validated = await validateBrandSettings(vendor.id, formData);
+  } catch (error) {
+    if (error instanceof BrandSettingsValidationError) {
+      return { status: "error", message: error.message, values };
+    }
+    throw error;
+  }
+
+  await updateBrandSettings(vendor.id, formData, validated);
+  revalidatePath("/settings/brand");
+  redirect("/settings/brand");
 }
 
 export async function saveTrackingSettingsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   await getDb().trackingSetting.upsert({
     where: { vendorId: vendor.id },
     create: {
@@ -232,1076 +502,974 @@ export async function saveTrackingSettingsAction(formData: FormData) {
 }
 
 export async function updatePasswordAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const password = text(formData, "password");
-  if (password.length < 12) {
-    redirect("/settings/security?error=short");
-  }
-  await getDb().user.update({
-    where: { id: auth.user.id },
-    data: { passwordHash: hashPassword(password) },
-  });
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "update_password",
-    targetType: "User",
-    targetId: auth.user.id,
-    after: { email: auth.user.email },
-  });
-  redirect("/settings/security?updated=1");
+  return updatePasswordActionImpl(formData);
 }
 
 export async function requestPasswordResetAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "password-reset-request",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/password-reset/request?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
-  }
-
-  const email = normalizedEmail(text(formData, "email"));
-  if (!email) {
-    redirect("/password-reset/request?error=invalid");
-  }
-
-  let previewUrl: string | null = null;
-  try {
-    const result = await sendPasswordResetLink({
-      email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    });
-
-    if (process.env.NODE_ENV !== "production" && result?.resetUrl) {
-      previewUrl = result.resetUrl;
-    }
-  } catch {
-    await writeAuditLog({
-      actorLabel: "password_reset_request_failed",
-      action: "password_reset_email_failed",
-      targetType: "PasswordResetToken",
-      after: auditSnapshot({ email }),
-    });
-  }
-
-  if (previewUrl) {
-    redirect(`/password-reset/request?updated=sent&preview=${encodeURIComponent(previewUrl)}`);
-  }
-  redirect("/password-reset/request?updated=sent");
+  return requestPasswordResetActionImpl(formData);
 }
 
 export async function confirmPasswordResetAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const token = text(formData, "token");
-  const password = text(formData, "password");
-  const confirmPassword = text(formData, "confirmPassword");
-
-  if (password.length < 12) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=short`);
-  }
-
-  if (password !== confirmPassword) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=mismatch`);
-  }
-
-  const { consumePasswordResetToken } = await import("@/lib/password-reset");
-  const result = await consumePasswordResetToken(token, password);
-  if (!result.ok) {
-    redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=expired`);
-  }
-
-  redirect("/login?reset=1");
-}
-
-function longLivedCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 15,
-  };
-}
-
-function recoveryCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 10,
-  };
+  return confirmPasswordResetActionImpl(formData);
 }
 
 export async function startMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  if (auth.user.mfaFactor) {
-    redirect(`${destination}?updated=mfa_exists`);
-  }
-
-  const cookieStore = await cookies();
-  const secret = generateTotpSecret();
-  cookieStore.set(MFA_SETUP_COOKIE, serializePendingMfaSetup(secret), longLivedCookieOptions());
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(`${destination}?updated=mfa_started`);
+  return startMfaEnrollmentActionImpl(formData);
 }
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  const code = text(formData, "code");
-  const cookieStore = await cookies();
-  const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
-
-  if (!pending || !verifyTotpCode(pending.secret, code)) {
-    redirect(`${destination}?error=mfa_code`);
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  const secretEncrypted = encryptMfaSecret(pending.secret);
-
-  await getDb().$transaction([
-    getDb().userMfaFactor.upsert({
-      where: { userId: auth.user.id },
-      create: {
-        userId: auth.user.id,
-        factorType: "totp",
-        label: "CelebrateDeal Authenticator",
-        secretEncrypted,
-      },
-      update: {
-        factorType: "totp",
-        label: "CelebrateDeal Authenticator",
-        secretEncrypted,
-        enabledAt: new Date(),
-        lastUsedAt: new Date(),
-      },
-    }),
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue) => ({
-        userId: auth.user.id,
-        codeHash: hashRecoveryCode(codeValue),
-      })),
-    }),
-  ]);
-
-  await markCurrentSessionMfaVerified();
-  cookieStore.delete(MFA_SETUP_COOKIE);
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_enabled",
-    targetType: "UserMfaFactor",
-    targetId: auth.user.id,
-    after: auditSnapshot({ factorType: "totp" }),
-  });
-  redirect(`${destination}?updated=mfa_enabled`);
+  return confirmMfaEnrollmentActionImpl(formData);
 }
 
 export async function verifyMfaAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const next = safeInternalPath(text(formData, "next", "/admin/billing/dashboard"));
-  const code = text(formData, "code");
-
-  if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
-  }
-
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    `mfa-verification:${auth.user.id}`,
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
-  }
-
-  const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
-  const recoveryCodes = await getDb().userRecoveryCode.findMany({
-    where: {
-      userId: auth.user.id,
-      usedAt: null,
-    },
-  });
-
-  const matchedRecoveryCode = recoveryCodes.find((recoveryCode) => verifyRecoveryCode(code, recoveryCode.codeHash));
-  if (!verifyTotpCode(secret, code) && !matchedRecoveryCode) {
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "mfa_verify_failed",
-      targetType: "UserMfaFactor",
-      targetId: auth.user.id,
-    });
-    redirect(`/mfa/verify?error=invalid&next=${encodeURIComponent(next)}`);
-  }
-
-  if (matchedRecoveryCode) {
-    await getDb().userRecoveryCode.update({
-      where: { id: matchedRecoveryCode.id },
-      data: { usedAt: new Date() },
-    });
-  } else {
-    await getDb().userMfaFactor.update({
-      where: { userId: auth.user.id },
-      data: { lastUsedAt: new Date() },
-    });
-  }
-
-  await markCurrentSessionMfaVerified();
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: matchedRecoveryCode ? "mfa_verify_recovery_code" : "mfa_verify_totp",
-    targetType: "UserMfaFactor",
-    targetId: auth.user.id,
-  });
-  redirect(next);
+  return verifyMfaActionImpl(formData);
 }
 
 export async function dismissRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const cookieStore = await cookies();
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security");
+  return dismissRecoveryCodesActionImpl(formData);
 }
 
 export async function regenerateRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-
-  if (!auth.user.mfaFactor) {
-    redirect(`${destination}?error=mfa_required`);
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  await getDb().$transaction([
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({
-      data: recoveryCodes.map((codeValue) => ({
-        userId: auth.user.id,
-        codeHash: hashRecoveryCode(codeValue),
-      })),
-    }),
-  ]);
-
-  const cookieStore = await cookies();
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_recovery_codes_regenerated",
-    targetType: "UserRecoveryCode",
-    targetId: auth.user.id,
-    after: auditSnapshot({ codeCount: recoveryCodes.length }),
-  });
-  redirect(`${destination}?updated=recovery_regenerated`);
+  return regenerateRecoveryCodesActionImpl(formData);
 }
 
 export async function sendPasswordResetSmokeAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  let sent = false;
-
-  try {
-    await sendPasswordResetLink({
-      email: auth.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    });
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "password_reset_smoke_email_sent",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: auditSnapshot({ email: auth.user.email }),
-    });
-    sent = true;
-  } catch {
-    await writeAuditLog({
-      vendorId: auth.vendor?.id ?? null,
-      actorId: auth.user.id,
-      actorLabel: auth.member?.role ?? auth.user.platformRole,
-      action: "password_reset_smoke_email_failed",
-      targetType: "User",
-      targetId: auth.user.id,
-      after: auditSnapshot({ email: auth.user.email }),
-    });
-  }
-
-  redirect(sent ? `${destination}?updated=password_reset_smoke` : `${destination}?error=password_reset_smoke`);
+  return sendPasswordResetSmokeActionImpl(formData);
 }
 
+// A file-level `use server` module must expose direct async function exports.
+// Wrapping the isolated vendor-member actions keeps their public import path
+// stable while allowing Next.js to register each root action at build time.
 export async function createVendorMemberAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const email = normalizedEmail(text(formData, "email"));
-  const name = text(formData, "name");
-  const role = text(formData, "role", "accountant");
-
-  if (!email || !name || !MEMBER_ROLES.has(role)) {
-    redirect("/settings/security?error=member_invalid");
-  }
-
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "vendor-member-invitation",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
-  }
-
-  const db = getDb();
-  const existingUser = await db.user.findUnique({
-    where: { email },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      platformRole: true,
-      status: true,
-    },
-  });
-  if (existingUser?.platformRole && existingUser.platformRole !== "none") {
-    redirect("/settings/security?error=platform_user");
-  }
-
-  const existingMember = existingUser
-    ? await db.vendorMember.findUnique({
-        where: { vendorId_userId: { vendorId: auth.vendor.id, userId: existingUser.id } },
-        include: {
-          user: {
-            select: {
-              email: true,
-            },
-          },
-        },
-      })
-    : null;
-
-  if (existingMember?.userId === auth.user.id && role !== "owner") {
-    redirect("/settings/security?error=self_role");
-  }
-
-  const savedMember = await db.$transaction(async (tx) => {
-    const user = existingUser ?? await tx.user.create({
-      data: {
-        email,
-        name,
-        // New members set their real password through the one-time reset link below.
-        passwordHash: hashPassword(randomBytes(32).toString("base64url")),
-        status: "active",
-      },
-    });
-
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        name: user.name || name,
-        status: "active",
-      },
-    });
-
-    return tx.vendorMember.upsert({
-      where: { vendorId_userId: { vendorId: auth.vendor.id, userId: user.id } },
-      create: {
-        vendorId: auth.vendor.id,
-        userId: user.id,
-        role,
-        status: "active",
-      },
-      update: {
-        role,
-        status: "active",
-        deactivatedAt: null,
-      },
-      include: {
-        user: {
-          select: {
-            email: true,
-          },
-        },
-      },
-    });
-  });
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: existingMember?.status === "inactive"
-      ? "reactivate_vendor_member"
-      : existingMember
-        ? "invite_vendor_member"
-        : "create_vendor_member",
-    targetType: "VendorMember",
-    targetId: savedMember.id,
-    before: auditSnapshot(existingMember ? {
-      id: existingMember.id,
-      email: existingMember.user.email,
-      role: existingMember.role,
-      status: existingMember.status,
-    } : null),
-    after: auditSnapshot({
-      id: savedMember.id,
-      email: savedMember.user.email,
-      role: savedMember.role,
-      status: savedMember.status,
-    }),
-  });
-
-  let invitationSent = false;
-  try {
-    invitationSent = Boolean(await sendPasswordResetLink({
-      email: savedMember.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    }));
-  } catch {}
-
-  if (!invitationSent) {
-    await writeAuditLog({
-      vendorId: auth.vendor.id,
-      actorId: auth.user.id,
-      actorLabel: auth.member.role,
-      action: "vendor_member_invitation_email_failed",
-      targetType: "VendorMember",
-      targetId: savedMember.id,
-      after: auditSnapshot({
-        email: savedMember.user.email,
-        role: savedMember.role,
-        status: savedMember.status,
-      }),
-    });
-    // The membership transaction has already committed, so refresh the list even
-    // when the invitation provider is unavailable.
-    revalidatePath("/settings/security");
-    redirect("/settings/security?error=member_invitation");
-  }
-
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=member");
-}
-
-export async function resendVendorMemberInvitationAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const id = text(formData, "id");
-  const db = getDb();
-  const member = await db.vendorMember.findFirst({
-    where: {
-      id,
-      vendorId: auth.vendor.id,
-      status: "active",
-    },
-    include: { user: true },
-  });
-
-  if (member?.status !== "active" || member.userId === auth.user.id || member.user.platformRole !== "none") {
-    redirect("/settings/security?error=member_invitation_resend_invalid");
-  }
-
-  const headerStore = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(
-    new Request(appUrl, { headers: rateLimitHeaders }),
-    "vendor-member-invitation",
-    5,
-    60_000,
-  );
-  if (rateLimited) {
-    redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
-  }
-
-  let invitationSent = false;
-  try {
-    invitationSent = Boolean(await sendPasswordResetLink({
-      email: member.user.email,
-      appUrl,
-      ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: headerStore.get("user-agent"),
-    }));
-  } catch {}
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: invitationSent ? "vendor_member_invitation_resent" : "vendor_member_invitation_resend_email_failed",
-    targetType: "VendorMember",
-    targetId: member.id,
-    after: auditSnapshot({
-      email: member.user.email,
-      role: member.role,
-      status: member.status,
-    }),
-  });
-
-  if (invitationSent) {
-    revalidatePath("/settings/security");
-    redirect("/settings/security?updated=member_invitation_resent");
-  }
-
-  redirect("/settings/security?error=member_invitation_resend_failed");
+  return createVendorMemberActionImpl(formData);
 }
 
 export async function deactivateVendorMemberAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireVendorOwner();
-  const id = text(formData, "id");
-  const db = getDb();
-  const member = await db.vendorMember.findFirst({
-    where: { id, vendorId: auth.vendor.id },
-    include: { user: true },
-  });
+  return deactivateVendorMemberActionImpl(formData);
+}
 
-  if (!member || member.user.platformRole !== "none") {
-    redirect("/settings/security?error=member_not_found");
-  }
+export async function resendVendorMemberInvitationAction(formData: FormData) {
+  return resendVendorMemberInvitationActionImpl(formData);
+}
 
-  if (member.userId === auth.user.id) {
-    redirect("/settings/security?error=self_deactivate");
-  }
-
-  if (member.role === "owner") {
-    const activeOwnerCount = await db.vendorMember.count({
-      where: {
-        vendorId: auth.vendor.id,
-        role: "owner",
-        status: "active",
-        id: { not: member.id },
-      },
-    });
-    if (activeOwnerCount === 0) {
-      redirect("/settings/security?error=last_owner");
-    }
-  }
-
-  const updated = await db.$transaction(async (tx) => {
-    const saved = await tx.vendorMember.update({
-      where: { id: member.id },
-      data: {
-        status: "inactive",
-        deactivatedAt: new Date(),
-      },
-    });
-    await tx.userSession.updateMany({
-      where: {
-        userId: member.userId,
-        vendorId: auth.vendor.id,
-        revokedAt: null,
-      },
-      data: { revokedAt: new Date() },
-    });
-    return saved;
-  });
-
-  await writeAuditLog({
-    vendorId: auth.vendor.id,
-    actorId: auth.user.id,
-    actorLabel: auth.member.role,
-    action: "deactivate_vendor_member",
-    targetType: "VendorMember",
-    targetId: member.id,
-    before: auditSnapshot(member),
-    after: auditSnapshot(updated),
-  });
-
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=member_deactivated");
+export async function voidAffiliateCommissionAction(formData: FormData) {
+  return voidAffiliateCommissionActionImpl(formData);
 }
 
 export async function revokeOtherSessionsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  await getDb().userSession.updateMany({
-    where: {
-      userId: auth.user.id,
-      id: { not: auth.session.id },
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    data: { revokedAt: new Date() },
-  });
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "revoke_other_sessions",
-    targetType: "User",
-    targetId: auth.user.id,
-  });
-  revalidatePath("/settings/security");
-  redirect("/settings/security?updated=sessions_revoked");
+  return revokeOtherSessionsActionImpl(formData);
 }
 
 export async function revokeAllSessionsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  await getDb().userSession.updateMany({
-    where: {
-      userId: auth.user.id,
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    data: { revokedAt: new Date() },
-  });
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "revoke_all_sessions",
-    targetType: "User",
-    targetId: auth.user.id,
-  });
-  const cookieStore = await cookies();
-  cookieStore.delete(AUTH_COOKIE);
-  cookieStore.delete(LEGACY_VENDOR_COOKIE);
-  redirect("/login?revoked=1");
+  return revokeAllSessionsActionImpl(formData);
 }
 
+// Keep the legacy public action surface stable while webinar resources live in
+// a dedicated file-level `use server` module.
 export async function upsertVideoAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  const data = {
-    title: text(formData, "title"),
-    description: optionalText(formData, "description"),
-    sourceType: text(formData, "sourceType", "url"),
-    videoUrl: text(formData, "videoUrl"),
-    thumbnailUrl: optionalText(formData, "thumbnailUrl"),
-    durationSec: intValue(formData, "durationSec"),
-    status: text(formData, "status", "ready"),
-    cloudflareStreamUid: optionalText(formData, "cloudflareStreamUid"),
-    cloudflareLiveInputUid: optionalText(formData, "cloudflareLiveInputUid"),
-    cloudflarePlaybackId: optionalText(formData, "cloudflarePlaybackId"),
-    cloudflareReadyToStream: formData.get("cloudflareReadyToStream") === "on",
-    liveInputStatus: optionalText(formData, "liveInputStatus"),
-    estimatedMinutes: intValue(formData, "estimatedMinutes"),
-  };
-
-  if (id) {
-    await getDb().video.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().video.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/videos");
+  return upsertVideoActionImpl(formData);
 }
 
-export async function upsertProductAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  const data = {
-    name: text(formData, "name"),
-    slug: toSlug(text(formData, "slug")),
-    description: optionalText(formData, "description"),
-    priceCents: intValue(formData, "priceCents"),
-    compareAtCents: optionalText(formData, "compareAtCents") ? intValue(formData, "compareAtCents") : null,
-    currency: text(formData, "currency", "TWD"),
-    imageUrl: optionalText(formData, "imageUrl"),
-    checkoutUrl: optionalText(formData, "checkoutUrl"),
-    inventory: intValue(formData, "inventory"),
-    isActive: formData.get("isActive") === "on",
-  };
+export async function archiveVideoAction(formData: FormData) {
+  return archiveVideoActionImpl(formData);
+}
 
-  if (id) {
-    await getDb().product.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().product.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/products");
+export async function restoreVideoAction(formData: FormData) {
+  return restoreVideoActionImpl(formData);
 }
 
 export async function upsertFormAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  let fields: Prisma.InputJsonValue = [];
-  try {
-    fields = JSON.parse(text(formData, "fields", "[]")) as Prisma.InputJsonValue;
-  } catch {
-    fields = [];
-  }
-
-  const data = {
-    name: text(formData, "name"),
-    slug: toSlug(text(formData, "slug")),
-    headline: text(formData, "headline"),
-    description: optionalText(formData, "description"),
-    submitLabel: text(formData, "submitLabel", "送出報名"),
-    fields,
-    successMessage: text(formData, "successMessage", "已收到你的資料，開播前會再提醒你。"),
-    isActive: formData.get("isActive") === "on",
-  };
-
-  if (id) {
-    await getDb().registrationForm.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().registrationForm.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/forms");
+  return upsertFormActionImpl(formData);
 }
 
-export async function upsertTemplateAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  const data = {
-    name: text(formData, "name"),
-    channel: text(formData, "channel", "email"),
-    trigger: text(formData, "trigger", "registration_confirmed"),
-    subject: optionalText(formData, "subject"),
-    body: text(formData, "body"),
-    isActive: formData.get("isActive") === "on",
-  };
+export async function upsertTemplateAction(
+  previousState: MessageTemplateActionState,
+  formData: FormData,
+): Promise<MessageTemplateActionState> {
+  return upsertTemplateActionImpl(previousState, formData);
+}
 
-  if (id) {
-    await getDb().messageTemplate.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().messageTemplate.create({ data: { ...data, vendorId: vendor.id } });
+async function requireLiveQuotaPaymentMethod(
+  db: PrismaClient,
+  vendorId: string,
+  quotaPolicy: Pick<LiveQuotaPolicy, "customAllocations" | "memberQuotas" | "pageQuotas" | "quotaPayerScope">,
+  id: string | null,
+  draftId: string,
+) {
+  const quotaMemberIds = [
+    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
+    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
+  ];
+  if (quotaMemberIds.length === 0 && quotaPolicy.pageQuotas.length === 0) return;
+  try {
+    await assertPaymentMethodReferenceForQuota(db, {
+      vendorId,
+      payerScope: quotaPolicy.quotaPayerScope,
+      memberIds: quotaMemberIds,
+    });
+  } catch (error) {
+    if (error instanceof PaymentMethodReferenceRequiredError) redirect(
+      id
+        ? `/lives/${encodeURIComponent(id)}/edit?error=payment_method_required`
+        : `/lives/new?error=payment_method_required&draft=${encodeURIComponent(draftId)}`,
+    );
+    throw error;
+  }
+}
+
+function hasInvalidLiveReferences(input: {
+  liveMissing: boolean;
+  productCount: number;
+  expectedProductCount: number;
+  videoMissing: boolean;
+  formMissing: boolean;
+  templateMissing: boolean;
+  reminderTemplateMissing: boolean;
+  scriptMissing: boolean;
+  affiliateMissing: boolean;
+  customMembershipMissing: boolean;
+  quotaPageCount: number;
+  expectedQuotaPageCount: number;
+}) {
+  return input.liveMissing
+    || input.productCount !== input.expectedProductCount
+    || input.videoMissing
+    || input.formMissing
+    || input.templateMissing
+    || input.reminderTemplateMissing
+    || input.scriptMissing
+    || input.affiliateMissing
+    || input.customMembershipMissing
+    || input.quotaPageCount !== input.expectedQuotaPageCount;
+}
+
+function isMissingDefaultAffiliate(
+  code: string | null,
+  affiliate: { id: string } | null,
+) {
+  return code !== null && affiliate === null;
+}
+
+function optionalDraftReference(value: string) {
+  return value ? value : null;
+}
+
+type LiveMutationData = {
+  title: string;
+  slug: string;
+  description: string | null;
+  scheduledAt: Date;
+  status: string;
+  videoId: string | null;
+  formId: string | null;
+  messageTemplateId: string | null;
+  liveReminderTemplateId: string | null;
+  liveReminderOffsetMinutes: number;
+  interactionScriptId: string | null;
+  heroImageUrl: string | null;
+  heroImageAssetId: string | null;
+  accentCopy: string | null;
+  replayEnabled: boolean;
+  replayAvailableUntil: Date | null;
+  streamMode: string;
+  quotaPolicy: Prisma.InputJsonValue;
+};
+
+class LiveLegacyBindingConflict extends Error {}
+
+function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
+  const draftId = optionalText(formData, "liveDraftId");
+  const revisionText = text(formData, "liveDraftRevision");
+  const revision = /^\d{1,9}$/u.test(revisionText) ? Number.parseInt(revisionText, 10) : 0;
+  const conflictPath = liveId
+    ? `/lives/${encodeURIComponent(liveId)}/edit?error=draft_conflict`
+    : `/lives/new?error=draft_conflict${draftId ? `&draft=${encodeURIComponent(draftId)}` : ""}`;
+  if (!draftId || draftId.length > 128 || revision < 1) redirect(conflictPath);
+  return { draftId, revision, conflictPath };
+}
+
+const liveStatusTransitions: Readonly<Record<string, ReadonlySet<string>>> = {
+  draft: new Set(["draft", "scheduled"]),
+  scheduled: new Set(["draft", "scheduled", "live"]),
+  live: new Set(["live", "ended"]),
+  ended: new Set(["draft", "ended", "scheduled"]),
+};
+
+function requestedLiveStatus(
+  formData: FormData,
+  liveId: string | null,
+  draftId: string,
+  currentStatus: string | null,
+) {
+  const status = text(formData, "status", "draft");
+  const transitionAllowed = liveId
+    ? Boolean(currentStatus && liveStatusTransitions[currentStatus]?.has(status))
+    : status === "draft" || status === "scheduled";
+  if (!transitionAllowed) {
+    redirect(
+      liveId
+        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_status`
+        : `/lives/new?error=invalid_status&draft=${encodeURIComponent(draftId)}`,
+    );
+  }
+  return status;
+}
+
+async function commitLiveDraft(input: {
+  db: PrismaClient;
+  vendorId: string;
+  liveId: string | null;
+  draftId: string;
+  revision: number;
+  expectedDraftPayload: LiveStudioDraftPayload;
+  data: LiveMutationData;
+  productIds: string[];
+  reminderReconciliationSnapshot: LiveReminderReconciliationSnapshot | null;
+  notificationRules: LiveNotificationRuleInput[];
+  expectedLegacyBinding: { templateId: string | null; offsetMinutes: number } | null;
+}) {
+  const transitionAt = new Date();
+  if (input.liveId) {
+    try {
+      return await input.db.$transaction(async (tx) => {
+      const claimedDraft = await tx.liveStudioDraft.updateMany({
+        where: {
+          id: input.draftId,
+          vendorId: input.vendorId,
+          liveId: input.liveId,
+          revision: input.revision,
+          payload: { equals: input.expectedDraftPayload as Prisma.InputJsonValue },
+          consumedAt: null,
+          expiresAt: { gt: transitionAt },
+        },
+        data: { revision: { increment: 1 } },
+      });
+      if (claimedDraft.count !== 1) return null;
+      const expectedBinding = input.expectedLegacyBinding;
+      if (!expectedBinding) throw new LiveLegacyBindingConflict();
+      const bindingClaim = await tx.live.updateMany({
+        where: {
+          id: input.liveId!,
+          vendorId: input.vendorId,
+          liveReminderTemplateId: expectedBinding.templateId,
+          liveReminderOffsetMinutes: expectedBinding.offsetMinutes,
+        },
+        data: { liveReminderOffsetMinutes: expectedBinding.offsetMinutes },
+      });
+      if (bindingClaim.count !== 1) throw new LiveLegacyBindingConflict();
+      const currentLive = await tx.live.findFirst({
+        where: { id: input.liveId!, vendorId: input.vendorId },
+        select: { status: true, startedAt: true, endedAt: true },
+      });
+      if (!currentLive) return null;
+      const lifecycleData: LiveMutationData & { startedAt?: Date | null; endedAt?: Date | null } = { ...input.data };
+      if (currentLive.status === "scheduled" && input.data.status === "live" && !currentLive.startedAt) {
+        lifecycleData.startedAt = transitionAt;
+      }
+      if (currentLive.status === "live" && input.data.status === "ended" && !currentLive.endedAt) {
+        lifecycleData.endedAt = transitionAt;
+      }
+      const startsNewSession = ["ended", "draft"].includes(currentLive.status) && input.data.status === "scheduled";
+      if (startsNewSession) {
+        lifecycleData.startedAt = null;
+        lifecycleData.endedAt = null;
+      }
+      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: lifecycleData });
+      if (currentLive.status === "scheduled" && input.data.status === "live") {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live"],
+        });
+      } else if (currentLive.status === "live" && input.data.status === "ended") {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live", "during_live"],
+        });
+      } else if (startsNewSession) {
+        await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
+          vendorId: input.vendorId,
+          liveId: input.liveId!,
+          triggers: ["before_live", "during_live"],
+        });
+      }
+      await tx.liveProduct.deleteMany({ where: { liveId: input.liveId! } });
+      for (const [index, productId] of input.productIds.entries()) {
+        await tx.liveProduct.create({
+          data: { vendorId: input.vendorId, liveId: input.liveId!, productId, sortOrder: index + 1, isPinned: index === 0 },
+        });
+      }
+      const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
+        vendorId: input.vendorId,
+        liveId: input.liveId!,
+        rules: input.notificationRules,
+      });
+      const reminderReconciliation = input.reminderReconciliationSnapshot
+        ? await queueLiveReminderReconciliation(tx, input.reminderReconciliationSnapshot, transitionAt)
+        : null;
+      return {
+        id: input.liveId!,
+        created: false,
+        reminderReconciliationStatus: reminderReconciliation?.status ?? null,
+        notificationRuleIds: notificationReconciliation.materializeRuleIds,
+      };
+      });
+    } catch (error) {
+      if (error instanceof LiveLegacyBindingConflict
+        || (typeof error === "object" && error !== null && "code" in error && error.code === "P2034")) return null;
+      throw error;
+    }
   }
 
-  redirect("/messages/templates");
+  return input.db.$transaction(async (tx) => {
+    const claimedDraft = await tx.liveStudioDraft.updateMany({
+      where: {
+        id: input.draftId,
+        vendorId: input.vendorId,
+        liveId: null,
+        revision: input.revision,
+        payload: { equals: input.expectedDraftPayload as Prisma.InputJsonValue },
+        consumedAt: null,
+        expiresAt: { gt: transitionAt },
+      },
+      data: { consumedAt: transitionAt },
+    });
+    if (claimedDraft.count !== 1) return null;
+    const live = await tx.live.create({
+      data: {
+        ...input.data,
+        vendorId: input.vendorId,
+        products: {
+          create: input.productIds.map((productId, index) => ({
+            vendorId: input.vendorId,
+            productId,
+            sortOrder: index + 1,
+            isPinned: index === 0,
+          })),
+        },
+      },
+    });
+    const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
+      vendorId: input.vendorId,
+      liveId: live.id,
+      rules: input.notificationRules,
+    });
+    return { id: live.id, created: true, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
+  });
+}
+
+function parseSubmittedLiveDraft(
+  formData: FormData,
+  liveId: string | null,
+  draftId: string,
+  vendorTimeZone: string,
+) {
+  const suffix = liveId ? "" : `&draft=${encodeURIComponent(draftId)}`;
+  const invalidDraftPath = liveId
+    ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_draft`
+    : `/lives/new?error=invalid_draft${suffix}`;
+  let payload: LiveStudioDraftPayload;
+  try {
+    payload = liveStudioDraftFromFormData(formData, 7);
+  } catch {
+    redirect(invalidDraftPath);
+  }
+  const slug = toSlug(payload.slug);
+  if (!payload.title || !slug || !payload.scheduledAt) {
+    redirect(invalidDraftPath);
+  }
+  let scheduledAt: Date;
+  let replayAvailableUntil: Date | null = null;
+  try {
+    scheduledAt = parseZonedDateTimeLocal(payload.scheduledAt, vendorTimeZone);
+    if (payload.replayEnabled && payload.replayAvailableUntil) {
+      replayAvailableUntil = parseZonedDateTimeLocal(payload.replayAvailableUntil, vendorTimeZone);
+    }
+  } catch {
+    redirect(invalidDraftPath);
+  }
+  return { payload, scheduledAt, replayAvailableUntil, slug, suffix, invalidDraftPath };
+}
+
+function requireValidReplayDeadline(input: {
+  replayAvailableUntil: Date | null;
+  scheduledAt: Date;
+  streamMode: LiveStudioDraftPayload["streamMode"];
+  video: { durationSec: number | null } | null;
+  invalidDraftPath: string;
+}) {
+  if (!input.replayAvailableUntil) return;
+  let earliestDeadline = input.scheduledAt;
+  if (input.streamMode === "vod") {
+    const durationSec = input.video?.durationSec;
+    if (typeof durationSec !== "number" || !Number.isSafeInteger(durationSec) || durationSec <= 0) {
+      redirect(input.invalidDraftPath);
+    }
+    const naturalCompletionMs = input.scheduledAt.getTime() + durationSec * 1_000;
+    if (!Number.isSafeInteger(naturalCompletionMs)) redirect(input.invalidDraftPath);
+    earliestDeadline = new Date(naturalCompletionMs);
+  }
+  if (input.replayAvailableUntil.getTime() <= earliestDeadline.getTime()) {
+    redirect(input.invalidDraftPath);
+  }
+}
+
+function parseSubmittedLiveQuotaPolicy(
+  payload: LiveStudioDraftPayload,
+  liveId: string | null,
+  createDraftSuffix: string,
+) {
+  try {
+    return parseLiveQuotaPolicyForm({
+      affiliateMode: payload.affiliateMode,
+      defaultAffiliateCode: payload.defaultAffiliateCode || null,
+      maxConcurrentViewers: Number.parseInt(payload.maxConcurrentViewers, 10),
+      stopWhenCreditsBelow: Number.parseInt(payload.stopWhenCreditsBelow, 10),
+      quotaPayerScope: payload.quotaPayerScope,
+      usageAttributionMode: payload.usageAttributionMode,
+      splitOwnerBps: Number.parseInt(payload.splitOwnerBps, 10),
+      splitPromoterBps: Number.parseInt(payload.splitPromoterBps, 10),
+      customAllocations: payload.customAllocations || null,
+      memberQuotas: payload.memberQuotas || null,
+      pageQuotas: payload.pageQuotas || null,
+    });
+  } catch (error) {
+    if (error instanceof LiveQuotaPolicyValidationError) redirect(
+      liveId
+        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_policy`
+        : `/lives/new?error=invalid_policy${createDraftSuffix}`,
+    );
+    throw error;
+  }
+}
+
+async function resolveSubmittedLiveReferences(input: {
+  db: PrismaClient;
+  vendorId: string;
+  liveId: string | null;
+  productIds: string[];
+  videoId: string | null;
+  formId: string | null;
+  messageTemplateId: string | null;
+  liveReminderTemplateId: string | null;
+  notificationRules: LiveNotificationRuleInput[];
+  interactionScriptId: string | null;
+  defaultAffiliateCode: string | null;
+  heroImageAssetId: string | null;
+  quotaPageIds: string[];
+  invalidReferencePath: string;
+}) {
+  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
+    input.liveId
+      ? input.db.live.findFirst({
+          where: { id: input.liveId, vendorId: input.vendorId },
+          select: {
+            id: true,
+            slug: true,
+            title: true,
+            status: true,
+            scheduledAt: true,
+            liveReminderTemplateId: true,
+            liveReminderOffsetMinutes: true,
+          },
+        })
+      : Promise.resolve(null),
+    input.productIds.length > 0
+      ? input.db.product.findMany({ where: { vendorId: input.vendorId, id: { in: input.productIds }, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true } })
+      : Promise.resolve([]),
+    input.videoId ? input.db.video.findFirst({ where: liveReadyVideoWhere(input.vendorId, input.videoId), select: { id: true, durationSec: true } }) : Promise.resolve(null),
+    input.formId ? input.db.registrationForm.findFirst({
+      where: { id: input.formId, vendorId: input.vendorId, isActive: true },
+      select: { id: true, fields: true },
+    }) : Promise.resolve(null),
+    input.messageTemplateId ? input.db.messageTemplate.findFirst({
+      where: {
+        id: input.messageTemplateId,
+        vendorId: input.vendorId,
+        ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
+      },
+      select: { id: true, subject: true, body: true },
+    }) : Promise.resolve(null),
+    input.liveReminderTemplateId ? input.db.messageTemplate.findFirst({
+      where: {
+        id: input.liveReminderTemplateId,
+        vendorId: input.vendorId,
+        ...LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
+      },
+      select: {
+        id: true,
+        vendorId: true,
+        channel: true,
+        trigger: true,
+        subject: true,
+        body: true,
+        isActive: true,
+        updatedAt: true,
+      },
+    }) : Promise.resolve(null),
+    input.notificationRules.length > 0 ? input.db.messageTemplate.findMany({
+      where: {
+        vendorId: input.vendorId,
+        id: { in: [...new Set(input.notificationRules.map((rule) => rule.messageTemplateId))] },
+        channel: "email",
+        isActive: true,
+      },
+      select: {
+        id: true,
+        vendorId: true,
+        channel: true,
+        trigger: true,
+        subject: true,
+        body: true,
+        isActive: true,
+        updatedAt: true,
+      },
+    }) : Promise.resolve([]),
+    input.interactionScriptId ? input.db.interactionScript.findFirst({ where: { id: input.interactionScriptId, vendorId: input.vendorId, status: "published" }, select: { id: true } }) : Promise.resolve(null),
+    input.defaultAffiliateCode ? input.db.affiliate.findFirst({
+      where: { vendorId: input.vendorId, code: input.defaultAffiliateCode, isActive: true },
+      select: { id: true },
+    }) : Promise.resolve(null),
+    resolveReadyImageAsset(input.db, { vendorId: input.vendorId, assetId: input.heroImageAssetId })
+      .catch(() => redirect(input.invalidReferencePath)),
+    input.quotaPageIds.length > 0
+      ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
+      : Promise.resolve([]),
+  ]);
+  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages };
+}
+
+function requireSubmittedLivePublishReadiness(input: {
+  liveId: string | null;
+  draftId: string;
+  requestedStatus: string;
+  replayEnabled: boolean;
+  studioPreset: LiveStudioDraftPayload["studioPreset"];
+  productCount: number;
+  productsReady: boolean;
+  videoReady: boolean;
+  registrationFormFields: unknown;
+  registrationEmail: { subject: string | null; body: string } | null;
+  liveReminderEmail: { subject: string | null; body: string } | null;
+  interactionScriptReady: boolean;
+}) {
+  const readiness = getLivePublishReadiness({
+    studioPreset: input.studioPreset,
+    productCount: input.productCount,
+    productsReady: input.productsReady,
+    videoReady: input.videoReady,
+    formReady: parseRegistrationFormFields(input.registrationFormFields).success,
+    registrationEmailReady: Boolean(input.registrationEmail && hasUsableMessageTemplateContent(input.registrationEmail)),
+    liveReminderEmailReady: Boolean(input.liveReminderEmail && hasUsableMessageTemplateContent(input.liveReminderEmail)),
+    interactionScriptReady: input.interactionScriptReady,
+  });
+  if (!requiresLivePublishReadiness(input.requestedStatus, input.replayEnabled) || readiness.ready) return;
+  redirect(
+    input.liveId
+      ? `/lives/${encodeURIComponent(input.liveId)}/edit?error=publish_not_ready`
+      : `/lives/new?error=publish_not_ready&draft=${encodeURIComponent(input.draftId)}`,
+  );
+}
+
+function liveReminderSnapshotAfterUpdate(input: {
+  vendorId: string;
+  liveId: string | null;
+  existingLive: {
+    slug: string;
+    title: string;
+    status: string;
+    scheduledAt: Date;
+    liveReminderTemplateId: string | null;
+    liveReminderOffsetMinutes: number;
+  } | null;
+  requestedTitle: string;
+  requestedSlug: string;
+  requestedStatus: string;
+  scheduledAt: Date;
+  reminderOffsetMinutes: number;
+  template: LiveReminderTemplateSnapshot | null;
+}) {
+  const existing = input.existingLive;
+  if (!input.liveId || !existing) return null;
+  const previousActive = ["scheduled", "live"].includes(existing.status);
+  const nextActive = ["scheduled", "live"].includes(input.requestedStatus);
+  const templateId = input.template?.id ?? null;
+  const changed = existing.slug !== input.requestedSlug
+    || existing.title !== input.requestedTitle
+    || existing.scheduledAt.getTime() !== input.scheduledAt.getTime()
+    || existing.liveReminderTemplateId !== templateId
+    || existing.liveReminderOffsetMinutes !== input.reminderOffsetMinutes
+    || (previousActive !== nextActive && (existing.liveReminderTemplateId !== null || templateId !== null));
+  if (!changed) return null;
+  return createLiveReminderReconciliationSnapshot({
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    liveSlug: input.requestedSlug,
+    liveTitle: input.requestedTitle,
+    liveStatus: input.requestedStatus,
+    scheduledAt: input.scheduledAt,
+    reminderOffsetMinutes: input.reminderOffsetMinutes,
+    template: input.template,
+  });
+}
+
+function liveReminderReconciliationNotice(status: string | null) {
+  if (!status) return null;
+  return ["cancelled", "reused_cancelled"].includes(status)
+    ? "reminders_cancelled"
+    : "reminders_reconciling";
+}
+
+function parseSubmittedNotificationRuleDraft(
+  submittedDraft: LiveStudioDraftPayload,
+  invalidDraftPath: string,
+) {
+  const parsed = parseLiveNotificationRules(submittedDraft.notificationRules);
+  if (!parsed.success) redirect(invalidDraftPath);
+  return parsed.data;
+}
+
+function requireValidNotificationRuleTemplates(input: {
+  rules: LiveNotificationRuleInput[];
+  templates: Array<{ id: string; vendorId: string; channel: string; trigger: string; isActive: boolean }>;
+  vendorId: string;
+  invalidReferencePath: string;
+}) {
+  if (!haveValidLiveNotificationRuleTemplates(input.rules, input.templates, input.vendorId)) {
+    redirect(input.invalidReferencePath);
+  }
+}
+
+async function resolveAuthoritativeLegacyReminder(input: {
+  db: PrismaClient;
+  vendorId: string;
+  existingLive: {
+    liveReminderTemplateId: string | null;
+    liveReminderOffsetMinutes: number;
+  } | null;
+  submittedOffsetMinutes: number;
+  notificationRules: LiveNotificationRuleInput[];
+  notificationTemplates: LiveReminderTemplateSnapshot[];
+}) {
+  if (!input.existingLive) {
+    const firstActiveBeforeLiveRule = input.notificationRules
+      .filter((rule) => rule.trigger === "before_live" && rule.isActive)
+      .sort((left, right) => left.sortOrder - right.sortOrder)[0];
+    const reminderTemplate = firstActiveBeforeLiveRule
+      ? input.notificationTemplates.find((template) => (
+          template.id === firstActiveBeforeLiveRule.messageTemplateId
+          && template.vendorId === input.vendorId
+          && template.channel === "email"
+          && template.isActive
+          && template.trigger === expectedTemplateTrigger(firstActiveBeforeLiveRule.trigger)
+        ))
+      : undefined;
+
+    return reminderTemplate && firstActiveBeforeLiveRule
+      ? {
+          templateId: reminderTemplate.id,
+          offsetMinutes: firstActiveBeforeLiveRule.offsetMinutes,
+          template: reminderTemplate,
+          missing: false,
+        }
+      : { templateId: null, offsetMinutes: input.submittedOffsetMinutes, template: null, missing: false };
+  }
+  const templateId = input.existingLive.liveReminderTemplateId;
+  const template = templateId
+    ? await input.db.messageTemplate.findFirst({
+        where: { id: templateId, vendorId: input.vendorId },
+        select: {
+          id: true,
+          vendorId: true,
+          channel: true,
+          trigger: true,
+          subject: true,
+          body: true,
+          isActive: true,
+          updatedAt: true,
+        },
+      })
+    : null;
+  return {
+    templateId,
+    offsetMinutes: input.existingLive.liveReminderOffsetMinutes,
+    template,
+    missing: Boolean(templateId && !template),
+  };
 }
 
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
-  const productIds = formData.getAll("productIds").filter((value): value is string => typeof value === "string");
-  const scheduledAtValue = text(formData, "scheduledAt");
+  const draftClaim = parseLiveDraftClaim(formData, id);
+  const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId, vendor.timezone);
+  const submittedDraft = parsedSubmission.payload;
+  const notificationRules = parseSubmittedNotificationRuleDraft(submittedDraft, parsedSubmission.invalidDraftPath);
+  const scheduledAt = parsedSubmission.scheduledAt;
+  const createDraftSuffix = parsedSubmission.suffix;
+  const rawProductIds = submittedDraft.productIds;
+  const productIds = [...new Set(rawProductIds.map((productId) => productId.trim()).filter(Boolean))];
+  const videoId = optionalDraftReference(submittedDraft.videoId);
+  const formId = optionalDraftReference(submittedDraft.formId);
+  const messageTemplateId = optionalDraftReference(submittedDraft.messageTemplateId);
+  const interactionScriptId = optionalDraftReference(submittedDraft.interactionScriptId);
+  const heroImageAssetId = optionalDraftReference(submittedDraft.heroImageAssetId);
+  const quotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
+  const invalidReferencePath = id
+    ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
+    : `/lives/new?error=invalid_reference${createDraftSuffix}`;
+  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, heroImageAssetId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
+    (value): value is string => value !== null,
+  );
+  if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
+    redirect(invalidReferencePath);
+  }
+  const db = getDb();
+  const quotaMembershipIds = [
+    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
+    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
+  ];
+  const quotaPageIds = quotaPolicy.pageQuotas.map((quota) => quota.pageId);
+  const references = await resolveSubmittedLiveReferences({
+    db,
+    vendorId: vendor.id,
+    liveId: id,
+    productIds,
+    videoId,
+    formId,
+    messageTemplateId,
+    liveReminderTemplateId: null,
+    notificationRules,
+    interactionScriptId,
+    defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
+    heroImageAssetId,
+    quotaPageIds,
+    invalidReferencePath,
+  });
+  const {
+    existingLive,
+    products,
+    video,
+    registrationForm,
+    messageTemplate,
+    liveReminderTemplate: ignoredSubmittedReminderTemplate,
+    notificationTemplates,
+    interactionScript,
+    defaultAffiliate,
+    heroImageAsset,
+    quotaPages,
+  } = references;
+  void ignoredSubmittedReminderTemplate;
+  const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
+    db,
+    vendorId: vendor.id,
+    existingLive,
+    submittedOffsetMinutes: Number(submittedDraft.liveReminderOffsetMinutes),
+    notificationRules,
+    notificationTemplates,
+  });
+  const liveReminderTemplate = authoritativeReminder.template;
+  const customMemberships = quotaMembershipIds.length > 0
+    ? await db.teamMembership.findMany({
+        where: {
+          vendorId: vendor.id,
+          id: { in: [...new Set(quotaMembershipIds)] },
+          status: "ACTIVE",
+          leftAt: null,
+        },
+        select: { id: true, teamId: true },
+      })
+    : [];
+  const membershipKeys = new Set(customMemberships.map((membership) => `${membership.teamId}:${membership.id}`));
+  const hasInvalidCustomMembership = quotaPolicy.customAllocations.some(
+    (allocation) => !membershipKeys.has(`${allocation.teamId}:${allocation.membershipId}`),
+  );
+  const hasInvalidMemberQuota = quotaPolicy.memberQuotas.some(
+    (quota) => !membershipKeys.has(`${quota.teamId}:${quota.membershipId}`),
+  );
+  const hasInvalidReference = hasInvalidLiveReferences({
+    liveMissing: id !== null && !existingLive,
+    productCount: products.length,
+    expectedProductCount: productIds.length,
+    videoMissing: videoId !== null && !video,
+    formMissing: formId !== null && !registrationForm,
+    templateMissing: messageTemplateId !== null && !messageTemplate,
+    reminderTemplateMissing: authoritativeReminder.missing,
+    scriptMissing: interactionScriptId !== null && !interactionScript,
+    affiliateMissing: isMissingDefaultAffiliate(quotaPolicy.defaultAffiliateCode, defaultAffiliate),
+    customMembershipMissing: hasInvalidCustomMembership || hasInvalidMemberQuota,
+    quotaPageCount: quotaPages.length,
+    expectedQuotaPageCount: new Set(quotaPageIds).size,
+  });
+  if (hasInvalidReference) {
+    redirect(invalidReferencePath);
+  }
+  requireValidNotificationRuleTemplates({
+    rules: notificationRules,
+    templates: notificationTemplates,
+    vendorId: vendor.id,
+    invalidReferencePath,
+  });
+  requireValidReplayDeadline({
+    replayAvailableUntil: parsedSubmission.replayAvailableUntil,
+    scheduledAt,
+    streamMode: submittedDraft.streamMode,
+    video,
+    invalidDraftPath: parsedSubmission.invalidDraftPath,
+  });
+  await requireLiveQuotaPaymentMethod(db, vendor.id, quotaPolicy, id, draftClaim.draftId);
+  const requestedStatus = requestedLiveStatus(formData, id, draftClaim.draftId, existingLive?.status ?? null);
+  requireSubmittedLivePublishReadiness({
+    liveId: id,
+    draftId: draftClaim.draftId,
+    requestedStatus,
+    replayEnabled: submittedDraft.replayEnabled,
+    studioPreset: submittedDraft.studioPreset,
+    productCount: productIds.length,
+    productsReady: products.length === productIds.length,
+    videoReady: Boolean(video),
+    registrationFormFields: registrationForm?.fields,
+    registrationEmail: messageTemplate,
+    liveReminderEmail: liveReminderTemplate,
+    interactionScriptReady: Boolean(interactionScript),
+  });
+  let heroImageUrl;
+  try {
+    heroImageUrl = heroImageAsset?.publicUrl ?? safeExternalUrl(submittedDraft.heroImageUrl || null, "直播主視覺網址");
+  } catch {
+    redirect(invalidReferencePath);
+  }
   const data = {
-    title: text(formData, "title"),
-    slug: toSlug(text(formData, "slug")),
-    description: optionalText(formData, "description"),
-    scheduledAt: scheduledAtValue ? new Date(scheduledAtValue) : new Date(),
-    status: text(formData, "status", "scheduled"),
-    videoId: optionalText(formData, "videoId"),
-    formId: optionalText(formData, "formId"),
-    messageTemplateId: optionalText(formData, "messageTemplateId"),
-    interactionScriptId: optionalText(formData, "interactionScriptId"),
-    heroImageUrl: optionalText(formData, "heroImageUrl"),
-    accentCopy: optionalText(formData, "accentCopy"),
-    replayEnabled: formData.get("replayEnabled") !== "off",
-    streamMode: text(formData, "streamMode", "vod"),
-    cloudflareLiveInputUid: optionalText(formData, "cloudflareLiveInputUid"),
-    quotaPolicy: {
-      maxConcurrentViewers: intValue(formData, "maxConcurrentViewers", 500),
-      stopWhenCreditsBelow: intValue(formData, "stopWhenCreditsBelow", 300),
-    } as Prisma.InputJsonValue,
+    title: submittedDraft.title,
+    slug: parsedSubmission.slug,
+    description: submittedDraft.description || null,
+    scheduledAt,
+    status: requestedStatus,
+    videoId,
+    formId,
+    messageTemplateId,
+    liveReminderTemplateId: authoritativeReminder.templateId,
+    liveReminderOffsetMinutes: authoritativeReminder.offsetMinutes,
+    interactionScriptId,
+    heroImageUrl,
+    heroImageAssetId: heroImageAsset?.id ?? null,
+    accentCopy: submittedDraft.accentCopy || null,
+    replayEnabled: submittedDraft.replayEnabled,
+    replayAvailableUntil: parsedSubmission.replayAvailableUntil,
+    streamMode: submittedDraft.streamMode,
+    quotaPolicy: quotaPolicy as Prisma.InputJsonValue,
   };
 
-  const db = getDb();
-  if (id) {
-    await db.$transaction([
-      db.live.update({ where: { id, vendorId: vendor.id }, data }),
-      db.liveProduct.deleteMany({ where: { liveId: id } }),
-      ...productIds.map((productId, index) =>
-        db.liveProduct.create({
-          data: { liveId: id, productId, sortOrder: index + 1, isPinned: index === 0 },
-        }),
-      ),
-    ]);
-    redirect(`/lives/${id}/edit`);
-  }
-
-  const live = await db.live.create({
-    data: {
-      ...data,
-      vendorId: vendor.id,
-      products: {
-        create: productIds.map((productId, index) => ({
-          productId,
-          sortOrder: index + 1,
-          isPinned: index === 0,
-        })),
-      },
-    },
+  const reminderReconciliationSnapshot = liveReminderSnapshotAfterUpdate({
+    vendorId: vendor.id,
+    liveId: id,
+    existingLive,
+    requestedTitle: data.title,
+    requestedSlug: data.slug,
+    requestedStatus,
+    scheduledAt,
+    reminderOffsetMinutes: data.liveReminderOffsetMinutes,
+    template: liveReminderTemplate,
   });
 
-  redirect(`/lives/${live.id}/preview`);
+  const committed = await commitLiveDraft({
+    db,
+    vendorId: vendor.id,
+    liveId: id,
+    draftId: draftClaim.draftId,
+    revision: draftClaim.revision,
+    expectedDraftPayload: submittedDraft,
+    data,
+    productIds,
+    notificationRules,
+    reminderReconciliationSnapshot,
+    expectedLegacyBinding: existingLive ? {
+      templateId: existingLive.liveReminderTemplateId,
+      offsetMinutes: existingLive.liveReminderOffsetMinutes,
+    } : null,
+  });
+  if (!committed) redirect(draftClaim.conflictPath);
+  try {
+    await materializeLiveNotificationRules({
+      vendorId: vendor.id,
+      liveId: committed.id,
+      ruleIds: committed.notificationRuleIds,
+    });
+  } catch (error) {
+    try {
+      captureOperationalError(error, { source: "live_notification", operation: "rule_materialize", status: "failed" });
+    } catch {
+      // Durable cron repair remains available if optional eager materialization fails.
+    }
+  }
+  if (committed.created) redirect(`/lives/${committed.id}/preview`);
+  const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
+  redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);
 }
 
+// Keep existing imports stable while interaction and blacklist mutations live
+// in their own server-action domain.
 export async function upsertInteractionRoleAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  const data = {
-    name: text(formData, "name"),
-    avatarUrl: optionalText(formData, "avatarUrl"),
-    label: text(formData, "label", "官方角色"),
-    roleType: text(formData, "roleType", "official"),
-    tone: optionalText(formData, "tone"),
-    isActive: formData.get("isActive") === "on",
-  };
+  return upsertInteractionRoleActionImpl(formData);
+}
 
-  if (id) {
-    await getDb().interactionRole.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().interactionRole.create({ data: { ...data, vendorId: vendor.id } });
-  }
-
-  redirect("/interaction-roles");
+export async function upsertInteractionRoleActionState(
+  previousState: InteractionRoleActionState,
+  formData: FormData,
+): Promise<InteractionRoleActionState> {
+  return upsertInteractionRoleActionStateImpl(previousState, formData);
 }
 
 export async function deleteInteractionRoleAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = text(formData, "id");
-  await getDb().interactionRole.delete({
-    where: { id, vendorId: vendor.id },
-  });
-  redirect("/interaction-roles/new");
+  return deleteInteractionRoleActionImpl(formData);
 }
-
-function roleAvatar(seed: string) {
-  return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundType=gradientLinear&radius=18`;
-}
-
-const systemRoleLibrary = [
-  { name: "開場 AI 主持人", label: "AI 主持人", roleType: "ai_host", tone: "熱情但不吵，負責歡迎、提醒流程與整理重點", avatarUrl: roleAvatar("host-blue") },
-  { name: "官方商品顧問", label: "官方角色", roleType: "official", tone: "清楚說明商品差異、價格與適合族群", avatarUrl: roleAvatar("advisor-cyan") },
-  { name: "優惠提醒助手", label: "系統助手", roleType: "system_assistant", tone: "在關鍵節點提醒限時優惠與表單，不過度催促", avatarUrl: roleAvatar("reminder-rose") },
-  { name: "客服 Q&A 助手", label: "客服助手", roleType: "support", tone: "簡短回答常見問題，引導私訊或表單", avatarUrl: roleAvatar("qa-indigo") },
-  { name: "保養知識顧問", label: "官方角色", roleType: "official", tone: "用生活化方式補充使用情境與注意事項", avatarUrl: roleAvatar("care-teal") },
-  { name: "成交節奏助手", label: "系統助手", roleType: "system_assistant", tone: "在商品浮出時整理賣點與 CTA", avatarUrl: roleAvatar("sales-amber") },
-  { name: "直播小編", label: "官方角色", roleType: "official", tone: "像品牌小編一樣親切補充直播資訊", avatarUrl: roleAvatar("editor-purple") },
-  { name: "提醒通知助手", label: "系統助手", roleType: "system_assistant", tone: "提醒報名、優惠到期、庫存與下一段重點", avatarUrl: roleAvatar("assistant-lime") },
-  { name: "售後關懷助手", label: "客服助手", roleType: "support", tone: "說明出貨、保固、退換貨與客服入口", avatarUrl: roleAvatar("support-green") },
-  { name: "限時活動主持", label: "AI 主持人", roleType: "ai_host", tone: "在促銷段落帶節奏，強調活動時間與組合價值", avatarUrl: roleAvatar("promo-red") },
-];
 
 export async function importSystemRolesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const db = getDb();
-  const existing = await db.interactionRole.findMany({
-    where: {
-      vendorId: vendor.id,
-      name: { in: systemRoleLibrary.map((role) => role.name) },
-    },
-    select: { name: true },
-  });
-  const existingNames = new Set(existing.map((role) => role.name));
-
-  await db.interactionRole.createMany({
-    data: systemRoleLibrary
-      .filter((role) => !existingNames.has(role.name))
-      .map((role) => ({ ...role, vendorId: vendor.id, isActive: true })),
-  });
-
-  revalidatePath("/interaction-roles");
-  redirect("/interaction-roles");
+  return importSystemRolesActionImpl(formData);
 }
 
 export async function upsertInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = optionalText(formData, "id");
-  const db = getDb();
-  const roleIds = formData.getAll("roleId").map(String);
-  const eventTypes = formData.getAll("eventType").map(String);
-  const parsedTriggerSecs = formData.getAll("triggerSec").map((value) => parseInteractionTriggerSeconds(String(value)));
-  const titles = formData.getAll("eventTitle").map(String);
-  const messages = formData.getAll("message").map(String);
-  const productIds = formData.getAll("productId").map(String);
-  const ctaLabels = formData.getAll("ctaLabel").map(String);
-  const ctaUrls = formData.getAll("ctaUrl").map(String);
+  return upsertInteractionScriptActionImpl(formData);
+}
 
-  if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
-    throw new Error(INTERACTION_TIME_FORMAT_ERROR);
-  }
-  const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
-    if (triggerSec === null) throw new Error(INTERACTION_TIME_FORMAT_ERROR);
-    return triggerSec;
-  });
-
-  const events = eventTypes
-    .map((eventType, index) => ({
-      eventType,
-      triggerSec: triggerSecs[index],
-      title: titles[index]?.trim() || `${eventType} ${index + 1}`,
-      message: messages[index]?.trim() || null,
-      productId: productIds[index]?.trim() || null,
-      ctaLabel: ctaLabels[index]?.trim() || null,
-      ctaUrl: ctaUrls[index]?.trim() || null,
-      roleId: roleIds[index]?.trim() || null,
-    }))
-    .filter((event) => event.eventType && event.title);
-
-  const data = {
-    name: text(formData, "name"),
-    description: optionalText(formData, "description"),
-    status: text(formData, "status", "draft"),
-  };
-
-  if (id) {
-    await db.$transaction([
-      db.interactionScript.update({ where: { id, vendorId: vendor.id }, data }),
-      db.interactionEvent.deleteMany({ where: { scriptId: id } }),
-      ...events.map((event) => db.interactionEvent.create({ data: { ...event, scriptId: id } })),
-    ]);
-  } else {
-    await db.interactionScript.create({
-      data: {
-        ...data,
-        vendorId: vendor.id,
-        events: { create: events },
-      },
-    });
-  }
-
-  redirect("/interaction-scripts");
+export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
+  return unbindInteractionScriptFromLiveActionImpl(formData);
 }
 
 export async function duplicateInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = text(formData, "id");
-  const script = await getDb().interactionScript.findFirst({
-    where: { id, vendorId: vendor.id },
-    include: { events: { orderBy: { triggerSec: "asc" } } },
-  });
-  if (!script) {
-    redirect("/interaction-scripts");
-  }
-
-  await getDb().interactionScript.create({
-    data: {
-      vendorId: vendor.id,
-      name: `${script.name} 複本`,
-      description: script.description,
-      status: "draft",
-      events: {
-        create: script.events.map((event) => ({
-          eventType: event.eventType,
-          triggerSec: event.triggerSec,
-          title: event.title,
-          message: event.message,
-          productId: event.productId,
-          ctaLabel: event.ctaLabel,
-          ctaUrl: event.ctaUrl,
-          roleId: event.roleId,
-          metadata: event.metadata as Prisma.InputJsonValue,
-        })),
-      },
-    },
-  });
-
-  revalidatePath("/interaction-scripts");
-  redirect("/interaction-scripts");
+  return duplicateInteractionScriptActionImpl(formData);
 }
 
 export async function deleteInteractionScriptAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = text(formData, "id");
-  await getDb().interactionScript.delete({
-    where: { id, vendorId: vendor.id },
-  });
-  revalidatePath("/interaction-scripts");
-  redirect("/interaction-scripts");
+  return deleteInteractionScriptActionImpl(formData);
 }
 
 export async function upsertBlacklistAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  await getDb().blacklist.create({
-    data: {
-      vendorId: vendor.id,
-      identifier: text(formData, "identifier"),
-      identifierType: text(formData, "identifierType", "email"),
-      reason: text(formData, "reason"),
-      notes: optionalText(formData, "notes"),
-    },
-  });
-  revalidatePath("/blacklists");
+  return upsertBlacklistActionImpl(formData);
 }
 
 export async function unblockBlacklistAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
-  const id = text(formData, "id");
-  await getDb().blacklist.update({
-    where: { id, vendorId: vendor.id },
-    data: {
-      isActive: false,
-      unblockedAt: new Date(),
-    },
-  });
-  revalidatePath("/blacklists");
+  return unblockBlacklistActionImpl(formData);
 }
 
 export async function upsertAffiliateAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const id = optionalText(formData, "id");
+  const commissionRate = AffiliateCommissionRateBps.safeParse(
+    Number(text(formData, "commissionRateBps")),
+  );
+  if (!commissionRate.success) {
+    redirect("/affiliates?error=invalid_commission_rate");
+  }
   const data = {
     name: text(formData, "name"),
     code: text(formData, "code").toUpperCase(),
     source: optionalText(formData, "source"),
     contactEmail: optionalText(formData, "contactEmail"),
-    commissionRateBps: intValue(formData, "commissionRateBps"),
+    commissionRateBps: commissionRate.data,
     isActive: formData.get("isActive") === "on",
   };
 
@@ -1323,92 +1491,22 @@ export async function generateSettlementAction(formData: FormData) {
     redirect("/admin/billing/settlements?error=missing");
   }
 
-  const db = getDb();
-  const vendor = await db.vendor.findUnique({ where: { id: vendorId } });
-  if (!vendor) {
-    redirect("/admin/billing/settlements?error=missing");
+  let result;
+  try {
+    result = await generateSettlementForVendor(vendorId, monthKey);
+  } catch (error) {
+    if (error instanceof BillingCycleError) {
+      if (error.code === "locked") redirect("/admin/billing/settlements?error=locked");
+      if (error.code === "negative_payout") redirect("/admin/billing/settlements?error=negative_payout");
+      if (error.code === "terminal_invoice_amount_conflict") redirect("/admin/billing/settlements?error=invoice_conflict");
+      if (error.code === "conflict") redirect("/admin/billing/settlements?error=conflict");
+      redirect("/admin/billing/settlements?error=missing");
+    }
+    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
   }
-
-  const existing = await db.settlement.findUnique({ where: { vendorId_monthKey: { vendorId, monthKey } } });
-  if (existing?.lockedAt) {
-    redirect("/admin/billing/settlements?error=locked");
-  }
-
-  const calculation = await calculateSettlement(vendorId, monthKey);
-  const adjustmentAmountCents = existing?.adjustmentAmountCents ?? 0;
-  const adjustmentReason = existing?.adjustmentReason ?? null;
-  const finalPayoutAmountCents = calculation.payoutableAmountCents + adjustmentAmountCents;
-
-  const settlement = await db.$transaction(async (tx) => {
-    const savedSettlement = await tx.settlement.upsert({
-      where: { vendorId_monthKey: { vendorId, monthKey } },
-      create: {
-        vendorId,
-        monthKey,
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        paymentGatewayFeeCents: calculation.paymentGatewayFeeCents,
-        grossRevenueCents: calculation.grossRevenueCents,
-        payoutableAmountCents: calculation.payoutableAmountCents,
-        adjustmentAmountCents,
-        adjustmentReason,
-        finalPayoutAmountCents,
-        status: "draft",
-      },
-      update: {
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        paymentGatewayFeeCents: calculation.paymentGatewayFeeCents,
-        grossRevenueCents: calculation.grossRevenueCents,
-        payoutableAmountCents: calculation.payoutableAmountCents,
-        finalPayoutAmountCents,
-        status: "draft",
-      },
-    });
-
-    const subtotalCents =
-      calculation.monthlyFeeCents +
-      calculation.overflowFeeCents +
-      calculation.paymentServiceFeeCents +
-      calculation.transactionServiceFeeCents +
-      calculation.affiliateManagementFeeCents;
-
-    await tx.invoice.upsert({
-      where: { invoiceNumber: invoiceNumber(vendor.slug, monthKey) },
-      create: {
-        vendorId,
-        monthKey,
-        invoiceNumber: invoiceNumber(vendor.slug, monthKey),
-        invoiceType: "monthly",
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        subtotalCents,
-        totalCents: subtotalCents,
-        status: "issued",
-      },
-      update: {
-        monthlyFeeCents: calculation.monthlyFeeCents,
-        overflowFeeCents: calculation.overflowFeeCents,
-        paymentServiceFeeCents: calculation.paymentServiceFeeCents,
-        transactionServiceFeeCents: calculation.transactionServiceFeeCents,
-        affiliateManagementFeeCents: calculation.affiliateManagementFeeCents,
-        subtotalCents,
-        totalCents: subtotalCents,
-        status: "issued",
-      },
-    });
-
-    return savedSettlement;
-  });
 
   await writeAuditLog({
     vendorId,
@@ -1416,9 +1514,9 @@ export async function generateSettlementAction(formData: FormData) {
     actorLabel: member.role,
     action: "generate_settlement",
     targetType: "Settlement",
-    targetId: settlement.id,
-    before: auditSnapshot(existing),
-    after: auditSnapshot({ settlement, calculation }),
+    targetId: result.settlement.id,
+    before: auditSnapshot(result.existingSettlement),
+    after: auditSnapshot({ settlement: result.settlement, calculation: result.calculation, invoice: result.invoice }),
   });
 
   revalidatePath("/admin/billing/settlements");
@@ -1437,16 +1535,35 @@ export async function updateSettlementAdjustmentAction(formData: FormData) {
   if (!settlement || settlement.lockedAt) {
     redirect("/admin/billing/settlements?error=locked");
   }
+  const finalPayoutAmountCents = settlement.payoutableAmountCents + adjustmentAmountCents;
+  if (finalPayoutAmountCents < 0) {
+    redirect("/admin/billing/settlements?error=negative_payout");
+  }
 
-  const updated = await getDb().settlement.update({
-    where: { id },
-    data: {
-      adjustmentAmountCents,
-      adjustmentReason,
-      reviewedBy: member.id,
-      finalPayoutAmountCents: settlement.payoutableAmountCents + adjustmentAmountCents,
-    },
-  });
+  const db = getDb();
+  let updated;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      const result = await tx.settlement.updateMany({
+        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
+        data: {
+          adjustmentAmountCents,
+          adjustmentReason,
+          reviewedBy: member.id,
+          finalPayoutAmountCents,
+        },
+      });
+      if (result.count !== 1) throw new SettlementMutationConflict();
+      const saved = await tx.settlement.findUnique({ where: { id } });
+      if (!saved) throw new SettlementMutationConflict();
+      return saved;
+    });
+  } catch (error) {
+    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlement.vendorId,
@@ -1468,27 +1585,136 @@ export async function lockSettlementAction(formData: FormData) {
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
   const settlement = await getDb().settlement.findUnique({ where: { id } });
-  if (!settlement || settlement.lockedAt) {
-    redirect("/admin/billing/settlements");
+  if (!settlement) {
+    redirect("/admin/billing/settlements?error=missing");
+  }
+  if (settlement.lockedAt) {
+    redirect("/admin/billing/settlements?error=locked");
+  }
+  if (settlement.finalPayoutAmountCents < 0) {
+    redirect("/admin/billing/settlements?error=negative_payout");
   }
 
   const db = getDb();
-  const updated = await db.$transaction(async (tx) => {
-    const locked = await tx.settlement.update({
-      where: { id },
-      data: {
-        status: "locked",
-        lockedAt: new Date(),
-        lockedBy: member.id,
-        reviewedBy: member.id,
-      },
+  let updated;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      const lockedAt = new Date();
+      const result = await tx.settlement.updateMany({
+        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
+        data: {
+          status: "locked",
+          lockedAt,
+          lockedBy: member.id,
+          reviewedBy: member.id,
+        },
+      });
+      if (result.count !== 1) throw new SettlementMutationConflict();
+
+      const locked = await tx.settlement.findUnique({ where: { id } });
+      if (!locked) throw new SettlementMutationConflict();
+      await tx.affiliateCommission.updateMany({
+        where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
+        data: { status: "locked", settledAt: lockedAt },
+      });
+
+      // Affiliate payouts are merchant-owned payables, not platform payout
+      // items. Derive them from the immutable ledger and keep the identity
+      // boundary in the database's vendor/affiliate/month unique key.
+      const lockedCommissions = await tx.affiliateCommission.findMany({
+        where: {
+          vendorId: settlement.vendorId,
+          monthKey: settlement.monthKey,
+          status: "locked",
+          affiliateId: { not: null },
+        },
+        select: {
+          id: true,
+          affiliateId: true,
+          commissionBaseAmountCents: true,
+          netReferenceAmountCents: true,
+        },
+      });
+      const payoutSnapshotsByAffiliate = new Map<string, {
+        commissionAmountCents: number;
+        grossSalesAmountCents: number;
+        netReferenceAmountCents: number;
+      }>();
+      for (const commission of lockedCommissions) {
+        if (!commission.affiliateId) continue;
+        const balance = await commissionLedgerBalance(tx, settlement.vendorId, commission.id);
+        const current = payoutSnapshotsByAffiliate.get(commission.affiliateId) ?? {
+          commissionAmountCents: 0,
+          grossSalesAmountCents: 0,
+          netReferenceAmountCents: 0,
+        };
+        const next = {
+          commissionAmountCents: current.commissionAmountCents + balance,
+          grossSalesAmountCents: current.grossSalesAmountCents + commission.commissionBaseAmountCents,
+          netReferenceAmountCents: current.netReferenceAmountCents + commission.netReferenceAmountCents,
+        };
+        if (next.commissionAmountCents < 0) throw new SettlementMutationConflict();
+        payoutSnapshotsByAffiliate.set(commission.affiliateId, next);
+      }
+
+      for (const [affiliateId, snapshot] of payoutSnapshotsByAffiliate) {
+        const { commissionAmountCents, grossSalesAmountCents, netReferenceAmountCents } = snapshot;
+        // A zero balance is a valid locked commission state but is not an
+        // amount payable to a merchant's affiliate.
+        if (commissionAmountCents === 0) continue;
+
+        const existingPayout = await tx.affiliatePayout.findUnique({
+          where: {
+            vendorId_affiliateId_monthKey: {
+              vendorId: settlement.vendorId,
+              affiliateId,
+              monthKey: settlement.monthKey,
+            },
+          },
+        });
+        if (existingPayout) {
+          if (
+            existingPayout.commissionAmountCents !== commissionAmountCents
+            || existingPayout.adjustmentAmountCents !== 0
+            || existingPayout.finalAmountCents !== commissionAmountCents
+            || (typeof existingPayout.grossSalesAmountCents === "number" && existingPayout.grossSalesAmountCents !== grossSalesAmountCents)
+            || (typeof existingPayout.netReferenceAmountCents === "number" && existingPayout.netReferenceAmountCents !== netReferenceAmountCents)
+          ) {
+            throw new SettlementMutationConflict();
+          }
+          continue;
+        }
+
+        await tx.affiliatePayout.create({
+          data: {
+            vendorId: settlement.vendorId,
+            affiliateId,
+            monthKey: settlement.monthKey,
+            commissionAmountCents,
+            adjustmentAmountCents: 0,
+            finalAmountCents: commissionAmountCents,
+            grossSalesAmountCents,
+            netReferenceAmountCents,
+            status: "pending",
+          },
+        });
+      }
+      // Course F/G payables are a separate merchant-owned read model. They
+      // are grouped by recipient membership and original transaction month;
+      // this never implies a bank/KYC/tax check or an external payment.
+      await syncCoursePayoutsForSettlement(tx, {
+        vendorId: settlement.vendorId,
+        monthKey: settlement.monthKey,
+        ...monthRange(settlement.monthKey),
+      });
+      return locked;
     });
-    await tx.affiliateCommission.updateMany({
-      where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
-      data: { status: "locked", settledAt: new Date() },
-    });
-    return locked;
-  });
+  } catch (error) {
+    if (error instanceof SettlementMutationConflict || error instanceof CoursePayoutMutationConflict || isSettlementMutationConflict(error)) {
+      redirect("/admin/billing/settlements?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlement.vendorId,
@@ -1506,10 +1732,139 @@ export async function lockSettlementAction(formData: FormData) {
   redirect("/admin/billing/settlements");
 }
 
+export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { vendor, member } = await requireVendorFinance("/affiliates/commissions");
+  const id = text(formData, "id");
+  const status = text(formData, "status");
+  const reason = text(formData, "reason");
+  const outcomeReference = optionalText(formData, "outcomeReference");
+  if (
+    !id
+    || id.length > 200
+    || (status !== "paid" && status !== "void")
+    || reason.length < 1
+    || reason.length > 500
+    || (status === "paid" && (!outcomeReference || outcomeReference.length > 200))
+  ) {
+    redirect("/affiliates/commissions?error=invalid_payout");
+  }
+
+  const auditMeta = await requestAuditMeta();
+  try {
+    await getDb().$transaction(async (tx) => {
+      const payout = await tx.affiliatePayout.findFirst({
+        where: { id, vendorId: vendor.id },
+      });
+      if (!payout) throw new AffiliatePayoutMutationConflict();
+      if (
+        payout.payoutItemId !== null
+        || payout.finalAmountCents <= 0
+        || payout.finalAmountCents !== payout.commissionAmountCents + payout.adjustmentAmountCents
+      ) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+      if (payout.status === "paid" && !payout.paidAt) throw new AffiliatePayoutMutationConflict();
+      if (payout.status === "void" && payout.paidAt) throw new AffiliatePayoutMutationConflict();
+      if (payout.status === status) return;
+      if (payout.status !== "pending") throw new AffiliatePayoutMutationConflict();
+
+      const commissions = await tx.affiliateCommission.findMany({
+        where: {
+          vendorId: vendor.id,
+          affiliateId: payout.affiliateId,
+          monthKey: payout.monthKey,
+        },
+        select: { id: true, affiliateId: true, status: true },
+      });
+      if (commissions.length === 0 || commissions.some((commission) => commission.status !== "locked" || commission.affiliateId !== payout.affiliateId)) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+
+      const balances = [] as Array<{ id: string; amountCents: number }>;
+      let commissionTotalCents = 0;
+      for (const commission of commissions) {
+        const amountCents = await commissionLedgerBalance(tx, vendor.id, commission.id);
+        if (amountCents < 0) throw new AffiliatePayoutMutationConflict();
+        balances.push({ id: commission.id, amountCents });
+        commissionTotalCents += amountCents;
+      }
+      if (commissionTotalCents !== payout.commissionAmountCents) throw new AffiliatePayoutMutationConflict();
+
+      const transitionedAt = new Date();
+      if (status === "void") {
+        for (const balance of balances) {
+          if (balance.amountCents === 0) continue;
+          await appendCommissionLedgerEntry(tx, {
+            vendorId: vendor.id,
+            affiliateCommissionId: balance.id,
+            entryType: "reversal",
+            providerName: "merchant",
+            eventIdentity: `affiliate-payout:void:${payout.id}:${balance.id}`,
+            amountCents: -balance.amountCents,
+            occurredAt: transitionedAt,
+          });
+        }
+      }
+
+      const payoutClaim = await tx.affiliatePayout.updateMany({
+        where: { id: payout.id, vendorId: vendor.id, status: "pending", payoutItemId: null },
+        data: {
+          status,
+          outcomeReference: status === "paid" ? outcomeReference : null,
+          outcomeReason: reason,
+          paidAt: status === "paid" ? transitionedAt : null,
+        },
+      });
+      if (payoutClaim.count !== 1) throw new AffiliatePayoutMutationConflict();
+
+      const commissionClaim = await tx.affiliateCommission.updateMany({
+        where: {
+          vendorId: vendor.id,
+          id: { in: commissions.map((commission) => commission.id) },
+          status: "locked",
+        },
+        data: { status, settledAt: transitionedAt },
+      });
+      if (commissionClaim.count !== commissions.length) throw new AffiliatePayoutMutationConflict();
+
+      const updated = await tx.affiliatePayout.findUnique({ where: { id: payout.id } });
+      if (!updated || updated.vendorId !== vendor.id || updated.status !== status) {
+        throw new AffiliatePayoutMutationConflict();
+      }
+      await tx.auditLog.create({
+        data: {
+          vendorId: vendor.id,
+          actorId: member.id,
+          actorLabel: member.role,
+          action: status === "paid" ? "mark_affiliate_payout_paid" : "mark_affiliate_payout_void",
+          targetType: "AffiliatePayout",
+          targetId: payout.id,
+          before: auditSnapshot(payout),
+          after: auditSnapshot({ payout: updated, reference: status === "paid" ? outcomeReference : null, reason, transitionedAt }),
+          ipAddress: auditMeta.ipAddress,
+          userAgent: auditMeta.userAgent,
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof AffiliatePayoutMutationConflict || isAffiliatePayoutMutationConflict(error)) {
+      redirect("/affiliates/commissions?error=conflict");
+    }
+    throw error;
+  }
+
+  revalidatePath("/affiliates/commissions");
+  redirect("/affiliates/commissions");
+}
+
 export async function createPayoutBatchAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
-  const settlementIds = formData.getAll("settlementIds").filter((value): value is string => typeof value === "string" && value.length > 0);
+  const settlementIds = Array.from(new Set(
+    formData.getAll("settlementIds")
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+  ));
   if (settlementIds.length === 0) {
     redirect("/admin/billing/payouts?error=empty");
   }
@@ -1525,53 +1880,91 @@ export async function createPayoutBatchAction(formData: FormData) {
     include: { vendor: { include: { paymentAccounts: true } } },
   });
 
-  if (settlements.length === 0) {
+  if (settlements.length !== settlementIds.length) {
     redirect("/admin/billing/payouts?error=no_locked");
+  }
+
+  const bankAccountsBySettlementId = new Map<string, ReturnType<typeof resolveStoredBankAccount>>();
+  try {
+    for (const settlement of settlements) {
+      const account = selectPayoutAccount(settlement.vendor.paymentAccounts);
+      bankAccountsBySettlementId.set(settlement.id, resolveStoredBankAccount({
+        vendorId: settlement.vendorId,
+        bankAccountEncrypted: account.bankAccountEncrypted,
+        legacyAccountName: account.bankAccountLegacyName,
+        legacyBankCode: account.bankCodeLegacy,
+        legacyAccountNumber: account.bankAccountLegacyNumber,
+      }));
+    }
+  } catch {
+    redirect("/admin/billing/settlements?error=invalid_payout_account");
   }
 
   const now = new Date();
   const batchNumber = payoutBatchNumber(now);
   const totalAmountCents = settlements.reduce((sum, settlement) => sum + settlement.finalPayoutAmountCents, 0);
 
-  const batch = await db.$transaction(async (tx) => {
-    const batch = await tx.payoutBatch.create({
-      data: {
-        batchNumber,
-        batchDate: now,
-        totalAmountCents,
-        totalCount: settlements.length,
-        status: "draft",
-        exportedFilePath: `/admin/billing/payouts/${batchNumber}/csv`,
-      },
-    });
-
-    for (const settlement of settlements) {
-      const account = settlement.vendor.paymentAccounts.find((item) => item.mode === "platform" && item.bankAccountNumber) ?? settlement.vendor.paymentAccounts[0];
-      await tx.payoutItem.create({
+  let batch;
+  try {
+    batch = await db.$transaction(async (tx) => {
+      const createdBatch = await tx.payoutBatch.create({
         data: {
-          payoutBatchId: batch.id,
-          vendorId: settlement.vendorId,
-          settlementId: settlement.id,
-          bankAccountName: account?.bankAccountName ?? settlement.vendor.name,
-          bankCode: account?.bankCode ?? "000",
-          bankAccountNumber: account?.bankAccountNumber ?? "未設定",
-          payoutAmountCents: settlement.finalPayoutAmountCents,
-          status: "pending",
-        },
-      });
-      await tx.settlement.update({
-        where: { id: settlement.id },
-        data: {
-          payoutBatchId: batch.id,
           batchNumber,
-          status: "ready_for_payout",
-          payoutDate: now,
+          batchDate: now,
+          totalAmountCents,
+          totalCount: settlements.length,
+          status: "draft",
+          exportedFilePath: `/admin/billing/payouts/${batchNumber}/csv`,
         },
       });
-    }
 
-    return batch;
-  });
+      for (const settlement of settlements) {
+        // Claim the settlement before creating a payout item. updateMany makes
+        // the eligibility check and bind one atomic row-locking operation, so
+        // concurrent batches cannot both consume the same settlement.
+        const claim = await tx.settlement.updateMany({
+          where: {
+            id: settlement.id,
+            lockedAt: { not: null },
+            payoutBatchId: null,
+            finalPayoutAmountCents: { gt: 0 },
+          },
+          data: {
+            payoutBatchId: createdBatch.id,
+            batchNumber,
+            status: "ready_for_payout",
+            payoutDate: now,
+          },
+        });
+        if (claim.count !== 1) {
+          throw new PayoutBatchClaimConflict();
+        }
+
+        const bankAccount = bankAccountsBySettlementId.get(settlement.id)!;
+        const bankAccountDisplay = maskBankAccount(bankAccount);
+        await tx.payoutItem.create({
+          data: {
+            payoutBatchId: createdBatch.id,
+            vendorId: settlement.vendorId,
+            settlementId: settlement.id,
+            bankAccountDisplayName: bankAccountDisplay.accountName,
+            bankCodeDisplay: bankAccountDisplay.bankCode,
+            bankAccountDisplayNumber: bankAccountDisplay.accountNumber,
+            bankAccountEncrypted: encryptBankAccount(bankAccount, settlement.vendorId),
+            payoutAmountCents: settlement.finalPayoutAmountCents,
+            status: "pending",
+          },
+        });
+      }
+
+      return createdBatch;
+    });
+  } catch (error) {
+    if (error instanceof PayoutBatchClaimConflict || isDatabaseTransactionConflict(error)) {
+      redirect("/admin/billing/payouts?error=conflict");
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     vendorId: settlements[0]?.vendorId ?? null,
@@ -1593,16 +1986,24 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
-  const status = text(formData, "status", "pending");
+  const parsedStatus = PayoutItemTargetStatus.safeParse(text(formData, "status"));
   const failReason = optionalText(formData, "failReason");
+  const outcomeReference = optionalText(formData, "outcomeReference");
+  if (!parsedStatus.success
+    || (parsedStatus.data === "failed" && (!failReason || failReason.length > 500))
+    || (parsedStatus.data === "paid" && (!outcomeReference || outcomeReference.length > 200))) {
+    redirect("/admin/billing/payouts?error=invalid_status");
+  }
+  const status = parsedStatus.data;
   const item = await getDb().payoutItem.findUnique({ where: { id }, include: { payoutBatch: true } });
-  if (!item) {
-    redirect("/admin/billing/payouts");
+  if (!item || !canTransitionPayoutItem(item.status, status)) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
   }
 
   const data: Prisma.PayoutItemUpdateInput = {
     status,
     failReason: status === "failed" ? failReason : null,
+    outcomeReference: status === "paid" ? outcomeReference : null,
   };
 
   if (status === "paid") {
@@ -1614,30 +2015,49 @@ export async function updatePayoutItemStatusAction(formData: FormData) {
     data.retryCount = { increment: 1 };
   }
 
-  const updated = await getDb().$transaction(async (tx) => {
-    const savedItem = await tx.payoutItem.update({ where: { id }, data });
-    const items = await tx.payoutItem.findMany({ where: { payoutBatchId: item.payoutBatchId } });
-    const paidItems = items.filter((batchItem) => batchItem.status === "paid" || batchItem.id === id && status === "paid");
-    const failedItems = items.filter((batchItem) => batchItem.status === "failed" || batchItem.id === id && status === "failed");
-    const batchStatus = paidItems.length === items.length ? "completed" : failedItems.length > 0 ? "failed" : item.payoutBatch.status;
+  const updated = await (async () => {
+    try {
+      return await getDb().$transaction(async (tx) => {
+        const savedItem = await tx.payoutItem.update({ where: { id, status: item.status }, data });
+        const items = await tx.payoutItem.findMany({ where: { payoutBatchId: item.payoutBatchId } });
+        const itemStatuses = items.map((batchItem) => batchItem.id === id ? status : batchItem.status);
+        const batchStatus = derivePayoutBatchStatus(itemStatuses, item.payoutBatch.status);
 
-    await tx.payoutBatch.update({
-      where: { id: item.payoutBatchId },
-      data: {
-        status: batchStatus,
-        executedAt: batchStatus === "completed" ? new Date() : item.payoutBatch.executedAt,
-      },
-    });
+        await tx.payoutBatch.update({
+          where: { id: item.payoutBatchId },
+          data: {
+            status: batchStatus,
+            executedAt: batchStatus === "completed" ? new Date() : item.payoutBatch.executedAt,
+          },
+        });
 
-    if (item.settlementId && status === "paid") {
-      await tx.settlement.update({
-        where: { id: item.settlementId },
-        data: { status: "paid", paidAt: new Date() },
-      });
+        if (item.settlementId && status === "paid") {
+          const paidAt = new Date();
+          const settlementTransition = await tx.settlement.updateMany({
+            where: {
+              id: item.settlementId,
+              vendorId: item.vendorId,
+              payoutBatchId: item.payoutBatchId,
+              finalPayoutAmountCents: item.payoutAmountCents,
+              status: "ready_for_payout",
+            },
+            data: { status: "paid", paidAt },
+          });
+          if (settlementTransition.count !== 1) throw new PayoutBatchClaimConflict();
+          // This platform payout settles the vendor only. Merchant-owned
+          // affiliate commissions remain locked until the merchant records
+          // the separate AffiliatePayout outcome with its own evidence.
+        }
+
+        return savedItem;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof PayoutBatchClaimConflict || isDatabaseTransactionConflict(error)) {
+        redirect("/admin/billing/payouts?error=invalid_transition");
+      }
+      throw error;
     }
-
-    return savedItem;
-  });
+  })();
 
   await writeAuditLog({
     vendorId: item.vendorId,
@@ -1660,13 +2080,22 @@ export async function markPayoutBatchExportedAction(formData: FormData) {
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
   const before = await getDb().payoutBatch.findUnique({ where: { id } });
-  const updated = await getDb().payoutBatch.update({
-    where: { id },
+  if (!before || !canMarkPayoutBatchExported(before.status)) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
+  }
+
+  const exportedAt = new Date();
+  const result = await getDb().payoutBatch.updateMany({
+    where: { id, status: "draft" },
     data: {
       status: "exported",
-      exportedAt: new Date(),
+      exportedAt,
     },
   });
+  if (result.count !== 1) {
+    redirect("/admin/billing/payouts?error=invalid_transition");
+  }
+  const updated = { ...before, status: "exported", exportedAt };
   await writeAuditLog({
     actorId: member.id,
     actorLabel: member.role,
@@ -1684,6 +2113,21 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
+  const db = getDb();
+
+  // An already-refunded PayUni transaction must be rejected before validating
+  // the editable refund fields. The dashboard intentionally leaves those
+  // fields blank for terminal transactions, so validating them first would
+  // hide the real idempotency result behind the generic `error=refund` path.
+  const providerTransaction = await db.paymentTransaction.findUnique({ where: { id } });
+  if (
+    providerTransaction?.providerName === "payuni"
+    && providerTransaction.status !== "paid"
+    && providerTransaction.status !== "partially_refunded"
+  ) {
+    redirect("/admin/billing/dashboard?error=refund_already_processed");
+  }
+
   const refundAmountCents = moneyToCents(formData, "refundAmount");
   const gatewayFeeRefundCents = moneyToCents(formData, "gatewayFeeRefund");
   const platformFeeRefundCents = moneyToCents(formData, "platformFeeRefund");
@@ -1697,7 +2141,196 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
-  const db = getDb();
+
+  // PayUni does not send a refund callback for the close API used by Sandbox.
+  // Reserve a local pending record first, then let this finance-admin action be
+  // the sole issuer of the provider refund.  This keeps a recoverable record if
+  // the provider succeeds but the final local commit cannot complete.
+  if (providerTransaction?.providerName === "payuni") {
+    const provider = getPaymentProvider("payuni");
+    if (!provider.refundPayment || !providerTransaction.providerTradeNo) {
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+
+    const requestId = randomBytes(16).toString("hex");
+    const requestReservationEventId = `request:${requestId}`;
+    const ambiguousReservationEventId = `ambiguous:${requestId}`;
+    let reserved: { transaction: typeof providerTransaction; refundId: string };
+    try {
+      reserved = await db.$transaction(async (tx) => {
+        const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
+        if (!transaction) throw new RefundValidationError();
+        // A provider-side refund is valid only after this transaction has been
+        // recorded as paid.  Do not allow a provider trade reference alone to
+        // move a pending, failed, or already-refunded transaction forward.
+        if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
+          throw new RefundValidationError();
+        }
+
+        const reservedRefunds = await tx.refundRecord.aggregate({
+          where: { paymentTransactionId: transaction.id, status: { in: ["pending", "processed"] } },
+          _sum: {
+            refundAmountCents: true,
+            gatewayFeeRefundCents: true,
+            platformFeeRefundCents: true,
+          },
+        });
+        const reservedAmountCents = reservedRefunds._sum.refundAmountCents ?? 0;
+        const reservedGatewayFeeCents = reservedRefunds._sum.gatewayFeeRefundCents ?? 0;
+        const reservedPlatformFeeCents = reservedRefunds._sum.platformFeeRefundCents ?? 0;
+        const pendingReservations = await tx.refundRecord.aggregate({ where: { paymentTransactionId: transaction.id, status: "pending" }, _count: { _all: true } });
+        if ((pendingReservations._count?._all ?? 0) > 0) throw new RefundValidationError();
+        if (
+          refundAmountCents > transaction.grossAmountCents - reservedAmountCents
+          || reservedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents
+          || reservedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
+        ) {
+          throw new RefundValidationError();
+        }
+
+        const refund = await tx.refundRecord.create({
+          data: {
+            vendorId: transaction.vendorId,
+            paymentTransactionId: transaction.id,
+            providerEventId: requestReservationEventId,
+            monthKey,
+            refundAmountCents,
+            gatewayFeeRefundCents,
+            platformFeeRefundCents,
+            reason,
+            status: "pending",
+          },
+        });
+        return { transaction, refundId: refund.id };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof RefundValidationError || isDatabaseTransactionConflict(error)) {
+        redirect("/admin/billing/dashboard?error=refund");
+      }
+      throw error;
+    }
+
+    let providerResult: Awaited<ReturnType<NonNullable<typeof provider.refundPayment>>>;
+    try {
+      providerResult = await provider.refundPayment({
+        transaction: reserved.transaction,
+        refundAmountCents,
+        requestId,
+      });
+    } catch (error) {
+      const category = error instanceof RefundProviderError ? error.category : "unknown";
+      // request_contract is the only category that is known to fail before a
+      // provider request can be sent. Every other outcome may have reached
+      // PayUni, so keep the reservation pending and require a provider query
+      // before allowing another refund attempt.
+      const requiresReconciliation = category !== "request_contract";
+      await db.refundRecord.update({
+        // This conditional update is the state transition boundary between an
+        // in-flight provider call and a query-only reconciliation. It also
+        // prevents a late action from overwriting a reconciled reservation.
+        where: {
+          id: reserved.refundId,
+          status: "pending",
+          providerEventId: requestReservationEventId,
+        },
+        data: requiresReconciliation
+          ? { providerEventId: ambiguousReservationEventId }
+          : { status: "failed" },
+      });
+      // 僅輸出安全分類，避免 provider payload、URL 或密鑰進入 runtime log。
+      console.info("payuni_refund_failed", {
+        category,
+        reservation: requiresReconciliation ? "pending_reconciliation" : "released",
+      });
+      redirect(`/admin/billing/dashboard?error=${requiresReconciliation ? "refund_reconciliation_required" : "refund"}`);
+    }
+
+    try {
+      await (async () => {
+        for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            return await db.$transaction(async (tx) => {
+              // The provider has already accepted this exact reservation. Read
+              // the transaction again inside the serializable completion
+              // transaction so a concurrent partial refund cannot overwrite a
+              // newer refunded total with the pre-provider snapshot.
+              const currentTransaction = await tx.paymentTransaction.findUnique({ where: { id: reserved.transaction.id } });
+              if (!currentTransaction) throw new RefundValidationError();
+              const refundedAmountCents = currentTransaction.refundedAmountCents + refundAmountCents;
+              if (refundedAmountCents > currentTransaction.grossAmountCents) throw new RefundValidationError();
+              const refundOccurredAt = new Date();
+
+              await tx.refundRecord.update({
+                where: {
+                  id: reserved.refundId,
+                  status: "pending",
+                  providerEventId: requestReservationEventId,
+                },
+                data: {
+                  status: "processed",
+                  providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
+                },
+              });
+              const completedTransaction = await tx.paymentTransaction.update({
+                where: { id: currentTransaction.id },
+                data: {
+                  status: refundedAmountCents >= currentTransaction.grossAmountCents ? "refunded" : "partially_refunded",
+                  refundedAmountCents,
+                  refundReason: reason,
+                  refundedAt: refundOccurredAt,
+                },
+              });
+              const refundedFeeTotals = await tx.refundRecord.aggregate({
+                where: { paymentTransactionId: completedTransaction.id, status: "processed" },
+                _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
+              });
+              await applyPaymentRefundAccounting(tx, {
+                vendorId: currentTransaction.vendorId,
+                transactionId: currentTransaction.id,
+                orderNumber: currentTransaction.orderNumber,
+                providerName: currentTransaction.providerName,
+                eventIdentity: providerResult.providerEventId ?? `request:${reserved.refundId}`,
+                refundRecordId: reserved.refundId,
+                refundAmountCents,
+                netReferenceAmountCents: calculateNetReferenceAmountCents({
+                  netAmountCents: completedTransaction.netAmountCents,
+                  refundedAmountCents: completedTransaction.refundedAmountCents,
+                  gatewayFeeRefundCents: refundedFeeTotals._sum.gatewayFeeRefundCents ?? 0,
+                  platformFeeRefundCents: refundedFeeTotals._sum.platformFeeRefundCents ?? 0,
+                }),
+                isFullRefund: refundedAmountCents >= currentTransaction.grossAmountCents,
+                transactionOccurredAt: currentTransaction.occurredAt,
+                occurredAt: refundOccurredAt,
+              });
+              const auditData = { vendorId: reserved.transaction.vendorId, actorId: member.id, actorLabel: member.role, action: "refund_payment_transaction", targetType: "PaymentTransaction", targetId: reserved.transaction.id, before: auditSnapshot(reserved.transaction), after: auditSnapshot(completedTransaction) };
+              if (tx.auditLog && typeof tx.auditLog.create === "function") {
+                await tx.auditLog.create({ data: auditData });
+              } else {
+                await writeAuditLog(auditData);
+              }
+              return completedTransaction;
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+          } catch (error) {
+            if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) continue;
+            throw error;
+          }
+        }
+        throw new Error("PayUni refund completion retry loop exited unexpectedly");
+      })();
+    } catch (error) {
+      // Keep the reservation pending after a provider-confirmed refund when
+      // local accounting cannot finish. This is recoverable and must not cause
+      // a second provider call on a later reconciliation attempt.
+      console.info("payuni_refund_completion_failed", {
+        category: isDatabaseTransactionConflict(error) ? "database" : "unknown",
+      });
+      redirect("/admin/billing/dashboard?error=refund");
+    }
+
+    revalidatePath("/admin/billing/dashboard");
+    revalidatePath("/admin/billing/settlements");
+    redirect("/admin/billing/dashboard");
+  }
 
   const { transaction, updated } = await (async () => {
     for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
@@ -1705,6 +2338,9 @@ export async function refundPaymentTransactionAction(formData: FormData) {
         return await db.$transaction(async (tx) => {
           const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
           if (!transaction) throw new RefundValidationError();
+          if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
+            throw new RefundValidationError();
+          }
 
           const remainingRefundAmountCents = transaction.grossAmountCents - transaction.refundedAmountCents;
           if (refundAmountCents > remainingRefundAmountCents) throw new RefundValidationError();
@@ -1727,7 +2363,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
           const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
           const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
-          await tx.refundRecord.create({
+          const refund = await tx.refundRecord.create({
             data: {
               vendorId: transaction.vendorId,
               paymentTransactionId: transaction.id,
@@ -1747,15 +2383,37 @@ export async function refundPaymentTransactionAction(formData: FormData) {
               refundedAt: new Date(),
             },
           });
+          const refundedFeeTotals = await tx.refundRecord.aggregate({
+            where: { paymentTransactionId: updated.id, status: "processed" },
+            _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
+          });
+          await applyPaymentRefundAccounting(tx, {
+            vendorId: transaction.vendorId,
+            transactionId: transaction.id,
+            orderNumber: transaction.orderNumber,
+            providerName: transaction.providerName,
+            eventIdentity: `refund:${refund.id}`,
+            refundRecordId: refund.id,
+            refundAmountCents,
+            netReferenceAmountCents: calculateNetReferenceAmountCents({
+              netAmountCents: updated.netAmountCents,
+              refundedAmountCents: updated.refundedAmountCents,
+              gatewayFeeRefundCents: refundedFeeTotals._sum.gatewayFeeRefundCents ?? 0,
+              platformFeeRefundCents: refundedFeeTotals._sum.platformFeeRefundCents ?? 0,
+            }),
+            isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
+            transactionOccurredAt: transaction.occurredAt,
+            occurredAt: new Date(),
+          });
 
           return { transaction, updated };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error) {
-        if (isRefundSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
+        if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
           continue;
         }
 
-        if (error instanceof RefundValidationError || isRefundTransactionConflict(error)) {
+        if (error instanceof RefundValidationError || isDatabaseTransactionConflict(error)) {
           redirect("/admin/billing/dashboard?error=refund");
         }
         throw error;
@@ -1778,42 +2436,6 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
   revalidatePath("/admin/billing/dashboard");
   revalidatePath("/admin/billing/settlements");
-  redirect("/admin/billing/dashboard");
-}
-
-export async function voidAffiliateCommissionAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { member } = await requireFinanceAdmin();
-  const id = text(formData, "id");
-  const reason = optionalText(formData, "reason");
-  const commission = await getDb().affiliateCommission.findUnique({ where: { id } });
-  if (!commission || commission.status === "paid") {
-    redirect("/admin/billing/dashboard?error=commission");
-  }
-
-  const updated = await getDb().affiliateCommission.update({
-    where: { id },
-    data: {
-      status: "void",
-      commissionAmountCents: 0,
-      settledAt: new Date(),
-      sourceType: reason ? `${commission.sourceType}: ${reason}` : commission.sourceType,
-    },
-  });
-
-  await writeAuditLog({
-    vendorId: commission.vendorId,
-    actorId: member.id,
-    actorLabel: member.role,
-    action: "void_affiliate_commission",
-    targetType: "AffiliateCommission",
-    targetId: commission.id,
-    before: auditSnapshot(commission),
-    after: auditSnapshot(updated),
-  });
-
-  revalidatePath("/admin/billing/dashboard");
-  revalidatePath("/affiliates/commissions");
   redirect("/admin/billing/dashboard");
 }
 

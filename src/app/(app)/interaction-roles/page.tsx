@@ -1,16 +1,22 @@
 import { importSystemRolesAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
 import { PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
-export default async function InteractionRolesPage() {
-  const vendor = await requireVendor();
-  const [roles, csrfToken] = await Promise.all([
+export default async function InteractionRolesPage({
+  searchParams = Promise.resolve({}),
+}: {
+  searchParams?: Promise<{ error?: string }>;
+}) {
+  const vendor = await requireVendorManager();
+  const [roles, csrfToken, query] = await Promise.all([
     getDb().interactionRole.findMany({ where: { vendorId: vendor.id }, orderBy: { createdAt: "desc" } }),
     getCsrfToken(),
+    searchParams,
   ]);
 
   return (
@@ -21,13 +27,22 @@ export default async function InteractionRolesPage() {
         action={
           <form action={importSystemRolesAction}>
             <CsrfField />
-            <button className="inline-flex h-10 items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100">
+            <FormSubmitButton
+              pendingChildren="匯入中…"
+              pendingMessage="正在匯入官方互動角色"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+            >
               匯入 10 個官方角色
-            </button>
+            </FormSubmitButton>
           </form>
         }
       />
-      <InteractionRolesWorkbench roles={roles} csrfToken={csrfToken} />
+      <InteractionRolesWorkbench
+        key="new-role"
+        roles={roles}
+        csrfToken={csrfToken}
+        error={query.error === "invalid_role" || query.error === "missing_role" ? query.error : null}
+      />
     </>
   );
 }

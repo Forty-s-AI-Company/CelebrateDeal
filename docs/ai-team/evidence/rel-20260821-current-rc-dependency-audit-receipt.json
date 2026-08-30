@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "celebratedeal-current-rc-dependency-audit/v1",
+  "workPackage": "REL-20260821-CURRENT-RC-DEPENDENCY-AUDIT",
+  "recordedAt": "2026-08-21T07:00:23Z",
+  "sourceCommit": "5fd1c61",
+  "status": "PASS",
+  "command": "npm audit --omit=dev --audit-level=high",
+  "result": "found 0 vulnerabilities",
+  "vulnerabilities": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "moderate": 0,
+    "low": 0
+  },
+  "scope": "Current source RC production dependencies only; no dependency mutation was performed.",
+  "sideEffects": {
+    "production": 0,
+    "payment": 0,
+    "refund": 0,
+    "email": 0,
+    "deployment": 0,
+    "workflowDispatch": 0
+  },
+  "safety": {
+    "dotenvRead": false,
+    "rawAuditOutputPersisted": false,
+    "credentialsRead": false,
+    "tokensPersisted": false,
+    "cookiesPersisted": false,
+    "customerDataRead": false,
+    "paymentDataRead": false
+  },
+  "sanitized": true
+}

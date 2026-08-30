@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "current-readiness-provenance/v1",
+  "sourceSnapshot": {
+    "json": {
+      "path": "docs/launch/current-readiness-snapshot-20260802.json",
+      "sha256": "sha256:f67a42235d3dda97e3fc9d2d78e0e579a96492cce6b3ca2d48ae147ff0d843ad"
+    },
+    "markdown": {
+      "path": "docs/launch/current-readiness-snapshot-20260802.md",
+      "sha256": "sha256:69b77429682b3a0f622670add32b805fc6d5c621fc320b0ae56762b3c07c538d"
+    }
+  },
+  "runtimeArtifacts": [
+    { "path": ".ai-team/reports/cat06-closure-20260807.json", "sha256": "sha256:0895db71d814db11b81ce40af78c031b56835b66faa3c170b96469d0e2015817", "bytes": 1465, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/cat10-closure-20260807.json", "sha256": "sha256:78bb1e40da4fc8b1ce0988ed3ad640672610834991d90e0835f51eabeae346fb", "bytes": 1258, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/g7-23-live-reminder-reconciliation-20260809.json", "sha256": "sha256:7ec87f34ce959dcf243086120ec41f3c18e9896f9b610aa6969457f4700a2d7d", "bytes": 1960, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp-116-payment-failure-observability-receipt.json", "sha256": "sha256:2e87107f2c2b72b0f788ae7b560928761f7491c76ec178ea612fe191b7e2d770", "bytes": 648, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp-86-m2-a01-direct-url-closure-20260801125227709/final-runner-summary.json", "sha256": "sha256:906d3336f801dd1a28b69ee2b5ab536eb79e3bd6de49c2e166839841af65bb3b", "bytes": 1928, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp110-merchant-onboarding-readiness-receipt.json", "sha256": "sha256:cfa564524cb9f8439211cd9ae38a1b6edff6d940a26b4be7a8ae0e7338d9dda5", "bytes": 1368, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp117-20260802-payuni-refund-reconciliation/sanitized-receipt.json", "sha256": "sha256:cec0789904d5f858946090dd7e84a05728d7e9aa047dd781a358fbb66f4f7432", "bytes": 1736, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp118-payuni-refund-reconciliation-local-receipt.json", "sha256": "sha256:dc4558bf6e8bdb574f9949251075594380bf4b6cd7421863385cd3309c3f34a7", "bytes": 2531, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp122-merchant-onboarding-receipt.json", "sha256": "sha256:a45f809d2302ded4b07ff165498611ac72c61b07d856db36605c6f6f6f733e62", "bytes": 1118, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp123-observability-rehearsal-receipt.json", "sha256": "sha256:cf66a8ae82ba792e756180fc3b6550f3d8c6faba7c30785bb59734e2d7bfedc5", "bytes": 6191, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp131-cloudflare-stream-webhook-idempotency-receipt.json", "sha256": "sha256:3ce66b99cd73b7eb92a5c18dc5eff183ced768b501f0b9670d19fb872c704a0e", "bytes": 1990, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp148-local-reliability-contract.json", "sha256": "sha256:b39431c8deea24f91c3eab9f8e2b7a6e89b21175b6377ca76eb68c66122a74f8", "bytes": 1705, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp148-sol-acceptance.json", "sha256": "sha256:04f07fdca89d8a18885ecdb7c4eb65a68960097735adbc4f853a34fb7e664be1", "bytes": 1399, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp175-sales-to-support-operational-rehearsal-receipt.json", "sha256": "sha256:936bc87c110a086c4f45c926921b46e87a91780ba53785d76617f8cc9ec73189", "bytes": 4139, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp187-latest-workspace-preview-freshness.json", "sha256": "sha256:54e917db53ea9106ef3af454460bfcbcc9965349e89f472bf5444c4d68917817", "bytes": 1943, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp191-staging-alias-rollback-rehearsal.json", "sha256": "sha256:0ed71c06ff85e5f4a123d7adeb3ed737ba1a713240afc958e3332fa1ad2c146a", "bytes": 2958, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp192-staging-alias-propagation-verification.json", "sha256": "sha256:db1a4a0203f8283fed785371e4fbafd2631cdd181432ab72fed3b6fec6bd71e8", "bytes": 2282, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp195-launch-owner-acceptance.json", "sha256": "sha256:3f3342f4b99d01390f3232a28021e431482dd20eff313a64af0362bad14f46da", "bytes": 2261, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp196-final-staging-payuni-authorization-receipt.json", "sha256": "sha256:026a21e0f90dc2c54554f9767c6fe3e9a37ca4287ea36783e858844cedc8d98a", "bytes": 2647, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp87-g2-recovery-receipt.json", "sha256": "sha256:c1ed5eb7c75c8c700f0323ff31a1dfc124481b7c8a328569c0400cd66d1d2cb5", "bytes": 134886, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp88-g1-direct-url-matrix-receipt.json", "sha256": "sha256:b9ad2d4963e2fdbf68787ec134b008725c3de3d9671373958408598776b8cef2", "bytes": 2502, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" },
+    { "path": ".ai-team/reports/wp89-migration-drift-receipt.json", "sha256": "sha256:1d63a8defa26e9e219fc1a946cf6e1b01a79824fbc1d35d08a23819e35744f40", "bytes": 23680, "sourceClass": "SANITIZED_LOCAL_RUNTIME_ARTIFACT" }
+  ],
+  "ignoredProvenanceArtifacts": [
+    {
+      "path": "docs/ai-team/current-work-package.md",
+      "sha256": "sha256:e9f55cc12afdb0868e361a5728ba4e4cbf6268f75e574a46cc282f7411b99002",
+      "bytes": 41670,
+      "sourceClass": "SANITIZED_LOCAL_IGNORED_PROVENANCE_ARTIFACT"
+    }
+  ],
+  "wp148Summary": {
+    "classification": "LOCAL_RELIABILITY_DIAGNOSTIC_CONTRACT_VERIFIED",
+    "state": "LOCAL_VERIFIED",
+    "externalTelemetry": "NOT_COLLECTED",
+    "scoreImpact": {
+      "CAT08": { "before": 7, "candidateAfter": 7.5, "applied": false },
+      "total": { "before": 71, "candidateAfter": 71.5, "applied": false }
+    },
+    "labels": { "SANDBOX_READY": false, "PRODUCTION_READY": false },
+    "sanitized": true,
+    "rawOutputPersisted": false,
+    "rawOutputExposed": false
+  }
+}

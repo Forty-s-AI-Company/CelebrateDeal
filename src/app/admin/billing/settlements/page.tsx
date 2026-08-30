@@ -7,6 +7,7 @@ import {
   updateSettlementAdjustmentAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader, SubmitButton } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -23,8 +24,22 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
-export default async function AdminBillingSettlementsPage() {
+const settlementErrorMessages: Record<string, string> = {
+  conflict: "月結資料已被其他操作更新，請重新整理後再試一次。",
+  invalid_payout_account: "無法建立出款批次：每個商家都必須恰好設定一筆有效的平台出款帳戶。",
+  locked: "這筆月結已鎖定，不能再重新計算或調整。",
+  missing: "找不到指定的商家或月結資料。",
+  negative_payout: "調整後的結算金額不可小於 0 元，資料未儲存。",
+};
+
+export default async function AdminBillingSettlementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   await requireFinanceAdmin();
+  const { error } = await searchParams;
+  const errorMessage = error ? settlementErrorMessages[error] : null;
   const db = getDb();
   const [vendors, settlements] = await Promise.all([
     db.vendor.findMany({
@@ -47,6 +62,12 @@ export default async function AdminBillingSettlementsPage() {
         description="產生商家月結、覆核人工調整、鎖單，並將已鎖定月結送入批次出款。"
         action={<Link href="/billing/settlements" className="text-sm font-semibold text-primary hover:underline">查看商家端月結</Link>}
       />
+
+      {errorMessage ? (
+        <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-white to-blue-50">
@@ -84,7 +105,7 @@ export default async function AdminBillingSettlementsPage() {
             月份
             <input name="monthKey" type="month" defaultValue={currentMonthKey()} className="h-10 rounded-md border border-border bg-white px-3 text-sm" />
           </label>
-          <SubmitButton>
+          <SubmitButton pendingChildren="產生中…" pendingMessage="正在產生月結，請勿重複送出。">
             <RefreshCw size={16} />
             產生月結
           </SubmitButton>
@@ -147,19 +168,28 @@ export default async function AdminBillingSettlementsPage() {
                     className="h-10 rounded-md border border-border bg-white px-3 text-sm disabled:bg-slate-100"
                   />
                 </label>
-                <button disabled={Boolean(settlement.lockedAt)} className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
+                <FormSubmitButton
+                  disabled={Boolean(settlement.lockedAt)}
+                  pendingChildren="儲存中…"
+                  pendingMessage="正在儲存月結調整，請勿重複送出。"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
                   儲存調整
-                </button>
+                </FormSubmitButton>
               </form>
 
               {!settlement.lockedAt ? (
                 <form action={lockSettlementAction}>
                   <CsrfField />
                   <input type="hidden" name="id" value={settlement.id} />
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+                  <FormSubmitButton
+                    pendingChildren="鎖定中…"
+                    pendingMessage="正在鎖定月結並建立分潤應付款，請勿重複送出。"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
                     <ShieldCheck size={16} />
                     鎖定月結
-                  </button>
+                  </FormSubmitButton>
                 </form>
               ) : null}
 
@@ -167,10 +197,14 @@ export default async function AdminBillingSettlementsPage() {
                 <form action={createPayoutBatchAction}>
                   <CsrfField />
                   <input type="hidden" name="settlementIds" value={settlement.id} />
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-dark">
+                  <FormSubmitButton
+                    pendingChildren="建立中…"
+                    pendingMessage="正在建立出款批次，請勿重複送出。"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-dark"
+                  >
                     <Banknote size={16} />
                     建立出款
-                  </button>
+                  </FormSubmitButton>
                 </form>
               ) : null}
             </div>

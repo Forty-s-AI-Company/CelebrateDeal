@@ -4,15 +4,22 @@ import { redirect } from "next/navigation";
 import type { Prisma, User, VendorMember } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync } from "@/lib/password";
 
 export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
+const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
+const VENDOR_SUPPORT_ROLES = ["owner", "admin", "support"] as const;
 const PLATFORM_ROLES = ["platform_admin"] as const;
 const ACTIVE_MEMBER_STATUS = "active";
+// A fixed, valid scrypt record makes unknown-account logins perform the same
+// asynchronous password derivation as known accounts without creating a
+// request-time synchronous hash.
+const DUMMY_PASSWORD_HASH =
+  "scrypt:000102030405060708090a0b0c0d0e0f:65c37c85e9aefa50a1f444621f7edb56f3b1e94a9ef3928cb01f59a6153d44286c55fb3532d67eb6f759e734c8c06a07918d5ae25593811db1727a668938246d";
 
 type VendorWithTracking = Prisma.VendorGetPayload<{ include: { tracking: true } }>;
 type UserWithMemberships = Prisma.UserGetPayload<{
@@ -57,6 +64,12 @@ function requiresAdminMfa(input: {
   memberRole?: string | null;
 }) {
   return input.isPlatformAdmin || isFinanceRole(input.memberRole);
+}
+
+function safeMfaNextPath(value: string, fallback = "/billing/usage") {
+  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+    ? value
+    : fallback;
 }
 
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
@@ -174,17 +187,103 @@ export async function requireAuth() {
   return auth;
 }
 
-export async function requireVendor() {
+export async function requireVendorContext() {
   const auth = await requireAuth();
   if (!auth.vendor) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/login?error=no_vendor");
   }
 
-  return auth.vendor as VendorWithTracking;
+  return {
+    auth,
+    vendor: auth.vendor as VendorWithTracking,
+  };
+}
+
+export async function requireVendor() {
+  return (await requireVendorContext()).vendor;
+}
+
+export async function requireVendorManagerContext() {
+  const { auth, vendor } = await requireVendorContext();
+  const role = auth.member?.role;
+  if (
+    !auth.member
+    || auth.member.status !== ACTIVE_MEMBER_STATUS
+    || !VENDOR_MANAGER_ROLES.includes(role as (typeof VENDOR_MANAGER_ROLES)[number])
+  ) {
+    redirect("/dashboard?error=insufficient_role");
+  }
+
+  return { auth, vendor };
+}
+
+export async function requireVendorManager() {
+  return (await requireVendorManagerContext()).vendor;
+}
+
+export async function requireVendorSupportContext() {
+  const { auth, vendor } = await requireVendorContext();
+  const role = auth.member?.role;
+  if (
+    !auth.member
+    || auth.member.status !== ACTIVE_MEMBER_STATUS
+    || !VENDOR_SUPPORT_ROLES.includes(role as (typeof VENDOR_SUPPORT_ROLES)[number])
+  ) {
+    redirect("/dashboard?error=insufficient_role");
+  }
+
+  return { auth, vendor };
+}
+
+export async function requireVendorSupportMfa(nextPath = "/support-cases") {
+  const { auth, vendor } = await requireVendorSupportContext();
+
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath, "/support-cases");
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
+  }
+
+  return {
+    auth,
+    user: auth.user,
+    vendor,
+    member: auth.member!,
+  };
+}
+
+export async function requireVendorManagerMfa(nextPath = "/orders") {
+  const { auth, vendor } = await requireVendorManagerContext();
+
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath, "/orders");
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
+  }
+
+  return {
+    auth,
+    user: auth.user,
+    vendor,
+    member: auth.member!,
+  };
 }
 
 export async function requireFinanceAdmin() {
   const auth = await requireAuth();
+
+  // `/admin`、退款、月結、出款與 webhook 重送都是平台層級操作。
+  // 商家 owner/admin/accountant 另有 tenant-scoped `/billing` 畫面，不能因
+  // 角色名稱含財務權限就取得跨商家的平台後台資料。
+  if (!auth.isPlatformAdmin) {
+    redirect("/dashboard");
+  }
 
   if (auth.requiresAdminMfa) {
     if (!auth.user.mfaFactor) {
@@ -196,25 +295,49 @@ export async function requireFinanceAdmin() {
     }
   }
 
-  if (auth.isPlatformAdmin) {
-    return {
-      user: auth.user,
-      vendor: auth.vendor,
-      member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
-      isPlatformAdmin: true,
-    };
+  return {
+    user: auth.user,
+    vendor: auth.vendor,
+    member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
+    isPlatformAdmin: true,
+  };
+}
+
+export async function requireVendorFinance(nextPath = "/billing/usage") {
+  const { auth, vendor } = await requireVendorContext();
+  const member = auth.member;
+
+  if (
+    !member
+    || member.status !== ACTIVE_MEMBER_STATUS
+    || !isFinanceRole(member.role)
+  ) {
+    redirect("/dashboard?error=insufficient_role");
   }
 
-  if (!auth.vendor || !auth.member || !FINANCE_ROLES.includes(auth.member.role as (typeof FINANCE_ROLES)[number])) {
-    redirect("/dashboard");
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup");
+  }
+
+  if (!auth.isMfaVerified) {
+    const safeNext = safeMfaNextPath(nextPath);
+    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
   }
 
   return {
     user: auth.user,
-    vendor: auth.vendor,
-    member: auth.member as FinanceActor,
-    isPlatformAdmin: false,
+    vendor,
+    member,
   };
+}
+
+export async function requireVendorOwnerFinance(nextPath = "/billing/plans") {
+  const context = await requireVendorFinance(nextPath);
+  if (context.member.role !== "owner") {
+    redirect("/settings/security?error=owner_required");
+  }
+
+  return context;
 }
 
 export async function requireVendorOwner() {
@@ -244,7 +367,11 @@ export async function authenticateUser(email: string, password: string) {
     },
   });
 
-  if (!user || !isActiveUser(user) || !verifyPassword(password, user.passwordHash)) {
+  const passwordMatches = await verifyPasswordAsync(
+    password,
+    user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
+  if (!user || !isActiveUser(user) || !passwordMatches) {
     return null;
   }
 

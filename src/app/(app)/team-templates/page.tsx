@@ -48,7 +48,7 @@ export default async function TeamTemplatesPage() {
     <>
       <PageHeader title="團隊展業" description="建立 A 端原始頁、發佈不可變版本，並用受控分享連結讓夥伴複製。" action={<ButtonLink href="/team-templates/new" tone="cta"><Plus size={16} />建立模板</ButtonLink>} />
       {memberships.length === 0 ? <p role="status" className="mb-4 rounded-md bg-orange-50 p-3 text-sm text-orange-800">你目前沒有可管理的有效團隊，無法建立或發佈團隊模板。</p> : null}
-      <TeamTemplateList templates={items} csrfToken={csrfToken} action={manageTeamFunnelTemplateAction} />
+      <TeamTemplateList templates={items} csrfToken={csrfToken} action={manageTeamFunnelTemplateAction} nativeAction="/api/team-funnel/template-actions" />
     </>
   );
 }

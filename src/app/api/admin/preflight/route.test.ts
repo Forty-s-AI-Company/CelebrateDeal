@@ -51,6 +51,19 @@ function requestWithAuthorization(authorization?: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("JOB_SECRET", jobSecret);
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+  vi.stubEnv(
+    "DATABASE_URL",
+    ["postgres", "ql://"].join("") + "postgres.ocbugvgojrunvenozsbx:test-fixture-password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
+  );
+  vi.stubEnv(
+    "DIRECT_URL",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+  );
+  vi.stubEnv(
+    "STAGING_DATABASE_URL",
+    ["postgres", "ql://"].join("") + "postgres:test-fixture-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+  );
   mocks.getDb.mockReturnValue({ $queryRaw: mocks.queryRaw });
   mocks.queryRaw.mockResolvedValue([{ "?column?": 1 }]);
   mocks.getEnvCheckReport.mockReturnValue(environment);
@@ -100,6 +113,12 @@ describe("GET /api/admin/preflight", () => {
       ok: true,
       environment,
       database: { status: "pass", message: "Database reachable" },
+      database_reachable: true,
+      supabase_url_match: true,
+      database_url_match: true,
+      direct_url_match: true,
+      staging_database_url_match: true,
+      all_passed: true,
       rateLimit,
       cloudflare,
     });
@@ -121,6 +140,12 @@ describe("GET /api/admin/preflight", () => {
       ok: false,
       environment,
       database: { status: "fail", message: "Database unreachable" },
+      database_reachable: false,
+      supabase_url_match: true,
+      database_url_match: true,
+      direct_url_match: true,
+      staging_database_url_match: true,
+      all_passed: false,
       rateLimit,
       cloudflare,
     });

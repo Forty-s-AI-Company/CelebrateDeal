@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "environment": {
+    "DATABASE_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build_test?connect_timeout=1",
+    "DIRECT_URL": "postgresql://controlled:controlled@127.0.0.1:1/controlled_build_test?connect_timeout=1",
+    "NEXT_PUBLIC_APP_URL": "https://build.invalid",
+    "JOB_SECRET": "synthetic-build-job-material-20260730",
+    "CRON_SECRET": "synthetic-build-cron-material-20260821",
+    "CSRF_SECRET": "synthetic-build-csrf-material-20260730-value",
+    "LIVE_CHAT_INGRESS_SECRET": "synthetic-build-chat-ingress-material-20260821",
+    "RATE_LIMIT_PROVIDER": "cloudflare_waf",
+    "PAYMENT_PROVIDER": "demo",
+    "RESEND_API_KEY": "synthetic-build-mail-value",
+    "EMAIL_FROM": "build@build.invalid",
+    "SENTRY_DSN": "https://public@build.invalid/1",
+    "NEXT_PUBLIC_POSTHOG_KEY": "synthetic-build-public-analytics",
+    "NEXT_PUBLIC_POSTHOG_HOST": "https://build.invalid"
+  }
+}

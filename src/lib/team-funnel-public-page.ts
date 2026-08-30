@@ -1,10 +1,12 @@
 import { getDb } from "@/lib/db";
+import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import { renderTeamFunnelPageText } from "@/lib/team-funnel-pages";
 import {
   parseSafeTeamFunnelProductUrl,
   resolveTeamFunnelPartnerProfile,
   resolveTeamFunnelProductSlots,
   type ResolvedTeamFunnelProductSlot,
+  type TeamFunnelProductLink,
 } from "@/lib/team-funnel-product-slots";
 
 export type TeamFunnelContentBlock =
@@ -23,6 +25,7 @@ export type TeamFunnelPublicPageState =
 export type TeamFunnelPublicPageView = {
   state: TeamFunnelPublicPageState;
   page?: {
+    vendorId: string;
     slug: string;
     headline: string;
     subheadline: string | null;
@@ -35,14 +38,14 @@ export type TeamFunnelPublicPageView = {
       startsAt: string;
       playbackHref: string;
       registrationHref: string;
-      registration: {
+      registration: null | {
         formId: string;
-        fields: Array<{ key: string; label: string; type: string; required: boolean }>;
+        fields: RegistrationFormFieldSpec[];
         submitLabel: string;
         successMessage: string;
       };
     };
-    productSlots: Array<Pick<ResolvedTeamFunnelProductSlot, "slotKey" | "offerLabel" | "url">>;
+    productSlots: Array<Pick<ResolvedTeamFunnelProductSlot, "slotKey" | "offerLabel" | "url" | "checkoutMode">>;
   };
 };
 
@@ -76,15 +79,40 @@ export type PublicTeamFunnelPageRecord = {
     slug: string;
     title: string;
     scheduledAt: Date;
+    status: string;
+    replayEnabled: boolean;
     seminarOwnerMembershipId: string | null;
     form: { id: string; slug: string; isActive: boolean; fields: unknown; submitLabel: string; successMessage: string } | null;
   } | null;
   templateVersion: {
     contentOwnerMembershipId: string;
-    productSlots: Array<{ id: string; slotKey: string; productId: string; offerLabel: string | null; product: { id: string; checkoutUrl: string | null } | null }>;
+    productSlots: Array<{ id: string; slotKey: string; productId: string; offerLabel: string | null; product: TeamFunnelProductLink | null }>;
   };
-  productOverrides: Array<{ productSlotId: string; productId: string | null; overrideUrl: string | null; product: { id: string; checkoutUrl: string | null } | null }>;
+  productOverrides: Array<{ productSlotId: string; productId: string | null; overrideUrl: string | null; product: TeamFunnelProductLink | null }>;
 };
+
+type PublicRegistrationForm = NonNullable<NonNullable<PublicTeamFunnelPageRecord["live"]>["form"]>;
+
+function resolvePublicRegistration(form: PublicRegistrationForm) {
+  const fields = parseRegistrationFormFields(form.fields);
+  if (!fields.success) return null;
+  return {
+    formId: form.id,
+    fields: fields.data,
+    submitLabel: form.submitLabel,
+    successMessage: form.successMessage,
+  };
+}
+
+/**
+ * Carries the server-resolved partner page lineage into the shared playback
+ * route so the browser cannot lose B-page attribution during navigation.
+ */
+export function buildPartnerPlaybackHref(liveSlug: string, sourcePageSlug: string, referralCode: string | null) {
+  const params = new URLSearchParams({ sourcePage: sourcePageSlug });
+  if (referralCode) params.set("ref", referralCode);
+  return `/live/${encodeURIComponent(liveSlug)}?${params.toString()}`;
+}
 
 /**
  * Server-only lookup for a stable `/p/[slug]` page. It deliberately loads only
@@ -108,11 +136,11 @@ export async function getPublicTeamFunnelPage(slug: string): Promise<TeamFunnelP
           affiliate: { select: { code: true, isActive: true } },
         },
       },
-      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, seminarOwnerMembershipId: true, form: { select: { id: true, slug: true, isActive: true, fields: true, submitLabel: true, successMessage: true } } } },
+      live: { select: { id: true, teamId: true, slug: true, title: true, scheduledAt: true, status: true, replayEnabled: true, seminarOwnerMembershipId: true, form: { select: { id: true, slug: true, isActive: true, fields: true, submitLabel: true, successMessage: true } } } },
       templateVersion: {
-        select: { contentOwnerMembershipId: true, productSlots: { include: { product: { select: { id: true, checkoutUrl: true } } } } },
+        select: { contentOwnerMembershipId: true, productSlots: { include: { product: { select: { id: true, vendorId: true, checkoutUrl: true, isActive: true, fulfillmentTypeConfirmed: true, inventory: true, priceCents: true } } } } },
       },
-      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+      productOverrides: { include: { product: { select: { id: true, vendorId: true, checkoutUrl: true, isActive: true, fulfillmentTypeConfirmed: true, inventory: true, priceCents: true } } } },
     },
   });
 
@@ -137,6 +165,7 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
     || page.live.teamId !== page.teamId
     || !page.live.form?.isActive
     || page.live.seminarOwnerMembershipId !== page.contentOwnerMembershipId
+    || !isPublicLiveLifecycle(page.live.status, page.live.replayEnabled)
   ) {
     return { state: "missing_webinar" };
   }
@@ -190,6 +219,7 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
   return {
     state: "ready",
     page: {
+      vendorId: page.vendorId,
       slug: page.slug,
       headline: rendered.headline.text,
       subheadline: rendered.subheadline?.text ?? null,
@@ -207,22 +237,22 @@ export function prepareTeamFunnelPublicPage(page: PublicTeamFunnelPageRecord | n
         id: page.live.id,
         title: page.live.title,
         startsAt: page.live.scheduledAt.toISOString(),
-        playbackHref: `/live/${page.live.slug}`,
+        playbackHref: buildPartnerPlaybackHref(page.live.slug, page.slug, referralCode),
         registrationHref,
-        registration: {
-          formId: page.live.form.id,
-          fields: normalizeFormFields(page.live.form.fields),
-          submitLabel: page.live.form.submitLabel,
-          successMessage: page.live.form.successMessage,
-        },
+        registration: resolvePublicRegistration(page.live.form),
       },
       productSlots: slots.filter((slot) => slot.url).map((slot) => ({
         slotKey: slot.slotKey,
         offerLabel: slot.offerLabel,
         url: slot.url,
+        checkoutMode: slot.checkoutMode,
       })),
     },
   };
+}
+
+function isPublicLiveLifecycle(status: string, replayEnabled: boolean) {
+  return status === "scheduled" || status === "live" || (status === "ended" && replayEnabled);
 }
 
 /** Only paragraphs and simple unordered lists are supported as rich content. */
@@ -242,9 +272,10 @@ export function toStructuredContentBlocks(value: string): TeamFunnelContentBlock
 
   for (const line of lines) {
     const item = /^\s*[-*]\s+(.+)$/u.exec(line);
-    if (item) {
+    const itemText = item?.[1];
+    if (itemText) {
       flushParagraph();
-      list.push(item[1]);
+      list.push(itemText);
     } else if (line.trim()) {
       flushList();
       paragraph.push(line.trim());
@@ -260,23 +291,6 @@ export function toStructuredContentBlocks(value: string): TeamFunnelContentBlock
 
 function isActiveMembership(member: PublicMembership) {
   return member.status === "ACTIVE" && member.leftAt === null && member.vendorMember.status === "active" && member.vendorMember.deactivatedAt === null;
-}
-
-function normalizeFormFields(fields: unknown) {
-  if (!Array.isArray(fields)) return [];
-  return fields.flatMap((field) => {
-    if (!field || typeof field !== "object" || Array.isArray(field)) return [];
-    const value = field as Record<string, unknown>;
-    const key = typeof value.key === "string" ? value.key : "";
-    const label = typeof value.label === "string" ? value.label : "";
-    if (!key || !label) return [];
-    return [{
-      key,
-      label,
-      type: typeof value.type === "string" ? value.type : "text",
-      required: Boolean(value.required),
-    }];
-  });
 }
 
 function parseSafePublicHref(value: string | null | undefined) {

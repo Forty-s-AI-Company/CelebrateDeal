@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "wp195-launch-owner-acceptance/v2",
+  "governanceDecision": "docs/decisions/ADR-2026-08-13-solo-founder-owner-model.md",
+  "scope": "LOCAL_SYNTHETIC_RESPONSIBILITY_ACCEPTANCE_ONLY",
+  "ownerModel": {
+    "sameHumanMultipleRoles": true,
+    "distinctHumanRequired": false,
+    "minimumHumanCount": 1,
+    "holderRefRequired": true,
+    "secondHumanRequiredOnlyWithProvenance": [
+      "EXTERNAL_PROVIDER",
+      "LEGAL_REGULATION",
+      "TRACKED_PROJECT_REQUIREMENT",
+      "ACCEPTED_SECURITY_DECISION",
+      "DIRECT_PRODUCTION_RISK"
+    ]
+  },
+  "owners": [
+    {
+      "id": "merchant_owner",
+      "responsibilities": ["merchant_onboarding", "operational_readiness", "merchant_impact"],
+      "requiredChecks": ["owner_role_confirmed", "onboarding_handoff_reviewed", "merchant_impact_reviewed"]
+    },
+    {
+      "id": "support_operator",
+      "responsibilities": ["support_intake", "incident_escalation", "customer_communication"],
+      "requiredChecks": ["support_queue_defined", "severity_path_reviewed", "escalation_owner_confirmed"]
+    },
+    {
+      "id": "finance_owner",
+      "responsibilities": ["payment_controls", "refund_reconciliation", "finance_escalation"],
+      "requiredChecks": ["sandbox_boundary_reviewed", "refund_handoff_reviewed", "reconciliation_gap_acknowledged"]
+    },
+    {
+      "id": "privacy_policy_owner",
+      "responsibilities": ["privacy_notice", "data_request_routing", "retention_and_legal_review"],
+      "requiredChecks": ["privacy_review_assigned", "data_request_path_reviewed", "retention_review_assigned"]
+    },
+    {
+      "id": "release_owner",
+      "responsibilities": ["cross_owner_completeness", "blocker_aggregation", "release_go_no_go"],
+      "requiredChecks": ["all_owner_packets_reviewed", "blockers_aggregated", "release_decision_recorded"]
+    }
+  ],
+  "allowedDecisionStates": ["PENDING", "ACCEPTED", "REJECTED", "BLOCKED"],
+  "evidenceSchema": {
+    "requiredFields": ["ownerId", "holderRef", "checkId", "sourceRef", "capturedAt", "sanitized", "synthetic"],
+    "sourceRefPattern": "^synthetic:[a-z0-9_-]+$",
+    "holderRefPattern": "^synthetic:[a-z0-9_-]+$",
+    "capturedAtPattern": "^2026-08-04T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+    "sanitized": true,
+    "synthetic": true
+  },
+  "invariants": {
+    "manualSignatures": "PENDING",
+    "releaseStatus": "HOLD_NOT_READY",
+    "releaseDecision": "HOLD",
+    "legalComplianceSelfReview": true,
+    "notIndependentLegalCounsel": true,
+    "productionReady": false,
+    "externalSideEffects": 0
+  }
+}

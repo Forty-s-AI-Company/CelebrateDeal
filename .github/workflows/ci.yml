@@ -26,8 +26,10 @@ jobs:
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       NEXT_PUBLIC_APP_URL: https://ci.celebratedeal.local
       JOB_SECRET: ci-job-secret-123456
-      CSRF_SECRET: ci-csrf-secret-123456
-      RATE_LIMIT_PROVIDER: memory
+      CRON_SECRET: ci-cron-secret-123456
+      CSRF_SECRET: ci-csrf-fixture-32-bytes-safe-key
+      LIVE_CHAT_INGRESS_SECRET: ci-live-chat-ingress-secret-1234567890
+      RATE_LIMIT_PROVIDER: cloudflare_waf
       CLOUDFLARE_ACCOUNT_ID: ci-cloudflare-account
       CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
       CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
@@ -37,6 +39,7 @@ jobs:
       SENTRY_DSN: https://ci@sentry.invalid/1
       NEXT_PUBLIC_POSTHOG_KEY: ci-posthog-key
       NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
+      RT01_D2_DISPOSABLE_DB: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +53,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Repository secret and archive scan
+        run: npm run secret:scan
+
       - name: Generate Prisma client
         run: npm run db:generate
 
@@ -62,19 +71,96 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm run test
+      - name: PayUni deployment environment binding contract
+        run: npx vitest run src/lib/env.test.ts
+
+      - name: Strict production index access
+        run: npm run typecheck:strict-index
+
+      - name: Release readiness contract
+        run: npm run test:release-readiness
+
+      - name: Readiness truth reconciliation
+        run: node scripts/readiness-truth-reconciliation.mjs
+
+      - name: Staging migration evidence contract
+        run: npx vitest run scripts/staging-migration-evidence.test.mjs
+
+      - name: Staging migration receipt validation contract
+        run: node --test scripts/validate-staging-migration-evidence.test.mjs
+
+      - name: Staging release evidence aggregation contract
+        run: node --test scripts/staging-release-evidence.test.mjs
+
+      - name: Staging release evidence receipt validation contract
+        run: node --test scripts/validate-staging-release-evidence.test.mjs
+
+      - name: Human owner acceptance evidence contract
+        run: node --test scripts/validate-human-owner-acceptance-evidence.test.mjs
+
+      - name: Release evidence bundle contract
+        run: node --test scripts/validate-release-evidence-bundle.test.mjs
+
+      - name: Current release handoff evidence consistency
+        run: node --test scripts/current-release-gate-handoff.test.mjs
+
+      - name: Non-Production owner authorization contract
+        run: node --test scripts/validate-non-production-owner-authorization.test.mjs
+
+      - name: External smoke output safety contract
+        run: npx vitest run scripts/external-smoke-safety.test.ts
+
+      - name: External provider evidence contract
+        run: node --test scripts/external-provider-evidence.test.mjs scripts/validate-external-provider-evidence.test.mjs
+
+      - name: Backup tooling static checks
+        shell: pwsh
+        run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1
+
+      - name: AI Team router and resilience tests
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check -r .ai-team/mcp_server/requirements.txt
+          python .ai-team/mcp_server/test_server.py
+          pwsh -NoProfile -File .ai-team/scripts/Test-AiTeamResilience.ps1
+
+      - name: Unit tests and coverage thresholds
+        run: npm run test:coverage
+
+      - name: Node TAP contract tests
+        run: npm run test:contracts
+
+      - name: PostgreSQL concurrency tests
+        shell: bash
+        run: |
+          base_url="${DATABASE_URL%\?schema=public}"
+          wp17_base_url="${base_url%/*}/celebratedeal_wp17_ci"
+          wp18_base_url="${base_url%/*}/celebratedeal_wp18_ci"
+          wp17_url="${wp17_base_url}?schema=wp17_ci"
+          wp18_url="${wp18_base_url}?schema=wp18_ci"
+          psql "$base_url" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE celebratedeal_wp17_ci'
+          psql "$base_url" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE celebratedeal_wp18_ci'
+          psql "$wp17_base_url" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA wp17_ci'
+          psql "$wp18_base_url" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA wp18_ci'
+          psql "$wp17_base_url" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA wp17_ci'
+          psql "$wp18_base_url" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA wp18_ci'
+          DATABASE_URL="$wp17_url" DIRECT_URL="$wp17_url" npm run db:migrate:deploy
+          DATABASE_URL="$wp18_url" DIRECT_URL="$wp18_url" npm run db:migrate:deploy
+          WP17_COVERAGE_DATABASE_URL="$wp17_url" WP17_COVERAGE_DIRECT_URL="$wp17_url" WP17_COVERAGE_DISPOSABLE_SCHEMA="wp17_ci" WP18_COVERAGE_DATABASE_URL="$wp18_url" WP18_COVERAGE_DIRECT_URL="$wp18_url" WP18_COVERAGE_DISPOSABLE_SCHEMA="wp18_ci" npm run test:db:concurrency
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: E2E smoke
-        run: npm run e2e:smoke
+      - name: Release browser gates
+        run: npm run e2e -- --fail-on-flaky-tests
         env:
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
 
       - name: Build
         run: npm run build
 
+      - name: Controlled production preflight and build
+        run: node scripts/build/controlled-production-build.mjs
+
       - name: Preflight
-        run: npm run preflight
+        run: NODE_ENV=production npm run preflight

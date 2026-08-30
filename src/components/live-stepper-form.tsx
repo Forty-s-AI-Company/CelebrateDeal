@@ -1,32 +1,964 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
-import { Ban, Bell, Calendar, Check, ClipboardList, Gauge, Package, PlaySquare, ScrollText, Shield } from "lucide-react";
+import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
+import { FormSubmitButton } from "@/components/form-submit-button";
+import { MediaUploadField } from "@/components/media-upload-field";
+import {
+  StreamAllocationEditor,
+  type StreamAllocationMemberOption,
+  type StreamAllocationPageOption,
+} from "@/components/stream-allocation-editor";
+import { useLiveStudioDraft } from "@/components/use-live-studio-draft";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { createLivePreview } from "@/lib/live-preview";
-import { SubmitButton } from "@/components/ui";
+import {
+  getLivePublishReadiness,
+  requiresLivePublishReadiness,
+  type LivePublishRequirementCodeWithReminder,
+} from "@/lib/live-publish-readiness";
+import {
+  emptyLiveStudioDraft,
+  type LiveStudioDraftEnvelope,
+  type LiveStudioDraftPayload,
+} from "@/lib/live-studio-draft";
+import {
+  createSuggestedLiveNotificationRules,
+  expectedTemplateTrigger,
+  LIVE_NOTIFICATION_RULE_LIMITS,
+  LIVE_NOTIFICATION_RULE_TRIGGERS,
+  type LiveNotificationRuleDraft,
+  type LiveNotificationRuleTrigger,
+} from "@/lib/live-notification-rules";
 
 const steps = [
-  { key: "basics", label: "基本資料", icon: Calendar },
-  { key: "media", label: "影片 / Live Input", icon: PlaySquare },
-  { key: "products", label: "商品", icon: Package },
-  { key: "form", label: "報名頁", icon: ClipboardList },
-  { key: "template", label: "通知", icon: Bell },
-  { key: "script", label: "互動腳本", icon: ScrollText },
-  { key: "rules", label: "規則", icon: Shield },
-  { key: "review", label: "發布", icon: Check },
+  { key: "purpose", label: "用途與基本資料", icon: Calendar },
+  { key: "media", label: "媒體與 Live Input", icon: PlaySquare },
+  { key: "products", label: "商品優惠", icon: Package },
+  { key: "registration", label: "報名頁", icon: Calendar },
+  { key: "schedule", label: "時間、回放與品牌", icon: Calendar },
+  { key: "emails", label: "Email", icon: Check },
+  { key: "interactions", label: "留言、商品浮窗與 CTA", icon: Shield },
+  { key: "review", label: "桌機／手機預覽發布", icon: Check },
 ];
+const requiredFieldsMessage = "請先完成本步驟的必填欄位，再繼續下一步。";
+
+type LiveProductOption = Pick<Product, "id" | "name" | "inventory">;
+type LiveFormOption = Pick<RegistrationForm, "id" | "name">;
+type LiveTemplateOption = Pick<MessageTemplate, "id" | "name" | "channel" | "trigger">;
+type LiveScriptOption = Pick<InteractionScript, "id" | "name">;
+type LiveAffiliateOption = Pick<Affiliate, "id" | "name" | "code">;
+type LiveStudioPreset = LiveStudioDraftPayload["studioPreset"];
+type LiveReadinessResources = {
+  studioPreset: LiveStudioPreset;
+  products: LiveProductOption[];
+  productIds: string[];
+  videos: Array<Pick<Video, "id" | "title">>;
+  videoId: string;
+  forms: LiveFormOption[];
+  formId: string;
+  templates: LiveTemplateOption[];
+  templateId: string;
+  scripts: LiveScriptOption[];
+  scriptId: string;
+};
+
+const liveStudioPresetOptions: Array<{
+  value: LiveStudioPreset;
+  label: string;
+  description: string;
+}> = [
+  { value: "COMMERCE", label: "商品銷售直播", description: "適合導購、報名與開播提醒；發布前會檢查商品、Email 與互動腳本。" },
+  { value: "CONTENT", label: "內容／課程直播", description: "適合分享、教學與回放；商品可留空，至少需要可播放媒體。" },
+  { value: "CUSTOM", label: "從空白開始", description: "保留完整八步設定，自行決定商品、通知、互動與用量規則。" },
+];
+
+function LiveStudioPurposeStarter({
+  selectedPreset,
+  onSelect,
+}: {
+  selectedPreset: LiveStudioPreset;
+  onSelect: (preset: LiveStudioPreset) => void;
+}) {
+  const selected = liveStudioPresetOptions.find((option) => option.value === selectedPreset) ?? liveStudioPresetOptions[2];
+  return (
+    <section aria-labelledby="live-studio-purpose-title" className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <div>
+        <h2 id="live-studio-purpose-title" className="font-semibold text-slate-950">先選這場直播的用途</h2>
+        <p className="mt-1 text-sm text-slate-700">開始器只補空白欄位與步驟提示，不會移除已選商品或覆寫既有內容。</p>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        {liveStudioPresetOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selectedPreset === option.value}
+            onClick={() => onSelect(option.value)}
+            className={`min-h-28 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+              selectedPreset === option.value
+                ? "border-primary bg-white text-slate-950 shadow-sm"
+                : "border-blue-100 bg-blue-50/60 text-slate-700 hover:border-blue-300 hover:bg-white"
+            }`}
+          >
+            <span className="block font-semibold">{option.label}</span>
+            <span className="mt-1 block text-xs leading-5">{option.description}</span>
+          </button>
+        ))}
+      </div>
+      <p role="status" aria-live="polite" className="mt-3 text-sm font-medium text-blue-900">
+        已選擇：{selected?.label}。{selected?.description}
+      </p>
+    </section>
+  );
+}
+
+function applyLiveStudioPreset(form: HTMLFormElement | null, preset: LiveStudioPreset) {
+  if (!form) return null;
+  const presetControl = form.elements.namedItem("studioPreset");
+  if (presetControl instanceof HTMLInputElement) presetControl.value = preset;
+  const accentControl = form.elements.namedItem("accentCopy");
+  if (preset !== "COMMERCE" || !(accentControl instanceof HTMLInputElement) || accentControl.value.trim()) return null;
+  accentControl.value = "直播限定優惠";
+  return accentControl.value;
+}
+
+function useLiveStudioPresetSave(preset: LiveStudioPreset, scheduleSave: () => void) {
+  const previousPresetRef = useRef(preset);
+  useEffect(() => {
+    if (previousPresetRef.current === preset) return;
+    previousPresetRef.current = preset;
+    scheduleSave();
+  }, [preset, scheduleSave]);
+}
 
 function StepPanel({
   active,
+  index,
   children,
 }: {
   active: boolean;
+  index: number;
   children: React.ReactNode;
 }) {
-  return <div className={active ? "grid gap-4 rounded-lg border border-border bg-white p-5" : "hidden"}>{children}</div>;
+  return (
+    <div
+      id={`live-step-panel-${index}`}
+      data-step-index={index}
+      hidden={!active}
+      className="grid gap-4 rounded-lg border border-border bg-white p-5"
+    >
+      {children}
+    </div>
+  );
+}
+
+function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone: string; defaultValue: string; onChange?: (value: string) => void }) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      開播時間（{timeZone}）
+      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
+      <span className="text-xs font-normal text-slate-500">請依商家時區輸入；儲存時會轉成 UTC，提醒與公開頁會使用同一時間。</span>
+    </label>
+  );
+}
+
+function ProductSelection({
+  products,
+  selectedProductIds,
+  onSelectionChange,
+}: {
+  products: LiveProductOption[];
+  selectedProductIds: string[];
+  onSelectionChange: (productId: string, checked: boolean) => void;
+}) {
+  if (products.length === 0) {
+    return (
+      <div data-readiness-focus="products" tabIndex={-1} className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p>目前沒有可綁定的啟用商品。你仍可先建立草稿，或先建立商品。</p>
+        <Link href="/products/new" className="mt-2 inline-flex font-semibold text-primary underline">新增商品</Link>
+      </div>
+    );
+  }
+
+  return products.map((product) => (
+    <label key={product.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+      <span>
+        <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
+        <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
+      </span>
+      <input
+        name="productIds"
+        type="checkbox"
+        value={product.id}
+        defaultChecked={selectedProductIds.includes(product.id)}
+        onChange={(event) => onSelectionChange(product.id, event.target.checked)}
+        className="h-5 w-5 accent-blue-600"
+      />
+    </label>
+  ));
+}
+
+function updateSelectedProductIds(currentIds: string[], productId: string, checked: boolean) {
+  return checked
+    ? [...currentIds, productId]
+    : currentIds.filter((currentProductId) => currentProductId !== productId);
+}
+
+function buildLivePreview(title: string, accentCopy: string, products: LiveProductOption[], selectedProductIds: string[]) {
+  return createLivePreview({ title, accentCopy, products, selectedProductIds });
+}
+
+function buildLivePublishReadiness(resources: LiveReadinessResources) {
+  return getLivePublishReadiness({
+    studioPreset: resources.studioPreset,
+    productCount: resources.productIds.length,
+    productsReady: resources.productIds.every((productId) => resources.products.some((product) => product.id === productId)),
+    videoReady: resources.videos.some((video) => video.id === resources.videoId),
+    formReady: resources.forms.some((form) => form.id === resources.formId),
+    registrationEmailReady: resources.templates.some((template) => template.id === resources.templateId),
+    interactionScriptReady: resources.scripts.some((script) => script.id === resources.scriptId),
+  });
+}
+
+function liveStatusAction(status: string) {
+  switch (status) {
+    case "draft": return { value: "scheduled", label: "排程發布", confirm: "確定要讓這場直播進入已排程、可公開存取的狀態嗎？" };
+    case "scheduled": return { value: "live", label: "開始直播", confirm: "確定要將這場直播標記為直播中嗎？" };
+    case "live": return { value: "ended", label: "結束直播", confirm: "確定要結束這場直播嗎？" };
+    case "ended": return { value: "scheduled", label: "重新排程", confirm: "確定要重新排程並開放這場直播嗎？" };
+    default: return null;
+  }
+}
+
+const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: string; step: number; action: string }> = {
+  media: { label: "可播放的影片或 Live Input", step: 1, action: "前往媒體" },
+  products: { label: "啟用且已確認履約類型的商品", step: 2, action: "前往商品優惠" },
+  registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
+  registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
+  live_reminder_email: { label: "可寄送的開播提醒 Email", step: 5, action: "前往 Email" },
+  interaction_script: { label: "已發布的互動腳本", step: 6, action: "前往互動設定" },
+};
+
+const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, string> = {
+  media: '[name="videoId"]',
+  products: '[data-readiness-focus="products"]',
+  registration_form: '[name="formId"]',
+  registration_email: '[name="messageTemplateId"]',
+  live_reminder_email: '[name="liveReminderTemplateId"]',
+  interaction_script: '[name="interactionScriptId"]',
+};
+
+function LiveReviewPanel({
+  preview,
+  readiness,
+  onFix,
+}: {
+  preview: ReturnType<typeof buildLivePreview>;
+  readiness: ReturnType<typeof getLivePublishReadiness>;
+  onFix: (code: LivePublishRequirementCodeWithReminder) => void;
+}) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-5">
+        <div className="flex items-start gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-50 text-emerald-700">
+            <Gauge size={18} aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">確認直播間設定</h2>
+            <p className="mt-1 text-sm text-slate-500">直播頁會支援 VOD / Live Input、商品浮出、官方角色訊息、CTA 切換、聯盟來源追蹤與用量規則。</p>
+          </div>
+        </div>
+
+        <section
+          aria-labelledby="live-publish-readiness-title"
+          aria-live="polite"
+          className={`rounded-xl border p-4 ${readiness.ready ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}
+        >
+          <h3 id="live-publish-readiness-title" className="font-semibold text-slate-950">
+            {readiness.mode === "commerce" ? "銷售型直播發布檢查" : "內容直播發布檢查"}
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            {readiness.mode === "commerce"
+              ? "已選擇商品。公開前需要完整的播放、報名、通知與互動路徑。"
+              : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與報名成功 Email。"}
+          </p>
+          <p className={`mt-3 text-sm font-semibold ${readiness.ready ? "text-emerald-800" : "text-amber-900"}`}>
+            {readiness.ready ? "發布條件已完成" : `還有 ${readiness.blockers.length} 項需要完成`}
+          </p>
+          <ul className="mt-3 grid gap-2">
+            {readiness.requirements.map((requirement) => {
+              const copy = readinessCopy[requirement.code];
+              return (
+                <li key={requirement.code} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/80 px-3 py-2 text-sm">
+                  <span className={requirement.ready ? "font-medium text-emerald-800" : "font-medium text-amber-950"}>
+                    {requirement.ready ? "已完成" : "待完成"} · {copy.label}
+                  </span>
+                  {!requirement.ready ? (
+                    <button type="button" onClick={() => onFix(requirement.code)} className="min-h-9 rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900">
+                      {copy.action}
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        <div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-xs font-bold text-blue-700">播放設定</p>
+              <p className="mt-1 font-semibold text-slate-950">建立後驗證串流狀態</p>
+            </div>
+            <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
+              <p className="text-xs font-bold text-orange-700">導購時刻</p>
+              <p className="mt-1 font-semibold text-slate-950">商品 Pop-up + CTA</p>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+              <p className="text-xs font-bold text-emerald-700">名單收集</p>
+              <p className="mt-1 font-semibold text-slate-950">報名表與通知模板</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-bold text-slate-600">營運控制</p>
+              <p className="mt-1 font-semibold text-slate-950">黑名單、聯盟與配額</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <LiveDevicePreviews preview={preview} />
+    </div>
+  );
+}
+
+function LiveDesktopPreview({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
+      <div className="aspect-video rounded-xl bg-[radial-gradient(circle_at_30%_20%,#475569,transparent_28%),linear-gradient(160deg,#0f172a,#020617)] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-lg font-black">{preview.title}</p>
+          <span className="rounded-full bg-red-700 px-3 py-1 text-xs font-black">LIVE</span>
+        </div>
+        <div className="mt-12 rounded-xl bg-white p-4 text-slate-950 shadow-2xl">
+          <p className="text-sm font-black text-orange-800">{preview.accentCopy}</p>
+          <p className="mt-2 font-bold">
+            {preview.productNames.length > 0 ? preview.productNames.join("、") : preview.emptyProductLabel}
+          </p>
+          {preview.remainingProductCount > 0 ? <p className="mt-1 text-xs text-slate-500">及其他 {preview.remainingProductCount} 件商品</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveDevicePreviews({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <div className="grid gap-4">
+      <section aria-labelledby="desktop-live-preview-label">
+        <h3 id="desktop-live-preview-label" className="mb-2 text-sm font-semibold text-slate-700">桌機預覽</h3>
+        <LiveDesktopPreview preview={preview} />
+      </section>
+      <section aria-labelledby="mobile-live-preview-label" className="mx-auto w-full max-w-[320px]">
+        <h3 id="mobile-live-preview-label" className="mb-2 text-sm font-semibold text-slate-700">手機預覽</h3>
+        <LivePhonePreview preview={preview} />
+      </section>
+    </div>
+  );
+}
+
+function LivePhonePreview({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-950 p-3">
+      <div className="overflow-hidden rounded-xl bg-slate-900 text-white">
+        <div className="relative aspect-[9/16] bg-[radial-gradient(circle_at_30%_20%,#475569,transparent_28%),linear-gradient(160deg,#0f172a,#111827_45%,#020617)]">
+          <div className="absolute left-3 right-3 top-3 flex items-center justify-between">
+            <div className="max-w-[70%] truncate rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white">{preview.title}</div>
+            <div className="rounded-full bg-red-700 px-2.5 py-1 text-[10px] font-black text-white">LIVE</div>
+          </div>
+          <div className="absolute bottom-28 left-3 right-3 rounded-2xl bg-white p-3 text-slate-950 shadow-2xl">
+            <div className="flex gap-3">
+              <div className="h-16 w-16 rounded-xl bg-orange-100" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black text-orange-800">{preview.accentCopy}</p>
+                {preview.productNames.length > 0 ? (
+                  <div className="mt-1 space-y-1 text-sm font-bold">
+                    {preview.productNames.map((productName, index) => <p key={`${productName}-${index}`} className="truncate">{productName}</p>)}
+                    {preview.remainingProductCount > 0 ? <p className="text-xs font-medium text-slate-500">及其他 {preview.remainingProductCount} 件商品</p> : null}
+                  </div>
+                ) : (
+                  <p className="mt-1 truncate font-bold text-slate-700">{preview.emptyProductLabel}</p>
+                )}
+                <span aria-hidden="true" className="mt-2 grid h-8 w-full place-items-center rounded-lg bg-orange-700 text-xs font-black text-white">立即搶購</span>
+              </div>
+            </div>
+          </div>
+          <div className="absolute bottom-14 left-3 max-w-[78%] rounded-2xl bg-slate-950 px-3 py-2 text-xs text-white">
+            <b>AI 主持人</b>
+            <span className="ml-2 rounded-full bg-blue-700 px-1.5 py-0.5 text-[10px] text-white">官方</span>
+            <p className="mt-1 text-white">優惠在這一段會自動跳出，不用手動場控。</p>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 grid grid-cols-3 gap-2 bg-black p-3">
+            <span className="rounded-xl bg-white py-2 text-center text-xs font-black text-slate-950">聊天</span>
+            <span className="rounded-xl bg-slate-800 py-2 text-center text-xs font-black text-white">商品</span>
+            <span className="rounded-xl bg-slate-800 py-2 text-center text-xs font-black text-white">報名</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileLivePreviewToggle({ preview }: { preview: ReturnType<typeof buildLivePreview> }) {
+  return (
+    <details className="rounded-lg border border-slate-200 bg-white p-3 lg:hidden">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+        查看即時手機預覽
+      </summary>
+      <div className="mx-auto mt-3 max-w-[320px]">
+        <LivePhonePreview preview={preview} />
+      </div>
+    </details>
+  );
+}
+
+function handleLiveFormInvalid(
+  event: { preventDefault: () => void; target: unknown },
+  invalidFocusPendingRef: { current: boolean },
+  setActiveStep: (step: number) => void,
+  setValidationMessage: (message: string) => void,
+) {
+  event.preventDefault();
+  const control = event.target;
+  if (!(control instanceof HTMLElement)) return;
+  if (invalidFocusPendingRef.current) return;
+  invalidFocusPendingRef.current = true;
+  const panel = control.closest<HTMLElement>("[data-step-index]");
+  const invalidStep = Number(panel?.dataset.stepIndex);
+  if (Number.isInteger(invalidStep)) setActiveStep(invalidStep);
+  setValidationMessage(requiredFieldsMessage);
+  requestAnimationFrame(() => {
+    control.focus();
+    invalidFocusPendingRef.current = false;
+  });
+}
+
+function submitOnlyAfterLatestDraft(
+  event: FormEvent<HTMLFormElement>,
+  activeStep: number,
+  draft: Pick<ReturnType<typeof useLiveStudioDraft>, "getCurrentClaim" | "isCurrentFormSaved" | "saveNow">,
+  form: HTMLFormElement | null,
+) {
+  const writeClaim = (claim: { draftId: string; revision: number }) => {
+    if (!form) return false;
+    const draftIdControl = form.elements.namedItem("liveDraftId") as HTMLInputElement | null;
+    const revisionControl = form.elements.namedItem("liveDraftRevision") as HTMLInputElement | null;
+    if (!draftIdControl || !revisionControl) return false;
+    draftIdControl.value = claim.draftId;
+    revisionControl.value = String(claim.revision);
+    return true;
+  };
+  if (draft.isCurrentFormSaved(activeStep)) {
+    const claim = draft.getCurrentClaim();
+    if (!claim || !writeClaim(claim)) event.preventDefault();
+    return;
+  }
+  event.preventDefault();
+  const submitter = (event.nativeEvent as SubmitEvent).submitter;
+  void draft.saveNow(activeStep).then((claim) => {
+    if (!claim || !writeClaim(claim) || !form) return;
+    form.requestSubmit(submitter instanceof HTMLButtonElement ? submitter : undefined);
+  });
+}
+
+function LiveRulesFields({
+  affiliates,
+  initialValues,
+  streamMembers,
+  streamPages,
+}: {
+  affiliates: LiveAffiliateOption[];
+  initialValues: LiveStudioDraftPayload;
+  streamMembers: StreamAllocationMemberOption[];
+  streamPages: StreamAllocationPageOption[];
+}) {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          允許聯盟來源
+          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
+            <option value="enabled">啟用 ref 追蹤</option>
+            <option value="disabled">停用</option>
+          </select>
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          預設推廣碼
+          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-10 rounded-md border border-border px-3">
+            <option value="">不指定</option>
+            {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.code}>{affiliate.name} · {affiliate.code}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          觀看人數上限
+          <input name="maxConcurrentViewers" type="number" inputMode="numeric" min={1} defaultValue={initialValues.maxConcurrentViewers} className="h-10 rounded-md border border-border px-3" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          點數低於多少時停止推播
+          <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-10 rounded-md border border-border px-3" />
+        </label>
+      </div>
+      <StreamAllocationEditor initialValues={initialValues} members={streamMembers} pages={streamPages} />
+      <p className="flex items-start gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
+        <Ban size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+        成員／推廣頁額度會在 immutable usage ledger 寫入前 fail closed；額度用完會拒絕後續 heartbeat，不會自動扣款。
+      </p>
+    </>
+  );
+}
+
+function liveFormError(error?: string) {
+  const messages: Record<string, string> = {
+    invalid_reference: "直播關聯資料無效，請重新選擇目前商店的影片、表單、模板、腳本與商品。",
+    invalid_policy: "用量或聯盟來源規則無效，請確認模式、推廣碼與數值範圍。",
+    payment_method_required: "啟用成員／推廣頁 Stream 額度前，必須先由 payment provider 驗證付款方式 reference；目前不會自動扣款。",
+    draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
+    invalid_status: "直播狀態轉換無效，內容尚未發布。",
+    invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
+    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布。",
+  };
+  const message = error ? messages[error] : undefined;
+  return message ? (
+    <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+      {message}
+    </p>
+  ) : null;
+}
+
+function LiveSubmitActions({
+  canSubmit,
+  currentStatus,
+  liveId,
+  publishReady,
+  replayEnabled,
+  statusAction,
+}: {
+  canSubmit: boolean;
+  currentStatus: string;
+  liveId: string;
+  publishReady: boolean;
+  replayEnabled: boolean;
+  statusAction: ReturnType<typeof liveStatusAction>;
+}) {
+  const canUnpublish = Boolean(liveId && ["scheduled", "ended"].includes(currentStatus));
+  const saveDisabled = !canSubmit
+    || (requiresLivePublishReadiness(currentStatus, replayEnabled) && !publishReady);
+  const actionDisabled = !canSubmit
+    || Boolean(statusAction && requiresLivePublishReadiness(statusAction.value, replayEnabled) && !publishReady);
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <FormSubmitButton name="status" value={liveId ? currentStatus : "draft"} disabled={saveDisabled} pendingChildren="儲存中…" pendingMessage="正在儲存直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">
+        {liveId ? "儲存變更" : "建立草稿並預覽"}
+      </FormSubmitButton>
+      {!liveId ? (
+        <FormSubmitButton name="status" value="scheduled" disabled={!canSubmit || (requiresLivePublishReadiness("scheduled", replayEnabled) && !publishReady)} confirmMessage="確定要建立並排程這場直播嗎？" pendingChildren="排程中…" pendingMessage="正在建立並排程直播間，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+          建立並排程
+        </FormSubmitButton>
+      ) : statusAction ? (
+        <FormSubmitButton name="status" value={statusAction.value} disabled={actionDisabled} confirmMessage={statusAction.confirm} pendingChildren="處理中…" pendingMessage="正在更新直播公開狀態，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-cta px-4 text-sm font-semibold text-white transition hover:bg-cta-dark">
+          {statusAction.label}
+        </FormSubmitButton>
+      ) : null}
+      {canUnpublish ? (
+        <FormSubmitButton name="status" value="draft" disabled={!canSubmit} confirmMessage="確定要將這場直播下架並回到草稿嗎？公開連結會立即停止顯示。" pendingChildren="下架中…" pendingMessage="正在將直播下架為草稿，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          下架為草稿
+        </FormSubmitButton>
+      ) : null}
+    </div>
+  );
+}
+
+type LiveStudioStepPanelRenderOptions = {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  videos: Array<Pick<Video, "id" | "title">>;
+  selectedVideoId: string;
+  onVideoChange: (value: string) => void;
+  products: LiveProductOption[];
+  selectedProductIds: string[];
+  onProductSelectionChange: (productId: string, checked: boolean) => void;
+  onAccentCopyChange: (value: string) => void;
+  forms: LiveFormOption[];
+  onFormChange: (value: string) => void;
+  registrationTemplates: LiveTemplateOption[];
+  selectedTemplateId: string;
+  onTemplateChange: (value: string) => void;
+  notificationTemplates: LiveTemplateOption[];
+  notificationRules: LiveNotificationRuleDraft[];
+  onNotificationRulesChange: (rules: LiveNotificationRuleDraft[]) => void;
+  scripts: LiveScriptOption[];
+  selectedScriptId: string;
+  onScriptChange: (value: string) => void;
+  affiliates: LiveAffiliateOption[];
+  streamMembers: StreamAllocationMemberOption[];
+  streamPages: StreamAllocationPageOption[];
+};
+
+const notificationRuleGroupCopy: Record<LiveNotificationRuleTrigger, { title: string; timing: string }> = {
+  before_live: { title: "開播前", timing: "開播前幾分鐘寄送" },
+  during_live: { title: "直播中", timing: "開播後幾分鐘寄送" },
+  post_live_followup: { title: "課後", timing: "內容結束後幾分鐘寄送" },
+};
+
+let draftNotificationRuleSequence = 0;
+
+function withDraftRuleIds(rules: LiveNotificationRuleDraft[]) {
+  return rules.map((rule) => ({
+    ...rule,
+    id: rule.id || `draft-notification-rule-${++draftNotificationRuleSequence}`,
+  }));
+}
+
+function NotificationRulesEditor({
+  rules,
+  templates,
+  onChange,
+}: {
+  rules: LiveNotificationRuleDraft[];
+  templates: LiveTemplateOption[];
+  onChange: (rules: LiveNotificationRuleDraft[]) => void;
+}) {
+  const hasSuggestionTemplates = templates.some((template) => (
+    template.trigger === "live_reminder" || template.trigger === "post_live_followup"
+  ));
+  function replaceRule(id: string, patch: Partial<LiveNotificationRuleDraft>) {
+    onChange(rules.map((rule) => rule.id === id ? { ...rule, ...patch } : rule));
+  }
+
+  function addRule(trigger: LiveNotificationRuleTrigger) {
+    const group = rules.filter((rule) => rule.trigger === trigger);
+    if (group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger]) return;
+    const template = templates.find((candidate) => candidate.trigger === expectedTemplateTrigger(trigger));
+    const usedOffsets = new Set(group.map((rule) => rule.offsetMinutes));
+    const candidates = trigger === "before_live" ? [60, 10, 30, 1, 1440] : [0, 10, 30, 60, 15, 1440, 4320];
+    const offsetMinutes = candidates.find((candidate) => !usedOffsets.has(candidate)) ?? (trigger === "before_live" ? 1 : 0);
+    onChange([...rules, ...withDraftRuleIds([{
+      id: "",
+      trigger,
+      messageTemplateId: template?.id ?? "",
+      offsetMinutes,
+      sortOrder: group.length,
+      isActive: true,
+    }])]);
+  }
+
+  function moveRule(trigger: LiveNotificationRuleTrigger, id: string, direction: -1 | 1) {
+    const indexes = rules.flatMap((rule, index) => rule.trigger === trigger ? [index] : []);
+    const position = indexes.findIndex((index) => rules[index]?.id === id);
+    const targetPosition = position + direction;
+    if (position < 0 || targetPosition < 0 || targetPosition >= indexes.length) return;
+    const next = [...rules];
+    const currentIndex = indexes[position]!;
+    const targetIndex = indexes[targetPosition]!;
+    [next[currentIndex], next[targetIndex]] = [next[targetIndex]!, next[currentIndex]!];
+    onChange(next);
+  }
+
+  function applySuggestions() {
+    const liveReminder = templates.find((template) => template.trigger === "live_reminder")?.id ?? "";
+    const postLiveFollowup = templates.find((template) => template.trigger === "post_live_followup")?.id ?? "";
+    onChange(withDraftRuleIds(createSuggestedLiveNotificationRules({ liveReminder, postLiveFollowup })));
+  }
+
+  return (
+    <section aria-labelledby="notification-rules-title" className="grid gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 id="notification-rules-title" className="font-semibold text-slate-950">選配通知規則</h3>
+          <p className="mt-1 text-sm text-slate-600">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
+        </div>
+        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
+          套用建議設定
+        </button>
+      </div>
+      {!hasSuggestionTemplates ? <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">目前沒有可用的開播提醒或課後 Email 模板，請先建立模板再套用建議設定。</p> : null}
+      {LIVE_NOTIFICATION_RULE_TRIGGERS.map((trigger) => {
+        const group = rules.filter((rule) => rule.trigger === trigger);
+        const availableTemplates = templates.filter((template) => template.trigger === expectedTemplateTrigger(trigger));
+        const missingTemplateReason = trigger === "post_live_followup"
+          ? "需要啟用中的課後 Email 模板（post_live_followup）才能新增。"
+          : "需要啟用中的 Email 開播提醒模板（live_reminder）才能新增。";
+        const addButtonDescriptionId = `notification-rule-${trigger}-add-description`;
+        return (
+          <fieldset key={trigger} className="grid gap-3 rounded-lg border border-border p-4">
+            <legend className="px-1 font-semibold text-slate-900">
+              {notificationRuleGroupCopy[trigger].title} {group.length}/{LIVE_NOTIFICATION_RULE_LIMITS[trigger]}
+            </legend>
+            {group.length === 0 ? <p className="text-sm text-slate-500">尚未設定通知。</p> : null}
+            {group.map((rule, index) => (
+              <div key={rule.id} className="grid gap-3 rounded-md bg-slate-50 p-3 lg:grid-cols-[auto_minmax(0,1fr)_150px_auto] lg:items-end">
+                <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={rule.isActive}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則通知啟用`}
+                    onChange={(event) => replaceRule(rule.id, { isActive: event.target.checked })}
+                    className="h-4 w-4 accent-blue-600"
+                  />
+                  啟用
+                </label>
+                <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+                  Email 模板
+                  <select
+                    value={rule.messageTemplateId}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則 Email 模板`}
+                    onChange={(event) => replaceRule(rule.id, { messageTemplateId: event.target.value })}
+                    className="h-10 min-w-0 rounded-md border border-border px-3"
+                  >
+                    <option value="">請選擇模板</option>
+                    {availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+                  {notificationRuleGroupCopy[trigger].timing}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={trigger === "before_live" ? 1 : 0}
+                    max={10_080}
+                    value={rule.offsetMinutes}
+                    aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則寄送分鐘`}
+                    onChange={(event) => replaceRule(rule.id, { offsetMinutes: Number(event.target.value) })}
+                    className="h-10 rounded-md border border-border px-3"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2" aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則排序控制`}>
+                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
+                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
+                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-10 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
+                </div>
+              </div>
+            ))}
+            <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-10 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                新增{notificationRuleGroupCopy[trigger].title}通知
+              </button>
+              {availableTemplates.length === 0 ? <span id={addButtonDescriptionId} className="text-xs text-amber-800">{missingTemplateReason}</span> : null}
+            </div>
+          </fieldset>
+        );
+      })}
+    </section>
+  );
+}
+
+function renderLiveStudioStepPanels({
+  activeStep,
+  initialValues,
+  videos,
+  selectedVideoId,
+  onVideoChange,
+  products,
+  selectedProductIds,
+  onProductSelectionChange,
+  onAccentCopyChange,
+  forms,
+  onFormChange,
+  registrationTemplates,
+  selectedTemplateId,
+  onTemplateChange,
+  notificationTemplates,
+  notificationRules,
+  onNotificationRulesChange,
+  scripts,
+  selectedScriptId,
+  onScriptChange,
+  affiliates,
+  streamMembers,
+  streamPages,
+}: LiveStudioStepPanelRenderOptions) {
+  return (
+    <>
+      <StepPanel active={activeStep === 1} index={1}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">媒體與 Live Input</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇既有 Stream 影片或 Live Input；來源識別碼由受保護流程管理。</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            串流模式
+            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
+              <option value="vod">Cloudflare Stream VOD</option>
+              <option value="live">Cloudflare Stream Live</option>
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            影片 / Live Input
+            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+              <option value="">不綁定影片</option>
+              {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
+            </select>
+          </label>
+        </div>
+        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或 Live Input</Link></p> : null}
+      </StepPanel>
+
+      <StepPanel active={activeStep === 2} index={2}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">商品優惠</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇主打商品並設定直播促銷短句；內容型直播可不選商品。</p>
+        </div>
+        <div data-readiness-focus="products" tabIndex={-1} className="grid gap-3">
+          <ProductSelection
+            products={products}
+            selectedProductIds={selectedProductIds}
+            onSelectionChange={onProductSelectionChange}
+          />
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          促銷短句
+          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
+        </label>
+      </StepPanel>
+
+      <StepPanel active={activeStep === 3} index={3}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">報名頁</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇這場直播要使用的報名表單。</p>
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          報名頁
+          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <option value="">不綁定表單</option>
+            {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
+          </select>
+        </label>
+        {forms.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用報名頁。<Link href="/forms/new" className="ml-1 font-semibold text-primary underline">新增報名頁</Link></p> : null}
+      </StepPanel>
+
+      <StepPanel active={activeStep === 5} index={5}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">Email</h2>
+          <p className="mt-1 text-sm text-slate-500">報名成功信是發布必要條件；開播前、直播中與課後通知皆可選配。</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            報名成功 Email
+            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+              <option value="">不綁定模板</option>
+              {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
+            </select>
+          </label>
+        </div>
+        <input type="hidden" name="liveReminderTemplateId" value={initialValues.liveReminderTemplateId} readOnly />
+        <input type="hidden" name="liveReminderOffsetMinutes" value={initialValues.liveReminderOffsetMinutes} readOnly />
+        <NotificationRulesEditor rules={notificationRules} templates={notificationTemplates} onChange={onNotificationRulesChange} />
+        {registrationTemplates.length === 0 || notificationTemplates.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">缺少可用 Email 模板。<Link href="/messages/templates/new" className="ml-1 font-semibold text-primary underline">新增訊息模板</Link></p> : null}
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
+      </StepPanel>
+
+      <StepPanel active={activeStep === 6} index={6}>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">留言、商品浮窗與 CTA</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇已發布的互動腳本，再設定聯盟來源、觀看上限與 Stream 用量歸屬。</p>
+        </div>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          互動腳本
+          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <option value="">不綁定腳本</option>
+            {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
+          </select>
+        </label>
+        {scripts.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有已發布的互動腳本。<Link href="/interaction-scripts/new" className="ml-1 font-semibold text-primary underline">新增互動腳本</Link></p> : null}
+        {selectedScriptId ? (
+          <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <p>已選腳本：<strong>{scripts.find((script) => script.id === selectedScriptId)?.name ?? "目前選取的腳本"}</strong></p>
+            <p className="mt-1">事件摘要請至互動腳本編輯時間軸查看。</p>
+            <Link href={`/interaction-scripts/${encodeURIComponent(selectedScriptId)}/edit`} className="mt-1 inline-flex font-semibold text-primary underline">至互動腳本編輯時間軸</Link>
+          </div>
+        ) : null}
+        <LiveRulesFields affiliates={affiliates} initialValues={initialValues} streamMembers={streamMembers} streamPages={streamPages} />
+      </StepPanel>
+
+    </>
+  );
+}
+
+function renderLiveStudioBasicsStep(input: {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  studioPreset: LiveStudioPreset;
+  purposeStarter: React.ReactNode;
+  onTitleChange: (value: string) => void;
+  onSlugChange: (value: string) => void;
+}) {
+  return (
+    <StepPanel active={input.activeStep === 0} index={0}>
+      <input type="hidden" name="studioPreset" value={input.studioPreset} readOnly />
+      {input.purposeStarter}
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        直播標題
+        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        Slug
+        <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={input.initialValues.slug} onChange={(event) => input.onSlugChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
+      </label>
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        直播說明
+        <textarea name="description" rows={4} autoComplete="off" defaultValue={input.initialValues.description} className="rounded-md border border-border px-3 py-2" />
+      </label>
+    </StepPanel>
+  );
+}
+
+function renderLiveStudioScheduleStep(input: {
+  activeStep: number;
+  initialValues: LiveStudioDraftPayload;
+  timeZone: string;
+  replayEnabled: boolean;
+  replayAvailableUntil: string;
+  onScheduledAtChange: (value: string) => void;
+  onReplayEnabledChange: (enabled: boolean) => void;
+  onReplayAvailableUntilChange: (value: string) => void;
+  onMediaValueChange: () => void;
+}) {
+  return (
+    <StepPanel active={input.activeStep === 4} index={4}>
+      <div>
+        <h2 className="text-base font-semibold text-slate-950">時間、回放與品牌</h2>
+        <p className="mt-1 text-sm text-slate-500">設定開播時間、回放選項與直播主視覺。</p>
+      </div>
+      <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+        Logo、品牌色、寄件資訊與聯絡網址會沿用商店品牌設定。
+        <Link href="/settings/brand" className="ml-1 font-semibold text-primary underline">編輯品牌設定</Link>
+      </p>
+      <ScheduleDateTimeField timeZone={input.timeZone} defaultValue={input.initialValues.scheduledAt} onChange={input.onScheduledAtChange} />
+      <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input name="replayEnabled" type="checkbox" checked={input.replayEnabled} onChange={(event) => input.onReplayEnabledChange(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+        直播結束後允許回放
+      </label>
+      <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
+      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        回放觀看期限（{input.timeZone}，選填）
+        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
+        <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
+      </label>
+      <MediaUploadField
+        kind="image"
+        label="直播封面"
+        description="直接上傳直播主視覺；完成後可在最後一步預覽，URL 僅保留為進階相容選項。"
+        defaultUrl={input.initialValues.heroImageUrl}
+        defaultAssetId={input.initialValues.heroImageAssetId}
+        urlInputName="heroImageUrl"
+        assetIdInputName="heroImageAssetId"
+        onValueChange={input.onMediaValueChange}
+      />
+    </StepPanel>
+  );
 }
 
 export function LiveStepperForm({
@@ -36,268 +968,262 @@ export function LiveStepperForm({
   templates,
   scripts,
   affiliates,
+  streamMembers,
+  streamPages,
   csrfToken,
+  error,
+  initialDraft,
+  initialValues: suppliedInitialValues,
+  liveId = "",
+  currentStatus = "draft",
+  timeZone,
 }: {
-  videos: Video[];
-  products: Product[];
-  forms: RegistrationForm[];
-  templates: MessageTemplate[];
-  scripts: InteractionScript[];
-  affiliates: Affiliate[];
+  videos: Array<Pick<Video, "id" | "title">>;
+  products: LiveProductOption[];
+  forms: LiveFormOption[];
+  templates: LiveTemplateOption[];
+  scripts: LiveScriptOption[];
+  affiliates: LiveAffiliateOption[];
+  streamMembers: StreamAllocationMemberOption[];
+  streamPages: StreamAllocationPageOption[];
   csrfToken: string;
+  error?: string;
+  initialDraft?: LiveStudioDraftEnvelope;
+  initialValues?: LiveStudioDraftPayload;
+  liveId?: string;
+  currentStatus?: string;
+  timeZone: string;
 }) {
-  const [activeStep, setActiveStep] = useState(0);
-  const [previewTitle, setPreviewTitle] = useState("");
-  const [previewAccentCopy, setPreviewAccentCopy] = useState("");
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const preview = createLivePreview({
-    title: previewTitle,
-    accentCopy: previewAccentCopy,
-    products,
-    selectedProductIds,
+  const initialValues = initialDraft?.payload ?? suppliedInitialValues ?? emptyLiveStudioDraft();
+  const registrationTemplates = templates.filter((template) => template.trigger === "registration_confirmed");
+  const notificationTemplates = templates.filter((template) => template.trigger === "live_reminder" || template.trigger === "post_live_followup");
+  const [activeStep, setActiveStep] = useState(initialValues.activeStep);
+  const [previewTitle, setPreviewTitle] = useState(initialValues.title);
+  const [slug, setSlug] = useState(initialValues.slug);
+  const [scheduledAt, setScheduledAt] = useState(initialValues.scheduledAt);
+  const [previewAccentCopy, setPreviewAccentCopy] = useState(initialValues.accentCopy);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(initialValues.productIds);
+  const [validationMessage, setValidationMessage] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const invalidFocusPendingRef = useRef(false);
+  const readinessFocusPendingRef = useRef<LivePublishRequirementCodeWithReminder | null>(null);
+  const [selectedVideoId, setSelectedVideoId] = useState(initialValues.videoId);
+  const [selectedFormId, setSelectedFormId] = useState(initialValues.formId);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(initialValues.messageTemplateId);
+  const [selectedScriptId, setSelectedScriptId] = useState(initialValues.interactionScriptId);
+  const [replayEnabled, setReplayEnabled] = useState(initialValues.replayEnabled);
+  const [studioPreset, setStudioPreset] = useState<LiveStudioPreset>(initialValues.studioPreset);
+  const [notificationRules, setNotificationRules] = useState<LiveNotificationRuleDraft[]>(initialValues.notificationRules);
+  const [replayAvailableUntil, setReplayAvailableUntil] = useState(
+    initialValues.replayEnabled ? initialValues.replayAvailableUntil : "",
+  );
+  const draft = useLiveStudioDraft({
+    activeStep,
+    csrfToken,
+    formRef,
+    initialDraft,
+    liveId,
+    saveOnMount: Boolean(liveId && !initialDraft),
   });
+  useLiveStudioPresetSave(studioPreset, draft.scheduleSave);
+  const preview = buildLivePreview(previewTitle, previewAccentCopy, products, selectedProductIds); const statusAction = liveId ? liveStatusAction(currentStatus) : null;
+  const publishReadiness = buildLivePublishReadiness({ studioPreset, products, productIds: selectedProductIds, videos, videoId: selectedVideoId, forms, formId: selectedFormId, templates: registrationTemplates, templateId: selectedTemplateId, scripts, scriptId: selectedScriptId });
+  const readinessIsReady = (code: LivePublishRequirementCodeWithReminder) => (
+    publishReadiness.requirements.find((requirement) => requirement.code === code)?.ready ?? true
+  );
+  const stepCompletion = [
+    Boolean(previewTitle.trim() && slug.trim()),
+    readinessIsReady("media"),
+    readinessIsReady("products"),
+    readinessIsReady("registration_form"),
+    Boolean(scheduledAt),
+    readinessIsReady("registration_email"),
+    readinessIsReady("interaction_script"),
+    publishReadiness.ready,
+  ];
+
+  useEffect(() => {
+    const code = readinessFocusPendingRef.current;
+    if (!code) return;
+    const target = formRef.current?.querySelector<HTMLElement>(readinessFocusSelector[code]);
+    target?.focus();
+    readinessFocusPendingRef.current = null;
+  }, [activeStep]);
+  function validateCurrentStep() {
+    const panel = formRef.current?.querySelector<HTMLElement>(`[data-step-index="${activeStep}"]`);
+    const invalidControl = panel?.querySelector<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >("input:invalid, select:invalid, textarea:invalid");
+    if (!invalidControl) {
+      setValidationMessage("");
+      return true;
+    }
+
+    setValidationMessage(requiredFieldsMessage);
+    invalidControl.reportValidity();
+    return false;
+  }
+
+  function moveToStep(nextStep: number) {
+    if (nextStep > activeStep && !validateCurrentStep()) return;
+    setValidationMessage(""); setActiveStep(nextStep); draft.scheduleSave(nextStep);
+  }
+
+  function selectStudioPreset(preset: LiveStudioPreset) {
+    const accentCopy = applyLiveStudioPreset(formRef.current, preset);
+    setStudioPreset(preset);
+    if (accentCopy) setPreviewAccentCopy(accentCopy);
+  }
+
+  function fixReadinessRequirement(code: LivePublishRequirementCodeWithReminder) {
+    const step = readinessCopy[code].step;
+    readinessFocusPendingRef.current = code;
+    setValidationMessage("");
+    setActiveStep(step);
+    draft.scheduleSave(step);
+  }
+
+  function updateNotificationRules(rules: LiveNotificationRuleDraft[]) {
+    setNotificationRules(rules);
+    draft.scheduleSave();
+  }
 
   return (
-    <form action={upsertLiveAction} className="grid gap-5">
+    <form
+      ref={formRef}
+      action={upsertLiveAction}
+      className="grid gap-5"
+      onChange={() => draft.scheduleSave()}
+      onInvalid={(event) => handleLiveFormInvalid(event, invalidFocusPendingRef, setActiveStep, setValidationMessage)}
+      onSubmit={(event) => submitOnlyAfterLatestDraft(event, activeStep, draft, formRef.current)}
+    >
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      {liveId ? <input type="hidden" name="id" value={liveId} /> : null}
+      <input type="hidden" name="liveDraftId" value={draft.draftId} readOnly />
+      <input type="hidden" name="liveDraftRevision" value={draft.revision ?? ""} readOnly />
+      <input type="hidden" name="flowVersion" value="2" readOnly />
+      <input type="hidden" name="notificationRules" value={JSON.stringify(notificationRules)} readOnly />
+      {liveFormError(error)}
+      <p role="status" aria-live="polite" className="min-h-5 text-sm font-medium text-red-700">
+        {validationMessage}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+        <p
+          role={draft.status === "conflict" || draft.status === "error" ? "alert" : "status"}
+          aria-live="polite"
+          className={`text-sm font-medium ${draft.status === "conflict" || draft.status === "error" ? "text-red-700" : "text-slate-700"}`}
+        >
+          {draft.message}
+        </p>
+        <button
+          type="button"
+          onClick={() => void draft.saveNow()}
+          disabled={draft.status === "saving" || draft.status === "conflict"}
+          aria-busy={draft.status === "saving"}
+          className="min-h-10 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {draft.status === "saving" ? "儲存中…" : "立即儲存草稿"}
+        </button>
+      </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button
             key={step.key}
             type="button"
-            onClick={() => setActiveStep(index)}
+            onClick={() => moveToStep(index)}
+            aria-controls={`live-step-panel-${index}`}
+            aria-current={activeStep === index ? "step" : undefined}
             className={`flex h-14 items-center justify-center gap-2 rounded-md border text-sm font-semibold transition ${
-              activeStep === index ? "border-primary bg-blue-50 text-primary" : "border-border bg-white text-slate-500"
+              activeStep === index
+                ? "border-primary bg-blue-50 text-primary"
+                : "border-border bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
-            <step.icon size={17} />
-            {step.label}
+            <step.icon size={17} aria-hidden="true" />
+            <span>{step.label}</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${stepCompletion[index] ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+              {stepCompletion[index] ? "已完成" : "待完成"}
+            </span>
           </button>
         ))}
       </div>
 
-      <StepPanel active={activeStep === 0}>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          直播標題
-          <input name="title" required onChange={(event) => setPreviewTitle(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          Slug
-          <input name="slug" required className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          開播時間
-          <input name="scheduledAt" type="datetime-local" required className="h-10 rounded-md border border-border px-3" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          直播說明
-          <textarea name="description" rows={4} className="rounded-md border border-border px-3 py-2" />
-        </label>
-      </StepPanel>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="grid min-w-0 gap-5">
+          {activeStep !== steps.length - 1 ? (
+            <MobileLivePreviewToggle preview={preview} />
+          ) : null}
 
-      <StepPanel active={activeStep === 1}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            串流模式
-            <select name="streamMode" className="h-10 rounded-md border border-border px-3">
-              <option value="vod">Cloudflare Stream VOD</option>
-              <option value="live">Cloudflare Stream Live</option>
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            影片 / Live Input
-            <select name="videoId" className="h-10 rounded-md border border-border px-3">
-              <option value="">不綁定影片</option>
-              {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
-            </select>
-          </label>
-        </div>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          Cloudflare Live Input UID
-          <input name="cloudflareLiveInputUid" className="h-10 rounded-md border border-border px-3" placeholder="live input uid，可先留空" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          Hero 圖片 URL
-          <input name="heroImageUrl" className="h-10 rounded-md border border-border px-3" placeholder="https://..." />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          促銷短句
-          <input name="accentCopy" onChange={(event) => setPreviewAccentCopy(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
-        </label>
-      </StepPanel>
+      {renderLiveStudioBasicsStep({
+        activeStep,
+        initialValues,
+        studioPreset,
+        purposeStarter: !liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null,
+        onTitleChange: setPreviewTitle,
+        onSlugChange: setSlug,
+      })}
 
-      <StepPanel active={activeStep === 2}>
-        {products.map((product) => (
-          <label key={product.id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-            <span>
-              <span className="block text-sm font-semibold text-slate-900">{product.name}</span>
-              <span className="block text-xs text-slate-500">庫存 {product.inventory}</span>
-            </span>
-            <input
-              name="productIds"
-              type="checkbox"
-              value={product.id}
-              onChange={(event) => setSelectedProductIds((currentIds) => (
-                event.target.checked
-                  ? [...currentIds, product.id]
-                  : currentIds.filter((productId) => productId !== product.id)
-              ))}
-              className="h-5 w-5 accent-blue-600"
-            />
-          </label>
-        ))}
-      </StepPanel>
+      {renderLiveStudioStepPanels({
+        activeStep,
+        initialValues,
+        videos,
+        selectedVideoId,
+        onVideoChange: setSelectedVideoId,
+        products,
+        selectedProductIds,
+        onProductSelectionChange: (productId, checked) => setSelectedProductIds(
+          (currentIds) => updateSelectedProductIds(currentIds, productId, checked),
+        ),
+        onAccentCopyChange: setPreviewAccentCopy,
+        forms,
+        onFormChange: setSelectedFormId,
+        registrationTemplates,
+        selectedTemplateId,
+        onTemplateChange: setSelectedTemplateId,
+        notificationTemplates,
+        notificationRules,
+        onNotificationRulesChange: updateNotificationRules,
+        scripts,
+        selectedScriptId,
+        onScriptChange: setSelectedScriptId,
+        affiliates,
+        streamMembers,
+        streamPages,
+      })}
 
-      <StepPanel active={activeStep === 3}>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          報名頁
-          <select name="formId" className="h-10 rounded-md border border-border px-3">
-            <option value="">不綁定表單</option>
-            {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
-          </select>
-        </label>
-      </StepPanel>
-
-      <StepPanel active={activeStep === 4}>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          通知模板
-          <select name="messageTemplateId" className="h-10 rounded-md border border-border px-3">
-            <option value="">不綁定模板</option>
-            {templates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
-          </select>
-        </label>
-      </StepPanel>
-
-      <StepPanel active={activeStep === 5}>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          互動腳本
-          <select name="interactionScriptId" className="h-10 rounded-md border border-border px-3">
-            <option value="">不綁定腳本</option>
-            {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
-          </select>
-        </label>
-      </StepPanel>
-
-      <StepPanel active={activeStep === 6}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            允許聯盟來源
-            <select name="affiliateMode" className="h-10 rounded-md border border-border px-3">
-              <option value="enabled">啟用 ref 追蹤</option>
-              <option value="disabled">停用</option>
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            預設推廣碼
-            <select name="defaultAffiliateCode" className="h-10 rounded-md border border-border px-3">
-              <option value="">不指定</option>
-              {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.code}>{affiliate.name} · {affiliate.code}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            觀看人數上限
-            <input name="maxConcurrentViewers" type="number" defaultValue={500} className="h-10 rounded-md border border-border px-3" />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            點數低於多少時停止推播
-            <input name="stopWhenCreditsBelow" type="number" defaultValue={300} className="h-10 rounded-md border border-border px-3" />
-          </label>
-        </div>
-        <p className="flex items-start gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
-          <Ban size={16} className="mt-0.5 shrink-0" />
-          黑名單會在名單提交與互動事件中做風險控管；此版先套用資料模型與後台管理。
-        </p>
-      </StepPanel>
-
-      <StepPanel active={activeStep === 7}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="flex items-start gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-50 text-emerald-700">
-              <Gauge size={18} />
-            </span>
-            <div>
-              <h2 className="text-base font-semibold text-slate-950">確認建立 Cloudflare-first 直播間</h2>
-              <p className="mt-1 text-sm text-slate-500">直播頁會支援 VOD / Live Input、商品浮出、官方角色訊息、CTA 切換、聯盟來源追蹤與用量規則。</p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-                  <p className="text-xs font-bold uppercase text-blue-500">Playback</p>
-                  <p className="mt-1 font-semibold text-slate-950">Cloudflare Stream ready</p>
-                </div>
-                <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
-                  <p className="text-xs font-bold uppercase text-orange-500">Sales moment</p>
-                  <p className="mt-1 font-semibold text-slate-950">商品 Pop-up + CTA</p>
-                </div>
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                  <p className="text-xs font-bold uppercase text-emerald-500">Lead capture</p>
-                  <p className="mt-1 font-semibold text-slate-950">報名表與通知模板</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase text-slate-500">Control</p>
-                  <p className="mt-1 font-semibold text-slate-950">黑名單、聯盟與配額</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-slate-950 p-3 shadow-2xl">
-            <div className="overflow-hidden rounded-[22px] bg-slate-900 text-white">
-              <div className="relative aspect-[9/16] bg-[radial-gradient(circle_at_30%_20%,#475569,transparent_28%),linear-gradient(160deg,#0f172a,#111827_45%,#020617)]">
-                <div className="absolute left-3 right-3 top-3 flex items-center justify-between">
-                  <div className="max-w-[70%] truncate rounded-full bg-black/35 px-3 py-1.5 text-xs font-bold backdrop-blur">{preview.title}</div>
-                  <div className="rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-black">LIVE</div>
-                </div>
-                <div className="absolute bottom-28 left-3 right-3 rounded-2xl bg-white p-3 text-slate-950 shadow-2xl">
-                  <div className="flex gap-3">
-                    <div className="h-16 w-16 rounded-xl bg-orange-100" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black text-orange-600">{preview.accentCopy}</p>
-                      {preview.productNames.length > 0 ? (
-                        <div className="mt-1 space-y-1 text-sm font-bold">
-                          {preview.productNames.map((productName, index) => <p key={`${productName}-${index}`} className="truncate">{productName}</p>)}
-                          {preview.remainingProductCount > 0 ? <p className="text-xs font-medium text-slate-500">及其他 {preview.remainingProductCount} 件商品</p> : null}
-                        </div>
-                      ) : (
-                        <p className="mt-1 truncate font-bold text-slate-500">{preview.emptyProductLabel}</p>
-                      )}
-                      <button type="button" className="mt-2 h-8 w-full rounded-lg bg-orange-500 text-xs font-black text-white">立即搶購</button>
-                    </div>
-                  </div>
-                </div>
-                <div className="absolute bottom-14 left-3 max-w-[78%] rounded-2xl bg-black/45 px-3 py-2 text-xs backdrop-blur">
-                  <b>AI 主持人</b>
-                  <span className="ml-2 rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px]">官方</span>
-                  <p className="mt-1 text-white/85">優惠在這一段會自動跳出，不用手動場控。</p>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 grid grid-cols-3 gap-2 bg-black/60 p-3 backdrop-blur">
-                  <span className="rounded-xl bg-white py-2 text-center text-xs font-black text-slate-950">聊天</span>
-                  <span className="rounded-xl bg-white/10 py-2 text-center text-xs font-black">商品</span>
-                  <span className="rounded-xl bg-white/10 py-2 text-center text-xs font-black">報名</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {renderLiveStudioScheduleStep({ activeStep, initialValues, timeZone, replayEnabled, replayAvailableUntil, onScheduledAtChange: setScheduledAt, onReplayEnabledChange: (enabled) => { setReplayEnabled(enabled); if (!enabled) setReplayAvailableUntil(""); }, onReplayAvailableUntilChange: setReplayAvailableUntil, onMediaValueChange: () => draft.scheduleSave() })}
+      <StepPanel active={activeStep === 7} index={7}>
+        <LiveReviewPanel preview={preview} readiness={publishReadiness} onFix={fixReadinessRequirement} />
       </StepPanel>
 
       <div className="flex justify-between">
-        <button
-          type="button"
-          onClick={() => setActiveStep((step) => Math.max(0, step - 1))}
-          className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600"
-        >
+        <button type="button" onClick={() => moveToStep(Math.max(0, activeStep - 1))} disabled={activeStep === 0} className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
           上一步
         </button>
         {activeStep < steps.length - 1 ? (
-          <button
-            type="button"
-            onClick={() => setActiveStep((step) => Math.min(steps.length - 1, step + 1))}
-            className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white"
-          >
+          <button type="button" onClick={() => moveToStep(Math.min(steps.length - 1, activeStep + 1))} className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
             下一步
           </button>
         ) : (
-          <SubmitButton>建立直播間</SubmitButton>
+          <LiveSubmitActions
+            canSubmit={draft.canSubmit}
+            currentStatus={currentStatus}
+            liveId={liveId}
+            publishReady={publishReadiness.ready}
+            replayEnabled={replayEnabled}
+            statusAction={statusAction}
+          />
         )}
+      </div>
+        </div>
+
+        <aside aria-labelledby="live-studio-preview-title" className="sticky top-4 hidden lg:block">
+          <div className="mb-3">
+            <h2 id="live-studio-preview-title" className="font-semibold text-slate-950">即時手機預覽</h2>
+            <p className="mt-1 text-xs text-slate-700">修改標題、促銷短句或商品時會同步更新。</p>
+          </div>
+          <LivePhonePreview preview={preview} />
+        </aside>
       </div>
     </form>
   );

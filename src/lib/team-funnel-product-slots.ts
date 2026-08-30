@@ -12,9 +12,14 @@ import {
 export const teamFunnelProductSlotKeys = ["main_product", "bundle_product", "join_member", "consultation"] as const;
 export type TeamFunnelProductSlotKey = (typeof teamFunnelProductSlotKeys)[number];
 
-type ProductLink = {
+export type TeamFunnelProductLink = {
   id: string;
+  vendorId?: string;
   checkoutUrl?: string | null;
+  isActive?: boolean;
+  fulfillmentTypeConfirmed?: boolean;
+  inventory?: number;
+  priceCents?: number;
 };
 
 export type TeamFunnelTemplateSlot = {
@@ -23,14 +28,14 @@ export type TeamFunnelTemplateSlot = {
   productId: string;
   displayOrder?: number;
   offerLabel?: string | null;
-  product?: ProductLink | null;
+  product?: TeamFunnelProductLink | null;
 };
 
 export type TeamFunnelPartnerSlotOverride = {
   productSlotId: string;
   productId?: string | null;
   overrideUrl?: string | null;
-  product?: ProductLink | null;
+  product?: TeamFunnelProductLink | null;
 };
 
 export type TeamFunnelAttribution = {
@@ -61,6 +66,7 @@ export type ResolvedTeamFunnelProductSlot = {
   source: "partner_override" | "template_default" | "missing";
   productId: string | null;
   url: string | null;
+  checkoutMode: "platform" | "external" | null;
   offerLabel: string | null;
   attribution: TeamFunnelAttribution;
 };
@@ -186,21 +192,52 @@ export function resolveTeamFunnelProductSlot(input: {
 }): ResolvedTeamFunnelProductSlot {
   const template = input.templateSlot;
   const override = input.partnerOverride;
-  const overrideUrl = override?.overrideUrl == null ? null : parseSafeTeamFunnelProductUrl(override.overrideUrl);
-  const overrideProductUrl = override?.product?.checkoutUrl == null ? null : parseSafeTeamFunnelProductUrl(override.product.checkoutUrl);
-  const templateUrl = template?.product?.checkoutUrl == null ? null : parseSafeTeamFunnelProductUrl(template.product.checkoutUrl);
+  const overrideProductIsUsable = override?.productId == null || (
+    override.product?.isActive === true
+    && override.product.fulfillmentTypeConfirmed === true
+    && (override.product.vendorId === undefined || override.product.vendorId === input.attribution.vendorId)
+  );
+  const overrideUrl = !overrideProductIsUsable || override?.overrideUrl == null
+    ? null
+    : parseSafeTeamFunnelProductUrl(override.overrideUrl);
+  const overrideProductDestination = resolveProductCheckoutDestination(override?.product, input.attribution.vendorId);
+  const templateProductDestination = resolveProductCheckoutDestination(template?.product, input.attribution.vendorId);
   const offerLabel = template?.offerLabel ?? null;
 
   if (overrideUrl) {
-    return resolved(input.slotKey, "partner_override", override?.productId ?? template?.productId ?? null, overrideUrl, offerLabel, input.attribution);
+    return resolved(input.slotKey, "partner_override", override?.productId ?? template?.productId ?? null, overrideUrl, "external", offerLabel, input.attribution);
   }
-  if (overrideProductUrl) {
-    return resolved(input.slotKey, "partner_override", override?.productId ?? null, overrideProductUrl, offerLabel, input.attribution);
+  if (overrideProductDestination) {
+    return resolved(input.slotKey, "partner_override", override?.productId ?? null, overrideProductDestination.url, overrideProductDestination.checkoutMode, offerLabel, input.attribution);
   }
-  if (templateUrl) {
-    return resolved(input.slotKey, "template_default", template?.productId ?? null, templateUrl, offerLabel, input.attribution);
+  if (templateProductDestination) {
+    return resolved(input.slotKey, "template_default", template?.productId ?? null, templateProductDestination.url, templateProductDestination.checkoutMode, offerLabel, input.attribution);
   }
-  return resolved(input.slotKey, "missing", null, null, offerLabel, input.attribution);
+  return resolved(input.slotKey, "missing", null, null, null, offerLabel, input.attribution);
+}
+
+function resolveProductCheckoutDestination(product: TeamFunnelProductLink | null | undefined, vendorId: string) {
+  if (!product || product.isActive !== true) return null;
+  if (product.vendorId !== undefined && product.vendorId !== vendorId) return null;
+  if (product.fulfillmentTypeConfirmed !== true) return null;
+
+  if (product.checkoutUrl != null) {
+    const url = parseSafeTeamFunnelProductUrl(product.checkoutUrl);
+    return url ? { url, checkoutMode: "external" as const } : null;
+  }
+
+  if (
+    product.vendorId !== vendorId
+    || !Number.isSafeInteger(product.inventory)
+    || product.inventory! <= 0
+    || !Number.isSafeInteger(product.priceCents)
+    || product.priceCents! <= 0
+  ) return null;
+
+  return {
+    url: `/checkout/${encodeURIComponent(product.vendorId)}/${encodeURIComponent(product.id)}`,
+    checkoutMode: "platform" as const,
+  };
 }
 
 /** Always returns all approved slots, including an explicit missing state. */
@@ -269,7 +306,12 @@ export async function createTeamFunnelTemplateProductSlot(input: {
   await assertVersionAccess(actor, version);
 
   const product = await db.product.findFirst({
-    where: { id: input.productId, vendorId: actor.vendorId, isActive: true },
+    where: {
+      id: input.productId,
+      vendorId: actor.vendorId,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+    },
     select: { id: true },
   });
   if (!product) throw new TeamFunnelAccessDeniedError("missing_resource");
@@ -313,7 +355,12 @@ export async function upsertTeamFunnelPartnerProductSlotOverride(input: {
   let productId: string | null = input.productId ?? null;
   if (productId) {
     const product = await getDb().product.findFirst({
-      where: { id: productId, vendorId: actor.vendorId, isActive: true },
+      where: {
+        id: productId,
+        vendorId: actor.vendorId,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+      },
       select: { id: true },
     });
     if (!product) throw new TeamFunnelAccessDeniedError("missing_resource");
@@ -338,10 +385,11 @@ function resolved(
   source: ResolvedTeamFunnelProductSlot["source"],
   productId: string | null,
   url: string | null,
+  checkoutMode: ResolvedTeamFunnelProductSlot["checkoutMode"],
   offerLabel: string | null,
   attribution: TeamFunnelAttribution,
 ): ResolvedTeamFunnelProductSlot {
-  return { slotKey, status: url ? "resolved" : "missing", source, productId, url, offerLabel, attribution };
+  return { slotKey, status: url ? "resolved" : "missing", source, productId, url, checkoutMode, offerLabel, attribution };
 }
 
 async function loadPage(actor: TeamFunnelMembership, pageId: string) {
@@ -352,10 +400,10 @@ async function loadPage(actor: TeamFunnelMembership, pageId: string) {
       templateVersion: {
         include: {
           fieldLocks: { select: { field: true } },
-          productSlots: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+          productSlots: { include: { product: { select: { id: true, vendorId: true, checkoutUrl: true, isActive: true, fulfillmentTypeConfirmed: true, inventory: true, priceCents: true } } } },
         },
       },
-      productOverrides: { include: { product: { select: { id: true, checkoutUrl: true } } } },
+      productOverrides: { include: { product: { select: { id: true, vendorId: true, checkoutUrl: true, isActive: true, fulfillmentTypeConfirmed: true, inventory: true, priceCents: true } } } },
     },
   });
   if (!page) throw new TeamFunnelAccessDeniedError("missing_resource");

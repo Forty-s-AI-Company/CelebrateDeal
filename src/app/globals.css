@@ -8,8 +8,8 @@
   --border: #dbe3ef;
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
-  --cta: #f97316;
-  --cta-dark: #ea580c;
+  --cta: #c2410c;
+  --cta-dark: #9a3412;
 }
 
 @theme inline {
@@ -22,14 +22,14 @@
   --color-primary-dark: var(--primary-dark);
   --color-cta: var(--cta);
   --color-cta-dark: var(--cta-dark);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }
 
 button,
@@ -38,6 +38,23 @@ input,
 select,
 textarea {
   letter-spacing: 0;
+  touch-action: manipulation;
+}
+
+/* Keep the global announcement launcher out of the persistent player controls. */
+body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-launcher"] {
+  bottom: 13rem;
+}
+
+@media (max-width: 639px) {
+  body:has([data-live-player-mode="page"]) [data-testid="announcement-center-launcher"] {
+    bottom: 24rem;
+  }
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
 }
 
 ::selection {
@@ -54,5 +71,20 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

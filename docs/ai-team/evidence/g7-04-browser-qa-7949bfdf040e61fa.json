@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "7949bfdf040e61fa",
+  "startedAt": "2026-08-08T23:20:01.875Z",
+  "finishedAt": "2026-08-08T23:28:03.821Z",
+  "serverMode": "PRODUCTION",
+  "sourceLineage": {
+    "algorithm": "sha256",
+    "files": {
+      "scripts/g7-commerce-browser-qa.mjs": "70f8ae551da3101dcb286b0c0112688bf705fd08665136c652193dc9d314c9e0",
+      "playwright.g7-commerce.config.ts": "cf0a290ea39ff48783ad4e9f903ac7e4d37b2d516e5ec19cc1f7f151860a8501",
+      "tests/e2e/commerce-orders.spec.ts": "798b333a7447843c2c3ea9426714f74b5973cd2eb5dfdd86ab62fe86668b7671",
+      "src/lib/product-action-state.ts": "abb77058354d3d30aa5678bd2aee1476e8b782d7a2c6085432c65c3737c498a0",
+      "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+      "src/app/actions/product-actions.ts": "a322f1fc3d900b9b4a9dcc77ea5693588277deaa3c0ab7c08c4da2759afb3bd0",
+      "src/components/product-form-client.tsx": "1258b02cc6b1f8cd35613a7e58b12680eeee16b743dd573178cf3c5400fd5ab7",
+      "src/components/media-upload-field.tsx": "0aaca77d89f55201f324b9ec7da8be7256c358ceeb742d5e4cf87150425d7c2d",
+      "src/app/(app)/products/page.tsx": "74bd4875552933bd74e949402a7099ee3390ac1e111290e9871055433e6415ea",
+      "src/app/(app)/products/new/page.tsx": "2f6def1af7eda843341385c9f91be852c619822b483b9778ab813fa6548c9863",
+      "src/app/(app)/products/[id]/edit/page.tsx": "7689b7359e96ce45079c3079701d74b2cb89bb32011be8cc9f31f21f272196ee",
+      "src/app/(app)/products/[id]/preview/page.tsx": "13847c7d2b3634fd236877836697dc8cdf6f511d74af3ddc9a7d624998583ef8",
+      "src/app/checkout/[vendorId]/[productId]/page.tsx": "46b67809661420f0fcea9e2ec5c6ecb9888988ae8b70d4727ee8d899d299305e",
+      "src/app/api/webhooks/payments/route.ts": "e054aba9a7c8a5d303b2e92e05648cbe21b404f40d4523b8d73c9993408af493",
+      "src/app/checkout/result/page.tsx": "d22a0f3ab6af54fd044c8582e059528261e6a32ec64a21a69f9c03379c2272a1",
+      "src/app/checkout/result/loading.tsx": "3c6477c893fea5bb3c2a4ba9a5e8b0b0618bce61a624be27b15adde99e24233d",
+      "src/app/checkout/result/error.tsx": "103b53f03eb2993b845f65e7f7998c88a1b556cf9314071b4f1a869e1d4c536d",
+      "src/components/public-policy.tsx": "c40a78a228eafb499d4707b0ab239431395c382e8dec81e60120d2f34231aed4",
+      "src/components/form-submit-button.tsx": "2efe332d42831a4ca34d84da03576ea1fb8ffb786208893d53e3b1aa8490734a",
+      "src/app/admin/billing/loading.tsx": "175ce5f75f181dac45d9ccd3671fcaade9afbd114fa0c761e81b7664da69db33",
+      "src/app/admin/billing/error.tsx": "b57dcc9702af463a99c0a617092cdc346e384e7177f0becc667303611ef090b2",
+      "src/app/(app)/billing/loading.tsx": "36b30aa6ad0ae06834a5ee107c2831e5e1b3e111377ab6382d4b6441881a7b66",
+      "src/app/(app)/billing/error.tsx": "a0944aac6298f1316c484cd247f3acb8d9b3f7b05fc983447dd160bf0f3b3fe8",
+      "src/app/admin/billing/course-payouts/page.tsx": "fa46c45556c9eef6d5d8bf3e9c194538d08fed04e1e799b8a973d3ed45228478",
+      "src/app/admin/billing/platform-referral-payouts/page.tsx": "da0d5d8e7f7668a63401a407c21219f05fe7ea9419d346cc11d86ea5fd1a2b3a",
+      "src/app/(app)/billing/payment-methods/page.tsx": "70ecb2b582e1f53b84ba6626345c9da8cc36e0c131e16ee24ca9ab181e2fe268",
+      "src/app/admin/billing/webhooks/page.tsx": "8106508d2326ea0a63634ee191d22f485456d557caf42636fa8e131899fb871d",
+      "src/app/admin/billing/webhooks/[id]/page.tsx": "0a69bfcd27eaed8d909903aceffdf10b040736a1e607203e84371f3f5203969c",
+      "src/app/admin/billing/dashboard/page.tsx": "1a2207f6f00dc783a135deadfa995b4a149ab2b8d2e49409456eff8aeac88149",
+      "src/lib/buyer-support-access.ts": "1c3d2d73a6a6cc4a2749cd0d3e8cf8383ef5bcdc119aa69e260d09fc2457c156",
+      "src/lib/payment-return-outcome.ts": "0bd7542477dc5900d85c881b4816d7e219f55fb196800f5dc7b2f13c1eb0f67d"
+    }
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 44,
+    "applied": true
+  },
+  "browser": {
+    "expected": 6,
+    "passed": 5,
+    "failed": 1,
+    "skipped": 0,
+    "contracts": {
+      "desktop merchant can recover upload and validation errors, then publish and preview one product": "PASS",
+      "mobile product catalog has no overflow, preserves keyboard entry and passes axe": "PASS",
+      "desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment": "PASS",
+      "mobile order detail has no horizontal overflow, keeps keyboard focus visible, and passes axe": "PASS",
+      "public buyer receives a server admission, creates exactly one reserved order, and safely reviews payment status": "PASS",
+      "finance admin payout batch prevents duplicate submission and exposes accessible pending feedback": "FAILED"
+    },
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED",
+    "productCatalog": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "3dcffc7b1dc55510200651ec2395fc6f0f4639848935d33ae077cc51e5f08d7d"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "339f6c04990b908c67637f2ed2da3dba0c827a225e1192c68ad11933755fbace"
+    },
+    "productDesktop": {
+      "filename": "product-desktop.png",
+      "sha256": "c4b3d85f52dbcb0c1dbecc4cd46d7e6d37879c923b1aeefabac4c343606dfe0b"
+    },
+    "productMobile": {
+      "filename": "product-mobile.png",
+      "sha256": "fb178cc301f41353b2bcdbcafa13ad6267a15f29dffd4ffa551688b03704e9c5"
+    },
+    "paymentResult": {
+      "filename": "payment-result.png",
+      "sha256": "03ac5a673f57318e819c9bd875e3bcc738b968a72fbd15b79fbd05242fae2bb1"
+    },
+    "financePending": {
+      "filename": "finance-pending.png",
+      "sha256": "40f517cf66b2e9808f3afa65a5e84c1517cdcd95dc4cd8cfdc33b64450001865"
+    }
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "loopbackTlsCookieBridge": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > finance admin payout batch prevents duplicate submission and exposes accessible pending feedback",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('alert')",
+          "Expected substring: \"平台推薦 payout 操作未完成\"",
+          "Error: strict mode violation: getByRole('alert') resolved to 2 elements:",
+          "1) <p role=\"alert\" class=\"mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700\">平台推薦 payout 操作未完成，請重新整理後依目前狀態處理。</p> aka getByText('平台推薦 payout')",
+          "2) <div role=\"alert\" aria-live=\"assertive\" id=\"__next-route-announcer__\"></div> aka locator('[id=\"__next-route-announcer__\"]')",
+          "Call log:",
+          "- Expect \"toContainText\" with timeout 15000ms",
+          "- waiting for getByRole('alert')",
+          "Error: expect(locator).toContainText(expected) failed",
+          "Locator: getByRole('alert')",
+          "Expected substring: \"平台推薦 payout 操作未完成\""
+        ]
+      }
+    ],
+    "browserGlobalErrors": [],
+    "serverRuntimeDetails": [
+      "▲ Next.js 16.2.11",
+      "- Local:         http://127.0.0.1:61978",
+      "- Network:       http://127.0.0.1:61978",
+      "✓ Ready in 1019ms"
+    ]
+  },
+  "failure": "commerce-browser-contract-failed"
+}

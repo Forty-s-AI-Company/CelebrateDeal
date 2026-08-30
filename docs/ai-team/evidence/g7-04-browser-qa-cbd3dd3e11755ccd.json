@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "cbd3dd3e11755ccd",
+  "startedAt": "2026-08-08T04:08:32.048Z",
+  "finishedAt": "2026-08-08T04:08:56.574Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "FAIL",
+    "server": "NOT_STARTED",
+    "browser": "NOT_STARTED"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "axeCriticalOrSerious": null,
+    "rwd": "NOT_RUN",
+    "tenantIsolation": "NOT_RUN",
+    "piiEnvelopeLeak": "NOT_RUN"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "diagnostics": {
+    "nextBuild": "NEXT_BUILD_FAILED_UNCLASSIFIED",
+    "nextBuildDetails": [
+      "⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache",
+      "▲ Next.js 16.2.11 (Turbopack)",
+      "- Experiments (use with caution):",
+      "· clientTraceMetadata",
+      "Creating an optimized production build ...",
+      "> Build error occurred",
+      "Error: Turbopack build failed with 1 errors:",
+      "./src/app",
+      "Error: Next.js inferred your workspace root, but it may not be correct.",
+      "We couldn't find the Next.js package (next/package.json) from the project directory: <temp>\\mirror\\src\\app",
+      "To fix this, set turbopack.root in your Next.js config, or ensure the Next.js package is resolvable from this directory.",
+      "Note: For security and performance reasons, files outside of the project directory will not be compiled.",
+      "See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.",
+      "at ignore-listed frames"
+    ]
+  },
+  "failure": "next-build-failed"
+}

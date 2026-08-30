@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "173297bce31917fa",
+  "startedAt": "2026-08-08T04:49:04.835Z",
+  "finishedAt": "2026-08-08T04:51:18.313Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 1,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_ASSERTION_FAILED",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_ASSERTION_FAILED",
+        "details": [
+          "Error: 商家訂單頁不可出現 axe critical/serious 違規",
+          "expect(received).toEqual(expected) // deep equality",
+          "- Expected  -  1",
+          "+ Received  + 11",
+          "- Array []",
+          "+ Array [",
+          "+   Object {",
+          "+     \"id\": \"color-contrast\",",
+          "+     \"impact\": \"serious\",",
+          "+     \"targets\": Array [",
+          "+       Array [",
+          "+         \".mb-3\","
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

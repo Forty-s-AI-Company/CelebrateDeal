@@ -16,6 +16,28 @@ function payloadFromEvent(event: WebhookEvent) {
   return PaymentWebhookPayload.safeParse(payload.normalized ?? event.payload);
 }
 
+function metadataObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function invoiceIdFromMetadata(metadata: unknown) {
+  const invoiceId = metadataObject(metadata).invoiceId;
+  return typeof invoiceId === "string" && invoiceId.trim().length > 0 ? invoiceId.trim() : null;
+}
+
+function isInvoicePayment(metadata: unknown) {
+  return metadataObject(metadata).billingPurpose === "invoice_payment";
+}
+
+function expectedInvoiceStatus(transactionStatus: string) {
+  if (["paid", "partially_refunded", "refunded"].includes(transactionStatus)) {
+    return transactionStatus;
+  }
+  return null;
+}
+
 export async function reconcileWebhookEvent(event: WebhookEvent): Promise<ReconciliationCheck[]> {
   const parsed = payloadFromEvent(event);
   if (!parsed.success) {
@@ -31,8 +53,22 @@ export async function reconcileWebhookEvent(event: WebhookEvent): Promise<Reconc
 
   const payload = parsed.data;
   const db = getDb();
+  if (!event.vendorId) {
+    return [{
+      key: "transaction_exists",
+      label: "Webhook order -> payment transaction",
+      status: "fail",
+      expected: `${payload.provider}:${payload.orderNumber}`,
+      actual: "missing webhook vendor scope",
+      detail: "Webhook event 尚未完成商家歸屬，拒絕用未 scoped 的 order number 猜測交易。",
+    }];
+  }
   const transaction = await db.paymentTransaction.findFirst({
-    where: { orderNumber: payload.orderNumber },
+    where: {
+      vendorId: event.vendorId,
+      providerName: payload.provider,
+      orderNumber: payload.orderNumber,
+    },
     include: { refunds: true },
   });
 
@@ -46,6 +82,50 @@ export async function reconcileWebhookEvent(event: WebhookEvent): Promise<Reconc
   });
 
   if (!transaction) return checks;
+
+  if (transaction.paymentMode === "platform" && isInvoicePayment(transaction.metadata)) {
+    const invoiceId = invoiceIdFromMetadata(transaction.metadata);
+    const invoice = invoiceId
+      ? await db.invoice.findFirst({ where: { id: invoiceId, vendorId: event.vendorId } })
+      : null;
+    checks.push({
+      key: "invoice_identity",
+      label: "Invoice payment -> invoice identity",
+      status: invoice ? "pass" : "fail",
+      expected: invoiceId ?? "invoiceId in trusted checkout metadata",
+      actual: invoice?.id ?? "missing",
+      detail: invoice ? undefined : "帳單付款交易的 trusted metadata 無法解析到同一商家的 invoice。",
+    });
+
+    if (invoice) {
+      checks.push({
+        key: "invoice_amount",
+        label: "Invoice total vs payment transaction",
+        status: invoice.totalCents === transaction.grossAmountCents ? "pass" : "fail",
+        expected: String(invoice.totalCents),
+        actual: String(transaction.grossAmountCents),
+      });
+
+      const expectedStatus = expectedInvoiceStatus(transaction.status);
+      if (expectedStatus) {
+        checks.push({
+          key: "invoice_status",
+          label: "Invoice status vs payment transaction",
+          status: invoice.status === expectedStatus ? "pass" : "fail",
+          expected: expectedStatus,
+          actual: invoice.status,
+        });
+      } else {
+        checks.push({
+          key: "invoice_status",
+          label: "Invoice status vs payment transaction",
+          status: ["issued", "overdue"].includes(invoice.status) ? "pass" : "warning",
+          expected: "issued or overdue while payment is not settled",
+          actual: invoice.status,
+        });
+      }
+    }
+  }
 
   const expectedGross = payload.grossAmountCents || transaction.grossAmountCents;
   checks.push({
@@ -68,7 +148,9 @@ export async function reconcileWebhookEvent(event: WebhookEvent): Promise<Reconc
   if (payload.referralCode && payload.eventType === "paid") {
     const commission = await db.affiliateCommission.findFirst({
       where: {
-        orderNumber: payload.orderNumber,
+        vendorId: event.vendorId,
+        sourceType: "webhook",
+        sourceId: transaction.id,
         referralCode: payload.referralCode.toUpperCase(),
       },
     });

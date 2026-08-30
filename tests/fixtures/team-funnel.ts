@@ -212,19 +212,45 @@ export async function createTeamFunnelFixture(db: PrismaClient, runKey: string) 
     async cleanup() {
       // TEST ONLY: clear restrictive team references before removing the tenant
       // roots. These records are all scoped to this fixture's unique vendors.
-      await db.$transaction([
-        db.teamConversionAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.teamClickAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.teamLeadAttribution.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.partnerFunnelPage.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.teamFunnelTemplate.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.live.deleteMany({ where: { vendorId: leaderVendor.id } }),
-        db.teamMembershipRelationship.deleteMany({ where: { teamId: team.id } }),
-        db.teamMembership.deleteMany({ where: { teamId: team.id } }),
-        db.salesTeam.deleteMany({ where: { id: team.id } }),
-        db.vendor.deleteMany({ where: { id: { in: [leaderVendor.id, outsiderVendor.id] } } }),
-      ]);
-      await db.user.deleteMany({ where: { id: { in: [leader.id, partner.id, outsider.id] } } });
+      await db.$transaction(async (tx) => {
+        // Re-read pages in the same transaction so browser-created pages are
+        // included before any restrictive page/live foreign keys are removed.
+        const pageIds = (await tx.partnerFunnelPage.findMany({
+          where: { vendorId: leaderVendor.id, teamId: team.id },
+          select: { id: true },
+        })).map(({ id }) => id);
+
+        await tx.teamConversionAttribution.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.teamClickAttribution.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.teamLeadAttribution.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.streamUsageAllocationEntry.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.streamUsageLedgerEntry.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.partnerLiveShare.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.liveChatMessage.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.formSubmission.deleteMany({ where: { formId: form.id } });
+        await tx.affiliateClick.deleteMany({
+          where: {
+            vendorId: leaderVendor.id,
+            OR: [{ liveId: seminar.id }, { affiliateId: affiliate.id }],
+          },
+        });
+        await tx.partnerFunnelPageShareSetting.deleteMany({ where: { pageId: { in: pageIds } } });
+        await tx.partnerProductSlotOverride.deleteMany({ where: { pageId: { in: pageIds } } });
+        await tx.partnerFunnelPage.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.liveProduct.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.liveViewerSession.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.liveStudioDraft.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.liveReminderReconciliationJob.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.liveNotificationRule.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.analyticsEvent.deleteMany({ where: { vendorId: leaderVendor.id, liveId: seminar.id } });
+        await tx.live.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.teamFunnelTemplate.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.teamMembershipRelationship.deleteMany({ where: { teamId: team.id } });
+        await tx.teamMembership.deleteMany({ where: { vendorId: leaderVendor.id, teamId: team.id } });
+        await tx.salesTeam.deleteMany({ where: { id: team.id, vendorId: leaderVendor.id } });
+        await tx.vendor.deleteMany({ where: { id: { in: [leaderVendor.id, outsiderVendor.id] } } });
+        await tx.user.deleteMany({ where: { id: { in: [leader.id, partner.id, outsider.id] } } });
+      });
     },
   };
 }

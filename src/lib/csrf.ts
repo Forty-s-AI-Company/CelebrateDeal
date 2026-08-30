@@ -8,13 +8,18 @@ export { CSRF_FIELD_NAME };
 const TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 
 function csrfSecret() {
-  return process.env.CSRF_SECRET ?? process.env.JOB_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "development-csrf-secret");
+  const configured = process.env.CSRF_SECRET?.trim();
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV === "production") return "";
+
+  return process.env.JOB_SECRET?.trim() || "development-csrf-secret";
 }
 
 function sign(value: string) {
   const secret = csrfSecret();
   if (!secret) {
-    throw new Error("CSRF_SECRET or JOB_SECRET must be configured in production.");
+    throw new Error("CSRF_SECRET must be configured in production.");
   }
   return createHmac("sha256", secret).update(value).digest("base64url");
 }
@@ -46,9 +51,11 @@ async function allowedServerActionOrigins() {
   const configured = originFrom(process.env.NEXT_PUBLIC_APP_URL ?? null);
   if (configured) origins.add(configured);
 
-  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  // Do not let a forwarded header expand the application allowlist. Legitimate
+  // public origins are represented by NEXT_PUBLIC_APP_URL or the actual Host.
+  const host = headerStore.get("host");
   if (host) {
-    const proto = headerStore.get("x-forwarded-proto") ?? (host.includes("localhost") || host.startsWith("127.") ? "http" : "https");
+    const proto = host.includes("localhost") || host.startsWith("127.") ? "http" : "https";
     origins.add(`${proto}://${host}`);
   }
 
@@ -81,6 +88,7 @@ export async function verifyCsrfToken(token: string | null | undefined) {
   if (parts.length !== 4) return false;
 
   const [issuedAtValue, nonce, fingerprint, signature] = parts;
+  if (!issuedAtValue || !nonce || !fingerprint || !signature) return false;
   const issuedAt = Number.parseInt(issuedAtValue, 10);
   if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > TOKEN_TTL_MS || issuedAt - Date.now() > 60_000) {
     return false;

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { sendPasswordResetLink } from "@/lib/password-reset";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { schedulePasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const PasswordResetRequest = z.object({
@@ -20,18 +21,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password reset request" }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-  const reset = await sendPasswordResetLink({
+  let appUrl: string;
+  try {
+    appUrl = getCanonicalAppUrl();
+  } catch {
+    // Keep the anonymous response generic without falling back to the
+    // attacker-controlled request Host when Production is misconfigured.
+    return NextResponse.json({ ok: true });
+  }
+
+  schedulePasswordResetLink({
     email: parsed.data.email,
     appUrl,
     ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     userAgent: request.headers.get("user-agent"),
   });
 
-  const response: Record<string, unknown> = { ok: true };
-  if (reset && process.env.NODE_ENV !== "production") {
-    response.resetUrl = reset.resetUrl;
-  }
-
-  return NextResponse.json(response);
+  return NextResponse.json({ ok: true });
 }

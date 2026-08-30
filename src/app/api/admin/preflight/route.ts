@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { getCloudflareStreamDiagnostics } from "@/lib/cloudflare-diagnostics";
+import { getStagingDatabaseIdentityReport } from "@/lib/database-identity";
 import { getDb } from "@/lib/db";
 import { getEnvCheckReport } from "@/lib/env";
 import { getRateLimitProviderStatus } from "@/lib/rate-limit";
@@ -22,10 +23,16 @@ export async function GET(request: Request) {
     };
   }
 
+  const databaseIdentity = getStagingDatabaseIdentityReport();
+  const allPassed = database.status === "pass" && databaseIdentity.all_passed;
+
   return NextResponse.json({
-    ok: envReport.ok && database.status === "pass",
+    ok: envReport.ok && allPassed,
     environment: envReport,
     database,
+    database_reachable: database.status === "pass",
+    ...databaseIdentity,
+    all_passed: allPassed,
     rateLimit: getRateLimitProviderStatus(),
     cloudflare: getCloudflareStreamDiagnostics(),
   });

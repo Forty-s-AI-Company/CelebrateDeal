@@ -1,0 +1,162 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "e73d7ad38f340800",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-20T16:01:42.387Z",
+  "finishedAt": "2026-08-20T16:04:36.299Z",
+  "sourceDigest": "73ac03fbf9d92c7c3b0c5e338e855d16f5316c24fe10dfb2f49c2d45f0d3b432",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 58,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 3,
+    "failed": 2,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 25,
+    "search": "PASS",
+    "filters": "PASS",
+    "pagination": "PASS",
+    "privacy": "PASS",
+    "requeue": "PASS",
+    "providerRejected": "PASS",
+    "pending": "PASS",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "PASS",
+      "mobile": "PASS"
+    },
+    "tests": [
+      {
+        "title": "desktop search filters reset pagination and URL privacy",
+        "status": "passed"
+      },
+      {
+        "title": "safe requeue preserves immutable provider identity and permanent rejection stays closed",
+        "status": "passed"
+      },
+      {
+        "title": "mobile RWD keyboard and Axe",
+        "status": "failed"
+      },
+      {
+        "title": "pending disables duplicate submit and expired CSRF does not echo query",
+        "status": "failed"
+      },
+      {
+        "title": "foreign tenant exact email search leaks no identity",
+        "status": "passed"
+      }
+    ],
+    "diagnostics": [
+      "mobile RWD keyboard and Axe: Error: \u001b[<synthetic-value> failed",
+      "Locator:  getByLabel('完整收件 Email 或寄送編號')",
+      "Expected: focused",
+      "Received: inactive",
+      "Timeout:  10000ms",
+      "Call log:",
+      "\u001b[2m  - Expect \"toBeFocused\" with timeout 10000ms\u001b[22m",
+      "\u001b[2m  - waiting for getByLabel('完整收件 Email 或寄送編號')\u001b[22m",
+      "\u001b[2m    24 × locator resolved to <input value=\"\" name=\"query\" type=\"search\" maxlength=\"320\" autocomplete=\"off\" placeholder=\"<redacted-email> 或 email_…\" class=\"h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100\"/>\u001b[22m",
+      "\u001b[2m       - unexpected value \"inactive\"\u001b[22m",
+      "  27 | test(\"safe requeue preserves immutable provider identity and permanent rejection stays closed\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.failedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 1); const before = await db.emailDelivery.findUniqueOrThrow({ where: { id: fixture.failedId }, select: { idempotencyKey: true, payloadEncryptedEnvelope: true } }); page.once(\"dialog\", (dialog) => dialog.accept()); await page.getByRole(\"button\", { name: \"重新排程\" }).click(); await expect(page.getByRole(\"status\").filter({ hasText: \"重新排入寄送佇列\" })).toBeVisible(); await expect(db.emailDelivery.findUnique({ where: { id: fixture.failedId } })).resolves.toMatchObject({ status: \"queued\", manualRetryCount: 1, idempotencyKey: before.idempotencyKey, payloadEncryptedEnvelope: before.payloadEncryptedEnvelope }); evidence.requeue = \"PASS\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.rejectedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 1); const rejected = page.locator(\"article\").filter({ hasText: fixture.rejectedId }); await expect(rejected).toBeVisible(); await expect(rejected.getByRole(\"button\", { name: \"重新排程\" })).toHaveCount(0); await expect(db.emailDelivery.findUnique({ where: { id: fixture.rejectedId } })).resolves.toMatchObject({ status: \"exhausted\", lastErrorCode: \"provider_rejected\" }); evidence.providerRejected = \"PASS\"; });",
+      "  28 |",
+      "> 29 | test(\"mobile RWD keyboard and Axe\", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto(\"/messages/deliveries\"); await expectResultCount(page, 25); await noOverflow(page, \"mobile\"); await axe(page); await page.screenshot({ path: join(screenshotDir, \"mobile.png\"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel(\"完整收件 Email 或寄送編號\"); const status = page.getByLabel(\"寄送狀態\"); const trigger = page.getByLabel(\"通知類型\"); const submit = page.getByRole(\"button\", { name: \"查詢\", exact: true }); await query.focus(); await expect(query).toBeFocused(); await query.press(\"Control+A\"); await query.press(\"Backspace\"); await status.focus(); await expect(status).toBeFocused(); await status.selectOption(\"failed\"); await trigger.focus(); await expect(trigger).toBeFocused(); await trigger.selectOption(\"live_reminder\"); await submit.focus(); await expect(submit).toBeFocused(); await page.keyboard.press(\"Enter\"); await expectResultCount(page, 1); evidence.keyboard = \"PASS\"; });",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ^",
+      "  30 |",
+      "  31 | test(\"pending disables duplicate submit and expired CSRF does not echo query\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route(\"**/messages/deliveries\", async (route) => { if (route.request().method() === \"POST\" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole(\"button\", { name: \"查詢\", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole(\"button\", { name: \"查詢中…\" })).toBeDisabled(); await <synthetic-value>(); expect(intercepted).toBe(true); evidence.pending = \"PASS\"; release?.(); await click; await page.unroute(\"**/messages/deliveries\"); await <synthetic-value>(); const privateQuery = \"private-\" + suffix + \"@example.test\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(privateQuery); await <synthetic-value>) => { (element as HTMLInputElement).value = \"invalid\"; }); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const alert = page.getByRole(\"alert\"); await expect(alert).toContainText(\"安全驗證已失效\"); await expect(alert).toContainText(\"本次條件尚未套用\"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = \"PASS\"; });",
+      "  32 |",
+      "    at <<synthetic-value>",
+      "pending disables duplicate submit and expired CSRF does not echo query: Error: locator.evaluate: Error: strict mode violation: locator('input[name=\"_csrf\"]') resolved to 3 elements:",
+      "    1) <input name=\"_csrf\" type=\"hidden\" <synthetic-value>\"/> aka <synthetic-value>\"]')",
+      "    2) <input name=\"_csrf\" type=\"hidden\" <synthetic-value>\"/> aka locator('header input[name=\"_csrf\"]')",
+      "    3) <input name=\"_csrf\" type=\"hidden\" <synthetic-value>\"/> aka locator('#main-content input[name=\"_csrf\"]')",
+      "Call log:",
+      "\u001b[2m  - waiting for locator('input[name=\"_csrf\"]')\u001b[22m",
+      "  29 | test(\"mobile RWD keyboard and Axe\", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto(\"/messages/deliveries\"); await expectResultCount(page, 25); await noOverflow(page, \"mobile\"); await axe(page); await page.screenshot({ path: join(screenshotDir, \"mobile.png\"), fullPage: true }); await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); const query = page.getByLabel(\"完整收件 Email 或寄送編號\"); const status = page.getByLabel(\"寄送狀態\"); const trigger = page.getByLabel(\"通知類型\"); const submit = page.getByRole(\"button\", { name: \"查詢\", exact: true }); await query.focus(); await expect(query).toBeFocused(); await query.press(\"Control+A\"); await query.press(\"Backspace\"); await status.focus(); await expect(status).toBeFocused(); await status.selectOption(\"failed\"); await trigger.focus(); await expect(trigger).toBeFocused(); await trigger.selectOption(\"live_reminder\"); await submit.focus(); await expect(submit).toBeFocused(); await page.keyboard.press(\"Enter\"); await expectResultCount(page, 1); evidence.keyboard = \"PASS\"; });",
+      "  30 |",
+      "> 31 | test(\"pending disables duplicate submit and expired CSRF does not echo query\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); let release: (() => void) | undefined; const held = new Promise<void>((resolve) => { release = resolve; }); let intercepted = false; await page.route(\"**/messages/deliveries\", async (route) => { if (route.request().method() === \"POST\" && !intercepted) { intercepted = true; await held; } await route.continue(); }); const click = page.getByRole(\"button\", { name: \"查詢\", exact: true }).click({ noWaitAfter: true }); await expect(page.getByRole(\"button\", { name: \"查詢中…\" })).toBeDisabled(); await <synthetic-value>(); expect(intercepted).toBe(true); evidence.pending = \"PASS\"; release?.(); await click; await page.unroute(\"**/messages/deliveries\"); await <synthetic-value>(); const privateQuery = \"private-\" + suffix + \"@example.test\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(privateQuery); await <synthetic-value>) => { (element as HTMLInputElement).value = \"invalid\"; }); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const alert = page.getByRole(\"alert\"); await expect(alert).toContainText(\"安全驗證已失效\"); await expect(alert).toContainText(\"本次條件尚未套用\"); await expect(alert).not.toContainText(privateQuery); expect(await page.content()).not.toContain(privateQuery); evidence.csrf = \"PASS\"; });",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ^",
+      "  32 |",
+      "  33 | test(\"foreign tenant exact email search leaks no identity\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(foreignEmail); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expectResultCount(page, 0); await expect(page.getByRole(\"status\").filter({ hasText: \"共\" })).toContainText(\"0\"); await expect(page.getByText(foreignCanary, { exact: true })).toHaveCount(0); expect(await page.content()).not.toContain(foreignCanary); expect(page.url()).toBe(baseURL + \"/messages/deliveries\"); evidence.tenantIsolation = \"PASS\"; });",
+      "  34 |",
+      "    at <<synthetic-value>"
+    ]
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      "browser-contract-failed:"
+    ]
+  }
+}

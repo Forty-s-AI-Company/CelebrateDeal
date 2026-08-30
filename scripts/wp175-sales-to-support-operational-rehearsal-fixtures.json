@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "wp175.fixtures.v1",
+  "positive": [
+    { "id": "full_plan_explanation", "stage": "sales_plan_explanation", "severity": "P2", "expected": "LOCAL_EVIDENCE" },
+    { "id": "overage_handoff", "stage": "entitlement_usage_expectation", "severity": "P2", "expected": "HANDOFF_REQUIRED" },
+    { "id": "synthetic_onboarding_handoff", "stage": "synthetic_merchant_onboarding", "severity": "P2", "expected": "OWNER_ACCEPTANCE_REQUIRED" },
+    { "id": "p2_support_intake", "stage": "support_intake", "severity": "P2", "expected": "TRIAGED" },
+    { "id": "p1_billing_mismatch", "stage": "support_triage_escalation", "severity": "P1", "expected": "HANDOFF_REQUIRED" },
+    { "id": "duplicate_refund_no_resend", "stage": "refund_finance_handoff", "severity": "P2", "expected": "HANDOFF_REQUIRED" },
+    { "id": "p0_incident_status", "stage": "incident_status_message", "severity": "P0", "expected": "STATUS_DRAFTED" },
+    { "id": "offboarding_safe_routing", "stage": "offboarding_data_request_routing", "severity": "P1", "expected": "PROCESS_GAP_BLOCKED" }
+  ],
+  "negative": [
+    { "id": "missing_plan_fields", "fault": "missing_required_input", "expected": "REJECTED" },
+    { "id": "forged_entitlement", "fault": "forge_entitlement", "expected": "REJECTED" },
+    { "id": "missing_owner", "fault": "missing_owner", "expected": "REJECTED" },
+    { "id": "unknown_severity", "fault": "unknown_severity", "expected": "REJECTED" },
+    { "id": "sensitive_raw_message", "fault": "sensitive_data", "expected": "REJECTED" },
+    { "id": "external_side_effect", "fault": "request_external_side_effect", "expected": "REJECTED" },
+    { "id": "premature_resolved", "fault": "claim_resolved_without_closure", "expected": "REJECTED" },
+    { "id": "forged_owner_acceptance", "fault": "forge_manual_acceptance", "expected": "REJECTED" },
+    { "id": "forged_readiness", "fault": "forge_production_ready", "expected": "REJECTED" },
+    { "id": "actual_delete_export", "fault": "delete_or_export_data", "expected": "REJECTED" }
+  ]
+}

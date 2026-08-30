@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { POST } from "@/app/api/cloudflare/stream-webhook/route";
+import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
+import { createCloudflareStreamWebhookHandler } from "@/lib/cloudflare-stream-webhook-handler";
 import { buildCloudflareStreamWebhookFixture } from "@/lib/cloudflare-webhook-fixtures";
 
 const createdVendorIds: string[] = [];
@@ -41,6 +43,43 @@ async function createProcessingVideo(uid: string) {
 }
 
 describe("Cloudflare Stream webhook", () => {
+  it("fails closed before database access when the webhook secret is not configured", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", undefined);
+    const body = JSON.stringify({ uid: "cf_uid_disabled", readyToStream: true });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "unused-fixture-secret"),
+      },
+      body,
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ reason: "missing_webhook_signing_secret" });
+    await expect(getDb().video.findFirst({
+      where: { cloudflareStreamUid: "cf_uid_disabled" },
+    })).resolves.toBeNull();
+  });
+
+  it("rejects oversized payloads before signature verification or database access", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(MAX_JSON_BODY_BYTES + 1),
+        "Webhook-Signature": "time=1,sig1=not-a-signature",
+      },
+      body: "{}",
+    }));
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Cloudflare Stream webhook payload too large" });
+  });
+
   it("updates video ready status and playback mapping with shared secret fallback", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
     vi.stubEnv("VERCEL_ENV", "preview");
@@ -95,7 +134,7 @@ describe("Cloudflare Stream webhook", () => {
     expect(response.status).toBe(200);
     expect(payload.verificationMode).toBe("official-signature");
     expect(updated.status).toBe("ready");
-    expect(updated.durationSec).toBe(31);
+    expect(updated.durationSec).toBe(32);
   });
 
   it("rejects invalid official signatures without falling back", async () => {
@@ -186,6 +225,135 @@ describe("Cloudflare Stream webhook", () => {
     expect(updated.cloudflareReadyToStream).toBe(false);
   });
 
+  it("does not let a stale processing callback regress a ready video", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_ready_terminal");
+    const ready = buildCloudflareStreamWebhookFixture({
+      fixture: "ready",
+      uid: "cf_uid_ready_terminal",
+      secret: "stream-secret",
+    });
+    const processing = buildCloudflareStreamWebhookFixture({
+      fixture: "processing",
+      uid: "cf_uid_ready_terminal",
+      secret: "stream-secret",
+    });
+
+    const readyResponse = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: ready.headers,
+      body: ready.body,
+    }));
+    const staleResponse = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: processing.headers,
+      body: processing.body,
+    }));
+
+    const updated = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    expect(readyResponse.status).toBe(200);
+    expect(staleResponse.status).toBe(200);
+    await expect(staleResponse.json()).resolves.toMatchObject({ updated: 0 });
+    expect(updated.status).toBe("ready");
+    expect(updated.cloudflareReadyToStream).toBe(true);
+  });
+
+  it("rejects stale processing after error but permits a later ready recovery", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_error_recovery");
+    const error = buildCloudflareStreamWebhookFixture({
+      fixture: "error",
+      uid: "cf_uid_error_recovery",
+      secret: "stream-secret",
+    });
+    const processing = buildCloudflareStreamWebhookFixture({
+      fixture: "processing",
+      uid: "cf_uid_error_recovery",
+      secret: "stream-secret",
+    });
+    const ready = buildCloudflareStreamWebhookFixture({
+      fixture: "ready",
+      uid: "cf_uid_error_recovery",
+      secret: "stream-secret",
+    });
+
+    await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: error.headers,
+      body: error.body,
+    }));
+    const staleResponse = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: processing.headers,
+      body: processing.body,
+    }));
+    const afterStale = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    const readyResponse = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: ready.headers,
+      body: ready.body,
+    }));
+
+    const recovered = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    expect(staleResponse.status).toBe(200);
+    await expect(staleResponse.json()).resolves.toMatchObject({ updated: 0 });
+    expect(afterStale.status).toBe("error");
+    expect(readyResponse.status).toBe(200);
+    expect(recovered.status).toBe("ready");
+    expect(recovered.cloudflareReadyToStream).toBe(true);
+  });
+
+  it("rejects signed unknown states without changing the mapped video", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_unknown_state");
+    const body = JSON.stringify({
+      uid: "cf_uid_unknown_state",
+      readyToStream: false,
+      status: { state: "provider-added-state" },
+    });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+
+    const updated = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Unsupported Cloudflare Stream status" });
+    expect(updated.status).toBe("processing");
+    expect(updated.cloudflareReadyToStream).toBe(false);
+  });
+
+  it("fails closed when a provider UID maps to videos from multiple tenants", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const first = await createProcessingVideo("cf_uid_collision");
+    const second = await createProcessingVideo("cf_uid_collision");
+    const body = JSON.stringify({ uid: "cf_uid_collision", readyToStream: true });
+
+    const response = await POST(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+
+    const videos = await getDb().video.findMany({
+      where: { id: { in: [first.video.id, second.video.id] } },
+      orderBy: { id: "asc" },
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Ambiguous Cloudflare Stream mapping" });
+    expect(videos).toHaveLength(2);
+    expect(videos.every((video) => video.status === "processing")).toBe(true);
+    expect(videos.every((video) => video.cloudflareReadyToStream === false)).toBe(true);
+  });
+
   it("rejects replayed official signatures with expired timestamps", async () => {
     vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
     const body = JSON.stringify({ uid: "cf_uid_replay", readyToStream: true });
@@ -203,5 +371,38 @@ describe("Cloudflare Stream webhook", () => {
 
     expect(response.status).toBe(401);
     expect(payload.reason).toBe("expired_timestamp");
+  });
+
+  it("returns a fixed retryable response when bounded contention cannot converge", async () => {
+    vi.stubEnv("CLOUDFLARE_STREAM_WEBHOOK_SECRET", "stream-secret");
+    const { video } = await createProcessingVideo("cf_uid_contention");
+    const captureError = vi.fn(() => {
+      throw new Error("monitoring unavailable");
+    });
+    const handler = createCloudflareStreamWebhookHandler({
+      captureError,
+      converge: async () => ({ outcome: "contention_exhausted" }),
+    });
+    const body = JSON.stringify({ uid: "cf_uid_contention", readyToStream: true });
+
+    const response = await handler(new Request("https://app.example.test/api/cloudflare/stream-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Webhook-Signature": cloudflareSignatureHeader(body, "stream-secret"),
+      },
+      body,
+    }));
+    const payload = await response.json() as { error: string; code: string };
+    const unchanged = await getDb().video.findUniqueOrThrow({ where: { id: video.id } });
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({
+      error: "Cloudflare Stream webhook update is temporarily unavailable",
+      code: "contention_exhausted",
+    });
+    expect(JSON.stringify(payload)).not.toContain(video.id);
+    expect(captureError).toHaveBeenCalledTimes(1);
+    expect(unchanged.status).toBe("processing");
   });
 });

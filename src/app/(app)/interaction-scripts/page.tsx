@@ -3,8 +3,9 @@ import Link from "next/link";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { deleteInteractionScriptAction, duplicateInteractionScriptAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 function pageHref(page: number, pageSize: number) {
@@ -14,11 +15,12 @@ function pageHref(page: number, pageSize: number) {
 export default async function InteractionScriptsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string; error?: string }>;
 }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const params = await searchParams;
-  const pageSize = Number.parseInt(params.pageSize ?? "10", 10) || 10;
+  const requestedPageSize = Number.parseInt(params.pageSize ?? "10", 10);
+  const pageSize = [10, 20, 50].includes(requestedPageSize) ? requestedPageSize : 10;
   const currentPage = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   const totalItems = await getDb().interactionScript.count({ where: { vendorId: vendor.id } });
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -34,13 +36,33 @@ export default async function InteractionScriptsPage({
   return (
     <>
       <PageHeader title="留言組" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增留言組</ButtonLink>} />
+      {params.error === "invalid_event" ? (
+        <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          這份舊腳本含有無效或不安全的事件，請先編輯修正後再複製。
+        </p>
+      ) : null}
+      {params.error === "invalid_reference" ? (
+        <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          這份腳本引用了其他商店、已停用或不存在的角色／商品，請先編輯重新選擇後再複製。
+        </p>
+      ) : null}
+      {params.error === "missing_script" ? (
+        <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          這份留言組已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
+        </p>
+      ) : null}
       {scripts.length === 0 ? (
         <EmptyState title="還沒有留言組" description="建立留言組後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增留言組</ButtonLink>} />
       ) : (
         <Card>
           <div className="grid gap-3">
             {scripts.map((script) => (
-              <div key={script.id} className="grid gap-4 rounded-xl border border-border p-4 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md lg:grid-cols-[220px_1fr_auto]">
+              <article
+                key={script.id}
+                id={`interaction-script-${script.id}`}
+                aria-labelledby={`interaction-script-${script.id}-name`}
+                className="grid gap-4 rounded-xl border border-border p-4 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md lg:grid-cols-[220px_1fr_auto]"
+              >
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
                   <div className="relative aspect-video">
                     {script.lives[0]?.video?.thumbnailUrl ? (
@@ -59,7 +81,7 @@ export default async function InteractionScriptsPage({
                 <div className="min-w-0">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h2 className="font-semibold text-slate-950">{script.name}</h2>
+                      <h2 id={`interaction-script-${script.id}-name`} className="font-semibold text-slate-950">{script.name}</h2>
                       <p className="mt-1 text-sm text-slate-500">{script.description ?? "未填寫說明"}</p>
                     </div>
                     <div className="flex gap-2">
@@ -77,26 +99,39 @@ export default async function InteractionScriptsPage({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 lg:flex-col lg:justify-center">
-                  <Link href={`/interaction-scripts/${script.id}/edit`} title="編輯" className="grid h-10 w-10 place-items-center rounded-md border border-border bg-white text-slate-600 shadow-sm hover:bg-blue-50 hover:text-primary">
+                <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch lg:justify-center">
+                  <Link href={`/interaction-scripts/${script.id}/edit`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-blue-50 hover:text-primary">
                     <Pencil size={17} />
+                    編輯
                   </Link>
                   <form action={duplicateInteractionScriptAction}>
                     <CsrfField />
                     <input type="hidden" name="id" value={script.id} />
-                    <button title="複製" className="grid h-10 w-10 place-items-center rounded-md border border-border bg-white text-slate-600 shadow-sm hover:bg-blue-50 hover:text-primary">
+                    <FormSubmitButton
+                      pendingChildren="複製中…"
+                      pendingMessage={`正在複製「${script.name}」互動腳本。`}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-600 shadow-sm hover:bg-blue-50 hover:text-primary"
+                    >
                       <Copy size={17} />
-                    </button>
+                      複製
+                    </FormSubmitButton>
                   </form>
                   <form action={deleteInteractionScriptAction}>
                     <CsrfField />
                     <input type="hidden" name="id" value={script.id} />
-                    <button title="刪除" className="grid h-10 w-10 place-items-center rounded-md border border-red-100 bg-white text-red-500 shadow-sm hover:bg-red-50">
+                    <FormSubmitButton
+                      formNoValidate
+                      confirmMessage={`確定刪除「${script.name}」？已綁定的直播會解除這個互動腳本。`}
+                      pendingChildren="刪除中…"
+                      pendingMessage={`正在刪除「${script.name}」互動腳本。`}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-red-100 bg-white px-3 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50"
+                    >
                       <Trash2 size={17} />
-                    </button>
+                      刪除
+                    </FormSubmitButton>
                   </form>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
 

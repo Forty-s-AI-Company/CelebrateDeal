@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getOrCreateVisitorId, VISITOR_ID_STORAGE_KEY } from "./visitor-id";
+import { getOrCreateVisitorId, visitorIdStorageKey } from "./visitor-id";
 
 describe("getOrCreateVisitorId", () => {
   it("reuses an existing non-blank visitor ID", () => {
@@ -9,10 +9,10 @@ describe("getOrCreateVisitorId", () => {
     };
     const createRandomId = vi.fn(() => "new-visitor-id");
 
-    const visitorId = getOrCreateVisitorId(createRandomId, () => storage);
+    const visitorId = getOrCreateVisitorId("vendor-1", createRandomId, () => storage);
 
     expect(visitorId).toBe("existing-visitor-id");
-    expect(storage.getItem).toHaveBeenCalledWith(VISITOR_ID_STORAGE_KEY);
+    expect(storage.getItem).toHaveBeenCalledWith(visitorIdStorageKey("vendor-1"));
     expect(createRandomId).not.toHaveBeenCalled();
     expect(storage.setItem).not.toHaveBeenCalled();
   });
@@ -24,11 +24,11 @@ describe("getOrCreateVisitorId", () => {
     };
     const createRandomId = vi.fn(() => "new-visitor-id");
 
-    const visitorId = getOrCreateVisitorId(createRandomId, () => storage);
+    const visitorId = getOrCreateVisitorId("vendor-1", createRandomId, () => storage);
 
     expect(visitorId).toBe("new-visitor-id");
     expect(createRandomId).toHaveBeenCalledOnce();
-    expect(storage.setItem).toHaveBeenCalledWith(VISITOR_ID_STORAGE_KEY, "new-visitor-id");
+    expect(storage.setItem).toHaveBeenCalledWith(visitorIdStorageKey("vendor-1"), "new-visitor-id");
   });
 
   it("replaces a blank stored ID", () => {
@@ -37,8 +37,8 @@ describe("getOrCreateVisitorId", () => {
       setItem: vi.fn(),
     };
 
-    expect(getOrCreateVisitorId(() => "new-visitor-id", () => storage)).toBe("new-visitor-id");
-    expect(storage.setItem).toHaveBeenCalledWith(VISITOR_ID_STORAGE_KEY, "new-visitor-id");
+    expect(getOrCreateVisitorId("vendor-1", () => "new-visitor-id", () => storage)).toBe("new-visitor-id");
+    expect(storage.setItem).toHaveBeenCalledWith(visitorIdStorageKey("vendor-1"), "new-visitor-id");
   });
 
   it("returns a generated ID when reading storage throws", () => {
@@ -49,10 +49,10 @@ describe("getOrCreateVisitorId", () => {
       setItem: vi.fn(),
     };
 
-    const visitorId = getOrCreateVisitorId(() => "session-visitor-id", () => storage);
+    const visitorId = getOrCreateVisitorId("vendor-1", () => "session-visitor-id", () => storage);
 
     expect(visitorId).toBe("session-visitor-id");
-    expect(storage.setItem).toHaveBeenCalledWith(VISITOR_ID_STORAGE_KEY, "session-visitor-id");
+    expect(storage.setItem).toHaveBeenCalledWith(visitorIdStorageKey("vendor-1"), "session-visitor-id");
   });
 
   it("returns a generated ID when accessing or writing storage throws", () => {
@@ -63,9 +63,24 @@ describe("getOrCreateVisitorId", () => {
       }),
     };
 
-    expect(getOrCreateVisitorId(() => "session-visitor-id", () => storage)).toBe("session-visitor-id");
-    expect(getOrCreateVisitorId(() => "blocked-storage-id", () => {
+    expect(getOrCreateVisitorId("vendor-1", () => "session-visitor-id", () => storage)).toBe("session-visitor-id");
+    expect(getOrCreateVisitorId("vendor-1", () => "blocked-storage-id", () => {
       throw new DOMException("Storage access blocked", "SecurityError");
     })).toBe("blocked-storage-id");
+  });
+
+  it("uses independent storage keys for different vendors", () => {
+    expect(visitorIdStorageKey("vendor-1")).not.toBe(visitorIdStorageKey("vendor-2"));
+  });
+
+  it("does not persist an ID when the vendor scope is blank", () => {
+    const storage = {
+      getItem: vi.fn(),
+      setItem: vi.fn(),
+    };
+
+    expect(getOrCreateVisitorId("   ", () => "ephemeral-id", () => storage)).toBe("ephemeral-id");
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 });

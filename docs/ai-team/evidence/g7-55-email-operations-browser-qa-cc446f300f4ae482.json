@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "celebratedeal-g7-55-email-operations-browser-qa/v1",
+  "runId": "cc446f300f4ae482",
+  "workPackage": "G7-55",
+  "status": "BLOCKED_OR_FAILED",
+  "startedAt": "2026-08-09T21:53:38.159Z",
+  "finishedAt": "2026-08-09T21:56:41.093Z",
+  "sourceDigest": "95b016b8719782e1719e5d06937e9419ce66db1cdefef4912e96cc36b03cb72a",
+  "commands": [
+    {
+      "name": "docker image inspect",
+      "exitCode": 0
+    },
+    {
+      "name": "docker run disposable postgres",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma generate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma validate",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate deploy",
+      "exitCode": 0
+    },
+    {
+      "name": "prisma migrate status",
+      "exitCode": 0
+    },
+    {
+      "name": "next build --webpack",
+      "exitCode": 0
+    },
+    {
+      "name": "next start loopback",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright g7-55 chromium",
+      "exitCode": 1
+    }
+  ],
+  "expected": {
+    "canonicalMigrations": 53,
+    "emailDeliveries": 55,
+    "pageSize": 25,
+    "browserTests": 5
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "browser": {
+    "passed": 2,
+    "failed": 3,
+    "skipped": 0,
+    "axeCriticalOrSerious": 0,
+    "pageSize": 0,
+    "search": "NOT_RUN",
+    "filters": "NOT_RUN",
+    "pagination": "NOT_RUN",
+    "privacy": "NOT_RUN",
+    "requeue": "NOT_RUN",
+    "providerRejected": "NOT_RUN",
+    "pending": "NOT_RUN",
+    "csrf": "NOT_RUN",
+    "keyboard": "NOT_RUN",
+    "tenantIsolation": "PASS",
+    "rwd": {
+      "desktop": "NOT_RUN",
+      "mobile": "NOT_RUN"
+    },
+    "diagnostics": [
+      "desktop search filters reset pagination and URL privacy: Error: \u001b[<synthetic-value> failed",
+      "Locator:  locator('article')",
+      "Expected: \u001b[32m1\u001b[39m",
+      "Received: \u001b[31m25\u001b[39m",
+      "Timeout:  10000ms",
+      "Call log:",
+      "\u001b[2m  - Expect \"toHaveCount\" with timeout 10000ms\u001b[22m",
+      "\u001b[2m  - waiting for locator('article')\u001b[22m",
+      "\u001b[2m    24 × locator resolved to 25 elements\u001b[22m",
+      "\u001b[2m       - unexpected value \"25\"\u001b[22m",
+      "  20 | test.afterAll(async () => { try { await db.vendor.deleteMany({ where: { id: { in: [fixture.vendorId, fixture.foreignVendorId] } } }); } finally { await persist(); await db.$disconnect(); } });",
+      "  21 |",
+      "> 22 | test(\"desktop search filters reset pagination and URL privacy\", async ({ page }) => { await owner(page); await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(\"/messages/deliveries\"); await expect(page.getByRole(\"heading\", { name: \"Email 寄送營運\" })).toBeVisible(); await expect(page.locator(\"article\")).toHaveCount(25); evidence.pageSize = await page.locator(\"article\").count(); await page.getByRole(\"button\", { name: \"下一頁\" }).click(); await expect(page.getByRole(\"status\").filter({ hasText: \"共\" })).toContainText(\"第 2／3 頁\"); evidence.pagination = \"PASS\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(targetEmail); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expect(page.locator(\"article\")).toHaveCount(1); await <synthetic-value>>\"); expect(page.url()).toBe(baseURL + \"/messages/deliveries\"); evidence.search = \"PASS\"; evidence.privacy = \"PASS\"; await page.getByRole(\"button\", { name: \"清除\", exact: true }).click(); await page.getByLabel(\"寄送狀態\").selectOption(\"failed\"); await <synthetic-value>\"); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); await expect(page.locator(\"article\")).toHaveCount(1); await <synthetic-value>); evidence.filters = \"PASS\"; await noOverflow(page, \"desktop\"); await axe(page); await page.screenshot({ path: join(screenshotDir, \"desktop.png\"), fullPage: true }); });",
+      "     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ^",
+      "  23 |",
+      "  24 | test(\"safe requeue preserves immutable provider identity and permanent rejection stays closed\", async ({ page }) => { await owner(page); await page.goto(\"/messages/deliveries\"); await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.failedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const before = await db.emailDelivery.findUniqueOrThrow({ where: { id: fixture.failedId }, select: { idempotencyKey: true, payloadEncryptedEnvelope: true } }); page.once(\"dialog\", (dialog) => dialog.accept()); await page.getByRole(\"button\", { name: \"重新排程\" }).click(); await expect(page.getByRole(\"status\").filter({ hasText: \"重新排入寄送佇列\" })).toBeVisible(); await expect(db.emailDelivery.findUnique({ where: { id: fixture.failedId } })).resolves.toMatchObject({ status: \"queued\", manualRetryCount: 1, idempotencyKey: before.idempotencyKey, payloadEncryptedEnvelope: before.payloadEncryptedEnvelope }); evidence.requeue = \"PASS\"; await page.getByLabel(\"完整收件 Email 或寄送編號\").fill(fixture.rejectedId); await page.getByRole(\"button\", { name: \"查詢\", exact: true }).click(); const rejected = page.locator(\"article\").filter({ hasText: fixture.rejectedId }); await expect(rejected).toBeVisible(); await expect(rejected.getByRole(\"button\", { name: \"重新排程\" })).toHaveCount(0); await expect(db.emailDelivery.findUnique({ where: { id: fixture.rejectedId } })).resolves.toMatchObject({ status: \"exhausted\", lastErrorCode: \"provider_rejected\" }); evidence.providerRejected = \"PASS\"; });",
+      "  25 |",
+      "    at <<synthetic-value>",
+      "mobile RWD keyboard and Axe: Error: \u001b[<synthetic-value> failed",
+      "Locator:  getByLabel('寄送狀態')"
+    ]
+  },
+  "cleanup": {
+    "syntheticRows": "PASS",
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "userBrowserProfileRead": false,
+    "externalOperations": false,
+    "productionOperations": false
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "failure": {
+    "classification": "RUNNER_FAILED_UNCLASSIFIED",
+    "details": [
+      "browser-contract-failed:"
+    ]
+  }
+}

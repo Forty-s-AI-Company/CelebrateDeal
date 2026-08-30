@@ -112,4 +112,15 @@ describe("POST /api/cloudflare/direct-upload", () => {
       maxDurationSeconds: 120,
     });
   });
+
+  it("returns a closed diagnostic when mapping fails", async () => {
+    mocks.createDirectUploadMapping.mockRejectedValue(new Error("raw-provider-response"));
+
+    const response = await POST(authorizedRequest({ vendorId: "vendor-1", title: "Test upload" }));
+    const body = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(body).toContain('"diagnostic":"internal_failure"');
+    expect(body).not.toContain("raw-provider-response");
+  });
 });

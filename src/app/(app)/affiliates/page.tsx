@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Plus, WalletCards } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { calculateAffiliateConversionRate } from "@/lib/affiliate-performance";
 
 export default async function AffiliatesPage() {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const affiliates = await getDb().affiliate.findMany({
     where: { vendorId: vendor.id },
     orderBy: { createdAt: "desc" },

@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "f35911a5c31709f4",
+  "startedAt": "2026-08-09T00:50:02.407Z",
+  "finishedAt": "2026-08-09T01:02:17.217Z",
+  "serverMode": "PRODUCTION",
+  "sourceLineage": {
+    "algorithm": "sha256",
+    "files": {
+      "scripts/g7-commerce-browser-qa.mjs": "e3cd723e7fa6cf418c5a6e9b2f375ec827bb65ef2ce746bd65a06095a81b6096",
+      "playwright.g7-commerce.config.ts": "cf0a290ea39ff48783ad4e9f903ac7e4d37b2d516e5ec19cc1f7f151860a8501",
+      "tests/e2e/commerce-orders.spec.ts": "4bbda04bf8d54fdb676b62cff923e56882fcd4850e4de82859f8851f33391ba0",
+      "src/lib/product-action-state.ts": "abb77058354d3d30aa5678bd2aee1476e8b782d7a2c6085432c65c3737c498a0",
+      "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+      "src/app/actions/product-actions.ts": "a322f1fc3d900b9b4a9dcc77ea5693588277deaa3c0ab7c08c4da2759afb3bd0",
+      "src/components/product-form-client.tsx": "1258b02cc6b1f8cd35613a7e58b12680eeee16b743dd573178cf3c5400fd5ab7",
+      "src/components/media-upload-field.tsx": "0aaca77d89f55201f324b9ec7da8be7256c358ceeb742d5e4cf87150425d7c2d",
+      "src/app/(app)/products/page.tsx": "74bd4875552933bd74e949402a7099ee3390ac1e111290e9871055433e6415ea",
+      "src/app/(app)/products/new/page.tsx": "2f6def1af7eda843341385c9f91be852c619822b483b9778ab813fa6548c9863",
+      "src/app/(app)/products/[id]/edit/page.tsx": "7689b7359e96ce45079c3079701d74b2cb89bb32011be8cc9f31f21f272196ee",
+      "src/app/(app)/products/[id]/preview/page.tsx": "13847c7d2b3634fd236877836697dc8cdf6f511d74af3ddc9a7d624998583ef8",
+      "src/app/checkout/[vendorId]/[productId]/page.tsx": "46b67809661420f0fcea9e2ec5c6ecb9888988ae8b70d4727ee8d899d299305e",
+      "src/app/api/webhooks/payments/route.ts": "e054aba9a7c8a5d303b2e92e05648cbe21b404f40d4523b8d73c9993408af493",
+      "src/app/checkout/result/page.tsx": "d22a0f3ab6af54fd044c8582e059528261e6a32ec64a21a69f9c03379c2272a1",
+      "src/app/checkout/result/loading.tsx": "3c6477c893fea5bb3c2a4ba9a5e8b0b0618bce61a624be27b15adde99e24233d",
+      "src/app/checkout/result/error.tsx": "103b53f03eb2993b845f65e7f7998c88a1b556cf9314071b4f1a869e1d4c536d",
+      "src/components/public-policy.tsx": "c40a78a228eafb499d4707b0ab239431395c382e8dec81e60120d2f34231aed4",
+      "src/components/form-submit-button.tsx": "2efe332d42831a4ca34d84da03576ea1fb8ffb786208893d53e3b1aa8490734a",
+      "src/app/admin/billing/loading.tsx": "175ce5f75f181dac45d9ccd3671fcaade9afbd114fa0c761e81b7664da69db33",
+      "src/app/admin/billing/error.tsx": "b57dcc9702af463a99c0a617092cdc346e384e7177f0becc667303611ef090b2",
+      "src/app/(app)/billing/loading.tsx": "36b30aa6ad0ae06834a5ee107c2831e5e1b3e111377ab6382d4b6441881a7b66",
+      "src/app/(app)/billing/error.tsx": "a0944aac6298f1316c484cd247f3acb8d9b3f7b05fc983447dd160bf0f3b3fe8",
+      "src/app/admin/billing/course-payouts/page.tsx": "fa46c45556c9eef6d5d8bf3e9c194538d08fed04e1e799b8a973d3ed45228478",
+      "src/app/admin/billing/platform-referral-payouts/page.tsx": "da0d5d8e7f7668a63401a407c21219f05fe7ea9419d346cc11d86ea5fd1a2b3a",
+      "src/app/(app)/billing/payment-methods/page.tsx": "70ecb2b582e1f53b84ba6626345c9da8cc36e0c131e16ee24ca9ab181e2fe268",
+      "src/app/admin/billing/webhooks/page.tsx": "8106508d2326ea0a63634ee191d22f485456d557caf42636fa8e131899fb871d",
+      "src/app/admin/billing/webhooks/[id]/page.tsx": "0a69bfcd27eaed8d909903aceffdf10b040736a1e607203e84371f3f5203969c",
+      "src/app/admin/billing/dashboard/page.tsx": "1a2207f6f00dc783a135deadfa995b4a149ab2b8d2e49409456eff8aeac88149",
+      "src/lib/buyer-support-access.ts": "1c3d2d73a6a6cc4a2749cd0d3e8cf8383ef5bcdc119aa69e260d09fc2457c156",
+      "src/lib/payment-return-outcome.ts": "0bd7542477dc5900d85c881b4816d7e219f55fb196800f5dc7b2f13c1eb0f67d",
+      "vercel.json": "0d8956c91cb3270aca23787cecc50cb4ac5cf256c7643c2c0648332e03140da0",
+      "prisma/migrations/20260809030000_g7_21_live_reminder_email/migration.sql": "9af5626356988fdb745749698cb4287165968a78bef10f753ad6ec71d64ac21d",
+      "src/lib/message-template.ts": "39af2bd6f3ea11ee6ab4dd42f652de68b42e4be03418a8b02f292a003a9169cb",
+      "src/lib/email-delivery.ts": "62ef385091e3d7fcfeb51af4292c64f117860034bffc542d27463543293042f9",
+      "src/app/api/jobs/email-deliveries/route.ts": "9d55bae2d9ced0e5502839c8339fb646b5c6626bc92ea8570a5e3f94af1d7657",
+      "src/components/message-template-form.tsx": "e37c0e0d91cb5ea50d9b22b7d7bc9a618e9cb8c71c358065fe2d204322716dee",
+      "src/components/live-stepper-form.tsx": "e7b22ed160df90c5d890be5393cc4a01e07663852d12d89bb6f644c186467748",
+      "src/app/(app)/messages/templates/page.tsx": "2b86379fcb8cb780d2566727d4ee498746ccca136f493ae904e5d92961e705a3",
+      "src/app/(app)/messages/deliveries/page.tsx": "c13bd5b688bec18fe2e4224a77c7129a0c9641def6ddc0cb8e7fc8a58c79b2b4",
+      "src/app/(app)/lives/new/page.tsx": "09a532d86acd811106441c2bdb6351bc8902ef0d682c7c1d1ec715c96ef0aa1d"
+    }
+  },
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 45,
+    "applied": true
+  },
+  "browser": {
+    "expected": 7,
+    "passed": 6,
+    "failed": 1,
+    "skipped": 0,
+    "contracts": {
+      "desktop merchant can recover upload and validation errors, then publish and preview one product": "PASS",
+      "mobile product catalog has no overflow, preserves keyboard entry and passes axe": "PASS",
+      "desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment": "PASS",
+      "mobile order detail has no horizontal overflow, keeps keyboard focus visible, and passes axe": "PASS",
+      "public buyer receives a server admission, creates exactly one reserved order, and safely reviews payment status": "PASS",
+      "finance admin payout batch prevents duplicate submission and exposes accessible pending feedback": "PASS",
+      "merchant Email templates keep live reminders scoped, then Live Studio separates registration and reminder templates": "FAILED"
+    },
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED",
+    "productCatalog": "NOT_VERIFIED",
+    "emailReminder": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": {
+      "filename": "desktop.png",
+      "sha256": "ce02341bb217ec183807a90730f51634bb61b5f2c1a3fafd45fe870bfb201f91"
+    },
+    "mobile": {
+      "filename": "mobile.png",
+      "sha256": "a5a8c3766d20b71f84bba41aee8f94f372c4c6cf9a4de09e5c00ae486368531c"
+    },
+    "productDesktop": {
+      "filename": "product-desktop.png",
+      "sha256": "8ac3a3086a543d1358c88cc6a699f1ac64aa9c950c4bede822ab3ca4f2566658"
+    },
+    "productMobile": {
+      "filename": "product-mobile.png",
+      "sha256": "14a3f370cff93867865a2edfb5a93850090b79ea4c0b75c32cf5f0d68dcc629f"
+    },
+    "paymentResult": {
+      "filename": "payment-result.png",
+      "sha256": "977b523152a7d2344c759e3072539f833b626992467f57eeb920e882b095de69"
+    },
+    "financePending": {
+      "filename": "finance-pending.png",
+      "sha256": "a723cbe366b1f38e72326d35e864e7e33f5fb6f71b7e08e751be10925c6302c0"
+    },
+    "emailTemplates": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "loopbackTlsCookieBridge": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_TIMEOUT",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > merchant Email templates keep live reminders scoped, then Live Studio separates registration and reminder templates",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_TIMEOUT",
+        "details": [
+          "Error: expect(locator).toBeDisabled() failed",
+          "Locator:  locator('select[name=\"channel\"]').locator('option[value=\"sms\"]')",
+          "Expected: disabled",
+          "Received: enabled",
+          "Timeout:  15000ms",
+          "Call log:",
+          "- Expect \"toBeDisabled\" with timeout 15000ms",
+          "- waiting for locator('select[name=\"channel\"]').locator('option[value=\"sms\"]')",
+          "33 × locator resolved to <option disabled value=\"sms\">SMS（尚未串接，不能啟用）</option>",
+          "- unexpected value \"enabled\"",
+          "Error: expect(locator).toBeDisabled() failed",
+          "Locator:  locator('select[name=\"channel\"]').locator('option[value=\"sms\"]')"
+        ]
+      }
+    ],
+    "browserGlobalErrors": [],
+    "serverRuntimeDetails": [
+      "▲ Next.js 16.2.11",
+      "- Local:         http://127.0.0.1:49390",
+      "- Network:       http://127.0.0.1:49390",
+      "✓ Ready in 1501ms"
+    ]
+  },
+  "failure": "commerce-browser-contract-failed"
+}

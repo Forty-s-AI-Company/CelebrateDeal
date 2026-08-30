@@ -1,0 +1,43 @@
+{
+  "schema_version": "wp130-cloudflare-stream-webhook-contract/v1",
+  "work_package": "WP-130",
+  "category": "CAT01",
+  "source_route": "src/app/api/cloudflare/stream-webhook/route.ts",
+  "expected_exports": ["POST", "createCloudflareStreamWebhookHandler"],
+  "read_only_imports": [
+    "src/lib/api-security.ts",
+    "src/lib/cloudflare-video-status.ts",
+    "src/lib/cloudflare-video-transition.ts",
+    "src/lib/cloudflare-webhook-signature.ts",
+    "src/lib/db.ts",
+    "src/lib/monitoring.ts"
+  ],
+  "owned_paths": [
+    "scripts/wp130-cloudflare-stream-webhook-contract-manifest.json",
+    "scripts/wp130-cloudflare-stream-webhook-contract-runner.mjs",
+    "tests/unit/wp130-cloudflare-stream-webhook-contract.test.ts",
+    ".ai-team/reports/wp130-cloudflare-stream-webhook-contract-receipt.json",
+    "docs/ai-team/evidence/wp-130-cloudflare-stream-webhook-contract.md"
+  ],
+  "scenarios": [
+    "route export and factory contract",
+    "missing and invalid signature fail closed",
+    "valid signed payload transition",
+    "malformed JSON and missing fields fail closed",
+    "unsupported state and ambiguous UID fail closed",
+    "duplicate and replay idempotency",
+    "contention retry response and safe error capture",
+    "no raw payload, signature, secret or PII in response/receipt"
+  ],
+  "forbidden": {
+    "source_modification": true,
+    "next_generated_artifacts": true,
+    "dotenv_content": true,
+    "network": true,
+    "database": true,
+    "provider": true,
+    "deployment": true,
+    "production": true,
+    "git_mutation": true
+  }
+}

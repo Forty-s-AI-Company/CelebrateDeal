@@ -1,0 +1,37 @@
+# G7-11 source and receipt SHA-256 manifest
+# generatedAt=2026-08-08T16:53:22.9426326Z
+# Paths are workspace-relative. This manifest intentionally excludes secrets and environment files.
+5b78662ee216468399672ce75c2505b553b0b141c92a80879e4f578fc11bebee  .ai-team/reports/g7-11-stream-allocation-20260809.json
+3caeee762ef692c4a147ce3869d37ad67d11133e037e9c0c821859294f4929c7  .ai-team/reports/g7-11-stream-allocation-20260809.json.sha256
+d0228570c9d17637cbc32c6619c901d7a61dd5a2d41db18d476b964243b34df8  prisma.g7-stream-disposable.config.mjs
+5f77281f068d52a674421584b87df0b4895df70bc69085d19d9ea134ed73aa76  prisma/schema.prisma
+45fa35d25fd5e5a8a3c69977c1474497529f14601d281875d8a9e21855174059  src/app/(app)/billing/payment-methods/page.test.tsx
+20e1bf148143a8ec48e4c839161a79224122ead1cf9a6af7cdbf2ca73fe7a219  src/app/(app)/billing/payment-methods/page.tsx
+ce06d4b658c2a490484d0b5f6298b3ec6b7b3d10ca0ed9fe07b2aad611408e93  src/app/(app)/billing/usage/page.test.tsx
+c5096e45dab90e704d0cc13665c63b579c9d5af491aae16f0a8e33c3994f03b3  src/app/(app)/billing/usage/page.tsx
+452f2bfff32c75932b7b2a43de8fecbe9ed099941246ce7230f59dbed167be98  src/app/(app)/lives/[id]/edit/page.test.tsx
+0567dcb956ee641b8dc87f45b65af3677a6b5711d6ade410290bd3cee823cf25  src/app/(app)/lives/[id]/edit/page.tsx
+fec9f691a8881d3c2128eddddb64043e8f8f74e8aa609320f4db115c31522328  src/app/(app)/lives/new/page.test.tsx
+e9bbc646e86498a2971c2f905505b877474c3f2710af4e8b2757a3c1529b5d40  src/app/(app)/lives/new/page.tsx
+8b999206779fd606e81da155f8a7d6327aee401c9736382c34d266da30978406  src/app/actions.test.ts
+4924b82e98e82bad966afa6a35f8d2fea3b9eb06c25e562e7d19de643081b2ed  src/app/actions.ts
+1aabe6113c31d5f226b5c6de3aa6f521049f8407afae016cc44b1c077c18fd2e  src/app/api/live-studio/drafts/route.test.ts
+9ff2ff3730ef12302164ac3d802ac396dec91d918fed1b398bb98bb8e6db9b53  src/app/api/live-studio/drafts/route.ts
+bc6a0b9b8cf000b90a248374c7428a5888260cde6a6f85c2c842afa7a38465fa  src/components/live-stepper-form.test.tsx
+032c2e3906137a6ec19221888cec6cd78c493a2adace330ea9ea2a6076f3c700  src/components/live-stepper-form.tsx
+38944c222a8b3a5bf16e6366805403b8033a158283462d6ff8007b0456162dbc  src/components/stream-allocation-editor.test.tsx
+94c280cac3b38dd0bb8fb97c4e5ebdca745ab6a5ac950af020d2e79450db01df  src/components/stream-allocation-editor.tsx
+e80c7e76b055986b8c2ca02b9e111dcc4df9e11fdcd1005f8eb2e0259680eff8  src/components/use-live-studio-draft.test.ts
+ba7a37401204ce9df51f39a6658d4056881641653ac09c973856b9605955e46c  src/components/use-live-studio-draft.ts
+b54b1b29137ae55a1866b810847e72ede307d68d175e589f519855da97339fb6  src/lib/live-quota-policy.test.ts
+5164e3cfa7ad4708b78faafc8aa1d810f94a0e669376b3327b4cc33b6220b535  src/lib/live-quota-policy.ts
+f553c24a6df17d97d1d77959f6159b1646985d421aada892e3d1fbf9fdd6d2da  src/lib/live-studio-draft.db.test.ts
+0b1bbffdc44610be6b667a536964704f1c50bcb0ce41bd9f881db8909f6486cf  src/lib/live-studio-draft.test.ts
+293463f339e293d85bfee2bc7b0b5d027ba96bf8be61cfbfdfcf403cce6c5c4d  src/lib/live-studio-draft.ts
+b9b5315ed014ea12e3986cfdaafa1bddfa1e55ea6e039cc3de3e76ce84bc0521  src/lib/stream-quota.test.ts
+e2e5979da9b727f63585069dc83b8d35947a46a9275fa2045b13eb5bc0fcd2ed  src/lib/stream-quota.ts
+0bb1264b407566ebb4367ec79b92daac0d1b7adbc66488d7043fc678ae236163  src/lib/stream-usage-attribution.test.ts
+71ef59f6988a172a4ee029aab5b7e097d3465a4fe8a69e1a293c63641cc3fbc4  src/lib/stream-usage-attribution.ts
+33d908676dcc3c1198e6bf8ca4165aa56feea31c9f5e2eb931a5785578456337  src/lib/stream-usage.test.ts
+fd3b3ee5cbd693eeab22fb23f4e6f0198e3523c8779b19a369e8c0c1d1a7ede5  src/lib/stream-usage.ts
+57295d624d4cf0abdad576784d21589427cdddb73cbb688b0b38e3965fab121d  vitest.g7-stream-db.config.ts

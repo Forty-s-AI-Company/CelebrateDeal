@@ -1,0 +1,8 @@
+G7-18 artifact SHA-256
+df1c2ad47c6e4f48b283be42d6416cf7295a3f5a03ff02b01f16cd63314a6c27  docs/ai-team/evidence/g7-18-browser-runner-source-attribution-20260809.md
+5bd42a29df7e77576e3e6973716f0b3d1949d9054de7c889d4ca282e5ec3195c  .ai-team/reports/g7-18-browser-runner-source-attribution-20260809.json
+5752501431fbbc8506a3318870c0bc9b82bb78257254c5c4ed8c3b2aab2ee2bd  docs/ai-team/evidence/g7-18-source-manifest-20260809.txt
+439addd4261dbc5b86e0394b5bb20082831cb46abc7eaf3183d658345b27e2c8  scripts/g7-commerce-browser-qa.mjs
+250ad5a3e8bd5868832e902230de47e1721c20a9069c96c18855aa859c6ecc60  scripts/g7-commerce-browser-qa.test.mjs
+e52871b0aab1e081e95c0b1d613777151d4495056349f152d0e8fcf12c8d1fc0  scripts/g7-form-builder-browser-qa.mjs
+84d98f9226b1cac20128cd3871eff088eba3bf96163aee02e4a3279666a6f820  scripts/g7-form-builder-browser-qa.test.mjs

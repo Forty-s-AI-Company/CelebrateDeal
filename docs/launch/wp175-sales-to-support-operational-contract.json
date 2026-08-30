@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "wp175.v2",
+  "governanceDecision": "docs/decisions/ADR-2026-08-13-solo-founder-owner-model.md",
+  "ownerModel": { "sameHumanMultipleRoles": true, "distinctHumanRequired": false },
+  "scope": "LOCAL_OPERATIONAL_REHEARSAL_ONLY",
+  "sourcePaths": [
+    "src/app/(app)/billing/plans/page.tsx",
+    "src/app/(app)/billing/usage/page.tsx",
+    "src/app/(app)/billing/plans/actions.ts",
+    "docs/launch/wp122-merchant-onboarding-contract.json",
+    "docs/operations/merchant-onboarding-readiness-runbook.md",
+    "docs/operations/payment-refund-support-incident-sop.md",
+    "docs/launch/manual-blockers.md",
+    "docs/launch/current-readiness-snapshot-20260802.json"
+  ],
+  "roles": [
+    "sales_operator",
+    "merchant_owner",
+    "merchant_admin",
+    "support_operator",
+    "finance_owner",
+    "platform_admin",
+    "release_owner",
+    "privacy_policy_owner"
+  ],
+  "stages": [
+    {
+      "id": "sales_plan_explanation",
+      "owner": "sales_operator",
+      "requiredInputs": ["current_plan_projection", "published_plan_fields"],
+      "allowedEvidence": ["local_product_source", "sanitized_plan_projection"],
+      "decisionState": "LOCAL_EVIDENCE",
+      "prohibitedActions": ["invent_price", "promise_legal_terms", "trigger_payment"],
+      "nextOwner": "merchant_owner",
+      "stopCondition": "missing_or_stale_plan_fields",
+      "sanitizedProjection": ["monthly_fee", "included_stream", "included_events", "included_affiliates", "included_storage", "platform_payment_monthly_fee", "transaction_service_fee", "overage_pricing", "month_end_postpaid"]
+    },
+    {
+      "id": "entitlement_usage_expectation",
+      "owner": "sales_operator",
+      "requiredInputs": ["current_plan", "usage_and_remaining"],
+      "allowedEvidence": ["local_product_source", "sanitized_usage_projection"],
+      "decisionState": "HANDOFF_REQUIRED",
+      "prohibitedActions": ["forge_entitlement", "promise_unpublished_allowance"],
+      "nextOwner": "merchant_owner",
+      "stopCondition": "missing_usage_or_entitlement_source",
+      "sanitizedProjection": ["current_plan", "usage", "remaining", "overage_handoff"]
+    },
+    {
+      "id": "synthetic_merchant_onboarding",
+      "owner": "merchant_owner",
+      "requiredInputs": ["synthetic_merchant", "active_owner_role"],
+      "allowedEvidence": ["wp122_local_contract", "sanitized_role_projection"],
+      "decisionState": "OWNER_ACCEPTANCE_REQUIRED",
+      "prohibitedActions": ["create_account", "send_invitation", "collect_personal_data"],
+      "nextOwner": "platform_admin",
+      "stopCondition": "missing_active_owner_or_shared_account",
+      "sanitizedProjection": ["synthetic_merchant_ref", "role_state", "unresolved_owner_acceptance"]
+    },
+    {
+      "id": "support_intake",
+      "owner": "support_operator",
+      "requiredInputs": ["severity", "sanitized_issue_class"],
+      "allowedEvidence": ["severity", "environment_class", "short_reference", "status_class"],
+      "decisionState": "TRIAGED",
+      "prohibitedActions": ["store_sensitive_data", "request_credentials", "store_raw_provider_payload"],
+      "nextOwner": "support_operator",
+      "stopCondition": "sensitive_or_unclassified_input",
+      "sanitizedProjection": ["severity", "issue_class", "environment_class", "short_reference"]
+    },
+    {
+      "id": "support_triage_escalation",
+      "owner": "support_operator",
+      "requiredInputs": ["severity", "known", "unknown"],
+      "allowedEvidence": ["sanitized_incident_projection", "owner_handoff"],
+      "decisionState": "HANDOFF_REQUIRED",
+      "prohibitedActions": ["close_without_evidence", "operate_provider", "write_production"],
+      "nextOwner": "platform_admin",
+      "stopCondition": "unknown_severity_or_missing_owner",
+      "sanitizedProjection": ["severity", "known", "unknown", "next_owner", "next_safe_action"]
+    },
+    {
+      "id": "refund_finance_handoff",
+      "owner": "finance_owner",
+      "requiredInputs": ["refund_state", "provider_consistency_class"],
+      "allowedEvidence": ["sanitized_transaction_reference", "refund_state", "reconciliation_class"],
+      "decisionState": "HANDOFF_REQUIRED",
+      "prohibitedActions": ["send_refund", "retry_callback", "write_database", "replay_provider_request"],
+      "nextOwner": "platform_admin",
+      "stopCondition": "state_unknown_or_provider_mismatch",
+      "sanitizedProjection": ["refund_state", "reconciliation_class", "no_resend_reason"]
+    },
+    {
+      "id": "incident_status_message",
+      "owner": "platform_admin",
+      "requiredInputs": ["known", "unknown", "impact", "next_update"],
+      "allowedEvidence": ["sanitized_status_projection"],
+      "decisionState": "STATUS_DRAFTED",
+      "prohibitedActions": ["claim_resolved_without_closure", "include_personal_data", "promise_unverified_timeline"],
+      "nextOwner": "release_owner",
+      "stopCondition": "missing_impact_owner_or_next_update",
+      "sanitizedProjection": ["known", "unknown", "impact", "owner", "next_update", "prohibited_claims"]
+    },
+    {
+      "id": "offboarding_data_request_routing",
+      "owner": "privacy_policy_owner",
+      "requiredInputs": ["request_class", "sanitized_subject_reference"],
+      "allowedEvidence": ["sanitized_request_projection", "process_gap"],
+      "decisionState": "PROCESS_GAP_BLOCKED",
+      "prohibitedActions": ["delete_data", "export_data", "promise_legal_deadline", "claim_legal_approval"],
+      "nextOwner": "release_owner",
+      "stopCondition": "no_approved_legal_process",
+      "sanitizedProjection": ["request_class", "process_gap", "privacy_policy_owner", "release_owner"]
+    }
+  ],
+  "boundaries": {
+    "billingMode": "MONTH_END_POSTPAID",
+    "plansPageTriggersPayment": true,
+    "plansPagePaymentSemantics": "paid_plan_creates_pending_subscription_and_server_owned_transaction; trusted_paid_callback_required_for_activation",
+    "externalNetwork": false,
+    "databaseReads": 0,
+    "databaseWrites": 0,
+    "paymentRequests": 0,
+    "refundRequests": 0,
+    "callbackRequests": 0,
+    "productionOperations": 0
+  },
+  "readiness": {
+    "localOperationalRehearsal": "PASS_CANDIDATE",
+    "manualMerchantRehearsal": "PENDING",
+    "supportOwnerAcceptance": "PENDING",
+    "legalPrivacyApproval": "PENDING",
+    "actualOffboardingDataRequest": "PENDING",
+    "overallCommercialReadiness": "NOT_READY",
+    "SANDBOX_READY": false,
+    "PRODUCTION_READY": false
+  }
+}

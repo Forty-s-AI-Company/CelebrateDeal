@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { CheckCircle2, CopyPlus, FilePenLine, LockKeyhole, RectangleEllipsis } from "lucide-react";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Card } from "@/components/ui";
 import type { PartnerPageActionState } from "@/app/actions/team-funnel-partner-actions";
 
@@ -35,10 +36,8 @@ export function TeamTemplateClaimError({ state }: { state: "expired" | "disabled
 }
 
 export function TeamTemplateClaim({ template, csrfToken, action }: { template: TeamTemplateClaimData; csrfToken: string; action: ClaimAction }) {
-  const [state, formAction, pending] = useActionState(action, initialState);
+  const [state, formAction] = useActionState(action, initialState);
   const [mode, setMode] = useState<(typeof modes)[number]["value"]>("QUICK_APPLY");
-
-  useEffect(() => { if (state.redirectTo) window.location.assign(state.redirectTo); }, [state.redirectTo]);
 
   return (
     <Card>
@@ -73,8 +72,23 @@ export function TeamTemplateClaim({ template, csrfToken, action }: { template: T
           <input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="my-webinar-page" className="h-10 rounded-md border border-border px-3 text-sm" />
         </label>
         <label className="flex items-start gap-2 text-sm text-slate-700"><input name="confirmed" value="yes" type="checkbox" required className="mt-0.5 h-4 w-4 accent-blue-600" />我已確認建立自己的夥伴頁；內容可否編輯會依 A 的鎖定範圍決定。</label>
-        {state.status !== "idle" ? <p role="status" className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}>{state.status === "success" ? <CheckCircle2 className="mr-1 inline" size={16} /> : null}{state.message}</p> : null}
-        <button disabled={pending} className="inline-flex h-10 w-fit items-center rounded-md bg-primary px-4 text-sm font-semibold text-white disabled:opacity-60">{pending ? "建立中…" : "確認並建立夥伴頁"}</button>
+        {state.status !== "idle" ? (
+          <p
+            role={state.status === "error" ? "alert" : "status"}
+            aria-live={state.status === "success" ? "polite" : undefined}
+            className={state.status === "success" ? "rounded-md bg-emerald-50 p-3 text-sm text-emerald-800" : "rounded-md bg-red-50 p-3 text-sm text-red-800"}
+          >
+            {state.status === "success" ? <CheckCircle2 aria-hidden="true" className="mr-1 inline" size={16} /> : null}
+            {state.message}
+          </p>
+        ) : null}
+        <FormSubmitButton
+          pendingChildren="建立中…"
+          pendingMessage="正在建立夥伴頁，請勿重複送出。"
+          className="inline-flex h-10 w-fit items-center rounded-md bg-primary px-4 text-sm font-semibold text-white"
+        >
+          確認並建立夥伴頁
+        </FormSubmitButton>
       </form>
     </Card>
   );

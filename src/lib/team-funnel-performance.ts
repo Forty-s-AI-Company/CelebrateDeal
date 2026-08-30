@@ -122,7 +122,10 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
     db.teamLeadAttribution.findMany({
       where: {
         vendorId: actor.vendorId, teamId: actor.teamId, pageId: { in: pageIds },
-        formSubmission: { createdAt: { gte: range.start, lt: range.endExclusive } },
+        formSubmission: {
+          verificationStatus: "VERIFIED",
+          createdAt: { gte: range.start, lt: range.endExclusive },
+        },
       },
       select: { pageId: true },
       take: MAX_EVENTS_PER_SOURCE + 1,
@@ -159,6 +162,7 @@ export async function getTeamFunnelPerformanceReport(input: TeamFunnelPerformanc
     liveIds.length === 0 ? Promise.resolve([]) : db.analyticsEvent.findMany({
       where: {
         vendorId: actor.vendorId, liveId: { in: liveIds }, eventType: { in: PAGE_VIEW_EVENT_TYPES },
+        trustLevel: "ADMITTED_LIVE_SESSION",
         createdAt: { gte: range.start, lt: range.endExclusive },
       },
       select: { payload: true },

@@ -1,10 +1,11 @@
-import { config as loadEnv } from "dotenv";
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
-import { getStreamVideoStatus } from "../src/lib/cloudflare-stream";
-import { createCloudflareStreamWebhookSignature } from "../src/lib/cloudflare-webhook-signature";
-
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
+import {
+  isLoopbackSmokeTarget,
+  resolveSmokeTarget,
+  summarizeSmokeFailure,
+  summarizeSmokeResponse,
+} from "./external-smoke-safety";
+import { validateNonProductionOwnerAuthorization } from "./validate-non-production-owner-authorization.mjs";
 
 type SmokeResult = {
   name: string;
@@ -12,7 +13,12 @@ type SmokeResult = {
   detail: string;
 };
 
-const baseUrl = (process.env.TARGET_APP_URL ?? "http://localhost:31023").replace(/\/$/, "");
+const baseUrl = resolveSmokeTarget({
+  targetAppUrl: process.env.TARGET_APP_URL,
+  smokeEnvironment: process.env.SMOKE_ENVIRONMENT,
+  allowStagingSmoke: process.env.ALLOW_STAGING_SMOKE,
+  expectedHostname: process.env.SMOKE_EXPECTED_HOSTNAME,
+});
 const jobSecret = process.env.JOB_SECRET;
 const results: SmokeResult[] = [];
 const sampleVideoUrl = "https://storage.googleapis.com/stream-example-bucket/video.mp4";
@@ -23,24 +29,27 @@ function record(result: SmokeResult) {
   console.log(`[${prefix}] ${result.name}: ${result.detail}`);
 }
 
-async function readResponsePayload(response: Response) {
+function ownerAuthorizationFailure(expectedEnvironment?: string): string | null {
+  const authorization = validateNonProductionOwnerAuthorization(process.env);
+  if (!authorization.ok) return authorization.reason;
+
+  const authorizedEnvironment = process.env.AI_TEAM_PROVIDER_ENVIRONMENT?.trim().toLowerCase();
+  return expectedEnvironment && expectedEnvironment !== authorizedEnvironment ? "scope_invalid" : null;
+}
+
+function remoteSmokeAuthorizationFailure(): string | null {
+  if (isLoopbackSmokeTarget(baseUrl)) return null;
+  return ownerAuthorizationFailure(process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase());
+}
+
+async function readResponsePayload(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     return response.json().catch(() => null);
   }
 
   const text = await response.text().catch(() => "");
-  return text ? { rawText: text } : null;
-}
-
-function formatPayload(payload: unknown) {
-  if (!payload) {
-    return "empty response";
-  }
-  if (typeof payload === "string") {
-    return payload;
-  }
-  return JSON.stringify(payload);
+  return text || null;
 }
 
 function isRecord(payload: unknown): payload is Record<string, unknown> {
@@ -66,47 +75,69 @@ async function checkJson(name: string, path: string, init?: RequestInit) {
   try {
     const response = await request(path, init);
     const body = await readResponsePayload(response);
-    if (!response.ok || body.ok === false) {
-      record({ name, status: "fail", detail: `HTTP ${response.status}: ${formatPayload(body)}` });
+    if (!response.ok || (isRecord(body) && body.ok === false)) {
+      record({
+        name,
+        status: "fail",
+        detail: summarizeSmokeResponse({ status: response.status, ok: response.ok, payload: body }),
+      });
       return;
     }
-    record({ name, status: "pass", detail: `HTTP ${response.status}` });
+    record({
+      name,
+      status: "pass",
+      detail: summarizeSmokeResponse({ status: response.status, ok: response.ok, payload: body }),
+    });
   } catch (error) {
-    record({ name, status: "fail", detail: error instanceof Error ? error.message : String(error) });
+    record({ name, status: "fail", detail: summarizeSmokeFailure(error) });
   }
 }
 
 async function main() {
+  const authorizationFailure = remoteSmokeAuthorizationFailure();
+  if (authorizationFailure) {
+    record({
+      name: "non-Production owner authorization",
+      status: "fail",
+      detail: "blocked_before_network",
+    });
+    process.exitCode = 1;
+    return;
+  }
+
   await checkJson("health", "/api/health");
   await checkJson("admin preflight", "/api/admin/preflight");
 
-  if (process.env.SMOKE_TEST_EMAIL) {
-    await checkJson("resend test email", "/api/admin/ops/test-email", {
-      method: "POST",
-      body: JSON.stringify({ to: process.env.SMOKE_TEST_EMAIL }),
+  const providerAuthorizationFailure = ownerAuthorizationFailure(
+    isLoopbackSmokeTarget(baseUrl) ? undefined : process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase(),
+  );
+  if (providerAuthorizationFailure) {
+    record({
+      name: "external provider owner authorization",
+      status: "fail",
+      detail: "blocked_before_provider_request",
     });
   } else {
-    record({ name: "resend test email", status: "skip", detail: "SMOKE_TEST_EMAIL not set" });
-  }
+    await checkJson("resend test email", "/api/admin/ops/test-email", {
+      method: "POST",
+      body: JSON.stringify(process.env.SMOKE_TEST_EMAIL ? { to: process.env.SMOKE_TEST_EMAIL } : {}),
+    });
 
-  await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
-  await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
+    await checkJson("posthog smoke event", "/api/admin/ops/test-analytics", { method: "POST" });
+    await checkJson("sentry smoke event", "/api/admin/ops/test-monitoring", { method: "POST" });
 
-  if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
-    const vendorId = process.env.SMOKE_VENDOR_ID;
-    if (!vendorId) {
-      record({ name: "cloudflare mutating smoke", status: "skip", detail: "SMOKE_VENDOR_ID not set" });
-    } else {
+    if (process.env.RUN_CLOUDFLARE_SMOKE === "true") {
+      const vendorId = process.env.SMOKE_VENDOR_ID;
       await runCloudflareSmoke(vendorId);
+    } else {
+      record({ name: "cloudflare mutating smoke", status: "skip", detail: "Set RUN_CLOUDFLARE_SMOKE=true to create direct upload and live input" });
     }
-  } else {
-    record({ name: "cloudflare mutating smoke", status: "skip", detail: "Set RUN_CLOUDFLARE_SMOKE=true to create direct upload and live input" });
-  }
 
-  if (process.env.RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE === "true") {
-    await runPayUniSmoke();
-  } else {
-    record({ name: "payuni sandbox webhook", status: "skip", detail: "Set RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true to replay paid / refunded / duplicate fixtures" });
+    if (process.env.RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE === "true") {
+      await runPayUniSmoke();
+    } else {
+      record({ name: "payuni sandbox webhook", status: "skip", detail: "Set RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true to replay paid / refunded / duplicate fixtures" });
+    }
   }
 
   if (process.env.RUN_DEMO_PAYMENT_WEBHOOK_SMOKE === "true") {
@@ -150,22 +181,44 @@ async function main() {
   }
 }
 
-async function runCloudflareSmoke(vendorId: string) {
+async function runCloudflareSmoke(vendorId?: string) {
   try {
     const directUploadResponse = await request("/api/admin/ops/cloudflare/direct-upload", {
       method: "POST",
-      body: JSON.stringify({ vendorId, title: `Smoke upload ${Date.now()}`, maxDurationSeconds: 600 }),
+      body: JSON.stringify({
+        ...(vendorId ? { vendorId } : {}),
+        title: `Smoke upload ${Date.now()}`,
+        maxDurationSeconds: 600,
+      }),
     });
     const directUploadBody = await readResponsePayload(directUploadResponse);
-    if (!directUploadResponse.ok || !directUploadBody?.upload?.uploadURL || !directUploadBody?.upload?.uid) {
+    const upload = isRecord(directUploadBody) && isRecord(directUploadBody.upload) ? directUploadBody.upload : null;
+    if (
+      !directUploadResponse.ok ||
+      !upload ||
+      typeof upload.uploadURL !== "string" ||
+      typeof upload.uid !== "string"
+    ) {
       record({
         name: "cloudflare direct upload",
         status: "fail",
-        detail: `HTTP ${directUploadResponse.status}: ${formatPayload(directUploadBody)}`,
+        detail: summarizeSmokeResponse({
+          status: directUploadResponse.status,
+          ok: directUploadResponse.ok,
+          payload: directUploadBody,
+        }),
       });
       return;
     }
-    record({ name: "cloudflare direct upload", status: "pass", detail: directUploadBody.upload.uid });
+    record({
+      name: "cloudflare direct upload",
+      status: "pass",
+      detail: `${summarizeSmokeResponse({
+        status: directUploadResponse.status,
+        ok: directUploadResponse.ok,
+        payload: directUploadBody,
+      })}; direct_upload=present`,
+    });
 
     const sampleResponse = await fetch(sampleVideoUrl);
     if (!sampleResponse.ok) {
@@ -175,7 +228,7 @@ async function runCloudflareSmoke(vendorId: string) {
     const sampleBytes = await sampleResponse.arrayBuffer();
     const uploadForm = new FormData();
     uploadForm.set("file", new Blob([sampleBytes], { type: "video/mp4" }), "sample-video.mp4");
-    const uploadResponse = await fetch(directUploadBody.upload.uploadURL, {
+    const uploadResponse = await fetch(upload.uploadURL, {
       method: "POST",
       body: uploadForm,
     });
@@ -185,80 +238,77 @@ async function runCloudflareSmoke(vendorId: string) {
     }
     record({ name: "cloudflare upload file", status: "pass", detail: `HTTP ${uploadResponse.status}` });
 
-    const readyDetails = await pollUntilReady(directUploadBody.upload.uid);
-    record({ name: "cloudflare stream ready", status: "pass", detail: readyDetails.playback?.hls ?? "readyToStream=true" });
-
-    const signedWebhookBody = JSON.stringify({
-      uid: directUploadBody.upload.uid,
-      readyToStream: true,
-      thumbnail: readyDetails.thumbnail,
-      duration: readyDetails.duration,
-      playback: readyDetails.playback,
-      status: {
-        state: "ready",
-        pctComplete: "100.000000",
-      },
-    });
-    const webhookTimestamp = Math.floor(Date.now() / 1000);
-    const webhookSecret = process.env.CLOUDFLARE_STREAM_WEBHOOK_SECRET ?? "";
-    const webhookSignature = createCloudflareStreamWebhookSignature({
-      body: signedWebhookBody,
-      secret: webhookSecret,
-      timestamp: webhookTimestamp,
-    });
-    const webhookResponse = await fetch(`${baseUrl}/api/cloudflare/stream-webhook`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Webhook-Signature": `time=${webhookTimestamp},sig1=${webhookSignature}`,
-      },
-      body: signedWebhookBody,
-    });
-    const webhookResult = await readResponsePayload(webhookResponse);
-    if (!webhookResponse.ok || (isRecord(webhookResult) && webhookResult.ok === false)) {
-      record({
-        name: "cloudflare ready webhook replay",
-        status: "fail",
-        detail: `HTTP ${webhookResponse.status}: ${formatPayload(webhookResult)}`,
-      });
+    const videoId = isRecord(directUploadBody) && typeof directUploadBody.videoId === "string" ? directUploadBody.videoId : null;
+    if (!videoId) {
+      record({ name: "cloudflare webhook ready mapping", status: "fail", detail: "videoId missing" });
       return;
     }
-    record({ name: "cloudflare ready webhook replay", status: "pass", detail: JSON.stringify(webhookResult) });
+    const readyDetails = await pollUntilReady(videoId);
+    record({
+      name: "cloudflare webhook ready mapping",
+      status: "pass",
+      detail: `ready=${String(readyDetails.ready)}, duration_present=${String(readyDetails.durationPresent)}`,
+    });
 
     const liveInputResponse = await request("/api/admin/ops/cloudflare/live-input", {
       method: "POST",
-      body: JSON.stringify({ vendorId, name: `CelebrateDeal smoke ${new Date().toISOString()}` }),
+      body: JSON.stringify({
+        ...(vendorId ? { vendorId } : {}),
+        name: `CelebrateDeal smoke ${new Date().toISOString()}`,
+      }),
     });
     const liveInputBody = await readResponsePayload(liveInputResponse);
-    if (!liveInputResponse.ok || !liveInputBody?.liveInput?.uid) {
+    const liveInput = isRecord(liveInputBody) && isRecord(liveInputBody.liveInput) ? liveInputBody.liveInput : null;
+    if (!liveInputResponse.ok || !liveInput || typeof liveInput.uid !== "string") {
       record({
         name: "cloudflare live input",
         status: "fail",
-        detail: `HTTP ${liveInputResponse.status}: ${formatPayload(liveInputBody)}`,
+        detail: summarizeSmokeResponse({
+          status: liveInputResponse.status,
+          ok: liveInputResponse.ok,
+          payload: liveInputBody,
+        }),
       });
       return;
     }
-    const hasPlaintextStreamKey = Object.prototype.hasOwnProperty.call(liveInputBody.liveInput, "streamKey");
-    if (hasPlaintextStreamKey || !liveInputBody.liveInput.streamKeyRef) {
+    const hasPlaintextStreamKey = Object.prototype.hasOwnProperty.call(liveInput, "streamKey");
+    const hasStreamKeyRef = typeof liveInput.streamKeyRef === "string" && liveInput.streamKeyRef.length > 0;
+    if (hasPlaintextStreamKey || !hasStreamKeyRef) {
       record({ name: "cloudflare live input", status: "fail", detail: "stream key exposure detected" });
       return;
     }
-    record({ name: "cloudflare live input", status: "pass", detail: `streamKeyRef=${liveInputBody.liveInput.streamKeyRef}` });
+    record({
+      name: "cloudflare live input",
+      status: "pass",
+      detail: `${summarizeSmokeResponse({
+        status: liveInputResponse.status,
+        ok: liveInputResponse.ok,
+        payload: liveInputBody,
+      })}; live_input=present; plaintext_stream_key=false; stream_key_ref=present`,
+    });
   } catch (error) {
-    record({ name: "cloudflare mutating smoke", status: "fail", detail: error instanceof Error ? error.message : String(error) });
+    record({ name: "cloudflare mutating smoke", status: "fail", detail: summarizeSmokeFailure(error) });
   }
 }
 
-async function pollUntilReady(uid: string) {
+async function pollUntilReady(videoId: string) {
   const timeoutAt = Date.now() + 180_000;
   while (Date.now() < timeoutAt) {
-    const details = await getStreamVideoStatus(uid);
-    if (details.readyToStream) {
-      return details;
+    const response = await request(`/api/admin/ops/cloudflare/direct-upload?videoId=${encodeURIComponent(videoId)}`);
+    const payload = await readResponsePayload(response);
+    const video = isRecord(payload) && isRecord(payload.video) ? payload.video : null;
+    if (!response.ok || !video) {
+      throw new Error(summarizeSmokeResponse({ status: response.status, ok: response.ok, payload }));
+    }
+    if (video.readyToStream === true) {
+      return {
+        ready: true,
+        durationPresent: typeof video.durationSec === "number" && Number.isFinite(video.durationSec),
+      };
     }
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  throw new Error(`Cloudflare video ${uid} did not reach readyToStream within timeout.`);
+  throw new Error("Cloudflare video did not reach readyToStream within timeout.");
 }
 
 async function runPayUniSmoke() {
@@ -302,12 +352,20 @@ async function runPayUniSmoke() {
       });
       const payload = await readResponsePayload(response);
       if (!response.ok) {
-        record({ name: item.name, status: "fail", detail: `HTTP ${response.status}: ${formatPayload(payload)}` });
+        record({
+          name: item.name,
+          status: "fail",
+          detail: summarizeSmokeResponse({ status: response.status, ok: response.ok, payload }),
+        });
         continue;
       }
-      record({ name: item.name, status: "pass", detail: formatPayload(payload) });
+      record({
+        name: item.name,
+        status: "pass",
+        detail: summarizeSmokeResponse({ status: response.status, ok: response.ok, payload }),
+      });
     } catch (error) {
-      record({ name: item.name, status: "fail", detail: error instanceof Error ? error.message : String(error) });
+      record({ name: item.name, status: "fail", detail: summarizeSmokeFailure(error) });
     }
   }
 }

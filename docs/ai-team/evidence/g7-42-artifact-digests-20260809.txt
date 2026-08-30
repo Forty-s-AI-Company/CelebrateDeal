@@ -1,0 +1,3 @@
+8a743a2e4a8fa0029489af184c9e4bbac413ff95ebf7c833d32be29d4d9d0ae0  docs/ai-team/evidence/g7-42-support-least-privilege-20260809.md
+d218525445326c07542cd0024a7be4d433cfecb27fdc76c8809680fa4a4d8e15  docs/ai-team/evidence/g7-42-source-manifest-20260809.txt
+01ee90dcae95a5af3c48149c0de1fc10f4bd4d08c90a8cf7c154daa0ed63a7b4  docs/launch/current-function-scorecard-20260809.json

@@ -1,0 +1,6 @@
+e015989200913c24faec158407cc3b57002f8ac2baa6eecefccc3f5525e6e6a6  docs/ai-team/evidence/g7-23-live-reminder-reconciliation-20260809.md
+7ec87f34ce959dcf243086120ec41f3c18e9896f9b610aa6969457f4700a2d7d  .ai-team/reports/g7-23-live-reminder-reconciliation-20260809.json
+3bc6d0b78cc73e1dcff139e4ecaa2ca228788bd602d0f82398ad464b1547c9ae  .ai-team/reports/g7-23-live-reminder-reconciliation-disposable-20260809.json
+718c0fdfbdfdac469a721ffae1e10114467e48351ea0bf27f545c357afdaa7e9  .ai-team/reports/g7-23-live-reminder-controlled-build-20260809.json
+94f6e5cd1426bae41e39368bd92886b9e63f244e22831706df6c964f66535bd5  docs/ai-team/evidence/g7-23-source-manifest-20260809.txt
+09bc81d8126d29e5eb977aaefd4681fd4b2467da407c8fcbe655f3c8f32eebac  docs/ai-team/evidence/g7-23-source-digests-20260809.txt

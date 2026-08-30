@@ -1,0 +1,6 @@
+generated_at_utc=2026-08-08T17:59:49.999Z
+work_package=G7-13A
+algorithm=SHA-256
+ce5d5020abd1800212e101e66cbf536c48b609bd976e08790592819bbbd20190  docs/ai-team/evidence/g7-13a-analytics-authenticity-20260809.md
+b568151645dc1bfecb6c03dfeb14961bbc11f2b213544140f9623a423a6d6dde  docs/ai-team/evidence/g7-13a-source-manifest-20260809.txt
+30c1fec279ab9d7ea8dee7e225ae160d097a576def7383d924cc415dacbab9f7  .ai-team/reports/g7-13a-analytics-authenticity-20260809.json

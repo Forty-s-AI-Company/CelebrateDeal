@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "celebratedeal-ai-team-wp122-fixture/v1",
+  "caseId": "synthetic_onboarding_local_contract_01",
+  "environment": "local",
+  "stageEvidence": {
+    "merchant_owner_identity": "OWNER_ACCEPTANCE_REQUIRED",
+    "security_mfa_minimum_privilege": "LOCAL_EVIDENCE",
+    "members_roles_active_owner": "LOCAL_EVIDENCE",
+    "branding_tracking": "LOCAL_EVIDENCE",
+    "product_live_forms_interactions": "LOCAL_EVIDENCE",
+    "plans_payuni_boundary": "LOCAL_EVIDENCE",
+    "support_refund_sop": "LOCAL_EVIDENCE",
+    "dns_terms_policy_release_acceptance": "BLOCKED"
+  },
+  "localContract": "PASS",
+  "manualRehearsal": "PENDING",
+  "legalApproval": "PENDING",
+  "supportReadiness": "PENDING",
+  "overallReadiness": "NOT_READY",
+  "SANDBOX_READY": false,
+  "PRODUCTION_READY": false,
+  "evidenceRefs": ["wp110-local-runbook", "synthetic-tabletop-01"]
+}

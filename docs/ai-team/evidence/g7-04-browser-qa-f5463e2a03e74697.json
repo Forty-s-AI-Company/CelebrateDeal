@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "g7-04-commerce-browser-qa/v1",
+  "workPackage": "G7-04",
+  "status": "BLOCKED_OR_FAILED",
+  "runId": "f5463e2a03e74697",
+  "startedAt": "2026-08-08T04:37:42.012Z",
+  "finishedAt": "2026-08-08T04:39:57.883Z",
+  "phases": {
+    "mirror": "PASS",
+    "prismaGenerate": "PASS",
+    "prismaValidate": "PASS",
+    "prismaDeploy": "PASS",
+    "prismaStatus": "PASS",
+    "nextBuild": "PASS",
+    "server": "PASS",
+    "browser": "FAIL"
+  },
+  "migrations": {
+    "count": 37,
+    "applied": true
+  },
+  "browser": {
+    "expected": 2,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 1,
+    "axeCriticalOrSerious": -1,
+    "rwd": "NOT_VERIFIED",
+    "tenantIsolation": "NOT_VERIFIED",
+    "piiEnvelopeLeak": "NOT_VERIFIED"
+  },
+  "screenshots": {
+    "desktop": null,
+    "mobile": null
+  },
+  "cleanup": {
+    "server": "PASS",
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "dotenvContentsRead": false,
+    "mirrorExcludesDotenv": true,
+    "loopbackOnly": true,
+    "postgresTmpfs": true,
+    "sourceNodeModulesWritten": false,
+    "rawOutputPersisted": false,
+    "externalOperations": false,
+    "productionOperations": false,
+    "playwrightBrowserCacheReuseOnly": true,
+    "userBrowserProfileRead": false
+  },
+  "diagnostics": {
+    "nextBuild": null,
+    "nextBuildDetails": [],
+    "browser": "PLAYWRIGHT_ASSERTION_FAILED",
+    "browserDetails": [
+      {
+        "title": "commerce-orders.spec.ts > G7-04 商家訂單 UI > desktop owner can see only its canonical order, reveal PII safely, and complete physical fulfillment",
+        "status": "failed",
+        "classification": "PLAYWRIGHT_ASSERTION_FAILED",
+        "details": [
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "Error: expect(received).toBe(expected) // Object.is equality",
+          "Expected: 404",
+          "Received: 200",
+          "285 |",
+          "286 |     const foreignResponse = await page.goto(`/orders/${fixture.foreignOrderId}`);",
+          "> 287 |     expect(foreignResponse?.status()).toBe(404);",
+          "|                                       ^",
+          "288 |     await expect(page.getByText(fixture.foreignOrderNumber, { exact: true })).toHaveCount(0);",
+          "289 |"
+        ]
+      }
+    ],
+    "browserGlobalErrors": []
+  },
+  "failure": "commerce-browser-contract-failed"
+}

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "DIRECT_URL=\"$STAGING_DATABASE_URL\" npm run db:migrate:deploy && npm run build",
+  "crons": []
+}

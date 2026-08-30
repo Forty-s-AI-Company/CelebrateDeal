@@ -2,12 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { requireVendor } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
 export default async function AffiliateDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendor();
+  const vendor = await requireVendorManager();
   const { id } = await params;
   const affiliate = await getDb().affiliate.findFirst({
     where: { id, vendorId: vendor.id },
@@ -60,16 +60,20 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
           <div className="divide-y divide-border">
             {affiliate.commissions.length === 0 ? (
               <p className="p-5 text-sm text-slate-500">尚無佣金紀錄。</p>
-            ) : affiliate.commissions.map((commission) => (
-              <div key={commission.id} className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
+            ) : affiliate.commissions.map((commission) => {
+              const commissionBaseAmountCents = commission.commissionBaseAmountCents ?? commission.orderAmountCents;
+              const netReferenceAmountCents = commission.netReferenceAmountCents ?? 0;
+              return (
+                <div key={commission.id} className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                 <div>
                   <p className="font-semibold text-slate-950">{commission.orderNumber ?? "未綁定訂單"}</p>
-                  <p className="mt-1 text-sm text-slate-500">{formatDateTime(commission.attributedAt)} · 成交 {formatCurrency(commission.orderAmountCents)}</p>
+                  <p className="mt-1 text-sm text-slate-500">{formatDateTime(commission.attributedAt)} · Gross 分潤基礎 {formatCurrency(commissionBaseAmountCents)} · Net reference {formatCurrency(netReferenceAmountCents)}</p>
                 </div>
                 <Badge tone={commission.status === "approved" ? "green" : "orange"}>{commission.status}</Badge>
                 <p className="text-lg font-bold text-slate-950">{formatCurrency(commission.commissionAmountCents)}</p>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </Card>
 
