@@ -8,6 +8,11 @@ import yaml from "js-yaml";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = path.join(root, ".github", "workflows", "secure-staging-validation.yml");
 
+test("master cannot trigger an automatic Vercel deployment", () => {
+  const config = JSON.parse(fs.readFileSync(path.join(root, "vercel.json"), "utf8"));
+  assert.equal(config.git?.deploymentEnabled?.master, false);
+});
+
 test("secure staging workflow is valid YAML and protected-default-branch only", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
