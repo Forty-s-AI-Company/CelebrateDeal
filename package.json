@@ -23,6 +23,8 @@
     "external:smoke": "node --import tsx scripts/external-smoke.ts",
     "payuni:fixture": "node --import tsx scripts/payuni-webhook-fixtures.ts",
     "qa:payuni:sandbox": "node scripts/payuni-sandbox-external-qa.mjs",
+    "secure:staging:contract": "node --import tsx --test scripts/secure-staging-runner.test.mjs scripts/secure-staging-workflow-contract.test.mjs scripts/validate-secure-staging-receipt.test.mjs",
+    "secure:staging:wp2": "node --import tsx scripts/secure-staging-runner.mjs wp2-readonly-restore",
     "release:verify:local": "node scripts/release-local-readiness.mjs verify",
     "test:release-readiness": "vitest run scripts/release-local-readiness.test.mjs",
     "cloudflare:fixtures": "node --import tsx scripts/cloudflare-webhook-fixtures.ts",

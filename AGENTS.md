@@ -29,6 +29,20 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 - 同一檔案或資料資源同一時間只允許一個 writer；不同 scope 可並行。
 - 所有外部、staging、sandbox 與 disposable 操作必須保存最小化、可驗證的 sanitized evidence。
 
+## Approved secret-aware runner
+
+- Agent 只能觸發已合併至受保護預設分支的
+  `.github/workflows/secure-staging-validation.yml`，且只能選擇 workflow
+  明列的固定 task；feature branch、未受保護分支或任意 command 不得取得 Secret。
+- Agent 可以讀取 sanitized receipt，但不得列舉 GitHub Environment Secrets、
+  Secret Store、child-process environment 或 raw logs，也不得執行 `.env*`、
+  `vercel env pull`、`vercel env run` 等載入方式。
+- Trusted runner 必須先驗證 exact Preview source／deployment lineage，並維持
+  fixed-host outbound allowlist、固定 side-effect budget 與 canonical receipt
+  validator；任一條件不成立即 fail closed。
+- Trusted runner 的加入不授權 Production、正式付款／退款、migration write、
+  deployment、alias mutation、資料刪除、force push 或 merge。
+
 ## 代理協作
 
 - 主代理負責整合與最終判斷，但不要求固定模型或固定角色順序。
