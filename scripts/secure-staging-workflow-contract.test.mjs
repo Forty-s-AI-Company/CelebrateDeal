@@ -27,6 +27,10 @@ test("workflow exposes only the fixed WP2 task and pinned actions", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   assert.match(source, /options:\s*\n\s*- wp2-readonly-restore/u);
   assert.match(source, /npm run secure:staging:wp2/u);
+  assert.match(source, /id: execute-wp2\s*\n\s*continue-on-error: true/u);
+  assert.match(source, /if: \$\{\{ steps\.execute-wp2\.outcome != 'success' \}\}\s*\n\s*run: exit 2/u);
+  assert.ok(source.indexOf("Validate sanitized receipt") < source.indexOf("Enforce fixed WP2 task success"));
+  assert.ok(source.indexOf("Upload sanitized receipt only") < source.indexOf("Enforce fixed WP2 task success"));
   assert.doesNotMatch(source, /payuni|vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
   assert.equal(actionUses.length, 3);
