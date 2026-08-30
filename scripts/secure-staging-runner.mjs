@@ -213,20 +213,27 @@ function databaseEnvironment(source) {
     PGUSER: decodeURIComponent(value.username),
     PGPASSWORD: decodeURIComponent(value.password),
     PGSSLMODE: "require",
-    PGOPTIONS: "-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000",
   };
 }
 
 function sourcePostgres(pgEnvironment, tool, args, { mount } = {}) {
   const dockerArgs = ["run", "--rm", "--network", "host", "--volume", "/etc/hosts:/etc/hosts:ro"];
   if (mount) dockerArgs.push("-v", `${mount}:/out`);
-  for (const key of ["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE", "PGOPTIONS"]) dockerArgs.push("-e", key);
+  for (const key of ["PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE"]) dockerArgs.push("-e", key);
   dockerArgs.push(POSTGRES_IMAGE, tool, ...args);
   return run("docker", dockerArgs, { env: pgEnvironment, maxBuffer: 16 * 1024 * 1024 });
 }
 
+export function readOnlySql(sql) {
+  const statement = String(sql).trim().replace(/;+$/u, "");
+  if (!/^SELECT\b/iu.test(statement) || /\b(?:INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|COPY)\b/iu.test(statement)) {
+    throw new Error("SOURCE_QUERY_NOT_READ_ONLY");
+  }
+  return `BEGIN READ ONLY; ${statement}; COMMIT;`;
+}
+
 function sourcePsql(pgEnvironment, sql) {
-  return sourcePostgres(pgEnvironment, "psql", ["-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", sql]);
+  return sourcePostgres(pgEnvironment, "psql", ["-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", readOnlySql(sql)]);
 }
 
 function targetPsql(containerId, sql) {
@@ -296,7 +303,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     delete process.env.GITHUB_TOKEN;
 
     receipt.database.connectionAttempts = 1;
-    const first = sourcePsql(pgEnvironment, "BEGIN READ ONLY; SELECT (current_setting('transaction_read_only')='on')::text,(current_database()='postgres')::text,EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='auth')::text,(to_regclass('public._prisma_migrations') IS NOT NULL)::text; COMMIT;");
+    const first = sourcePsql(pgEnvironment, "SELECT (current_setting('transaction_read_only')='on')::text,(current_database()='postgres')::text,EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='auth')::text,(to_regclass('public._prisma_migrations') IS NOT NULL)::text");
     receipt.database.readQueries += 1;
     if (first.code !== 0) throw new Error("DATABASE_READONLY_IDENTITY_FAILED");
     const identityLine = String(first.stdout).split(/\r?\n/u).find((line) => /^(?:true|false)\|/u.test(line));

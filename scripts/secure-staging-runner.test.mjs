@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   createInitialReceipt,
+  readOnlySql,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
   validateInvocation,
@@ -86,6 +87,12 @@ test("squash-merged sources require an exact protected migration tree", () => {
       : result;
   };
   assert.throws(() => verifyTrustedMigrationTree(sha, mismatchedSpawn), /SOURCE_MIGRATION_TREE_UNTRUSTED/u);
+});
+
+test("source queries begin an explicit read-only transaction without startup PGOPTIONS", () => {
+  const wrapped = readOnlySql("SELECT current_setting('transaction_read_only')");
+  assert.equal(wrapped, "BEGIN READ ONLY; SELECT current_setting('transaction_read_only'); COMMIT;");
+  assert.throws(() => readOnlySql("UPDATE public.example SET value = 1"), /SOURCE_QUERY_NOT_READ_ONLY/u);
 });
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
