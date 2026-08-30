@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   classifyPostgresFailure,
+  classifyRestoreFailure,
   createInitialReceipt,
   readOnlySql,
   REQUIRED_CONFIG_KEYS,
@@ -103,6 +104,17 @@ test("database stderr is reduced to fixed sanitized failure categories", () => {
   assert.equal(classifyPostgresFailure("unrecognized provider response"), "DATABASE_CONNECTION_OR_QUERY_FAILED");
   for (const sample of ["credential=value", "postgresql://example", "user@example.test"]) {
     assert.match(classifyPostgresFailure(sample), /^[A-Z0-9_]+$/u);
+  }
+});
+
+test("restore stderr is reduced to fixed sanitized failure categories", () => {
+  assert.equal(classifyRestoreFailure('error: role "supabase_admin" does not exist'), "ISOLATED_RESTORE_ROLE_DEPENDENCY");
+  assert.equal(classifyRestoreFailure('error: schema "auth" does not exist'), "ISOLATED_RESTORE_SCHEMA_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("unsupported version (1.16) in file header"), "ISOLATED_RESTORE_ARCHIVE_INCOMPATIBLE");
+  assert.equal(classifyRestoreFailure('relation "Example" already exists'), "ISOLATED_RESTORE_TARGET_CONFLICT");
+  assert.equal(classifyRestoreFailure("unrecognized restore failure"), "ISOLATED_RESTORE_COMMAND_FAILED");
+  for (const sample of ["credential=value", "postgresql://example", "user@example.test"]) {
+    assert.match(classifyRestoreFailure(sample), /^[A-Z0-9_]+$/u);
   }
 });
 
