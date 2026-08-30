@@ -119,8 +119,10 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
       affiliateId: affiliate.id,
       monthKey: `wp75-month-${suffix}`,
       commissionAmountCents: 6_992_776,
-      adjustmentAmountCents: 12_345,
-      finalAmountCents: 7_005_121,
+      // Keep raw numeric disclosure canaries distinct from shared UI examples
+      // such as MFA placeholders (for example, "ABCDE-12345").
+      adjustmentAmountCents: 7_654_321,
+      finalAmountCents: 14_647_097,
       status: `wp75-payout-pending-${suffix}`,
     },
   });

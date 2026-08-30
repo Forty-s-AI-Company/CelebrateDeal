@@ -270,7 +270,28 @@ export function classifyRestoreFailure(stderr) {
 
 export function isolatedRestoreArgs(containerId) {
   if (!/^[a-f0-9]{64}$/u.test(String(containerId))) throw new Error("ISOLATED_CONTAINER_ID_INVALID");
-  return ["exec", containerId, "pg_restore", "--username=postgres", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"];
+  return ["exec", containerId, "pg_restore", "--username=postgres", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--use-list=/tmp/staging-public.list", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"];
+}
+
+export function isolatedReadinessArgs(containerId) {
+  if (!/^[a-f0-9]{64}$/u.test(String(containerId))) throw new Error("ISOLATED_CONTAINER_ID_INVALID");
+  return ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-c", "SELECT 1;"];
+}
+
+export function parseExtensionPlacements(output) {
+  const rows = String(output).split(/\r?\n/u).filter(Boolean).map((line) => line.split("|"));
+  if (rows.some((row) => row.length !== 2)) throw new Error("SOURCE_EXTENSION_INVENTORY_INVALID");
+  const placements = Object.fromEntries(rows);
+  if (Object.keys(placements).sort().join(",") !== "pg_trgm,pgcrypto") throw new Error("SOURCE_EXTENSION_INVENTORY_INVALID");
+  if (!Object.values(placements).every((schema) => schema === "public" || schema === "extensions")) throw new Error("SOURCE_EXTENSION_SCHEMA_UNSUPPORTED");
+  return placements;
+}
+
+export function filteredRestoreList(output) {
+  const lines = String(output).split(/\r?\n/u);
+  const publicSchemaEntries = lines.filter((line) => /\bSCHEMA\s+-\s+public\b/u.test(line));
+  if (publicSchemaEntries.length !== 1) throw new Error("ISOLATED_PUBLIC_SCHEMA_TOC_INVALID");
+  return `${lines.filter((line) => !/\bSCHEMA\s+-\s+public\b/u.test(line)).join("\n")}\n`;
 }
 
 function targetPsql(containerId, sql) {
@@ -286,7 +307,7 @@ function parseSnapshot(metaOutput, tableOutput) {
 }
 
 function snapshot(query) {
-  const metaSql = "SELECT (SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text,(SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE')::text,(SELECT count(*) FROM information_schema.columns WHERE table_schema='public')::text,COALESCE((SELECT string_agg(extname,',' ORDER BY extname) FROM pg_extension WHERE extname IN ('pgcrypto','pg_trgm')),'');";
+  const metaSql = "SELECT (SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text,(SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE')::text,(SELECT count(*) FROM information_schema.columns WHERE table_schema='public')::text,COALESCE((SELECT string_agg(extension.extname || ':' || namespace.nspname,',' ORDER BY extension.extname) FROM pg_extension extension INNER JOIN pg_namespace namespace ON namespace.oid=extension.extnamespace WHERE extension.extname IN ('pgcrypto','pg_trgm')),'');";
   const meta = query(metaSql);
   if (meta.code !== 0) throw new Error("SNAPSHOT_METADATA_FAILED");
   const tables = query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name;");
@@ -373,6 +394,11 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     receipt.migration = { expectedCount: EXPECTED_MIGRATION_COUNT, appliedCount: active.length, unresolvedFailedCount: unresolved.length, rollbackEntryCount: rolledBack.length, completedCounterpartCount, exactChecksumCount, formatVarianceCount, unknownMismatchCount, status: active.length === EXPECTED_MIGRATION_COUNT && unresolved.length === 0 && rolledBack.length === 1 && completedCounterpartCount === 1 && unknownMismatchCount === 0 ? (formatVarianceCount === 0 ? "UP_TO_DATE" : "UP_TO_DATE_FORMAT_VARIANCE") : "HISTORY_DIVERGED" };
     if (!["UP_TO_DATE", "UP_TO_DATE_FORMAT_VARIANCE"].includes(receipt.migration.status)) throw new Error("MIGRATION_HISTORY_DIVERGED");
 
+    const sourceExtensions = sourcePsql(pgEnvironment, "SELECT extension.extname,namespace.nspname FROM pg_extension extension INNER JOIN pg_namespace namespace ON namespace.oid=extension.extnamespace WHERE extension.extname IN ('pgcrypto','pg_trgm') ORDER BY extension.extname;");
+    receipt.database.readQueries += 1;
+    if (sourceExtensions.code !== 0) throw new Error("SOURCE_EXTENSION_INVENTORY_FAILED");
+    const extensionPlacements = parseExtensionPlacements(sourceExtensions.stdout);
+
     const sourceSnapshot = snapshot((sql) => { receipt.database.readQueries += 1; return sourcePsql(pgEnvironment, sql); });
     const runnerTemp = await fsp.realpath(source.RUNNER_TEMP);
     tempRoot = await fsp.mkdtemp(path.join(runnerTemp, "celebratedeal-wp2-"));
@@ -392,21 +418,21 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     containerId = String(started.stdout).trim();
     let ready = false;
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      const probe = run("docker", ["exec", containerId, "pg_isready", "-U", "postgres", "-d", "celebratedeal_restore"]);
+      const probe = run("docker", isolatedReadinessArgs(containerId));
       if (probe.code === 0) { ready = true; break; }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
     }
     if (!ready) throw new Error("ISOLATED_POSTGRES_NOT_READY");
-    const prepared = targetPsql(containerId, "CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions; DROP SCHEMA public CASCADE;");
-    if (prepared.code !== 0) throw new Error("ISOLATED_TARGET_PREPARE_FAILED");
     const copied = run("docker", ["cp", dumpPath, `${containerId}:/tmp/staging-public.dump`]);
     if (copied.code !== 0) throw new Error("ISOLATED_DUMP_COPY_FAILED");
     const listed = run("docker", ["exec", containerId, "pg_restore", "--list", "/tmp/staging-public.dump"]);
     if (listed.code !== 0) throw new Error("ISOLATED_DUMP_LIST_FAILED");
-    if (!/SCHEMA\s+-\s+public\b/u.test(String(listed.stdout))) {
-      const publicSchema = targetPsql(containerId, "CREATE SCHEMA public;");
-      if (publicSchema.code !== 0) throw new Error("ISOLATED_PUBLIC_SCHEMA_FAILED");
-    }
+    const restoreList = filteredRestoreList(listed.stdout);
+    const extensionSql = ["pgcrypto", "pg_trgm"].map((name) => `CREATE EXTENSION ${name} WITH SCHEMA ${extensionPlacements[name]};`).join(" ");
+    const prepared = targetPsql(containerId, `DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE SCHEMA IF NOT EXISTS extensions; ${extensionSql}`);
+    if (prepared.code !== 0) throw new Error("ISOLATED_TARGET_PREPARE_FAILED");
+    const restoreListWritten = run("docker", ["exec", "-i", containerId, "tee", "/tmp/staging-public.list"], { input: restoreList });
+    if (restoreListWritten.code !== 0) throw new Error("ISOLATED_RESTORE_LIST_WRITE_FAILED");
     receipt.restore.attempts = 1;
     receipt.sideEffects.isolatedRestoreWrites = 1;
     const restored = run("docker", isolatedRestoreArgs(containerId));

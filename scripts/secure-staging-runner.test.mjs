@@ -6,7 +6,10 @@ import {
   classifyPostgresFailure,
   classifyRestoreFailure,
   createInitialReceipt,
+  filteredRestoreList,
+  isolatedReadinessArgs,
   isolatedRestoreArgs,
+  parseExtensionPlacements,
   readOnlySql,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
@@ -136,10 +139,38 @@ test("isolated restore connects as the container postgres role", () => {
     "--no-privileges",
     "--exit-on-error",
     "--single-transaction",
+    "--use-list=/tmp/staging-public.list",
     "--dbname=celebratedeal_restore",
     "/tmp/staging-public.dump",
   ]);
   assert.throws(() => isolatedRestoreArgs("not-a-container"), /ISOLATED_CONTAINER_ID_INVALID/u);
+});
+
+test("isolated readiness verifies the exact restore database", () => {
+  const containerId = "b".repeat(64);
+  const args = isolatedReadinessArgs(containerId);
+  assert.deepEqual(args.slice(0, 5), ["exec", containerId, "psql", "-U", "postgres"]);
+  assert.deepEqual(args.slice(-4), ["-v", "ON_ERROR_STOP=1", "-c", "SELECT 1;"]);
+  assert.equal(args.includes("celebratedeal_restore"), true);
+  assert.equal(args.includes("pg_isready"), false);
+});
+
+test("isolated restore mirrors allowlisted source extension placement", () => {
+  assert.deepEqual(parseExtensionPlacements("pg_trgm|public\npgcrypto|extensions\n"), {
+    pg_trgm: "public",
+    pgcrypto: "extensions",
+  });
+  assert.throws(() => parseExtensionPlacements("pg_trgm|private\npgcrypto|extensions\n"), /SOURCE_EXTENSION_SCHEMA_UNSUPPORTED/u);
+  assert.throws(() => parseExtensionPlacements("pg_trgm|public\n"), /SOURCE_EXTENSION_INVENTORY_INVALID/u);
+  assert.throws(() => parseExtensionPlacements("pg_trgm|public|extra\npgcrypto|extensions\n"), /SOURCE_EXTENSION_INVENTORY_INVALID/u);
+});
+
+test("restore TOC removes only the pre-created public schema entry", () => {
+  const toc = "; archive\n1; 2615 2200 SCHEMA - public postgres\n2; 1259 1 TABLE public Example postgres\n";
+  const filtered = filteredRestoreList(toc);
+  assert.doesNotMatch(filtered, /SCHEMA\s+-\s+public/u);
+  assert.match(filtered, /TABLE public Example/u);
+  assert.throws(() => filteredRestoreList("; archive\n2; TABLE public Example\n"), /ISOLATED_PUBLIC_SCHEMA_TOC_INVALID/u);
 });
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
