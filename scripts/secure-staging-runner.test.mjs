@@ -3,6 +3,7 @@ import os from "node:os";
 import test from "node:test";
 
 import {
+  classifyPostgresFailure,
   createInitialReceipt,
   readOnlySql,
   REQUIRED_CONFIG_KEYS,
@@ -93,6 +94,16 @@ test("source queries begin an explicit read-only transaction without startup PGO
   const wrapped = readOnlySql("SELECT current_setting('transaction_read_only')");
   assert.equal(wrapped, "BEGIN READ ONLY; SELECT current_setting('transaction_read_only'); COMMIT;");
   assert.throws(() => readOnlySql("UPDATE public.example SET value = 1"), /SOURCE_QUERY_NOT_READ_ONLY/u);
+});
+
+test("database stderr is reduced to fixed sanitized failure categories", () => {
+  assert.equal(classifyPostgresFailure("password authentication failed for user [redacted]"), "DATABASE_AUTHENTICATION_FAILED");
+  assert.equal(classifyPostgresFailure("connection timed out"), "DATABASE_NETWORK_FAILED");
+  assert.equal(classifyPostgresFailure("unsupported startup parameter: options"), "DATABASE_POOLER_STARTUP_REJECTED");
+  assert.equal(classifyPostgresFailure("unrecognized provider response"), "DATABASE_CONNECTION_OR_QUERY_FAILED");
+  for (const sample of ["credential=value", "postgresql://example", "user@example.test"]) {
+    assert.match(classifyPostgresFailure(sample), /^[A-Z0-9_]+$/u);
+  }
 });
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
