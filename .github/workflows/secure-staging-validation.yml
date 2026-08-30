@@ -56,6 +56,8 @@ jobs:
         run: npm run secure:staging:contract
 
       - name: Execute fixed WP2 task with bounded egress
+        id: execute-wp2
+        continue-on-error: true
         shell: bash
         env:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
@@ -135,3 +137,7 @@ jobs:
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore-receipt.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Enforce fixed WP2 task success
+        if: ${{ steps.execute-wp2.outcome != 'success' }}
+        run: exit 2
