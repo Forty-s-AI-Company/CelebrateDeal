@@ -55,9 +55,24 @@ export function FormSubmitButton({
         aria-disabled={isDisabled}
         aria-busy={isActivePending}
         onClick={(event) => {
-          const formIsValid = event.currentTarget.form?.checkValidity() ?? true;
-          if (confirmMessage && (event.currentTarget.formNoValidate || formIsValid) && !window.confirm(confirmMessage)) {
+          const button = event.currentTarget;
+          const form = button.form;
+          const formIsValid = form?.checkValidity() ?? true;
+          const requiresConfirmation = Boolean(confirmMessage) && (button.formNoValidate || formIsValid);
+          if (requiresConfirmation) {
+            if (!window.confirm(confirmMessage!)) {
+              event.preventDefault();
+              return;
+            }
+
+            onClick?.(event);
+            if (event.defaultPrevented || type !== "submit" || !form) return;
+
+            // Blocking confirm dialogs can detach the original click from
+            // React's Server Action submit dispatch. Re-submit explicitly with
+            // the same button so its name, value and formAction are preserved.
             event.preventDefault();
+            form.requestSubmit(button);
             return;
           }
           onClick?.(event);
