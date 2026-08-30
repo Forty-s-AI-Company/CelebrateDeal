@@ -262,6 +262,11 @@ export function classifyRestoreFailure(stderr) {
   return "ISOLATED_RESTORE_COMMAND_FAILED";
 }
 
+export function isolatedRestoreArgs(containerId) {
+  if (!/^[a-f0-9]{64}$/u.test(String(containerId))) throw new Error("ISOLATED_CONTAINER_ID_INVALID");
+  return ["exec", containerId, "pg_restore", "--username=postgres", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"];
+}
+
 function targetPsql(containerId, sql) {
   return run("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", sql]);
 }
@@ -398,7 +403,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     }
     receipt.restore.attempts = 1;
     receipt.sideEffects.isolatedRestoreWrites = 1;
-    const restored = run("docker", ["exec", containerId, "pg_restore", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"]);
+    const restored = run("docker", isolatedRestoreArgs(containerId));
     if (restored.code !== 0) throw new Error(classifyRestoreFailure(restored.stderr));
     const targetSnapshot = snapshot((sql) => targetPsql(containerId, sql));
     receipt.restore = { attempts: 1, result: "PASS", migrationCount: targetSnapshot.migrationCount, schemaMatched: sourceSnapshot.tableCount === targetSnapshot.tableCount && sourceSnapshot.columnCount === targetSnapshot.columnCount, extensionsMatched: sourceSnapshot.extensionDigest === targetSnapshot.extensionDigest, aggregateMatched: sourceSnapshot.aggregateDigest === targetSnapshot.aggregateDigest, isolated: true };

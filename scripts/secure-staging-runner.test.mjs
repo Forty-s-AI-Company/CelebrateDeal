@@ -6,6 +6,7 @@ import {
   classifyPostgresFailure,
   classifyRestoreFailure,
   createInitialReceipt,
+  isolatedRestoreArgs,
   readOnlySql,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
@@ -116,6 +117,23 @@ test("restore stderr is reduced to fixed sanitized failure categories", () => {
   for (const sample of ["credential=value", "postgresql://example", "user@example.test"]) {
     assert.match(classifyRestoreFailure(sample), /^[A-Z0-9_]+$/u);
   }
+});
+
+test("isolated restore connects as the container postgres role", () => {
+  const containerId = "a".repeat(64);
+  assert.deepEqual(isolatedRestoreArgs(containerId), [
+    "exec",
+    containerId,
+    "pg_restore",
+    "--username=postgres",
+    "--no-owner",
+    "--no-privileges",
+    "--exit-on-error",
+    "--single-transaction",
+    "--dbname=celebratedeal_restore",
+    "/tmp/staging-public.dump",
+  ]);
+  assert.throws(() => isolatedRestoreArgs("not-a-container"), /ISOLATED_CONTAINER_ID_INVALID/u);
 });
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
