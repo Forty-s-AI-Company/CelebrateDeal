@@ -177,6 +177,35 @@ describe("FormSubmitButton", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("explicitly submits the same button after an accepted confirmation", () => {
+    const onClick = vi.fn();
+    const confirm = vi.fn(() => true);
+    const preventDefault = vi.fn();
+    const requestSubmit = vi.fn();
+    const form = { checkValidity: () => true, requestSubmit };
+    const buttonElement = { form, formNoValidate: false };
+    vi.stubGlobal("window", { confirm });
+    const tree = FormSubmitButton({
+      children: "重新產生 recovery codes",
+      pendingChildren: "重新產生中…",
+      pendingMessage: "正在重新產生 recovery codes。",
+      confirmMessage: "確定重新產生？",
+      onClick,
+    }) as { props: { children: Array<{ type: unknown; props: { onClick?: (event: unknown) => void } }> } };
+    const button = tree.props.children.find((child) => child.type === "button");
+
+    button?.props.onClick?.({
+      currentTarget: buttonElement,
+      defaultPrevented: false,
+      preventDefault,
+    });
+
+    expect(confirm).toHaveBeenCalledWith("確定重新產生？");
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(requestSubmit).toHaveBeenCalledWith(buttonElement);
+  });
+
   it("lets native validation report invalid required fields before showing confirmation", () => {
     const onClick = vi.fn();
     const confirm = vi.fn(() => true);
