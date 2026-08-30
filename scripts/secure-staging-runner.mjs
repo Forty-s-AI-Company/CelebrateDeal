@@ -236,6 +236,18 @@ function sourcePsql(pgEnvironment, sql) {
   return sourcePostgres(pgEnvironment, "psql", ["-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", readOnlySql(sql)]);
 }
 
+export function classifyPostgresFailure(stderr) {
+  const message = String(stderr ?? "");
+  if (/password authentication failed|tenant or user not found|invalid (?:user|password)|authentication failed/iu.test(message)) return "DATABASE_AUTHENTICATION_FAILED";
+  if (/could not translate host name|name or service not known|temporary failure in name resolution/iu.test(message)) return "DATABASE_DNS_FAILED";
+  if (/connection refused|timeout expired|connection timed out|network is unreachable|no route to host|could not connect to server/iu.test(message)) return "DATABASE_NETWORK_FAILED";
+  if (/certificate|ssl error|tls/iu.test(message)) return "DATABASE_TLS_FAILED";
+  if (/unsupported (?:startup|config) parameter|pgoptions/iu.test(message)) return "DATABASE_POOLER_STARTUP_REJECTED";
+  if (/permission denied|must be (?:owner|superuser)/iu.test(message)) return "DATABASE_PERMISSION_DENIED";
+  if (/syntax error|read only|transaction/iu.test(message)) return "DATABASE_READONLY_QUERY_REJECTED";
+  return "DATABASE_CONNECTION_OR_QUERY_FAILED";
+}
+
 function targetPsql(containerId, sql) {
   return run("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", sql]);
 }
@@ -305,7 +317,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     receipt.database.connectionAttempts = 1;
     const first = sourcePsql(pgEnvironment, "SELECT (current_setting('transaction_read_only')='on')::text,(current_database()='postgres')::text,EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='auth')::text,(to_regclass('public._prisma_migrations') IS NOT NULL)::text");
     receipt.database.readQueries += 1;
-    if (first.code !== 0) throw new Error("DATABASE_READONLY_IDENTITY_FAILED");
+    if (first.code !== 0) throw new Error(classifyPostgresFailure(first.stderr));
     const identityLine = String(first.stdout).split(/\r?\n/u).find((line) => /^(?:true|false)\|/u.test(line));
     const identity = identityLine?.split("|") ?? [];
     receipt.database.firstTransactionReadOnly = identity[0] === "true";
