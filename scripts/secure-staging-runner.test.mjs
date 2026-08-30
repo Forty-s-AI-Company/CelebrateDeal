@@ -9,6 +9,7 @@ import {
   validateInvocation,
   validateReceipt,
   verifyDeployment,
+  verifyTrustedMigrationTree,
 } from "./secure-staging-runner.mjs";
 
 const sha = "e65485d5fd5f54d2c6bb9fe8231f55eac809376e";
@@ -63,6 +64,28 @@ test("deployment verification requires one exact non-production successful Previ
   assert.equal(result.sourceMatched, true);
   const productionResponses = [new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: true }]), { status: 200 })];
   await assert.rejects(verifyDeployment(source, async () => productionResponses.shift()), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
+});
+
+test("squash-merged sources require an exact protected migration tree", () => {
+  const trustedTree = "a".repeat(40);
+  const matchingSpawn = (_command, args) => {
+    const key = args.join(" ");
+    if (key.startsWith("cat-file -e ")) return { status: 0, stdout: "" };
+    if (key.startsWith("merge-base --is-ancestor ")) return { status: 1, stdout: "" };
+    if (key === `rev-parse ${sha}:prisma/migrations` || key === "rev-parse HEAD:prisma/migrations") {
+      return { status: 0, stdout: `${trustedTree}\n` };
+    }
+    return { status: 1, stdout: "" };
+  };
+  assert.deepEqual(verifyTrustedMigrationTree(sha, matchingSpawn), { mode: "squash-equivalent" });
+
+  const mismatchedSpawn = (_command, args) => {
+    const result = matchingSpawn(_command, args);
+    return args.join(" ") === "rev-parse HEAD:prisma/migrations"
+      ? { status: 0, stdout: `${"b".repeat(40)}\n` }
+      : result;
+  };
+  assert.throws(() => verifyTrustedMigrationTree(sha, mismatchedSpawn), /SOURCE_MIGRATION_TREE_UNTRUSTED/u);
 });
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
