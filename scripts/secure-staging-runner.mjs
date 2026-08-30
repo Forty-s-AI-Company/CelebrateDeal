@@ -157,12 +157,34 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   return { host, deploymentMatched, sourceMatched, preview, ready, deploymentDigest: digest("deployment", deployment.id), reads: 2 };
 }
 
+export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync) {
+  const execute = (args, encoding = "utf8") => {
+    const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+    return { code: child.status ?? 1, stdout: child.stdout ?? (encoding ? "" : Buffer.alloc(0)) };
+  };
+  if (execute(["cat-file", "-e", `${sourceCommit}^{commit}`]).code !== 0) throw new Error("SOURCE_COMMIT_UNAVAILABLE");
+  if (execute(["merge-base", "--is-ancestor", sourceCommit, "HEAD"]).code === 0) return { mode: "ancestor" };
+
+  // Squash merges intentionally remove feature-branch ancestry. In that case the
+  // protected runner may trust only an exact migration-tree match with HEAD; the
+  // deployment itself is still independently pinned to the requested source SHA.
+  const sourceTree = execute(["rev-parse", `${sourceCommit}:prisma/migrations`]);
+  const trustedTree = execute(["rev-parse", "HEAD:prisma/migrations"]);
+  const sourceTreeSha = String(sourceTree.stdout).trim();
+  const trustedTreeSha = String(trustedTree.stdout).trim();
+  if (sourceTree.code !== 0 || trustedTree.code !== 0 || !SAFE_SHA.test(sourceTreeSha) || !SAFE_SHA.test(trustedTreeSha)) {
+    throw new Error("SOURCE_MIGRATION_TREE_UNAVAILABLE");
+  }
+  if (sourceTreeSha !== trustedTreeSha) throw new Error("SOURCE_MIGRATION_TREE_UNTRUSTED");
+  return { mode: "squash-equivalent" };
+}
+
 function sourceInventory(sourceCommit, spawnImpl = spawnSync) {
   const execute = (args, encoding = "utf8") => {
     const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     return { code: child.status ?? 1, stdout: child.stdout ?? (encoding ? "" : Buffer.alloc(0)) };
   };
-  if (execute(["merge-base", "--is-ancestor", sourceCommit, "HEAD"]).code !== 0) throw new Error("SOURCE_NOT_TRUSTED_ANCESTOR");
+  verifyTrustedMigrationTree(sourceCommit, spawnImpl);
   const listed = execute(["ls-tree", "-r", "--name-only", sourceCommit, "--", "prisma/migrations"]);
   if (listed.code !== 0) throw new Error("SOURCE_MIGRATION_INVENTORY_FAILED");
   const files = String(listed.stdout).split(/\r?\n/u).filter((item) => item.endsWith("/migration.sql"));
