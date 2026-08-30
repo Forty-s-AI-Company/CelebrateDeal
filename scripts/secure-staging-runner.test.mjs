@@ -111,6 +111,12 @@ test("database stderr is reduced to fixed sanitized failure categories", () => {
 test("restore stderr is reduced to fixed sanitized failure categories", () => {
   assert.equal(classifyRestoreFailure('error: role "supabase_admin" does not exist'), "ISOLATED_RESTORE_ROLE_DEPENDENCY");
   assert.equal(classifyRestoreFailure('error: schema "auth" does not exist'), "ISOLATED_RESTORE_SCHEMA_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("function auth.uid() does not exist"), "ISOLATED_RESTORE_AUTH_FUNCTION_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("function public.uuid_generate_v4() does not exist"), "ISOLATED_RESTORE_UUID_OSSP_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("function extensions.digest(text, text) does not exist"), "ISOLATED_RESTORE_PGCRYPTO_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("operator class extensions.gin_trgm_ops does not exist"), "ISOLATED_RESTORE_PG_TRGM_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("type extensions.vector does not exist"), "ISOLATED_RESTORE_VECTOR_DEPENDENCY");
+  assert.equal(classifyRestoreFailure("function public.audit_trigger() does not exist"), "ISOLATED_RESTORE_PUBLIC_OBJECT_DEPENDENCY");
   assert.equal(classifyRestoreFailure("unsupported version (1.16) in file header"), "ISOLATED_RESTORE_ARCHIVE_INCOMPATIBLE");
   assert.equal(classifyRestoreFailure('relation "Example" already exists'), "ISOLATED_RESTORE_TARGET_CONFLICT");
   assert.equal(classifyRestoreFailure("unrecognized restore failure"), "ISOLATED_RESTORE_COMMAND_FAILED");
