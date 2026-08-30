@@ -252,6 +252,12 @@ export function classifyRestoreFailure(stderr) {
   const message = String(stderr ?? "");
   if (/role [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_ROLE_DEPENDENCY";
   if (/schema [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_SCHEMA_DEPENDENCY";
+  if (/auth\.(?:uid|jwt)\b/iu.test(message)) return "ISOLATED_RESTORE_AUTH_FUNCTION_DEPENDENCY";
+  if (/uuid_generate_v4|uuid-ossp/iu.test(message)) return "ISOLATED_RESTORE_UUID_OSSP_DEPENDENCY";
+  if (/(?:gen_random_uuid|gen_random_bytes|digest|hmac|crypt|gen_salt)\s*\(/iu.test(message)) return "ISOLATED_RESTORE_PGCRYPTO_DEPENDENCY";
+  if (/(?:gin_trgm_ops|gist_trgm_ops|similarity|word_similarity|strict_word_similarity)\b/iu.test(message)) return "ISOLATED_RESTORE_PG_TRGM_DEPENDENCY";
+  if (/\bvector(?:_l[12]_ops|_ip_ops|_cosine_ops)?\b/iu.test(message)) return "ISOLATED_RESTORE_VECTOR_DEPENDENCY";
+  if (/(?:function|procedure|operator|type)\s+public\./iu.test(message)) return "ISOLATED_RESTORE_PUBLIC_OBJECT_DEPENDENCY";
   if (/(?:function|procedure|operator|type) [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_OBJECT_DEPENDENCY";
   if (/extension [^\r\n]+ (?:is not available|does not exist)|could not open extension control file/iu.test(message)) return "ISOLATED_RESTORE_EXTENSION_UNAVAILABLE";
   if (/unsupported version|archive version|input file appears to be a text format dump/iu.test(message)) return "ISOLATED_RESTORE_ARCHIVE_INCOMPATIBLE";
