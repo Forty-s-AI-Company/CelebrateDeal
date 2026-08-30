@@ -248,6 +248,20 @@ export function classifyPostgresFailure(stderr) {
   return "DATABASE_CONNECTION_OR_QUERY_FAILED";
 }
 
+export function classifyRestoreFailure(stderr) {
+  const message = String(stderr ?? "");
+  if (/role [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_ROLE_DEPENDENCY";
+  if (/schema [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_SCHEMA_DEPENDENCY";
+  if (/(?:function|procedure|operator|type) [^\r\n]+ does not exist/iu.test(message)) return "ISOLATED_RESTORE_OBJECT_DEPENDENCY";
+  if (/extension [^\r\n]+ (?:is not available|does not exist)|could not open extension control file/iu.test(message)) return "ISOLATED_RESTORE_EXTENSION_UNAVAILABLE";
+  if (/unsupported version|archive version|input file appears to be a text format dump/iu.test(message)) return "ISOLATED_RESTORE_ARCHIVE_INCOMPATIBLE";
+  if (/already exists|duplicate key value violates unique constraint/iu.test(message)) return "ISOLATED_RESTORE_TARGET_CONFLICT";
+  if (/permission denied|must be (?:owner|superuser)/iu.test(message)) return "ISOLATED_RESTORE_PERMISSION_DENIED";
+  if (/no space left on device|could not write|disk full/iu.test(message)) return "ISOLATED_RESTORE_STORAGE_FAILED";
+  if (/connection refused|server closed the connection|terminating connection|could not connect to server/iu.test(message)) return "ISOLATED_RESTORE_DATABASE_UNAVAILABLE";
+  return "ISOLATED_RESTORE_COMMAND_FAILED";
+}
+
 function targetPsql(containerId, sql) {
   return run("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1", "-F", "|", "-c", sql]);
 }
@@ -385,7 +399,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     receipt.restore.attempts = 1;
     receipt.sideEffects.isolatedRestoreWrites = 1;
     const restored = run("docker", ["exec", containerId, "pg_restore", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"]);
-    if (restored.code !== 0) throw new Error("ISOLATED_RESTORE_FAILED");
+    if (restored.code !== 0) throw new Error(classifyRestoreFailure(restored.stderr));
     const targetSnapshot = snapshot((sql) => targetPsql(containerId, sql));
     receipt.restore = { attempts: 1, result: "PASS", migrationCount: targetSnapshot.migrationCount, schemaMatched: sourceSnapshot.tableCount === targetSnapshot.tableCount && sourceSnapshot.columnCount === targetSnapshot.columnCount, extensionsMatched: sourceSnapshot.extensionDigest === targetSnapshot.extensionDigest, aggregateMatched: sourceSnapshot.aggregateDigest === targetSnapshot.aggregateDigest, isolated: true };
     if (receipt.restore.migrationCount !== EXPECTED_MIGRATION_COUNT || !receipt.restore.schemaMatched || !receipt.restore.extensionsMatched || !receipt.restore.aggregateMatched) throw new Error("ISOLATED_RESTORE_MISMATCH");
