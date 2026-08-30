@@ -40,7 +40,7 @@ vi.mock("@/lib/mfa", () => ({
   verifyTotpCode: mocks.verifyTotpCode,
 }));
 
-import { completeMfaEnrollment, startMfaEnrollment } from "./mfa-enrollment";
+import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "./mfa-enrollment";
 
 describe("completeMfaEnrollment", () => {
   const cookieStore = {
@@ -134,5 +134,21 @@ describe("completeMfaEnrollment", () => {
     expect(cookieStore.set).not.toHaveBeenCalled();
     expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("dismisses recovery codes through the shared CSRF, auth and cookie boundary", async () => {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "admin-1", mfaFactor: { id: "factor-1" } },
+      vendor: null,
+      member: null,
+      isPlatformAdmin: true,
+    });
+    const formData = new FormData();
+
+    const result = await dismissMfaRecoveryCodes(formData);
+
+    expect(result).toEqual({ destination: "/mfa/verify" });
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(cookieStore.delete).toHaveBeenCalledWith("mfa_recovery_codes");
   });
 });

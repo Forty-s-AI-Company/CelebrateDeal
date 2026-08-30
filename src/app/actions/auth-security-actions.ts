@@ -31,7 +31,7 @@ import {
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { completeMfaEnrollment, startMfaEnrollment } from "@/lib/mfa-enrollment";
+import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
@@ -278,11 +278,8 @@ export async function verifyMfaAction(formData: FormData) {
 }
 
 export async function dismissRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const cookieStore = await cookies();
-  cookieStore.delete(MFA_RECOVERY_COOKIE);
-  redirect(auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security");
+  const result = await dismissMfaRecoveryCodes(formData);
+  redirect(result.destination);
 }
 
 export async function regenerateRecoveryCodesAction(formData: FormData) {

@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import {
-  dismissRecoveryCodesAction,
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
 } from "@/app/actions";
@@ -137,7 +136,7 @@ export default async function MfaSetupPage({
                     <div key={code} className="font-mono text-sm font-semibold text-slate-800">{code}</div>
                   ))}
                 </div>
-                <form action={dismissRecoveryCodesAction} className="mt-4">
+                <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                   <CsrfField />
                   <FormSubmitButton
                     className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"

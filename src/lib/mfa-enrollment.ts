@@ -101,3 +101,15 @@ export async function completeMfaEnrollment(formData: FormData): Promise<MfaEnro
   });
   return { ok: true, destination };
 }
+
+/**
+ * Clears the one-time plaintext recovery-code cookie without coupling the
+ * security transition to React hydration or a specific navigation transport.
+ */
+export async function dismissMfaRecoveryCodes(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireAuth();
+  const cookieStore = await cookies();
+  cookieStore.delete(MFA_RECOVERY_COOKIE);
+  return { destination: auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security" };
+}

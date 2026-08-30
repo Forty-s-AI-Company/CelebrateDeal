@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import {
   createVendorMemberAction,
   deactivateVendorMemberAction,
-  dismissRecoveryCodesAction,
   logoutAction,
   regenerateRecoveryCodesAction,
   revokeAllSessionsAction,
@@ -175,7 +174,7 @@ export default async function SecuritySettingsPage({
                   <div key={code} className="font-mono text-sm font-semibold text-slate-800">{code}</div>
                 ))}
               </div>
-              <form action={dismissRecoveryCodesAction} className="mt-4">
+                <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                 <CsrfField />
                 <SubmitButton>我已保存 recovery codes</SubmitButton>
               </form>
