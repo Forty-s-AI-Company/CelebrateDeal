@@ -53,7 +53,7 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 2);
   assert.match(source, /api\.github\.com/u);
-  assert.match(source, /sandbox-api\.payuni\.com\.tw/u);
+  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 0);
   assert.match(source, /getent ahostsv4/u);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
@@ -71,10 +71,13 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   const steps = workflow.jobs["trusted-runner"].steps;
   const wp4 = steps.find((step) => step.id === "execute-wp4");
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
-  assert.equal(wp4.env.PAYUNI_MERCHANT_ID, "${{ secrets.PAYUNI_MERCHANT_ID }}");
-  assert.equal(wp4.env.PAYUNI_HASH_KEY, "${{ secrets.PAYUNI_HASH_KEY }}");
-  assert.equal(wp4.env.PAYUNI_HASH_IV, "${{ secrets.PAYUNI_HASH_IV }}");
-  assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), true);
+  assert.deepEqual(Object.keys(wp4.env).sort(), [
+    "CELEBRATEDEAL_DEPLOYMENT_HOST",
+    "CELEBRATEDEAL_SOURCE_SHA",
+    "GITHUB_TOKEN",
+  ]);
+  assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), false);
+  assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH|SANDBOX|TEST)/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
 });
