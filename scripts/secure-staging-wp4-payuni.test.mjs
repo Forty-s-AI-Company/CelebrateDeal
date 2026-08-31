@@ -25,15 +25,18 @@ test("WP4 invocation is fixed-task, exact-source, Preview and staging-only", () 
   assert.equal(validateInvocation("wp4-payuni-sandbox-reconciliation", { ...safeEnvironment, STAGING_DATABASE_URL: nonStagingDatabase }).reason, "STAGING_DATABASE_IDENTITY_INVALID");
 });
 
-test("canonical receipt rejects side-effect, secret and incomplete PASS drift", () => {
+test("canonical receipt enforces bounded side effects, secret safety and incomplete PASS drift", () => {
   const blocked = createInitialReceipt(sha);
   assert.equal(validateReceipt(blocked).ok, true);
-  assert.equal(validateReceipt({ ...blocked, sideEffects: { ...blocked.sideEffects, refunds: 1 } }).ok, false);
+  assert.equal(validateReceipt({ ...blocked, sideEffects: { ...blocked.sideEffects, refunds: 7 } }).ok, false);
+  assert.equal(validateReceipt({ ...blocked, sideEffects: { ...blocked.sideEffects, payments: 4 } }).ok, false);
+  assert.equal(validateReceipt({ ...blocked, sideEffects: { ...blocked.sideEffects, providerWrites: 10 } }).ok, false);
+  assert.equal(validateReceipt({ ...blocked, sideEffects: { ...blocked.sideEffects, deployments: 1 } }).ok, false);
   assert.equal(validateReceipt({ ...blocked, failureCategory: "https://unsafe.example" }).ok, false);
   assert.equal(validateReceipt({ ...blocked, result: "PASS" }).errors.includes("PASS_GATE_INCOMPLETE"), true);
 });
 
-test("canonical PASS requires exact lineage, two candidates per purpose and zero write side effects", () => {
+test("canonical PASS requires exact lineage and the full bounded Sandbox attempt matrix", () => {
   const receipt = createInitialReceipt(sha);
   receipt.result = "PASS";
   receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true };
@@ -55,9 +58,21 @@ test("canonical PASS requires exact lineage, two candidates per purpose and zero
     status: "PASS",
   }));
   receipt.reconciliation = { callbackConsistency: true, duplicateRejected: true, outOfOrderFailClosed: true, overRefundRejected: true, allPurposesMatched: true };
-  receipt.sideEffects = { ...receipt.sideEffects, databaseConnections: 1, databaseReads: 2, providerQueries: 3, callbackReplays: 6 };
+  receipt.sideEffects = {
+    ...receipt.sideEffects,
+    databaseConnections: 1,
+    databaseReads: 4,
+    databaseWrites: 30,
+    providerQueries: 3,
+    providerWrites: 9,
+    transactionsCreated: 6,
+    payments: 3,
+    refunds: 6,
+    callbackReplays: 6,
+  };
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
   assert.equal(validateReceipt({ ...receipt, lineage: { ...receipt.lineage, noRedirect: false } }).errors.includes("PASS_GATE_INCOMPLETE"), true);
+  assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, payments: 0 } }).errors.includes("PASS_GATE_INCOMPLETE"), true);
 });
 
 test("callback replay uses one exact Return and Notify request without following redirects", async () => {

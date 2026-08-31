@@ -94,7 +94,7 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v1",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v2",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
@@ -127,7 +127,7 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v1" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v2" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (!new Set(["PASS", "FAILED", "BLOCKED"]).has(receipt?.result)) errors.push("RESULT");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
@@ -142,8 +142,13 @@ export function validateReceipt(receipt) {
   if (!Number.isInteger(effects.databaseConnections) || effects.databaseConnections < 0 || effects.databaseConnections > 1) errors.push("DATABASE_CONNECTION_BUDGET");
   if (!Number.isInteger(effects.databaseReads) || effects.databaseReads < 0 || effects.databaseReads > 4) errors.push("DATABASE_READ_BUDGET");
   if (!Number.isInteger(effects.providerQueries) || effects.providerQueries < 0 || effects.providerQueries > 3) errors.push("PROVIDER_QUERY_BUDGET");
+  if (!Number.isInteger(effects.databaseWrites) || effects.databaseWrites < 0 || effects.databaseWrites > 60) errors.push("DATABASE_WRITE_BUDGET");
+  if (!Number.isInteger(effects.providerWrites) || effects.providerWrites < 0 || effects.providerWrites > 9) errors.push("PROVIDER_WRITE_BUDGET");
+  if (!Number.isInteger(effects.transactionsCreated) || effects.transactionsCreated < 0 || effects.transactionsCreated > 6) errors.push("TRANSACTION_BUDGET");
+  if (!Number.isInteger(effects.payments) || effects.payments < 0 || effects.payments > 3) errors.push("PAYMENT_BUDGET");
+  if (!Number.isInteger(effects.refunds) || effects.refunds < 0 || effects.refunds > 6) errors.push("REFUND_BUDGET");
   if (!Number.isInteger(effects.callbackReplays) || effects.callbackReplays < 0 || effects.callbackReplays > 6) errors.push("CALLBACK_REPLAY_BUDGET");
-  for (const key of ["databaseWrites", "providerWrites", "transactionsCreated", "payments", "refunds", "deployments", "aliasMutations", "productionOperations"]) {
+  for (const key of ["deployments", "aliasMutations", "productionOperations"]) {
     if (effects[key] !== 0) errors.push("FORBIDDEN_SIDE_EFFECTS");
   }
   if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.payuniSandbox !== true) errors.push("NETWORK_POLICY");
@@ -155,7 +160,9 @@ export function validateReceipt(receipt) {
     const complete = receipt.lineage?.deploymentMatched && receipt.lineage?.sourceMatched && receipt.lineage?.preview && receipt.lineage?.ready && receipt.lineage?.healthStatus === 200 && receipt.lineage?.noRedirect
       && receipt.environment?.requiredBindingsPresent && receipt.environment?.payuniSandbox && receipt.environment?.stagingDatabaseMatched && !receipt.environment?.productionDetected
       && allPurposes && receipt.reconciliation?.callbackConsistency && receipt.reconciliation?.duplicateRejected && receipt.reconciliation?.outOfOrderFailClosed && receipt.reconciliation?.overRefundRejected && receipt.reconciliation?.allPurposesMatched
-      && effects.databaseConnections === 1 && effects.databaseReads === 2 && effects.providerQueries === 3 && effects.callbackReplays === 6;
+      && effects.databaseConnections === 1 && effects.databaseReads >= 2 && effects.providerQueries === 3
+      && effects.transactionsCreated === 6 && effects.payments === 3 && effects.refunds === 6
+      && effects.providerWrites === 9 && effects.callbackReplays === 6;
     if (!complete) errors.push("PASS_GATE_INCOMPLETE");
   }
   return { ok: errors.length === 0, errors };
@@ -343,8 +350,10 @@ function evaluateLocal(row) {
     refundMatched,
     projectionMatched,
     duplicateSideEffectsAbsent: Number(row.paid_event_count) <= 1 && Number(row.processed_refund_count) === 2,
-    outOfOrderFailClosed: row.local_status === "refunded",
-    overRefundRejected: refundMatched,
+    // A final refunded snapshot cannot prove that an out-of-order callback or
+    // an over-refund was actually attempted and rejected during this run.
+    outOfOrderFailClosed: false,
+    overRefundRejected: false,
   };
 }
 
@@ -406,7 +415,12 @@ async function runChild(source) {
       overRefundRejected: receipt.purposes.every((item) => item.overRefundRejected),
       allPurposesMatched: receipt.purposes.every((item) => item.status === "PASS"),
     };
-    receipt.result = Object.values(receipt.reconciliation).every(Boolean) ? "PASS" : "FAILED";
+    const boundedProviderEvidenceComplete = receipt.sideEffects.transactionsCreated === 6
+      && receipt.sideEffects.payments === 3
+      && receipt.sideEffects.refunds === 6
+      && receipt.sideEffects.providerWrites === 9;
+    receipt.result = Object.values(receipt.reconciliation).every(Boolean) && boundedProviderEvidenceComplete ? "PASS" : "BLOCKED";
+    if (!boundedProviderEvidenceComplete) receipt.failureCategory = "SANDBOX_SIDE_EFFECT_EVIDENCE_MISSING";
   } catch (error) {
     receipt.result = "BLOCKED";
     receipt.failureCategory = normalizeFailure(error);
