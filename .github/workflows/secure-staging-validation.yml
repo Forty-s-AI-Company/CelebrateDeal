@@ -135,6 +135,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: |

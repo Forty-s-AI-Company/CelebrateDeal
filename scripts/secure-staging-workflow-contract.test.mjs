@@ -75,7 +75,9 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
     "CELEBRATEDEAL_DEPLOYMENT_HOST",
     "CELEBRATEDEAL_SOURCE_SHA",
     "GITHUB_TOKEN",
+    "JOB_SECRET",
   ]);
+  assert.equal(wp4.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
   assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), false);
   assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH|SANDBOX|TEST)/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);

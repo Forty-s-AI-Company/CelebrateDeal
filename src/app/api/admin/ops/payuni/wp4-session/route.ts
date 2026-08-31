@@ -1,7 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { AUTH_COOKIE, createWp4PreviewMfaVerifiedSession, sessionCookieOptions } from "@/lib/auth";
+import {
+  AUTH_COOKIE,
+  WP4_PREVIEW_SESSION_TTL_SECONDS,
+  createWp4PreviewMfaVerifiedSession,
+  sessionCookieOptions,
+} from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
@@ -81,7 +86,11 @@ export async function POST(request: Request) {
       status: 204,
       headers: { "Cache-Control": "no-store" },
     });
-    response.cookies.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
+    response.cookies.set(
+      AUTH_COOKIE,
+      token,
+      sessionCookieOptions(expiresAt, WP4_PREVIEW_SESSION_TTL_SECONDS),
+    );
     return response;
   } catch {
     return unavailableConfigurationResponse();

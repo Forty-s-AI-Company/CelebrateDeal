@@ -126,6 +126,10 @@ describe("createUserSession", () => {
         mfaVerifiedAt: expect.any(Date),
       }),
     });
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+    const expiresAt = mocks.createSession.mock.calls[0]?.[0].data.expiresAt as Date;
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 15 * 60 * 1000);
   });
 
   it("refuses the WP4 helper outside the guarded preview sandbox", async () => {

@@ -13,6 +13,8 @@ const CHILD_PREFIX = "SECURE_WP4_RESULT:";
 const SAFE_SHA = /^[a-f0-9]{40}$/u;
 const SAFE_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)$/u;
 const PURPOSES = Object.freeze(["buyer_order", "platform_subscription", "invoice_payment"]);
+const SESSION_COOKIE_NAME = "celebrate_session";
+const WP4_SESSION_TTL_SECONDS = 15 * 60;
 
 // These names are intentionally public contract metadata. Values stay only in
 // the protected runner environment and are never printed or persisted.
@@ -24,6 +26,7 @@ export const REQUIRED_SECRET_KEYS = Object.freeze([
   "PAYUNI_SANDBOX_ONETIME_CARD_NO",
   "PAYUNI_TEST_EXPIRY",
   "PAYUNI_TEST_CVV",
+  "JOB_SECRET",
 ]);
 export const REQUIRED_CONFIG_KEYS = Object.freeze([
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -40,7 +43,7 @@ export const REQUIRED_CONFIG_KEYS = Object.freeze([
   "AI_TEAM_PROVIDER_ENVIRONMENT",
 ]);
 
-const ACTIVE_SECRET_KEYS = Object.freeze(["GITHUB_TOKEN"]);
+const ACTIVE_SECRET_KEYS = Object.freeze(["GITHUB_TOKEN", "JOB_SECRET"]);
 const ACTIVE_CONFIG_KEYS = Object.freeze([
   "CELEBRATEDEAL_SOURCE_SHA",
   "CELEBRATEDEAL_DEPLOYMENT_HOST",
@@ -52,17 +55,23 @@ export const FIXED_PREREQUISITE_GAPS = Object.freeze([
   "OWNER_SESSION_OR_SYNTHETIC_SETUP_UNAVAILABLE",
   "FIXED_SANDBOX_REFUND_EXECUTOR_UNAVAILABLE",
 ]);
+export const OWNER_SESSION_COMPLETE_GAPS = Object.freeze([
+  "FIXED_PRODUCT_FLOW_EXECUTOR_UNAVAILABLE",
+  "FIXED_SANDBOX_REFUND_EXECUTOR_UNAVAILABLE",
+]);
 
-const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory"];
+const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
+const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
 const NESTED_KEYS = Object.freeze({
   lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect"],
+  ownerSession: OWNER_SESSION_KEYS,
   environment: ["requiredBindingsPresent", "payuniSandbox", "stagingDatabaseMatched", "productionDetected"],
   prerequisites: ["requiredSecretBindings", "requiredConfigBindings", "fixedTask", "exactPreviewLineage", "fixedHostEgress", "sterileChildEnvironment", "gaps"],
   reconciliation: ["callbackConsistency", "duplicateRejected", "outOfOrderFailClosed", "overRefundRejected", "allPurposesMatched"],
   network: ["policy", "githubDeployments", "stagingPreview", "supabaseStaging", "payuniSandbox", "arbitraryOutbound"],
   safety: ["sanitized", "envFilesRead", "envEnumerated", "secretValuesPrinted", "secretValuesPersisted", "rawOutputPersisted", "rawDatabaseRowsPersisted", "rawProviderResponsePersisted", "customerOrPaymentDataPersisted"],
-  sideEffects: ["databaseConnections", "databaseReads", "databaseWrites", "providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
+  sideEffects: ["sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
 });
 
 function hasValue(source, key) {
@@ -84,6 +93,116 @@ function systemEnvironment(source = process.env) {
       .filter((key) => hasValue(source, key))
       .map((key) => [key, source[key]]),
   );
+}
+
+function initialOwnerSession() {
+  return {
+    bootstrapRequests: 0,
+    bootstrapAuthenticated: false,
+    sessionCookieCount: 0,
+    sessionCreationAttempts: 0,
+    sessionCreationOutcome: "NOT_ATTEMPTED",
+    sessionRowsCreated: 0,
+    sessionTtlSeconds: 0,
+    userRowsUpdated: 0,
+    plansProbeRequests: 0,
+    plansProbeAuthenticated: false,
+    invoicesProbeRequests: 0,
+    invoicesProbeAuthenticated: false,
+  };
+}
+
+function uncertainOwnerSession() {
+  return {
+    ...initialOwnerSession(),
+    bootstrapRequests: 1,
+    sessionCreationAttempts: 1,
+    sessionCreationOutcome: "UNKNOWN",
+    sessionRowsCreated: null,
+    sessionTtlSeconds: WP4_SESSION_TTL_SECONDS,
+  };
+}
+
+function fixedPreviewUrl(host, pathname) {
+  return `https://${host}${pathname}`;
+}
+
+function responseMatches(response, host, pathname, status) {
+  if (!response || response.status !== status || response.headers?.has("location")) return false;
+  try {
+    const url = new URL(response.url);
+    return url.protocol === "https:"
+      && url.host === host
+      && url.pathname === pathname
+      && url.search === ""
+      && url.hash === ""
+      && url.username === ""
+      && url.password === "";
+  } catch {
+    return false;
+  }
+}
+
+async function discardResponseBody(response) {
+  try {
+    await response?.body?.cancel();
+  } catch {
+    // The response body is never parsed or persisted. A closed stream is safe.
+  }
+}
+
+function captureSessionCookie(headers) {
+  const values = typeof headers?.getSetCookie === "function"
+    ? headers.getSetCookie()
+    : [headers?.get?.("set-cookie")].filter((value) => typeof value === "string" && value.length > 0);
+  if (values.length !== 1) throw new Error("SESSION_COOKIE_COUNT_INVALID");
+  const match = /^celebrate_session=([A-Za-z0-9_-]{43});(?:\s|$)/u.exec(values[0]);
+  if (!match) throw new Error("SESSION_COOKIE_INVALID");
+  return `${SESSION_COOKIE_NAME}=${match[1]}`;
+}
+
+function ownerSessionState(owner) {
+  if (!exactKeys(owner, OWNER_SESSION_KEYS)) return "INVALID";
+  const notRun = owner.bootstrapRequests === 0 && owner.bootstrapAuthenticated === false
+    && owner.sessionCookieCount === 0 && owner.sessionCreationAttempts === 0
+    && owner.sessionCreationOutcome === "NOT_ATTEMPTED" && owner.sessionRowsCreated === 0
+    && owner.sessionTtlSeconds === 0 && owner.userRowsUpdated === 0
+    && owner.plansProbeRequests === 0 && owner.plansProbeAuthenticated === false
+    && owner.invoicesProbeRequests === 0 && owner.invoicesProbeAuthenticated === false;
+  const bootstrapFailed = owner.bootstrapRequests === 1 && owner.bootstrapAuthenticated === false
+    && owner.sessionCookieCount === 0 && owner.sessionCreationAttempts === 1
+    && owner.sessionCreationOutcome === "UNKNOWN" && owner.sessionRowsCreated === null
+    && owner.sessionTtlSeconds === WP4_SESSION_TTL_SECONDS && owner.userRowsUpdated === 0
+    && owner.plansProbeRequests === 0
+    && owner.plansProbeAuthenticated === false && owner.invoicesProbeRequests === 0
+    && owner.invoicesProbeAuthenticated === false;
+  const plansFailed = owner.bootstrapRequests === 1 && owner.bootstrapAuthenticated === true
+    && owner.sessionCookieCount === 1 && owner.sessionCreationAttempts === 1
+    && owner.sessionCreationOutcome === "CONFIRMED" && owner.sessionRowsCreated === 1
+    && owner.sessionTtlSeconds === WP4_SESSION_TTL_SECONDS && owner.userRowsUpdated === 0
+    && owner.plansProbeRequests === 1
+    && owner.plansProbeAuthenticated === false && owner.invoicesProbeRequests === 0
+    && owner.invoicesProbeAuthenticated === false;
+  const invoicesFailed = owner.bootstrapRequests === 1 && owner.bootstrapAuthenticated === true
+    && owner.sessionCookieCount === 1 && owner.sessionCreationAttempts === 1
+    && owner.sessionCreationOutcome === "CONFIRMED" && owner.sessionRowsCreated === 1
+    && owner.sessionTtlSeconds === WP4_SESSION_TTL_SECONDS && owner.userRowsUpdated === 0
+    && owner.plansProbeRequests === 1
+    && owner.plansProbeAuthenticated === true && owner.invoicesProbeRequests === 1
+    && owner.invoicesProbeAuthenticated === false;
+  const complete = owner.bootstrapRequests === 1 && owner.bootstrapAuthenticated === true
+    && owner.sessionCookieCount === 1 && owner.sessionCreationAttempts === 1
+    && owner.sessionCreationOutcome === "CONFIRMED" && owner.sessionRowsCreated === 1
+    && owner.sessionTtlSeconds === WP4_SESSION_TTL_SECONDS && owner.userRowsUpdated === 0
+    && owner.plansProbeRequests === 1
+    && owner.plansProbeAuthenticated === true && owner.invoicesProbeRequests === 1
+    && owner.invoicesProbeAuthenticated === true;
+  if (complete) return "COMPLETE";
+  if (invoicesFailed) return "INVOICES_FAILED";
+  if (plansFailed) return "PLANS_FAILED";
+  if (bootstrapFailed) return "BOOTSTRAP_FAILED";
+  if (notRun) return "NOT_RUN";
+  return "INVALID";
 }
 
 export function validateInvocation(task, source = process.env) {
@@ -119,12 +238,13 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v3",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v4",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
     executedAtUtc: new Date().toISOString(),
     lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false },
+    ownerSession: initialOwnerSession(),
     environment: { requiredBindingsPresent: false, payuniSandbox: false, stagingDatabaseMatched: false, productionDetected: false },
     prerequisites: {
       requiredSecretBindings: [...REQUIRED_SECRET_KEYS],
@@ -139,7 +259,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     reconciliation: { callbackConsistency: false, duplicateRejected: false, outOfOrderFailClosed: false, overRefundRejected: false, allPurposesMatched: false },
     network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: false, payuniSandbox: false, arbitraryOutbound: false },
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDatabaseRowsPersisted: false, rawProviderResponsePersisted: false, customerOrPaymentDataPersisted: false },
-    sideEffects: { databaseConnections: 0, databaseReads: 0, databaseWrites: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
+    sideEffects: { sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
     failureCategory: "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
   };
 }
@@ -150,13 +270,16 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v3" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v4" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
   if (receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE") errors.push("FAILURE_CATEGORY");
   if (!exactArray(receipt?.prerequisites?.requiredSecretBindings, REQUIRED_SECRET_KEYS) || !exactArray(receipt?.prerequisites?.requiredConfigBindings, REQUIRED_CONFIG_KEYS)) errors.push("PREREQUISITE_BINDINGS");
-  if (receipt?.prerequisites?.fixedTask !== true || receipt?.prerequisites?.fixedHostEgress !== true || receipt?.prerequisites?.sterileChildEnvironment !== true || typeof receipt?.prerequisites?.exactPreviewLineage !== "boolean" || !exactArray(receipt?.prerequisites?.gaps, FIXED_PREREQUISITE_GAPS)) errors.push("PREREQUISITE_CONTRACT");
+  const ownerState = ownerSessionState(receipt?.ownerSession);
+  const expectedGaps = ownerState === "COMPLETE" ? OWNER_SESSION_COMPLETE_GAPS : FIXED_PREREQUISITE_GAPS;
+  if (receipt?.prerequisites?.fixedTask !== true || receipt?.prerequisites?.fixedHostEgress !== true || receipt?.prerequisites?.sterileChildEnvironment !== true || typeof receipt?.prerequisites?.exactPreviewLineage !== "boolean" || !exactArray(receipt?.prerequisites?.gaps, expectedGaps)) errors.push("PREREQUISITE_CONTRACT");
+  if (ownerState === "INVALID") errors.push("OWNER_SESSION_CONTRACT");
   if (!Array.isArray(receipt?.purposes) || receipt.purposes.length !== PURPOSES.length || receipt.purposes.map((item) => item?.purpose).join("|") !== PURPOSES.join("|")) errors.push("PURPOSES");
   for (const item of receipt?.purposes ?? []) {
     if (!exactKeys(item, PURPOSE_KEYS)) errors.push("PURPOSE_SCHEMA");
@@ -178,21 +301,90 @@ export function validateReceipt(receipt) {
     && receipt?.lineage?.healthStatus === null
     && receipt?.lineage?.noRedirect === false;
   if ((!lineageProven && !lineageNotRun) || receipt?.prerequisites?.exactPreviewLineage !== lineageProven) errors.push("LINEAGE_CONTRACT");
+  if (!lineageProven && ownerState !== "NOT_RUN") errors.push("OWNER_WITHOUT_LINEAGE");
   if (receipt?.environment?.requiredBindingsPresent !== false || receipt?.environment?.payuniSandbox !== false || receipt?.environment?.stagingDatabaseMatched !== false || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_MUST_NOT_RUN");
   if (Object.values(receipt?.reconciliation ?? {}).some((value) => value !== false)) errors.push("RECONCILIATION_MUST_NOT_RUN");
   if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.payuniSandbox !== false || receipt?.network?.supabaseStaging !== false) errors.push("NETWORK_POLICY");
   if (receipt?.safety?.sanitized !== true || Object.entries(receipt?.safety ?? {}).some(([key, value]) => key !== "sanitized" && value !== false)) errors.push("SENSITIVE_PERSISTENCE");
-  if (Object.values(receipt?.sideEffects ?? {}).some((value) => value !== 0)) errors.push("SIDE_EFFECTS_MUST_BE_ZERO");
+  const expectedSessionEffects = ownerState === "NOT_RUN"
+    ? { attempts: 0, outcome: "NOT_ATTEMPTED", rows: 0, ttl: 0 }
+    : ownerState === "BOOTSTRAP_FAILED"
+      ? { attempts: 1, outcome: "UNKNOWN", rows: null, ttl: WP4_SESSION_TTL_SECONDS }
+      : { attempts: 1, outcome: "CONFIRMED", rows: 1, ttl: WP4_SESSION_TTL_SECONDS };
+  if (receipt?.sideEffects?.sessionCreationAttempts !== expectedSessionEffects.attempts
+    || receipt?.sideEffects?.sessionCreationOutcome !== expectedSessionEffects.outcome
+    || receipt?.sideEffects?.sessionRowsCreated !== expectedSessionEffects.rows
+    || receipt?.sideEffects?.sessionTtlSeconds !== expectedSessionEffects.ttl
+    || receipt?.sideEffects?.userRowsUpdated !== 0) errors.push("SESSION_SIDE_EFFECTS");
+  if (["providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"].some((key) => receipt?.sideEffects?.[key] !== 0)) errors.push("FORBIDDEN_SIDE_EFFECTS");
   const serialized = JSON.stringify(receipt);
-  if (/(?:postgres(?:ql)?:\/\/|https?:\/\/|Bearer\s+|BEGIN\s+(?:RSA|OPENSSH|EC)\s+PRIVATE\s+KEY|set-cookie|EncryptInfo|HashInfo|MerchantId|providerTradeNo|orderNumber|transactionReference)/iu.test(serialized)) errors.push("FORBIDDEN_TEXT");
+  if (/(?:postgres(?:ql)?:\/\/|https?:\/\/|Bearer\s+|BEGIN\s+(?:RSA|OPENSSH|EC)\s+PRIVATE\s+KEY|set-cookie|celebrate_session|EncryptInfo|HashInfo|MerchantId|providerTradeNo|orderNumber|transactionReference)/iu.test(serialized)) errors.push("FORBIDDEN_TEXT");
   return { ok: errors.length === 0, errors };
 }
 
-function childEnvironment(source) {
+export function childEnvironment(source) {
   return {
     ...systemEnvironment(source),
+    JOB_SECRET: source.JOB_SECRET,
     CELEBRATEDEAL_SOURCE_SHA: source.CELEBRATEDEAL_SOURCE_SHA,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: source.CELEBRATEDEAL_DEPLOYMENT_HOST,
   };
+}
+
+export async function runOwnerSession(source, fetchImpl = fetch) {
+  let owner = initialOwnerSession();
+  let sessionCookie = "";
+  if (!hasValue(source, "JOB_SECRET")
+    || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return owner;
+  try {
+    owner = uncertainOwnerSession();
+    const bootstrapPath = "/api/admin/ops/payuni/wp4-session";
+    const bootstrap = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, bootstrapPath), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${source.JOB_SECRET}`,
+        "x-celebratedeal-source-sha": source.CELEBRATEDEAL_SOURCE_SHA,
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!responseMatches(bootstrap, source.CELEBRATEDEAL_DEPLOYMENT_HOST, bootstrapPath, 204)) {
+      await discardResponseBody(bootstrap);
+      return owner;
+    }
+    sessionCookie = captureSessionCookie(bootstrap.headers);
+    owner.bootstrapAuthenticated = true;
+    owner.sessionCookieCount = 1;
+    owner.sessionCreationOutcome = "CONFIRMED";
+    owner.sessionRowsCreated = 1;
+    await discardResponseBody(bootstrap);
+
+    for (const [pathname, requestKey, authenticatedKey] of [
+      ["/billing/plans", "plansProbeRequests", "plansProbeAuthenticated"],
+      ["/billing/invoices", "invoicesProbeRequests", "invoicesProbeAuthenticated"],
+    ]) {
+      owner[requestKey] = 1;
+      const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+        method: "GET",
+        headers: { Cookie: sessionCookie },
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+        await discardResponseBody(response);
+        return owner;
+      }
+      owner[authenticatedKey] = true;
+      await discardResponseBody(response);
+    }
+    return owner;
+  } catch {
+    return owner;
+  } finally {
+    sessionCookie = "";
+  }
 }
 
 export function parseChildOutput(stdout, exitCode) {
@@ -200,9 +392,10 @@ export function parseChildOutput(stdout, exitCode) {
   const lines = nonEmpty.filter((line) => line.startsWith(CHILD_PREFIX));
   if (exitCode !== 2 || lines.length !== 1 || nonEmpty.length !== 1) return { ok: false, reason: "CHILD_OUTPUT_INVALID" };
   try {
-    const receipt = JSON.parse(lines[0].slice(CHILD_PREFIX.length));
-    const validation = validateReceipt(receipt);
-    return validation.ok ? { ok: true, receipt } : { ok: false, reason: "CHILD_RECEIPT_INVALID" };
+    const ownerSession = JSON.parse(lines[0].slice(CHILD_PREFIX.length));
+    return ownerSessionState(ownerSession) !== "INVALID"
+      ? { ok: true, ownerSession }
+      : { ok: false, reason: "CHILD_RECEIPT_INVALID" };
   } catch {
     return { ok: false, reason: "CHILD_OUTPUT_UNREADABLE" };
   }
@@ -220,17 +413,6 @@ async function runParent(source) {
   let receipt = createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
   const invocation = validateInvocation(TASK, source);
   if (!invocation.ok) return writeReceipt(receipt, source.RUNNER_TEMP);
-  const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
-    cwd: ROOT,
-    env: childEnvironment(source),
-    encoding: "utf8",
-    shell: false,
-    windowsHide: true,
-    timeout: 30_000,
-    maxBuffer: 64 * 1024,
-  });
-  const parsed = parseChildOutput(child.stdout, child.status ?? 1);
-  if (parsed.ok) receipt = parsed.receipt;
   try {
     const lineage = await verifyDeployment(source);
     const health = await fetch(`https://${lineage.host}/api/health`, {
@@ -251,16 +433,48 @@ async function runParent(source) {
     receipt.prerequisites.exactPreviewLineage = Boolean(
       lineage.deploymentMatched && lineage.sourceMatched && lineage.preview && lineage.ready && noRedirect,
     );
+    if (receipt.prerequisites.exactPreviewLineage) {
+      receipt.ownerSession = uncertainOwnerSession();
+      receipt.sideEffects.sessionCreationAttempts = 1;
+      receipt.sideEffects.sessionCreationOutcome = "UNKNOWN";
+      receipt.sideEffects.sessionRowsCreated = null;
+      receipt.sideEffects.sessionTtlSeconds = WP4_SESSION_TTL_SECONDS;
+      const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
+        cwd: ROOT,
+        env: childEnvironment(source),
+        encoding: "utf8",
+        shell: false,
+        windowsHide: true,
+        timeout: 50_000,
+        maxBuffer: 64 * 1024,
+      });
+      const parsed = parseChildOutput(child.stdout, child.status ?? 1);
+      if (parsed.ok) {
+        receipt.ownerSession = parsed.ownerSession;
+        receipt.sideEffects.sessionCreationAttempts = parsed.ownerSession.sessionCreationAttempts;
+        receipt.sideEffects.sessionCreationOutcome = parsed.ownerSession.sessionCreationOutcome;
+        receipt.sideEffects.sessionRowsCreated = parsed.ownerSession.sessionRowsCreated;
+        receipt.sideEffects.sessionTtlSeconds = parsed.ownerSession.sessionTtlSeconds;
+        receipt.sideEffects.userRowsUpdated = parsed.ownerSession.userRowsUpdated;
+        if (ownerSessionState(parsed.ownerSession) === "COMPLETE") {
+          receipt.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
+        }
+      }
+    }
   } catch {
     // Keep the canonical receipt blocked and value-free when lineage cannot
     // be proven. The missing executor remains the primary release blocker.
   }
-  return writeReceipt(receipt, source.RUNNER_TEMP);
+  const safeReceipt = validateReceipt(receipt).ok
+    ? receipt
+    : createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
+  return writeReceipt(safeReceipt, source.RUNNER_TEMP);
 }
 
 async function main() {
   if (process.argv[2] === "--child") {
-    process.stdout.write(`${CHILD_PREFIX}${JSON.stringify(createInitialReceipt(process.env.CELEBRATEDEAL_SOURCE_SHA))}\n`);
+    const ownerSession = await runOwnerSession(process.env);
+    process.stdout.write(`${CHILD_PREFIX}${JSON.stringify(ownerSession)}\n`);
     process.exitCode = 2;
     return;
   }

@@ -160,6 +160,7 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
     expect(setCookie).toContain("Secure");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).toMatch(/SameSite=lax/i);
+    expect(setCookie).toContain("Max-Age=900");
     expect(mocks.createSession).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({
         userId: "owner-preview",
@@ -168,6 +169,7 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
       }),
     });
     expect(mocks.createSession.mock.calls[0]?.[0].data.mfaVerifiedAt).toBeInstanceOf(Date);
+    expect(mocks.updateUser).not.toHaveBeenCalled();
   });
 
   it("does not leak database errors, identities, or session data", async () => {

@@ -10,6 +10,7 @@ export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+export const WP4_PREVIEW_SESSION_TTL_SECONDS = 15 * 60;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
 const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
 const VENDOR_SUPPORT_ROLES = ["owner", "admin", "support"] as const;
@@ -36,13 +37,13 @@ function newSessionToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export function sessionCookieOptions(expiresAt?: Date) {
+export function sessionCookieOptions(expiresAt?: Date, maxAge = SESSION_TTL_SECONDS) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge,
     expires: expiresAt,
   };
 }
@@ -86,15 +87,19 @@ async function createSession({
   ipAddress,
   userAgent,
   mfaVerifiedAt = null,
+  ttlSeconds = SESSION_TTL_SECONDS,
+  updateLastLogin = true,
 }: {
   userId: string;
   vendorId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   mfaVerifiedAt?: Date | null;
+  ttlSeconds?: number;
+  updateLastLogin?: boolean;
 }) {
   const token = newSessionToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
   await getDb().userSession.create({
     data: {
@@ -110,10 +115,12 @@ async function createSession({
     },
   });
 
-  await getDb().user.update({
-    where: { id: userId },
-    data: { lastLoginAt: new Date() },
-  });
+  if (updateLastLogin) {
+    await getDb().user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
+  }
 
   return { token, expiresAt };
 }
@@ -152,7 +159,13 @@ export async function createWp4PreviewMfaVerifiedSession({
     throw new Error("WP4 preview session creation is disabled");
   }
 
-  return createSession({ userId, vendorId, mfaVerifiedAt: new Date() });
+  return createSession({
+    userId,
+    vendorId,
+    mfaVerifiedAt: new Date(),
+    ttlSeconds: WP4_PREVIEW_SESSION_TTL_SECONDS,
+    updateLastLogin: false,
+  });
 }
 
 export async function revokeCurrentSession() {
