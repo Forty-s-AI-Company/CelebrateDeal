@@ -15,6 +15,9 @@ const SAFE_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z
 const PURPOSES = Object.freeze(["buyer_order", "platform_subscription", "invoice_payment"]);
 const SESSION_COOKIE_NAME = "celebrate_session";
 const WP4_SESSION_TTL_SECONDS = 15 * 60;
+export const WP4_NETWORK_REQUEST_TIMEOUT_MS = 10_000;
+export const WP4_CHILD_TIMEOUT_MS = 45_000;
+export const WP4_CHILD_MAX_REQUESTS = 4;
 
 // These names are intentionally public contract metadata. Values stay only in
 // the protected runner environment and are never printed or persisted.
@@ -60,11 +63,14 @@ export const OWNER_SESSION_COMPLETE_GAPS = Object.freeze([
   "FIXED_SANDBOX_REFUND_EXECUTOR_UNAVAILABLE",
 ]);
 
-const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory"];
+const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
+const FIXTURE_PREFLIGHT_KEYS = ["requests", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
 const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
+const CHILD_RESULT_KEYS = ["fixturePreflight", "ownerSession"];
 const NESTED_KEYS = Object.freeze({
   lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect"],
+  fixturePreflight: FIXTURE_PREFLIGHT_KEYS,
   ownerSession: OWNER_SESSION_KEYS,
   environment: ["requiredBindingsPresent", "payuniSandbox", "stagingDatabaseMatched", "productionDetected"],
   prerequisites: ["requiredSecretBindings", "requiredConfigBindings", "fixedTask", "exactPreviewLineage", "fixedHostEgress", "sterileChildEnvironment", "gaps"],
@@ -93,6 +99,30 @@ function systemEnvironment(source = process.env) {
       .filter((key) => hasValue(source, key))
       .map((key) => [key, source[key]]),
   );
+}
+
+function initialFixturePreflight() {
+  return {
+    requests: 0,
+    responseAccepted: false,
+    buyerOrderReady: false,
+    platformSubscriptionReady: false,
+    invoicePaymentReady: false,
+  };
+}
+
+function failedFixturePreflight() {
+  return { ...initialFixturePreflight(), requests: 1 };
+}
+
+function uncertainFixturePreflight() {
+  return {
+    requests: 1,
+    responseAccepted: null,
+    buyerOrderReady: null,
+    platformSubscriptionReady: null,
+    invoicePaymentReady: null,
+  };
 }
 
 function initialOwnerSession() {
@@ -161,6 +191,37 @@ function captureSessionCookie(headers) {
   return `${SESSION_COOKIE_NAME}=${match[1]}`;
 }
 
+async function readBoundedJsonObject(response, maximumBytes = 1_024) {
+  const reader = response?.body?.getReader?.();
+  if (!reader) throw new Error("PREFLIGHT_BODY_UNAVAILABLE");
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) throw new Error("PREFLIGHT_BODY_INVALID");
+      total += value.byteLength;
+      if (total > maximumBytes) throw new Error("PREFLIGHT_BODY_TOO_LARGE");
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // The fixed response has already been bounded; cancellation is best effort.
+    }
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+}
+
 function ownerSessionState(owner) {
   if (!exactKeys(owner, OWNER_SESSION_KEYS)) return "INVALID";
   const notRun = owner.bootstrapRequests === 0 && owner.bootstrapAuthenticated === false
@@ -205,6 +266,35 @@ function ownerSessionState(owner) {
   return "INVALID";
 }
 
+function fixturePreflightState(preflight) {
+  if (!exactKeys(preflight, FIXTURE_PREFLIGHT_KEYS)) return "INVALID";
+  const notRun = preflight.requests === 0
+    && preflight.responseAccepted === false
+    && preflight.buyerOrderReady === false
+    && preflight.platformSubscriptionReady === false
+    && preflight.invoicePaymentReady === false;
+  const failed = preflight.requests === 1
+    && preflight.responseAccepted === false
+    && preflight.buyerOrderReady === false
+    && preflight.platformSubscriptionReady === false
+    && preflight.invoicePaymentReady === false;
+  const complete = preflight.requests === 1
+    && preflight.responseAccepted === true
+    && preflight.buyerOrderReady === true
+    && preflight.platformSubscriptionReady === true
+    && preflight.invoicePaymentReady === true;
+  const unknown = preflight.requests === 1
+    && preflight.responseAccepted === null
+    && preflight.buyerOrderReady === null
+    && preflight.platformSubscriptionReady === null
+    && preflight.invoicePaymentReady === null;
+  if (complete) return "COMPLETE";
+  if (unknown) return "UNKNOWN";
+  if (failed) return "FAILED";
+  if (notRun) return "NOT_RUN";
+  return "INVALID";
+}
+
 export function validateInvocation(task, source = process.env) {
   if (task !== TASK) return { ok: false, reason: "TASK_NOT_ALLOWLISTED" };
   if (![...ACTIVE_SECRET_KEYS, ...ACTIVE_CONFIG_KEYS].every((key) => hasValue(source, key))) {
@@ -238,12 +328,13 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v4",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v5",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
     executedAtUtc: new Date().toISOString(),
     lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false },
+    fixturePreflight: initialFixturePreflight(),
     ownerSession: initialOwnerSession(),
     environment: { requiredBindingsPresent: false, payuniSandbox: false, stagingDatabaseMatched: false, productionDetected: false },
     prerequisites: {
@@ -270,16 +361,25 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v4" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v5" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
   if (receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE") errors.push("FAILURE_CATEGORY");
   if (!exactArray(receipt?.prerequisites?.requiredSecretBindings, REQUIRED_SECRET_KEYS) || !exactArray(receipt?.prerequisites?.requiredConfigBindings, REQUIRED_CONFIG_KEYS)) errors.push("PREREQUISITE_BINDINGS");
+  const fixtureState = fixturePreflightState(receipt?.fixturePreflight);
   const ownerState = ownerSessionState(receipt?.ownerSession);
-  const expectedGaps = ownerState === "COMPLETE" ? OWNER_SESSION_COMPLETE_GAPS : FIXED_PREREQUISITE_GAPS;
+  const expectedGaps = fixtureState === "COMPLETE" && ownerState === "COMPLETE"
+    ? OWNER_SESSION_COMPLETE_GAPS
+    : FIXED_PREREQUISITE_GAPS;
   if (receipt?.prerequisites?.fixedTask !== true || receipt?.prerequisites?.fixedHostEgress !== true || receipt?.prerequisites?.sterileChildEnvironment !== true || typeof receipt?.prerequisites?.exactPreviewLineage !== "boolean" || !exactArray(receipt?.prerequisites?.gaps, expectedGaps)) errors.push("PREREQUISITE_CONTRACT");
   if (ownerState === "INVALID") errors.push("OWNER_SESSION_CONTRACT");
+  if (fixtureState === "INVALID") errors.push("FIXTURE_PREFLIGHT_CONTRACT");
+  const ownerSequenceValid = (fixtureState === "COMPLETE" && ownerState !== "NOT_RUN" && ownerState !== "INVALID")
+    || (fixtureState === "FAILED" && ownerState === "NOT_RUN")
+    || (fixtureState === "UNKNOWN" && ownerState === "BOOTSTRAP_FAILED")
+    || (fixtureState === "NOT_RUN" && ownerState === "NOT_RUN");
+  if (!ownerSequenceValid) errors.push("OWNER_WITHOUT_FIXTURES");
   if (!Array.isArray(receipt?.purposes) || receipt.purposes.length !== PURPOSES.length || receipt.purposes.map((item) => item?.purpose).join("|") !== PURPOSES.join("|")) errors.push("PURPOSES");
   for (const item of receipt?.purposes ?? []) {
     if (!exactKeys(item, PURPOSE_KEYS)) errors.push("PURPOSE_SCHEMA");
@@ -301,7 +401,7 @@ export function validateReceipt(receipt) {
     && receipt?.lineage?.healthStatus === null
     && receipt?.lineage?.noRedirect === false;
   if ((!lineageProven && !lineageNotRun) || receipt?.prerequisites?.exactPreviewLineage !== lineageProven) errors.push("LINEAGE_CONTRACT");
-  if (!lineageProven && ownerState !== "NOT_RUN") errors.push("OWNER_WITHOUT_LINEAGE");
+  if (!lineageProven && (fixtureState !== "NOT_RUN" || ownerState !== "NOT_RUN")) errors.push("CHILD_WITHOUT_LINEAGE");
   if (receipt?.environment?.requiredBindingsPresent !== false || receipt?.environment?.payuniSandbox !== false || receipt?.environment?.stagingDatabaseMatched !== false || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_MUST_NOT_RUN");
   if (Object.values(receipt?.reconciliation ?? {}).some((value) => value !== false)) errors.push("RECONCILIATION_MUST_NOT_RUN");
   if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.payuniSandbox !== false || receipt?.network?.supabaseStaging !== false) errors.push("NETWORK_POLICY");
@@ -331,6 +431,48 @@ export function childEnvironment(source) {
   };
 }
 
+export async function runFixturePreflight(source, fetchImpl = fetch) {
+  const initial = initialFixturePreflight();
+  if (!hasValue(source, "JOB_SECRET")
+    || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
+  const result = failedFixturePreflight();
+  try {
+    const pathname = "/api/admin/ops/payuni/wp4-preflight";
+    const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${source.JOB_SECRET}`,
+        "x-celebratedeal-source-sha": source.CELEBRATEDEAL_SOURCE_SHA,
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
+    });
+    const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)
+      || contentType !== "application/json") {
+      await discardResponseBody(response);
+      return result;
+    }
+    const body = await readBoundedJsonObject(response);
+    if (!exactKeys(body, ["ready", "buyerOrder", "platformSubscription", "invoicePayment"])
+      || body.ready !== true
+      || body.buyerOrder !== true
+      || body.platformSubscription !== true
+      || body.invoicePayment !== true) return result;
+    return {
+      requests: 1,
+      responseAccepted: true,
+      buyerOrderReady: true,
+      platformSubscriptionReady: true,
+      invoicePaymentReady: true,
+    };
+  } catch {
+    return result;
+  }
+}
+
 export async function runOwnerSession(source, fetchImpl = fetch) {
   let owner = initialOwnerSession();
   let sessionCookie = "";
@@ -348,7 +490,7 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
         "x-celebratedeal-source-sha": source.CELEBRATEDEAL_SOURCE_SHA,
       },
       redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     if (!responseMatches(bootstrap, source.CELEBRATEDEAL_DEPLOYMENT_HOST, bootstrapPath, 204)) {
       await discardResponseBody(bootstrap);
@@ -370,7 +512,7 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
         method: "GET",
         headers: { Cookie: sessionCookie },
         redirect: "manual",
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
       });
       if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
         await discardResponseBody(response);
@@ -387,18 +529,41 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
   }
 }
 
+export async function runWp4Child(source, fetchImpl = fetch) {
+  const fixturePreflight = await runFixturePreflight(source, fetchImpl);
+  const ownerSession = fixturePreflightState(fixturePreflight) === "COMPLETE"
+    ? await runOwnerSession(source, fetchImpl)
+    : initialOwnerSession();
+  return { fixturePreflight, ownerSession };
+}
+
 export function parseChildOutput(stdout, exitCode) {
   const nonEmpty = String(stdout ?? "").split(/\r?\n/u).filter(Boolean);
   const lines = nonEmpty.filter((line) => line.startsWith(CHILD_PREFIX));
   if (exitCode !== 2 || lines.length !== 1 || nonEmpty.length !== 1) return { ok: false, reason: "CHILD_OUTPUT_INVALID" };
   try {
-    const ownerSession = JSON.parse(lines[0].slice(CHILD_PREFIX.length));
-    return ownerSessionState(ownerSession) !== "INVALID"
-      ? { ok: true, ownerSession }
+    const result = JSON.parse(lines[0].slice(CHILD_PREFIX.length));
+    const fixtureState = fixturePreflightState(result?.fixturePreflight);
+    const ownerState = ownerSessionState(result?.ownerSession);
+    const validSequence = fixtureState === "COMPLETE"
+      ? ownerState !== "INVALID" && ownerState !== "NOT_RUN"
+      : fixtureState === "FAILED" && ownerState === "NOT_RUN";
+    return exactKeys(result, CHILD_RESULT_KEYS) && validSequence
+      ? { ok: true, ...result }
       : { ok: false, reason: "CHILD_RECEIPT_INVALID" };
   } catch {
     return { ok: false, reason: "CHILD_OUTPUT_UNREADABLE" };
   }
+}
+
+export function markChildAttemptUnknown(receipt) {
+  receipt.fixturePreflight = uncertainFixturePreflight();
+  receipt.ownerSession = uncertainOwnerSession();
+  receipt.sideEffects.sessionCreationAttempts = 1;
+  receipt.sideEffects.sessionCreationOutcome = "UNKNOWN";
+  receipt.sideEffects.sessionRowsCreated = null;
+  receipt.sideEffects.sessionTtlSeconds = WP4_SESSION_TTL_SECONDS;
+  return receipt;
 }
 
 async function writeReceipt(receipt, runnerTemp) {
@@ -418,7 +583,7 @@ async function runParent(source) {
     const health = await fetch(`https://${lineage.host}/api/health`, {
       method: "HEAD",
       redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     const noRedirect = health.status === 200 && !health.headers.has("location");
     receipt.lineage = {
@@ -434,29 +599,27 @@ async function runParent(source) {
       lineage.deploymentMatched && lineage.sourceMatched && lineage.preview && lineage.ready && noRedirect,
     );
     if (receipt.prerequisites.exactPreviewLineage) {
-      receipt.ownerSession = uncertainOwnerSession();
-      receipt.sideEffects.sessionCreationAttempts = 1;
-      receipt.sideEffects.sessionCreationOutcome = "UNKNOWN";
-      receipt.sideEffects.sessionRowsCreated = null;
-      receipt.sideEffects.sessionTtlSeconds = WP4_SESSION_TTL_SECONDS;
+      markChildAttemptUnknown(receipt);
       const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
         cwd: ROOT,
         env: childEnvironment(source),
         encoding: "utf8",
         shell: false,
         windowsHide: true,
-        timeout: 50_000,
+        timeout: WP4_CHILD_TIMEOUT_MS,
         maxBuffer: 64 * 1024,
       });
       const parsed = parseChildOutput(child.stdout, child.status ?? 1);
       if (parsed.ok) {
+        receipt.fixturePreflight = parsed.fixturePreflight;
         receipt.ownerSession = parsed.ownerSession;
         receipt.sideEffects.sessionCreationAttempts = parsed.ownerSession.sessionCreationAttempts;
         receipt.sideEffects.sessionCreationOutcome = parsed.ownerSession.sessionCreationOutcome;
         receipt.sideEffects.sessionRowsCreated = parsed.ownerSession.sessionRowsCreated;
         receipt.sideEffects.sessionTtlSeconds = parsed.ownerSession.sessionTtlSeconds;
         receipt.sideEffects.userRowsUpdated = parsed.ownerSession.userRowsUpdated;
-        if (ownerSessionState(parsed.ownerSession) === "COMPLETE") {
+        if (fixturePreflightState(parsed.fixturePreflight) === "COMPLETE"
+          && ownerSessionState(parsed.ownerSession) === "COMPLETE") {
           receipt.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
         }
       }
@@ -473,8 +636,8 @@ async function runParent(source) {
 
 async function main() {
   if (process.argv[2] === "--child") {
-    const ownerSession = await runOwnerSession(process.env);
-    process.stdout.write(`${CHILD_PREFIX}${JSON.stringify(ownerSession)}\n`);
+    const result = await runWp4Child(process.env);
+    process.stdout.write(`${CHILD_PREFIX}${JSON.stringify(result)}\n`);
     process.exitCode = 2;
     return;
   }

@@ -7,10 +7,16 @@ import {
   OWNER_SESSION_COMPLETE_GAPS,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
+  WP4_CHILD_MAX_REQUESTS,
+  WP4_CHILD_TIMEOUT_MS,
+  WP4_NETWORK_REQUEST_TIMEOUT_MS,
   childEnvironment,
   createInitialReceipt,
+  markChildAttemptUnknown,
   parseChildOutput,
+  runFixturePreflight,
   runOwnerSession,
+  runWp4Child,
   validateInvocation,
   validateReceipt,
 } from "./secure-staging-wp4-payuni.mjs";
@@ -23,6 +29,12 @@ const safeEnvironment = {
   CELEBRATEDEAL_DEPLOYMENT_HOST: "safe-preview.vercel.app",
   RUNNER_TEMP: "/tmp/runner",
 };
+
+test("parent timeout covers every bounded child request plus shutdown headroom", () => {
+  assert.ok(
+    WP4_CHILD_TIMEOUT_MS >= (WP4_NETWORK_REQUEST_TIMEOUT_MS * WP4_CHILD_MAX_REQUESTS) + 5_000,
+  );
+});
 
 test("WP4 invocation is fixed-task, exact-source, Preview and staging-only", () => {
   assert.equal(validateInvocation("wp4-payuni-sandbox-reconciliation", safeEnvironment).ok, true);
@@ -67,6 +79,10 @@ test("receipt rejects fabricated payment, refund, callback, lineage and provider
   assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, callbackReplays: 6 } }).errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(validateReceipt({ ...receipt, lineage: { ...receipt.lineage, deploymentReads: 2 } }).errors.includes("LINEAGE_CONTRACT"), true);
   assert.equal(validateReceipt({ ...receipt, purposes: receipt.purposes.map((purpose) => ({ ...purpose, providerStatus: "refunded", status: "PASS" })) }).errors.includes("PURPOSE_MUST_NOT_RUN"), true);
+  assert.equal(validateReceipt({
+    ...receipt,
+    fixturePreflight: { ...receipt.fixturePreflight, requests: 1, responseAccepted: true, buyerOrderReady: true, platformSubscriptionReady: true, invoicePaymentReady: true },
+  }).errors.includes("OWNER_WITHOUT_FIXTURES"), true);
 });
 
 test("receipt may prove exact Preview lineage without claiming PayUni execution", () => {
@@ -87,13 +103,18 @@ test("receipt may prove exact Preview lineage without claiming PayUni execution"
   assert.equal(receipt.sideEffects.providerWrites, 0);
 });
 
-function mockResponse(url, status, { cookies = [], location } = {}) {
+function mockResponse(url, status, { cookies = [], location, json } = {}) {
   const headers = new Headers();
   if (location) headers.set("location", location);
+  let body = { cancel: async () => undefined };
+  if (json !== undefined) {
+    headers.set("content-type", "application/json; charset=utf-8");
+    body = new Response(JSON.stringify(json)).body;
+  }
   return {
     url,
     status,
-    body: { cancel: async () => undefined },
+    body,
     headers: {
       has: (name) => headers.has(name),
       get: (name) => headers.get(name),
@@ -101,6 +122,13 @@ function mockResponse(url, status, { cookies = [], location } = {}) {
     },
   };
 }
+
+const readyFixtures = {
+  ready: true,
+  buyerOrder: true,
+  platformSubscription: true,
+  invoicePayment: true,
+};
 
 function successfulOwnerFetch(requests) {
   const token = "a".repeat(43);
@@ -112,6 +140,86 @@ function successfulOwnerFetch(requests) {
     return mockResponse(url, 200);
   };
 }
+
+function successfulWp4Fetch(requests) {
+  const ownerFetch = successfulOwnerFetch(requests);
+  return async (url, options) => {
+    if (url.endsWith("/wp4-preflight")) {
+      requests.push({ url, options });
+      return mockResponse(url, 200, { json: readyFixtures });
+    }
+    return ownerFetch(url, options);
+  };
+}
+
+test("fixture preflight accepts only the exact fixed boolean projection", async () => {
+  const requests = [];
+  const fixture = await runFixturePreflight(safeEnvironment, successfulWp4Fetch(requests));
+
+  assert.deepEqual(fixture, {
+    requests: 1,
+    responseAccepted: true,
+    buyerOrderReady: true,
+    platformSubscriptionReady: true,
+    invoicePaymentReady: true,
+  });
+  assert.deepEqual(requests.map(({ url, options }) => [options.method, new URL(url).pathname]), [
+    ["POST", "/api/admin/ops/payuni/wp4-preflight"],
+  ]);
+  assert.equal(Object.hasOwn(requests[0].options, "body"), false);
+});
+
+test("fixture preflight fails closed for redirect, schema drift and oversized output", async () => {
+  const redirect = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 302, {
+    location: "https://production.example.com",
+  }));
+  const drift = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 200, {
+    json: { ...readyFixtures, identifier: "must-not-persist" },
+  }));
+  const oversized = await runFixturePreflight(safeEnvironment, async (url) => mockResponse(url, 200, {
+    json: { ...readyFixtures, padding: "x".repeat(1_100) },
+  }));
+
+  for (const result of [redirect, drift, oversized]) {
+    assert.deepEqual(result, {
+      requests: 1,
+      responseAccepted: false,
+      buyerOrderReady: false,
+      platformSubscriptionReady: false,
+      invoicePaymentReady: false,
+    });
+    assert.equal(JSON.stringify(result).includes("must-not-persist"), false);
+    assert.equal(JSON.stringify(result).includes("production.example.com"), false);
+  }
+});
+
+test("WP4 child verifies fixtures before creating one bounded owner session", async () => {
+  const requests = [];
+  const result = await runWp4Child(safeEnvironment, successfulWp4Fetch(requests));
+
+  assert.equal(result.fixturePreflight.responseAccepted, true);
+  assert.equal(result.ownerSession.invoicesProbeAuthenticated, true);
+  assert.deepEqual(requests.map(({ url, options }) => [options.method, new URL(url).pathname]), [
+    ["POST", "/api/admin/ops/payuni/wp4-preflight"],
+    ["POST", "/api/admin/ops/payuni/wp4-session"],
+    ["GET", "/billing/plans"],
+    ["GET", "/billing/invoices"],
+  ]);
+});
+
+test("WP4 child does not create a session when fixture preflight is unconfirmed", async () => {
+  const requests = [];
+  const result = await runWp4Child(safeEnvironment, async (url, options) => {
+    requests.push({ url, options });
+    return mockResponse(url, 404);
+  });
+
+  assert.equal(result.fixturePreflight.responseAccepted, false);
+  assert.equal(result.ownerSession.sessionCreationAttempts, 0);
+  assert.deepEqual(requests.map(({ url }) => new URL(url).pathname), [
+    "/api/admin/ops/payuni/wp4-preflight",
+  ]);
+});
 
 test("owner-session child performs one bootstrap and two authenticated read-only probes", async () => {
   const requests = [];
@@ -152,6 +260,7 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
     noRedirect: true,
   };
   receipt.prerequisites.exactPreviewLineage = true;
+  receipt.fixturePreflight = await runFixturePreflight(safeEnvironment, successfulWp4Fetch([]));
   receipt.ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch([]));
   receipt.sideEffects.sessionCreationAttempts = 1;
   receipt.sideEffects.sessionCreationOutcome = "CONFIRMED";
@@ -161,10 +270,11 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
 
   const unbound = createInitialReceipt(sha);
+  unbound.fixturePreflight = receipt.fixturePreflight;
   unbound.ownerSession = receipt.ownerSession;
   unbound.sideEffects = { ...receipt.sideEffects };
   unbound.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
-  assert.equal(validateReceipt(unbound).errors.includes("OWNER_WITHOUT_LINEAGE"), true);
+  assert.equal(validateReceipt(unbound).errors.includes("CHILD_WITHOUT_LINEAGE"), true);
 
   const zeroWriteOverclaim = {
     ...receipt,
@@ -191,6 +301,45 @@ test("an indeterminate child outcome records one bounded attempt with unknown pe
     noRedirect: true,
   };
   receipt.prerequisites.exactPreviewLineage = true;
+  markChildAttemptUnknown(receipt);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(receipt.fixturePreflight.responseAccepted, null);
+  assert.equal(receipt.ownerSession.sessionCreationOutcome, "UNKNOWN");
+  assert.deepEqual(receipt.prerequisites.gaps, FIXED_PREREQUISITE_GAPS);
+});
+
+test("invalid child output preserves the parent-level unknown attempt projection", () => {
+  const receipt = createInitialReceipt(sha);
+  receipt.lineage = {
+    deploymentReads: 2,
+    deploymentMatched: true,
+    sourceMatched: true,
+    preview: true,
+    ready: true,
+    healthStatus: 200,
+    noRedirect: true,
+  };
+  receipt.prerequisites.exactPreviewLineage = true;
+  markChildAttemptUnknown(receipt);
+
+  assert.equal(parseChildOutput("", 1).ok, false);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(receipt.fixturePreflight.responseAccepted, null);
+  assert.equal(receipt.sideEffects.sessionCreationOutcome, "UNKNOWN");
+});
+
+test("receipt rejects a session attempt when fixture preflight never ran", () => {
+  const receipt = createInitialReceipt(sha);
+  receipt.lineage = {
+    deploymentReads: 2,
+    deploymentMatched: true,
+    sourceMatched: true,
+    preview: true,
+    ready: true,
+    healthStatus: 200,
+    noRedirect: true,
+  };
+  receipt.prerequisites.exactPreviewLineage = true;
   receipt.ownerSession = {
     ...receipt.ownerSession,
     bootstrapRequests: 1,
@@ -206,8 +355,8 @@ test("an indeterminate child outcome records one bounded attempt with unknown pe
     sessionRowsCreated: null,
     sessionTtlSeconds: 900,
   };
-  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
-  assert.deepEqual(receipt.prerequisites.gaps, FIXED_PREREQUISITE_GAPS);
+
+  assert.equal(validateReceipt(receipt).errors.includes("OWNER_WITHOUT_FIXTURES"), true);
 });
 
 for (const [name, fetchImpl] of [
@@ -230,12 +379,16 @@ for (const [name, fetchImpl] of [
   });
 }
 
-test("sterile child output accepts exactly one canonical owner-session projection", async () => {
-  const ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch([]));
-  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(ownerSession)}\n`, 2).ok, true);
-  assert.equal(parseChildOutput(`noise\nSECURE_WP4_RESULT:${JSON.stringify(ownerSession)}\n`, 2).ok, false);
-  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(ownerSession)}\n`, 0).ok, false);
-  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify({ ...ownerSession, cookie: "leak" })}\n`, 2).ok, false);
+test("sterile child output accepts exactly one canonical preflight and owner projection", async () => {
+  const childResult = await runWp4Child(safeEnvironment, successfulWp4Fetch([]));
+  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 2).ok, true);
+  assert.equal(parseChildOutput(`noise\nSECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 2).ok, false);
+  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify(childResult)}\n`, 0).ok, false);
+  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify({ ...childResult, cookie: "leak" })}\n`, 2).ok, false);
+  assert.equal(parseChildOutput(`SECURE_WP4_RESULT:${JSON.stringify({
+    fixturePreflight: childResult.fixturePreflight,
+    ownerSession: createInitialReceipt(sha).ownerSession,
+  })}\n`, 2).ok, false);
 });
 
 test("runner cannot load provider fixtures, Prisma, or create external payment side effects", () => {
