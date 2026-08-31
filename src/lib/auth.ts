@@ -80,16 +80,18 @@ function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null
   return selected ?? activeMemberships[0] ?? null;
 }
 
-export async function createUserSession({
+async function createSession({
   userId,
   vendorId,
   ipAddress,
   userAgent,
+  mfaVerifiedAt = null,
 }: {
   userId: string;
   vendorId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  mfaVerifiedAt?: Date | null;
 }) {
   const token = newSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
@@ -101,7 +103,9 @@ export async function createUserSession({
       tokenHash: sessionTokenHash(token),
       ipAddress,
       userAgent,
-      mfaVerifiedAt: null,
+      // 呼叫端只能在已完成其自身驗證流程後指定此值；與 session 建立同一筆
+      // insert，避免先建立未驗證 session 再補寫的短暫狀態。
+      mfaVerifiedAt,
       expiresAt,
     },
   });
@@ -112,6 +116,43 @@ export async function createUserSession({
   });
 
   return { token, expiresAt };
+}
+
+export async function createUserSession({
+  userId,
+  vendorId,
+  ipAddress,
+  userAgent,
+}: {
+  userId: string;
+  vendorId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  // 一般登入流程永遠從未通過 MFA 的 session 開始；不得由一般 caller 覆寫。
+  return createSession({ userId, vendorId, ipAddress, userAgent, mfaVerifiedAt: null });
+}
+
+/**
+ * WP4 受控 Preview runner 專用。此 guard 放在 session helper 內，避免 route
+ * 以外的任何一般產品呼叫端取得建立 MFA-verified session 的能力。
+ */
+export async function createWp4PreviewMfaVerifiedSession({
+  userId,
+  vendorId,
+}: {
+  userId: string;
+  vendorId: string;
+}) {
+  if (
+    process.env.VERCEL_ENV !== "preview"
+    || process.env.PAYUNI_ENV !== "sandbox"
+    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true"
+  ) {
+    throw new Error("WP4 preview session creation is disabled");
+  }
+
+  return createSession({ userId, vendorId, mfaVerifiedAt: new Date() });
 }
 
 export async function revokeCurrentSession() {
