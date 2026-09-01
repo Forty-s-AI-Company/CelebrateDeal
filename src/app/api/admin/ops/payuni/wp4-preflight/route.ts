@@ -5,11 +5,14 @@ import { isProductDeliveryReadyForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 
 const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
+const PREFLIGHT_OUTCOME_HEADER = "x-celebratedeal-wp4-preflight";
 const SHA_PATTERN = /^[a-f0-9]{40}$/i;
 const PAYABLE_INVOICE_STATUSES = ["issued", "overdue"] as const;
 
-function unavailableResponse() {
-  return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+function unavailableResponse(outcome?: "EXECUTOR_DISABLED" | "FIXTURE_UNAVAILABLE") {
+  const headers: Record<string, string> = { "Cache-Control": "no-store" };
+  if (outcome) headers[PREFLIGHT_OUTCOME_HEADER] = outcome;
+  return NextResponse.json({ error: "Not found" }, { status: 404, headers });
 }
 
 function unauthorizedResponse() {
@@ -79,7 +82,7 @@ export async function POST(request: Request) {
   }
 
   if (!previewSandboxEnabled()) {
-    return unavailableResponse();
+    return unavailableResponse(process.env.VERCEL_ENV === "preview" ? "EXECUTOR_DISABLED" : undefined);
   }
 
   const configuration = serverConfiguration();
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
       select: { id: true },
     });
     if (!membership) {
-      return unavailableResponse();
+      return unavailableResponse("FIXTURE_UNAVAILABLE");
     }
 
     const [product, billingPlan, invoice] = await Promise.all([
@@ -167,7 +170,7 @@ export async function POST(request: Request) {
     ]);
 
     if (!product || !isProductDeliveryReadyForCheckout(product, vendorId) || !billingPlan || !invoice) {
-      return unavailableResponse();
+      return unavailableResponse("FIXTURE_UNAVAILABLE");
     }
 
     return NextResponse.json(

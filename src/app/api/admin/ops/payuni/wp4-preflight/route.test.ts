@@ -165,6 +165,19 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: "Not found" });
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-celebratedeal-wp4-preflight")).toBeNull();
+    expectNoReads();
+    expectNoWritesOrProviders();
+  });
+
+  it("returns only a closed executor-disabled classification in Preview", async () => {
+    vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "false");
+
+    const response = await POST(request(`Bearer ${jobSecret}`));
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-celebratedeal-wp4-preflight")).toBe("EXECUTOR_DISABLED");
+    await expect(response.json()).resolves.toEqual({ error: "Not found" });
     expectNoReads();
     expectNoWritesOrProviders();
   });
@@ -173,6 +186,7 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
     const response = await POST(request(`Bearer ${jobSecret}`, "b".repeat(40)));
 
     expect(response.status).toBe(404);
+    expect(response.headers.get("x-celebratedeal-wp4-preflight")).toBeNull();
     await expect(response.json()).resolves.toEqual({ error: "Not found" });
     expectNoReads();
     expectNoWritesOrProviders();
@@ -230,6 +244,7 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
     const response = await POST(request(`Bearer ${jobSecret}`));
 
     expect(response.status).toBe(404);
+    expect(response.headers.get("x-celebratedeal-wp4-preflight")).toBe("FIXTURE_UNAVAILABLE");
     await expect(response.json()).resolves.toEqual({ error: "Not found" });
     expectNoWritesOrProviders();
   });

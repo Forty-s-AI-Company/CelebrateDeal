@@ -88,6 +88,8 @@ const FIXTURE_PREFLIGHT_KEYS = ["requests", "outcome", "responseAccepted", "buye
 const FIXTURE_PREFLIGHT_FAILURE_OUTCOMES = new Set([
   "AUTHORIZATION_REJECTED",
   "DISABLED_OR_FIXTURE_UNAVAILABLE",
+  "EXECUTOR_DISABLED",
+  "FIXTURE_UNAVAILABLE",
   "CONFIGURATION_UNAVAILABLE",
   "HTTP_REJECTED",
   "RESPONSE_INVALID",
@@ -495,10 +497,13 @@ export async function runFixturePreflight(source, fetchImpl = fetch) {
     const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
     if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
       await discardResponseBody(response);
+      const closedPreflightOutcome = response.headers?.get?.("x-celebratedeal-wp4-preflight");
       const outcome = response.status === 401
         ? "AUTHORIZATION_REJECTED"
         : response.status === 404
-          ? "DISABLED_OR_FIXTURE_UNAVAILABLE"
+          ? closedPreflightOutcome === "EXECUTOR_DISABLED" || closedPreflightOutcome === "FIXTURE_UNAVAILABLE"
+            ? closedPreflightOutcome
+            : "DISABLED_OR_FIXTURE_UNAVAILABLE"
           : response.status === 503
             ? "CONFIGURATION_UNAVAILABLE"
             : "HTTP_REJECTED";
