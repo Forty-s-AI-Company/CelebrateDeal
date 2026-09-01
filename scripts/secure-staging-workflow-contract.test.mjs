@@ -23,15 +23,24 @@ test("secure staging workflow is valid YAML and protected-default-branch only", 
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read" });
 });
 
-test("workflow exposes only the fixed WP2 task and pinned actions", () => {
+test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
-  assert.match(source, /options:\s*\n\s*- wp2-readonly-restore/u);
+  const workflow = yaml.load(source);
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.task.options, [
+    "wp2-readonly-restore",
+    "wp4-payuni-sandbox-reconciliation",
+  ]);
   assert.match(source, /npm run secure:staging:wp2/u);
+  assert.match(source, /npm run secure:staging:wp4/u);
   assert.match(source, /id: execute-wp2\s*\n\s*continue-on-error: true/u);
-  assert.match(source, /if: \$\{\{ steps\.execute-wp2\.outcome != 'success' \}\}\s*\n\s*run: exit 2/u);
-  assert.ok(source.indexOf("Validate sanitized receipt") < source.indexOf("Enforce fixed WP2 task success"));
+  assert.match(source, /id: execute-wp4\s*\n\s*continue-on-error: true/u);
+  assert.match(source, /steps\.execute-wp2\.outcome != 'success'/u);
+  assert.match(source, /steps\.execute-wp4\.outcome != 'success'/u);
+  assert.ok(source.indexOf("Validate sanitized WP2 receipt") < source.indexOf("Enforce fixed WP2 task success"));
+  assert.ok(source.indexOf("Validate sanitized WP4 receipt") < source.indexOf("Enforce fixed WP4 task success"));
   assert.ok(source.indexOf("Upload sanitized receipt only") < source.indexOf("Enforce fixed WP2 task success"));
-  assert.doesNotMatch(source, /payuni|vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit/iu);
+  assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
+  assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
   assert.equal(actionUses.length, 3);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
@@ -40,13 +49,37 @@ test("workflow exposes only the fixed WP2 task and pinned actions", () => {
 test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-runner.mjs"), "utf8");
+  const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
-  assert.match(source, /iptables -P OUTPUT DROP/u);
+  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 2);
   assert.match(source, /api\.github\.com/u);
+  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 0);
   assert.match(source, /getent ahostsv4/u);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
   assert.match(runner, /\/etc\/hosts:\/etc\/hosts:ro/u);
   assert.match(runner, /"--network", "none"/u);
+  assert.match(wp4Runner, /function childEnvironment/u);
+  assert.match(wp4Runner, /spawnSync\(process\.execPath/u);
+  assert.doesNotMatch(wp4Runner, /Object\.(?:keys|entries)\(process\.env\)/u);
   assert.doesNotMatch(source, /curl\s+\$|wget\s+\$|Invoke-Expression|\beval\b/iu);
+});
+
+test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute arbitrary commands", () => {
+  const source = fs.readFileSync(workflowPath, "utf8");
+  const workflow = yaml.load(source);
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const wp4 = steps.find((step) => step.id === "execute-wp4");
+  assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
+  assert.deepEqual(Object.keys(wp4.env).sort(), [
+    "CELEBRATEDEAL_DEPLOYMENT_HOST",
+    "CELEBRATEDEAL_SOURCE_SHA",
+    "GITHUB_TOKEN",
+    "JOB_SECRET",
+  ]);
+  assert.equal(wp4.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
+  assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), false);
+  assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH|SANDBOX|TEST)/u);
+  assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
+  assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
 });

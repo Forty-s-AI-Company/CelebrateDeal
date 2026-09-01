@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
+  createSession: vi.fn(),
   findSession: vi.fn(),
   findUser: vi.fn(),
   redirect: vi.fn(),
+  updateUser: vi.fn(),
   verifyPasswordAsync: vi.fn(),
 }));
 
@@ -12,8 +14,8 @@ vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
-    userSession: { findUnique: mocks.findSession },
-    user: { findUnique: mocks.findUser },
+    userSession: { create: mocks.createSession, findUnique: mocks.findSession },
+    user: { findUnique: mocks.findUser, update: mocks.updateUser },
   }),
 }));
 vi.mock("@/lib/mfa", () => ({ decryptMfaSecret: vi.fn() }));
@@ -23,6 +25,8 @@ vi.mock("@/lib/password", () => ({
 
 import {
   authenticateUser,
+  createUserSession,
+  createWp4PreviewMfaVerifiedSession,
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
@@ -79,6 +83,61 @@ beforeEach(() => {
   mocks.verifyPasswordAsync.mockResolvedValue(false);
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("createUserSession", () => {
+  it("keeps existing callers MFA-unverified", async () => {
+    mocks.createSession.mockResolvedValue({ id: "session-1" });
+    mocks.updateUser.mockResolvedValue({ id: "user-1" });
+
+    await createUserSession({
+      userId: "user-1",
+      vendorId: "vendor-1",
+    });
+
+    expect(mocks.createSession).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        vendorId: "vendor-1",
+        mfaVerifiedAt: null,
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    });
+  });
+
+  it("only creates an MFA-verified session through the guarded WP4 helper", async () => {
+    mocks.createSession.mockResolvedValue({ id: "session-1" });
+    mocks.updateUser.mockResolvedValue({ id: "user-1" });
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
+
+    await createWp4PreviewMfaVerifiedSession({ userId: "user-1", vendorId: "vendor-1" });
+
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        vendorId: "vendor-1",
+        mfaVerifiedAt: expect.any(Date),
+      }),
+    });
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+    const expiresAt = mocks.createSession.mock.calls[0]?.[0].data.expiresAt as Date;
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 15 * 60 * 1000);
+  });
+
+  it("refuses the WP4 helper outside the guarded preview sandbox", async () => {
+    await expect(
+      createWp4PreviewMfaVerifiedSession({ userId: "user-1", vendorId: "vendor-1" }),
+    ).rejects.toThrow("WP4 preview session creation is disabled");
+
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 });
 

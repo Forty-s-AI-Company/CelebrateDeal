@@ -10,6 +10,7 @@ export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+export const WP4_PREVIEW_SESSION_TTL_SECONDS = 15 * 60;
 const FINANCE_ROLES = ["owner", "admin", "accountant"] as const;
 const VENDOR_MANAGER_ROLES = ["owner", "admin"] as const;
 const VENDOR_SUPPORT_ROLES = ["owner", "admin", "support"] as const;
@@ -36,13 +37,13 @@ function newSessionToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export function sessionCookieOptions(expiresAt?: Date) {
+export function sessionCookieOptions(expiresAt?: Date, maxAge = SESSION_TTL_SECONDS) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge,
     expires: expiresAt,
   };
 }
@@ -80,6 +81,50 @@ function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null
   return selected ?? activeMemberships[0] ?? null;
 }
 
+async function createSession({
+  userId,
+  vendorId,
+  ipAddress,
+  userAgent,
+  mfaVerifiedAt = null,
+  ttlSeconds = SESSION_TTL_SECONDS,
+  updateLastLogin = true,
+}: {
+  userId: string;
+  vendorId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  mfaVerifiedAt?: Date | null;
+  ttlSeconds?: number;
+  updateLastLogin?: boolean;
+}) {
+  const token = newSessionToken();
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+
+  await getDb().userSession.create({
+    data: {
+      userId,
+      vendorId: vendorId ?? null,
+      tokenHash: sessionTokenHash(token),
+      ipAddress,
+      userAgent,
+      // 呼叫端只能在已完成其自身驗證流程後指定此值；與 session 建立同一筆
+      // insert，避免先建立未驗證 session 再補寫的短暫狀態。
+      mfaVerifiedAt,
+      expiresAt,
+    },
+  });
+
+  if (updateLastLogin) {
+    await getDb().user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
+  }
+
+  return { token, expiresAt };
+}
+
 export async function createUserSession({
   userId,
   vendorId,
@@ -91,27 +136,36 @@ export async function createUserSession({
   ipAddress?: string | null;
   userAgent?: string | null;
 }) {
-  const token = newSessionToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+  // 一般登入流程永遠從未通過 MFA 的 session 開始；不得由一般 caller 覆寫。
+  return createSession({ userId, vendorId, ipAddress, userAgent, mfaVerifiedAt: null });
+}
 
-  await getDb().userSession.create({
-    data: {
-      userId,
-      vendorId: vendorId ?? null,
-      tokenHash: sessionTokenHash(token),
-      ipAddress,
-      userAgent,
-      mfaVerifiedAt: null,
-      expiresAt,
-    },
+/**
+ * WP4 受控 Preview runner 專用。此 guard 放在 session helper 內，避免 route
+ * 以外的任何一般產品呼叫端取得建立 MFA-verified session 的能力。
+ */
+export async function createWp4PreviewMfaVerifiedSession({
+  userId,
+  vendorId,
+}: {
+  userId: string;
+  vendorId: string;
+}) {
+  if (
+    process.env.VERCEL_ENV !== "preview"
+    || process.env.PAYUNI_ENV !== "sandbox"
+    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true"
+  ) {
+    throw new Error("WP4 preview session creation is disabled");
+  }
+
+  return createSession({
+    userId,
+    vendorId,
+    mfaVerifiedAt: new Date(),
+    ttlSeconds: WP4_PREVIEW_SESSION_TTL_SECONDS,
+    updateLastLogin: false,
   });
-
-  await getDb().user.update({
-    where: { id: userId },
-    data: { lastLoginAt: new Date() },
-  });
-
-  return { token, expiresAt };
 }
 
 export async function revokeCurrentSession() {

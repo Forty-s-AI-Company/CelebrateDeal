@@ -95,7 +95,7 @@ function assertProductDomain(product: { commerceDomain: string; fulfillmentType:
   }
 }
 
-function orderDeliveryFromProduct(product: {
+export type CheckoutDeliveryProduct = {
   id: string;
   fulfillmentType: CommerceFulfillmentType;
   deliveryConfig: {
@@ -111,7 +111,9 @@ function orderDeliveryFromProduct(product: {
     instructionsMaskedSummary: string | null;
     allowlist: { hostname: string; pathPrefix: string; allowQuery: boolean; status: string } | null;
   } | null;
-}, vendorId: string) {
+};
+
+function orderDeliveryFromProduct(product: CheckoutDeliveryProduct, vendorId: string) {
   if (product.fulfillmentType === "physical") return null;
   const config = product.deliveryConfig;
   if (!config || config.status !== "active" || config.fulfillmentType !== product.fulfillmentType) {
@@ -145,6 +147,20 @@ function orderDeliveryFromProduct(product: {
     allowlistSnapshot = { hostname: parsed.hostname, pathPrefix: parsed.pathPrefix, allowQuery: false };
   }
   return { config, revealed, allowlistSnapshot };
+}
+
+/**
+ * Uses the same delivery checks as checkout without creating an order or
+ * exposing decrypted delivery values to the caller.
+ */
+export function isProductDeliveryReadyForCheckout(product: CheckoutDeliveryProduct, vendorId: string) {
+  try {
+    orderDeliveryFromProduct(product, vendorId);
+    return true;
+  } catch (error) {
+    if (error instanceof CommerceOrderValidationError) return false;
+    throw error;
+  }
 }
 
 function sanitizedOrderData(
