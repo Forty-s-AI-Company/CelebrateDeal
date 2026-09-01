@@ -63,7 +63,26 @@ export const OWNER_SESSION_COMPLETE_GAPS = Object.freeze([
   "FIXED_SANDBOX_REFUND_EXECUTOR_UNAVAILABLE",
 ]);
 
-const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory"];
+export const DIAGNOSTIC_CATEGORIES = Object.freeze([
+  "NOT_RUN",
+  "REQUIRED_BINDING_MISSING",
+  "SOURCE_SHA_INVALID",
+  "DEPLOYMENT_HOST_INVALID",
+  "GITHUB_DEPLOYMENT_READ_FAILED",
+  "GITHUB_DEPLOYMENT_AMBIGUOUS",
+  "GITHUB_DEPLOYMENT_STATUS_READ_FAILED",
+  "GITHUB_DEPLOYMENT_LINEAGE_MISMATCH",
+  "STAGING_HEALTH_FAILED",
+  "CHILD_EXECUTION_FAILED",
+  "CHILD_OUTPUT_INVALID",
+  "CHILD_OUTPUT_UNREADABLE",
+  "CHILD_RECEIPT_INVALID",
+  "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
+  "RECEIPT_VALIDATION_FAILED",
+  "UNCLASSIFIED_INTERNAL_FAILURE",
+]);
+
+const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
 const FIXTURE_PREFLIGHT_KEYS = ["requests", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
 const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
@@ -328,7 +347,7 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v5",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v6",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
@@ -352,7 +371,17 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDatabaseRowsPersisted: false, rawProviderResponsePersisted: false, customerOrPaymentDataPersisted: false },
     sideEffects: { sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
     failureCategory: "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
+    diagnosticCategory: "NOT_RUN",
   };
+}
+
+export function safeDiagnosticCategory(error, fallback = "UNCLASSIFIED_INTERNAL_FAILURE") {
+  const candidate = typeof error === "string"
+    ? error
+    : typeof error?.message === "string"
+      ? error.message
+      : "";
+  return DIAGNOSTIC_CATEGORIES.includes(candidate) ? candidate : fallback;
 }
 
 export function validateReceipt(receipt) {
@@ -361,11 +390,12 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v5" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v6" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
   if (receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE") errors.push("FAILURE_CATEGORY");
+  if (!DIAGNOSTIC_CATEGORIES.includes(receipt?.diagnosticCategory)) errors.push("DIAGNOSTIC_CATEGORY");
   if (!exactArray(receipt?.prerequisites?.requiredSecretBindings, REQUIRED_SECRET_KEYS) || !exactArray(receipt?.prerequisites?.requiredConfigBindings, REQUIRED_CONFIG_KEYS)) errors.push("PREREQUISITE_BINDINGS");
   const fixtureState = fixturePreflightState(receipt?.fixturePreflight);
   const ownerState = ownerSessionState(receipt?.ownerSession);
@@ -574,18 +604,26 @@ async function writeReceipt(receipt, runnerTemp) {
   return receiptPath;
 }
 
-async function runParent(source) {
+export async function runParent(source, dependencies = {}) {
+  const verifyDeploymentImpl = dependencies.verifyDeploymentImpl ?? verifyDeployment;
+  const fetchImpl = dependencies.fetchImpl ?? fetch;
+  const spawnSyncImpl = dependencies.spawnSyncImpl ?? spawnSync;
   let receipt = createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
   const invocation = validateInvocation(TASK, source);
-  if (!invocation.ok) return writeReceipt(receipt, source.RUNNER_TEMP);
+  if (!invocation.ok) {
+    receipt.diagnosticCategory = safeDiagnosticCategory(invocation.reason);
+    return writeReceipt(receipt, source.RUNNER_TEMP);
+  }
+  let childStarted = false;
   try {
-    const lineage = await verifyDeployment(source);
-    const health = await fetch(`https://${lineage.host}/api/health`, {
+    const lineage = await verifyDeploymentImpl(source);
+    const health = await fetchImpl(`https://${lineage.host}/api/health`, {
       method: "HEAD",
       redirect: "manual",
       signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     const noRedirect = health.status === 200 && !health.headers.has("location");
+    if (!noRedirect) throw new Error("STAGING_HEALTH_FAILED");
     receipt.lineage = {
       deploymentReads: lineage.reads,
       deploymentMatched: lineage.deploymentMatched,
@@ -600,7 +638,8 @@ async function runParent(source) {
     );
     if (receipt.prerequisites.exactPreviewLineage) {
       markChildAttemptUnknown(receipt);
-      const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
+      childStarted = true;
+      const child = spawnSyncImpl(process.execPath, [fileURLToPath(import.meta.url), "--child"], {
         cwd: ROOT,
         env: childEnvironment(source),
         encoding: "utf8",
@@ -609,7 +648,12 @@ async function runParent(source) {
         timeout: WP4_CHILD_TIMEOUT_MS,
         maxBuffer: 64 * 1024,
       });
-      const parsed = parseChildOutput(child.stdout, child.status ?? 1);
+      const childExecutionFailed = Boolean(child.error)
+        || (child.signal !== null && child.signal !== undefined)
+        || child.status === null;
+      const parsed = childExecutionFailed
+        ? { ok: false, reason: "CHILD_EXECUTION_FAILED" }
+        : parseChildOutput(child.stdout, child.status ?? 1);
       if (parsed.ok) {
         receipt.fixturePreflight = parsed.fixturePreflight;
         receipt.ownerSession = parsed.ownerSession;
@@ -622,15 +666,25 @@ async function runParent(source) {
           && ownerSessionState(parsed.ownerSession) === "COMPLETE") {
           receipt.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
         }
+        receipt.diagnosticCategory = "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE";
+      } else {
+        receipt.diagnosticCategory = safeDiagnosticCategory(parsed.reason);
       }
     }
-  } catch {
-    // Keep the canonical receipt blocked and value-free when lineage cannot
-    // be proven. The missing executor remains the primary release blocker.
+  } catch (error) {
+    receipt.diagnosticCategory = safeDiagnosticCategory(error);
   }
-  const safeReceipt = validateReceipt(receipt).ok
-    ? receipt
-    : createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
+  let safeReceipt = receipt;
+  if (!validateReceipt(safeReceipt).ok) {
+    const fallback = createInitialReceipt(source.CELEBRATEDEAL_SOURCE_SHA);
+    fallback.diagnosticCategory = "RECEIPT_VALIDATION_FAILED";
+    if (receipt.prerequisites.exactPreviewLineage === true) {
+      fallback.lineage = { ...receipt.lineage };
+      fallback.prerequisites.exactPreviewLineage = true;
+      if (childStarted) markChildAttemptUnknown(fallback);
+    }
+    safeReceipt = fallback;
+  }
   return writeReceipt(safeReceipt, source.RUNNER_TEMP);
 }
 

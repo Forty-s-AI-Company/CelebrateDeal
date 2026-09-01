@@ -60,7 +60,7 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   assert.match(runner, /\/etc\/hosts:\/etc\/hosts:ro/u);
   assert.match(runner, /"--network", "none"/u);
   assert.match(wp4Runner, /function childEnvironment/u);
-  assert.match(wp4Runner, /spawnSync\(process\.execPath/u);
+  assert.match(wp4Runner, /spawnSyncImpl\(process\.execPath/u);
   assert.doesNotMatch(wp4Runner, /Object\.(?:keys|entries)\(process\.env\)/u);
   assert.doesNotMatch(source, /curl\s+\$|wget\s+\$|Invoke-Expression|\beval\b/iu);
 });
