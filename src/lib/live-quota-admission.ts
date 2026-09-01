@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -10,6 +11,8 @@ import { assertStreamQuotaAvailable } from "@/lib/stream-quota";
 export const LIVE_VIEWER_SESSION_COOKIE = "celebratedeal_live_viewer";
 export const LIVE_VIEWER_SESSION_TTL_MS = 90_000;
 const LIVE_ADMISSION_MAX_ATTEMPTS = 3;
+const LIVE_ADMISSION_RETRY_BASE_MS = 20;
+const LIVE_ADMISSION_RETRY_JITTER_MS = 20;
 const LIVE_VIEWER_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type LiveQuotaAdmissionErrorCode =
@@ -253,6 +256,14 @@ function isPrismaCode(error: unknown, code: string) {
     && error.code === code;
 }
 
+export function liveAdmissionRetryDelayMs(attempt: number, jitter: number) {
+  const normalizedAttempt = Number.isFinite(attempt) ? Math.trunc(attempt) : 1;
+  const normalizedJitter = Number.isFinite(jitter) ? Math.trunc(jitter) : 0;
+  const boundedAttempt = Math.max(1, Math.min(LIVE_ADMISSION_MAX_ATTEMPTS - 1, normalizedAttempt));
+  const boundedJitter = Math.max(0, Math.min(LIVE_ADMISSION_RETRY_JITTER_MS, normalizedJitter));
+  return (LIVE_ADMISSION_RETRY_BASE_MS * boundedAttempt) + boundedJitter;
+}
+
 export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
   const now = input.now ?? new Date();
   const transactionInput = { ...input, now };
@@ -278,6 +289,12 @@ export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
       if (attempt === LIVE_ADMISSION_MAX_ATTEMPTS) {
         throw new LiveQuotaAdmissionError("admission_busy");
       }
+      // Immediate Serializable retries tend to collide with the same competing
+      // transaction again. This bounded jitter clears that conflict window.
+      await sleep(liveAdmissionRetryDelayMs(
+        attempt,
+        randomInt(0, LIVE_ADMISSION_RETRY_JITTER_MS + 1),
+      ));
     }
   }
 
