@@ -31,7 +31,7 @@
 | `docs/codex-goal/REQUIREMENTS_TRACEABILITY.md` | 27 項需求→實作→測試→manual/decision |
 | `docs/codex-goal/ARCHITECTURE_BOUNDARIES.md` | 依賴方向與架構債 |
 | `docs/codex-goal/AUTHORIZATION_MATRIX.md` | route/action 的 role/tenant/MFA |
-| `docs/codex-goal/API_CONTRACT_REGISTRY.md` | 27 route contracts |
+| `docs/codex-goal/API_CONTRACT_REGISTRY.md` | 63 route contract rows |
 | `docs/codex-goal/PRISMA_INVARIANTS.md` | 51 models／9 migrations |
 | `docs/codex-goal/QA_REPORT.md` | 可重現 QA evidence |
 | `docs/codex-goal/CODE_REVIEW_REPORT.md` | validated findings |

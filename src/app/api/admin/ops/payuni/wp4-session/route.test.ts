@@ -15,6 +15,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { POST } from "./route";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const jobSecret = "test-fixture-job-secret";
 const sourceSha = "a".repeat(40);
@@ -51,8 +52,6 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
-  vi.stubEnv("SMOKE_VENDOR_ID", "vendor-preview");
-  vi.stubEnv("WP4_SMOKE_OWNER_USER_ID", "owner-preview");
   vi.stubEnv("VERCEL_GIT_COMMIT_SHA", sourceSha);
   mocks.findMembership.mockResolvedValue({ id: "member-1" });
   mocks.createSession.mockResolvedValue({ id: "session-1" });
@@ -116,8 +115,8 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it("fails closed when server-owned configuration is missing", async () => {
-    vi.stubEnv("SMOKE_VENDOR_ID", undefined);
+  it("fails closed when deployment lineage configuration is missing", async () => {
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", undefined);
 
     const response = await POST(request(`Bearer ${jobSecret}`));
 
@@ -139,8 +138,8 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
     expect(mocks.findMembership).toHaveBeenCalledWith({
       where: {
-        vendorId: "vendor-preview",
-        userId: "owner-preview",
+        vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+        userId: WP4_SANDBOX_FIXTURE.userId,
         role: "owner",
         status: "active",
         user: { status: "active" },
@@ -163,8 +162,8 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
     expect(setCookie).toContain("Max-Age=900");
     expect(mocks.createSession).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({
-        userId: "owner-preview",
-        vendorId: "vendor-preview",
+        userId: WP4_SANDBOX_FIXTURE.userId,
+        vendorId: WP4_SANDBOX_FIXTURE.vendorId,
         mfaVerifiedAt: expect.any(Date),
       }),
     });
