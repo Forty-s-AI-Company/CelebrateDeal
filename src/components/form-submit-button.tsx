@@ -68,11 +68,13 @@ export function FormSubmitButton({
             onClick?.(event);
             if (event.defaultPrevented || type !== "submit" || !form) return;
 
-            // Blocking confirm dialogs can detach the original click from
-            // React's Server Action submit dispatch. Re-submit explicitly with
-            // the same button so its name, value and formAction are preserved.
+            // Exit the confirm click task before dispatching the Server Action.
+            // Re-entrant requestSubmit() can be dropped by React while the
+            // original synthetic click is still unwinding under CPU pressure.
             event.preventDefault();
-            form.requestSubmit(button);
+            window.setTimeout(() => {
+              if (button.form === form && !button.disabled) form.requestSubmit(button);
+            }, 0);
             return;
           }
           onClick?.(event);
