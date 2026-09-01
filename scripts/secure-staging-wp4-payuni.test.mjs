@@ -176,9 +176,10 @@ test("receipt may prove exact Preview lineage without claiming PayUni execution"
   assert.equal(receipt.sideEffects.providerWrites, 0);
 });
 
-function mockResponse(url, status, { cookies = [], location, json } = {}) {
+function mockResponse(url, status, { cookies = [], location, json, extraHeaders = {} } = {}) {
   const headers = new Headers();
   if (location) headers.set("location", location);
+  for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
   let body = { cancel: async () => undefined };
   if (json !== undefined) {
     headers.set("content-type", "application/json; charset=utf-8");
@@ -289,6 +290,27 @@ test("fixture preflight persists only a closed HTTP failure classification", asy
     assert.equal(result.responseAccepted, false);
     assert.equal(JSON.stringify(result).includes(String(status)), false);
   }
+});
+
+test("fixture preflight accepts only closed authenticated 404 classifications", async () => {
+  for (const outcome of ["EXECUTOR_DISABLED", "FIXTURE_UNAVAILABLE"]) {
+    const result = await runFixturePreflight(
+      safeEnvironment,
+      async (url) => mockResponse(url, 404, {
+        extraHeaders: { "x-celebratedeal-wp4-preflight": outcome },
+      }),
+    );
+    assert.equal(result.outcome, outcome);
+  }
+
+  const rejected = await runFixturePreflight(
+    safeEnvironment,
+    async (url) => mockResponse(url, 404, {
+      extraHeaders: { "x-celebratedeal-wp4-preflight": "raw-fixture-identifier" },
+    }),
+  );
+  assert.equal(rejected.outcome, "DISABLED_OR_FIXTURE_UNAVAILABLE");
+  assert.equal(JSON.stringify(rejected).includes("raw-fixture-identifier"), false);
 });
 
 test("WP4 child verifies fixtures before creating one bounded owner session", async () => {
