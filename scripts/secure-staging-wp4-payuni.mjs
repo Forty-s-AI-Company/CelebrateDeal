@@ -84,7 +84,15 @@ export const DIAGNOSTIC_CATEGORIES = Object.freeze([
 
 const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
-const FIXTURE_PREFLIGHT_KEYS = ["requests", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
+const FIXTURE_PREFLIGHT_KEYS = ["requests", "outcome", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
+const FIXTURE_PREFLIGHT_FAILURE_OUTCOMES = new Set([
+  "AUTHORIZATION_REJECTED",
+  "DISABLED_OR_FIXTURE_UNAVAILABLE",
+  "CONFIGURATION_UNAVAILABLE",
+  "HTTP_REJECTED",
+  "RESPONSE_INVALID",
+  "NETWORK_FAILED",
+]);
 const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
 const CHILD_RESULT_KEYS = ["fixturePreflight", "ownerSession"];
 const NESTED_KEYS = Object.freeze({
@@ -123,6 +131,7 @@ function systemEnvironment(source = process.env) {
 function initialFixturePreflight() {
   return {
     requests: 0,
+    outcome: "NOT_RUN",
     responseAccepted: false,
     buyerOrderReady: false,
     platformSubscriptionReady: false,
@@ -130,13 +139,14 @@ function initialFixturePreflight() {
   };
 }
 
-function failedFixturePreflight() {
-  return { ...initialFixturePreflight(), requests: 1 };
+function failedFixturePreflight(outcome = "HTTP_REJECTED") {
+  return { ...initialFixturePreflight(), requests: 1, outcome };
 }
 
 function uncertainFixturePreflight() {
   return {
     requests: 1,
+    outcome: "UNKNOWN",
     responseAccepted: null,
     buyerOrderReady: null,
     platformSubscriptionReady: null,
@@ -288,21 +298,25 @@ function ownerSessionState(owner) {
 function fixturePreflightState(preflight) {
   if (!exactKeys(preflight, FIXTURE_PREFLIGHT_KEYS)) return "INVALID";
   const notRun = preflight.requests === 0
+    && preflight.outcome === "NOT_RUN"
     && preflight.responseAccepted === false
     && preflight.buyerOrderReady === false
     && preflight.platformSubscriptionReady === false
     && preflight.invoicePaymentReady === false;
   const failed = preflight.requests === 1
+    && FIXTURE_PREFLIGHT_FAILURE_OUTCOMES.has(preflight.outcome)
     && preflight.responseAccepted === false
     && preflight.buyerOrderReady === false
     && preflight.platformSubscriptionReady === false
     && preflight.invoicePaymentReady === false;
   const complete = preflight.requests === 1
+    && preflight.outcome === "ACCEPTED"
     && preflight.responseAccepted === true
     && preflight.buyerOrderReady === true
     && preflight.platformSubscriptionReady === true
     && preflight.invoicePaymentReady === true;
   const unknown = preflight.requests === 1
+    && preflight.outcome === "UNKNOWN"
     && preflight.responseAccepted === null
     && preflight.buyerOrderReady === null
     && preflight.platformSubscriptionReady === null
@@ -347,7 +361,7 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v6",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v7",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
@@ -390,7 +404,7 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v6" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v7" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
@@ -467,7 +481,6 @@ export async function runFixturePreflight(source, fetchImpl = fetch) {
     || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
     || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
     || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
-  const result = failedFixturePreflight();
   try {
     const pathname = "/api/admin/ops/payuni/wp4-preflight";
     const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
@@ -480,26 +493,37 @@ export async function runFixturePreflight(source, fetchImpl = fetch) {
       signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
     });
     const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)
-      || contentType !== "application/json") {
+    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
       await discardResponseBody(response);
-      return result;
+      const outcome = response.status === 401
+        ? "AUTHORIZATION_REJECTED"
+        : response.status === 404
+          ? "DISABLED_OR_FIXTURE_UNAVAILABLE"
+          : response.status === 503
+            ? "CONFIGURATION_UNAVAILABLE"
+            : "HTTP_REJECTED";
+      return failedFixturePreflight(outcome);
+    }
+    if (contentType !== "application/json") {
+      await discardResponseBody(response);
+      return failedFixturePreflight("RESPONSE_INVALID");
     }
     const body = await readBoundedJsonObject(response);
     if (!exactKeys(body, ["ready", "buyerOrder", "platformSubscription", "invoicePayment"])
       || body.ready !== true
       || body.buyerOrder !== true
       || body.platformSubscription !== true
-      || body.invoicePayment !== true) return result;
+      || body.invoicePayment !== true) return failedFixturePreflight("RESPONSE_INVALID");
     return {
       requests: 1,
+      outcome: "ACCEPTED",
       responseAccepted: true,
       buyerOrderReady: true,
       platformSubscriptionReady: true,
       invoicePaymentReady: true,
     };
   } catch {
-    return result;
+    return failedFixturePreflight("NETWORK_FAILED");
   }
 }
 

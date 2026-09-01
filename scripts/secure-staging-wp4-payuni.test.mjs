@@ -231,6 +231,7 @@ test("fixture preflight accepts only the exact fixed boolean projection", async 
 
   assert.deepEqual(fixture, {
     requests: 1,
+    outcome: "ACCEPTED",
     responseAccepted: true,
     buyerOrderReady: true,
     platformSubscriptionReady: true,
@@ -253,9 +254,14 @@ test("fixture preflight fails closed for redirect, schema drift and oversized ou
     json: { ...readyFixtures, padding: "x".repeat(1_100) },
   }));
 
-  for (const result of [redirect, drift, oversized]) {
+  for (const [result, outcome] of [
+    [redirect, "HTTP_REJECTED"],
+    [drift, "RESPONSE_INVALID"],
+    [oversized, "NETWORK_FAILED"],
+  ]) {
     assert.deepEqual(result, {
       requests: 1,
+      outcome,
       responseAccepted: false,
       buyerOrderReady: false,
       platformSubscriptionReady: false,
@@ -263,6 +269,25 @@ test("fixture preflight fails closed for redirect, schema drift and oversized ou
     });
     assert.equal(JSON.stringify(result).includes("must-not-persist"), false);
     assert.equal(JSON.stringify(result).includes("production.example.com"), false);
+  }
+});
+
+test("fixture preflight persists only a closed HTTP failure classification", async () => {
+  const cases = [
+    [401, "AUTHORIZATION_REJECTED"],
+    [404, "DISABLED_OR_FIXTURE_UNAVAILABLE"],
+    [503, "CONFIGURATION_UNAVAILABLE"],
+    [429, "HTTP_REJECTED"],
+  ];
+
+  for (const [status, outcome] of cases) {
+    const result = await runFixturePreflight(
+      safeEnvironment,
+      async (url) => mockResponse(url, status),
+    );
+    assert.equal(result.outcome, outcome);
+    assert.equal(result.responseAccepted, false);
+    assert.equal(JSON.stringify(result).includes(String(status)), false);
   }
 });
 
