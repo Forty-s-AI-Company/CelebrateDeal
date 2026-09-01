@@ -62,6 +62,9 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
 
     expect(response.status).toBe(404);
+    if (vercelEnv === "preview") {
+      expect(response.headers.get("x-celebratedeal-wp4-fixture")).toBe("EXECUTOR_DISABLED");
+    }
     expect(mocks.ensureFixture).not.toHaveBeenCalled();
   });
 
@@ -70,7 +73,29 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     const body = await POST(request({ authorization: `Bearer ${jobSecret}`, body: "{}" }));
 
     expect(drift.status).toBe(404);
+    expect(drift.headers.get("x-celebratedeal-wp4-fixture")).toBe("SOURCE_MISMATCH");
     expect(body.status).toBe(404);
+    expect(body.headers.get("x-celebratedeal-wp4-fixture")).toBe("BODY_REJECTED");
+    expect(mocks.ensureFixture).not.toHaveBeenCalled();
+  });
+
+  it("uses the exact server-bound public SHA when Vercel omits its system SHA", async () => {
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", undefined);
+    vi.stubEnv("WP4_EXPECTED_SOURCE_SHA", sourceSha);
+
+    const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.ensureFixture).toHaveBeenCalledExactlyOnceWith(mocks.database);
+  });
+
+  it("fails closed when system and bound source identities conflict", async () => {
+    vi.stubEnv("WP4_EXPECTED_SOURCE_SHA", "b".repeat(40));
+
+    const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-celebratedeal-wp4-fixture")).toBe("SOURCE_CONFIGURATION_UNAVAILABLE");
     expect(mocks.ensureFixture).not.toHaveBeenCalled();
   });
 

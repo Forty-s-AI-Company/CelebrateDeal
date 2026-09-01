@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import {
@@ -9,9 +8,11 @@ import {
 } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
+import {
+  resolveWp4ExpectedSourceSha,
+  wp4SourceMatchesRequest,
+} from "@/lib/wp4-preview-runtime";
 
-const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
-const SHA_PATTERN = /^[a-f0-9]{40}$/i;
 
 function unavailableResponse() {
   return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -19,12 +20,6 @@ function unavailableResponse() {
 
 function unavailableConfigurationResponse() {
   return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
-}
-
-function timingSafeShaEqual(sourceSha: string, deploymentSha: string) {
-  const source = Buffer.from(sourceSha);
-  const deployment = Buffer.from(deploymentSha);
-  return source.length === deployment.length && timingSafeEqual(source, deployment);
 }
 
 /**
@@ -48,13 +43,12 @@ export async function POST(request: Request) {
 
   const vendorId = WP4_SANDBOX_FIXTURE.vendorId;
   const userId = WP4_SANDBOX_FIXTURE.userId;
-  const deploymentSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim();
-  if (!vendorId || !userId || !deploymentSha || !SHA_PATTERN.test(deploymentSha)) {
+  const deploymentSha = resolveWp4ExpectedSourceSha();
+  if (!vendorId || !userId || !deploymentSha) {
     return unavailableConfigurationResponse();
   }
 
-  const sourceSha = request.headers.get(SOURCE_SHA_HEADER);
-  if (!sourceSha || !SHA_PATTERN.test(sourceSha) || !timingSafeShaEqual(sourceSha, deploymentSha)) {
+  if (!wp4SourceMatchesRequest(request, deploymentSha)) {
     return unavailableResponse();
   }
 
