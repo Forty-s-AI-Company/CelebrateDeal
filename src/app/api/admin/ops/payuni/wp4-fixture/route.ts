@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
@@ -6,14 +5,20 @@ import {
   ensureWp4SandboxFixture,
   Wp4SandboxFixtureConflictError,
 } from "@/lib/wp4-sandbox-fixture";
+import {
+  resolveWp4ExpectedSourceSha,
+  wp4SourceMatchesRequest,
+} from "@/lib/wp4-preview-runtime";
 
-const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
-const SHA_PATTERN = /^[a-f0-9]{40}$/i;
+const FIXTURE_OUTCOME_HEADER = "x-celebratedeal-wp4-fixture";
+type FixtureClosedOutcome = "EXECUTOR_DISABLED" | "SOURCE_CONFIGURATION_UNAVAILABLE" | "SOURCE_MISMATCH" | "BODY_REJECTED";
 
-function unavailableResponse() {
+function unavailableResponse(outcome?: FixtureClosedOutcome, status = 404) {
+  const headers: Record<string, string> = { "Cache-Control": "no-store" };
+  if (outcome) headers[FIXTURE_OUTCOME_HEADER] = outcome;
   return NextResponse.json(
     { error: "Not found" },
-    { status: 404, headers: { "Cache-Control": "no-store" } },
+    { status, headers },
   );
 }
 
@@ -30,17 +35,6 @@ function previewSandboxEnabled() {
     && process.env.WP4_SANDBOX_EXECUTOR_ENABLED === "true";
 }
 
-function sourceMatchesDeployment(request: Request) {
-  const sourceSha = request.headers.get(SOURCE_SHA_HEADER);
-  const deploymentSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim();
-  if (!sourceSha || !deploymentSha || !SHA_PATTERN.test(sourceSha) || !SHA_PATTERN.test(deploymentSha)) {
-    return false;
-  }
-  const source = Buffer.from(sourceSha);
-  const deployment = Buffer.from(deploymentSha);
-  return source.length === deployment.length && timingSafeEqual(source, deployment);
-}
-
 function requestHasBody(request: Request) {
   if (request.body !== null) return true;
   if (request.headers.has("transfer-encoding")) return true;
@@ -54,9 +48,11 @@ function requestHasBody(request: Request) {
  */
 export async function POST(request: Request) {
   if (!requireJobSecret(request)) return unauthorizedResponse();
-  if (!previewSandboxEnabled() || !sourceMatchesDeployment(request) || requestHasBody(request)) {
-    return unavailableResponse();
-  }
+  if (!previewSandboxEnabled()) return unavailableResponse(process.env.VERCEL_ENV === "preview" ? "EXECUTOR_DISABLED" : undefined);
+  const expectedSha = resolveWp4ExpectedSourceSha();
+  if (!expectedSha) return unavailableResponse("SOURCE_CONFIGURATION_UNAVAILABLE", 503);
+  if (!wp4SourceMatchesRequest(request, expectedSha)) return unavailableResponse("SOURCE_MISMATCH");
+  if (requestHasBody(request)) return unavailableResponse("BODY_REJECTED");
 
   try {
     const result = await ensureWp4SandboxFixture(getDb());

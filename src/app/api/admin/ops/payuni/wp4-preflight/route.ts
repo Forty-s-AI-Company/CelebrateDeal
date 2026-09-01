@@ -1,13 +1,14 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { isProductDeliveryReadyForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
+import {
+  resolveWp4ExpectedSourceSha,
+  wp4SourceMatchesRequest,
+} from "@/lib/wp4-preview-runtime";
 
-const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
 const PREFLIGHT_OUTCOME_HEADER = "x-celebratedeal-wp4-preflight";
-const SHA_PATTERN = /^[a-f0-9]{40}$/i;
 const PAYABLE_INVOICE_STATUSES = ["issued", "overdue"] as const;
 
 function unavailableResponse(outcome?: "EXECUTOR_DISABLED" | "FIXTURE_UNAVAILABLE") {
@@ -30,12 +31,6 @@ function unavailableConfigurationResponse() {
   );
 }
 
-function timingSafeShaEqual(sourceSha: string, deploymentSha: string) {
-  const source = Buffer.from(sourceSha);
-  const deployment = Buffer.from(deploymentSha);
-  return source.length === deployment.length && timingSafeEqual(source, deployment);
-}
-
 function previewSandboxEnabled() {
   return process.env.VERCEL_ENV === "preview"
     && process.env.PAYUNI_ENV === "sandbox"
@@ -49,20 +44,11 @@ function serverConfiguration() {
     productId: WP4_SANDBOX_FIXTURE.productId,
     planId: WP4_SANDBOX_FIXTURE.planId,
     invoiceId: WP4_SANDBOX_FIXTURE.invoiceId,
-    deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim(),
+    deploymentSha: resolveWp4ExpectedSourceSha(),
   };
-  return Object.values(configuration).every(Boolean) && SHA_PATTERN.test(configuration.deploymentSha ?? "")
+  return Object.values(configuration).every(Boolean)
     ? configuration as Record<keyof typeof configuration, string>
     : null;
-}
-
-function sourceMatchesDeployment(request: Request, deploymentSha: string) {
-  const sourceSha = request.headers.get(SOURCE_SHA_HEADER);
-  return Boolean(
-    sourceSha
-    && SHA_PATTERN.test(sourceSha)
-    && timingSafeShaEqual(sourceSha, deploymentSha),
-  );
 }
 
 function requestHasBody(request: Request) {
@@ -92,7 +78,7 @@ export async function POST(request: Request) {
   }
   const { vendorId, userId, productId, planId, invoiceId, deploymentSha } = configuration;
 
-  if (!sourceMatchesDeployment(request, deploymentSha)) {
+  if (!wp4SourceMatchesRequest(request, deploymentSha)) {
     return unavailableResponse();
   }
 

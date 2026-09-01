@@ -337,7 +337,7 @@ function fixtureSetupState(setup) {
   if (!exactKeys(setup, FIXTURE_SETUP_KEYS)) return "INVALID";
   const notRun = setup.requests === 0 && setup.outcome === "NOT_RUN" && setup.responseAccepted === false
     && setup.createdRows === 0 && setup.reusedRows === 0;
-  const failed = setup.requests === 1 && ["AUTHORIZATION_REJECTED", "DISABLED", "CONFLICT", "HTTP_REJECTED", "RESPONSE_INVALID", "NETWORK_FAILED"].includes(setup.outcome)
+  const failed = setup.requests === 1 && ["AUTHORIZATION_REJECTED", "DISABLED", "SOURCE_CONFIGURATION_UNAVAILABLE", "SOURCE_MISMATCH", "BODY_REJECTED", "CONFLICT", "HTTP_REJECTED", "RESPONSE_INVALID", "NETWORK_FAILED"].includes(setup.outcome)
     && setup.responseAccepted === false && setup.createdRows === 0 && setup.reusedRows === 0;
   const complete = setup.requests === 1 && setup.outcome === "ACCEPTED" && setup.responseAccepted === true
     && Number.isSafeInteger(setup.createdRows) && setup.createdRows >= 0 && setup.createdRows <= 6
@@ -531,13 +531,20 @@ export async function runFixtureSetup(source, fetchImpl = fetch) {
     const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
     if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
       await discardResponseBody(response);
+      const closedOutcome = response.headers?.get?.("x-celebratedeal-wp4-fixture");
+      const allowlistedClosedOutcome = ["EXECUTOR_DISABLED", "SOURCE_CONFIGURATION_UNAVAILABLE", "SOURCE_MISMATCH", "BODY_REJECTED"].includes(closedOutcome)
+        ? closedOutcome
+        : null;
       const outcome = response.status === 401
         ? "AUTHORIZATION_REJECTED"
-        : response.status === 404
+        : allowlistedClosedOutcome === "EXECUTOR_DISABLED"
           ? "DISABLED"
-          : response.status === 409
-            ? "CONFLICT"
-            : "HTTP_REJECTED";
+          : allowlistedClosedOutcome
+            ?? (response.status === 404
+              ? "DISABLED"
+              : response.status === 409
+                ? "CONFLICT"
+                : "HTTP_REJECTED");
       return failedFixtureSetup(outcome);
     }
     if (contentType !== "application/json") {
