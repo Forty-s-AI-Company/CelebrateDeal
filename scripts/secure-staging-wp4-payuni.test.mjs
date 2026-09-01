@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -16,7 +18,9 @@ import {
   parseChildOutput,
   runFixturePreflight,
   runOwnerSession,
+  runParent,
   runWp4Child,
+  safeDiagnosticCategory,
   validateInvocation,
   validateReceipt,
 } from "./secure-staging-wp4-payuni.mjs";
@@ -69,6 +73,75 @@ test("receipt is an explicit bounded-mutation prerequisite contract", () => {
   assert.equal(receipt.sideEffects.sessionCreationOutcome, "NOT_ATTEMPTED");
   assert.equal(receipt.sideEffects.sessionRowsCreated, 0);
   assert.equal(receipt.sideEffects.userRowsUpdated, 0);
+  assert.equal(receipt.diagnosticCategory, "NOT_RUN");
+});
+
+test("diagnostic categories are closed, sanitized and never persist raw errors", () => {
+  assert.equal(safeDiagnosticCategory(new Error("GITHUB_DEPLOYMENT_READ_FAILED")), "GITHUB_DEPLOYMENT_READ_FAILED");
+  assert.equal(safeDiagnosticCategory("CHILD_OUTPUT_INVALID"), "CHILD_OUTPUT_INVALID");
+  assert.equal(safeDiagnosticCategory(new Error("https://unexpected.example/?token=secret")), "UNCLASSIFIED_INTERNAL_FAILURE");
+  const receipt = createInitialReceipt(sha);
+  receipt.diagnosticCategory = "https://unexpected.example/?token=secret";
+  assert.equal(validateReceipt(receipt).errors.includes("DIAGNOSTIC_CATEGORY"), true);
+});
+
+async function runParentInTemp(dependencies) {
+  const runnerTemp = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-wp4-test-"));
+  try {
+    const receiptPath = await runParent({ ...safeEnvironment, RUNNER_TEMP: runnerTemp }, dependencies);
+    return JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+  } finally {
+    fs.rmSync(runnerTemp, { recursive: true, force: true });
+  }
+}
+
+test("parent persists a closed lineage diagnostic without raw error text", async () => {
+  const receipt = await runParentInTemp({
+    verifyDeploymentImpl: async () => { throw new Error("GITHUB_DEPLOYMENT_READ_FAILED"); },
+  });
+  assert.equal(receipt.diagnosticCategory, "GITHUB_DEPLOYMENT_READ_FAILED");
+  assert.equal(receipt.lineage.deploymentReads, 0);
+  assert.equal(receipt.sideEffects.sessionCreationAttempts, 0);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("parent classifies a non-200 Preview health response without starting the child", async () => {
+  const receipt = await runParentInTemp({
+    verifyDeploymentImpl: async () => ({
+      reads: 2,
+      host: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST,
+      deploymentMatched: true,
+      sourceMatched: true,
+      preview: true,
+      ready: true,
+    }),
+    fetchImpl: async () => new Response(null, { status: 503 }),
+  });
+  assert.equal(receipt.diagnosticCategory, "STAGING_HEALTH_FAILED");
+  assert.equal(receipt.lineage.deploymentReads, 0);
+  assert.equal(receipt.sideEffects.sessionCreationAttempts, 0);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("parent preserves unknown session side effects when child output is invalid", async () => {
+  const receipt = await runParentInTemp({
+    verifyDeploymentImpl: async () => ({
+      reads: 2,
+      host: safeEnvironment.CELEBRATEDEAL_DEPLOYMENT_HOST,
+      deploymentMatched: true,
+      sourceMatched: true,
+      preview: true,
+      ready: true,
+    }),
+    fetchImpl: async () => new Response(null, { status: 200 }),
+    spawnSyncImpl: () => ({ status: 1, signal: null, stdout: "", stderr: "must-not-persist" }),
+  });
+  assert.equal(receipt.diagnosticCategory, "CHILD_OUTPUT_INVALID");
+  assert.equal(receipt.prerequisites.exactPreviewLineage, true);
+  assert.equal(receipt.sideEffects.sessionCreationAttempts, 1);
+  assert.equal(receipt.sideEffects.sessionCreationOutcome, "UNKNOWN");
+  assert.equal(JSON.stringify(receipt).includes("must-not-persist"), false);
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
 });
 
 test("receipt rejects fabricated payment, refund, callback, lineage and provider evidence", () => {
@@ -398,7 +471,7 @@ test("runner cannot load provider fixtures, Prisma, or create external payment s
   assert.doesNotMatch(source, /sandbox-api\.payuni\.com\.tw/u);
   assert.doesNotMatch(source, /Object\.(?:keys|entries)\(process\.env\)/u);
   assert.doesNotMatch(source, /\.json\(\)|\.text\(\)/u);
-  assert.match(source, /spawnSync\(process\.execPath/u);
+  assert.match(source, /spawnSyncImpl\(process\.execPath/u);
   assert.match(source, /PAYUNI_SANDBOX_ONETIME_CARD_NO/u);
   assert.match(source, /FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE/u);
 });
