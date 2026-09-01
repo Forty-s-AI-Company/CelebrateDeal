@@ -14,7 +14,7 @@
 | `docs/codex-goal/DECISIONS_NEEDED.md` | active | 真正產品決策 |
 | `docs/codex-goal/COMMAND_LOG.md` | active | sanitized command trail |
 | `docs/codex-goal/AUTHORIZATION_MATRIX.md` | active | route × role × tenant × MFA inventory |
-| `docs/codex-goal/API_CONTRACT_REGISTRY.md` | active | 27 route caller/input/tenant/replay/response contract |
+| `docs/codex-goal/API_CONTRACT_REGISTRY.md` | active | 63 route caller/input/tenant/replay/response contract rows |
 | `docs/codex-goal/PRISMA_INVARIANTS.md` | active | 51 model／9 migration invariant inventory |
 | `docs/codex-goal/REQUIREMENTS_TRACEABILITY.md` | active | 27 項需求到實作、測試、外部 Gate 與決策的追溯矩陣 |
 | `docs/codex-goal/ARCHITECTURE_BOUNDARIES.md` | active | 分層、依賴方向、runtime cycle 與 root actions debt ownership |

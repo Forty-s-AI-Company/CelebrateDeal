@@ -16,8 +16,8 @@ const PURPOSES = Object.freeze(["buyer_order", "platform_subscription", "invoice
 const SESSION_COOKIE_NAME = "celebrate_session";
 const WP4_SESSION_TTL_SECONDS = 15 * 60;
 export const WP4_NETWORK_REQUEST_TIMEOUT_MS = 10_000;
-export const WP4_CHILD_TIMEOUT_MS = 45_000;
-export const WP4_CHILD_MAX_REQUESTS = 4;
+export const WP4_CHILD_TIMEOUT_MS = 60_000;
+export const WP4_CHILD_MAX_REQUESTS = 5;
 
 // These names are intentionally public contract metadata. Values stay only in
 // the protected runner environment and are never printed or persisted.
@@ -82,8 +82,9 @@ export const DIAGNOSTIC_CATEGORIES = Object.freeze([
   "UNCLASSIFIED_INTERNAL_FAILURE",
 ]);
 
-const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
+const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixtureSetup", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
+const FIXTURE_SETUP_KEYS = ["requests", "outcome", "responseAccepted", "createdRows", "reusedRows"];
 const FIXTURE_PREFLIGHT_KEYS = ["requests", "outcome", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
 const FIXTURE_PREFLIGHT_FAILURE_OUTCOMES = new Set([
   "AUTHORIZATION_REJECTED",
@@ -96,9 +97,10 @@ const FIXTURE_PREFLIGHT_FAILURE_OUTCOMES = new Set([
   "NETWORK_FAILED",
 ]);
 const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
-const CHILD_RESULT_KEYS = ["fixturePreflight", "ownerSession"];
+const CHILD_RESULT_KEYS = ["fixtureSetup", "fixturePreflight", "ownerSession"];
 const NESTED_KEYS = Object.freeze({
   lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect"],
+  fixtureSetup: FIXTURE_SETUP_KEYS,
   fixturePreflight: FIXTURE_PREFLIGHT_KEYS,
   ownerSession: OWNER_SESSION_KEYS,
   environment: ["requiredBindingsPresent", "payuniSandbox", "stagingDatabaseMatched", "productionDetected"],
@@ -106,7 +108,7 @@ const NESTED_KEYS = Object.freeze({
   reconciliation: ["callbackConsistency", "duplicateRejected", "outOfOrderFailClosed", "overRefundRejected", "allPurposesMatched"],
   network: ["policy", "githubDeployments", "stagingPreview", "supabaseStaging", "payuniSandbox", "arbitraryOutbound"],
   safety: ["sanitized", "envFilesRead", "envEnumerated", "secretValuesPrinted", "secretValuesPersisted", "rawOutputPersisted", "rawDatabaseRowsPersisted", "rawProviderResponsePersisted", "customerOrPaymentDataPersisted"],
-  sideEffects: ["sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
+  sideEffects: ["fixtureSetupAttempts", "fixtureRowsCreated", "fixtureRowsReused", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
 });
 
 function hasValue(source, key) {
@@ -141,19 +143,20 @@ function initialFixturePreflight() {
   };
 }
 
-function failedFixturePreflight(outcome = "HTTP_REJECTED") {
-  return { ...initialFixturePreflight(), requests: 1, outcome };
+function initialFixtureSetup() {
+  return { requests: 0, outcome: "NOT_RUN", responseAccepted: false, createdRows: 0, reusedRows: 0 };
 }
 
-function uncertainFixturePreflight() {
-  return {
-    requests: 1,
-    outcome: "UNKNOWN",
-    responseAccepted: null,
-    buyerOrderReady: null,
-    platformSubscriptionReady: null,
-    invoicePaymentReady: null,
-  };
+function failedFixtureSetup(outcome = "HTTP_REJECTED") {
+  return { ...initialFixtureSetup(), requests: 1, outcome };
+}
+
+function uncertainFixtureSetup() {
+  return { requests: 1, outcome: "UNKNOWN", responseAccepted: null, createdRows: null, reusedRows: null };
+}
+
+function failedFixturePreflight(outcome = "HTTP_REJECTED") {
+  return { ...initialFixturePreflight(), requests: 1, outcome };
 }
 
 function initialOwnerSession() {
@@ -330,6 +333,25 @@ function fixturePreflightState(preflight) {
   return "INVALID";
 }
 
+function fixtureSetupState(setup) {
+  if (!exactKeys(setup, FIXTURE_SETUP_KEYS)) return "INVALID";
+  const notRun = setup.requests === 0 && setup.outcome === "NOT_RUN" && setup.responseAccepted === false
+    && setup.createdRows === 0 && setup.reusedRows === 0;
+  const failed = setup.requests === 1 && ["AUTHORIZATION_REJECTED", "DISABLED", "CONFLICT", "HTTP_REJECTED", "RESPONSE_INVALID", "NETWORK_FAILED"].includes(setup.outcome)
+    && setup.responseAccepted === false && setup.createdRows === 0 && setup.reusedRows === 0;
+  const complete = setup.requests === 1 && setup.outcome === "ACCEPTED" && setup.responseAccepted === true
+    && Number.isSafeInteger(setup.createdRows) && setup.createdRows >= 0 && setup.createdRows <= 6
+    && Number.isSafeInteger(setup.reusedRows) && setup.reusedRows >= 0 && setup.reusedRows <= 6
+    && setup.createdRows + setup.reusedRows === 6;
+  const unknown = setup.requests === 1 && setup.outcome === "UNKNOWN" && setup.responseAccepted === null
+    && setup.createdRows === null && setup.reusedRows === null;
+  if (complete) return "COMPLETE";
+  if (unknown) return "UNKNOWN";
+  if (failed) return "FAILED";
+  if (notRun) return "NOT_RUN";
+  return "INVALID";
+}
+
 export function validateInvocation(task, source = process.env) {
   if (task !== TASK) return { ok: false, reason: "TASK_NOT_ALLOWLISTED" };
   if (![...ACTIVE_SECRET_KEYS, ...ACTIVE_CONFIG_KEYS].every((key) => hasValue(source, key))) {
@@ -363,12 +385,13 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v7",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v8",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
     executedAtUtc: new Date().toISOString(),
     lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false },
+    fixtureSetup: initialFixtureSetup(),
     fixturePreflight: initialFixturePreflight(),
     ownerSession: initialOwnerSession(),
     environment: { requiredBindingsPresent: false, payuniSandbox: false, stagingDatabaseMatched: false, productionDetected: false },
@@ -385,7 +408,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     reconciliation: { callbackConsistency: false, duplicateRejected: false, outOfOrderFailClosed: false, overRefundRejected: false, allPurposesMatched: false },
     network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: false, payuniSandbox: false, arbitraryOutbound: false },
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDatabaseRowsPersisted: false, rawProviderResponsePersisted: false, customerOrPaymentDataPersisted: false },
-    sideEffects: { sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
+    sideEffects: { fixtureSetupAttempts: 0, fixtureRowsCreated: 0, fixtureRowsReused: 0, sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
     failureCategory: "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
     diagnosticCategory: "NOT_RUN",
   };
@@ -406,25 +429,28 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v7" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v8" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
   if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
   if (receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE") errors.push("FAILURE_CATEGORY");
   if (!DIAGNOSTIC_CATEGORIES.includes(receipt?.diagnosticCategory)) errors.push("DIAGNOSTIC_CATEGORY");
   if (!exactArray(receipt?.prerequisites?.requiredSecretBindings, REQUIRED_SECRET_KEYS) || !exactArray(receipt?.prerequisites?.requiredConfigBindings, REQUIRED_CONFIG_KEYS)) errors.push("PREREQUISITE_BINDINGS");
+  const setupState = fixtureSetupState(receipt?.fixtureSetup);
   const fixtureState = fixturePreflightState(receipt?.fixturePreflight);
   const ownerState = ownerSessionState(receipt?.ownerSession);
+  if (setupState === "INVALID") errors.push("FIXTURE_SETUP_CONTRACT");
   const expectedGaps = fixtureState === "COMPLETE" && ownerState === "COMPLETE"
     ? OWNER_SESSION_COMPLETE_GAPS
     : FIXED_PREREQUISITE_GAPS;
   if (receipt?.prerequisites?.fixedTask !== true || receipt?.prerequisites?.fixedHostEgress !== true || receipt?.prerequisites?.sterileChildEnvironment !== true || typeof receipt?.prerequisites?.exactPreviewLineage !== "boolean" || !exactArray(receipt?.prerequisites?.gaps, expectedGaps)) errors.push("PREREQUISITE_CONTRACT");
   if (ownerState === "INVALID") errors.push("OWNER_SESSION_CONTRACT");
   if (fixtureState === "INVALID") errors.push("FIXTURE_PREFLIGHT_CONTRACT");
-  const ownerSequenceValid = (fixtureState === "COMPLETE" && ownerState !== "NOT_RUN" && ownerState !== "INVALID")
-    || (fixtureState === "FAILED" && ownerState === "NOT_RUN")
-    || (fixtureState === "UNKNOWN" && ownerState === "BOOTSTRAP_FAILED")
-    || (fixtureState === "NOT_RUN" && ownerState === "NOT_RUN");
+  const ownerSequenceValid = (setupState === "COMPLETE" && fixtureState === "COMPLETE" && ownerState !== "NOT_RUN" && ownerState !== "INVALID")
+    || (setupState === "COMPLETE" && fixtureState === "FAILED" && ownerState === "NOT_RUN")
+    || (setupState === "FAILED" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN")
+    || (setupState === "UNKNOWN" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN")
+    || (setupState === "NOT_RUN" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN");
   if (!ownerSequenceValid) errors.push("OWNER_WITHOUT_FIXTURES");
   if (!Array.isArray(receipt?.purposes) || receipt.purposes.length !== PURPOSES.length || receipt.purposes.map((item) => item?.purpose).join("|") !== PURPOSES.join("|")) errors.push("PURPOSES");
   for (const item of receipt?.purposes ?? []) {
@@ -447,11 +473,19 @@ export function validateReceipt(receipt) {
     && receipt?.lineage?.healthStatus === null
     && receipt?.lineage?.noRedirect === false;
   if ((!lineageProven && !lineageNotRun) || receipt?.prerequisites?.exactPreviewLineage !== lineageProven) errors.push("LINEAGE_CONTRACT");
-  if (!lineageProven && (fixtureState !== "NOT_RUN" || ownerState !== "NOT_RUN")) errors.push("CHILD_WITHOUT_LINEAGE");
+  if (!lineageProven && (setupState !== "NOT_RUN" || fixtureState !== "NOT_RUN" || ownerState !== "NOT_RUN")) errors.push("CHILD_WITHOUT_LINEAGE");
   if (receipt?.environment?.requiredBindingsPresent !== false || receipt?.environment?.payuniSandbox !== false || receipt?.environment?.stagingDatabaseMatched !== false || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_MUST_NOT_RUN");
   if (Object.values(receipt?.reconciliation ?? {}).some((value) => value !== false)) errors.push("RECONCILIATION_MUST_NOT_RUN");
   if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.payuniSandbox !== false || receipt?.network?.supabaseStaging !== false) errors.push("NETWORK_POLICY");
   if (receipt?.safety?.sanitized !== true || Object.entries(receipt?.safety ?? {}).some(([key, value]) => key !== "sanitized" && value !== false)) errors.push("SENSITIVE_PERSISTENCE");
+  const expectedFixtureEffects = setupState === "NOT_RUN" || setupState === "FAILED"
+    ? { attempts: setupState === "FAILED" ? 1 : 0, created: 0, reused: 0 }
+    : setupState === "UNKNOWN"
+      ? { attempts: 1, created: null, reused: null }
+      : { attempts: 1, created: receipt.fixtureSetup.createdRows, reused: receipt.fixtureSetup.reusedRows };
+  if (receipt?.sideEffects?.fixtureSetupAttempts !== expectedFixtureEffects.attempts
+    || receipt?.sideEffects?.fixtureRowsCreated !== expectedFixtureEffects.created
+    || receipt?.sideEffects?.fixtureRowsReused !== expectedFixtureEffects.reused) errors.push("FIXTURE_SIDE_EFFECTS");
   const expectedSessionEffects = ownerState === "NOT_RUN"
     ? { attempts: 0, outcome: "NOT_ATTEMPTED", rows: 0, ttl: 0 }
     : ownerState === "BOOTSTRAP_FAILED"
@@ -475,6 +509,61 @@ export function childEnvironment(source) {
     CELEBRATEDEAL_SOURCE_SHA: source.CELEBRATEDEAL_SOURCE_SHA,
     CELEBRATEDEAL_DEPLOYMENT_HOST: source.CELEBRATEDEAL_DEPLOYMENT_HOST,
   };
+}
+
+export async function runFixtureSetup(source, fetchImpl = fetch) {
+  const initial = initialFixtureSetup();
+  if (!hasValue(source, "JOB_SECRET")
+    || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
+  try {
+    const pathname = "/api/admin/ops/payuni/wp4-fixture";
+    const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${source.JOB_SECRET}`,
+        "x-celebratedeal-source-sha": source.CELEBRATEDEAL_SOURCE_SHA,
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
+    });
+    const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+      await discardResponseBody(response);
+      const outcome = response.status === 401
+        ? "AUTHORIZATION_REJECTED"
+        : response.status === 404
+          ? "DISABLED"
+          : response.status === 409
+            ? "CONFLICT"
+            : "HTTP_REJECTED";
+      return failedFixtureSetup(outcome);
+    }
+    if (contentType !== "application/json") {
+      await discardResponseBody(response);
+      return failedFixtureSetup("RESPONSE_INVALID");
+    }
+    const body = await readBoundedJsonObject(response);
+    if (!exactKeys(body, ["ready", "createdCount", "reusedCount"])
+      || body.ready !== true
+      || !Number.isSafeInteger(body.createdCount)
+      || body.createdCount < 0
+      || body.createdCount > 6
+      || !Number.isSafeInteger(body.reusedCount)
+      || body.reusedCount < 0
+      || body.reusedCount > 6
+      || body.createdCount + body.reusedCount !== 6) return failedFixtureSetup("RESPONSE_INVALID");
+    return {
+      requests: 1,
+      outcome: "ACCEPTED",
+      responseAccepted: true,
+      createdRows: body.createdCount,
+      reusedRows: body.reusedCount,
+    };
+  } catch {
+    return failedFixtureSetup("NETWORK_FAILED");
+  }
 }
 
 export async function runFixturePreflight(source, fetchImpl = fetch) {
@@ -589,11 +678,14 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
 }
 
 export async function runWp4Child(source, fetchImpl = fetch) {
-  const fixturePreflight = await runFixturePreflight(source, fetchImpl);
+  const fixtureSetup = await runFixtureSetup(source, fetchImpl);
+  const fixturePreflight = fixtureSetupState(fixtureSetup) === "COMPLETE"
+    ? await runFixturePreflight(source, fetchImpl)
+    : initialFixturePreflight();
   const ownerSession = fixturePreflightState(fixturePreflight) === "COMPLETE"
     ? await runOwnerSession(source, fetchImpl)
     : initialOwnerSession();
-  return { fixturePreflight, ownerSession };
+  return { fixtureSetup, fixturePreflight, ownerSession };
 }
 
 export function parseChildOutput(stdout, exitCode) {
@@ -602,11 +694,15 @@ export function parseChildOutput(stdout, exitCode) {
   if (exitCode !== 2 || lines.length !== 1 || nonEmpty.length !== 1) return { ok: false, reason: "CHILD_OUTPUT_INVALID" };
   try {
     const result = JSON.parse(lines[0].slice(CHILD_PREFIX.length));
+    const setupState = fixtureSetupState(result?.fixtureSetup);
     const fixtureState = fixturePreflightState(result?.fixturePreflight);
     const ownerState = ownerSessionState(result?.ownerSession);
-    const validSequence = fixtureState === "COMPLETE"
+    const validSequence = setupState === "COMPLETE" && fixtureState === "COMPLETE"
       ? ownerState !== "INVALID" && ownerState !== "NOT_RUN"
-      : fixtureState === "FAILED" && ownerState === "NOT_RUN";
+      : setupState === "COMPLETE" && fixtureState === "FAILED"
+        ? ownerState === "NOT_RUN"
+        : (setupState === "FAILED" || setupState === "UNKNOWN")
+          && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN";
     return exactKeys(result, CHILD_RESULT_KEYS) && validSequence
       ? { ok: true, ...result }
       : { ok: false, reason: "CHILD_RECEIPT_INVALID" };
@@ -616,12 +712,12 @@ export function parseChildOutput(stdout, exitCode) {
 }
 
 export function markChildAttemptUnknown(receipt) {
-  receipt.fixturePreflight = uncertainFixturePreflight();
-  receipt.ownerSession = uncertainOwnerSession();
-  receipt.sideEffects.sessionCreationAttempts = 1;
-  receipt.sideEffects.sessionCreationOutcome = "UNKNOWN";
-  receipt.sideEffects.sessionRowsCreated = null;
-  receipt.sideEffects.sessionTtlSeconds = WP4_SESSION_TTL_SECONDS;
+  receipt.fixtureSetup = uncertainFixtureSetup();
+  receipt.fixturePreflight = initialFixturePreflight();
+  receipt.ownerSession = initialOwnerSession();
+  receipt.sideEffects.fixtureSetupAttempts = 1;
+  receipt.sideEffects.fixtureRowsCreated = null;
+  receipt.sideEffects.fixtureRowsReused = null;
   return receipt;
 }
 
@@ -684,8 +780,12 @@ export async function runParent(source, dependencies = {}) {
         ? { ok: false, reason: "CHILD_EXECUTION_FAILED" }
         : parseChildOutput(child.stdout, child.status ?? 1);
       if (parsed.ok) {
+        receipt.fixtureSetup = parsed.fixtureSetup;
         receipt.fixturePreflight = parsed.fixturePreflight;
         receipt.ownerSession = parsed.ownerSession;
+        receipt.sideEffects.fixtureSetupAttempts = parsed.fixtureSetup.requests;
+        receipt.sideEffects.fixtureRowsCreated = parsed.fixtureSetup.createdRows;
+        receipt.sideEffects.fixtureRowsReused = parsed.fixtureSetup.reusedRows;
         receipt.sideEffects.sessionCreationAttempts = parsed.ownerSession.sessionCreationAttempts;
         receipt.sideEffects.sessionCreationOutcome = parsed.ownerSession.sessionCreationOutcome;
         receipt.sideEffects.sessionRowsCreated = parsed.ownerSession.sessionRowsCreated;

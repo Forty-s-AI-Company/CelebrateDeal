@@ -44,6 +44,7 @@ vi.mock("@/lib/product-delivery", () => ({
 }));
 
 import { POST } from "./route";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const jobSecret = "test-fixture-job-secret";
 const sourceSha = "a".repeat(40);
@@ -125,11 +126,6 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
-  vi.stubEnv("SMOKE_VENDOR_ID", "vendor-preview");
-  vi.stubEnv("WP4_SMOKE_OWNER_USER_ID", "owner-preview");
-  vi.stubEnv("WP4_SMOKE_PRODUCT_ID", "product-preview");
-  vi.stubEnv("WP4_SMOKE_BILLING_PLAN_ID", "plan-preview");
-  vi.stubEnv("WP4_SMOKE_INVOICE_ID", "invoice-preview");
   vi.stubEnv("VERCEL_GIT_COMMIT_SHA", sourceSha);
   mocks.findMembership.mockResolvedValue({ id: "member-1" });
   mocks.findProduct.mockResolvedValue({
@@ -192,8 +188,8 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
     expectNoWritesOrProviders();
   });
 
-  it("fails closed when required server configuration is missing", async () => {
-    vi.stubEnv("WP4_SMOKE_INVOICE_ID", undefined);
+  it("fails closed when deployment lineage configuration is missing", async () => {
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", undefined);
 
     const response = await POST(request(`Bearer ${jobSecret}`));
 
@@ -261,13 +257,13 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
       invoicePayment: true,
     });
     expect(mocks.findMembership).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-preview", userId: "owner-preview", role: "owner", status: "active", user: { status: "active" } },
+      where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, userId: WP4_SANDBOX_FIXTURE.userId, role: "owner", status: "active", user: { status: "active" } },
       select: { id: true },
     });
     expect(mocks.findProduct).toHaveBeenCalledWith({
       where: {
-        id: "product-preview",
-        vendorId: "vendor-preview",
+        id: WP4_SANDBOX_FIXTURE.productId,
+        vendorId: WP4_SANDBOX_FIXTURE.vendorId,
         isActive: true,
         fulfillmentTypeConfirmed: true,
         priceCents: { gt: 0 },
@@ -295,11 +291,11 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
       },
     });
     expect(mocks.findBillingPlan).toHaveBeenCalledWith({
-      where: { id: "plan-preview", isActive: true, monthlyPriceCents: { gt: 0 } },
+      where: { id: WP4_SANDBOX_FIXTURE.planId, isActive: true, monthlyPriceCents: { gt: 0 } },
       select: { id: true },
     });
     expect(mocks.findInvoice).toHaveBeenCalledWith({
-      where: { id: "invoice-preview", vendorId: "vendor-preview", totalCents: { gt: 0 }, status: { in: ["issued", "overdue"] } },
+      where: { id: WP4_SANDBOX_FIXTURE.invoiceId, vendorId: WP4_SANDBOX_FIXTURE.vendorId, totalCents: { gt: 0 }, status: { in: ["issued", "overdue"] } },
       select: { id: true },
     });
     expectNoWritesOrProviders();

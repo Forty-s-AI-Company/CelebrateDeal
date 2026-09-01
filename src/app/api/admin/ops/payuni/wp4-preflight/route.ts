@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { isProductDeliveryReadyForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
 const PREFLIGHT_OUTCOME_HEADER = "x-celebratedeal-wp4-preflight";
@@ -43,11 +44,11 @@ function previewSandboxEnabled() {
 
 function serverConfiguration() {
   const configuration = {
-    vendorId: process.env.SMOKE_VENDOR_ID?.trim(),
-    userId: process.env.WP4_SMOKE_OWNER_USER_ID?.trim(),
-    productId: process.env.WP4_SMOKE_PRODUCT_ID?.trim(),
-    planId: process.env.WP4_SMOKE_BILLING_PLAN_ID?.trim(),
-    invoiceId: process.env.WP4_SMOKE_INVOICE_ID?.trim(),
+    vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+    userId: WP4_SANDBOX_FIXTURE.userId,
+    productId: WP4_SANDBOX_FIXTURE.productId,
+    planId: WP4_SANDBOX_FIXTURE.planId,
+    invoiceId: WP4_SANDBOX_FIXTURE.invoiceId,
     deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim(),
   };
   return Object.values(configuration).every(Boolean) && SHA_PATTERN.test(configuration.deploymentSha ?? "")

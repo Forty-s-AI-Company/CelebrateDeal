@@ -8,6 +8,7 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const SOURCE_SHA_HEADER = "x-celebratedeal-source-sha";
 const SHA_PATTERN = /^[a-f0-9]{40}$/i;
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
     return unavailableResponse();
   }
 
-  const vendorId = process.env.SMOKE_VENDOR_ID?.trim();
-  const userId = process.env.WP4_SMOKE_OWNER_USER_ID?.trim();
+  const vendorId = WP4_SANDBOX_FIXTURE.vendorId;
+  const userId = WP4_SANDBOX_FIXTURE.userId;
   const deploymentSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim();
   if (!vendorId || !userId || !deploymentSha || !SHA_PATTERN.test(deploymentSha)) {
     return unavailableConfigurationResponse();
