@@ -73,6 +73,29 @@ test("deployment verification requires one exact non-production successful Previ
   await assert.rejects(verifyDeployment(source, async () => productionResponses.shift()), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
 });
 
+test("deployment verification accepts GitHub target_url and rejects conflicting status URLs", async () => {
+  const source = environment();
+  const targetUrlResponses = [
+    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false }]), { status: 200 }),
+    new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+  ];
+  const result = await verifyDeployment(source, async () => targetUrlResponses.shift());
+  assert.equal(result.deploymentMatched, true);
+
+  const conflictingResponses = [
+    new Response(JSON.stringify([{ id: 42, sha, environment: "Preview – celebrate-deal-staging", production_environment: false }]), { status: 200 }),
+    new Response(JSON.stringify([{
+      state: "success",
+      environment_url: "https://safe-preview.vercel.app",
+      target_url: "https://different-preview.vercel.app",
+    }]), { status: 200 }),
+  ];
+  await assert.rejects(
+    verifyDeployment(source, async () => conflictingResponses.shift()),
+    /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u,
+  );
+});
+
 test("squash-merged sources require an exact protected migration tree", () => {
   const trustedTree = "a".repeat(40);
   const matchingSpawn = (_command, args) => {

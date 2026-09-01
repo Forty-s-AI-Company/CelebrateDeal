@@ -144,11 +144,26 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   if (statusResponse.status !== 200 || statusResponse.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_STATUS_READ_FAILED");
   const statuses = await statusResponse.json();
   const latest = Array.isArray(statuses) ? statuses[0] : null;
-  let host = "";
-  try {
-    const environmentUrl = new URL(latest?.environment_url ?? "");
-    host = environmentUrl.protocol === "https:" && !environmentUrl.port && !environmentUrl.username && !environmentUrl.password ? environmentUrl.hostname.toLowerCase() : "";
-  } catch { host = ""; }
+  const statusHosts = [latest?.environment_url, latest?.target_url]
+    .filter((value) => typeof value === "string" && value.length > 0)
+    .map((value) => {
+      try {
+        const statusUrl = new URL(value);
+        return statusUrl.protocol === "https:"
+          && !statusUrl.port
+          && !statusUrl.username
+          && !statusUrl.password
+          && statusUrl.pathname === "/"
+          && statusUrl.search === ""
+          && statusUrl.hash === ""
+          ? statusUrl.hostname.toLowerCase()
+          : "";
+      } catch {
+        return "";
+      }
+    });
+  const uniqueStatusHosts = [...new Set(statusHosts)];
+  const host = uniqueStatusHosts.length === 1 ? uniqueStatusHosts[0] : "";
   const deploymentMatched = host === source.CELEBRATEDEAL_DEPLOYMENT_HOST;
   const sourceMatched = deployment.sha === source.CELEBRATEDEAL_SOURCE_SHA;
   const preview = deployment.production_environment === false;
