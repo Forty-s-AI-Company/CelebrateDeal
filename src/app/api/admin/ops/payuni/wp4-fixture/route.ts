@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { requestHasNonEmptyBody } from "@/lib/http-request-body";
 import {
   ensureWp4SandboxFixture,
   Wp4SandboxFixtureConflictError,
@@ -35,13 +36,6 @@ function previewSandboxEnabled() {
     && process.env.WP4_SANDBOX_EXECUTOR_ENABLED === "true";
 }
 
-function requestHasBody(request: Request) {
-  if (request.body !== null) return true;
-  if (request.headers.has("transfer-encoding")) return true;
-  const contentLength = request.headers.get("content-length")?.trim();
-  return Boolean(contentLength && contentLength !== "0");
-}
-
 /**
  * Idempotently creates only deterministic staging synthetic rows required by
  * the bounded WP4 PayUni Sandbox runner. No caller-owned fixture values exist.
@@ -52,7 +46,7 @@ export async function POST(request: Request) {
   const expectedSha = resolveWp4ExpectedSourceSha();
   if (!expectedSha) return unavailableResponse("SOURCE_CONFIGURATION_UNAVAILABLE", 503);
   if (!wp4SourceMatchesRequest(request, expectedSha)) return unavailableResponse("SOURCE_MISMATCH");
-  if (requestHasBody(request)) return unavailableResponse("BODY_REJECTED");
+  if (await requestHasNonEmptyBody(request)) return unavailableResponse("BODY_REJECTED");
 
   try {
     const result = await ensureWp4SandboxFixture(getDb());

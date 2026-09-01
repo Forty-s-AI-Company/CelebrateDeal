@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { isProductDeliveryReadyForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
+import { requestHasNonEmptyBody } from "@/lib/http-request-body";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import {
   resolveWp4ExpectedSourceSha,
@@ -51,16 +52,10 @@ function serverConfiguration() {
     : null;
 }
 
-function requestHasBody(request: Request) {
-  if (request.body !== null) return true;
-  if (request.headers.has("transfer-encoding")) return true;
-  const contentLength = request.headers.get("content-length")?.trim();
-  return Boolean(contentLength && contentLength !== "0");
-}
-
 /**
  * Read-only fixture preflight for the approved WP4 Preview/Sandbox runner.
- * Identities and values are deployment-owned; caller input is never consumed.
+ * Identities and values are deployment-owned; the body stream is inspected only
+ * far enough to prove it is empty before any database read.
  */
 export async function POST(request: Request) {
   // Keep this first: unauthorized callers must not consume a body or touch the DB.
@@ -82,8 +77,9 @@ export async function POST(request: Request) {
     return unavailableResponse();
   }
 
-  // This endpoint accepts no caller-owned values. Do not consume a rejected body.
-  if (requestHasBody(request)) {
+  // This endpoint accepts no caller-owned values. A proxy may still provide an
+  // empty stream for a bodyless POST, so inspect content rather than presence.
+  if (await requestHasNonEmptyBody(request)) {
     return unavailableResponse();
   }
 

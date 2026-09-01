@@ -60,10 +60,29 @@ function request(authorization?: string, sha = sourceSha) {
 }
 
 function requestWithBody(authorization?: string) {
-  const body = new ReadableStream({ start: (controller) => controller.close() });
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("{}"));
+      controller.close();
+    },
+  });
   return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
     method: "POST",
     headers: authorization ? { authorization, ["x-celebratedeal-source-sha"]: sourceSha } : undefined,
+    body,
+    duplex: "half",
+  } as RequestInit);
+}
+
+function requestWithEmptyProxyBody() {
+  const body = new ReadableStream({ start: (controller) => controller.close() });
+  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${jobSecret}`,
+      ["x-celebratedeal-source-sha"]: sourceSha,
+      ["transfer-encoding"]: "chunked",
+    },
     body,
     duplex: "half",
   } as RequestInit);
@@ -200,25 +219,30 @@ describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
     expectNoWritesOrProviders();
   });
 
-  it("rejects any authorized request body without consuming it or touching the DB", async () => {
+  it("rejects any authorized non-empty request body after a bounded read", async () => {
     const requestWithAuthorizedBody = requestWithBody(`Bearer ${jobSecret}`);
 
     const response = await POST(requestWithAuthorizedBody);
 
     expect(response.status).toBe(404);
-    expect(requestWithAuthorizedBody.bodyUsed).toBe(false);
+    expect(requestWithAuthorizedBody.bodyUsed).toBe(true);
     expectNoReads();
     expectNoWritesOrProviders();
   });
 
-  it.each([
-    ["positive content length", { "content-length": "1" }],
-    ["transfer encoding", { "transfer-encoding": "chunked" }],
-  ])("rejects the %s body indicator before DB access", async (_name, headers) => {
-    const response = await POST(requestWithHeaders(headers));
+  it("rejects a positive content length before DB access", async () => {
+    const response = await POST(requestWithHeaders({ "content-length": "1" }));
 
     expect(response.status).toBe(404);
     expectNoReads();
+    expectNoWritesOrProviders();
+  });
+
+  it("accepts a proxy-provided zero-byte chunked stream", async () => {
+    const response = await POST(requestWithEmptyProxyBody());
+
+    expect(response.status).toBe(200);
+    expect(mocks.findMembership).toHaveBeenCalledOnce();
     expectNoWritesOrProviders();
   });
 
