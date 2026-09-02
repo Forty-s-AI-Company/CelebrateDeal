@@ -65,4 +65,40 @@ describe("WP4 fixed refund execution", () => {
       .resolves.toMatchObject({ status: "CANDIDATE_AMBIGUOUS", purpose: "buyer_order", providerWriteAttempted: false });
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+
+  it("walks the fixed purpose order and refuses an ineligible server-owned candidate", async () => {
+    findMany.mockResolvedValue([
+      row({
+        metadata: {
+          billingPurpose: "platform_subscription_checkout",
+          planId: WP4_SANDBOX_FIXTURE.planId,
+          wp4SourceCommit: sourceCommit,
+        },
+      }),
+    ]);
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
+      .resolves.toEqual({ status: "COMPLETED", purpose: "platform_subscription", phase: "partial", providerWriteAttempted: true });
+
+    findMany.mockResolvedValue([row({ grossAmountCents: 1 })]);
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
+      .resolves.toEqual({ status: "REFUND_NOT_ELIGIBLE", purpose: "buyer_order", phase: "partial", providerWriteAttempted: false });
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["provider_unavailable", "PROVIDER_UNAVAILABLE", false],
+    ["provider_request_rejected", "PROVIDER_REJECTED", true],
+    ["reconciliation_required", "RECONCILIATION_REQUIRED", true],
+  ])("returns a closed provider disposition for %s", async (disposition, status, providerWriteAttempted) => {
+    findMany.mockResolvedValue([row({
+      metadata: {
+        billingPurpose: "invoice_payment",
+        invoiceId: WP4_SANDBOX_FIXTURE.invoiceId,
+        wp4SourceCommit: sourceCommit,
+      },
+    })]);
+    mocks.execute.mockResolvedValueOnce({ disposition });
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
+      .resolves.toEqual({ status, purpose: "invoice_payment", phase: "partial", providerWriteAttempted });
+  });
 });
