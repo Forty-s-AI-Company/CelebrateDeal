@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PaymentTransaction, type PrismaClient } from "@prisma/client";
 import {
   requireFinanceAdmin,
   requireVendorFinance,
@@ -25,6 +25,7 @@ import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
+import { executePayUniRefund } from "@/lib/payuni-refund-execution";
 import { toSlug } from "@/lib/format";
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
@@ -159,6 +160,26 @@ function isSerializationConflict(error: unknown) {
 
 
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
+
+async function finishRefundAction(input: {
+  transaction: PaymentTransaction;
+  updated: PaymentTransaction;
+  actor: { id: string; label: string };
+}) {
+  await writeAuditLog({
+    vendorId: input.transaction.vendorId,
+    actorId: input.actor.id,
+    actorLabel: input.actor.label,
+    action: "refund_payment_transaction",
+    targetType: "PaymentTransaction",
+    targetId: input.transaction.id,
+    before: auditSnapshot(input.transaction),
+    after: auditSnapshot(input.updated),
+  });
+  revalidatePath("/admin/billing/dashboard");
+  revalidatePath("/admin/billing/settlements");
+  redirect("/admin/billing/dashboard");
+}
 
 // Keep the legacy public action surface stable while the auth/security domain
 // owns its implementation in a dedicated file-level `use server` module.
@@ -2142,10 +2163,28 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  // PayUni does not send a refund callback for the close API used by Sandbox.
-  // Reserve a local pending record first, then let this finance-admin action be
-  // the sole issuer of the provider refund.  This keeps a recoverable record if
-  // the provider succeeds but the final local commit cannot complete.
+  if (providerTransaction?.providerName === "payuni") {
+    const result = await executePayUniRefund({
+      db,
+      transactionId: id,
+      refundAmountCents,
+      gatewayFeeRefundCents,
+      platformFeeRefundCents,
+      reason,
+      monthKey,
+      actor: { id: member.id, label: member.role },
+    });
+    if (result.disposition === "completed") {
+      revalidatePath("/admin/billing/dashboard");
+      revalidatePath("/admin/billing/settlements");
+      redirect("/admin/billing/dashboard");
+    }
+    if (result.disposition === "provider_result_ambiguous") {
+      redirect("/admin/billing/dashboard?error=refund_reconciliation_required");
+    }
+    redirect("/admin/billing/dashboard?error=refund");
+  }
+
   if (providerTransaction?.providerName === "payuni") {
     const provider = getPaymentProvider("payuni");
     if (!provider.refundPayment || !providerTransaction.providerTradeNo) {
@@ -2160,9 +2199,6 @@ export async function refundPaymentTransactionAction(formData: FormData) {
       reserved = await db.$transaction(async (tx) => {
         const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
         if (!transaction) throw new RefundValidationError();
-        // A provider-side refund is valid only after this transaction has been
-        // recorded as paid.  Do not allow a provider trade reference alone to
-        // move a pending, failed, or already-refunded transaction forward.
         if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
           throw new RefundValidationError();
         }
@@ -2423,20 +2459,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     throw new Error("Refund transaction retry loop exited unexpectedly");
   })();
 
-  await writeAuditLog({
-    vendorId: transaction.vendorId,
-    actorId: member.id,
-    actorLabel: member.role,
-    action: "refund_payment_transaction",
-    targetType: "PaymentTransaction",
-    targetId: transaction.id,
-    before: auditSnapshot(transaction),
-    after: auditSnapshot(updated),
-  });
-
-  revalidatePath("/admin/billing/dashboard");
-  revalidatePath("/admin/billing/settlements");
-  redirect("/admin/billing/dashboard");
+  await finishRefundAction({ transaction, updated, actor: { id: member.id, label: member.role } });
 }
 
 export async function retryWebhookEventAction(formData: FormData) {
