@@ -26,8 +26,8 @@ function request(options: { authorization?: string; sha?: string; body?: BodyIni
       ...(options.authorization ? { authorization: options.authorization } : {}),
       "x-celebratedeal-source-sha": options.sha ?? sourceSha,
     },
-    ...(options.body ? { body: options.body } : {}),
-  });
+    ...(options.body === undefined ? {} : { body: options.body, duplex: "half" }),
+  } as RequestInit);
 }
 
 beforeEach(() => {
@@ -84,6 +84,19 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     vi.stubEnv("WP4_EXPECTED_SOURCE_SHA", sourceSha);
 
     const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.ensureFixture).toHaveBeenCalledExactlyOnceWith(mocks.database);
+  });
+
+  it("accepts a proxy-provided zero-byte request stream", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+
+    const response = await POST(request({ authorization: `Bearer ${jobSecret}`, body }));
 
     expect(response.status).toBe(200);
     expect(mocks.ensureFixture).toHaveBeenCalledExactlyOnceWith(mocks.database);
