@@ -90,7 +90,7 @@ export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity):
 
 export type Wp4PayUniSandboxReconciliationResult = {
   reconciled: boolean;
-  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
+  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
 };
 
 type Wp4ReconciliationDb = Pick<PrismaClient, "paymentTransaction"> & Parameters<typeof reconcilePayUniRefund>[0]["db"];
@@ -115,26 +115,38 @@ function candidateTransaction(value: unknown): CandidateTransaction | null {
 }
 
 /**
- * Reconciles only one already-reserved, fixture-owned PayUni refund. The
- * caller cannot choose a transaction, amount, or provider. A missing pending
- * reservation is not treated as success, which keeps a second provider refund
- * impossible from this route.
+ * Verifies exactly one current-source buyer-order refund against PayUni. A
+ * pending reservation is reconciled through the shared accounting core; an
+ * already-completed refund must still match the provider snapshot. The caller
+ * cannot choose a transaction, amount, purpose, or provider.
  */
 export async function reconcileWp4PayUniSandboxRefund(
   db: Wp4ReconciliationDb,
   sourceCommit: string,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
-  const selected = await db.paymentTransaction.findFirst({
+  const selected = await db.paymentTransaction.findMany({
     where: {
       vendorId: WP4_SANDBOX_FIXTURE.vendorId,
       providerName: "payuni",
-      status: { in: ["paid", "partially_refunded"] },
-      refunds: { some: { status: "pending" } },
+      status: { in: ["paid", "partially_refunded", "refunded"] },
     },
     orderBy: { occurredAt: "desc" },
   });
-  const row = candidateTransaction(selected);
-  if (!selected || !row || !isWp4PayUniSandboxTransactionForSource(row, sourceCommit) || !row.providerTradeNo || !row.orderNumber) {
+  const candidates = selected
+    .map(candidateTransaction)
+    .filter((row): row is CandidateTransaction => Boolean(
+      row
+      && isWp4PayUniSandboxTransactionForSource(row, sourceCommit)
+      && wp4PayUniPurposeFromMetadata(row.metadata) === "buyer_order",
+    ));
+  if (candidates.length === 0) {
+    return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
+  }
+  if (candidates.length > 1) return { reconciled: false, status: "CANDIDATE_AMBIGUOUS" };
+
+  const row = candidates[0]!;
+  const transaction = selected.find((item) => candidateTransaction(item)?.id === row.id);
+  if (!transaction || !row.providerTradeNo || !row.orderNumber) {
     return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
   }
 
@@ -143,7 +155,7 @@ export async function reconcileWp4PayUniSandboxRefund(
 
   let snapshot;
   try {
-    snapshot = await provider.queryPayment({ transaction: selected as PaymentTransaction });
+    snapshot = await provider.queryPayment({ transaction: transaction as PaymentTransaction });
   } catch {
     return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
   }

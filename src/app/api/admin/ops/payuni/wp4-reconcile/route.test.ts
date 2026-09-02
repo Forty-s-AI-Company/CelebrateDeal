@@ -87,6 +87,7 @@ describe("POST /api/admin/ops/payuni/wp4-reconcile", () => {
 
   it.each([
     [{ reconciled: false, status: "FIXTURE_UNAVAILABLE" }, 404],
+    [{ reconciled: false, status: "CANDIDATE_AMBIGUOUS" }, 409],
     [{ reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" }, 409],
     [{ reconciled: false, status: "REFUND_NOT_CONFIRMED" }, 409],
     [{ reconciled: false, status: "PROJECTION_UNAVAILABLE" }, 503],

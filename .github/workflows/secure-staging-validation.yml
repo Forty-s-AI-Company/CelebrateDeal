@@ -139,18 +139,13 @@ jobs:
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: |
           set -euo pipefail
 
-          node <<'NODE'
-          const sourceSha = process.env.CELEBRATEDEAL_SOURCE_SHA ?? "";
-          const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "";
-          const safeSha = /^[a-f0-9]{40}$/u;
-          const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
-          if (!safeSha.test(sourceSha) || !safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
-          NODE
+          node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
@@ -163,6 +158,7 @@ jobs:
           PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}
           PAYUNI_TEST_EXPIRY: ${{ secrets.PAYUNI_TEST_EXPIRY }}
           PAYUNI_TEST_CVV: ${{ secrets.PAYUNI_TEST_CVV }}
+          PAYUNI_ENV: sandbox
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: |
@@ -237,8 +233,8 @@ jobs:
       - name: Validate sanitized WP4 receipt
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         env:
-          SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-sandbox-reconciliation-receipt.json
-        run: node --import tsx scripts/validate-secure-staging-wp4-receipt.mjs "$SECURE_RECEIPT_PATH"
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-receipt
 
       - name: Upload sanitized receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

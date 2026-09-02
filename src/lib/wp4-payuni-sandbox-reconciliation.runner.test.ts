@@ -26,12 +26,12 @@ function candidate(overrides: Record<string, unknown> = {}) {
 }
 
 describe("WP4 PayUni Sandbox refund projection", () => {
-  const findFirst = vi.fn();
-  const db = { paymentTransaction: { findFirst } };
+  const findMany = vi.fn();
+  const db = { paymentTransaction: { findMany } };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    findFirst.mockResolvedValue(candidate());
+    findMany.mockResolvedValue([candidate()]);
     mocks.getProvider.mockReturnValue({
       queryPayment: vi.fn().mockResolvedValue({
         providerTradeNo: "opaque-provider-reference",
@@ -46,7 +46,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   });
 
   it("does not query a provider when no fixed-fixture transaction is eligible", async () => {
-    findFirst.mockResolvedValueOnce(null);
+    findMany.mockResolvedValueOnce([]);
 
     await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
@@ -56,11 +56,21 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   });
 
   it("rejects caller-like cross-fixture rows before provider access", async () => {
-    findFirst.mockResolvedValueOnce(candidate({ metadata: { billingPurpose: "buyer_order", productId: "other" } }));
+    findMany.mockResolvedValueOnce([candidate({ metadata: { billingPurpose: "buyer_order", productId: "other" } })]);
 
     await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
       status: "FIXTURE_UNAVAILABLE",
+    });
+    expect(mocks.getProvider).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before provider access when the current-source buyer flow is ambiguous", async () => {
+    findMany.mockResolvedValueOnce([candidate(), candidate({ id: "wp4-transaction-2" })]);
+
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
+      reconciled: false,
+      status: "CANDIDATE_AMBIGUOUS",
     });
     expect(mocks.getProvider).not.toHaveBeenCalled();
   });
@@ -93,6 +103,16 @@ describe("WP4 PayUni Sandbox refund projection", () => {
       transactionId: "wp4-transaction",
       actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
     }));
+  });
+
+  it("verifies an already-completed local refund against the provider snapshot", async () => {
+    findMany.mockResolvedValueOnce([candidate({ status: "refunded" })]);
+    mocks.reconcile.mockResolvedValueOnce({ disposition: "already_reconciled" });
+
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
+      reconciled: true,
+      status: "RECONCILED",
+    });
   });
 
   it("fails closed when a pending reservation cannot be reconciled", async () => {
