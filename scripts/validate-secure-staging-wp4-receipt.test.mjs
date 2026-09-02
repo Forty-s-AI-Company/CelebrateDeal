@@ -15,6 +15,8 @@ test("WP4 validator accepts only its canonical non-symlink runner-temp receipt",
     const receiptPath = path.join(directory, "wp4-payuni-sandbox-reconciliation-receipt.json");
     fs.writeFileSync(receiptPath, `${JSON.stringify(createInitialReceipt("146f8db0616fef63451d80f2d8d23a243f58860b"))}\n`);
     assert.deepEqual(validateReceiptPath(receiptPath, root), { ok: true, result: "BLOCKED" });
+    fs.writeFileSync(receiptPath, `${JSON.stringify(createInitialReceipt("not-a-source-sha"))}\n`);
+    assert.deepEqual(validateReceiptPath(receiptPath, root), { ok: false, reason: "RECEIPT_INVALID", diagnostic: "SOURCE" });
     const wrongName = path.join(directory, "wrong-receipt.json");
     fs.writeFileSync(wrongName, "{}\n");
     assert.equal(validateReceiptPath(wrongName, root).reason, "PATH_OUTSIDE_RUNNER_TEMP");

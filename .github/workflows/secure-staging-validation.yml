@@ -135,6 +135,23 @@ jobs:
 
           npm run secure:staging:wp2
 
+      - name: Validate fixed WP4 dispatch identity before secret injection
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        shell: bash
+        env:
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const sourceSha = process.env.CELEBRATEDEAL_SOURCE_SHA ?? "";
+          const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "";
+          const safeSha = /^[a-f0-9]{40}$/u;
+          const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+          if (!safeSha.test(sourceSha) || !safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
+          NODE
+
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         id: execute-wp4

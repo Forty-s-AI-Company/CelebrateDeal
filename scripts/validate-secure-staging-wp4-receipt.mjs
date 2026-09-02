@@ -6,6 +6,12 @@ import { validateReceipt } from "./secure-staging-wp4-payuni.mjs";
 
 const RECEIPT_NAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
 
+function diagnosticFor(validation) {
+  const errors = validation?.errors;
+  if (!Array.isArray(errors) || errors.length !== 1 || !/^[A-Z0-9_]+$/u.test(errors[0] ?? "")) return "RECEIPT_INVALID";
+  return errors[0];
+}
+
 export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_TEMP) {
   if (typeof candidate !== "string" || typeof runnerTemp !== "string") return { ok: false, reason: "PATH_MISSING" };
   try {
@@ -16,7 +22,7 @@ export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_T
     if (!stat.isFile() || stat.isSymbolicLink() || path.dirname(canonical) !== allowedRoot || path.basename(canonical) !== RECEIPT_NAME) return { ok: false, reason: "PATH_OUTSIDE_RUNNER_TEMP" };
     const receipt = JSON.parse(fs.readFileSync(canonical, "utf8"));
     const validation = validateReceipt(receipt);
-    return validation.ok ? { ok: true, result: receipt.result } : { ok: false, reason: "RECEIPT_INVALID" };
+    return validation.ok ? { ok: true, result: receipt.result } : { ok: false, reason: "RECEIPT_INVALID", diagnostic: diagnosticFor(validation) };
   } catch {
     return { ok: false, reason: "RECEIPT_UNREADABLE" };
   }
@@ -24,7 +30,7 @@ export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_T
 
 function main() {
   const result = validateReceiptPath(process.argv[2]);
-  process.stdout.write(`secure_staging_wp4_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}\n`);
+  process.stdout.write(`secure_staging_wp4_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}; reason=${result.reason ?? "NONE"}; diagnostic=${result.diagnostic ?? "NONE"}\n`);
   if (!result.ok) process.exitCode = 2;
 }
 
