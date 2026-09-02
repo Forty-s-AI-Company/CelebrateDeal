@@ -51,9 +51,10 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-runner.mjs"), "utf8");
   const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
+  assert.match(source, /npx playwright install --with-deps chromium/u);
   assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 2);
   assert.match(source, /api\.github\.com/u);
-  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 0);
+  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
@@ -85,10 +86,14 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
     "CELEBRATEDEAL_SOURCE_SHA",
     "GITHUB_TOKEN",
     "JOB_SECRET",
+    "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+    "PAYUNI_TEST_CVV",
+    "PAYUNI_TEST_EXPIRY",
   ]);
   assert.equal(wp4.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
-  assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), false);
-  assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH|SANDBOX|TEST)/u);
+  assert.equal(wp4.env.PAYUNI_SANDBOX_ONETIME_CARD_NO, "${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}");
+  assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), true);
+  assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH)/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
 });

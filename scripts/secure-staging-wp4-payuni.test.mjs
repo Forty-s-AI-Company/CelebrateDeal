@@ -30,6 +30,9 @@ const sha = "146f8db0616fef63451d80f2d8d23a243f58860b";
 const safeEnvironment = {
   GITHUB_TOKEN: "present",
   JOB_SECRET: "test-only-job-secret",
+  PAYUNI_SANDBOX_ONETIME_CARD_NO: "4111111111111111",
+  PAYUNI_TEST_EXPIRY: "1230",
+  PAYUNI_TEST_CVV: "123",
   CELEBRATEDEAL_SOURCE_SHA: sha,
   CELEBRATEDEAL_DEPLOYMENT_HOST: "safe-preview.vercel.app",
   RUNNER_TEMP: "/tmp/runner",
@@ -57,6 +60,9 @@ test("owner-session child environment excludes GitHub and ambient application cr
     "CELEBRATEDEAL_SOURCE_SHA",
     "JOB_SECRET",
     "PATH",
+    "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+    "PAYUNI_TEST_CVV",
+    "PAYUNI_TEST_EXPIRY",
     "RUNNER_TEMP",
   ]);
   assert.equal(child.GITHUB_TOKEN, undefined);

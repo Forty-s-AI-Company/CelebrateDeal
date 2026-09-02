@@ -54,6 +54,13 @@ jobs:
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
         run: docker pull postgres:17-alpine
 
+      # Browser binaries are fetched before the secret-aware WP4 step. The
+      # execution step below is therefore the only step that can receive the
+      # Sandbox test bindings.
+      - name: Preload Chromium before WP4 secret injection
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        run: npx playwright install --with-deps chromium
+
       - name: Verify secure runner contract
         run: npm run secure:staging:contract
 
@@ -136,6 +143,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}
+          PAYUNI_TEST_EXPIRY: ${{ secrets.PAYUNI_TEST_EXPIRY }}
+          PAYUNI_TEST_CVV: ${{ secrets.PAYUNI_TEST_CVV }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: |
@@ -149,7 +159,13 @@ jobs:
           : > "$hosts_file"
 
           node <<'NODE' > "$destinations"
-          const required = ["CELEBRATEDEAL_DEPLOYMENT_HOST"];
+          const required = [
+            "CELEBRATEDEAL_DEPLOYMENT_HOST",
+            "JOB_SECRET",
+            "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+            "PAYUNI_TEST_EXPIRY",
+            "PAYUNI_TEST_CVV",
+          ];
           if (required.some((key) => !process.env[key])) process.exit(2);
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
@@ -157,6 +173,7 @@ jobs:
           process.stdout.write([
             ["api.github.com", "443"],
             [deploymentHost, "443"],
+            ["sandbox-api.payuni.com.tw", "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 

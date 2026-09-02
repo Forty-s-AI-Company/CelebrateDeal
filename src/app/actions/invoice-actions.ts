@@ -14,6 +14,7 @@ import {
   checkoutSessionHasUsableDestination,
   type CheckoutSessionResult,
 } from "@/lib/payment-providers/types";
+import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 
 const INVOICE_PAYMENT_PURPOSE = "invoice_payment";
 const INVOICE_PAYMENT_MAX_ATTEMPTS = 3;
@@ -177,6 +178,7 @@ export async function payInvoiceAction(formData: FormData) {
               invoiceId: invoice.id,
               invoiceNumber: invoice.invoiceNumber,
               invoiceTotalCents: invoice.totalCents,
+              ...(wp4SourceBoundTransactionMetadata("invoice_payment", { invoiceId: invoice.id }) ?? {}),
             } as Prisma.InputJsonObject,
           },
         });
@@ -236,6 +238,7 @@ export async function payInvoiceAction(formData: FormData) {
             invoiceId: result.invoice.id,
             invoiceNumber: result.invoice.invoiceNumber,
             invoiceTotalCents: result.invoice.totalCents,
+            ...(wp4SourceBoundTransactionMetadata("invoice_payment", { invoiceId: result.invoice.id }) ?? {}),
             checkoutSession: checkoutSessionMetadata(checkoutSession),
           } as Prisma.InputJsonObject,
         },

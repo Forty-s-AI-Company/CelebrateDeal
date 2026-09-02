@@ -4,21 +4,22 @@ import { resolve } from "node:path";
 import { test } from "vitest";
 
 const workspace = resolve(import.meta.dirname, "..");
-const schema = readFileSync(resolve(workspace, "prisma/schema.prisma"), "utf8");
-const migration = readFileSync(
+const normalizeNewlines = (source: string) => source.replace(/\r\n/g, "\n");
+const schema = normalizeNewlines(readFileSync(resolve(workspace, "prisma/schema.prisma"), "utf8"));
+const migration = normalizeNewlines(readFileSync(
   resolve(
     workspace,
     "prisma/migrations/20260815090000_g8_01_one_stop_webinar_domain/migration.sql",
   ),
   "utf8",
-);
-const interactionRoleSemanticsMigration = readFileSync(
+));
+const interactionRoleSemanticsMigration = normalizeNewlines(readFileSync(
   resolve(
     workspace,
     "prisma/migrations/20260815100000_g8_02_interaction_role_semantics/migration.sql",
   ),
   "utf8",
-);
+));
 
 function requireText(source: string, text: string, label: string) {
   assert.ok(source.includes(text), `${label}: expected ${JSON.stringify(text)}`);

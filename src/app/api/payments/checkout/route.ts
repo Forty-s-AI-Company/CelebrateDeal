@@ -50,6 +50,7 @@ import {
   type BuyerSupportCookie,
 } from "@/lib/buyer-support-access";
 import { allowsLegacyAffiliateAttribution } from "@/lib/live-quota-policy";
+import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 import {
   ATTRIBUTION_TTL_SECONDS,
   attributionCookieFromRequest,
@@ -161,6 +162,7 @@ function checkoutTransactionMetadata(input: {
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
+    ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
 

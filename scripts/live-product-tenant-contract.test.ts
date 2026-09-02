@@ -9,7 +9,7 @@ const migration = fs.readFileSync(
   "utf8",
 );
 const actions = fs.readFileSync(path.join(ROOT, "src", "app", "actions.ts"), "utf8");
-const seed = fs.readFileSync(path.join(ROOT, "prisma", "seed.ts"), "utf8");
+const seed = fs.readFileSync(path.join(ROOT, "prisma", "seed.ts"), "utf8").replace(/\r\n/g, "\n");
 
 describe("LiveProduct tenant binding contract", () => {
   it("declares vendor-scoped composite relations and lookup ordering", () => {
