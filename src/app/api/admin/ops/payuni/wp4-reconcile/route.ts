@@ -21,7 +21,7 @@ function unavailableResponse(status = 404) {
 function resultStatus(result: Wp4PayUniSandboxReconciliationResult) {
   if (result.reconciled) return 200;
   if (result.status === "FIXTURE_UNAVAILABLE") return 404;
-  if (result.status === "PENDING_RESERVATION_UNAVAILABLE" || result.status === "REFUND_NOT_CONFIRMED") return 409;
+  if (result.status === "CANDIDATE_AMBIGUOUS" || result.status === "PENDING_RESERVATION_UNAVAILABLE" || result.status === "REFUND_NOT_CONFIRMED") return 409;
   return 503;
 }
 
@@ -32,8 +32,8 @@ function previewSandboxExecutorEnabled() {
 }
 
 /**
- * Reconciles only the deployment-owned WP4 Sandbox refund reservation. The
- * caller supplies no transaction, amount, provider URL, or other operation.
+ * Reconciles or verifies the deployment-owned WP4 Sandbox buyer-order refund.
+ * The caller supplies no transaction, amount, provider URL, or other operation.
  */
 export async function POST(request: Request) {
   // Reject unauthenticated callers before consuming a body or accessing the DB.
