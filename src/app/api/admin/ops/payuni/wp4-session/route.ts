@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { requestHasNonEmptyBody } from "@/lib/http-request-body";
 import {
   AUTH_COOKIE,
   WP4_PREVIEW_SESSION_TTL_SECONDS,
@@ -52,9 +53,10 @@ export async function POST(request: Request) {
     return unavailableResponse();
   }
 
-  // The runner must not be able to smuggle client-owned identity or payment
-  // inputs into this bootstrap endpoint. Reject a body without consuming it.
-  if (request.body !== null) {
+  // Vercel may represent an empty POST as a zero-byte ReadableStream. Reject
+  // only actual caller content, so this protected endpoint remains usable
+  // through the Preview proxy without accepting caller-owned inputs.
+  if (await requestHasNonEmptyBody(request)) {
     return unavailableResponse();
   }
 
