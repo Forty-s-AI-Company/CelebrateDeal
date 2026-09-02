@@ -15,6 +15,7 @@ import {
   capturePlatformReferralAttribution,
   PLATFORM_REFERRAL_COOKIE,
 } from "@/lib/platform-referral";
+import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 
 const PLAN_CHANGE_MAX_ATTEMPTS = 3;
 const DEFAULT_BILLING_PAYMENT_MODE = "platform";
@@ -310,6 +311,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
                   platformSubscriptionId: subscription.id,
                   billingPlanId: plan.id,
                   billingPlanCode: plan.code,
+                  ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: plan.id }) ?? {}),
                 } as Prisma.InputJsonObject,
               },
             })
@@ -403,6 +405,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               platformSubscriptionId: result.subscription.id,
               billingPlanId: result.plan.id,
               billingPlanCode: result.plan.code,
+              ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: result.plan.id }) ?? {}),
               checkoutSession: checkoutSessionMetadata(checkoutSession),
             } as Prisma.InputJsonObject,
           },
