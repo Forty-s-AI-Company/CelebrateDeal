@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import {
-  regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
@@ -153,7 +152,7 @@ export default async function MfaSetupPage({
                   啟用後會顯示一次 recovery codes。資料庫只保存 hash，不保存明碼。
                 </div>
                 {auth.user.mfaFactor ? (
-                  <form action={regenerateRecoveryCodesAction} className="grid gap-3">
+                  <form action="/api/settings/security/mfa/recovery-codes/regenerate" method="post" className="grid gap-3">
                     <CsrfField />
                     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                       目前 TOTP 驗證碼

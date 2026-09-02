@@ -21,10 +21,6 @@ import { getDb } from "@/lib/db";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
 import {
   decryptMfaSecret,
-  generateRecoveryCodes,
-  hashRecoveryCodeAsync,
-  MFA_RECOVERY_COOKIE,
-  serializeRecoveryCodes,
   verifyRecoveryCodeAsync,
   verifyTotpCode,
 } from "@/lib/mfa";
@@ -32,6 +28,7 @@ import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
+import { regenerateMfaRecoveryCodes } from "@/lib/mfa-recovery-regeneration";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_SOURCE_EMAIL_LIMIT = 5;
@@ -59,16 +56,6 @@ function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>
     if (value) rateLimitHeaders.set(headerName, value);
   }
   return rateLimitHeaders;
-}
-
-function recoveryCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 10,
-  };
 }
 
 export async function loginAction(formData: FormData) {
@@ -283,43 +270,8 @@ export async function dismissRecoveryCodesAction(formData: FormData) {
 }
 
 export async function regenerateRecoveryCodesAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
-  if (!auth.user.mfaFactor) redirect(`${destination}?error=mfa_required`);
-  const headerStore = await headers();
-  const rateLimited = await checkRateLimit(
-    new Request(getCanonicalAppUrl(), { headers: forwardedRequestHeaders(headerStore) }),
-    `mfa-recovery-regeneration:${auth.user.id}`,
-    3,
-    15 * 60 * 1000,
-  );
-  if (rateLimited) redirect(`${destination}?error=${rateLimited.status === 429 ? "recovery_rate_limited" : "recovery_unavailable"}`);
-  const code = text(formData, "code");
-  const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
-  if (!verifyTotpCode(secret, code)) {
-    await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "mfa_recovery_codes_regeneration_failed", targetType: "UserRecoveryCode", targetId: auth.user.id });
-    redirect(`${destination}?error=mfa_code`);
-  }
-  const recoveryCodes = generateRecoveryCodes();
-  const recoveryCodeHashes = await Promise.all(recoveryCodes.map(hashRecoveryCodeAsync));
-  await getDb().$transaction([
-    getDb().userRecoveryCode.deleteMany({ where: { userId: auth.user.id } }),
-    getDb().userRecoveryCode.createMany({ data: recoveryCodes.map((codeValue, index) => ({ userId: auth.user.id, codeHash: recoveryCodeHashes[index]! })) }),
-    getDb().userMfaFactor.update({ where: { userId: auth.user.id }, data: { lastUsedAt: new Date() } }),
-  ]);
-  const cookieStore = await cookies();
-  cookieStore.set(MFA_RECOVERY_COOKIE, serializeRecoveryCodes(recoveryCodes), recoveryCookieOptions());
-  await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
-    actorId: auth.user.id,
-    actorLabel: auth.member?.role ?? auth.user.platformRole,
-    action: "mfa_recovery_codes_regenerated",
-    targetType: "UserRecoveryCode",
-    targetId: auth.user.id,
-    after: auditSnapshot({ codeCount: recoveryCodes.length }),
-  });
-  redirect(`${destination}?updated=recovery_regenerated`);
+  const result = await regenerateMfaRecoveryCodes(formData);
+  redirect(`${result.destination}?${result.ok ? "updated=recovery_regenerated" : `error=${result.error}`}`);
 }
 
 export async function sendPasswordResetSmokeAction(formData: FormData) {

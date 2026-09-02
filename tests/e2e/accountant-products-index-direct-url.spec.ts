@@ -133,7 +133,11 @@ test("active accountant is denied the products index before product data is quer
         product.description,
         String(product.priceCents),
         String(product.compareAtCents),
-        product.currency,
+        // ISO currency codes are shared runtime vocabulary (for example, a
+        // framework or locale payload can legitimately contain "USD"). The
+        // product-specific formatted price below retains currency coverage
+        // together with a per-record amount, while the remaining generated
+        // fields prove that this product's database row was not serialized.
         String(product.inventory),
         product.imageUrl,
         product.checkoutUrl,
