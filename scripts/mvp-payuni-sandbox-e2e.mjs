@@ -73,6 +73,7 @@ const FAILURE_CODES = new Set([
   "PAYMENT_ATTEMPT_REJECTED",
   "PAYMENT_REJECTED",
   "RETURN_CALLBACK_UNMAPPED",
+  "RETURN_CALLBACK_PROOF_REQUIRED",
   "REFUND_REJECTED",
   "RECONCILE_REJECTED",
   "NETWORK_REJECTED",
@@ -318,9 +319,8 @@ export function validateMvpPayUniReceipt(receipt) {
     if (!completed || receipt.failure !== "NONE") errors.push("PASS_COMPLETENESS");
     const effects = receipt.sideEffects;
     const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "reconcilePosts", "transactionsCreated", "refunds"];
-    const firstExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
-    const recoveredExecution = effects.paymentReservationsCreated === 0 && effects.browserPaymentSubmissions === 0 && effects.payments === 0;
-    if (fixedOne.some((key) => effects[key] !== 1) || (!firstExecution && !recoveredExecution)) errors.push("PASS_EFFECTS");
+    const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
+    if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution) errors.push("PASS_EFFECTS");
   } else if (receipt?.failure === "NONE" || completed) {
     errors.push("BLOCKED_COMPLETENESS");
   }
@@ -596,24 +596,27 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       body: undefined,
     }));
     if (!assertPaymentAttemptResponse(paymentAttempt)) return fail(receipt, "PAYMENT_ATTEMPT_REJECTED");
+    // ALREADY_PAID proves only the current transaction state.  It does not
+    // carry a persisted, exact-source Return callback success proof, so it
+    // cannot authorize this runner to infer a browser submission, refund, or
+    // reconciliation.  Keep every later side effect at zero and fail closed.
+    if (paymentAttempt.body.status === "ALREADY_PAID") return fail(receipt, "RETURN_CALLBACK_PROOF_REQUIRED");
     receipt.checks.paymentAttemptReserved = true;
 
-    if (paymentAttempt.body.status === "SUBMIT_ALLOWED") {
-      receipt.sideEffects.paymentReservationsCreated = 1;
-      receipt.sideEffects.browserPaymentSubmissions = 1;
-      const callbackMapped = await browserSubmit({
-        previewHost: invocation.previewHost,
-        cardNumber: invocation.cardNumber,
-        cardExpiry: invocation.cardExpiry,
-        cardCvv: invocation.cardCvv,
-        formPayload: checkout.body.formPayload,
-        supportCookie: checkout.supportCookie,
-        orderNumber: checkout.body.orderNumber,
-        transactionId: checkout.body.transactionId,
-      });
-      if (callbackMapped !== true) return fail(receipt, "RETURN_CALLBACK_UNMAPPED");
-      receipt.sideEffects.payments = 1;
-    }
+    receipt.sideEffects.paymentReservationsCreated = 1;
+    receipt.sideEffects.browserPaymentSubmissions = 1;
+    const callbackMapped = await browserSubmit({
+      previewHost: invocation.previewHost,
+      cardNumber: invocation.cardNumber,
+      cardExpiry: invocation.cardExpiry,
+      cardCvv: invocation.cardCvv,
+      formPayload: checkout.body.formPayload,
+      supportCookie: checkout.supportCookie,
+      orderNumber: checkout.body.orderNumber,
+      transactionId: checkout.body.transactionId,
+    });
+    if (callbackMapped !== true) return fail(receipt, "RETURN_CALLBACK_UNMAPPED");
+    receipt.sideEffects.payments = 1;
     receipt.checks.payuniFormAccepted = true;
     receipt.checks.returnCallbackMapped = true;
 
