@@ -66,7 +66,9 @@ test("active member is denied billing plans before finance queries or MFA", asyn
       planId: plan.id,
       paymentMode: `wp78-payment-mode-${suffix}`,
       status: "active",
-      customFeeRateBps: 4_321,
+      // Keep the disclosure probe collision-resistant: a short number can
+      // occur incidentally in framework-generated terminal HTML.
+      customFeeRateBps: 432_109,
       billingCycleDay: 17,
     },
   });

@@ -178,15 +178,14 @@ describe("FormSubmitButton", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it("submits the same button in a fresh task after an accepted confirmation", () => {
-    vi.useFakeTimers();
+  it("explicitly submits the same button after an accepted confirmation", () => {
     const onClick = vi.fn();
     const confirm = vi.fn(() => true);
     const preventDefault = vi.fn();
     const requestSubmit = vi.fn();
     const form = { checkValidity: () => true, requestSubmit };
-    const buttonElement = { form, formNoValidate: false, disabled: false };
-    vi.stubGlobal("window", { confirm, setTimeout });
+    const buttonElement = { form, formNoValidate: false };
+    vi.stubGlobal("window", { confirm });
     const tree = FormSubmitButton({
       children: "重新產生 recovery codes",
       pendingChildren: "重新產生中…",
@@ -205,34 +204,7 @@ describe("FormSubmitButton", () => {
     expect(confirm).toHaveBeenCalledWith("確定重新產生？");
     expect(onClick).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
-    expect(requestSubmit).not.toHaveBeenCalled();
-    vi.runAllTimers();
     expect(requestSubmit).toHaveBeenCalledWith(buttonElement);
-  });
-
-  it("does not submit a confirmed button that became disabled before the deferred task", () => {
-    vi.useFakeTimers();
-    const requestSubmit = vi.fn();
-    const form = { checkValidity: () => true, requestSubmit };
-    const buttonElement = { form, formNoValidate: false, disabled: false };
-    vi.stubGlobal("window", { confirm: () => true, setTimeout });
-    const tree = FormSubmitButton({
-      children: "刪除",
-      pendingChildren: "刪除中…",
-      pendingMessage: "正在刪除。",
-      confirmMessage: "確定刪除？",
-    }) as { props: { children: Array<{ type: unknown; props: { onClick?: (event: unknown) => void } }> } };
-    const button = tree.props.children.find((child) => child.type === "button");
-
-    button?.props.onClick?.({
-      currentTarget: buttonElement,
-      defaultPrevented: false,
-      preventDefault: vi.fn(),
-    });
-    buttonElement.disabled = true;
-    vi.runAllTimers();
-
-    expect(requestSubmit).not.toHaveBeenCalled();
   });
 
   it("lets native validation report invalid required fields before showing confirmation", () => {
