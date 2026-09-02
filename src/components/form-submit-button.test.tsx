@@ -210,7 +210,7 @@ describe("FormSubmitButton", () => {
     expect(requestSubmit).toHaveBeenCalledWith(buttonElement);
   });
 
-  it("does not submit a confirmed button that became disabled before the deferred task", () => {
+  it("does not let a transient DOM disabled state drop an already confirmed submit", () => {
     vi.useFakeTimers();
     const requestSubmit = vi.fn();
     const form = { checkValidity: () => true, requestSubmit };
@@ -230,6 +230,35 @@ describe("FormSubmitButton", () => {
       preventDefault: vi.fn(),
     });
     buttonElement.disabled = true;
+    vi.runAllTimers();
+
+    expect(requestSubmit).toHaveBeenCalledWith(buttonElement);
+  });
+
+  it("does not submit when the caller explicitly disables the button before the deferred task", () => {
+    vi.useFakeTimers();
+    const requestSubmit = vi.fn();
+    const form = { checkValidity: () => true, requestSubmit };
+    const buttonElement = {
+      form,
+      formNoValidate: false,
+      disabled: true,
+      dataset: { explicitlyDisabled: "true" },
+    };
+    vi.stubGlobal("window", { confirm: () => true, setTimeout });
+    const tree = FormSubmitButton({
+      children: "刪除",
+      pendingChildren: "刪除中…",
+      pendingMessage: "正在刪除。",
+      confirmMessage: "確定刪除？",
+    }) as { props: { children: Array<{ type: unknown; props: { onClick?: (event: unknown) => void } }> } };
+    const button = tree.props.children.find((child) => child.type === "button");
+
+    button?.props.onClick?.({
+      currentTarget: buttonElement,
+      defaultPrevented: false,
+      preventDefault: vi.fn(),
+    });
     vi.runAllTimers();
 
     expect(requestSubmit).not.toHaveBeenCalled();

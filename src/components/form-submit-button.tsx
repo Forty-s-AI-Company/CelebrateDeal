@@ -52,6 +52,10 @@ export function FormSubmitButton({
         value={value}
         formAction={formAction}
         disabled={isDisabled}
+        // This deliberately excludes useFormStatus().pending. Confirmation
+        // submits are deferred, and that transient DOM state must not swallow
+        // a submit the user already confirmed.
+        data-explicitly-disabled={disabled || pendingOverride ? "true" : "false"}
         aria-disabled={isDisabled}
         aria-busy={isActivePending}
         onClick={(event) => {
@@ -73,7 +77,9 @@ export function FormSubmitButton({
             // original synthetic click is still unwinding under CPU pressure.
             event.preventDefault();
             window.setTimeout(() => {
-              if (button.form === form && !button.disabled) form.requestSubmit(button);
+              if (button.form === form && button.dataset?.explicitlyDisabled !== "true") {
+                form.requestSubmit(button);
+              }
             }, 0);
             return;
           }
