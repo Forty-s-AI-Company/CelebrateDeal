@@ -28,6 +28,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
   const workflow = yaml.load(source);
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.task.options, [
     "wp2-readonly-restore",
+    "wp4-payuni-sandbox-binding-preflight",
     "wp4-payuni-sandbox-reconciliation",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
@@ -80,8 +81,10 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   const workflow = yaml.load(source);
   const steps = workflow.jobs["trusted-runner"].steps;
   const dispatchPreflight = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
+  const bindingPreflight = steps.find((step) => step.name === "Validate fixed WP4 Sandbox bindings without execution");
   const wp4 = steps.find((step) => step.id === "execute-wp4");
   assert.match(String(dispatchPreflight.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
+  assert.match(String(dispatchPreflight.if), /inputs\.task == 'wp4-payuni-sandbox-binding-preflight'/u);
   assert.deepEqual(Object.keys(dispatchPreflight.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
   assert.equal(dispatchPreflight.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
   assert.equal(dispatchPreflight.env.CELEBRATEDEAL_DEPLOYMENT_HOST, "${{ inputs.deployment_host }}");
@@ -89,6 +92,16 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   assert.match(dispatchPreflight.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --verify-lineage/u);
   assert.doesNotMatch(dispatchPreflight.run, /secrets\.|\$\{\{\s*inputs\./u);
   assert.ok(source.indexOf(dispatchPreflight.name) < source.indexOf("Execute fixed WP4 PayUni Sandbox task with bounded egress"));
+  assert.match(String(bindingPreflight.if), /inputs\.task == 'wp4-payuni-sandbox-binding-preflight'/u);
+  assert.deepEqual(Object.keys(bindingPreflight.env).sort(), [
+    "JOB_SECRET",
+    "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+    "PAYUNI_TEST_CVV",
+    "PAYUNI_TEST_EXPIRY",
+  ]);
+  assert.match(bindingPreflight.run, /secure_wp4_missing_bindings/u);
+  assert.doesNotMatch(bindingPreflight.run, /process\.env\s*[).]|Object\.(?:keys|entries)\(process\.env\)/u);
+  assert.ok(source.indexOf(dispatchPreflight.name) < source.indexOf(bindingPreflight.name));
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
   assert.deepEqual(Object.keys(wp4.env).sort(), [
     "CELEBRATEDEAL_DEPLOYMENT_HOST",
