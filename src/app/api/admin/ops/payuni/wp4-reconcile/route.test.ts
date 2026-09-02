@@ -82,7 +82,7 @@ describe("POST /api/admin/ops/payuni/wp4-reconcile", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({ reconciled: true, status: "RECONCILED" });
-    expect(mocks.reconcile).toHaveBeenCalledExactlyOnceWith(mocks.database);
+    expect(mocks.reconcile).toHaveBeenCalledExactlyOnceWith(mocks.database, sourceSha);
   });
 
   it.each([
