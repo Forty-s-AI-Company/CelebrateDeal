@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (await requestHasNonEmptyBody(request)) return unavailableResponse();
 
   try {
-    const result = await reconcileWp4PayUniSandboxRefund(getDb());
+    const result = await reconcileWp4PayUniSandboxRefund(getDb(), expectedSha);
     return NextResponse.json(result, {
       status: resultStatus(result),
       headers: { "Cache-Control": "no-store" },

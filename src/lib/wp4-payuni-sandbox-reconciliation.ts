@@ -11,6 +11,8 @@ export const WP4_PAYUNI_PURPOSES = [
 
 export type Wp4PayUniPurpose = typeof WP4_PAYUNI_PURPOSES[number];
 
+const SOURCE_SHA = /^[a-f0-9]{40}$/u;
+
 type TransactionIdentity = {
   vendorId: string;
   providerName: string;
@@ -23,6 +25,27 @@ function objectValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+/**
+ * An exact commit marker separates the current bounded run from any historical
+ * staging fixture transaction. It is server-owned metadata: external routes
+ * must compare it with their deployment lineage, never accept it as input.
+ */
+export function wp4SourceCommitFromMetadata(metadata: unknown): string | null {
+  const sourceCommit = objectValue(metadata)?.wp4SourceCommit;
+  return typeof sourceCommit === "string" && SOURCE_SHA.test(sourceCommit)
+    ? sourceCommit
+    : null;
+}
+
+export function isWp4PayUniSandboxTransactionForSource(
+  transaction: TransactionIdentity,
+  sourceCommit: string,
+): boolean {
+  return SOURCE_SHA.test(sourceCommit)
+    && isWp4PayUniSandboxTransaction(transaction)
+    && wp4SourceCommitFromMetadata(transaction.metadata) === sourceCommit;
 }
 
 /**
@@ -97,7 +120,10 @@ function candidateTransaction(value: unknown): CandidateTransaction | null {
  * reservation is not treated as success, which keeps a second provider refund
  * impossible from this route.
  */
-export async function reconcileWp4PayUniSandboxRefund(db: Wp4ReconciliationDb): Promise<Wp4PayUniSandboxReconciliationResult> {
+export async function reconcileWp4PayUniSandboxRefund(
+  db: Wp4ReconciliationDb,
+  sourceCommit: string,
+): Promise<Wp4PayUniSandboxReconciliationResult> {
   const selected = await db.paymentTransaction.findFirst({
     where: {
       vendorId: WP4_SANDBOX_FIXTURE.vendorId,
@@ -108,7 +134,7 @@ export async function reconcileWp4PayUniSandboxRefund(db: Wp4ReconciliationDb): 
     orderBy: { occurredAt: "desc" },
   });
   const row = candidateTransaction(selected);
-  if (!selected || !row || !isWp4PayUniSandboxTransaction(row) || !row.providerTradeNo || !row.orderNumber) {
+  if (!selected || !row || !isWp4PayUniSandboxTransactionForSource(row, sourceCommit) || !row.providerTradeNo || !row.orderNumber) {
     return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
   }
 

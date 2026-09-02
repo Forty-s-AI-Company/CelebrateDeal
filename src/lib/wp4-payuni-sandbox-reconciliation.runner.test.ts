@@ -20,7 +20,7 @@ function candidate(overrides: Record<string, unknown> = {}) {
     orderNumber: "opaque-order-reference",
     grossAmountCents: 100,
     status: "paid",
-    metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId },
+    metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: "a".repeat(40) },
     ...overrides,
   };
 }
@@ -48,7 +48,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   it("does not query a provider when no fixed-fixture transaction is eligible", async () => {
     findFirst.mockResolvedValueOnce(null);
 
-    await expect(reconcileWp4PayUniSandboxRefund(db as never)).resolves.toEqual({
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
       status: "FIXTURE_UNAVAILABLE",
     });
@@ -58,7 +58,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   it("rejects caller-like cross-fixture rows before provider access", async () => {
     findFirst.mockResolvedValueOnce(candidate({ metadata: { billingPurpose: "buyer_order", productId: "other" } }));
 
-    await expect(reconcileWp4PayUniSandboxRefund(db as never)).resolves.toEqual({
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
       status: "FIXTURE_UNAVAILABLE",
     });
@@ -77,7 +77,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
       }),
     });
 
-    await expect(reconcileWp4PayUniSandboxRefund(db as never)).resolves.toEqual({
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
       status: "REFUND_NOT_CONFIRMED",
     });
@@ -85,7 +85,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   });
 
   it("reconciles a confirmed refund through the existing accounting core", async () => {
-    await expect(reconcileWp4PayUniSandboxRefund(db as never)).resolves.toEqual({
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: true,
       status: "RECONCILED",
     });
@@ -98,7 +98,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
   it("fails closed when a pending reservation cannot be reconciled", async () => {
     mocks.reconcile.mockRejectedValueOnce(new Error("not exposed"));
 
-    await expect(reconcileWp4PayUniSandboxRefund(db as never)).resolves.toEqual({
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
       status: "PENDING_RESERVATION_UNAVAILABLE",
     });
