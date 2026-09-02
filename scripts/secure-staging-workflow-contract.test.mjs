@@ -100,6 +100,7 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
     "PAYUNI_TEST_EXPIRY",
   ]);
   assert.match(bindingPreflight.run, /secure_wp4_missing_bindings/u);
+  assert.match(bindingPreflight.run, /::error title=WP4 Sandbox binding preflight/u);
   assert.doesNotMatch(bindingPreflight.run, /process\.env\s*[).]|Object\.(?:keys|entries)\(process\.env\)/u);
   assert.ok(source.indexOf(dispatchPreflight.name) < source.indexOf(bindingPreflight.name));
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
