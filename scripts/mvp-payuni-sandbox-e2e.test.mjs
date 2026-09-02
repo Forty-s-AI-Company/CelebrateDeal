@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -11,7 +14,9 @@ import {
   runMvpPayUniSandboxE2E,
   validateInvocation,
   validateMvpPayUniReceipt,
+  validateWrittenMvpPayUniReceipt,
   verifyMvpPayUniLineage,
+  writeMvpPayUniReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 
 const sourceSha = "a".repeat(40);
@@ -158,6 +163,35 @@ test("receipt validator accepts the complete fixed, sanitized one-purpose receip
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
+test("receipt validator rejects a recovered PASS without current reservation, browser, and payment evidence", async () => {
+  const receipt = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
+  receipt.sideEffects.paymentReservationsCreated = 0;
+  receipt.sideEffects.browserPaymentSubmissions = 0;
+  receipt.sideEffects.payments = 0;
+
+  const validation = validateMvpPayUniReceipt(receipt);
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.errors.includes("PASS_EFFECTS"), true);
+});
+
+test("written receipt validation shares the current-execution PASS requirement", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp4-receipt-"));
+
+  try {
+    const receipt = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
+    receipt.sideEffects.paymentReservationsCreated = 0;
+    receipt.sideEffects.browserPaymentSubmissions = 0;
+    receipt.sideEffects.payments = 0;
+
+    await writeMvpPayUniReceipt(receipt, temporaryRoot);
+    assert.equal(await validateWrittenMvpPayUniReceipt(temporaryRoot), false);
+  } finally {
+    assert.equal(path.dirname(temporaryRoot), os.tmpdir());
+    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 0 });
+  }
+});
+
 test("receipt validator rejects raw data fields and fabricated successful evidence", () => {
   const receipt = createReceipt(sourceSha);
   receipt.result = "PASS";
@@ -217,7 +251,7 @@ test("a reserved pending retry never submits the PayUni form again", async () =>
   assert.equal(receipt.sideEffects.refundPosts, 0);
 });
 
-test("an already-paid retry resumes at refund without a second payment submission", async () => {
+test("an already-paid retry without exact-source Return callback proof fails closed before refund", async () => {
   const calls = [];
   const dependencies = successfulDependencies(calls);
   const originalRequest = dependencies.request;
@@ -228,10 +262,16 @@ test("an already-paid retry resumes at refund without a second payment submissio
   dependencies.browserSubmit = async () => { browserSubmits += 1; return true; };
 
   const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
-  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "RETURN_CALLBACK_PROOF_REQUIRED");
   assert.equal(browserSubmits, 0);
   assert.equal(receipt.sideEffects.payments, 0);
-  assert.equal(receipt.checks.reconciled, true);
+  assert.equal(receipt.checks.payuniFormAccepted, false);
+  assert.equal(receipt.checks.returnCallbackMapped, false);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-refund")), false);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-reconcile")), false);
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
