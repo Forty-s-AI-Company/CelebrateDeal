@@ -11,6 +11,10 @@ const TASK = "wp2-readonly-restore";
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const GITHUB_ENVIRONMENT = "Preview – celebrate-deal-staging";
+const GITHUB_DEPLOYMENT_PAGE_SIZE = 10;
+const GITHUB_STATUS_PAGE_SIZE = 1;
+const GITHUB_READ_BUDGET = 20;
+const GITHUB_DEPLOYMENT_PAGINATION_ERROR = "GITHUB_DEPLOYMENT_PAGINATION_INVALID";
 const POSTGRES_IMAGE = "postgres:17-alpine";
 const EXPECTED_MIGRATION_COUNT = 58;
 const SAFE_SHA = /^[a-f0-9]{40}$/u;
@@ -127,49 +131,156 @@ export function validateReceipt(receipt) {
   return { ok: errors.length === 0, errors };
 }
 
-export async function verifyDeployment(source, fetchImpl = fetch) {
-  const endpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments`, GITHUB_API_ORIGIN);
-  endpoint.searchParams.set("sha", source.CELEBRATEDEAL_SOURCE_SHA);
-  endpoint.searchParams.set("environment", GITHUB_ENVIRONMENT);
-  endpoint.searchParams.set("per_page", "10");
-  const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${source.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" };
-  const response = await fetchImpl(endpoint, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
-  if (response.status !== 200 || response.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_READ_FAILED");
-  const deployments = await response.json();
-  const candidates = Array.isArray(deployments) ? deployments.filter((item) => item?.sha === source.CELEBRATEDEAL_SOURCE_SHA && item?.environment === GITHUB_ENVIRONMENT && item?.production_environment === false && Number.isSafeInteger(item?.id)) : [];
-  if (candidates.length !== 1) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
-  const deployment = candidates[0];
-  const statusEndpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments/${deployment.id}/statuses`, GITHUB_API_ORIGIN);
-  const statusResponse = await fetchImpl(statusEndpoint, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
-  if (statusResponse.status !== 200 || statusResponse.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_STATUS_READ_FAILED");
-  const statuses = await statusResponse.json();
-  const latest = Array.isArray(statuses) ? statuses[0] : null;
-  const statusHosts = [latest?.environment_url, latest?.target_url]
+function normalizeDeploymentStatusHost(value) {
+  if (typeof value !== "string" || value.length === 0) return "";
+  try {
+    const statusUrl = new URL(value);
+    return statusUrl.protocol === "https:"
+      && !statusUrl.port
+      && !statusUrl.username
+      && !statusUrl.password
+      && statusUrl.pathname === "/"
+      && statusUrl.search === ""
+      && statusUrl.hash === ""
+      ? statusUrl.hostname.toLowerCase()
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+function deploymentStatusHost(status) {
+  const statusHosts = [status?.environment_url, status?.target_url]
     .filter((value) => typeof value === "string" && value.length > 0)
-    .map((value) => {
-      try {
-        const statusUrl = new URL(value);
-        return statusUrl.protocol === "https:"
-          && !statusUrl.port
-          && !statusUrl.username
-          && !statusUrl.password
-          && statusUrl.pathname === "/"
-          && statusUrl.search === ""
-          && statusUrl.hash === ""
-          ? statusUrl.hostname.toLowerCase()
-          : "";
-      } catch {
-        return "";
-      }
-    });
+    .map(normalizeDeploymentStatusHost);
   const uniqueStatusHosts = [...new Set(statusHosts)];
-  const host = uniqueStatusHosts.length === 1 ? uniqueStatusHosts[0] : "";
-  const deploymentMatched = host === source.CELEBRATEDEAL_DEPLOYMENT_HOST;
-  const sourceMatched = deployment.sha === source.CELEBRATEDEAL_SOURCE_SHA;
-  const preview = deployment.production_environment === false;
-  const ready = latest?.state === "success";
-  if (!deploymentMatched || !sourceMatched || !preview || !ready || !host.endsWith(".vercel.app") || !SAFE_HOST.test(host)) throw new Error("GITHUB_DEPLOYMENT_LINEAGE_MISMATCH");
-  return { host, deploymentMatched, sourceMatched, preview, ready, deploymentDigest: digest("deployment", deployment.id), reads: 2 };
+  return uniqueStatusHosts.length === 1 && uniqueStatusHosts[0] ? uniqueStatusHosts[0] : "";
+}
+
+function invalidDeploymentPagination() {
+  throw new Error(GITHUB_DEPLOYMENT_PAGINATION_ERROR);
+}
+
+function linkedDeploymentPage(rawUrl) {
+  if (rawUrl.trim() !== rawUrl) invalidDeploymentPagination();
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    invalidDeploymentPagination();
+  }
+  if (url.origin !== GITHUB_API_ORIGIN || url.pathname !== `/repos/${GITHUB_REPOSITORY}/deployments` || url.username || url.password || url.hash) invalidDeploymentPagination();
+  const pageValues = url.searchParams.getAll("page");
+  if (pageValues.length > 1 || (pageValues[0] !== undefined && !/^[1-9]\d*$/u.test(pageValues[0]))) invalidDeploymentPagination();
+  const page = pageValues[0] === undefined ? 1 : Number(pageValues[0]);
+  if (!Number.isSafeInteger(page) || page < 1) invalidDeploymentPagination();
+  return page;
+}
+
+function paginationLinkEntries(linkHeader) {
+  const entries = linkHeader.trim().split(/,\s*(?=<)/u).map((entry) => entry.trim());
+  if (entries.some((entry) => entry.length === 0)) invalidDeploymentPagination();
+  return entries;
+}
+
+function paginationRelations(entry) {
+  const link = entry.match(/^<([^<>]+)>(.*)$/u);
+  if (!link) invalidDeploymentPagination();
+  const suffix = link[2].trim();
+  if (!suffix.startsWith(";")) invalidDeploymentPagination();
+  const parameters = suffix.slice(1).split(";").map((parameter) => parameter.trim());
+  if (parameters.some((parameter) => parameter.length === 0)) invalidDeploymentPagination();
+  const relationParameters = parameters.filter((parameter) => /^rel\s*=/iu.test(parameter));
+  if (relationParameters.length !== 1) invalidDeploymentPagination();
+  const relation = relationParameters[0].match(/^rel\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s,]+))$/iu);
+  if (!relation) invalidDeploymentPagination();
+  const relationValue = relation.slice(1).find((value) => typeof value === "string" && value.length > 0);
+  const relationNames = relationValue?.split(/\s+/u).map((value) => value.toLowerCase()) ?? [];
+  const allowedRelations = new Set(["first", "prev", "next", "last"]);
+  if (relationNames.length === 0 || relationNames.some((name) => !allowedRelations.has(name))) invalidDeploymentPagination();
+  for (const parameter of parameters) {
+    if (parameter === relationParameters[0]) continue;
+    if (!/^[A-Za-z][A-Za-z0-9!#$&^_.+-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,]+)$/u.test(parameter)) invalidDeploymentPagination();
+  }
+  return { page: linkedDeploymentPage(link[1]), relationNames };
+}
+
+function nextDeploymentPage(response, itemCount, currentPage) {
+  const linkHeader = typeof response.headers?.get === "function" ? response.headers.get("link") : null;
+  if (linkHeader === null || linkHeader === undefined || linkHeader.length === 0) return itemCount >= GITHUB_DEPLOYMENT_PAGE_SIZE ? currentPage + 1 : null;
+
+  const relations = new Map();
+  for (const entry of paginationLinkEntries(linkHeader)) {
+    const parsed = paginationRelations(entry);
+    for (const relationName of parsed.relationNames) {
+      if (relations.has(relationName)) invalidDeploymentPagination();
+      relations.set(relationName, parsed.page);
+    }
+  }
+  if (relations.has("first") && relations.get("first") !== 1) invalidDeploymentPagination();
+  if (relations.has("prev") && relations.get("prev") !== currentPage - 1) invalidDeploymentPagination();
+  if (relations.has("next") && relations.get("next") !== currentPage + 1) invalidDeploymentPagination();
+  if (relations.has("last") && relations.get("last") < currentPage) invalidDeploymentPagination();
+  if (relations.has("next")) {
+    if (relations.has("last") && relations.get("last") < relations.get("next")) invalidDeploymentPagination();
+    return relations.get("next");
+  }
+  if (relations.get("last") !== currentPage) invalidDeploymentPagination();
+  return null;
+}
+
+export async function verifyDeployment(source, fetchImpl = fetch) {
+  const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${source.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" };
+  let page = 1;
+  let reads = 0;
+  let candidateCount = 0;
+  const matchedCandidates = [];
+
+  while (true) {
+    if (reads >= GITHUB_READ_BUDGET) throw new Error("GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED");
+    const endpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments`, GITHUB_API_ORIGIN);
+    endpoint.searchParams.set("sha", source.CELEBRATEDEAL_SOURCE_SHA);
+    endpoint.searchParams.set("environment", GITHUB_ENVIRONMENT);
+    endpoint.searchParams.set("per_page", String(GITHUB_DEPLOYMENT_PAGE_SIZE));
+    endpoint.searchParams.set("page", String(page));
+    const response = await fetchImpl(endpoint, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+    reads += 1;
+    if (response.status !== 200 || response.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_READ_FAILED");
+    const deployments = await response.json();
+    const pageDeployments = Array.isArray(deployments) ? deployments : [];
+    const candidates = pageDeployments.filter((item) => item?.sha === source.CELEBRATEDEAL_SOURCE_SHA && item?.environment === GITHUB_ENVIRONMENT && item?.production_environment === false && Number.isSafeInteger(item?.id));
+    candidateCount += candidates.length;
+    const nextPage = nextDeploymentPage(response, pageDeployments.length, page);
+
+    for (const candidate of candidates) {
+      if (reads >= GITHUB_READ_BUDGET) throw new Error("GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED");
+      const statusEndpoint = new URL(`/repos/${GITHUB_REPOSITORY}/deployments/${candidate.id}/statuses`, GITHUB_API_ORIGIN);
+      statusEndpoint.searchParams.set("per_page", String(GITHUB_STATUS_PAGE_SIZE));
+      const statusResponse = await fetchImpl(statusEndpoint, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+      reads += 1;
+      if (statusResponse.status !== 200 || statusResponse.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_STATUS_READ_FAILED");
+      const statuses = await statusResponse.json();
+      const latest = Array.isArray(statuses) ? statuses[0] : null;
+      const host = latest?.state === "success" ? deploymentStatusHost(latest) : "";
+      const deploymentMatched = host === source.CELEBRATEDEAL_DEPLOYMENT_HOST;
+      const sourceMatched = candidate.sha === source.CELEBRATEDEAL_SOURCE_SHA;
+      const preview = candidate.production_environment === false;
+      const ready = latest?.state === "success";
+      if (deploymentMatched && sourceMatched && preview && ready && host.endsWith(".vercel.app") && SAFE_HOST.test(host)) {
+        matchedCandidates.push({ id: candidate.id, host });
+      }
+    }
+
+    if (nextPage === null) break;
+    if (reads >= GITHUB_READ_BUDGET) throw new Error("GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED");
+    page = nextPage;
+  }
+
+  if (candidateCount === 0) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
+  if (matchedCandidates.length > 1) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
+  if (matchedCandidates.length === 0) throw new Error("GITHUB_DEPLOYMENT_LINEAGE_MISMATCH");
+  const [{ id: deploymentId, host }] = matchedCandidates;
+  return { host, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, deploymentDigest: digest("deployment", deploymentId), reads };
 }
 
 export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync) {
