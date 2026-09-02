@@ -28,7 +28,7 @@ export type Wp4PayUniFixedRefund = {
 };
 
 function safeNonNegativeInteger(value: unknown) {
-  return Number.isSafeInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 /**
