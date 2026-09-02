@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - wp2-readonly-restore
+          - wp4-payuni-sandbox-binding-preflight
           - wp4-payuni-sandbox-reconciliation
       source_sha:
         description: Exact 40-character Preview source SHA
@@ -136,7 +137,7 @@ jobs:
           npm run secure:staging:wp2
 
       - name: Validate fixed WP4 dispatch identity before secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-binding-preflight' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -146,6 +147,32 @@ jobs:
           set -euo pipefail
 
           node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Validate fixed WP4 Sandbox bindings without execution
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-binding-preflight' }}
+        shell: bash
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}
+          PAYUNI_TEST_EXPIRY: ${{ secrets.PAYUNI_TEST_EXPIRY }}
+          PAYUNI_TEST_CVV: ${{ secrets.PAYUNI_TEST_CVV }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const required = [
+            "JOB_SECRET",
+            "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+            "PAYUNI_TEST_EXPIRY",
+            "PAYUNI_TEST_CVV",
+          ];
+          const missing = required.filter((key) => !process.env[key]);
+          if (missing.length > 0) {
+            process.stdout.write(`secure_wp4_missing_bindings=${missing.join(",")}\n`);
+            process.exit(2);
+          }
+          process.stdout.write("secure_wp4_bindings=PASS\n");
+          NODE
 
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
@@ -237,6 +264,7 @@ jobs:
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-receipt
 
       - name: Upload sanitized receipt only
+        if: ${{ inputs.task == 'wp2-readonly-restore' || inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
