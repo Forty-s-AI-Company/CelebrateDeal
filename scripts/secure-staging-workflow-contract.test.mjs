@@ -79,7 +79,15 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
   const steps = workflow.jobs["trusted-runner"].steps;
+  const dispatchPreflight = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
   const wp4 = steps.find((step) => step.id === "execute-wp4");
+  assert.match(String(dispatchPreflight.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
+  assert.deepEqual(Object.keys(dispatchPreflight.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA"]);
+  assert.equal(dispatchPreflight.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
+  assert.equal(dispatchPreflight.env.CELEBRATEDEAL_DEPLOYMENT_HOST, "${{ inputs.deployment_host }}");
+  assert.match(dispatchPreflight.run, /const safeSha = \/\^\[a-f0-9\]\{40\}\$\/u;/u);
+  assert.doesNotMatch(dispatchPreflight.run, /secrets\.|\$\{\{\s*inputs\./u);
+  assert.ok(source.indexOf(dispatchPreflight.name) < source.indexOf("Execute fixed WP4 PayUni Sandbox task with bounded egress"));
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
   assert.deepEqual(Object.keys(wp4.env).sort(), [
     "CELEBRATEDEAL_DEPLOYMENT_HOST",
