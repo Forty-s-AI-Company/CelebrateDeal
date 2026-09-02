@@ -9,7 +9,7 @@ import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 describe("WP4 PayUni Sandbox transaction boundary", () => {
   it("recognizes only the fixed server-owned purposes", () => {
     expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "buyer_order" })).toBe("buyer_order");
-    expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "platform_subscription" })).toBe("platform_subscription");
+    expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "platform_subscription_checkout" })).toBe("platform_subscription");
     expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "invoice_payment" })).toBe("invoice_payment");
     expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "anything_else" })).toBeNull();
     expect(wp4PayUniPurposeFromMetadata(null)).toBeNull();
@@ -17,7 +17,7 @@ describe("WP4 PayUni Sandbox transaction boundary", () => {
 
   it.each([
     ["buyer_order", { productId: WP4_SANDBOX_FIXTURE.productId }],
-    ["platform_subscription", { planId: WP4_SANDBOX_FIXTURE.planId }],
+    ["platform_subscription_checkout", { planId: WP4_SANDBOX_FIXTURE.planId }],
     ["invoice_payment", { invoiceId: WP4_SANDBOX_FIXTURE.invoiceId }],
   ] as const)("accepts the matching %s fixture transaction", (billingPurpose, fixtureIdentity) => {
     expect(isWp4PayUniSandboxTransaction({

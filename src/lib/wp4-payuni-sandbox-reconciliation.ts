@@ -31,9 +31,14 @@ function objectValue(value: unknown): Record<string, unknown> | null {
  * payment into a Sandbox reconciliation candidate.
  */
 export function wp4PayUniPurposeFromMetadata(metadata: unknown): Wp4PayUniPurpose | null {
-  const purpose = objectValue(metadata)?.billingPurpose;
-  return typeof purpose === "string" && (WP4_PAYUNI_PURPOSES as readonly string[]).includes(purpose)
-    ? purpose as Wp4PayUniPurpose
+  const billingPurpose = objectValue(metadata)?.billingPurpose;
+  // The platform-plan checkout has a deliberately more specific persisted
+  // marker than the release gate's business-purpose label. Keep that mapping
+  // here, rather than accepting a synthetic `platform_subscription` marker
+  // that the production checkout core never writes.
+  if (billingPurpose === "platform_subscription_checkout") return "platform_subscription";
+  return typeof billingPurpose === "string" && (WP4_PAYUNI_PURPOSES as readonly string[]).includes(billingPurpose)
+    ? billingPurpose as Wp4PayUniPurpose
     : null;
 }
 
