@@ -146,7 +146,11 @@ jobs:
           psql "$wp18_base_url" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA wp18_ci'
           DATABASE_URL="$wp17_url" DIRECT_URL="$wp17_url" npm run db:migrate:deploy
           DATABASE_URL="$wp18_url" DIRECT_URL="$wp18_url" npm run db:migrate:deploy
-          WP17_COVERAGE_DATABASE_URL="$wp17_url" WP17_COVERAGE_DIRECT_URL="$wp17_url" WP17_COVERAGE_DISPOSABLE_SCHEMA="wp17_ci" WP18_COVERAGE_DATABASE_URL="$wp18_url" WP18_COVERAGE_DIRECT_URL="$wp18_url" WP18_COVERAGE_DISPOSABLE_SCHEMA="wp18_ci" npm run test:db:concurrency
+          # A broken disposable connection must fail the gate rather than
+          # leave the entire required CI workflow running indefinitely. This
+          # is a hard timeout around the unchanged full suite, not a retry,
+          # exclusion, or relaxed assertion.
+          WP17_COVERAGE_DATABASE_URL="$wp17_url" WP17_COVERAGE_DIRECT_URL="$wp17_url" WP17_COVERAGE_DISPOSABLE_SCHEMA="wp17_ci" WP18_COVERAGE_DATABASE_URL="$wp18_url" WP18_COVERAGE_DIRECT_URL="$wp18_url" WP18_COVERAGE_DISPOSABLE_SCHEMA="wp18_ci" timeout --preserve-status 10m npm run test:db:concurrency
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
