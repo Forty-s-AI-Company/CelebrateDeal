@@ -92,9 +92,9 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
     expect(mocks.findMembership).not.toHaveBeenCalled();
   });
 
-  it("rejects any request body without consuming it or touching the DB", async () => {
+  it("accepts a zero-byte proxy stream but rejects caller content before DB access", async () => {
     const body = new ReadableStream({ start: (controller) => controller.close() });
-    const requestWithBody = new Request(
+    const zeroByteRequest = new Request(
       "https://app.example.test/api/admin/ops/payuni/wp4-session",
       {
         method: "POST",
@@ -107,10 +107,28 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
       } as RequestInit,
     );
 
-    const response = await POST(requestWithBody);
+    const zeroByteResponse = await POST(zeroByteRequest);
+    expect(zeroByteResponse.status).toBe(204);
+    expect(mocks.findMembership).toHaveBeenCalledOnce();
+
+    mocks.findMembership.mockClear();
+    mocks.createSession.mockClear();
+    const contentRequest = new Request(
+      "https://app.example.test/api/admin/ops/payuni/wp4-session",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${jobSecret}`,
+          ["x-celebratedeal-source-sha"]: sourceSha,
+          "content-type": "text/plain",
+        },
+        body: "caller-owned-content",
+      },
+    );
+    const response = await POST(contentRequest);
 
     expect(response.status).toBe(404);
-    expect(requestWithBody.bodyUsed).toBe(false);
+    expect(contentRequest.bodyUsed).toBe(true);
     expect(mocks.findMembership).not.toHaveBeenCalled();
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
