@@ -65,6 +65,15 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   assert.doesNotMatch(source, /curl\s+\$|wget\s+\$|Invoke-Expression|\beval\b/iu);
 });
 
+test("required PostgreSQL concurrency gate fails closed instead of hanging indefinitely", () => {
+  const source = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  assert.match(
+    source,
+    /timeout --preserve-status 10m npm run test:db:concurrency/u,
+  );
+  assert.doesNotMatch(source, /test:db:concurrency[^\n]*(?:--exclude|--skip|--passWithNoTests)/u);
+});
+
 test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute arbitrary commands", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
