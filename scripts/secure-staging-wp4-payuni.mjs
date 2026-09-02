@@ -22,10 +22,6 @@ export const WP4_CHILD_MAX_REQUESTS = 5;
 // These names are intentionally public contract metadata. Values stay only in
 // the protected runner environment and are never printed or persisted.
 export const REQUIRED_SECRET_KEYS = Object.freeze([
-  "STAGING_DATABASE_URL",
-  "PAYUNI_MERCHANT_ID",
-  "PAYUNI_HASH_KEY",
-  "PAYUNI_HASH_IV",
   "PAYUNI_SANDBOX_ONETIME_CARD_NO",
   "PAYUNI_TEST_EXPIRY",
   "PAYUNI_TEST_CVV",
@@ -46,7 +42,13 @@ export const REQUIRED_CONFIG_KEYS = Object.freeze([
   "AI_TEAM_PROVIDER_ENVIRONMENT",
 ]);
 
-const ACTIVE_SECRET_KEYS = Object.freeze(["GITHUB_TOKEN", "JOB_SECRET"]);
+const ACTIVE_SECRET_KEYS = Object.freeze([
+  "GITHUB_TOKEN",
+  "JOB_SECRET",
+  "PAYUNI_SANDBOX_ONETIME_CARD_NO",
+  "PAYUNI_TEST_EXPIRY",
+  "PAYUNI_TEST_CVV",
+]);
 const ACTIVE_CONFIG_KEYS = Object.freeze([
   "CELEBRATEDEAL_SOURCE_SHA",
   "CELEBRATEDEAL_DEPLOYMENT_HOST",
@@ -506,6 +508,9 @@ export function childEnvironment(source) {
   return {
     ...systemEnvironment(source),
     JOB_SECRET: source.JOB_SECRET,
+    PAYUNI_SANDBOX_ONETIME_CARD_NO: source.PAYUNI_SANDBOX_ONETIME_CARD_NO,
+    PAYUNI_TEST_EXPIRY: source.PAYUNI_TEST_EXPIRY,
+    PAYUNI_TEST_CVV: source.PAYUNI_TEST_CVV,
     CELEBRATEDEAL_SOURCE_SHA: source.CELEBRATEDEAL_SOURCE_SHA,
     CELEBRATEDEAL_DEPLOYMENT_HOST: source.CELEBRATEDEAL_DEPLOYMENT_HOST,
   };
