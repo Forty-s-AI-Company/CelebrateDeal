@@ -168,7 +168,9 @@ jobs:
           ];
           const missing = required.filter((key) => !process.env[key]);
           if (missing.length > 0) {
-            process.stdout.write(`secure_wp4_missing_bindings=${missing.join(",")}\n`);
+            const names = missing.join(",");
+            process.stdout.write(`::error title=WP4 Sandbox binding preflight::Missing fixed bindings: ${names}\n`);
+            process.stdout.write(`secure_wp4_missing_bindings=${names}\n`);
             process.exit(2);
           }
           process.stdout.write("secure_wp4_bindings=PASS\n");
