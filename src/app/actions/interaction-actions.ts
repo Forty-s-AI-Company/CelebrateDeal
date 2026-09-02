@@ -357,7 +357,13 @@ export async function importSystemRolesAction(formData: FormData) {
   redirect("/interaction-roles");
 }
 
-export async function upsertInteractionScriptAction(formData: FormData) {
+/**
+ * Performs the interaction-script write independently from its navigation
+ * transport. Both the legacy Server Action and the native same-origin POST
+ * route therefore retain the exact CSRF, authorization, tenant, transaction
+ * and audit boundary.
+ */
+export async function saveInteractionScript(formData: FormData): Promise<string> {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
   const auditActor = managerAuditIdentity(auth);
@@ -375,24 +381,23 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_event`
     : "/interaction-scripts/new?error=invalid_event";
 
-  if (eventTypes.length > 200) {
-    redirect(invalidEventPath);
-  }
+  if (eventTypes.length > 200) return invalidEventPath;
   if (eventTypes.length === 0 || [roleIds, titles, messages, productIds, ctaLabels, ctaUrls]
     .some((column) => column.length !== eventTypes.length)) {
-    redirect(invalidEventPath);
+    return invalidEventPath;
   }
   if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
-    redirect(invalidEventPath);
+    return invalidEventPath;
   }
   const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
-    if (triggerSec === null) redirect(invalidEventPath);
+    if (triggerSec === null) return null;
     return triggerSec;
   });
+  if (triggerSecs.some((triggerSec) => triggerSec === null)) return invalidEventPath;
 
   const eventResults = eventTypes.map((eventType, index) => {
     const triggerSec = triggerSecs[index];
-    if (triggerSec === undefined) redirect(invalidEventPath);
+    if (triggerSec === undefined || triggerSec === null) return { success: false as const };
 
     return normalizeInteractionEventDraft({
       eventType,
@@ -405,7 +410,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
       roleId: roleIds[index],
     }, index);
   });
-  if (eventResults.some((result) => !result.success)) redirect(invalidEventPath);
+  if (eventResults.some((result) => !result.success)) return invalidEventPath;
   const events = eventResults.flatMap((result) => result.success ? [result.data] : []);
 
   const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
@@ -414,14 +419,14 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : "/interaction-scripts/new?error=invalid_reference";
   if ([id, ...referencedRoleIds, ...referencedProductIds].some((value) => value && value.length > 128)) {
-    redirect(invalidReferencePath);
+    return invalidReferencePath;
   }
 
   const name = text(formData, "name");
   const description = optionalText(formData, "description");
   const status = text(formData, "status", "draft");
   if (!name || name.length > 160 || (description?.length ?? 0) > 1_000 || (status !== "draft" && status !== "published")) {
-    redirect(invalidEventPath);
+    return invalidEventPath;
   }
   const data = { name, description, status };
 
@@ -492,13 +497,13 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (error instanceof InteractionScriptMissingError || isRecordNotFoundError(error)) {
-      redirect("/interaction-scripts?error=missing_script");
+      return "/interaction-scripts?error=missing_script";
     }
     if (error instanceof InteractionScriptReferenceError) {
-      redirect(invalidReferencePath);
+      return invalidReferencePath;
     }
     if (isInteractionScriptWriteConflict(error)) {
-      redirect("/interaction-scripts?error=conflict");
+      return "/interaction-scripts?error=conflict";
     }
     throw error;
   }
@@ -512,7 +517,11 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     after: auditSnapshot({ name, status, eventCount: events.length }),
   });
 
-  redirect("/interaction-scripts");
+  return "/interaction-scripts";
+}
+
+export async function upsertInteractionScriptAction(formData: FormData) {
+  redirect(await saveInteractionScript(formData));
 }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {

@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
-import { unbindInteractionScriptFromLiveAction, upsertInteractionScriptAction } from "@/app/actions";
+import { unbindInteractionScriptFromLiveAction } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import {
@@ -567,7 +567,7 @@ export function InteractionScriptForm({
   }
 
   return (
-    <form action={upsertInteractionScriptAction} onSubmit={validateTimeInputs} className="grid gap-5">
+    <form action="/api/interaction-scripts/upsert" method="post" onSubmit={validateTimeInputs} className="grid gap-5">
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
       {error === "invalid_reference" ? (
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
