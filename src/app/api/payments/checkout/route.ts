@@ -149,6 +149,11 @@ function checkoutTransactionMetadata(input: {
   sourceLiveId?: string;
 }) {
   return {
+    // This server-owned marker distinguishes a merchant buyer checkout from
+    // the two platform billing flows during the fixed WP4 Sandbox runner.
+    // It is not supplied by the browser and is retained with the immutable
+    // product identity below.
+    billingPurpose: "buyer_order",
     productId: input.productId,
     productName: input.productName,
     ...(input.coursePolicySnapshot ? { coursePolicySnapshot: input.coursePolicySnapshot } : {}),

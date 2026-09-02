@@ -1,0 +1,134 @@
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
+import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
+import { getPaymentProvider } from "@/lib/payment-providers";
+import type { PaymentTransaction, PrismaClient } from "@prisma/client";
+
+export const WP4_PAYUNI_PURPOSES = [
+  "buyer_order",
+  "platform_subscription",
+  "invoice_payment",
+] as const;
+
+export type Wp4PayUniPurpose = typeof WP4_PAYUNI_PURPOSES[number];
+
+type TransactionIdentity = {
+  vendorId: string;
+  providerName: string;
+  grossAmountCents: number;
+  status: string;
+  metadata: unknown;
+};
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/**
+ * Resolves only the three server-owned WP4 payment purposes. Unknown metadata
+ * is deliberately not coerced: callers must not be able to turn an unrelated
+ * payment into a Sandbox reconciliation candidate.
+ */
+export function wp4PayUniPurposeFromMetadata(metadata: unknown): Wp4PayUniPurpose | null {
+  const purpose = objectValue(metadata)?.billingPurpose;
+  return typeof purpose === "string" && (WP4_PAYUNI_PURPOSES as readonly string[]).includes(purpose)
+    ? purpose as Wp4PayUniPurpose
+    : null;
+}
+
+/**
+ * Tests a row selected by the server against the deterministic staging-only
+ * fixture boundary. It does not accept a transaction identifier, amount, or
+ * provider value from an HTTP caller.
+ */
+export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity): boolean {
+  if (
+    transaction.vendorId !== WP4_SANDBOX_FIXTURE.vendorId
+    || transaction.providerName !== "payuni"
+    || !Number.isSafeInteger(transaction.grossAmountCents)
+    || transaction.grossAmountCents <= 0
+    || !["paid", "partially_refunded", "refunded"].includes(transaction.status)
+  ) return false;
+
+  const purpose = wp4PayUniPurposeFromMetadata(transaction.metadata);
+  const metadata = objectValue(transaction.metadata);
+  if (!purpose || !metadata) return false;
+
+  if (purpose === "buyer_order") return metadata.productId === WP4_SANDBOX_FIXTURE.productId;
+  if (purpose === "platform_subscription") return metadata.planId === WP4_SANDBOX_FIXTURE.planId;
+  return metadata.invoiceId === WP4_SANDBOX_FIXTURE.invoiceId;
+}
+
+export type Wp4PayUniSandboxReconciliationResult = {
+  reconciled: boolean;
+  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
+};
+
+type Wp4ReconciliationDb = Pick<PrismaClient, "paymentTransaction"> & Parameters<typeof reconcilePayUniRefund>[0]["db"];
+
+type CandidateTransaction = TransactionIdentity & {
+  id: string;
+  providerTradeNo: string | null;
+  orderNumber: string | null;
+};
+
+function candidateTransaction(value: unknown): CandidateTransaction | null {
+  const row = objectValue(value);
+  if (!row
+    || typeof row.id !== "string"
+    || (typeof row.providerTradeNo !== "string" && row.providerTradeNo !== null)
+    || (typeof row.orderNumber !== "string" && row.orderNumber !== null)
+    || typeof row.vendorId !== "string"
+    || typeof row.providerName !== "string"
+    || typeof row.grossAmountCents !== "number"
+    || typeof row.status !== "string") return null;
+  return row as CandidateTransaction;
+}
+
+/**
+ * Reconciles only one already-reserved, fixture-owned PayUni refund. The
+ * caller cannot choose a transaction, amount, or provider. A missing pending
+ * reservation is not treated as success, which keeps a second provider refund
+ * impossible from this route.
+ */
+export async function reconcileWp4PayUniSandboxRefund(db: Wp4ReconciliationDb): Promise<Wp4PayUniSandboxReconciliationResult> {
+  const selected = await db.paymentTransaction.findFirst({
+    where: {
+      vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+      providerName: "payuni",
+      status: { in: ["paid", "partially_refunded"] },
+      refunds: { some: { status: "pending" } },
+    },
+    orderBy: { occurredAt: "desc" },
+  });
+  const row = candidateTransaction(selected);
+  if (!selected || !row || !isWp4PayUniSandboxTransaction(row) || !row.providerTradeNo || !row.orderNumber) {
+    return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
+  }
+
+  const provider = getPaymentProvider("payuni");
+  if (!provider.queryPayment) return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
+
+  let snapshot;
+  try {
+    snapshot = await provider.queryPayment({ transaction: selected as PaymentTransaction });
+  } catch {
+    return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
+  }
+  if (snapshot.status === "paid") return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+
+  try {
+    const outcome = await reconcilePayUniRefund({
+      db,
+      transactionId: row.id,
+      providerSnapshot: snapshot,
+      actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
+    });
+    return outcome.disposition === "reconciled" || outcome.disposition === "already_reconciled"
+      ? { reconciled: true, status: "RECONCILED" }
+      : { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+  } catch {
+    return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
+  }
+}

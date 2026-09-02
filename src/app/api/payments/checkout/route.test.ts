@@ -462,6 +462,7 @@ describe("successful checkout response", () => {
     const response = await POST(checkoutRequest(undefined, { shipping: null }));
     expect(response.status).toBe(200);
     expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
+      billingPurpose: "buyer_order",
       coursePolicySnapshot: { productId: "product-1", contentOwnerMembershipId: "membership-f", promoterShareBps: 2_500, policyVersion: 6 },
     });
   });
