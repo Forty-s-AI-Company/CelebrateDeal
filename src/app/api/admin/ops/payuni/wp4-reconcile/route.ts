@@ -21,7 +21,7 @@ function unavailableResponse(status = 404) {
 function resultStatus(result: Wp4PayUniSandboxReconciliationResult) {
   if (result.reconciled) return 200;
   if (result.status === "FIXTURE_UNAVAILABLE") return 404;
-  if (result.status === "CANDIDATE_AMBIGUOUS" || result.status === "PENDING_RESERVATION_UNAVAILABLE" || result.status === "REFUND_NOT_CONFIRMED") return 409;
+  if (result.status === "CANDIDATE_AMBIGUOUS" || result.status === "PENDING_RESERVATION_UNAVAILABLE" || result.status === "REFUND_NOT_CONFIRMED" || result.status === "RESERVATION_RELEASED") return 409;
   return 503;
 }
 

@@ -90,7 +90,7 @@ export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity):
 
 export type Wp4PayUniSandboxReconciliationResult = {
   reconciled: boolean;
-  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
+  status: "RECONCILED" | "RESERVATION_RELEASED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
 };
 
 type Wp4ReconciliationDb = Pick<PrismaClient, "paymentTransaction"> & Parameters<typeof reconcilePayUniRefund>[0]["db"];
@@ -159,8 +159,6 @@ export async function reconcileWp4PayUniSandboxRefund(
   } catch {
     return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
   }
-  if (snapshot.status === "paid") return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
-
   try {
     const outcome = await reconcilePayUniRefund({
       db,
@@ -168,9 +166,13 @@ export async function reconcileWp4PayUniSandboxRefund(
       providerSnapshot: snapshot,
       actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
     });
-    return outcome.disposition === "reconciled" || outcome.disposition === "already_reconciled"
-      ? { reconciled: true, status: "RECONCILED" }
-      : { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+    if (outcome.disposition === "reconciled" || outcome.disposition === "already_reconciled") {
+      return { reconciled: true, status: "RECONCILED" };
+    }
+    if (outcome.disposition === "provider_not_refunded") {
+      return { reconciled: false, status: "RESERVATION_RELEASED" };
+    }
+    return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
   } catch {
     return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
   }

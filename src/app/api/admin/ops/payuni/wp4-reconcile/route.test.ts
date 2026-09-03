@@ -90,6 +90,7 @@ describe("POST /api/admin/ops/payuni/wp4-reconcile", () => {
     [{ reconciled: false, status: "CANDIDATE_AMBIGUOUS" }, 409],
     [{ reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" }, 409],
     [{ reconciled: false, status: "REFUND_NOT_CONFIRMED" }, 409],
+    [{ reconciled: false, status: "RESERVATION_RELEASED" }, 409],
     [{ reconciled: false, status: "PROJECTION_UNAVAILABLE" }, 503],
   ])("maps closed projection status %# to the fixed HTTP status", async (result, expectedStatus) => {
     mocks.reconcile.mockResolvedValueOnce(result);
