@@ -92,6 +92,7 @@ const FAILURE_CODES = new Set([
   "INTERNAL_REJECTED",
 ]);
 const PAYUNI_UPP_URL = "https://sandbox-api.payuni.com.tw/api/upp";
+const PAYUNI_PAYMENT_HOST = "sandbox-vendor.payuni.com.tw";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
@@ -517,7 +518,7 @@ async function defaultBrowserSubmit(input) {
       // can observe the cross-origin payment page.
       window.setTimeout(() => form.submit(), 0);
     }, { action: PAYUNI_UPP_URL, payload: input.formPayload });
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw", {
+    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST, {
       waitUntil: "domcontentloaded",
       timeout: REQUEST_TIMEOUT_MS,
     });
