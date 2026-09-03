@@ -80,6 +80,11 @@ const FAILURE_CODES = new Set([
   "PAYMENT_ATTEMPT_REJECTED",
   "PAYMENT_REJECTED",
   "PAYMENT_PAGE_UNREACHED",
+  "PAYMENT_FORM_NOT_SUBMITTED",
+  "PAYMENT_PROVIDER_HTTP_REJECTED",
+  "PAYMENT_PROVIDER_NETWORK_REJECTED",
+  "PAYMENT_REDIRECT_UNOBSERVED",
+  "PAYMENT_VENDOR_NAV_UNCOMMITTED",
   "PAYMENT_METHOD_UNAVAILABLE",
   "PAYMENT_FIELDS_REJECTED",
   "PAYMENT_SUBMIT_REJECTED",
@@ -496,7 +501,30 @@ async function defaultBrowserSubmit(input) {
   const page = await context.newPage();
   const origin = fixedOrigin(input.previewHost);
   let stage = "PAYMENT_PAGE_UNREACHED";
+  let apiPostSeen = false;
+  let apiStatus = null;
+  let providerNetworkRejected = false;
+  let vendorRequestSeen = false;
   try {
+    page.on("request", (request) => {
+      try {
+        const url = new URL(request.url());
+        if (url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw" && url.pathname === "/api/upp" && request.method() === "POST") apiPostSeen = true;
+        if (url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST) vendorRequestSeen = true;
+      } catch {}
+    });
+    page.on("response", (response) => {
+      try {
+        const url = new URL(response.url());
+        if (url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw" && url.pathname === "/api/upp") apiStatus = response.status();
+      } catch {}
+    });
+    page.on("requestfailed", (request) => {
+      try {
+        const url = new URL(request.url());
+        if (url.hostname === "sandbox-api.payuni.com.tw" || url.hostname === PAYUNI_PAYMENT_HOST) providerNetworkRejected = true;
+      } catch {}
+    });
     const [name, value] = input.supportCookie.split("=", 2);
     if (!name?.startsWith("celebrate_support_") || !value) throw new Error("PAYMENT_REJECTED");
     await context.addCookies([{ name, value, url: origin, httpOnly: true, sameSite: "Lax", secure: true }]);
@@ -555,7 +583,12 @@ async function defaultBrowserSubmit(input) {
     const resultText = await page.locator("body").innerText();
     return resultText.includes(input.orderNumber) && resultText.includes("付款完成");
   } catch {
-    return stage;
+    if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
+    if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
+    if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
+    if (providerNetworkRejected) return "PAYMENT_PROVIDER_NETWORK_REJECTED";
+    if (vendorRequestSeen) return "PAYMENT_VENDOR_NAV_UNCOMMITTED";
+    return "PAYMENT_REDIRECT_UNOBSERVED";
   } finally {
     await browser.close();
   }
