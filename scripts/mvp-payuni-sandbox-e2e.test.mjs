@@ -301,6 +301,7 @@ test("reconciles a provider-completed refund when local completion is ambiguous"
         providerWriteAttempted: true,
       })
     : originalRequest(request);
+  dependencies.wait = async () => {};
 
   const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
 
