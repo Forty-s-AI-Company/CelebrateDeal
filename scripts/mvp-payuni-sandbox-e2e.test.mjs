@@ -256,6 +256,19 @@ test("stops before refund and reconciliation when return callback cannot map to 
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
+test("preserves an allowlisted browser-stage failure without exposing provider data", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  dependencies.browserSubmit = async () => "PAYMENT_FIELDS_REJECTED";
+  const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
+
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "PAYMENT_FIELDS_REJECTED");
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+});
+
 test("a reserved pending retry never submits the PayUni form again", async () => {
   const calls = [];
   const dependencies = successfulDependencies(calls);
