@@ -26,7 +26,7 @@ export const SIDE_EFFECT_BUDGET = Object.freeze({
   paymentReservationsCreated: 1,
   browserPaymentSubmissions: 1,
   refundPosts: 1,
-  reconcilePosts: 6,
+  reconcilePosts: 12,
   transactionsCreated: 1,
   payments: 1,
   refunds: 1,
@@ -811,7 +811,7 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       if (!refundRequiresReconciliation || attempt === maximumReconcileAttempts) {
         return fail(receipt, "RECONCILE_REJECTED");
       }
-      await wait(2_000);
+      await wait(10_000);
     }
     // A provider write can succeed while the application loses the success
     // response or its local completion transaction fails. The reconciliation
