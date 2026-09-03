@@ -26,7 +26,7 @@ export const SIDE_EFFECT_BUDGET = Object.freeze({
   paymentReservationsCreated: 1,
   browserPaymentSubmissions: 1,
   refundPosts: 1,
-  reconcilePosts: 1,
+  reconcilePosts: 6,
   transactionsCreated: 1,
   payments: 1,
   refunds: 1,
@@ -360,14 +360,14 @@ function completedPrefix(receipt) {
   if (checks.payuniFormAccepted && (!checks.paymentAttemptReserved || effects.browserPaymentSubmissions !== effects.paymentReservationsCreated)) return false;
   if (checks.returnCallbackMapped && (!checks.payuniFormAccepted || effects.payments !== effects.paymentReservationsCreated)) return false;
   if (checks.refundCompleted && (!checks.returnCallbackMapped || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
-  if (checks.reconciled && (!checks.refundCompleted || effects.reconcilePosts !== 1)) return false;
+  if (checks.reconciled && (!checks.refundCompleted || effects.reconcilePosts < 1)) return false;
   if (effects.admissionPosts > 0 && !checks.fixtureReady) return false;
   if (effects.checkoutPosts > 0 && !checks.sameOriginAdmission) return false;
   if (effects.paymentAttemptPosts > 0 && !checks.checkoutCreated) return false;
   if (effects.paymentReservationsCreated > 0 && !checks.paymentAttemptReserved) return false;
   if (effects.browserPaymentSubmissions > 0 && !checks.paymentAttemptReserved) return false;
   if (effects.refundPosts > 0 && !checks.returnCallbackMapped) return false;
-  if (effects.reconcilePosts > 0 && !checks.refundCompleted) return false;
+  if (effects.reconcilePosts > 0 && !checks.refundCompleted && receipt.failure !== "RECONCILE_REJECTED") return false;
   if (effects.transactionsCreated > 0 && !checks.checkoutCreated) return false;
   if (effects.payments > 0 && !checks.returnCallbackMapped) return false;
   if (effects.refunds > 0 && !checks.refundCompleted) return false;
@@ -393,7 +393,7 @@ export function validateMvpPayUniReceipt(receipt) {
   if (receipt?.result === "PASS") {
     if (!completed || receipt.failure !== "NONE") errors.push("PASS_COMPLETENESS");
     const effects = receipt.sideEffects;
-    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "reconcilePosts", "transactionsCreated", "refunds"];
+    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds"];
     const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
     if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution) errors.push("PASS_EFFECTS");
   } else if (receipt?.failure === "NONE" || completed) {
@@ -692,6 +692,7 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
 
   const request = dependencies.request ?? defaultRequest;
   const browserSubmit = dependencies.browserSubmit ?? defaultBrowserSubmit;
+  const wait = dependencies.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const base = fixedOrigin(invocation.previewHost);
   const guarded = guardedHeaders(invocation);
   let admission;
@@ -797,13 +798,21 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       receipt.sideEffects.refunds = 1;
     }
 
-    receipt.sideEffects.reconcilePosts = 1;
-    const reconciliation = responseJson(await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-reconcile"),
-      headers: guarded,
-      body: undefined,
-    }));
-    if (!assertReconcileResponse(reconciliation)) return fail(receipt, "RECONCILE_REJECTED");
+    let reconciliation;
+    const maximumReconcileAttempts = refundRequiresReconciliation ? SIDE_EFFECT_BUDGET.reconcilePosts : 1;
+    for (let attempt = 1; attempt <= maximumReconcileAttempts; attempt += 1) {
+      receipt.sideEffects.reconcilePosts = attempt;
+      reconciliation = responseJson(await request({
+        url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-reconcile"),
+        headers: guarded,
+        body: undefined,
+      }));
+      if (assertReconcileResponse(reconciliation)) break;
+      if (!refundRequiresReconciliation || attempt === maximumReconcileAttempts) {
+        return fail(receipt, "RECONCILE_REJECTED");
+      }
+      await wait(2_000);
+    }
     // A provider write can succeed while the application loses the success
     // response or its local completion transaction fails. The reconciliation
     // endpoint queries PayUni and validates order, trade and amount before it
