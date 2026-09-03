@@ -611,28 +611,24 @@ async function defaultBrowserSubmit(input) {
     if (!name?.startsWith("celebrate_support_") || !value) throw new Error("PAYMENT_REJECTED");
     await context.addCookies([{ name, value, url: origin, httpOnly: true, sameSite: "Lax", secure: true }]);
     await page.goto(origin, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
-    await page.evaluate(({ action, payload }) => {
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = action;
-      for (const [name, value] of Object.entries(payload)) {
-        const field = document.createElement("input");
-        field.type = "hidden";
-        field.name = name;
-        field.value = value;
-        form.appendChild(field);
-      }
-      document.body.appendChild(form);
-      // Schedule the native navigation after evaluate has returned. An
-      // immediate submit can destroy Playwright's execution context before it
-      // can observe the cross-origin payment page.
-      window.setTimeout(() => form.submit(), 0);
-    }, { action: PAYUNI_UPP_URL, payload: input.formPayload });
-    await page.waitForURL(isPayUniPaymentPageUrl, {
-      // The runner intentionally blocks every non-allowlisted third-party
-      // resource.  The PayUni document can therefore be committed before its
-      // optional resources let DOMContentLoaded fire.  Field locators below
-      // remain the authoritative proof that the payment UI is usable.
+    // Chromium can report ERR_ABORTED for a cross-origin native POST
+    // navigation even when PayUni returned its payment document. Fetch that
+    // exact response inside the same isolated browser context, then fulfill a
+    // single exact-host navigation from the in-memory response. The encrypted
+    // provider payload never enters logs, disk, or the receipt.
+    apiPostSeen = true;
+    const paymentDocument = await context.request.post(PAYUNI_UPP_URL, {
+      form: input.formPayload,
+      failOnStatusCode: false,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    apiStatus = paymentDocument.status();
+    if (!paymentDocument.ok()) throw new Error("PAYMENT_PROVIDER_HTTP_REJECTED");
+    await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: paymentDocument }), { times: 1 });
+    await page.goto(PAYUNI_UPP_URL, {
+      // Optional third-party resources remain blocked by the fixed egress
+      // allowlist; the committed provider document is sufficient for the
+      // authoritative field checks below.
       waitUntil: "commit",
       timeout: REQUEST_TIMEOUT_MS,
     });
