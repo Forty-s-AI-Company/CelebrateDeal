@@ -289,6 +289,31 @@ test("stops before refund and reconciliation when return callback cannot map to 
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
+test("reconciles a provider-completed refund when local completion is ambiguous", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-refund")
+    ? response(503, {
+        status: "RECONCILIATION_REQUIRED",
+        purpose: "buyer_order",
+        phase: "remaining",
+        providerWriteAttempted: true,
+      })
+    : originalRequest(request);
+
+  const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
+
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.failure, "NONE");
+  assert.equal(receipt.checks.refundCompleted, true);
+  assert.equal(receipt.checks.reconciled, true);
+  assert.equal(receipt.sideEffects.refundPosts, 1);
+  assert.equal(receipt.sideEffects.refunds, 1);
+  assert.equal(receipt.sideEffects.reconcilePosts, 1);
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+});
+
 test("preserves an allowlisted browser-stage failure without exposing provider data", async () => {
   const calls = [];
   const dependencies = successfulDependencies(calls);
