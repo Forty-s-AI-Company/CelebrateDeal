@@ -221,7 +221,9 @@ jobs:
           NODE
 
           while IFS=$'\t' read -r host port; do
-            mapfile -t addresses < <(getent ahostsv4 "$host" | awk '{print $1}' | sort -u)
+            # Preserve the resolver's preferred CDN edge order while removing
+            # getent's repeated STREAM/DGRAM/RAW rows.
+            mapfile -t addresses < <(getent ahostsv4 "$host" | awk '!seen[$1]++ { print $1 }')
             if (( ${#addresses[@]} == 0 )); then
               echo "secure_wp4_egress_resolution=BLOCKED"
               exit 2

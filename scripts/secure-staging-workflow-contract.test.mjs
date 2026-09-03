@@ -57,6 +57,7 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   assert.match(source, /api\.github\.com/u);
   assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);
+  assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 1);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
   assert.match(runner, /\/etc\/hosts:\/etc\/hosts:ro/u);
