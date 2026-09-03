@@ -500,26 +500,27 @@ async function defaultBrowserSubmit(input) {
     if (!name?.startsWith("celebrate_support_") || !value) throw new Error("PAYMENT_REJECTED");
     await context.addCookies([{ name, value, url: origin, httpOnly: true, sameSite: "Lax", secure: true }]);
     await page.goto(origin, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
-    await Promise.all([
-      page.waitForURL((url) => url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw", {
-        waitUntil: "domcontentloaded",
-        timeout: REQUEST_TIMEOUT_MS,
-      }),
-      page.evaluate(({ action, payload }) => {
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = action;
-        for (const [name, value] of Object.entries(payload)) {
-          const field = document.createElement("input");
-          field.type = "hidden";
-          field.name = name;
-          field.value = value;
-          form.appendChild(field);
-        }
-        document.body.appendChild(form);
-        form.submit();
-      }, { action: PAYUNI_UPP_URL, payload: input.formPayload }),
-    ]);
+    await page.evaluate(({ action, payload }) => {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = action;
+      for (const [name, value] of Object.entries(payload)) {
+        const field = document.createElement("input");
+        field.type = "hidden";
+        field.name = name;
+        field.value = value;
+        form.appendChild(field);
+      }
+      document.body.appendChild(form);
+      // Schedule the native navigation after evaluate has returned. An
+      // immediate submit can destroy Playwright's execution context before it
+      // can observe the cross-origin payment page.
+      window.setTimeout(() => form.submit(), 0);
+    }, { action: PAYUNI_UPP_URL, payload: input.formPayload });
+    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw", {
+      waitUntil: "domcontentloaded",
+      timeout: REQUEST_TIMEOUT_MS,
+    });
     stage = "PAYMENT_METHOD_UNAVAILABLE";
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
