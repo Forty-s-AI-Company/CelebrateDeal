@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  classifyPayUniApiNetworkFailure,
   FIXED_PAYUNI_ENV,
   MVP_PAYUNI_SANDBOX_E2E_SCHEMA,
   SIDE_EFFECT_BUDGET,
@@ -18,6 +19,16 @@ import {
   verifyMvpPayUniLineage,
   writeMvpPayUniReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
+
+test("classifies Chromium PayUni API network failures without persisting raw errors", () => {
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_NAME_NOT_RESOLVED"), "PAYMENT_API_DNS_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_CONNECTION_TIMED_OUT"), "PAYMENT_API_TIMEOUT_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_CERT_AUTHORITY_INVALID"), "PAYMENT_API_TLS_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_CONNECTION_RESET"), "PAYMENT_API_CONNECTION_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_BLOCKED_BY_CLIENT"), "PAYMENT_API_CLIENT_BLOCKED");
+  assert.equal(classifyPayUniApiNetworkFailure("opaque browser failure"), "PAYMENT_API_NETWORK_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure(undefined), "PAYMENT_API_NETWORK_REJECTED");
+});
 
 const sourceSha = "a".repeat(40);
 const previewHost = "celebratedeal-wp4-20bc897.vercel.app";
@@ -125,10 +136,10 @@ test("fails closed for non-preview host, non-sandbox env, invalid SHA, and inval
   }
 });
 
-test("pins Chromium to the trusted runner host map without proxy or QUIC", async () => {
+test("uses the trusted runner multi-address host map without a second single-edge pin", async () => {
   const source = await readFile(new URL("./mvp-payuni-sandbox-e2e.mjs", import.meta.url), "utf8");
-  assert.match(source, /lookup\("sandbox-api\.payuni\.com\.tw", \{ family: 4 \}\)/u);
-  assert.match(source, /--host-resolver-rules=/u);
+  assert.doesNotMatch(source, /node:dns\/promises/u);
+  assert.doesNotMatch(source, /--host-resolver-rules=/u);
   assert.match(source, /--no-proxy-server/u);
   assert.match(source, /--disable-quic/u);
 });
