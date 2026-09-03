@@ -8,6 +8,10 @@ import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 const db = new PrismaClient();
 const password = "Wp67SyntheticPassword!";
 
+function highEntropyInventoryFromSuffix(seed: string, start: number) {
+  return 100_000_000 + (Number.parseInt(seed.slice(start, start + 8), 16) % 900_000_000);
+}
+
 // This negative authorization proof must not retain a synthetic session.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(90_000);
@@ -17,6 +21,14 @@ test("active accountant is denied the products index before product data is quer
 }) => {
   const suffix = randomUUID().replace(/-/g, "");
   const tag = `wp67-${suffix}`;
+  const activeInventory = highEntropyInventoryFromSuffix(suffix, 0);
+  const inactiveInventoryBase = highEntropyInventoryFromSuffix(suffix, 8);
+  const inactiveInventory =
+    inactiveInventoryBase === activeInventory
+      ? activeInventory === 999_999_999
+        ? 100_000_000
+        : activeInventory + 1
+      : inactiveInventoryBase;
   const vendor = await db.vendor.create({
     data: {
       name: `WP67 Vendor ${suffix}`,
@@ -55,7 +67,7 @@ test("active accountant is denied the products index before product data is quer
         currency: "TWD",
         imageUrl: `https://active-image-${tag}.invalid/product.jpg`,
         checkoutUrl: `https://active-checkout-${tag}.invalid/order`,
-        inventory: 6717,
+        inventory: activeInventory,
         isActive: true,
       },
     }),
@@ -70,7 +82,7 @@ test("active accountant is denied the products index before product data is quer
         currency: "USD",
         imageUrl: `https://inactive-image-${tag}.invalid/product.jpg`,
         checkoutUrl: `https://inactive-checkout-${tag}.invalid/order`,
-        inventory: 6727,
+        inventory: inactiveInventory,
         isActive: false,
       },
     }),
