@@ -79,7 +79,12 @@ const FAILURE_CODES = new Set([
   "CHECKOUT_REJECTED",
   "PAYMENT_ATTEMPT_REJECTED",
   "PAYMENT_REJECTED",
+  "PAYMENT_PAGE_UNREACHED",
+  "PAYMENT_METHOD_UNAVAILABLE",
+  "PAYMENT_FIELDS_REJECTED",
+  "PAYMENT_SUBMIT_REJECTED",
   "RETURN_CALLBACK_UNMAPPED",
+  "RETURN_RESULT_UNMAPPED",
   "RETURN_CALLBACK_PROOF_REQUIRED",
   "REFUND_REJECTED",
   "RECONCILE_REJECTED",
@@ -489,6 +494,7 @@ async function defaultBrowserSubmit(input) {
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   const origin = fixedOrigin(input.previewHost);
+  let stage = "PAYMENT_PAGE_UNREACHED";
   try {
     const [name, value] = input.supportCookie.split("=", 2);
     if (!name?.startsWith("celebrate_support_") || !value) throw new Error("PAYMENT_REJECTED");
@@ -513,12 +519,15 @@ async function defaultBrowserSubmit(input) {
       waitUntil: "domcontentloaded",
       timeout: REQUEST_TIMEOUT_MS,
     });
+    stage = "PAYMENT_METHOD_UNAVAILABLE";
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
-    await page.getByPlaceholder("16 碼或 19 碼").fill(input.cardNumber);
-    await page.getByPlaceholder("MM/YY").fill(input.cardExpiry);
-    await page.getByPlaceholder("***").fill(input.cardCvv);
+    stage = "PAYMENT_FIELDS_REJECTED";
+    await page.getByPlaceholder("16 碼或 19 碼").pressSequentially(input.cardNumber);
+    await page.getByPlaceholder("MM/YY").pressSequentially(input.cardExpiry);
+    await page.getByPlaceholder("***").pressSequentially(input.cardCvv);
     await page.getByPlaceholder("example@example.com").fill("wp4-buyer-v1@invalid.example");
+    stage = "PAYMENT_SUBMIT_REJECTED";
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
@@ -528,17 +537,18 @@ async function defaultBrowserSubmit(input) {
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
     }
+    stage = "RETURN_CALLBACK_UNMAPPED";
     await page.waitForURL((url) => (
       url.protocol === "https:"
       && url.hostname === input.previewHost
       && url.pathname === "/checkout/result"
       && url.searchParams.get("payment") === "updated"
     ), { waitUntil: "domcontentloaded", timeout: 60_000 });
+    stage = "RETURN_RESULT_UNMAPPED";
     const resultText = await page.locator("body").innerText();
     return resultText.includes(input.orderNumber) && resultText.includes("付款完成");
-  } catch (error) {
-    if (error instanceof errors.TimeoutError) return false;
-    return false;
+  } catch {
+    return stage;
   } finally {
     await browser.close();
   }
@@ -637,7 +647,12 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       orderNumber: checkout.body.orderNumber,
       transactionId: checkout.body.transactionId,
     });
-    if (callbackMapped !== true) return fail(receipt, "RETURN_CALLBACK_UNMAPPED");
+    if (callbackMapped !== true) {
+      const browserFailure = typeof callbackMapped === "string" && FAILURE_CODES.has(callbackMapped)
+        ? callbackMapped
+        : "RETURN_CALLBACK_UNMAPPED";
+      return fail(receipt, browserFailure);
+    }
     receipt.sideEffects.payments = 1;
     receipt.checks.payuniFormAccepted = true;
     receipt.checks.returnCallbackMapped = true;
