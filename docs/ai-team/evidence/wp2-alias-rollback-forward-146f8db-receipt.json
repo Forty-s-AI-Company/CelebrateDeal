@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "celebratedeal-staging-alias-drill/v1",
+  "sourceCommit": "146f8db0616fef63451d80f2d8d23a243f58860b",
+  "result": "PASS",
+  "executedAtUtc": "2026-08-30T22:00:15Z",
+  "lineage": {
+    "currentDeploymentDigest": "sha256:b141ccbdea28af8e51ba3ad242820ec7eb01b7ac711824b500e11566a3fae35e",
+    "rollbackDeploymentDigest": "sha256:e3a2f052cfde53298921bc25dc02cbceb13e9807c49cb91c0100739224f67046",
+    "currentSourceMatched": true,
+    "sameProject": true,
+    "previewOnly": true,
+    "ready": true,
+    "finalAliasCurrent": true
+  },
+  "probes": {
+    "preflight": 6,
+    "afterForward": 2,
+    "afterRollback": 2,
+    "afterRestore": 2,
+    "loginStatus": 200,
+    "healthStatus": 200,
+    "redirects": 0,
+    "productionRedirects": 0
+  },
+  "sideEffects": {
+    "aliasMutations": 3,
+    "deployments": 0,
+    "environmentMutations": 0,
+    "databaseWrites": 0,
+    "migrationWrites": 0,
+    "productionOperations": 0
+  },
+  "safety": {
+    "sanitized": true,
+    "envFilesRead": false,
+    "secretValuesPrinted": false,
+    "rawResponsesPersisted": false,
+    "customerDataPersisted": false
+  },
+  "failureCategory": null
+}

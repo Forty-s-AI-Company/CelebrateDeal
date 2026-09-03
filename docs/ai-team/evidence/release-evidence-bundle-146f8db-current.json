@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "celebratedeal-release-evidence-bundle/v1",
+  "capturedAt": "2026-08-31T08:46:48Z",
+  "sourceCommit": "146f8db0616fef63451d80f2d8d23a243f58860b",
+  "governanceVersion": "solo-founder-launch/v1",
+  "environment": "non-production",
+  "nonProduction": true,
+  "sanitized": true,
+  "sensitiveDataPersisted": false,
+  "rawDataPersisted": false,
+  "productionApproval": false,
+  "productionOperations": 0,
+  "releaseDecision": "NO_GO",
+  "gates": [
+    {"gateId":"remote_ci","evidenceClass":"REMOTE_CI","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:ci-run-33335743949","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":null},
+    {"gateId":"staging_lineage","evidenceClass":"STAGING_LINEAGE","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp2-lineage-run-33337647919","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":null},
+    {"gateId":"staging_migration","evidenceClass":"STAGING_MIGRATION","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp2-migration-run-33337647919","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":null},
+    {"gateId":"staging_recovery","evidenceClass":"STAGING_RECOVERY","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp2-recovery-run-33337647919","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":null},
+    {"gateId":"staging_rollback","evidenceClass":"STAGING_ROLLBACK","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp2-alias-drill-20260830","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":null},
+    {"gateId":"cloudflare_stream","evidenceClass":"EXTERNAL_PROVIDER","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp3-cloudflare-146f8db","ownerRef":"opaque:provider-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T02:10:03Z","sanitized":true,"failureReason":null},
+    {"gateId":"resend","evidenceClass":"EXTERNAL_PROVIDER","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp3-resend-verified-146f8db","ownerRef":"opaque:provider-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T08:33:10Z","sanitized":true,"failureReason":null},
+    {"gateId":"sentry","evidenceClass":"EXTERNAL_PROVIDER","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp3-sentry-verified-146f8db","ownerRef":"opaque:provider-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T08:40:24Z","sanitized":true,"failureReason":null},
+    {"gateId":"posthog","evidenceClass":"EXTERNAL_PROVIDER","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp3-posthog-146f8db","ownerRef":"opaque:provider-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T02:10:03Z","sanitized":true,"failureReason":null},
+    {"gateId":"durable_rate_limit","evidenceClass":"EXTERNAL_PROVIDER","result":"PASS","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp3-rate-limit-pass-146f8db","ownerRef":"opaque:provider-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T08:17:55Z","sanitized":true,"failureReason":null},
+    {"gateId":"payuni_sandbox_reconciliation","evidenceClass":"PAYMENT_RECONCILIATION","result":"PENDING_EXTERNAL","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:wp4-payuni-runner-task-missing-146f8db","ownerRef":"opaque:finance-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-31T08:46:48Z","sanitized":true,"failureReason":"PAYUNI_RECONCILIATION_MISSING"},
+    {"gateId":"policy_review","evidenceClass":"POLICY","result":"PENDING_HUMAN","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:policy-review-146f8db","ownerRef":"opaque:policy-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":"POLICY_APPROVAL_MISSING"},
+    {"gateId":"human_owner_acceptance","evidenceClass":"HUMAN_ACCEPTANCE","result":"PENDING_HUMAN","sourceCommit":"146f8db0616fef63451d80f2d8d23a243f58860b","evidenceRef":"opaque:human-acceptance-146f8db","ownerRef":"opaque:release-owner-20260830","scopeRef":"opaque:current-source-146f8db","capturedAt":"2026-08-30T22:00:15Z","sanitized":true,"failureReason":"HUMAN_ACCEPTANCE_MISSING"}
+  ]
+}

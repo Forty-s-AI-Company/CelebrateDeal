@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "celebratedeal-secure-staging-wp2/v2",
+  "task": "wp2-readonly-restore",
+  "sourceCommit": "146f8db0616fef63451d80f2d8d23a243f58860b",
+  "result": "PASS",
+  "executedAtUtc": "2026-08-30T21:54:03.743Z",
+  "lineage": {
+    "deploymentReads": 2,
+    "deploymentMatched": true,
+    "sourceMatched": true,
+    "preview": true,
+    "ready": true,
+    "healthStatus": 200,
+    "noRedirect": true,
+    "deploymentDigest": "sha256:418f99714b455fc365017603505d2f2a39929c10029a375c64d788234f2322dc"
+  },
+  "database": {
+    "connectionAttempts": 1,
+    "firstTransactionReadOnly": true,
+    "identityMatched": true,
+    "readQueries": 6,
+    "disconnected": true
+  },
+  "migration": {
+    "expectedCount": 58,
+    "appliedCount": 58,
+    "unresolvedFailedCount": 0,
+    "rollbackEntryCount": 1,
+    "completedCounterpartCount": 1,
+    "exactChecksumCount": 57,
+    "formatVarianceCount": 1,
+    "unknownMismatchCount": 0,
+    "status": "UP_TO_DATE_FORMAT_VARIANCE"
+  },
+  "backup": {
+    "attempts": 1,
+    "result": "PASS",
+    "byteBucket": "lt_1mib",
+    "digest": "sha256:25d97be7e5fda0b74beb0750c0766d9135f5f6792926c698dbb93797c3ad2adf"
+  },
+  "restore": {
+    "attempts": 1,
+    "result": "PASS",
+    "migrationCount": 58,
+    "schemaMatched": true,
+    "extensionsMatched": true,
+    "aggregateMatched": true,
+    "isolated": true
+  },
+  "network": {
+    "policy": "fixed-host-egress",
+    "githubDeployments": true,
+    "stagingPreview": true,
+    "supabaseStaging": true,
+    "arbitraryOutbound": false
+  },
+  "safety": {
+    "sanitized": true,
+    "envFilesRead": false,
+    "envEnumerated": false,
+    "secretValuesPrinted": false,
+    "secretValuesPersisted": false,
+    "rawOutputPersisted": false,
+    "rawDumpPersisted": false,
+    "rawDatabaseRowsPersisted": false,
+    "customerDataPersisted": false
+  },
+  "sideEffects": {
+    "databaseWrites": 0,
+    "migrationWrites": 0,
+    "backupWrites": 1,
+    "isolatedRestoreWrites": 1,
+    "deployments": 0,
+    "aliasMutations": 0,
+    "productionOperations": 0
+  },
+  "failureCategory": null
+}
