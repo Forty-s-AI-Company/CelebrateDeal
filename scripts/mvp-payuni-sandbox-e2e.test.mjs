@@ -314,7 +314,7 @@ test("a reserved pending retry never submits the PayUni form again", async () =>
 
   const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
   assert.equal(receipt.result, "BLOCKED");
-  assert.equal(receipt.failure, "PAYMENT_ATTEMPT_REJECTED");
+  assert.equal(receipt.failure, "PAYMENT_ATTEMPT_ALREADY_RESERVED");
   assert.equal(browserSubmits, 0);
   assert.equal(receipt.sideEffects.refundPosts, 0);
 });

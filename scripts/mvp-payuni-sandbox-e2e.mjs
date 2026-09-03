@@ -78,6 +78,10 @@ const FAILURE_CODES = new Set([
   "ADMISSION_REJECTED",
   "CHECKOUT_REJECTED",
   "PAYMENT_ATTEMPT_REJECTED",
+  "PAYMENT_ATTEMPT_ALREADY_RESERVED",
+  "PAYMENT_ATTEMPT_ALREADY_FINISHED",
+  "PAYMENT_ATTEMPT_CANDIDATE_AMBIGUOUS",
+  "PAYMENT_ATTEMPT_FIXTURE_UNAVAILABLE",
   "PAYMENT_REJECTED",
   "PAYMENT_PAGE_UNREACHED",
   "PAYMENT_FORM_NOT_SUBMITTED",
@@ -527,6 +531,15 @@ async function defaultRequest(request) {
   return parseFetchResponse(response, request.cookiePrefix, request.outcomeHeader);
 }
 
+function paymentAttemptFailure(response) {
+  const status = response?.body?.status;
+  if (status === "ALREADY_RESERVED") return "PAYMENT_ATTEMPT_ALREADY_RESERVED";
+  if (status === "ALREADY_FINISHED") return "PAYMENT_ATTEMPT_ALREADY_FINISHED";
+  if (status === "CANDIDATE_AMBIGUOUS") return "PAYMENT_ATTEMPT_CANDIDATE_AMBIGUOUS";
+  if (status === "FIXTURE_UNAVAILABLE") return "PAYMENT_ATTEMPT_FIXTURE_UNAVAILABLE";
+  return "PAYMENT_ATTEMPT_REJECTED";
+}
+
 function fixtureFailure(response) {
   if (response.status === 401) return "FIXTURE_AUTHORIZATION_REJECTED";
   const outcomes = {
@@ -735,7 +748,7 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       headers: guarded,
       body: undefined,
     }));
-    if (!assertPaymentAttemptResponse(paymentAttempt)) return fail(receipt, "PAYMENT_ATTEMPT_REJECTED");
+    if (!assertPaymentAttemptResponse(paymentAttempt)) return fail(receipt, paymentAttemptFailure(paymentAttempt));
     // ALREADY_PAID proves only the current transaction state.  It does not
     // carry a persisted, exact-source Return callback success proof, so it
     // cannot authorize this runner to infer a browser submission, refund, or
