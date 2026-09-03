@@ -233,6 +233,7 @@ describe("PayUni provider", () => {
     await expect(payUniPaymentProvider.queryPayment?.({
       transaction: {
         id: "tx-query",
+        providerName: "payuni",
         orderNumber: "CD-QUERY-001",
         providerTradeNo: "trade-query-123",
         grossAmountCents: 168_000,
@@ -272,7 +273,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -290,18 +291,81 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
-  it("does not permit the Sandbox reconciliation query to use Production", async () => {
+  it("queries the fixed Production endpoint exactly once and preserves the read-only request contract", async () => {
+    stubPayUniEnv();
+    vi.stubEnv("PAYUNI_ENV", "production");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify({
+        MerTradeNo: "CD-QUERY-003",
+        TradeNo: "trade-query-345",
+        TradeAmt: "1680",
+        TradeStatus: "1",
+        RefundStatus: "1",
+      }),
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
+    })).resolves.toEqual({
+      providerTradeNo: "trade-query-345",
+      orderNumber: "CD-QUERY-003",
+      grossAmountCents: 168_000,
+      refundedAmountCents: 168_000,
+      remainingRefundableAmountCents: 0,
+      status: "refunded",
+    });
+
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "https://api.payuni.com.tw/api/trade/query",
+      expect.objectContaining({ method: "POST", redirect: "error" }),
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const form = request.body as URLSearchParams;
+    expect(form.get("Version")).toBe("2.0");
+    expect(decryptCheckoutPayload(form.get("EncryptInfo") ?? "")).toMatchObject({ MerID: "TESTMER", MerTradeNo: "CD-QUERY-003" });
+    expect(JSON.stringify(request)).not.toContain(hashKey);
+    expect(JSON.stringify(request)).not.toContain(hashIv);
+  });
+
+  it.each([
+    ["provider reference", { TradeNo: "different-trade", TradeAmt: "1680" }],
+    ["gross amount", { TradeNo: "trade-query-346", TradeAmt: "1681" }],
+    ["order reference", { MerTradeNo: "different-order", TradeNo: "trade-query-346", TradeAmt: "1680" }],
+  ])("fails closed when Production query identity does not match the transaction: %s", async (_label, resultPatch) => {
+    stubPayUniEnv();
+    vi.stubEnv("PAYUNI_ENV", "production");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify(Object.assign({
+        MerTradeNo: "CD-QUERY-004",
+        TradeNo: "trade-query-346",
+        TradeAmt: "1680",
+        TradeStatus: "1",
+        RefundStatus: "1",
+      }, resultPatch)),
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-004", providerTradeNo: "trade-query-346", grossAmountCents: 168_000 } as PaymentTransaction,
+    })).rejects.toThrow("Payment provider query failed.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed before any provider call for a non-PayUni transaction", async () => {
     stubPayUniEnv();
     vi.stubEnv("PAYUNI_ENV", "production");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "stripe", orderNumber: "CD-QUERY-005", providerTradeNo: "trade-query-347", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).not.toHaveBeenCalled();
   });
