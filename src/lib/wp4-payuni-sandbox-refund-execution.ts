@@ -84,7 +84,12 @@ export async function executeNextWp4PayUniSandboxRefund(
     }
     const candidate = candidates[0];
     if (!candidate) continue;
-    const phase: Wp4PayUniRefundPhase = candidate.status === "paid" ? "partial" : "remaining";
+    // PayUni accepts whole TWD units only. The fixed NT$1 fixture therefore
+    // uses one full (remaining) refund; larger fixtures may still exercise a
+    // partial refund first when both phases can use whole-dollar amounts.
+    const phase: Wp4PayUniRefundPhase = candidate.status === "paid" && candidate.grossAmountCents >= 200
+      ? "partial"
+      : "remaining";
     const fixed = selectWp4PayUniFixedRefund(candidate, phase);
     if (!fixed || fixed.purpose !== purpose) {
       return { status: "REFUND_NOT_ELIGIBLE", purpose, phase, providerWriteAttempted: false };

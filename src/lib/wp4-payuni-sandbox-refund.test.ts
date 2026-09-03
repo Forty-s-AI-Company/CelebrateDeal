@@ -17,31 +17,33 @@ const base = {
 };
 
 describe("WP4 fixed PayUni Sandbox refund selection", () => {
-  it("derives a server-owned partial amount without accepting a caller amount", () => {
-    expect(selectWp4PayUniFixedRefund(base, "partial")).toEqual({
+  it("derives a whole-TWD partial amount without accepting a caller amount", () => {
+    expect(selectWp4PayUniFixedRefund({ ...base, grossAmountCents: 300 }, "partial")).toEqual({
       purpose: "buyer_order",
       phase: "partial",
-      refundAmountCents: 50,
+      refundAmountCents: 100,
       gatewayFeeRefundCents: 0,
       platformFeeRefundCents: 0,
     });
   });
 
-  it("allows the remaining phase only after a prior partial refund", () => {
-    expect(selectWp4PayUniFixedRefund({ ...base, status: "partially_refunded", refundedAmountCents: 50 }, "remaining"))
+  it("allows one full NT$1 refund or a whole-TWD remainder", () => {
+    expect(selectWp4PayUniFixedRefund(base, "remaining"))
       .toEqual({
         purpose: "buyer_order",
         phase: "remaining",
-        refundAmountCents: 50,
+        refundAmountCents: 100,
         gatewayFeeRefundCents: 0,
         platformFeeRefundCents: 0,
       });
-    expect(selectWp4PayUniFixedRefund(base, "remaining")).toBeNull();
+    expect(selectWp4PayUniFixedRefund({ ...base, grossAmountCents: 300, status: "partially_refunded", refundedAmountCents: 100 }, "remaining"))
+      .toMatchObject({ refundAmountCents: 200 });
   });
 
   it("fails closed for an unrelated transaction, a completed refund, or a one-cent fixture", () => {
     expect(selectWp4PayUniFixedRefund({ ...base, vendorId: "other-vendor" }, "partial")).toBeNull();
     expect(selectWp4PayUniFixedRefund({ ...base, status: "refunded", refundedAmountCents: 100 }, "remaining")).toBeNull();
     expect(selectWp4PayUniFixedRefund({ ...base, grossAmountCents: 1 }, "partial")).toBeNull();
+    expect(selectWp4PayUniFixedRefund({ ...base, grossAmountCents: 150 }, "remaining")).toBeNull();
   });
 });

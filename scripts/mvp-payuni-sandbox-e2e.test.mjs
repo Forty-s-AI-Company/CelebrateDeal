@@ -100,7 +100,7 @@ function successfulDependencies(calls = []) {
         return response(200, { status: "SUBMIT_ALLOWED", reservationCreated: true });
       }
       if (request.url.endsWith("/wp4-refund")) {
-        return response(200, { status: "COMPLETED", purpose: "buyer_order", phase: "partial", providerWriteAttempted: true });
+        return response(200, { status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true });
       }
       if (request.url.endsWith("/wp4-reconcile")) return response(200, { reconciled: true, status: "RECONCILED" });
       throw new Error("unexpected request");

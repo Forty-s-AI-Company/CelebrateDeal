@@ -476,7 +476,7 @@ function assertRefundResponse(response) {
     && exactKeys(response.body, ["status", "purpose", "phase", "providerWriteAttempted"])
     && response.body.status === "COMPLETED"
     && response.body.purpose === FIXED_PURPOSE
-    && response.body.phase === "partial"
+    && response.body.phase === "remaining"
     && response.body.providerWriteAttempted === true;
 }
 

@@ -36,22 +36,22 @@ describe("WP4 fixed refund execution", () => {
     mocks.execute.mockResolvedValue({ disposition: "completed" });
   });
 
-  it("selects one exact-source partial refund without caller values", async () => {
+  it("selects one exact-source full NT$1 refund without caller values", async () => {
     findMany.mockResolvedValue([row()]);
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit, new Date("2026-09-02T00:00:00.000Z")))
-      .resolves.toEqual({ status: "COMPLETED", purpose: "buyer_order", phase: "partial", providerWriteAttempted: true });
+      .resolves.toEqual({ status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true });
     expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({
       transactionId: "opaque-transaction",
-      refundAmountCents: 50,
+      refundAmountCents: 100,
       reason: "wp4_sandbox_fixed_refund",
     }));
   });
 
   it("uses the remaining phase only after the fixed partial state", async () => {
-    findMany.mockResolvedValue([row({ status: "partially_refunded", refundedAmountCents: 50 })]);
+    findMany.mockResolvedValue([row({ grossAmountCents: 300, status: "partially_refunded", refundedAmountCents: 100 })]);
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
       .resolves.toEqual({ status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true });
-    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ refundAmountCents: 50 }));
+    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ refundAmountCents: 200 }));
   });
 
   it("fails closed before provider access for source drift or duplicate candidates", async () => {
@@ -77,11 +77,11 @@ describe("WP4 fixed refund execution", () => {
       }),
     ]);
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
-      .resolves.toEqual({ status: "COMPLETED", purpose: "platform_subscription", phase: "partial", providerWriteAttempted: true });
+      .resolves.toEqual({ status: "COMPLETED", purpose: "platform_subscription", phase: "remaining", providerWriteAttempted: true });
 
     findMany.mockResolvedValue([row({ grossAmountCents: 1 })]);
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
-      .resolves.toEqual({ status: "REFUND_NOT_ELIGIBLE", purpose: "buyer_order", phase: "partial", providerWriteAttempted: false });
+      .resolves.toEqual({ status: "REFUND_NOT_ELIGIBLE", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: false });
     expect(mocks.execute).toHaveBeenCalledTimes(1);
   });
 
@@ -99,6 +99,6 @@ describe("WP4 fixed refund execution", () => {
     })]);
     mocks.execute.mockResolvedValueOnce({ disposition });
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
-      .resolves.toEqual({ status, purpose: "invoice_payment", phase: "partial", providerWriteAttempted });
+      .resolves.toEqual({ status, purpose: "invoice_payment", phase: "remaining", providerWriteAttempted });
   });
 });
