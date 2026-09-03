@@ -56,12 +56,18 @@ export function selectWp4PayUniFixedRefund(
   if (phase === "partial") {
     // A partial refund must leave a positive, server-derived remainder for the
     // distinct remaining/full-refund phase. One-cent fixtures fail closed.
-    if (candidate.status !== "paid" || candidate.refundedAmountCents !== 0 || remainingCents < 2) return null;
-    const refundAmountCents = Math.floor(remainingCents / 2);
+    if (candidate.status !== "paid" || candidate.refundedAmountCents !== 0 || remainingCents < 200) return null;
+    const refundAmountCents = Math.floor(remainingCents / 200) * 100;
     if (refundAmountCents <= 0 || refundAmountCents >= remainingCents) return null;
     return { purpose, phase, refundAmountCents, gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 };
   }
 
-  if (candidate.status !== "partially_refunded" || candidate.refundedAmountCents <= 0) return null;
+  const isWholeAmountFullRefund = candidate.status === "paid"
+    && candidate.refundedAmountCents === 0
+    && remainingCents % 100 === 0;
+  const isRemainingRefund = candidate.status === "partially_refunded"
+    && candidate.refundedAmountCents > 0
+    && remainingCents % 100 === 0;
+  if (!isWholeAmountFullRefund && !isRemainingRefund) return null;
   return { purpose, phase, refundAmountCents: remainingCents, gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 };
 }
