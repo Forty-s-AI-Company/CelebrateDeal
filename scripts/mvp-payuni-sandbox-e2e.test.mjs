@@ -27,6 +27,10 @@ test("classifies Chromium PayUni API network failures without persisting raw err
   assert.equal(classifyPayUniApiNetworkFailure("net::ERR_CERT_AUTHORITY_INVALID"), "PAYMENT_API_TLS_REJECTED");
   assert.equal(classifyPayUniApiNetworkFailure("net::ERR_CONNECTION_RESET"), "PAYMENT_API_CONNECTION_REJECTED");
   assert.equal(classifyPayUniApiNetworkFailure("net::ERR_BLOCKED_BY_CLIENT"), "PAYMENT_API_CLIENT_BLOCKED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_ABORTED"), "PAYMENT_API_NAVIGATION_ABORTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_HTTP2_PROTOCOL_ERROR"), "PAYMENT_API_PROTOCOL_REJECTED");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_EMPTY_RESPONSE"), "PAYMENT_API_EMPTY_RESPONSE");
+  assert.equal(classifyPayUniApiNetworkFailure("net::ERR_FAILED"), "PAYMENT_API_GENERIC_FAILED");
   assert.equal(classifyPayUniApiNetworkFailure("opaque browser failure"), "PAYMENT_API_NETWORK_REJECTED");
   assert.equal(classifyPayUniApiNetworkFailure(undefined), "PAYMENT_API_NETWORK_REJECTED");
 });

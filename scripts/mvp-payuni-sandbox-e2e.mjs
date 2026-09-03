@@ -89,6 +89,10 @@ const FAILURE_CODES = new Set([
   "PAYMENT_API_TIMEOUT_REJECTED",
   "PAYMENT_API_TLS_REJECTED",
   "PAYMENT_API_CLIENT_BLOCKED",
+  "PAYMENT_API_NAVIGATION_ABORTED",
+  "PAYMENT_API_PROTOCOL_REJECTED",
+  "PAYMENT_API_EMPTY_RESPONSE",
+  "PAYMENT_API_GENERIC_FAILED",
   "PAYMENT_VENDOR_NETWORK_REJECTED",
   "PAYMENT_REDIRECT_UNOBSERVED",
   "PAYMENT_VENDOR_NAV_UNCOMMITTED",
@@ -123,6 +127,12 @@ export function classifyPayUniApiNetworkFailure(errorText) {
     return "PAYMENT_API_TLS_REJECTED";
   }
   if (errorText.includes("ERR_BLOCKED_BY_CLIENT")) return "PAYMENT_API_CLIENT_BLOCKED";
+  if (errorText.includes("ERR_ABORTED")) return "PAYMENT_API_NAVIGATION_ABORTED";
+  if (errorText.includes("ERR_HTTP2_") || errorText.includes("ERR_HTTP3_")) {
+    return "PAYMENT_API_PROTOCOL_REJECTED";
+  }
+  if (errorText.includes("ERR_EMPTY_RESPONSE")) return "PAYMENT_API_EMPTY_RESPONSE";
+  if (errorText.includes("ERR_FAILED")) return "PAYMENT_API_GENERIC_FAILED";
   if (
     errorText.includes("ERR_CONNECTION_REFUSED")
     || errorText.includes("ERR_CONNECTION_RESET")
