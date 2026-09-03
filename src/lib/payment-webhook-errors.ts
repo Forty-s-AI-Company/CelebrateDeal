@@ -5,6 +5,7 @@ export type PaymentWebhookFailureCode =
   | "order_ambiguous"
   | "amount_mismatch"
   | "inventory_conflict"
+  | "processing_timeout"
   | "processing_claim_lost"
   | "processing_failed";
 
@@ -30,6 +31,10 @@ const KNOWN_FAILURES = new Map<string, PaymentWebhookFailureCode>([
  */
 export function classifyPaymentWebhookFailure(error: unknown): PaymentWebhookFailureCode {
   if (!(error instanceof Error)) return "processing_failed";
+  if (
+    ("code" in error && error.code === "P2028")
+    || error.message.includes("Transaction already closed")
+  ) return "processing_timeout";
   return KNOWN_FAILURES.get(error.message) ?? "processing_failed";
 }
 
