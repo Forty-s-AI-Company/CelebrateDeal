@@ -68,6 +68,13 @@ const FAILURE_CODES = new Set([
   "NONE",
   "INPUT_REJECTED",
   "FIXTURE_REJECTED",
+  "FIXTURE_AUTHORIZATION_REJECTED",
+  "FIXTURE_EXECUTOR_DISABLED",
+  "FIXTURE_SOURCE_CONFIGURATION_UNAVAILABLE",
+  "FIXTURE_SOURCE_MISMATCH",
+  "FIXTURE_BODY_REJECTED",
+  "FIXTURE_CONFLICT",
+  "FIXTURE_HTTP_REJECTED",
   "ADMISSION_REJECTED",
   "CHECKOUT_REJECTED",
   "PAYMENT_ATTEMPT_REJECTED",
@@ -428,7 +435,7 @@ function cookieValue(cookies, prefix) {
   return equals > 0 && pair.slice(equals + 1).length > 0 ? pair : null;
 }
 
-async function parseFetchResponse(response, cookiePrefix) {
+async function parseFetchResponse(response, cookiePrefix, outcomeHeader) {
   if (!response || !Number.isInteger(response.status)) throw new Error("NETWORK_REJECTED");
   let body;
   try {
@@ -439,6 +446,7 @@ async function parseFetchResponse(response, cookiePrefix) {
   return {
     status: response.status,
     body,
+    ...(outcomeHeader ? { outcome: response.headers?.get?.(outcomeHeader) ?? null } : {}),
     ...(cookiePrefix ? { sessionCookie: cookieValue(safeSetCookie(response.headers), cookiePrefix) } : {}),
     ...(cookiePrefix === "celebrate_support_" ? { supportCookie: cookieValue(safeSetCookie(response.headers), cookiePrefix) } : {}),
   };
@@ -452,7 +460,20 @@ async function defaultRequest(request) {
     redirect: "error",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  return parseFetchResponse(response, request.cookiePrefix);
+  return parseFetchResponse(response, request.cookiePrefix, request.outcomeHeader);
+}
+
+function fixtureFailure(response) {
+  if (response.status === 401) return "FIXTURE_AUTHORIZATION_REJECTED";
+  const outcomes = {
+    EXECUTOR_DISABLED: "FIXTURE_EXECUTOR_DISABLED",
+    SOURCE_CONFIGURATION_UNAVAILABLE: "FIXTURE_SOURCE_CONFIGURATION_UNAVAILABLE",
+    SOURCE_MISMATCH: "FIXTURE_SOURCE_MISMATCH",
+    BODY_REJECTED: "FIXTURE_BODY_REJECTED",
+  };
+  if (typeof response.outcome === "string" && outcomes[response.outcome]) return outcomes[response.outcome];
+  if (response.status === 409) return "FIXTURE_CONFLICT";
+  return "FIXTURE_HTTP_REJECTED";
 }
 
 function guardedHeaders(invocation) {
@@ -546,8 +567,9 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
       headers: guarded,
       body: undefined,
+      outcomeHeader: "x-celebratedeal-wp4-fixture",
     }));
-    if (!assertFixtureResponse(fixture)) return fail(receipt, "FIXTURE_REJECTED");
+    if (!assertFixtureResponse(fixture)) return fail(receipt, fixtureFailure(fixture));
     receipt.checks.fixtureReady = true;
 
     receipt.sideEffects.admissionPosts = 1;
