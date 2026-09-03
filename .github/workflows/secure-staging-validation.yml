@@ -216,6 +216,7 @@ jobs:
             ["api.github.com", "443"],
             [deploymentHost, "443"],
             ["sandbox-api.payuni.com.tw", "443"],
+            ["sandbox-vendor.payuni.com.tw", "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 

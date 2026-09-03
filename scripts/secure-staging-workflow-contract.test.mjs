@@ -118,6 +118,7 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   assert.equal(wp4.env.PAYUNI_ENV, "sandbox");
   assert.equal(wp4.env.PAYUNI_SANDBOX_ONETIME_CARD_NO, "${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}");
   assert.equal(wp4.run.includes("sandbox-api.payuni.com.tw"), true);
+  assert.equal(wp4.run.includes("sandbox-vendor.payuni.com.tw"), true);
   assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH)/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
