@@ -83,6 +83,8 @@ const FAILURE_CODES = new Set([
   "PAYMENT_FORM_NOT_SUBMITTED",
   "PAYMENT_PROVIDER_HTTP_REJECTED",
   "PAYMENT_PROVIDER_NETWORK_REJECTED",
+  "PAYMENT_API_NETWORK_REJECTED",
+  "PAYMENT_VENDOR_NETWORK_REJECTED",
   "PAYMENT_REDIRECT_UNOBSERVED",
   "PAYMENT_VENDOR_NAV_UNCOMMITTED",
   "PAYMENT_METHOD_UNAVAILABLE",
@@ -503,7 +505,8 @@ async function defaultBrowserSubmit(input) {
   let stage = "PAYMENT_PAGE_UNREACHED";
   let apiPostSeen = false;
   let apiStatus = null;
-  let providerNetworkRejected = false;
+  let apiNetworkRejected = false;
+  let vendorNetworkRejected = false;
   let vendorRequestSeen = false;
   try {
     page.on("request", (request) => {
@@ -522,7 +525,8 @@ async function defaultBrowserSubmit(input) {
     page.on("requestfailed", (request) => {
       try {
         const url = new URL(request.url());
-        if (url.hostname === "sandbox-api.payuni.com.tw" || url.hostname === PAYUNI_PAYMENT_HOST) providerNetworkRejected = true;
+        if (url.hostname === "sandbox-api.payuni.com.tw") apiNetworkRejected = true;
+        if (url.hostname === PAYUNI_PAYMENT_HOST) vendorNetworkRejected = true;
       } catch {}
     });
     const [name, value] = input.supportCookie.split("=", 2);
@@ -586,7 +590,8 @@ async function defaultBrowserSubmit(input) {
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
     if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
-    if (providerNetworkRejected) return "PAYMENT_PROVIDER_NETWORK_REJECTED";
+    if (apiNetworkRejected) return "PAYMENT_API_NETWORK_REJECTED";
+    if (vendorNetworkRejected) return "PAYMENT_VENDOR_NETWORK_REJECTED";
     if (vendorRequestSeen) return "PAYMENT_VENDOR_NAV_UNCOMMITTED";
     return "PAYMENT_REDIRECT_UNOBSERVED";
   } finally {
