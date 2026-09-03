@@ -523,9 +523,9 @@ async function defaultBrowserSubmit(input) {
     await page.getByText("一次付清", { exact: true }).click();
     await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
     stage = "PAYMENT_FIELDS_REJECTED";
-    await page.getByPlaceholder("16 碼或 19 碼").fill(input.cardNumber);
-    await page.getByPlaceholder("MM/YY").fill(input.cardExpiry);
-    await page.getByPlaceholder("***").fill(input.cardCvv);
+    await page.getByPlaceholder("16 碼或 19 碼").pressSequentially(input.cardNumber);
+    await page.getByPlaceholder("MM/YY").pressSequentially(input.cardExpiry);
+    await page.getByPlaceholder("***").pressSequentially(input.cardCvv);
     await page.getByPlaceholder("example@example.com").fill("wp4-buyer-v1@invalid.example");
     stage = "PAYMENT_SUBMIT_REJECTED";
     await page.getByRole("button", { name: "確認送出", exact: true }).click();
