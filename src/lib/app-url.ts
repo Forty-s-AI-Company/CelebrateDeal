@@ -57,3 +57,21 @@ export function getCanonicalAppUrl(env: NodeJS.ProcessEnv = process.env) {
 
   return url.origin;
 }
+
+/**
+ * Keep browser-return state on the host that issued the checkout cookie while
+ * refusing arbitrary Host-header destinations. A Vercel Preview origin is
+ * accepted only when it exactly matches VERCEL_URL; all other deployments use
+ * the configured canonical origin.
+ */
+export function getPaymentReturnAppUrl(request: Request, env: NodeJS.ProcessEnv = process.env) {
+  const canonical = getCanonicalAppUrl(env);
+  const requestOrigin = new URL(request.url).origin;
+  if (requestOrigin === canonical) return canonical;
+
+  const vercelUrl = env.VERCEL_URL?.trim();
+  if (env.VERCEL_ENV !== "preview" || !vercelUrl) return canonical;
+
+  const expectedPreviewOrigin = new URL(`https://${vercelUrl}`).origin;
+  return requestOrigin === expectedPreviewOrigin ? requestOrigin : canonical;
+}

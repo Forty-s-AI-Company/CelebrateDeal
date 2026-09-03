@@ -595,7 +595,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       return "unavailable";
     }
   },
-  async createCheckoutSession({ transaction, product, billingPlan, description, appUrl }) {
+  async createCheckoutSession({ transaction, product, billingPlan, description, appUrl, returnAppUrl }) {
     const merchantId = process.env.PAYUNI_MERCHANT_ID;
     if (!merchantId) {
       return {
@@ -618,7 +618,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
       Timestamp: Math.floor(Date.now() / 1000),
       ProdDesc: productDescription.slice(0, 80),
-      ReturnURL: payUniCallbackUrl(appUrl, "return"),
+      ReturnURL: payUniCallbackUrl(returnAppUrl ?? appUrl, "return"),
       NotifyURL: payUniCallbackUrl(appUrl, "notify"),
     });
     const baseUrl = payUniApiBaseUrl();

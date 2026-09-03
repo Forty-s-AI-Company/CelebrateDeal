@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
+import { getCanonicalAppUrl, getPaymentReturnAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 
 describe("getCanonicalAppUrl", () => {
   it("returns only the trusted origin from the configured URL", () => {
@@ -57,5 +57,29 @@ describe("getCanonicalAppUrl", () => {
 
   it.each(unsafeProductionEnvironments)("fails closed for an unsafe production URL", (env, error) => {
     expect(() => getCanonicalAppUrl(env)).toThrow(error);
+  });
+});
+
+describe("getPaymentReturnAppUrl", () => {
+  const env = {
+    NODE_ENV: "production",
+    VERCEL_ENV: "preview",
+    VERCEL_URL: "preview.example.test",
+    NEXT_PUBLIC_APP_URL: "https://staging.example.test",
+  } as NodeJS.ProcessEnv;
+
+  it("keeps an exact Vercel Preview checkout on its cookie origin", () => {
+    expect(getPaymentReturnAppUrl(new Request("https://preview.example.test/api/payments/checkout"), env))
+      .toBe("https://preview.example.test");
+  });
+
+  it("uses the canonical origin for its public alias", () => {
+    expect(getPaymentReturnAppUrl(new Request("https://staging.example.test/api/payments/checkout"), env))
+      .toBe("https://staging.example.test");
+  });
+
+  it("rejects an untrusted request host as a payment return destination", () => {
+    expect(getPaymentReturnAppUrl(new Request("https://attacker.example.test/api/payments/checkout"), env))
+      .toBe("https://staging.example.test");
   });
 });

@@ -134,6 +134,21 @@ describe("PayUni provider", () => {
     expect(JSON.stringify(payload)).not.toContain("preview-bypass-token");
   });
 
+  it("separates the browser ReturnURL from the canonical NotifyURL", async () => {
+    stubPayUniEnv();
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_preview_return", orderNumber: "CD-TEST-007", grossAmountCents: 100 } as PaymentTransaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://staging.example.test",
+      returnAppUrl: "https://preview.example.test",
+    });
+
+    const payload = decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "");
+    expect(new URL(payload.ReturnURL).origin).toBe("https://preview.example.test");
+    expect(new URL(payload.NotifyURL).origin).toBe("https://staging.example.test");
+  });
+
   it("submits a signed close request and accepts only the matching PayUni refund response", async () => {
     stubPayUniEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
