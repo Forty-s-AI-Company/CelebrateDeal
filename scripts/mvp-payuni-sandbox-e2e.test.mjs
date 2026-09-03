@@ -125,6 +125,28 @@ test("fails closed for non-preview host, non-sandbox env, invalid SHA, and inval
   }
 });
 
+test("preserves only allowlisted fixture failure classifications in the sanitized receipt", async () => {
+  const cases = [
+    [401, null, "FIXTURE_AUTHORIZATION_REJECTED"],
+    [404, "EXECUTOR_DISABLED", "FIXTURE_EXECUTOR_DISABLED"],
+    [503, "SOURCE_CONFIGURATION_UNAVAILABLE", "FIXTURE_SOURCE_CONFIGURATION_UNAVAILABLE"],
+    [404, "SOURCE_MISMATCH", "FIXTURE_SOURCE_MISMATCH"],
+    [404, "BODY_REJECTED", "FIXTURE_BODY_REJECTED"],
+    [409, null, "FIXTURE_CONFLICT"],
+    [503, "untrusted-detail", "FIXTURE_HTTP_REJECTED"],
+  ];
+  for (const [status, outcome, expected] of cases) {
+    const receipt = await runMvpPayUniSandboxE2E(validInput, {
+      request: async (request) => {
+        assert.equal(request.outcomeHeader, "x-celebratedeal-wp4-fixture");
+        return { status, body: { error: "Not found" }, outcome };
+      },
+    });
+    assert.equal(receipt.failure, expected);
+    assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+  }
+});
+
 test("verifies exact ready Preview lineage and health before secret injection", async () => {
   const source = {
     CELEBRATEDEAL_SOURCE_SHA: sourceSha,
