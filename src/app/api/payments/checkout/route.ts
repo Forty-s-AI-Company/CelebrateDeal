@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getCanonicalAppUrl, getPaymentReturnAppUrl } from "@/lib/app-url";
 import {
   checkoutRequiresPhone,
   checkoutRequiresShipping,
@@ -588,6 +588,7 @@ export async function POST(request: Request) {
       vendor: product.vendor,
       referralCode,
       appUrl,
+      returnAppUrl: getPaymentReturnAppUrl(request),
     });
   } catch {
     try {

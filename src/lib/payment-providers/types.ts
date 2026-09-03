@@ -18,6 +18,8 @@ export type CheckoutSessionInput = {
   vendor: Vendor;
   referralCode?: string;
   appUrl: string;
+  /** Browser return origin; NotifyURL remains pinned to the canonical appUrl. */
+  returnAppUrl?: string;
 };
 
 export type CheckoutSessionResult = {
