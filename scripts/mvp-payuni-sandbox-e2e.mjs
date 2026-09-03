@@ -519,7 +519,11 @@ async function defaultBrowserSubmit(input) {
       window.setTimeout(() => form.submit(), 0);
     }, { action: PAYUNI_UPP_URL, payload: input.formPayload });
     await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST, {
-      waitUntil: "domcontentloaded",
+      // The runner intentionally blocks every non-allowlisted third-party
+      // resource.  The PayUni document can therefore be committed before its
+      // optional resources let DOMContentLoaded fire.  Field locators below
+      // remain the authoritative proof that the payment UI is usable.
+      waitUntil: "commit",
       timeout: REQUEST_TIMEOUT_MS,
     });
     stage = "PAYMENT_METHOD_UNAVAILABLE";
