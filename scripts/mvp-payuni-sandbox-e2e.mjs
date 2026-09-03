@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -498,7 +500,31 @@ function guardedHeaders(invocation) {
 
 async function defaultBrowserSubmit(input) {
   const { chromium, errors } = await import("playwright");
-  const browser = await chromium.launch({ headless: true });
+  // The trusted runner pins the exact allowlisted host addresses in
+  // /etc/hosts and iptables before this process starts. Resolve through that
+  // same OS path and force Chromium to use the identical addresses; otherwise
+  // Chromium's network service can choose a different CDN address and be
+  // correctly rejected by the firewall.
+  const [apiAddress, vendorAddress] = await Promise.all([
+    lookup("sandbox-api.payuni.com.tw", { family: 4 }),
+    lookup(PAYUNI_PAYMENT_HOST, { family: 4 }),
+  ]);
+  if (isIP(apiAddress.address) !== 4 || isIP(vendorAddress.address) !== 4) {
+    throw new Error("PAYMENT_REJECTED");
+  }
+  const resolverRules = [
+    `MAP sandbox-api.payuni.com.tw ${apiAddress.address}`,
+    `MAP ${PAYUNI_PAYMENT_HOST} ${vendorAddress.address}`,
+    "EXCLUDE localhost",
+  ].join(",");
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-proxy-server",
+      "--disable-quic",
+      `--host-resolver-rules=${resolverRules}`,
+    ],
+  });
   const context = await browser.newContext({ locale: "zh-TW" });
   const page = await context.newPage();
   const origin = fixedOrigin(input.previewHost);

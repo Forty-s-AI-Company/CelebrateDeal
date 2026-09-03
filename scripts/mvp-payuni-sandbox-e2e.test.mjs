@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -123,6 +123,14 @@ test("fails closed for non-preview host, non-sandbox env, invalid SHA, and inval
   ]) {
     assert.deepEqual(validateInvocation(input), { ok: false, code: "INPUT_REJECTED" });
   }
+});
+
+test("pins Chromium to the trusted runner host map without proxy or QUIC", async () => {
+  const source = await readFile(new URL("./mvp-payuni-sandbox-e2e.mjs", import.meta.url), "utf8");
+  assert.match(source, /lookup\("sandbox-api\.payuni\.com\.tw", \{ family: 4 \}\)/u);
+  assert.match(source, /--host-resolver-rules=/u);
+  assert.match(source, /--no-proxy-server/u);
+  assert.match(source, /--disable-quic/u);
 });
 
 test("preserves only allowlisted fixture failure classifications in the sanitized receipt", async () => {
