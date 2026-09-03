@@ -9,11 +9,13 @@
 - Handoff schema：`handoff-schema.md`
 - Goal protocol：`GOAL-PROTOCOL.md`
 - Goal state：`.ai-team/state/goal-state.json`
+- Router config：`.ai-team/config/router.json`
+- Optional Claude plan review：`.ai-team/scripts/Invoke-AgyPlanReview.ps1`
 - Evidence：`.ai-team/reports/` 與 `docs/launch/evidence-index.md`
 
 ## 目前模式
 
-`PRELAUNCH_DEV_AUTONOMOUS` 允許長程 Goal 連續推進、多代理協作、本機／staging／sandbox 驗證、精確 local checkpoint commit，以及依產品價值選擇測試與驗收。流程不再以固定 Work Package 時間或固定代理順序阻擋進度。
+`PRELAUNCH_DEV_AUTONOMOUS` 允許長程 Goal 連續推進、多代理協作、本機／staging／sandbox 驗證、精確 local checkpoint commit，以及依產品價值選擇測試與驗收。可自動 push `codex/*` 分支並透過受保護 PR merge；Production deployment 仍需獨立 workflow 與人工核准。流程不再以固定 Work Package 時間或固定代理順序阻擋進度。
 
 ## 文件分類
 

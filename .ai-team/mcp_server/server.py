@@ -32,7 +32,7 @@ SENSITIVE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-ROUTES: dict[str, dict[str, str]] = {
+ROUTES: dict[str, dict[str, Any]] = {
     "planning": {
         "target": "planner",
         "provider": "native_agent",
@@ -42,7 +42,7 @@ ROUTES: dict[str, dict[str, str]] = {
     "explore": {
         "target": "Invoke-AgyFast.ps1",
         "provider": "gemini_wrapper",
-        "model": "gemini-3.6-flash-high",
+        "model": "gemini-3.8-flash-high",
         "reasoning_effort": "high",
     },
     "analyze": {
@@ -53,9 +53,11 @@ ROUTES: dict[str, dict[str, str]] = {
     },
     "implement": {
         "target": "worker",
+        "profile": "luna_worker",
         "provider": "native_agent",
-        "model": "gpt-5.6-terra",
-        "reasoning_effort": "medium",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "max",
+        "reasoning_lock": "max",
     },
     "complex_implementation": {
         "target": "worker-deep",
@@ -64,15 +66,21 @@ ROUTES: dict[str, dict[str, str]] = {
         "reasoning_effort": "high",
     },
     "review": {
-        "target": "Invoke-AgyDeep.ps1",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.1-pro-high",
+        "target": "reviewer",
+        "provider": "native_agent",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "high",
+    },
+    "plan_review": {
+        "target": "Invoke-AgyPlanReview.ps1",
+        "provider": "agy_wrapper",
+        "model": "claude-sonnet-4.6-thinking",
         "reasoning_effort": "high",
     },
     "gemini_fast": {
         "target": "Invoke-AgyFast.ps1",
         "provider": "gemini_wrapper",
-        "model": "gemini-3.6-flash-high",
+        "model": "gemini-3.8-flash-high",
         "reasoning_effort": "high",
     },
     "gemini_deep": {
@@ -96,6 +104,9 @@ ALIASES = {
     "hard_debugging": "complex_implementation",
     "security_review": "review",
     "regression_review": "review",
+    "plan_acceptance": "plan_review",
+    "plan_review": "plan_review",
+    "claude_plan_review": "plan_review",
     "summarize": "gemini_fast",
     "classify": "gemini_fast",
     "log_summary": "gemini_fast",
@@ -218,6 +229,7 @@ def normalized_task_type(task_summary: str, task_type: str) -> str:
         return ALIASES[candidate]
     summary = task_summary.lower()
     keyword_routes = (
+        ("plan_review", ("plan review", "plan-review", "claude sonnet", "規劃複審", "計畫複審")),
         ("gemini_deep", ("deep review", "cross file", "second opinion", "complex validation")),
         ("gemini_fast", ("summar", "classif", "log", "browser", "e2e", "ui validation")),
         ("complex_implementation", ("hard debugging", "cross file fix", "complex implementation")),
@@ -242,13 +254,13 @@ def inferred_difficulty(task_summary: str, route: str, requested: str = "auto") 
         return "critical"
     if any(term in summary for term in TRIVIAL_TASK_TERMS):
         return "trivial"
-    if route in {"planning", "complex_implementation"}:
+    if route in {"planning", "complex_implementation", "plan_review"}:
         return "complex"
     return "routine"
 
 
 def adaptive_reasoning_recommendation(
-    recommendation: dict[str, str],
+    recommendation: dict[str, Any],
     task_summary: str,
     route: str,
     requested_difficulty: str,
@@ -261,12 +273,49 @@ def adaptive_reasoning_recommendation(
     if effort_map is None or not isinstance(policy, dict):
         return recommendation["reasoning_effort"], difficulty, None
 
-    return effort_map[difficulty], difficulty, {
+    bounds = {
         "strategy": str(config.get("reasoning_policy", {}).get("strategy", "adaptive_lowest_sufficient")),
         "minimum": str(policy.get("minimum", "")),
         "maximum": str(policy.get("maximum", "")),
         "default": str(policy.get("default", "")),
     }
+    locked_effort = recommendation.get("reasoning_lock")
+    if locked_effort in {"low", "medium", "high", "xhigh", "max"}:
+        return str(locked_effort), difficulty, bounds
+    return effort_map[difficulty], difficulty, bounds
+
+
+def luna_escalation_recommendation(
+    config: dict[str, Any],
+    route: str,
+    task_summary: str,
+    difficulty: str,
+) -> dict[str, Any] | None:
+    """回傳 Explorer／Analyst 的唯讀 Luna 升級建議，不直接執行 agent。"""
+    agent_key = {"explore": "explorer", "analyze": "analyst"}.get(route)
+    if agent_key is None:
+        return None
+    agent_config = config.get("agents", {}).get(agent_key, {})
+    escalation = agent_config.get("luna_escalation") if isinstance(agent_config, dict) else None
+    if not isinstance(escalation, dict) or not escalation.get("enabled"):
+        return None
+    trigger_difficulties = escalation.get("trigger_difficulties", [])
+    if difficulty not in trigger_difficulties:
+        return None
+
+    recommendation = dict(escalation)
+    recommendation["target"] = "luna_readonly_escalation"
+    effort, _, bounds = adaptive_reasoning_recommendation(
+        recommendation,
+        task_summary,
+        route,
+        difficulty,
+        config,
+    )
+    recommendation["reasoning_effort"] = effort
+    recommendation["reasoning_bounds"] = bounds
+    recommendation["execution"] = "native_agent_handoff_only"
+    return recommendation
 
 
 @mcp.tool()
@@ -290,6 +339,8 @@ def router_status() -> dict[str, Any]:
         ],
         "agents": config.get("agents", {}),
         "reasoning_policy": config.get("reasoning_policy", {}),
+        "git_policy": config.get("git_policy", {}),
+        "plan_review": config.get("plan_review", {}),
         "gemini_profiles": config.get("gemini_profiles", {}),
         "codex_profiles": config.get("codex_profiles", {}),
         "fallback_chains": config.get("fallback_chains", {}),
@@ -312,6 +363,12 @@ def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto")
     )
     recommendation["reasoning_effort"] = reasoning_effort
     fallback_chains = config.get("fallback_chains", {})
+    escalation = luna_escalation_recommendation(
+        config,
+        route,
+        task_summary,
+        selected_difficulty,
+    )
     return {
         "status": "planned",
         "execution": "recommendation_only",
@@ -322,6 +379,9 @@ def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto")
         "reasoning_bounds": reasoning_bounds,
         "fallback_chain": fallback_chains.get(route, []),
         **recommendation,
+        "escalation": escalation,
+        "post_plan_review": config.get("plan_review", {}) if route == "planning" else None,
+        "requires_accepted_plan": bool(recommendation.get("requires_accepted_plan", False)),
     }
 
 

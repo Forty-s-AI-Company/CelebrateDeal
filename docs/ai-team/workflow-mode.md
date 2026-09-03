@@ -8,7 +8,8 @@
 
 - Goal 可以跨多個 WP 連續執行，不受固定時間、固定檔案數或固定 remediation 輪數限制。
 - 允許本機、loopback、disposable、Preview、staging、sandbox、Docker、Browser 與 PayUni Sandbox。
-- 允許精確 scope 的 local checkpoint commit，以及必要的 reversible integration。
+- 允許精確 scope 的 local checkpoint commit；可自動 push `codex/*` 分支並透過受保護 PR merge。
+- Production deployment 不會由 push／merge 自動觸發，仍需獨立 workflow 與人工核准。
 - 可依產品價值選擇 targeted tests、完整測試、coverage、E2E 或外部 sandbox evidence。
 - 不需要每個 WP 都執行相同的 planner、AGY、acceptance 與 finalize 流程。
 

@@ -22,9 +22,10 @@ $pwsh = Get-Command pwsh -ErrorAction Stop
 $helperPath = Join-Path $scriptsRoot 'Invoke-AiTeamProcess.ps1'
 $fastPath = Join-Path $scriptsRoot 'Invoke-AgyFast.ps1'
 $deepPath = Join-Path $scriptsRoot 'Invoke-AgyDeep.ps1'
+$planReviewPath = Join-Path $scriptsRoot 'Invoke-AgyPlanReview.ps1'
 $runnerPath = Join-Path $scriptsRoot 'Invoke-AiTeamReadOnlyFailover.ps1'
 
-foreach ($path in @($helperPath, $fastPath, $deepPath, $runnerPath)) {
+foreach ($path in @($helperPath, $fastPath, $deepPath, $planReviewPath, $runnerPath)) {
     $parseErrors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
         (Resolve-Path -LiteralPath $path),
@@ -40,6 +41,25 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptsRoot)
 $ciPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $ciSource = Get-Content -LiteralPath $ciPath -Raw
 Assert-AiTeam ($ciSource -match 'pip install[^\r\n]*\.ai-team/mcp_server/requirements\.txt') 'CI does not install MCP requirements'
+Assert-AiTeam ($ciSource -match '(?m)^  push:\s*$' -and $ciSource -match 'npm run lint' -and $ciSource -match 'npm run test:coverage') 'push CI does not run lint and unit coverage tests'
+Assert-AiTeam ($ciSource -notmatch '(?i)vercel\s+deploy[^\r\n]*--prod') 'push CI contains an automatic Vercel Production deploy'
+$routerPath = Join-Path $repoRoot '.ai-team/config/router.json'
+$routerConfig = Get-Content -LiteralPath $routerPath -Raw | ConvertFrom-Json
+Assert-AiTeam ($routerConfig.git_policy.auto_push.enabled -and $routerConfig.git_policy.auto_merge.enabled) 'controlled Git promotion policy is not enabled'
+Assert-AiTeam (-not $routerConfig.git_policy.auto_push.force_push -and -not $routerConfig.git_policy.auto_push.direct_default_branch_push) 'Git promotion policy allows unsafe direct or force push'
+Assert-AiTeam (-not $routerConfig.git_policy.production_deploy.enabled -and $routerConfig.git_policy.production_deploy.approval -eq 'manual') 'Production deployment policy is not manual-only'
+Assert-AiTeam ($routerConfig.plan_review.model -eq 'claude-sonnet-4.6-thinking' -and -not $routerConfig.plan_review.required) 'optional Claude plan review policy is invalid'
+Assert-AiTeam ($routerConfig.agents.worker.model -eq 'gpt-5.6-luna' -and $routerConfig.agents.worker.reasoning_lock -eq 'max') 'general Worker is not pinned to Luna max'
+$agentNames = @($routerConfig.agents.PSObject.Properties.Name)
+$profileNames = @($routerConfig.codex_profiles.PSObject.Properties.Name)
+Assert-AiTeam (-not ($agentNames -contains 'worker-critical') -and -not ($profileNames -contains 'luna_critical_worker')) 'legacy critical write profile remains configured'
+Assert-AiTeam ($routerConfig.agents.reviewer.model -eq 'gpt-5.6-terra' -and $routerConfig.agents.reviewer.sandbox_mode -eq 'read-only') 'Reviewer is not Terra read-only'
+Assert-AiTeam ($routerConfig.agents.explorer.luna_escalation.model -eq 'gpt-5.6-luna' -and $routerConfig.agents.analyst.luna_escalation.model -eq 'gpt-5.6-luna') 'Explorer/Analyst Luna escalation is missing'
+$fastSource = Get-Content -LiteralPath $fastPath -Raw
+Assert-AiTeam ($fastSource -match "gemini-3\.8-flash-high") 'AGY Fast model is not pinned to gemini-3.8-flash-high'
+$planReviewSource = Get-Content -LiteralPath $planReviewPath -Raw
+Assert-AiTeam ($planReviewSource -match "claude-sonnet-4\.6-thinking" -and $planReviewSource -match "skip_if_unavailable") 'Claude plan-review wrapper policy missing'
+Assert-AiTeam ($planReviewSource -match "--mode', 'plan" -and $planReviewSource -match "--sandbox") 'Claude plan-review wrapper is not read-only plan mode'
 
 $continuous = Invoke-AiTeamProcess `
     -FilePath $pwsh.Source `

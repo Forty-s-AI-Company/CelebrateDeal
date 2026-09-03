@@ -23,7 +23,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Invoke-AiTeamProcess.ps1')
 
-$model = 'gemini-3.6-flash-high'
+$model = 'gemini-3.8-flash-high'
 $effort = 'high'
 $profile = 'gemini_fast'
 

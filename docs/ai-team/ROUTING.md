@@ -15,21 +15,33 @@
 - `xhigh` 或 `max` 只用於高風險跨域、重大安全／金流／migration、重複失敗後的困難診斷或 release acceptance。
 - `low` 只用於真正簡單的唯讀查找、錯字、格式或單行機械修改。
 - Browser、Chrome、E2E 與 UI QA 也依實際難度選擇，不固定綁定單一模型或固定推理程度。
-- Gemini、Reviewer 與其他模型維持現有設定。
+- AGY Fast 使用 `gemini-3.8-flash-high`；AGY Deep 維持 `gemini-3.1-pro-high`。
+- Native Explorer 維持 `gpt-5.4-mini`，Native Analyst 維持 `gpt-5.4`；普通查找不固定消耗 Luna，但 `complex`／`critical` 任務可由 Router 升級至 `gpt-5.6-luna` read-only。
+- Router 的 Reviewer 路由固定指定 `gpt-5.6-terra` read-only，不沿用 Worker 的 workspace-write 權限；Codex App 內建 role binding 仍由 runtime 提供，本 Router 不假稱能改寫平台原生綁定。
+- Codex App 的 native role model／sandbox 由 runtime 提供；本 Router 只給出建議與升級條件，不會假稱已改寫 App 內建 role binding。
 
 | 任務類型 | 預設角色 | 可替代路徑 |
 | --- | --- | --- |
-| planning、architecture、acceptance | Sol | Terra 直接規劃；必要時由 Reviewer 複核 |
-| implement、bug fix、cross-file fix | Terra | Worker／Worker Deep 依 ownership 分工 |
-| agy_qa、browser、e2e、ui validation | AGY Fast | AGY Deep、native Luna、deterministic tests |
-| security、hard debugging | Terra／Reviewer | Analyst、Worker Deep、Sol |
+| planning、architecture、acceptance | Sol | complex／critical plan 可由 Claude Sonnet 4.6 thinking advisory review；額度不足可跳過 |
+| implement、bug fix、一般 cross-file fix | Worker／`gpt-5.6-luna` max | 一般寫入固定使用 Luna max；維持單一 writer、明確 scope 與 deterministic tests |
+| complex implementation、hard debugging | Worker Deep／`gpt-5.6-terra` high | 複雜跨檔與困難診斷使用 Terra；必要時由 Reviewer／Sol 唯讀複核 |
+| agy_qa、browser、e2e、ui validation | AGY Fast (`gemini-3.8-flash-high`) | AGY Deep、native Luna、deterministic tests |
+| security、release acceptance | Reviewer／`gpt-5.6-terra` read-only | Analyst／Explorer 可在 complex／critical 時升級 Luna read-only；Sol 負責 acceptance |
 | staging、sandbox、migration verification | Terra | Sol／Reviewer 提供唯讀複核 |
 
 ## 寫入與並行
 
 - 同一檔案、同一資料表或同一外部資源同一時間只允許一個 writer。
 - 不相交檔案與唯讀分析可以並行。
+- 一般 Worker 固定使用 Luna max；Worker Deep 固定使用 Terra high。Explorer／Analyst 的 Luna 僅是 complex／critical 時的唯讀升級，不具寫入權限。
 - 主代理負責整合結果、確認 evidence 與處理衝突，不要求所有修改都由單一模型完成。
+
+## Plan review
+
+- Sol 完成 complex／critical 或安全、金流、migration、release plan 後，可呼叫 AGY 的 Claude Sonnet 4.6 thinking 做一次 advisory review。
+- review 只讀取 sanitized plan，不修改檔案、不執行外部副作用，也不取代 Sol acceptance 或 deterministic tests。
+- Claude 額度不足、登入阻擋或工具失敗時直接跳過；狀態必須記錄為 `NOT_REQUESTED_QUOTA`、`LOGIN_REQUIRED` 或 `TOOL_BLOCKED`，不可標成 PASS。
+- Plan review 不加入一般 Fast → Deep → Luna fallback，避免審查額度問題擴大成不必要的模型切換。
 
 ## AGY fallback
 
@@ -46,4 +58,6 @@
 - 任何角色都不能讀取或輸出 `.env*`、Token、Cookie、私鑰、正式 Secret、正式客戶資料或付款資料。
 - 任何角色都不能操作正式 DB、正式付款、正式退款或正式服務；Production deployment 需要明確授權。
 - 任何角色都不能偽造 evidence、降低 assertion／threshold、使用 skip／exclude 掩蓋失敗，或覆蓋使用者既有變更。
+- Git 可自動 push `codex/*` 分支並透過受保護 PR merge；必須等待 CI、禁止 force push／直接 default branch push／衝突合併。
+- Production deployment 不因 push／merge 自動觸發，仍需獨立 workflow 與人工 approval。
 - `route_task` 可由主代理或已核准的本地 orchestrator 執行，但不得繞過上述安全邊界。

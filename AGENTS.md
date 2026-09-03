@@ -11,12 +11,13 @@
 CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AUTONOMOUS`：
 
 - 一個長程 Goal 可以連續執行多個 Work Package，不需要每 30～90 分鐘停止。
-- Terra、Sol、AGY、Luna 可依工作需要自動協作；不強制每個 WP 都走相同階段。
+- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY 與 Luna 唯讀升級可依工作需要自動協作；不強制每個 WP 都走相同階段。
 - 已核准 roadmap 內的下一個 WP 可在 checkpoint 後自動接續。
-- Planner 可重新規劃、更新 plan metadata；Terra 可直接在同一 Goal 內實作與驗證。
+- Planner 可重新規劃、更新 plan metadata；一般 Worker／Luna 可直接在同一 Goal 內實作與驗證，複雜跨檔工作交給 Worker Deep／Terra。
 - 低風險測試、文件、coverage 與本地功能修正可並行；高風險工作才需要額外 acceptance。
 - Agent 可以使用本機、loopback、disposable、staging 與 sandbox 資源，只要符合安全底線與明確 scope。
-- 允許建立精確 scope 的本地 checkpoint commit；不得自動 push 或合併到遠端。
+- 允許建立精確 scope 的本地 checkpoint commit；可自動 push 到 `codex/*` 分支，並只透過受保護 PR 自動 merge。
+- Production deployment 不得因 push／merge 自動觸發，仍需獨立 workflow 與人工核准。
 
 ## 不可放寬的安全底線
 
@@ -46,7 +47,9 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 ## 代理協作
 
 - 主代理負責整合與最終判斷，但不要求固定模型或固定角色順序。
-- Sol、Terra、AGY Fast、AGY Deep、Luna 可依可用性與風險自動選擇；fallback 只能如實記錄，不能冒充成功。
+- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY Fast、AGY Deep、Claude plan-review 與 Luna 唯讀升級可依可用性與風險自動選擇；fallback 只能如實記錄，不能冒充成功。
+- 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `max` 執行；複雜跨檔或困難診斷由 Worker Deep 使用 `gpt-5.6-terra`，Reviewer 使用 Terra 且維持 read-only。
+- Explorer 與 Analyst 預設維持低成本唯讀路徑；任務達到 `complex`／`critical` 時，可升級至 `gpt-5.6-luna` read-only。
 - 推理程度依任務難度動態選擇，以最低足夠成本完成工作：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`；其他模型設定維持不變。一般任務優先採中間值，只有真正簡單或高風險困難任務才使用範圍端點。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
