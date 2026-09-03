@@ -104,7 +104,7 @@ const FAILURE_CODES = new Set([
   "INTERNAL_REJECTED",
 ]);
 const PAYUNI_UPP_URL = "https://sandbox-api.payuni.com.tw/api/upp";
-const PAYUNI_PAYMENT_HOST = "sandbox-vendor.payuni.com.tw";
+const PAYUNI_PAYMENT_HOST = new URL(PAYUNI_UPP_URL).hostname;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
@@ -132,6 +132,17 @@ export function classifyPayUniApiNetworkFailure(errorText) {
     return "PAYMENT_API_CONNECTION_REJECTED";
   }
   return "PAYMENT_API_NETWORK_REJECTED";
+}
+
+export function isPayUniPaymentPageUrl(value) {
+  try {
+    const url = value instanceof URL ? value : new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === PAYUNI_PAYMENT_HOST
+      && url.pathname === "/api/upp";
+  } catch {
+    return false;
+  }
 }
 
 const SYNTHETIC_BUYER = Object.freeze({
@@ -547,14 +558,11 @@ async function defaultBrowserSubmit(input) {
   let apiStatus = null;
   let apiNetworkRejected = false;
   let apiNetworkFailure = "PAYMENT_API_NETWORK_REJECTED";
-  let vendorNetworkRejected = false;
-  let vendorRequestSeen = false;
   try {
     page.on("request", (request) => {
       try {
         const url = new URL(request.url());
         if (url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw" && url.pathname === "/api/upp" && request.method() === "POST") apiPostSeen = true;
-        if (url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST) vendorRequestSeen = true;
       } catch {}
     });
     page.on("response", (response) => {
@@ -566,11 +574,14 @@ async function defaultBrowserSubmit(input) {
     page.on("requestfailed", (request) => {
       try {
         const url = new URL(request.url());
-        if (url.hostname === "sandbox-api.payuni.com.tw") {
+        if (
+          request.isNavigationRequest()
+          && request.method() === "POST"
+          && isPayUniPaymentPageUrl(url)
+        ) {
           apiNetworkRejected = true;
           apiNetworkFailure = classifyPayUniApiNetworkFailure(request.failure()?.errorText);
         }
-        if (url.hostname === PAYUNI_PAYMENT_HOST) vendorNetworkRejected = true;
       } catch {}
     });
     const [name, value] = input.supportCookie.split("=", 2);
@@ -594,7 +605,7 @@ async function defaultBrowserSubmit(input) {
       // can observe the cross-origin payment page.
       window.setTimeout(() => form.submit(), 0);
     }, { action: PAYUNI_UPP_URL, payload: input.formPayload });
-    await page.waitForURL((url) => url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST, {
+    await page.waitForURL(isPayUniPaymentPageUrl, {
       // The runner intentionally blocks every non-allowlisted third-party
       // resource.  The PayUni document can therefore be committed before its
       // optional resources let DOMContentLoaded fire.  Field locators below
@@ -635,8 +646,6 @@ async function defaultBrowserSubmit(input) {
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
     if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
     if (apiNetworkRejected) return apiNetworkFailure;
-    if (vendorNetworkRejected) return "PAYMENT_VENDOR_NETWORK_REJECTED";
-    if (vendorRequestSeen) return "PAYMENT_VENDOR_NAV_UNCOMMITTED";
     return "PAYMENT_REDIRECT_UNOBSERVED";
   } finally {
     await browser.close();

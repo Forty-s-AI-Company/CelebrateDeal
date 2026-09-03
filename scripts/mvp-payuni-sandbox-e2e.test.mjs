@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   classifyPayUniApiNetworkFailure,
+  isPayUniPaymentPageUrl,
   FIXED_PAYUNI_ENV,
   MVP_PAYUNI_SANDBOX_E2E_SCHEMA,
   SIDE_EFFECT_BUDGET,
@@ -28,6 +29,15 @@ test("classifies Chromium PayUni API network failures without persisting raw err
   assert.equal(classifyPayUniApiNetworkFailure("net::ERR_BLOCKED_BY_CLIENT"), "PAYMENT_API_CLIENT_BLOCKED");
   assert.equal(classifyPayUniApiNetworkFailure("opaque browser failure"), "PAYMENT_API_NETWORK_REJECTED");
   assert.equal(classifyPayUniApiNetworkFailure(undefined), "PAYMENT_API_NETWORK_REJECTED");
+});
+
+test("recognizes only the fixed PayUni Sandbox UPP payment page", () => {
+  assert.equal(isPayUniPaymentPageUrl("https://sandbox-api.payuni.com.tw/api/upp"), true);
+  assert.equal(isPayUniPaymentPageUrl(new URL("https://sandbox-api.payuni.com.tw/api/upp")), true);
+  assert.equal(isPayUniPaymentPageUrl("https://sandbox-vendor.payuni.com.tw/api/upp"), false);
+  assert.equal(isPayUniPaymentPageUrl("https://sandbox-api.payuni.com.tw/api/trade/query"), false);
+  assert.equal(isPayUniPaymentPageUrl("http://sandbox-api.payuni.com.tw/api/upp"), false);
+  assert.equal(isPayUniPaymentPageUrl("not-a-url"), false);
 });
 
 const sourceSha = "a".repeat(40);
