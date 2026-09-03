@@ -531,6 +531,15 @@ async function defaultRequest(request) {
   return parseFetchResponse(response, request.cookiePrefix, request.outcomeHeader);
 }
 
+function assertRefundRequiresReconciliation(response) {
+  return response.status === 503
+    && exactKeys(response.body, ["status", "purpose", "phase", "providerWriteAttempted"])
+    && response.body.status === "RECONCILIATION_REQUIRED"
+    && response.body.purpose === FIXED_PURPOSE
+    && response.body.phase === "remaining"
+    && response.body.providerWriteAttempted === true;
+}
+
 function paymentAttemptFailure(response) {
   const status = response?.body?.status;
   if (status === "ALREADY_RESERVED") return "PAYMENT_ATTEMPT_ALREADY_RESERVED";
@@ -780,9 +789,13 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       headers: guarded,
       body: undefined,
     }));
-    if (!assertRefundResponse(refund)) return fail(receipt, "REFUND_REJECTED");
-    receipt.checks.refundCompleted = true;
-    receipt.sideEffects.refunds = 1;
+    const refundCompletedInline = assertRefundResponse(refund);
+    const refundRequiresReconciliation = assertRefundRequiresReconciliation(refund);
+    if (!refundCompletedInline && !refundRequiresReconciliation) return fail(receipt, "REFUND_REJECTED");
+    if (refundCompletedInline) {
+      receipt.checks.refundCompleted = true;
+      receipt.sideEffects.refunds = 1;
+    }
 
     receipt.sideEffects.reconcilePosts = 1;
     const reconciliation = responseJson(await request({
@@ -791,6 +804,15 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       body: undefined,
     }));
     if (!assertReconcileResponse(reconciliation)) return fail(receipt, "RECONCILE_REJECTED");
+    // A provider write can succeed while the application loses the success
+    // response or its local completion transaction fails. The reconciliation
+    // endpoint queries PayUni and validates order, trade and amount before it
+    // repairs the exact-source reservation, so a successful response is also
+    // authoritative proof that the refund occurred.
+    if (refundRequiresReconciliation) {
+      receipt.checks.refundCompleted = true;
+      receipt.sideEffects.refunds = 1;
+    }
     receipt.checks.reconciled = true;
     receipt.result = "PASS";
     receipt.failure = "NONE";
