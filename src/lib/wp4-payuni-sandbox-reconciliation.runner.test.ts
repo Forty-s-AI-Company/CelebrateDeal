@@ -75,7 +75,7 @@ describe("WP4 PayUni Sandbox refund projection", () => {
     expect(mocks.getProvider).not.toHaveBeenCalled();
   });
 
-  it("requires provider refund confirmation before local reconciliation", async () => {
+  it("releases an ambiguous reservation when the provider confirms no refund", async () => {
     mocks.getProvider.mockReturnValueOnce({
       queryPayment: vi.fn().mockResolvedValue({
         providerTradeNo: "opaque-provider-reference",
@@ -87,11 +87,16 @@ describe("WP4 PayUni Sandbox refund projection", () => {
       }),
     });
 
+    mocks.reconcile.mockResolvedValueOnce({ disposition: "provider_not_refunded" });
+
     await expect(reconcileWp4PayUniSandboxRefund(db as never, "a".repeat(40))).resolves.toEqual({
       reconciled: false,
-      status: "REFUND_NOT_CONFIRMED",
+      status: "RESERVATION_RELEASED",
     });
-    expect(mocks.reconcile).not.toHaveBeenCalled();
+    expect(mocks.reconcile).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: "wp4-transaction",
+      providerSnapshot: expect.objectContaining({ status: "paid", refundedAmountCents: 0 }),
+    }));
   });
 
   it("reconciles a confirmed refund through the existing accounting core", async () => {

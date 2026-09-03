@@ -203,7 +203,24 @@ function payUniResultRow(value: Record<string, unknown>) {
       return Object.keys(parsed).length > 0 ? parsed : undefined;
     }
   }
-  return result && typeof result === "object" ? result as Record<string, unknown> : undefined;
+  if (result && typeof result === "object") return result as Record<string, unknown>;
+
+  // PayUni may encode Result as PHP-style bracket fields in the encrypted
+  // query string (for example Result[TradeNo] or Result[0][TradeNo]).
+  // URLSearchParams intentionally keeps those keys flat, so normalize only
+  // the first documented Result row before validating any provider identity.
+  const rows = new Map<number, Record<string, unknown>>();
+  for (const [key, fieldValue] of Object.entries(value)) {
+    const match = /^Result(?:\[(\d+)\])?\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const index = Number(match[1] ?? "0");
+    if (!Number.isSafeInteger(index) || index < 0) continue;
+    const row = rows.get(index) ?? {};
+    row[match[2]!] = fieldValue;
+    rows.set(index, row);
+  }
+  if (rows.size === 0) return undefined;
+  return rows.get(Math.min(...rows.keys()));
 }
 
 function queryAmountCents(value: unknown) {

@@ -192,6 +192,22 @@ describe("PayUni provider", () => {
     })).resolves.toEqual({ providerEventId: "trade-direct-123" });
   });
 
+  it("accepts PayUni's bracket-encoded refund Result row", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      "Result[0][TradeNo]": "trade-bracket-123",
+      "Result[0][CloseType]": "2",
+      "Result[0][CloseNo]": "refund-bracket-456",
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-bracket", providerTradeNo: "trade-bracket-123", grossAmountCents: 100 } as PaymentTransaction,
+      refundAmountCents: 100,
+      requestId: "local-request-id",
+    })).resolves.toEqual({ providerEventId: "refund-bracket-456" });
+  });
+
   it("submits the documented token cancellation envelope", async () => {
     stubPayUniEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
