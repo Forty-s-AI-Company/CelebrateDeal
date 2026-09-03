@@ -14,6 +14,9 @@ const PAYUNI_API_BASE_URLS = {
   sandbox: "https://sandbox-api.payuni.com.tw/api",
   production: "https://api.payuni.com.tw/api",
 } as const;
+// Production reconciliation is intentionally pinned to one read-only query
+// endpoint; it must not inherit a caller- or environment-configurable URL.
+const PAYUNI_PRODUCTION_QUERY_URL = `${PAYUNI_API_BASE_URLS.production}/trade/query`;
 const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
 const PAYUNI_MIN_TRADE_AMOUNT = 1;
 const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
@@ -305,14 +308,26 @@ function payUniQueryRow(payload: Record<string, unknown>, orderNumber: string) {
 }
 
 async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
-  // WP-118 is a Sandbox-only reconciliation path. Production query access is
-  // deliberately a separate launch-authorized operation, not a fallback.
-  if (process.env.PAYUNI_ENV?.trim() !== "sandbox") {
+  const environment = process.env.PAYUNI_ENV?.trim();
+  if (environment !== "sandbox" && environment !== "production") {
     throw new PaymentQueryProviderError("request_contract");
   }
   const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
-  const orderNumber = transaction.orderNumber?.trim();
-  if (!merchantId || !orderNumber) throw new PaymentQueryProviderError("request_contract");
+  const orderNumber = typeof transaction.orderNumber === "string" ? transaction.orderNumber.trim() : "";
+  const providerTradeNo = typeof transaction.providerTradeNo === "string" ? transaction.providerTradeNo.trim() : "";
+  if (
+    !merchantId
+    || !orderNumber
+    || transaction.orderNumber !== orderNumber
+    || !PAYUNI_ORDER_NUMBER.test(orderNumber)
+    || transaction.providerName !== "payuni"
+    || !providerTradeNo
+    || transaction.providerTradeNo !== providerTradeNo
+    || !Number.isSafeInteger(transaction.grossAmountCents)
+    || transaction.grossAmountCents <= 0
+  ) {
+    throw new PaymentQueryProviderError("request_contract");
+  }
 
   let encrypted: string;
   try {
@@ -327,7 +342,10 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
 
   let response: Response;
   try {
-    response = await fetch(`${payUniApiBaseUrl().replace(/\/$/, "")}/trade/query`, {
+    const queryUrl = environment === "production"
+      ? PAYUNI_PRODUCTION_QUERY_URL
+      : `${PAYUNI_API_BASE_URLS.sandbox}/trade/query`;
+    response = await fetch(queryUrl, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -368,7 +386,14 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   if (optionalPayloadText(payload.Status) !== "SUCCESS") {
     throw new PaymentQueryProviderError("provider_response");
   }
-  return payUniQueryRow(payload, orderNumber);
+  const snapshot = payUniQueryRow(payload, orderNumber);
+  if (
+    snapshot.providerTradeNo !== providerTradeNo
+    || snapshot.grossAmountCents !== transaction.grossAmountCents
+  ) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  return snapshot;
 }
 
 /**
