@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { isIP } from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -86,6 +84,11 @@ const FAILURE_CODES = new Set([
   "PAYMENT_PROVIDER_HTTP_REJECTED",
   "PAYMENT_PROVIDER_NETWORK_REJECTED",
   "PAYMENT_API_NETWORK_REJECTED",
+  "PAYMENT_API_DNS_REJECTED",
+  "PAYMENT_API_CONNECTION_REJECTED",
+  "PAYMENT_API_TIMEOUT_REJECTED",
+  "PAYMENT_API_TLS_REJECTED",
+  "PAYMENT_API_CLIENT_BLOCKED",
   "PAYMENT_VENDOR_NETWORK_REJECTED",
   "PAYMENT_REDIRECT_UNOBSERVED",
   "PAYMENT_VENDOR_NAV_UNCOMMITTED",
@@ -105,6 +108,31 @@ const PAYUNI_PAYMENT_HOST = "sandbox-vendor.payuni.com.tw";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
+
+/**
+ * Converts Chromium's request-failure text into a fixed, non-sensitive
+ * category. The raw browser error must never enter logs or evidence.
+ */
+export function classifyPayUniApiNetworkFailure(errorText) {
+  if (typeof errorText !== "string") return "PAYMENT_API_NETWORK_REJECTED";
+  if (errorText.includes("ERR_NAME_NOT_RESOLVED")) return "PAYMENT_API_DNS_REJECTED";
+  if (errorText.includes("ERR_CONNECTION_TIMED_OUT") || errorText.includes("ERR_TIMED_OUT")) {
+    return "PAYMENT_API_TIMEOUT_REJECTED";
+  }
+  if (errorText.includes("ERR_CERT_") || errorText.includes("ERR_SSL_") || errorText.includes("ERR_TLS_")) {
+    return "PAYMENT_API_TLS_REJECTED";
+  }
+  if (errorText.includes("ERR_BLOCKED_BY_CLIENT")) return "PAYMENT_API_CLIENT_BLOCKED";
+  if (
+    errorText.includes("ERR_CONNECTION_REFUSED")
+    || errorText.includes("ERR_CONNECTION_RESET")
+    || errorText.includes("ERR_CONNECTION_CLOSED")
+    || errorText.includes("ERR_ADDRESS_UNREACHABLE")
+  ) {
+    return "PAYMENT_API_CONNECTION_REJECTED";
+  }
+  return "PAYMENT_API_NETWORK_REJECTED";
+}
 
 const SYNTHETIC_BUYER = Object.freeze({
   name: "WP4 Sandbox Buyer",
@@ -500,29 +528,15 @@ function guardedHeaders(invocation) {
 
 async function defaultBrowserSubmit(input) {
   const { chromium, errors } = await import("playwright");
-  // The trusted runner pins the exact allowlisted host addresses in
-  // /etc/hosts and iptables before this process starts. Resolve through that
-  // same OS path and force Chromium to use the identical addresses; otherwise
-  // Chromium's network service can choose a different CDN address and be
-  // correctly rejected by the firewall.
-  const [apiAddress, vendorAddress] = await Promise.all([
-    lookup("sandbox-api.payuni.com.tw", { family: 4 }),
-    lookup(PAYUNI_PAYMENT_HOST, { family: 4 }),
-  ]);
-  if (isIP(apiAddress.address) !== 4 || isIP(vendorAddress.address) !== 4) {
-    throw new Error("PAYMENT_REJECTED");
-  }
-  const resolverRules = [
-    `MAP sandbox-api.payuni.com.tw ${apiAddress.address}`,
-    `MAP ${PAYUNI_PAYMENT_HOST} ${vendorAddress.address}`,
-    "EXCLUDE localhost",
-  ].join(",");
+  // The trusted runner already pins every allowlisted A record in /etc/hosts
+  // and permits that exact set in iptables. Do not collapse a multi-edge host
+  // to one address here: a single unhealthy edge would make the payment flow
+  // fail even though another allowlisted address remains reachable.
   const browser = await chromium.launch({
     headless: true,
     args: [
       "--no-proxy-server",
       "--disable-quic",
-      `--host-resolver-rules=${resolverRules}`,
     ],
   });
   const context = await browser.newContext({ locale: "zh-TW" });
@@ -532,6 +546,7 @@ async function defaultBrowserSubmit(input) {
   let apiPostSeen = false;
   let apiStatus = null;
   let apiNetworkRejected = false;
+  let apiNetworkFailure = "PAYMENT_API_NETWORK_REJECTED";
   let vendorNetworkRejected = false;
   let vendorRequestSeen = false;
   try {
@@ -551,7 +566,10 @@ async function defaultBrowserSubmit(input) {
     page.on("requestfailed", (request) => {
       try {
         const url = new URL(request.url());
-        if (url.hostname === "sandbox-api.payuni.com.tw") apiNetworkRejected = true;
+        if (url.hostname === "sandbox-api.payuni.com.tw") {
+          apiNetworkRejected = true;
+          apiNetworkFailure = classifyPayUniApiNetworkFailure(request.failure()?.errorText);
+        }
         if (url.hostname === PAYUNI_PAYMENT_HOST) vendorNetworkRejected = true;
       } catch {}
     });
@@ -616,7 +634,7 @@ async function defaultBrowserSubmit(input) {
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
     if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
-    if (apiNetworkRejected) return "PAYMENT_API_NETWORK_REJECTED";
+    if (apiNetworkRejected) return apiNetworkFailure;
     if (vendorNetworkRejected) return "PAYMENT_VENDOR_NETWORK_REJECTED";
     if (vendorRequestSeen) return "PAYMENT_VENDOR_NAV_UNCOMMITTED";
     return "PAYMENT_REDIRECT_UNOBSERVED";
