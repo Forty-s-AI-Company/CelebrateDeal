@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "./payment-webhook-errors";
 
 describe("payment webhook failure classification", () => {
+  it("classifies Prisma interactive transaction expiry without exposing details", () => {
+    const error = Object.assign(new Error("Transaction already closed: expired transaction"), { code: "P2028" });
+    expect(classifyPaymentWebhookFailure(error)).toBe("processing_timeout");
+    expect(paymentWebhookFailureMessage("processing_timeout")).toBe(
+      "Payment webhook processing failed (processing_timeout).",
+    );
+  });
+
   it("maps reviewed business failures to closed operator codes", () => {
     expect(classifyPaymentWebhookFailure(new Error(
       "付款 webhook 訂單金額或幣別與既存交易不一致。",
