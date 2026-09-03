@@ -4,6 +4,7 @@ import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 const localE2eCsrfSecret = "celebratedeal-local-playwright-csrf-secret-v1";
 const localE2eCronSecret = "celebratedeal-local-playwright-cron-secret-v1";
 const localE2eLiveChatIngressSecret = "celebratedeal-local-playwright-live-chat-ingress-secret-v1";
@@ -84,6 +85,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL,
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
     trace: "retain-on-failure",
   },
   webServer: {
