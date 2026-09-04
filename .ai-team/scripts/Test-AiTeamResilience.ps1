@@ -49,7 +49,7 @@ Assert-AiTeam ($routerConfig.git_policy.auto_push.enabled -and $routerConfig.git
 Assert-AiTeam (-not $routerConfig.git_policy.auto_push.force_push -and -not $routerConfig.git_policy.auto_push.direct_default_branch_push) 'Git promotion policy allows unsafe direct or force push'
 Assert-AiTeam (-not $routerConfig.git_policy.production_deploy.enabled -and $routerConfig.git_policy.production_deploy.approval -eq 'manual') 'Production deployment policy is not manual-only'
 Assert-AiTeam ($routerConfig.plan_review.model -eq 'claude-sonnet-4.6-thinking' -and -not $routerConfig.plan_review.required) 'optional Claude plan review policy is invalid'
-Assert-AiTeam ($routerConfig.agents.worker.model -eq 'gpt-5.6-luna' -and $routerConfig.agents.worker.reasoning_lock -eq 'max') 'general Worker is not pinned to Luna max'
+Assert-AiTeam ($routerConfig.agents.worker.model -eq 'gpt-5.6-luna' -and ($routerConfig.agents.worker.reasoning_lock -in @('high', 'max'))) 'general Worker is not pinned to Luna high/max'
 $agentNames = @($routerConfig.agents.PSObject.Properties.Name)
 $profileNames = @($routerConfig.codex_profiles.PSObject.Properties.Name)
 Assert-AiTeam (-not ($agentNames -contains 'worker-critical') -and -not ($profileNames -contains 'luna_critical_worker')) 'legacy critical write profile remains configured'

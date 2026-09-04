@@ -7,11 +7,12 @@
 - 一個 Goal 可以連續處理多個 Work Package、Milestone 與修復輪次。
 - Goal 建立後，主代理可依 value-ranked roadmap 自動選擇、實作、驗證並接續下一項。
 - Planner 不再受「一次、30～90 分鐘、完成後停止」限制；只有 scope、風險、授權或架構改變時才重新規劃。
-- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY Fast、AGY Deep 與 Luna 唯讀升級可依工作內容並行或串接，不要求固定 canonical 階段。
-- 一般實作固定交給 `gpt-5.6-luna max` Worker；複雜跨檔或困難診斷交給 `gpt-5.6-terra` Worker Deep，Reviewer 固定使用 Terra read-only。
+- 主代理具備 Direct Autonomous 端到端直通模式，可直接規劃、實作、自測並建立 checkpoint commit。
+- 日常 70% 任務（UI、文案、簡單 Bug）通過本地 `typecheck` 與 targeted tests 即可交付，直接跳過 AI 複審以極限節省 Token 額度。
+- 高風險任務啟動四級審查降級鏈（Review Fallback Ladder）：Tier 1 Claude Sonnet 4.6（反過度設計）→ Tier 2 Gemini 3.8 Flash High（零額度焦慮）→ Tier 3 GPT-5.6-Terra medium（客觀嚴謹，不用 Sol 避免發散）→ Tier 4 本地測試防線。
+- 一般實作由 `gpt-5.6-luna high` Worker 執行（解除 max 鎖定以節省額度）；複雜跨檔或困難診斷由 `gpt-5.6-terra` Worker Deep 執行，Reviewer 固定使用 Terra read-only。
 - Explorer／Analyst 預設維持 AGY 唯讀路徑；`complex`／`critical` 任務可升級至 Luna read-only。
-- Sol 完成 complex／critical 或安全、金流、release 規劃後，可呼叫 Claude Sonnet 4.6 thinking 做一次 advisory plan review；額度不足時可跳過，不阻擋 Goal。
-- 推理程度依任務難度動態選擇，採最低足夠成本：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`；其他模型設定不變。一般任務使用中間值，只有真正簡單或 critical 工作才使用端點。
+- 推理程度動態選擇，採最低足夠成本：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般任務使用中間值。
 - 只要同一檔案、資料資源或外部資源沒有 writer 衝突，不同 scope 可以並行。
 - 每個 checkpoint 只需保存精確結果、證據、回滾方式與下一步；不因 checkpoint 自動停止 Goal。
 

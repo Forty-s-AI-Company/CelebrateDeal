@@ -44,13 +44,19 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 - Trusted runner 的加入不授權 Production、正式付款／退款、migration write、
   deployment、alias mutation、資料刪除、force push 或 merge。
 
-## 代理協作
+## 代理協作與審查機制
 
-- 主代理負責整合與最終判斷，但不要求固定模型或固定角色順序。
-- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY Fast、AGY Deep、Claude plan-review 與 Luna 唯讀升級可依可用性與風險自動選擇；fallback 只能如實記錄，不能冒充成功。
-- 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `max` 執行；複雜跨檔或困難診斷由 Worker Deep 使用 `gpt-5.6-terra`，Reviewer 使用 Terra 且維持 read-only。
-- Explorer 與 Analyst 預設維持低成本唯讀路徑；任務達到 `complex`／`critical` 時，可升級至 `gpt-5.6-luna` read-only。
-- 推理程度依任務難度動態選擇，以最低足夠成本完成工作：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`；其他模型設定維持不變。一般任務優先採中間值，只有真正簡單或高風險困難任務才使用範圍端點。
+- **主代理端到端直通（Direct Autonomous Delivery）**：主代理負責整合與最終判斷，具備直接規劃、編碼、自測與 checkpoint 提交權限，毋須進行多代理強制 handoff。
+- **日常任務免複審（Skip Routine Review）**：非重大金流、資安、資料庫 Migration 的日常任務（UI、文案、一般 Bug 修復），跑過本地 `typecheck` 與 targeted tests 即可直接交付，跳過 AI 複審以極限節省額度。
+- **高風險任務四級審查降級鏈（Review Fallback Ladder）**：
+  1. **Tier 1 首選**：`Claude Sonnet 4.6 thinking`（以奧坎剃刀原則審核：嚴禁過度設計、抓真實致命漏洞，防止 Sol 鑽牛角尖）。
+  2. **Tier 2 備選（Claude 額度不足時）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
+  3. **Tier 3 備選（若需 GPT 接手）**：`GPT-5.6-Terra (medium)`（客觀嚴謹，嚴禁用 Sol 自審避免發散）。
+  4. **Tier 4 終極防線（額度全竭時）**：直接跳過 AI 複審，以本地型別檢查與 3,134 個單元測試為最終驗證防線。
+- **模型分工與推理成本**：
+  - 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `high` 執行（解除 max 鎖定，大幅降低思考 Token 浪費）；複雜跨檔或困難診斷由 Worker Deep 使用 `gpt-5.6-terra`，Reviewer 固定使用 Terra read-only。
+  - Explorer 與 Analyst 預設維持低成本唯讀路徑；任務達到 `complex`／`critical` 時，可升級至 `gpt-5.6-luna` read-only。
+  - 推理程度依任務難度動態選擇，以最低足夠成本完成工作：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般任務優先採中間值，只有高風險關鍵任務才啟用端點。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 

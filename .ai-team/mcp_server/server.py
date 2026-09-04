@@ -56,8 +56,8 @@ ROUTES: dict[str, dict[str, Any]] = {
         "profile": "luna_worker",
         "provider": "native_agent",
         "model": "gpt-5.6-luna",
-        "reasoning_effort": "max",
-        "reasoning_lock": "max",
+        "reasoning_effort": "high",
+        "reasoning_lock": "high",
     },
     "complex_implementation": {
         "target": "worker-deep",
