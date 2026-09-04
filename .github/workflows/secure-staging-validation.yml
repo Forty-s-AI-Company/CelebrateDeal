@@ -14,6 +14,7 @@ on:
           - wp4-payuni-sandbox-refund-recovery
           - wp4-payuni-buyer-payment-check
           - wp4-payuni-buyer-callback-retry
+          - wp4-payuni-buyer-existing-continuation
           - wp4-payuni-sandbox-subscription
       source_sha:
         description: Exact 40-character Preview source SHA
@@ -182,6 +183,20 @@ jobs:
 
       - name: Validate fixed buyer-callback retry identity before JOB binding
         if: ${{ inputs.task == 'wp4-payuni-buyer-callback-retry' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+        run: |
+          set -euo pipefail
+
+          # Verify execution against the exact current Preview. The recovery
+          # endpoint owns the immutable historical transaction source.
+          node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Validate fixed buyer-existing continuation identity before JOB binding
+        if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -527,6 +542,79 @@ jobs:
 
           node scripts/mvp-payuni-sandbox-e2e.mjs --retry-buyer-callback
 
+      - name: Continue fixed existing WP4 buyer order with bounded egress
+        if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' }}
+        id: execute-wp4-buyer-existing-continuation
+        continue-on-error: true
+        shell: bash
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+        run: |
+          set -euo pipefail
+
+          firewall_backup="$RUNNER_TEMP/celebratedeal-wp4-buyer-continuation-iptables.rules"
+          firewall6_backup="$RUNNER_TEMP/celebratedeal-wp4-buyer-continuation-ip6tables.rules"
+          hosts_backup="$RUNNER_TEMP/celebratedeal-wp4-buyer-continuation-hosts.original"
+          destinations="$RUNNER_TEMP/celebratedeal-wp4-buyer-continuation-egress.tsv"
+          hosts_file="$RUNNER_TEMP/celebratedeal-wp4-buyer-continuation-hosts"
+          : > "$destinations"
+          : > "$hosts_file"
+
+          node <<'NODE' > "$destinations"
+          const required = ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "JOB_SECRET"];
+          if (required.some((key) => !process.env[key])) process.exit(2);
+          if (!/^[a-f0-9]{40}$/u.test(process.env.CELEBRATEDEAL_SOURCE_SHA)) process.exit(2);
+          const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
+          const safeHost = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
+          if (!safeHost.test(deploymentHost)) process.exit(2);
+          process.stdout.write([
+            ["api.github.com", "443"],
+            [deploymentHost, "443"],
+          ].map((row) => row.join("\t")).join("\n") + "\n");
+          NODE
+
+          while IFS=$'\t' read -r host port; do
+            mapfile -t addresses < <(getent ahostsv4 "$host" | awk '!seen[$1]++ { print $1 }')
+            if (( ${#addresses[@]} == 0 )); then
+              echo "secure_wp4_recovery_egress_resolution=BLOCKED"
+              exit 2
+            fi
+            for address in "${addresses[@]}"; do
+              printf '%s\t%s\t%s\n' "$host" "$address" "$port" >> "$hosts_file"
+            done
+          done < "$destinations"
+
+          sudo iptables-save > "$firewall_backup"
+          sudo ip6tables-save > "$firewall6_backup"
+          sudo cp /etc/hosts "$hosts_backup"
+          restore_network() {
+            sudo iptables-restore < "$firewall_backup"
+            sudo ip6tables-restore < "$firewall6_backup"
+            sudo cp "$hosts_backup" /etc/hosts
+            rm -f "$firewall_backup" "$firewall6_backup" "$hosts_backup" "$destinations" "$hosts_file"
+          }
+          trap restore_network EXIT
+
+          while IFS=$'\t' read -r host address _port; do
+            printf '%s %s\n' "$address" "$host" | sudo tee -a /etc/hosts > /dev/null
+          done < "$hosts_file"
+
+          sudo iptables -F OUTPUT
+          sudo iptables -P OUTPUT DROP
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          while IFS=$'\t' read -r _host address port; do
+            sudo iptables -A OUTPUT -p tcp -d "$address" --dport "$port" -j ACCEPT
+          done < "$hosts_file"
+          sudo ip6tables -F OUTPUT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+          node scripts/mvp-payuni-sandbox-e2e.mjs --continue-existing-buyer
+
       - name: Validate sanitized WP2 receipt
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
         env:
@@ -556,6 +644,12 @@ jobs:
         env:
           RUNNER_TEMP: ${{ runner.temp }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-buyer-callback-retry-receipt
+
+      - name: Validate sanitized buyer-existing continuation receipt
+        if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' }}
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-buyer-continuation-receipt
 
       - name: Validate sanitized subscription receipt
         if: ${{ inputs.task == 'wp4-payuni-sandbox-subscription' }}
@@ -599,6 +693,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload sanitized buyer-existing continuation receipt only
+        if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-buyer-existing-continuation-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload sanitized subscription receipt only
         if: ${{ inputs.task == 'wp4-payuni-sandbox-subscription' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -626,4 +729,8 @@ jobs:
 
       - name: Enforce fixed buyer-callback retry success
         if: ${{ inputs.task == 'wp4-payuni-buyer-callback-retry' && steps.execute-wp4-buyer-callback-retry.outcome != 'success' }}
+        run: exit 2
+
+      - name: Enforce fixed buyer-existing continuation success
+        if: ${{ inputs.task == 'wp4-payuni-buyer-existing-continuation' && steps.execute-wp4-buyer-existing-continuation.outcome != 'success' }}
         run: exit 2

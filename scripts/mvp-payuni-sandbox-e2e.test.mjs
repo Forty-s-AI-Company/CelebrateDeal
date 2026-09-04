@@ -25,6 +25,11 @@ import {
   EXISTING_REFUND_RECOVERY_SCHEMA,
   MVP_PAYUNI_SANDBOX_E2E_SCHEMA,
   MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA,
+  MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA,
+  BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA,
+  runMvpPayUniBuyerExistingContinuation,
+  validateBuyerContinuationReceipt,
+  writeBuyerExistingContinuationReceipt,
   SIDE_EFFECT_BUDGET,
   createExistingRefundRecoveryReceipt,
   createReceipt,
@@ -1175,4 +1180,103 @@ test("does not perform any side effect when input validation fails", async () =>
   assert.equal(receipt.failure, "INPUT_REJECTED");
   assert.equal(receipt.result, "BLOCKED");
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+});
+
+function continuationResponse(request, stateReads = { count: 0 }) {
+  if (request.url.endsWith("/wp4-buyer-existing-state")) {
+    stateReads.count += 1;
+    return response(200, {
+      status: "VERIFIED", paymentStatus: stateReads.count === 1 ? "PAID" : "REFUNDED",
+      orderPaid: true, inventoryCommitted: true, notificationQueued: true,
+      refundReconciled: stateReads.count === 2,
+    });
+  }
+  if (request.url.endsWith("/wp4-buyer-existing-refund")) return response(200, { status: "COMPLETED", providerWriteAttempted: true });
+  if (request.url.endsWith("/wp4-buyer-existing-reconcile")) return response(200, { status: "RECONCILED", reconciled: true });
+  throw new Error("unexpected continuation request");
+}
+
+test("continues an existing paid buyer transaction with one refund and final state proof", async () => {
+  const calls = [];
+  const stateReads = { count: 0 };
+  const receipt = await runMvpPayUniBuyerExistingContinuation(recoveryInput, {
+    request: async (request) => { calls.push(request); return continuationResponse(request, stateReads); },
+  });
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.transactionSourceSha, BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA);
+  assert.deepEqual(receipt.checks, { stateVerified: true, refundAttempted: true, reconciled: true, refundedStateVerified: true });
+  assert.deepEqual(receipt.sideEffects, { statePosts: 2, refundPosts: 1, reconcilePosts: 1, queryAttempts: 1, paymentSubmissions: 0, providerRefundSubmissions: 1 });
+  assert.deepEqual(validateBuyerContinuationReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(calls.filter((request) => request.url.endsWith("/wp4-buyer-existing-state")).length, 2);
+});
+
+test("repeats reconciliation only for REFUND_NOT_CONFIRMED", async () => {
+  let reconciles = 0;
+  const stateReads = { count: 0 };
+  const receipt = await runMvpPayUniBuyerExistingContinuation(recoveryInput, {
+    request: async (request) => {
+      if (request.url.endsWith("/wp4-buyer-existing-state")) return continuationResponse(request, stateReads);
+      if (request.url.endsWith("/wp4-buyer-existing-refund")) return response(200, { status: "RECONCILIATION_REQUIRED", providerWriteAttempted: true });
+      if (request.url.endsWith("/wp4-buyer-existing-reconcile")) {
+        reconciles += 1;
+        return reconciles === 1 ? response(200, { status: "REFUND_NOT_CONFIRMED", reconciled: false }) : response(200, { status: "RECONCILED", reconciled: true });
+      }
+      throw new Error("unexpected continuation request");
+    },
+    wait: async () => {},
+  });
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.sideEffects.reconcilePosts, 2);
+});
+
+test("stops on unknown network outcome with reserved refund budget", async () => {
+  const receipt = await runMvpPayUniBuyerExistingContinuation(recoveryInput, {
+    request: async (request) => {
+      if (request.url.endsWith("/wp4-buyer-existing-state")) return continuationResponse(request, { count: 0 });
+      throw new Error("network unknown");
+    },
+  });
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "NETWORK_REJECTED");
+  assert.equal(receipt.sideEffects.refundPosts, 1);
+  assert.deepEqual(validateBuyerContinuationReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("rejects forged continuation PASS receipts and fixed receipt identity violations", () => {
+  const receipt = createReceipt();
+  receipt.schemaVersion = MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA;
+  receipt.transactionSourceSha = BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA;
+  assert.equal(validateBuyerContinuationReceipt(receipt).ok, false);
+});
+
+test("rejects forged continuation phases, unsafe receipts, and extra response fields", async () => {
+  for (const malformed of [null, {}, { result: "PASS" }, { sideEffects: { refundPosts: 1 } }]) {
+    assert.equal(validateBuyerContinuationReceipt(malformed).ok, false);
+  }
+  const stateReads = { count: 0 };
+  const valid = await runMvpPayUniBuyerExistingContinuation(recoveryInput, {
+    request: async (request) => continuationResponse(request, stateReads),
+  });
+  assert.equal(validateBuyerContinuationReceipt({ ...valid, checks: { ...valid.checks, reconciled: false } }).ok, false);
+  assert.equal(validateBuyerContinuationReceipt({ ...valid, safety: { ...valid.safety, sideEffectBudgetExceeded: true } }).ok, false);
+
+  const blocked = await runMvpPayUniBuyerExistingContinuation(recoveryInput, {
+    request: async (request) => {
+      if (request.url.endsWith("/wp4-buyer-existing-state")) return continuationResponse(request, { count: 0 });
+      if (request.url.endsWith("/wp4-buyer-existing-refund")) return response(200, { status: "COMPLETED", providerWriteAttempted: true, raw: "must-not-escape" });
+      throw new Error("unexpected continuation request");
+    },
+  });
+  assert.equal(blocked.result, "BLOCKED");
+  assert.equal(blocked.failure, "REFUND_REJECTED");
+  assert.equal(blocked.sideEffects.reconcilePosts, 0);
+});
+
+test("refuses to persist an invalid continuation receipt", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp4-buyer-continuation-"));
+  try {
+    await assert.rejects(() => writeBuyerExistingContinuationReceipt({ schemaVersion: "forged" }, temporaryRoot), /RECEIPT_INVALID/);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 0 });
+  }
 });
