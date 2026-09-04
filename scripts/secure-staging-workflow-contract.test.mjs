@@ -32,6 +32,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
     "wp4-payuni-sandbox-binding-preflight",
     "wp4-payuni-sandbox-reconciliation",
     "wp4-payuni-sandbox-refund-recovery",
+    "wp4-payuni-buyer-payment-check",
     "wp4-payuni-sandbox-subscription",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
@@ -47,7 +48,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
   assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
   assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
-  assert.equal(actionUses.length, 5);
+  assert.equal(actionUses.length, 6);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
 });
 
@@ -57,12 +58,12 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.match(source, /npx playwright install --with-deps chromium/u);
-  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 3);
-  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 1);
+  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 4);
+  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 2);
   assert.match(source, /api\.github\.com/u);
   assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);
-  assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 2);
+  assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 3);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
   assert.match(runner, /\/etc\/hosts:\/etc\/hosts:ro/u);
@@ -202,6 +203,31 @@ test("fixed subscription task has its own command and receipt without broadening
   assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
   assert.ok(steps.indexOf(execute) < steps.indexOf(validate));
   assert.ok(steps.indexOf(validate) < steps.indexOf(enforce));
+});
+
+test("buyer payment check has isolated query-only execution after exact lineage and before sanitized upload", () => {
+  const steps = yaml.load(fs.readFileSync(workflowPath, "utf8")).jobs["trusted-runner"].steps;
+  const lineage = steps.find((s) => s.name === "Validate fixed buyer-payment check identity before JOB binding");
+  const execute = steps.find((s) => s.id === "execute-wp4-buyer-payment-check");
+  const validate = steps.find((s) => s.name === "Validate sanitized buyer-payment check receipt");
+  const upload = steps.find((s) => s.name === "Upload sanitized buyer-payment check receipt only");
+  const enforce = steps.find((s) => s.name === "Enforce fixed buyer-payment check success");
+  assert.equal(execute.if, "${{ inputs.task == 'wp4-payuni-buyer-payment-check' }}");
+  assert.equal(lineage.if, execute.if);
+  assert.match(lineage.run, /--verify-lineage/u);
+  assert.deepEqual(Object.keys(execute.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "JOB_SECRET"]);
+  assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
+  assert.match(execute.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --check-buyer-payment/u);
+  assert.match(execute.run, /sudo iptables -P OUTPUT DROP/u);
+  assert.match(execute.run, /sudo ip6tables -P OUTPUT DROP/u);
+  assert.doesNotMatch(execute.run, /playwright|chromium|sandbox-api\.payuni|sandbox-vendor\.payuni|--subscription|--recover-existing-refund/iu);
+  assert.equal(validate.run, "node scripts/mvp-payuni-sandbox-e2e.mjs --validate-buyer-payment-check-receipt");
+  assert.equal(upload.with.path, "${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-buyer-payment-check-receipt.json");
+  assert.match(enforce.if, /steps\.execute-wp4-buyer-payment-check\.outcome != 'success'/u);
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
+  assert.ok(steps.indexOf(execute) < steps.indexOf(validate));
+  assert.ok(steps.indexOf(validate) < steps.indexOf(upload));
+  assert.ok(steps.indexOf(upload) < steps.indexOf(enforce));
 });
 
 test("WP4 egress heredoc is syntactically valid without executing it", () => {
