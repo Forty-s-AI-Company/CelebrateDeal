@@ -165,6 +165,9 @@ test("existing-refund recovery verifies the current Preview before JOB binding a
   assert.match(recovery.run, /\["api\.github\.com", "443"\]/u);
   assert.match(recovery.run, /\[deploymentHost, "443"\]/u);
   assert.match(recovery.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --recover-existing-refund/u);
+  assert.match(recovery.run, /!\/\^\[a-f0-9\]\{40\}\$\/u\.test\(process\.env\.CELEBRATEDEAL_SOURCE_SHA\)/u);
+  assert.doesNotMatch(recovery.run, /CELEBRATEDEAL_SOURCE_SHA\s*!==\s*"1052a46d002149b5c06104927ed0fab32b049214"/u);
+  assert.match(recovery.run, /process\.stdout\.write\(\[\s*\["api\.github\.com", "443"\],\s*\[deploymentHost, "443"\]/u);
   assert.match(recovery.run, /sudo iptables -P OUTPUT DROP/u);
   assert.match(recovery.run, /sudo ip6tables -P OUTPUT DROP/u);
   assert.match(recovery.run, /sudo iptables-restore/u);
