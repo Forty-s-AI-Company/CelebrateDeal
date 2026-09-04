@@ -44,6 +44,9 @@ const nodeTapContractTests = findNodeTapContractTests(__dirname)
 const testExclude = [
   ...configDefaults.exclude,
   "tests/e2e/**",
+  // Playwright support journeys run in their own required Browser gate, not
+  // inside the PostgreSQL concurrency coverage process.
+  "tests/e2e-support/**",
   ".ai-team/tmp/**",
   ...nodeTapContractTests,
 ];

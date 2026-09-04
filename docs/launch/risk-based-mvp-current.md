@@ -4,6 +4,8 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- CI `33885169141` passed unit/coverage but failed PostgreSQL concurrency collection when its separate Vitest configuration loaded the Playwright-only support suite. Added the same routing boundary to `vitest.synthetic-db-coverage.config.ts`; collection no longer includes that Browser file, lint/typecheck and diff check passed. Other dedicated DB configurations explicitly include their own test files and were left unchanged. The mandatory support Playwright gate and all Browser assertions remain intact. This is a runner configuration fix, not a database invariant PASS.
+
 - Current published product source is `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2`, CI `33885775225` running. Earlier `a9dc22b` CI `33885169141` passed unit/coverage and is running PostgreSQL concurrency tests; this confirms the Browser/Vitest routing correction at that source, not full Browser acceptance.
 - Protected runner PR #198 is published on `codex/wp4-recovery-database-diagnostics`, head `0d862d955918f8a1f464d7b17762903229fce3ad`, based on protected master `c55a513`. Checks `33885801591` and `33885777222` are running. Worktree remains `C:/Users/eden/Downloads/AI/CelebrateDeal-subscription-runner`. Wait for current-head checks and protected merge, then verify matching application Preview before any further fixed query. Latest actual receipt remains `33885139996 / RECONCILIATION_UNKNOWN_FAILED`.
 
