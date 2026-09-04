@@ -26,7 +26,8 @@ import {
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
 import { toSlug } from "@/lib/format";
-import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
+import { parseLiveQuotaPolicy, parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
 import {
@@ -650,6 +651,30 @@ function isMissingDefaultAffiliate(
   return code !== null && affiliate === null;
 }
 
+/**
+ * MVP 首發不接受新的直播 affiliate 設定。既有直播保留資料庫中已存的
+ * 歷史設定，讓一般直播與 quota 編輯可繼續完成，且不會新增佣金負債來源。
+ */
+function applyMvpLiveAffiliatePolicy(
+  submitted: LiveQuotaPolicy,
+  existingQuotaPolicy: unknown | undefined,
+): LiveQuotaPolicy {
+  if (mvpCommissionPolicy.allowsNewAccrual("affiliate")) return submitted;
+
+  const existing = existingQuotaPolicy === undefined
+    ? null
+    : parseLiveQuotaPolicy(existingQuotaPolicy);
+  return {
+    ...submitted,
+    affiliateMode: existing?.affiliateMode ?? "disabled",
+    defaultAffiliateCode: existing?.defaultAffiliateCode ?? null,
+  };
+}
+
+function storedLiveQuotaPolicy(live: { quotaPolicy: unknown } | null) {
+  return live?.quotaPolicy;
+}
+
 function optionalDraftReference(value: string) {
   return value ? value : null;
 }
@@ -972,6 +997,7 @@ async function resolveSubmittedLiveReferences(input: {
             scheduledAt: true,
             liveReminderTemplateId: true,
             liveReminderOffsetMinutes: true,
+            quotaPolicy: true,
           },
         })
       : Promise.resolve(null),
@@ -1216,7 +1242,7 @@ export async function upsertLiveAction(formData: FormData) {
   const messageTemplateId = optionalDraftReference(submittedDraft.messageTemplateId);
   const interactionScriptId = optionalDraftReference(submittedDraft.interactionScriptId);
   const heroImageAssetId = optionalDraftReference(submittedDraft.heroImageAssetId);
-  const quotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
+  const submittedQuotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
   const invalidReferencePath = id
     ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : `/lives/new?error=invalid_reference${createDraftSuffix}`;
@@ -1227,11 +1253,7 @@ export async function upsertLiveAction(formData: FormData) {
     redirect(invalidReferencePath);
   }
   const db = getDb();
-  const quotaMembershipIds = [
-    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
-    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
-  ];
-  const quotaPageIds = quotaPolicy.pageQuotas.map((quota) => quota.pageId);
+  const submittedQuotaPageIds = submittedQuotaPolicy.pageQuotas.map((quota) => quota.pageId);
   const references = await resolveSubmittedLiveReferences({
     db,
     vendorId: vendor.id,
@@ -1243,9 +1265,9 @@ export async function upsertLiveAction(formData: FormData) {
     liveReminderTemplateId: null,
     notificationRules,
     interactionScriptId,
-    defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
+    defaultAffiliateCode: submittedQuotaPolicy.defaultAffiliateCode,
     heroImageAssetId,
-    quotaPageIds,
+    quotaPageIds: submittedQuotaPageIds,
     invalidReferencePath,
   });
   const {
@@ -1262,6 +1284,12 @@ export async function upsertLiveAction(formData: FormData) {
     quotaPages,
   } = references;
   void ignoredSubmittedReminderTemplate;
+  const quotaPolicy = applyMvpLiveAffiliatePolicy(submittedQuotaPolicy, storedLiveQuotaPolicy(existingLive));
+  const quotaMembershipIds = [
+    ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
+    ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
+  ];
+  const quotaPageIds = quotaPolicy.pageQuotas.map((quota) => quota.pageId);
   const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
     db,
     vendorId: vendor.id,
@@ -1298,7 +1326,9 @@ export async function upsertLiveAction(formData: FormData) {
     templateMissing: messageTemplateId !== null && !messageTemplate,
     reminderTemplateMissing: authoritativeReminder.missing,
     scriptMissing: interactionScriptId !== null && !interactionScript,
-    affiliateMissing: isMissingDefaultAffiliate(quotaPolicy.defaultAffiliateCode, defaultAffiliate),
+    // The submitted code is the only new reference that requires validation.
+    // A legacy stored code is preserved above and never re-bound by this edit.
+    affiliateMissing: isMissingDefaultAffiliate(submittedQuotaPolicy.defaultAffiliateCode, defaultAffiliate),
     customMembershipMissing: hasInvalidCustomMembership || hasInvalidMemberQuota,
     quotaPageCount: quotaPages.length,
     expectedQuotaPageCount: new Set(quotaPageIds).size,
@@ -1464,20 +1494,32 @@ export async function upsertAffiliateAction(formData: FormData) {
   if (!commissionRate.success) {
     redirect("/affiliates?error=invalid_commission_rate");
   }
+  if (!id) {
+    redirect("/affiliates?error=affiliate_program_disabled");
+  }
+
+  const db = getDb();
+  const existing = await db.affiliate.findFirst({
+    where: { id, vendorId: vendor.id },
+    select: { id: true, commissionRateBps: true },
+  });
+  if (!existing) {
+    redirect("/affiliates?error=affiliate_not_found");
+  }
+  if (commissionRate.data !== existing.commissionRateBps) {
+    redirect(`/affiliates/${encodeURIComponent(id)}/edit?error=commission_rate_locked`);
+  }
   const data = {
     name: text(formData, "name"),
     code: text(formData, "code").toUpperCase(),
     source: optionalText(formData, "source"),
     contactEmail: optionalText(formData, "contactEmail"),
-    commissionRateBps: commissionRate.data,
+    // Do not write the rate at all: a concurrent approved accounting change
+    // must not be overwritten by an ordinary contact-information edit.
     isActive: formData.get("isActive") === "on",
   };
 
-  if (id) {
-    await getDb().affiliate.update({ where: { id, vendorId: vendor.id }, data });
-  } else {
-    await getDb().affiliate.create({ data: { ...data, vendorId: vendor.id } });
-  }
+  await db.affiliate.update({ where: { id, vendorId: vendor.id }, data });
 
   redirect("/affiliates");
 }

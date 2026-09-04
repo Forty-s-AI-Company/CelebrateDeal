@@ -14,6 +14,7 @@ import {
 } from "@/components/stream-allocation-editor";
 import { useLiveStudioDraft } from "@/components/use-live-studio-draft";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import { createLivePreview } from "@/lib/live-preview";
 import {
   getLivePublishReadiness,
@@ -490,14 +491,14 @@ function LiveRulesFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           允許聯盟來源
-          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
+          <select name="affiliateMode" disabled={!mvpCommissionPolicy.allowsNewAccrual("affiliate")} defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
             <option value="enabled">啟用 ref 追蹤</option>
             <option value="disabled">停用</option>
           </select>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           預設推廣碼
-          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-10 rounded-md border border-border px-3">
+          <select name="defaultAffiliateCode" disabled={!mvpCommissionPolicy.allowsNewAccrual("affiliate")} defaultValue={initialValues.defaultAffiliateCode} className="h-10 rounded-md border border-border px-3">
             <option value="">不指定</option>
             {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.code}>{affiliate.name} · {affiliate.code}</option>)}
           </select>
@@ -511,6 +512,13 @@ function LiveRulesFields({
           <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-10 rounded-md border border-border px-3" />
         </label>
       </div>
+      {!mvpCommissionPolicy.allowsNewAccrual("affiliate") ? (
+        <>
+          <input type="hidden" name="affiliateMode" value="disabled" />
+          <input type="hidden" name="defaultAffiliateCode" value="" />
+          <p className="text-sm text-slate-600">首發暫停新增聯盟推廣設定。新直播停用聯盟來源；既有直播的歷史設定由伺服器保留，一般直播與額度設定仍可編輯。</p>
+        </>
+      ) : null}
       <StreamAllocationEditor initialValues={initialValues} members={streamMembers} pages={streamPages} />
       <p className="flex items-start gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
         <Ban size={16} aria-hidden="true" className="mt-0.5 shrink-0" />

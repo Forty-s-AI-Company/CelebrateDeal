@@ -283,6 +283,15 @@ function showPublishPreview(tree: unknown) {
 }
 
 describe("LiveStepperForm", () => {
+  it("locks affiliate settings while retaining ordinary quota controls", () => {
+    const markup = renderToStaticMarkup(renderForm([]) as ReactElement);
+    expect(markup).toContain('name="affiliateMode" disabled=""');
+    expect(markup).toContain('name="defaultAffiliateCode" disabled=""');
+    expect(markup).toContain('type="hidden" name="affiliateMode" value="disabled"');
+    expect(markup).toContain("首發暫停新增聯盟推廣設定");
+    expect(markup).toContain('name="maxConcurrentViewers"');
+    expect(markup).toContain("Stream 用量與額度分配");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     hookState.cursor = 0;

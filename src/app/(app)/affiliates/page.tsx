@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, WalletCards } from "lucide-react";
+import { WalletCards } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -33,12 +33,11 @@ export default async function AffiliatesPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/affiliates/commissions" tone="secondary"><WalletCards size={16} />分潤報表</ButtonLink>
-            <ButtonLink href="/affiliates/new"><Plus size={16} />新增夥伴</ButtonLink>
           </div>
         }
       />
       {affiliates.length === 0 ? (
-        <EmptyState title="還沒有聯盟夥伴" description="建立推廣碼後，公開直播頁可透過 ref 參數追蹤來源。" action={<ButtonLink href="/affiliates/new">新增夥伴</ButtonLink>} />
+        <EmptyState title="還沒有聯盟夥伴" description="首發期間已停用新增聯盟夥伴；既有推廣碼、佣金與月結資料仍可查閱與處理。" />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
