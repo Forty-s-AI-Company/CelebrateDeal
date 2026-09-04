@@ -1,6 +1,7 @@
-const allowedTestPath = /^(?:src|scripts)\/[A-Za-z0-9_.()[\]/-]+\.test\.(?:[cm]?[jt]sx?)$/;
+const allowedTestPath = /^(?:src|scripts|tests)\/[A-Za-z0-9_.()[\]/-]+\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/;
 const failedTestStatus = "failed";
-const annotationPattern = /^::error file=(?:src|scripts)\/[A-Za-z0-9_.()[\]/-]+\.test\.(?:[cm]?[jt]sx?),line=[1-9]\d{0,5}::coverage stage=vitest status=failed$/;
+const annotationPattern = /^::error file=(?:src|scripts|tests)\/[A-Za-z0-9_.()[\]/-]+\.(?:test|spec)\.(?:[cm]?[jt]sx?),line=[1-9]\d{0,5}::coverage stage=vitest status=failed$/;
+const fixedRunFailureClasses = new Set(["unhandled", "startup_or_worker"]);
 
 function normalizedTestPath(value) {
   const relativePath = String(value ?? "").replaceAll("\\", "/");
@@ -26,7 +27,13 @@ export function formatSanitizedVitestFailureAnnotation({ relativeModuleId, line,
 export function sanitizedVitestFailureAnnotations(output) {
   return String(output ?? "")
     .split(/\r?\n/)
-    .filter((line) => annotationPattern.test(line));
+    .filter((line) => annotationPattern.test(line) || /^::error::coverage stage=vitest status=failed class=(?:unhandled|startup_or_worker)$/.test(line));
+}
+
+export function formatSanitizedVitestRunFailureAnnotation(failureClass) {
+  return fixedRunFailureClasses.has(failureClass)
+    ? `::error::coverage stage=vitest status=failed class=${failureClass}`
+    : null;
 }
 
 export class SanitizedCoverageGithubReporter {
@@ -37,6 +44,7 @@ export class SanitizedCoverageGithubReporter {
       ? optionsOrWrite
       : (value) => process.stdout.write(value);
     this.failedModules = new Set();
+    this.hasFailedModule = false;
   }
 
   onTestCaseResult(testCase) {
@@ -53,13 +61,26 @@ export class SanitizedCoverageGithubReporter {
   }
 
   onTestModuleEnd(testModule) {
-    if (testModule.state() !== failedTestStatus || this.failedModules.has(testModule.relativeModuleId)) return;
+    if (testModule.state() !== failedTestStatus) return;
+    this.hasFailedModule = true;
+    if (this.failedModules.has(testModule.relativeModuleId)) return;
     const annotation = formatSanitizedVitestFailureAnnotation({
       relativeModuleId: testModule.relativeModuleId,
       // Module import and setup failures do not have a test-case location.
       line: 1,
       status: failedTestStatus,
     });
+    if (annotation) this.write(`${annotation}\n`);
+  }
+
+  onTestRunEnd(_testModules, unhandledErrors, reason) {
+    if (reason !== failedTestStatus) return;
+    const failureClass = unhandledErrors.length > 0
+      ? "unhandled"
+      : !this.hasFailedModule
+        ? "startup_or_worker"
+        : null;
+    const annotation = formatSanitizedVitestRunFailureAnnotation(failureClass);
     if (annotation) this.write(`${annotation}\n`);
   }
 }

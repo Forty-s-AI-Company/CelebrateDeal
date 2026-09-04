@@ -18,18 +18,20 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 | Product/live creation, registration and viewing | NOT_PROVEN | Existing E2E inventory is not an execution result. |
 | Buyer checkout, callback and delivery | NOT_PROVEN | Verify current branch implementation, not another worktree's run. |
 | Refund, reconciliation, merchant settlement | NOT_PROVEN | Diagnose existing Sandbox transaction outcome before any repeat refund. |
-| Fixed SaaS plan payment and entitlement | NOT_PROVEN | Verify successful/failed/duplicate payment, refund and expiry. |
-| Disabled usage billing and commission accrual | PARTIAL | New commission webhook accrual is guarded; default-policy refund delegation and notices pass local tests. Creation/configuration entrypoints and complete DB regression remain pending. Usage billing changes remain under accounting review. |
+| Fixed SaaS plan payment and entitlement | FAIL | Refund review found full refunds can leave paid quota active; manual/query refund paths omit subscription projection. Correct shared transaction-bound refund projection and verify newer subscriptions are preserved. Actual Sandbox remains unverified. |
+| Disabled usage billing and commission accrual | PARTIAL | Server-side accrual, product/affiliate/live configuration guards and historical refund preservation pass scoped local tests. Reviewed billing correction is committed in `e9dfffc`; full DB/browser regression is still pending. |
 | Backup, monitoring and deployment recovery | NOT_PROVEN | Assess prior evidence applicability and recheck affected boundaries. |
 | Policies and operational responsibility | PENDING_HUMAN | Required decisions and acceptance cannot be signed by an agent. |
 
 ## Current blockers and work order
 
-1. P0: CI run `33850245516` failed at Production dependency audit. Reproduce advisory/dependency path; do not assume the old fast-uri finding remains the cause.
+1. P0: Exact candidate `d95331753cfc59aa744063635956b767033bc8d3`, CI `33856922240`, passed dependency installation/audit, lint, typecheck and strict index, then failed at unit tests/coverage. Available annotation reports exit 1 only; test failure versus threshold failure is not yet established.
 2. P0: Compare current branch with remote master `431e4f53df36bcf54f5fdc911175e9e10354f5f3`; selectively restore necessary security/product fixes, not the entire historical WP4 toolchain.
 3. P1: Implement first-release server-side exclusions and verify both retained business journeys.
 4. P2: Complete actual Sandbox payment/refund/reconciliation for product and fixed SaaS purposes through approved secure tasks only.
 5. P3: Verify minimum delivery, recovery, observability and operating responsibility, then audit the exact release candidate.
+
+Concrete accounting blocker: `payment-webhooks.ts` marks a fully refunded subscription but does not revoke its usage limits. Manual refund and `payuni-refund-reconciliation.ts` do not synchronize subscription or invoice status. The fix must share trusted, tenant-bound refund projection across completion paths, preserve partial-refund policy and never revoke a newer paid subscription.
 
 ## Verification and publication
 
@@ -64,6 +66,17 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 - No external resource, payment, refund, database, deployment or alias mutation has been executed in this checkpoint.
 
 ## Release decision
+
+### Current checkpoint, superseding historical in-progress notes above
+
+- Latest CI `33859530599` for `8ef054c` failed at the Vitest coverage stage. Sanitized annotations do not yet distinguish a test failure from runner failure; later DB concurrency, Browser, build and audit were not completed. The older `33856922240` audit PASS applies only to that source, not this candidate.
+- Current local integration: 22 suites / 562 tests passed for refund projection/recovery, source binding, fixed buyer/SaaS ops, checkout and synthetic owner session. Typecheck, strict-index, scoped lint and changed-source secret scan passed. Independent review confirmed known-purpose payment-mode conflicts fail closed and fixed Preview session does not alter ordinary login/MFA. These mocked results do not prove DB concurrency or actual provider behavior.
+- Older CI `33856503982` completed with sanitized `AUDIT_ENDPOINT_UNAVAILABLE`, high/critical counts unavailable. It does not supersede the current candidate's successful audit.
+- Branch PR `#137` is CLOSED and reports conflicts against master; it is not an available merge vehicle. No merge has been attempted.
+- P2 inspection found missing master PayUni protected ops routes and bracket-encoded query-response handling. Selective compatibility work must retain Sandbox-only execution and reject unverified refund statuses; no new transaction or refund has been requested.
+- Verified actual protected-master execution chain: workflow calls `secure:staging:wp4`, mapped to `scripts/mvp-payuni-sandbox-e2e.mjs`; its fixed purpose is `buyer_order`. The older `secure-staging-wp4-payuni.mjs` is not the active execution entrypoint. Fixed SaaS execution still needs implementation and actual evidence.
+- Local PayUni query checkpoint `c9a1a24` adds bracket response decoding and fixed Sandbox query validation. Main-agent and independent reviewer each verified 44 mocked tests; changed-file secret scan passed. This does not establish a provider refund outcome.
+- Human policy and operating decisions remain pending. Historical opaque receipt schemas are not additional MVP requirements; actual refund rules, policy applicability and assigned operating responsibility are still necessary.
 
 `MVP_RELEASE_CANDIDATE_READY=false`
 
