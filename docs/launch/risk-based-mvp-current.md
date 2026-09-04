@@ -4,6 +4,13 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Recovery `33890531304` finished with validated/uploaded v2 `UNRESOLVED / RECONCILIATION_DATABASE_TRANSACTION_FAILED`, stage `PAYMENT_ACCOUNTING`, elapsed band `FROM_5S_TO_15S`, query 1 and payment/refund submissions 0. Canonical local validator passed; receipt saved at `docs/ai-team/evidence/wp4-existing-refund-recovery-33890531304-receipt.json`. This locates the last attempted accounting stage, not an exact root cause or committed writes. No repeat provider query followed. Next work is a bounded synthetic DB reproduction of transaction budget/rollback behavior, preserving Serializable and accounting invariants. Local `docker ps` did not respond and its own query process was interrupted; Docker availability is not established.
+- Product CI `33888838096` passed both general and dedicated support Browser gates and is now in Build. These certify source `6fa8c763e749740775605f2f74c49c107a445f97`; final build/preflight/audit conclusions remain pending.
+
+- Fixed recovery run `33890531304` has been dispatched with the one-query budget below; receipt pending, do not dispatch a duplicate. Product CI `33888838096` passed its general Browser gate and is running the dedicated support Browser gate.
+
+- PR #199 merged normally to protected master `4912dc3409a35dfcf6e4d33b37eaa50c262433f2` after both exact-head CI and Preview checks passed. Scoped runner files match reviewed `b818030`, and master automatic deployment remains disabled. Next fixed recovery budget is one query, zero payment submissions, zero refund submissions against application source `6fa8c763e749740775605f2f74c49c107a445f97`, deployment `6267470823`, immutable host `celebrate-deal-staging-831qqry2n-a25814740s-projects.vercel.app`. Keep the historical transaction selector unchanged; stop after dispatch to inspect its validated sanitized receipt.
+
 - Diagnostic application Preview is now ready: non-Production staging deployment `6267470823`, source `6fa8c763e749740775605f2f74c49c107a445f97`, immutable host `celebrate-deal-staging-831qqry2n-a25814740s-projects.vercel.app`. Anonymous health HEAD returned 200 and unauthenticated recovery POST returned 401. PR #199's two CI runs are still in Browser gates; no further authenticated recovery query has been dispatched.
 
 - Published diagnostic application source is `6fa8c763e749740775605f2f74c49c107a445f97`; product CI `33888838096` is confirmed running. PR #199 exact-head checks are `33888378579` and `33888350885`, also running. The matching application Preview has not yet appeared in deployment metadata, so no additional recovery dispatch is ready. Latest actual provider evidence remains `33887710723` below.
