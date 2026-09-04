@@ -11,9 +11,10 @@
 ## 目前證據
 
 - 既有 Browser 與 local DB 測試涵蓋桌機／行動登入、商家商品與直播流程、demo checkout、付款結果頁、交付／查單／客服入口、SaaS subscription quota projection，以及跨租戶隔離。這些測試使用 synthetic fixture、demo callback 或 local projection；不能代替 PayUni、Resend、Cloudflare 或正式資料的證據。
-- source `6fa8c763e749740775605f2f74c49c107a445f97` 的完整 CI `33888838096` 已通過，包含一般／客服 Browser、PostgreSQL、coverage、build、preflight 與 audit。後續退款時間預算修正 source `d0562b84daf11753085f09bc8bf4dd9c10370194` 正由 CI `33891833255` 驗證；前一版的通過不等於這一版已通過。受保護 runner PR `#199` 已全數通過並合併至 master `4912dc3`。
-- 最新實際退款 receipt [33890531304](../ai-team/evidence/wp4-existing-refund-recovery-33890531304-receipt.json) 為 `UNRESOLVED / RECONCILIATION_DATABASE_TRANSACTION_FAILED`，最後階段 `PAYMENT_ACCOUNTING`，耗時區間 5～15 秒；query 1 次、付款／退款提交皆 0 次，尚不證明帳務已收斂。
-- [本機 PostgreSQL 證據](../ai-team/evidence/wp4-refund-transaction-budget-local-20260904.json) 已重現相同帳務查詢延遲在 5 秒預算下完整回滾、15 秒產品預算下完成且重跑不重複入帳；4 項 DB 與 72 項單元測試通過。這支持有界交易預算修正，仍不能取代更新後的 actual Sandbox 結果。
+- source `6fa8c763e749740775605f2f74c49c107a445f97` 的完整 CI `33888838096` 已通過，包含一般／客服 Browser、PostgreSQL、coverage、build、preflight 與 audit。後續 source `d0562b8` 的 CI `33891833255` 因商家邀請 Browser 首次逾時、重試才通過而失敗；門檻保持不變。MFA fixture 修正 source `8497ec1ad66a07b0a286585dc050915c998d0f67` 的 CI `33893997112` 正在執行，前版結果不等於新版通過。受保護 runner PR `#199` 已通過並合併至 master `4912dc3`。
+- 最新歷史退款 receipt [33892202197](../ai-team/evidence/wp4-existing-refund-recovery-33892202197-receipt.json) 已達 `RECONCILED / RECONCILED`，query 1 次、付款／退款提交皆 0 次；workflow 與本機 canonical validator 通過。這關閉固定歷史交易的退款恢復，不代表新的商品與 SaaS 全流程均已驗收。
+- [本機 PostgreSQL 證據](../ai-team/evidence/wp4-refund-transaction-budget-local-20260904.json) 已重現相同帳務查詢延遲在 5 秒預算下完整回滾、15 秒產品預算下完成且重跑不重複入帳；4 項 DB 與 72 項單元測試通過，修正後的歷史 Sandbox 查核也已收斂。
+- SaaS receipt [33892546107](../ai-team/evidence/wp4-subscription-33892546107-receipt.json) 為 `BLOCKED / CHECKOUT_REJECTED`，fixture／session 成功，但原生 checkout 尚未確認，付款／退款提交皆 0 次。已補齊固定 synthetic owner 缺少的 MFA factor，9 項單元測試與 1 項真實 PostgreSQL 測試通過；實際 SaaS 驗收待新版 Preview。
 
 ## 未完成與發布限制
 
