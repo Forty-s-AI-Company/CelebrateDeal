@@ -743,6 +743,53 @@ test("recovery preserves fixed query diagnostics without accepting raw provider 
   assert.equal(arbitrary.status, "RESPONSE_INVALID");
 });
 
+test("recovery preserves only fixed transaction stages and elapsed bands with zero submissions", async () => {
+  const status = "RECONCILIATION_DATABASE_TRANSACTION_FAILED";
+  for (const stage of ["TRANSACTION_START", "LOAD_TRANSACTION", "LOAD_RESERVATIONS", "LOAD_TOTALS", "RELEASE_RESERVATION", "UPDATE_RESERVATION", "UPDATE_TRANSACTION", "PLATFORM_PROJECTION", "PAYMENT_ACCOUNTING", "AUDIT", "COMMIT"]) {
+    for (const elapsedBucket of ["LT_5S", "FROM_5S_TO_15S", "GE_15S"]) {
+      const transactionFailure = { stage, elapsedBucket };
+      let calls = 0;
+      const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+        request: async () => { calls += 1; return response(503, { reconciled: false, status, transactionFailure }); },
+      });
+      assert.equal(calls, 1);
+      assert.equal(receipt.result, "UNRESOLVED");
+      assert.equal(receipt.paymentSubmissions, 0);
+      assert.equal(receipt.refundSubmissions, 0);
+      assert.deepEqual(receipt.transactionFailure, transactionFailure);
+      assert.notEqual(receipt.transactionFailure, transactionFailure);
+      assert.deepEqual(validateExistingRefundRecoveryReceipt(receipt), { ok: true, errors: [] });
+      assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, status: "RECONCILED", result: "RECONCILED" }).ok, false);
+      assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, queryAttempts: 0 }).ok, false);
+    }
+  }
+});
+
+test("recovery rejects arbitrary transaction diagnostics in responses and stored receipts", async () => {
+  const status = "RECONCILIATION_DATABASE_TRANSACTION_FAILED";
+  for (const transactionFailure of [
+    null, {}, { stage: "PAYMENT_ACCOUNTING" },
+    { stage: "must-not-escape", elapsedBucket: "LT_5S" },
+    { stage: "COMMIT", elapsedBucket: 5000 },
+    { stage: "COMMIT", elapsedBucket: "LT_5S", raw: "must-not-escape" },
+  ]) {
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+      request: async () => response(503, { reconciled: false, status, transactionFailure }),
+    });
+    assert.equal(receipt.status, "RESPONSE_INVALID");
+    assert.equal(Object.hasOwn(receipt, "transactionFailure"), false);
+    assert.equal(JSON.stringify(receipt).includes("must-not-escape"), false);
+    const forged = { ...createExistingRefundRecoveryReceipt(sourceSha), status, result: "UNRESOLVED", queryAttempts: 1, transactionFailure };
+    assert.equal(validateExistingRefundRecoveryReceipt(forged).ok, false);
+  }
+  for (const [httpStatus, otherStatus, reconciled] of [[200, "RECONCILED", true], [503, "RECONCILIATION_UNKNOWN_FAILED", false]]) {
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+      request: async () => response(httpStatus, { reconciled, status: otherStatus, transactionFailure: { stage: "COMMIT", elapsedBucket: "LT_5S" } }),
+    });
+    assert.equal(receipt.status, "RESPONSE_INVALID");
+  }
+});
+
 test("recovery receipt is separately validated and cannot gain payment or refund submissions", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp4-recovery-"));
   try {
