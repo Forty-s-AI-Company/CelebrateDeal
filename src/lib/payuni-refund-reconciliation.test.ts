@@ -103,7 +103,8 @@ describe("PayUni refund reconciliation", () => {
   it("records a fixed start-stage bucket for a P2028 without replacing the error", async () => {
     const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
     const error = new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code: "P2028", clientVersion: "test" });
-    const db = { $transaction: vi.fn().mockRejectedValue(error) };
+    const transaction = vi.fn().mockRejectedValue(error);
+    const db = { $transaction: transaction };
 
     await expect(reconcilePayUniRefund({
       db: db as never,
@@ -112,6 +113,10 @@ describe("PayUni refund reconciliation", () => {
       actor: { id: "admin-1", label: "platform_admin" },
       diagnostics,
     })).rejects.toBe(error);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 15_000,
+    });
     expect(diagnostics.transactionFailure).toMatchObject({ stage: "TRANSACTION_START", elapsedBucket: "LT_5S" });
   });
 

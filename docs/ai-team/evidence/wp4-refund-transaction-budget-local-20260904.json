@@ -1,0 +1,38 @@
+{
+  "scope": "payuni_refund_transaction_budget_local_reproduction",
+  "environment": "owned_loopback_postgresql",
+  "postgresqlVersion": "18.4",
+  "schemaProvisioning": "repository_migrations",
+  "providerOperations": 0,
+  "injectedAccountingDelayMs": 5500,
+  "shortBudgetMs": 5000,
+  "productBudgetMs": 15000,
+  "shortBudgetResult": "P2028_AND_ROLLBACK",
+  "productBudgetResult": "RECONCILED",
+  "repeatedResult": "ALREADY_RECONCILED_NO_DUPLICATE_AUDIT",
+  "delayedQueryCounts": [
+    1,
+    2,
+    2
+  ],
+  "databaseTests": {
+    "passed": 4,
+    "failed": 0
+  },
+  "unitTests": {
+    "passed": 72,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "typecheck": "PASS",
+  "secretScanFindings": 0,
+  "independentReview": "NO_BLOCKING_FINDINGS",
+  "ownedDatabaseProcess": "STOPPED",
+  "externalRootCause": "NOT_CONFIRMED",
+  "sourceNormalization": "LF",
+  "sourceDigests": {
+    "src/lib/payuni-refund-reconciliation.ts": "ecd7affd5777c6590d47512a7c07fbaa1c14ed9987c8584eec6355d1e1cd21b5",
+    "src/lib/payuni-refund-reconciliation.test.ts": "3ce65a26c9d9ed1bba61cfe467b8237c95c956b9c2dbb83eaab28f3c07c94292",
+    "src/lib/payuni-refund-ambiguous.db.test.ts": "3054af10d253c23f3a5a4b067cf4051740ef4d9eb5ffc4179058487cdeec02c4"
+  }
+}

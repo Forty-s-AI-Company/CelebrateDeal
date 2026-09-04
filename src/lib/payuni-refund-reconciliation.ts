@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import { Prisma, type PaymentTransaction, type PrismaClient, type RefundRecord } from "@prisma/client";
+
 import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
 import { applyPlatformRefundProjection } from "@/lib/platform-refund-projection";
 import type { PaymentQueryResult } from "@/lib/payment-providers/types";
+
+// Keep the multi-step accounting reconciliation inside one bounded transaction.
+const RECONCILIATION_TRANSACTION_TIMEOUT_MS = 15_000;
 
 export type RefundReconciliationDisposition = "reconciled" | "already_reconciled" | "provider_not_refunded";
 
@@ -307,7 +311,10 @@ export async function reconcilePayUniRefund(input: {
       processedRefundRecordCount: pending.length,
       refundedAmountCents: updated.refundedAmountCents,
     };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: RECONCILIATION_TRANSACTION_TIMEOUT_MS,
+    });
   } catch (error) {
     if (diagnostics && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028") {
       const elapsed = performance.now() - startedAt;

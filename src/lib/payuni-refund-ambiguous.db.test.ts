@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
+import { reconcilePayUniRefund, type RefundReconciliationDiagnostics } from "@/lib/payuni-refund-reconciliation";
 
 const db = new PrismaClient();
 const suffix = crypto.randomBytes(8).toString("hex");
@@ -26,6 +26,92 @@ afterAll(async () => {
 });
 
 describe("PayUni ambiguous refund disposable PostgreSQL", () => {
+  it("reproduces short-budget rollback, then succeeds with the product bounded transaction budget", async () => {
+    const transactionId = `g756_tx_latency_${suffix}`;
+    const refundId = `g756_refund_latency_${suffix}`;
+    await db.paymentTransaction.create({
+      data: {
+        id: transactionId,
+        vendorId,
+        providerName: "payuni",
+        providerTradeNo: `g756-trade-latency-${suffix}`,
+        orderNumber: `G756-LATENCY-${suffix}`,
+        grossAmountCents: 10_000,
+        netAmountCents: 10_000,
+        status: "paid",
+      },
+    });
+    await db.refundRecord.create({
+      data: {
+        id: refundId,
+        vendorId,
+        paymentTransactionId: transactionId,
+        providerEventId: `request:${"d".repeat(32)}`,
+        monthKey: "2026-08",
+        refundAmountCents: 10_000,
+        status: "pending",
+      },
+    });
+    const providerSnapshot = {
+      providerTradeNo: `g756-trade-latency-${suffix}`,
+      orderNumber: `G756-LATENCY-${suffix}`,
+      grossAmountCents: 10_000,
+      refundedAmountCents: 10_000,
+      remainingRefundableAmountCents: 0,
+      status: "refunded" as const,
+    };
+    let delayedQueries = 0;
+    const delayedDb = db.$extends({
+      query: {
+        affiliateCommission: {
+          async findFirst({ args, query }) {
+            delayedQueries += 1;
+            // Delay the real accounting query inside the active transaction.
+            await new Promise((resolve) => setTimeout(resolve, 5_500));
+            return query(args);
+          },
+        },
+      },
+    });
+    const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
+    const shortBudgetDb = {
+      ...delayedDb,
+      $transaction: <T>(callback: (tx: Prisma.TransactionClient) => Promise<T>, options: { isolationLevel?: Prisma.TransactionIsolationLevel }) =>
+        delayedDb.$transaction(callback as never, { ...options, timeout: 5_000 }),
+    };
+    await expect(reconcilePayUniRefund({
+      db: shortBudgetDb as never,
+      transactionId,
+      providerSnapshot,
+      actor: { id: "g7-56-finance", label: "platform_admin" },
+      diagnostics,
+    })).rejects.toMatchObject({ code: "P2028" });
+    expect(delayedQueries).toBe(1);
+    expect(diagnostics.transactionFailure).toMatchObject({ stage: "PAYMENT_ACCOUNTING", elapsedBucket: "FROM_5S_TO_15S" });
+    await expect(db.refundRecord.findUnique({ where: { id: refundId } })).resolves.toMatchObject({ status: "pending" });
+    await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({ status: "paid", refundedAmountCents: 0 });
+    await expect(db.auditLog.count({ where: { vendorId, targetId: transactionId } })).resolves.toBe(0);
+
+    await expect(reconcilePayUniRefund({
+      db: delayedDb as never,
+      transactionId,
+      providerSnapshot,
+      actor: { id: "g7-56-finance", label: "platform_admin" },
+    })).resolves.toMatchObject({ disposition: "reconciled", refundedAmountCents: 10_000 });
+    expect(delayedQueries).toBe(2);
+    await expect(db.refundRecord.findUnique({ where: { id: refundId } })).resolves.toMatchObject({ status: "processed" });
+    await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({ status: "refunded", refundedAmountCents: 10_000 });
+    await expect(db.auditLog.count({ where: { vendorId, targetId: transactionId, action: "reconcile_payuni_refund" } })).resolves.toBe(1);
+    await expect(reconcilePayUniRefund({
+      db: delayedDb as never,
+      transactionId,
+      providerSnapshot,
+      actor: { id: "g7-56-finance", label: "platform_admin" },
+    })).resolves.toMatchObject({ disposition: "already_reconciled" });
+    expect(delayedQueries).toBe(2);
+    await expect(db.auditLog.count({ where: { vendorId, targetId: transactionId, action: "reconcile_payuni_refund" } })).resolves.toBe(1);
+  }, 30_000);
+
   it("releases a paid transaction reservation only after a verified no-refund snapshot", async () => {
     const transactionId = `g756_tx_paid_${suffix}`;
     const refundId = `g756_refund_paid_${suffix}`;
