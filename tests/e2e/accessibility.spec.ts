@@ -299,7 +299,9 @@ test("mobile login succeeds after rejecting invalid email input", async ({ page 
 
   await expect(page).toHaveURL(/\/login$/);
   await expect.poll(() => email.evaluate((element) => (element as HTMLInputElement).validity.typeMismatch)).toBe(true);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Next.js also mounts a route announcer with role=alert outside main.
+  // This assertion concerns only the login page server-error message.
+  await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
 
   await email.fill(fixture.email);
   await page.getByRole("button", { name: "登入" }).click();
