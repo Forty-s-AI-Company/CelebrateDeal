@@ -6,6 +6,7 @@ import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { ensureWp4SandboxFixture, WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { retryWp4PayUniBuyerCallback, WP4_CURRENT_BUYER_CALLBACK_SOURCE_SHA } from "@/lib/wp4-payuni-buyer-callback-retry";
+import { readWp4BuyerContinuationState } from "@/lib/wp4-payuni-buyer-continuation-state";
 
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: vi.fn() }));
 
@@ -132,6 +133,14 @@ describe("WP4 fixed buyer callback retry PostgreSQL", () => {
     expect(second).toEqual({ status: "ALREADY_PROCESSED", retryAttempts: 0, failureCode: "NONE" });
     await expect(db.emailDelivery.count({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId } })).resolves.toBe(emailDeliveriesAfterFirst);
     await expect(db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).resolves.toMatchObject({ status: "processed", retryCount: 1 });
+    await expect(readWp4BuyerContinuationState(db)).resolves.toEqual({
+      status: "VERIFIED",
+      paymentStatus: "PAID",
+      orderPaid: true,
+      inventoryCommitted: true,
+      notificationQueued: true,
+      refundReconciled: false,
+    });
   });
 
   it("fails closed on a paid callback amount mismatch and preserves pending state", async () => {
