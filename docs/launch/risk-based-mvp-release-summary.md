@@ -11,7 +11,7 @@
 ## 目前證據
 
 - 既有 Browser 與 local DB 測試涵蓋桌機／行動登入、商家商品與直播流程、demo checkout、付款結果頁、交付／查單／客服入口、SaaS subscription quota projection，以及跨租戶隔離。這些測試使用 synthetic fixture、demo callback 或 local projection；不能代替 PayUni、Resend、Cloudflare 或正式資料的證據。
-- source `72e41910b1073603cf2848cc2fb0f7059374e11b` 的完整 CI `33902536007` 已通過，包含一般／客服 Browser、PostgreSQL、coverage、build、preflight 與 dependency audit；fail-on-flaky 門檻保持不變。這取代前一版 `1c21c2b` 的 MFA flaky 結果，並保留較早 `33894327280`、`33896586787` 的歷史適用範圍。Runner PR `#201` 已受保護合併；買家 continuation PR `#202` 的 Preview 已通過，quality checks 仍在執行。
+- source `72e41910b1073603cf2848cc2fb0f7059374e11b` 的完整 CI `33902536007` 已通過，包含一般／客服 Browser、PostgreSQL、coverage、build、preflight 與 dependency audit；fail-on-flaky 門檻保持不變。這取代前一版 `1c21c2b` 的 MFA flaky 結果，並保留較早 `33894327280`、`33896586787` 的歷史適用範圍。Runner PR `#201` 與 continuation PR `#202` 均通過完整 CI／Preview 並受保護合併；固定 continuation 已由合併後 master 執行成功。
 - 最新歷史退款 receipt [33892202197](../ai-team/evidence/wp4-existing-refund-recovery-33892202197-receipt.json) 已達 `RECONCILED / RECONCILED`，query 1 次、付款／退款提交皆 0 次；workflow 與本機 canonical validator 通過。這關閉固定歷史交易的退款恢復，不代表新的商品與 SaaS 全流程均已驗收。
 - [本機 PostgreSQL 證據](../ai-team/evidence/wp4-refund-transaction-budget-local-20260904.json) 已重現相同帳務查詢延遲在 5 秒預算下完整回滾、15 秒產品預算下完成且重跑不重複入帳；4 項 DB 與 72 項單元測試通過，修正後的歷史 Sandbox 查核也已收斂。
 - 補齊固定 synthetic owner MFA 後，SaaS receipt [33894511275](../ai-team/evidence/wp4-subscription-33894511275-receipt.json) 已達 `PASS / NONE`：原生 checkout、可信付款、方案／額度啟用、退款、對帳與退款後權限全部通過；付款與退款各 1 次、對帳 1 次、權限查核 2 次。Workflow 與本機 canonical validator 均通過，適用 source `8497ec1`。這取代先前 checkout 阻擋，尚不代表商品流程或 Production 驗收完成。
