@@ -10,16 +10,25 @@ import {
   finalizeMvpPayUniReceipt,
   isPayUniPaymentPageUrl,
   FIXED_PAYUNI_ENV,
+  EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+  EXISTING_REFUND_RECOVERY_SCHEMA,
   MVP_PAYUNI_SANDBOX_E2E_SCHEMA,
   SIDE_EFFECT_BUDGET,
   createReceipt,
   fixedCheckoutIdempotencyKey,
+  createExistingRefundRecoveryReceipt,
   readFixedInputs,
+  readExistingRefundRecoveryInputs,
+  recoverExistingWp4BuyerRefund,
   runMvpPayUniSandboxE2E,
+  validateExistingRefundRecoveryInvocation,
+  validateExistingRefundRecoveryReceipt,
   validateInvocation,
   validateMvpPayUniReceipt,
+  validateWrittenExistingRefundRecoveryReceipt,
   validateWrittenMvpPayUniReceipt,
   verifyMvpPayUniLineage,
+  writeExistingRefundRecoveryReceipt,
   writeMvpPayUniReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 
@@ -127,6 +136,11 @@ const validInput = Object.freeze({
   cardCvv: "123",
   payuniEnv: FIXED_PAYUNI_ENV,
 });
+const recoveryInput = Object.freeze({
+  sourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+  previewHost,
+  jobSecret: "test-job-secret",
+});
 
 function response(status, body, cookies = []) {
   return { status, body, cookies };
@@ -199,6 +213,85 @@ test("reads only the fixed documented process inputs", () => {
   });
   assert.deepEqual(Object.keys(input).sort(), ["cardCvv", "cardExpiry", "cardNumber", "jobSecret", "payuniEnv", "previewHost", "sourceSha"].sort());
   assert.equal(validateInvocation(input).ok, true);
+});
+
+test("recovery reads only source, Preview host, and job binding", () => {
+  const input = readExistingRefundRecoveryInputs({
+    CELEBRATEDEAL_SOURCE_SHA: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+    JOB_SECRET: "secret",
+    PAYUNI_SANDBOX_ONETIME_CARD_NO: "must-not-be-read",
+    PAYUNI_TEST_EXPIRY: "must-not-be-read",
+    PAYUNI_TEST_CVV: "must-not-be-read",
+  });
+  assert.deepEqual(Object.keys(input).sort(), ["jobSecret", "previewHost", "sourceSha"]);
+  assert.equal(validateExistingRefundRecoveryInvocation(input).ok, true);
+});
+
+test("fixed existing-refund recovery performs one reconcile query with zero payment or refund submissions", async () => {
+  const calls = [];
+  const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+    request: async (request) => {
+      calls.push(request);
+      assert.equal(request.url, `https://${previewHost}/api/admin/ops/payuni/wp4-reconcile`);
+      assert.deepEqual(request.headers, {
+        authorization: "Bearer test-job-secret",
+        "x-celebratedeal-source-sha": EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+      });
+      assert.equal(request.body, undefined);
+      return response(200, { reconciled: true, status: "RECONCILED" });
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(receipt.schemaVersion, EXISTING_REFUND_RECOVERY_SCHEMA);
+  assert.equal(receipt.result, "RECONCILED");
+  assert.equal(receipt.status, "RECONCILED");
+  assert.equal(receipt.queryAttempts, 1);
+  assert.equal(receipt.paymentSubmissions, 0);
+  assert.equal(receipt.refundSubmissions, 0);
+  assert.deepEqual(validateExistingRefundRecoveryReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("existing-refund recovery fails closed for unknown responses and never queries a wrong source", async () => {
+  const unknown = await recoverExistingWp4BuyerRefund(recoveryInput, {
+    request: async () => response(200, { reconciled: true, status: "UNKNOWN" }),
+  });
+  assert.equal(unknown.result, "BLOCKED");
+  assert.equal(unknown.status, "RESPONSE_INVALID");
+  assert.equal(unknown.queryAttempts, 1);
+  assert.equal(unknown.paymentSubmissions, 0);
+  assert.equal(unknown.refundSubmissions, 0);
+  assert.deepEqual(validateExistingRefundRecoveryReceipt(unknown), { ok: true, errors: [] });
+
+  let requests = 0;
+  const wrongSource = await recoverExistingWp4BuyerRefund({ ...recoveryInput, sourceSha: sourceSha }, {
+    request: async () => { requests += 1; throw new Error("must not run"); },
+  });
+  assert.equal(requests, 0);
+  assert.equal(wrongSource.result, "BLOCKED");
+  assert.equal(wrongSource.status, "INPUT_REJECTED");
+  assert.equal(wrongSource.queryAttempts, 0);
+  assert.equal(wrongSource.paymentSubmissions, 0);
+  assert.equal(wrongSource.refundSubmissions, 0);
+  assert.deepEqual(validateExistingRefundRecoveryReceipt(wrongSource), { ok: true, errors: [] });
+});
+
+test("recovery receipt is separately validated and cannot gain payment or refund submissions", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp4-recovery-"));
+  try {
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+      request: async () => response(409, { reconciled: false, status: "REFUND_NOT_CONFIRMED" }),
+    });
+    await writeExistingRefundRecoveryReceipt(receipt, temporaryRoot);
+    assert.equal(await validateWrittenExistingRefundRecoveryReceipt(temporaryRoot), true);
+
+    const invalid = createExistingRefundRecoveryReceipt();
+    invalid.paymentSubmissions = 1;
+    assert.equal(validateExistingRefundRecoveryReceipt(invalid).errors.includes("SUBMISSION_BUDGET"), true);
+  } finally {
+    assert.equal(path.dirname(temporaryRoot), os.tmpdir());
+    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 0 });
+  }
 });
 
 test("derives a stable UUID idempotency key from the exact source", () => {

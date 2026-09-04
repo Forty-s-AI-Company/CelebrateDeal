@@ -10,6 +10,7 @@ on:
         options:
           - wp2-readonly-restore
           - wp4-payuni-sandbox-reconciliation
+          - wp4-payuni-sandbox-refund-recovery
       source_sha:
         description: Exact 40-character Preview source SHA
         required: true
@@ -65,7 +66,7 @@ jobs:
         run: npm run secure:staging:contract
 
       - name: Validate fixed WP4 dispatch identity before secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -147,16 +148,16 @@ jobs:
           npm run secure:staging:wp2
 
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
         id: execute-wp4
         continue-on-error: true
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}
-          PAYUNI_TEST_EXPIRY: ${{ secrets.PAYUNI_TEST_EXPIRY }}
-          PAYUNI_TEST_CVV: ${{ secrets.PAYUNI_TEST_CVV }}
+          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO || '' }}
+          PAYUNI_TEST_EXPIRY: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_TEST_EXPIRY || '' }}
+          PAYUNI_TEST_CVV: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_TEST_CVV || '' }}
+          WP4_TASK: ${{ inputs.task }}
           PAYUNI_ENV: sandbox
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
@@ -177,11 +178,16 @@ jobs:
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
           if (!safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
-          process.stdout.write([
+          const destinations = [
             ["api.github.com", "443"],
             [deploymentHost, "443"],
-            ["sandbox-api.payuni.com.tw", "443"],
-          ].map((row) => row.join("\t")).join("\n") + "\n");
+          ];
+          if (process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation") {
+            destinations.push(["sandbox-api.payuni.com.tw", "443"]);
+          } else if (process.env.WP4_TASK !== "wp4-payuni-sandbox-refund-recovery") {
+            process.exit(2);
+          }
+          process.stdout.write(destinations.map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
           while IFS=$'\t' read -r host port; do
@@ -222,7 +228,11 @@ jobs:
           sudo ip6tables -A OUTPUT -o lo -j ACCEPT
           sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-          npm run secure:staging:wp4
+          if [ "$WP4_TASK" = "wp4-payuni-sandbox-refund-recovery" ]; then
+            node scripts/mvp-payuni-sandbox-e2e.mjs --recover-existing-refund
+          else
+            npm run secure:staging:wp4
+          fi
 
       - name: Validate sanitized WP2 receipt
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
@@ -235,6 +245,12 @@ jobs:
         env:
           RUNNER_TEMP: ${{ runner.temp }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-receipt
+
+      - name: Validate sanitized existing-refund recovery receipt
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-recovery-receipt
 
       - name: Upload sanitized receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -249,5 +265,5 @@ jobs:
         run: exit 2
 
       - name: Enforce fixed WP4 task success
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && steps.execute-wp4.outcome != 'success' }}
+        if: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery') && steps.execute-wp4.outcome != 'success' }}
         run: exit 2

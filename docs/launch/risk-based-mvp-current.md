@@ -25,7 +25,7 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Current blockers and work order
 
-1. P0: Published candidate `203bbf6af133d012e4144955e4a8117296453f01`, CI `33866230418`, passed the unit/coverage stage but failed release browser gates. GitHub annotations contain only exit 1 and no artifact was published; the failing case is NOT_PROVEN without reading raw logs. Add a minimal sanitized file/line/status reporter before the next CI run. Prior coverage-stage failures were missing API registry entries and the root action-file size limit; both were fixed without weakening tests. Local `97bccb8` adds trusted Preview payer-return origin handling, with 145 scoped tests passing; it is not yet pushed.
+1. P0: Published candidate `7e1f262fc9afa3c82a7bfe2a85541bfa026f009d`, CI `33868635390`, is running. This includes payer-return fix `97bccb8`, bounded buyer-runner integration `5f7fe65`, and sanitized Browser reporter `7e1f262`. Previous CI `33866230418` passed unit/coverage but failed Browser; its annotation only reported exit 1 and no artifact was published. The exact failing case remains NOT_PROVEN until actionable sanitized evidence is available. Reporter tests: 4 passed; full typecheck/strict-index passed after correcting test typing. No test threshold, retry setting or fail-on-flaky gate was weakened.
 2. P0: Compare current branch with remote master `431e4f53df36bcf54f5fdc911175e9e10354f5f3`; selectively restore necessary security/product fixes, not the entire historical WP4 toolchain.
 3. P1: Implement first-release server-side exclusions and verify both retained business journeys.
 4. P2: Complete actual Sandbox payment/refund/reconciliation for product and fixed SaaS purposes through approved secure tasks only.
@@ -38,6 +38,8 @@ Current buyer-runner integration is local only: fixed five-entity fixture, one b
 Latest retrieved historical provider receipt: secure workflow run `33766531639`, source `1052a46d002149b5c06104927ed0fab32b049214`, canonical buyer receipt reports `BLOCKED / RECONCILE_REJECTED`, one browser submission, one confirmed payment, one refund POST, zero confirmed refunds, and twelve reconciliation POSTs. This is old-source evidence, not current-source readiness. Prioritize query/recovery of that uncertain refund before fresh payment or refund submission. Retrieved only the sanitized receipt artifact, not raw logs or provider payloads.
 
 Local checkpoint `5f7fe65` contains the bounded buyer runner wiring. Full Node TAP contracts: 891 passed, zero failed/skipped. A minimal CI Playwright reporter is being added to expose only test file, line, fixed outcome/retry and aggregate counts, without titles/errors/attachments; fail-on-flaky, retry count and assertions are unchanged.
+
+Existing-refund recovery is implemented locally as a fixed protected task: only source `1052a46d002149b5c06104927ed0fab32b049214`, one empty POST to that Preview's reconciliation endpoint, no browser/card bindings and zero payment/refund submissions. Secure contracts: 46 passed; bounded security review accepted. The old Preview login and health HEAD checks returned 200 without redirects. This is preparation only: recovery has NOT been dispatched and the historical refund remains unconfirmed. Local dependency audit was interrupted after prolonged silence; it is NOT_PROVEN, not PASS. Public npm ping and empty advisory-query probes returned 200, which do not establish package audit results.
 
 ## Verification and publication
 

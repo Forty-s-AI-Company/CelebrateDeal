@@ -29,6 +29,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.task.options, [
     "wp2-readonly-restore",
     "wp4-payuni-sandbox-reconciliation",
+    "wp4-payuni-sandbox-refund-recovery",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -77,11 +78,11 @@ test("WP4 buyer runner verifies lineage before fixed bindings and cannot execute
   const chromium = steps.find((step) => step.name === "Preload Chromium before WP4 secret injection");
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
   assert.equal(wp4.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
-  assert.equal(wp4.env.PAYUNI_SANDBOX_ONETIME_CARD_NO, "${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}");
-  assert.equal(wp4.env.PAYUNI_TEST_EXPIRY, "${{ secrets.PAYUNI_TEST_EXPIRY }}");
-  assert.equal(wp4.env.PAYUNI_TEST_CVV, "${{ secrets.PAYUNI_TEST_CVV }}");
+  for (const binding of ["PAYUNI_SANDBOX_ONETIME_CARD_NO", "PAYUNI_TEST_EXPIRY", "PAYUNI_TEST_CVV"]) {
+    assert.equal(wp4.env[binding], "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets." + binding + " || '' }}");
+  }
   assert.equal(wp4.env.PAYUNI_ENV, "sandbox");
-  for (const forbiddenBinding of ["STAGING_DATABASE_URL", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "NEXT_PUBLIC_SUPABASE_URL"]) {
+  for (const forbiddenBinding of ["GITHUB_TOKEN", "STAGING_DATABASE_URL", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "NEXT_PUBLIC_SUPABASE_URL"]) {
     assert.equal(wp4.env[forbiddenBinding], undefined);
   }
   assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
@@ -94,4 +95,21 @@ test("WP4 buyer runner verifies lineage before fixed bindings and cannot execute
   assert.doesNotMatch(wp4.run, /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT_ID|HASH_KEY|HASH_IV)|NEXT_PUBLIC_SUPABASE_URL/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
+});
+
+test("existing-refund recovery uses one fixed command without card or browser setup", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const execute = steps.find((step) => step.id === "execute-wp4");
+  const preload = steps.find((step) => step.name === "Preload Chromium before WP4 secret injection");
+  const lineage = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
+  const validate = steps.find((step) => step.name === "Validate sanitized existing-refund recovery receipt");
+  assert.equal(preload.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}");
+  assert.match(lineage.if, /wp4-payuni-sandbox-refund-recovery/u);
+  assert.match(execute.if, /wp4-payuni-sandbox-refund-recovery/u);
+  assert.equal(execute.env.WP4_TASK, "${{ inputs.task }}");
+  assert.match(execute.run, /if \[ "\$WP4_TASK" = "wp4-payuni-sandbox-refund-recovery" \]; then\s+node scripts\/mvp-payuni-sandbox-e2e\.mjs --recover-existing-refund/u);
+  assert.match(execute.run, /if \(process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation"\) \{\s+destinations.push\(\["sandbox-api.payuni.com.tw", "443"\]\);/u);
+  assert.equal(validate.run, "node scripts/mvp-payuni-sandbox-e2e.mjs --validate-recovery-receipt");
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
 });

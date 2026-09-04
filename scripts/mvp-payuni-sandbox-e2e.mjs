@@ -14,6 +14,8 @@ const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
 export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e2e/v1";
 export const FIXED_PURPOSE = "buyer_order";
 export const FIXED_PAYUNI_ENV = "sandbox";
+export const EXISTING_REFUND_RECOVERY_SOURCE_SHA = "1052a46d002149b5c06104927ed0fab32b049214";
+export const EXISTING_REFUND_RECOVERY_SCHEMA = "celebratedeal-mvp-payuni-sandbox-refund-recovery/v1";
 export const FIXED_FIXTURE = Object.freeze({
   vendorId: "wp4_synthetic_vendor_v1",
   productId: "wp4_synthetic_product_v1",
@@ -117,6 +119,29 @@ const PAYUNI_PAYMENT_HOST = new URL(PAYUNI_UPP_URL).hostname;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
+const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME]);
+const RECOVERY_RECEIPT_KEYS = Object.freeze([
+  "schemaVersion",
+  "purpose",
+  "sourceSha",
+  "result",
+  "status",
+  "queryAttempts",
+  "paymentSubmissions",
+  "refundSubmissions",
+]);
+const RECOVERY_STATUSES = new Set([
+  "RECONCILED",
+  "FIXTURE_UNAVAILABLE",
+  "CANDIDATE_AMBIGUOUS",
+  "PENDING_RESERVATION_UNAVAILABLE",
+  "REFUND_NOT_CONFIRMED",
+  "PROJECTION_UNAVAILABLE",
+  "INPUT_REJECTED",
+  "NETWORK_REJECTED",
+  "RESPONSE_INVALID",
+]);
 
 /**
  * Converts Chromium's request-failure text into a fixed, non-sensitive
@@ -240,6 +265,18 @@ export function readFixedInputs(source = process.env) {
   };
 }
 
+/**
+ * This recovery path intentionally reads neither card nor provider bindings.
+ * It can only query the one historical, source-owned buyer refund candidate.
+ */
+export function readExistingRefundRecoveryInputs(source = process.env) {
+  return {
+    sourceSha: source.CELEBRATEDEAL_SOURCE_SHA,
+    previewHost: source.CELEBRATEDEAL_DEPLOYMENT_HOST,
+    jobSecret: source.JOB_SECRET,
+  };
+}
+
 export function validateInvocation(input) {
   const sourceSha = typeof input?.sourceSha === "string" ? input.sourceSha.trim().toLowerCase() : "";
   const previewHost = typeof input?.previewHost === "string" ? input.previewHost.trim().toLowerCase() : "";
@@ -262,6 +299,15 @@ export function validateInvocation(input) {
     cardExpiry,
     cardCvv,
   };
+}
+
+export function validateExistingRefundRecoveryInvocation(input) {
+  const sourceSha = typeof input?.sourceSha === "string" ? input.sourceSha.trim().toLowerCase() : "";
+  const previewHost = typeof input?.previewHost === "string" ? input.previewHost.trim().toLowerCase() : "";
+  if (sourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA || !PREVIEW_HOST.test(previewHost) || !requiredText(input?.jobSecret)) {
+    return { ok: false };
+  }
+  return { ok: true, sourceSha, previewHost, jobSecret: input.jobSecret };
 }
 
 /**
@@ -404,6 +450,53 @@ export function validateMvpPayUniReceipt(receipt) {
 }
 
 export const validateReceipt = validateMvpPayUniReceipt;
+
+export function createExistingRefundRecoveryReceipt() {
+  return {
+    schemaVersion: EXISTING_REFUND_RECOVERY_SCHEMA,
+    purpose: FIXED_PURPOSE,
+    sourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+    result: "BLOCKED",
+    status: "INPUT_REJECTED",
+    queryAttempts: 0,
+    paymentSubmissions: 0,
+    refundSubmissions: 0,
+  };
+}
+
+export function validateExistingRefundRecoveryReceipt(receipt) {
+  const errors = [];
+  if (!exactKeys(receipt, RECOVERY_RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
+  if (receipt?.schemaVersion !== EXISTING_REFUND_RECOVERY_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || receipt?.sourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA) {
+    errors.push("FIXED_IDENTITY");
+  }
+  if (!new Set(["RECONCILED", "UNRESOLVED", "BLOCKED"]).has(receipt?.result)) errors.push("RESULT");
+  if (!RECOVERY_STATUSES.has(receipt?.status)) errors.push("STATUS");
+  if (!boundedInteger(receipt?.queryAttempts, 1)) errors.push("QUERY_BUDGET");
+  if (receipt?.paymentSubmissions !== 0 || receipt?.refundSubmissions !== 0) errors.push("SUBMISSION_BUDGET");
+
+  const queriedStatuses = new Set([
+    "RECONCILED",
+    "FIXTURE_UNAVAILABLE",
+    "CANDIDATE_AMBIGUOUS",
+    "PENDING_RESERVATION_UNAVAILABLE",
+    "REFUND_NOT_CONFIRMED",
+    "PROJECTION_UNAVAILABLE",
+    "NETWORK_REJECTED",
+    "RESPONSE_INVALID",
+  ]);
+  if (receipt?.status === "INPUT_REJECTED") {
+    if (receipt?.result !== "BLOCKED" || receipt?.queryAttempts !== 0) errors.push("INPUT_SEQUENCE");
+  } else if (queriedStatuses.has(receipt?.status) && receipt?.queryAttempts !== 1) {
+    errors.push("QUERY_SEQUENCE");
+  }
+  if (receipt?.status === "RECONCILED" && receipt?.result !== "RECONCILED") errors.push("RECONCILED_RESULT");
+  if (["NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status) && receipt?.result !== "BLOCKED") errors.push("BLOCKED_RESULT");
+  if (["FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "PENDING_RESERVATION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "PROJECTION_UNAVAILABLE"].includes(receipt?.status) && receipt?.result !== "UNRESOLVED") {
+    errors.push("UNRESOLVED_RESULT");
+  }
+  return { ok: errors.length === 0, errors };
+}
 
 function fail(receipt, code) {
   receipt.result = "BLOCKED";
@@ -574,6 +667,53 @@ function guardedHeaders(invocation) {
     authorization: `Bearer ${invocation.jobSecret}`,
     "x-celebratedeal-source-sha": invocation.sourceSha,
   };
+}
+
+function recoveryResult(response) {
+  const expectedStatus = {
+    RECONCILED: 200,
+    FIXTURE_UNAVAILABLE: 404,
+    CANDIDATE_AMBIGUOUS: 409,
+    PENDING_RESERVATION_UNAVAILABLE: 409,
+    REFUND_NOT_CONFIRMED: 409,
+    PROJECTION_UNAVAILABLE: 503,
+  };
+  if (!response || !Number.isInteger(response.status) || !exactKeys(response.body, ["reconciled", "status"])) return null;
+  const status = response.body.status;
+  if (typeof response.body.reconciled !== "boolean" || !Object.hasOwn(expectedStatus, status) || response.status !== expectedStatus[status]) return null;
+  if ((status === "RECONCILED") !== response.body.reconciled) return null;
+  return status;
+}
+
+/**
+ * Performs one query-only recovery against the exact historical Preview.
+ * The endpoint may repair local reconciliation state after its provider query,
+ * but this command never creates a checkout, reserves payment, or sends a refund.
+ */
+export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
+  const receipt = createExistingRefundRecoveryReceipt();
+  const invocation = validateExistingRefundRecoveryInvocation(input);
+  if (!invocation.ok) return receipt;
+
+  const request = dependencies.request ?? defaultRequest;
+  receipt.queryAttempts = 1;
+  try {
+    const response = await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-reconcile"),
+      headers: guardedHeaders(invocation),
+      body: undefined,
+    });
+    const status = recoveryResult(response);
+    if (!status) {
+      receipt.status = "RESPONSE_INVALID";
+      return receipt;
+    }
+    receipt.status = status;
+    receipt.result = status === "RECONCILED" ? "RECONCILED" : "UNRESOLVED";
+  } catch {
+    receipt.status = "NETWORK_REJECTED";
+  }
+  return receipt;
 }
 
 function fixedBrowserEnvironment() {
@@ -861,21 +1001,43 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
   return finalizeMvpPayUniReceipt(receipt);
 }
 
-export async function writeMvpPayUniReceipt(receipt, runnerTemp) {
+function fixedReceiptPath(runnerTemp, receiptName) {
   if (typeof runnerTemp !== "string" || runnerTemp.trim().length === 0) throw new Error("RECEIPT_PATH_REJECTED");
+  if (!FIXED_RECEIPT_FILENAMES.has(receiptName)) throw new Error("RECEIPT_PATH_REJECTED");
   const directory = path.resolve(runnerTemp, RECEIPT_DIRECTORY);
-  const receiptPath = path.join(directory, RECEIPT_FILENAME);
+  return { directory, receiptPath: path.join(directory, receiptName) };
+}
+
+async function writeFixedReceipt(receipt, runnerTemp, receiptName) {
+  const { directory, receiptPath } = fixedReceiptPath(runnerTemp, receiptName);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
   return receiptPath;
 }
 
+export async function writeMvpPayUniReceipt(receipt, runnerTemp) {
+  return writeFixedReceipt(receipt, runnerTemp, RECEIPT_FILENAME);
+}
+
+export async function writeExistingRefundRecoveryReceipt(receipt, runnerTemp) {
+  return writeFixedReceipt(receipt, runnerTemp, RECOVERY_RECEIPT_FILENAME);
+}
+
 export async function validateWrittenMvpPayUniReceipt(runnerTemp) {
-  if (typeof runnerTemp !== "string" || runnerTemp.trim().length === 0) return false;
   try {
-    const receiptPath = path.resolve(runnerTemp, RECEIPT_DIRECTORY, RECEIPT_FILENAME);
+    const { receiptPath } = fixedReceiptPath(runnerTemp, RECEIPT_FILENAME);
     const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
     return validateMvpPayUniReceipt(receipt).ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function validateWrittenExistingRefundRecoveryReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, RECOVERY_RECEIPT_FILENAME);
+    const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+    return validateExistingRefundRecoveryReceipt(receipt).ok;
   } catch {
     return false;
   }
@@ -893,6 +1055,24 @@ async function main() {
     const valid = await validateWrittenMvpPayUniReceipt(runnerTemp);
     process.stdout.write(`mvp_payuni_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
     process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--validate-recovery-receipt") {
+    const valid = await validateWrittenExistingRefundRecoveryReceipt(runnerTemp);
+    process.stdout.write(`mvp_payuni_refund_recovery_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+    process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--recover-existing-refund") {
+    const receipt = await recoverExistingWp4BuyerRefund(readExistingRefundRecoveryInputs());
+    try {
+      await writeExistingRefundRecoveryReceipt(receipt, runnerTemp);
+      process.stdout.write(`mvp_payuni_refund_recovery=${receipt.result}; status=${receipt.status}\n`);
+      process.exitCode = receipt.result === "RECONCILED" ? 0 : 2;
+    } catch {
+      process.stdout.write("mvp_payuni_refund_recovery=BLOCKED; status=RESPONSE_INVALID\n");
+      process.exitCode = 2;
+    }
     return;
   }
   let receipt;
