@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "celebratedeal-cat10-human-owner-acceptance/v1",
+  "packetRef": "opaque:risk-mvp-acceptance-20260905",
+  "capturedAt": "2026-09-04T19:02:54Z",
+  "governanceVersion": "solo-founder-launch/v1",
+  "humanAttestation": true,
+  "responsibilities": [
+    {
+      "roleId": "merchant_owner",
+      "holderRef": "opaque:solo-founder-holder-20260905",
+      "scopeRef": "opaque:closed-pilot-merchant-scope",
+      "manualSignatureRef": "opaque:thread-attestation-20260905",
+      "decision": "ACCEPTED",
+      "checks": [
+        { "checkId": "owner_role_confirmed", "status": "PASS", "evidenceRef": "opaque:closed-pilot-owner-confirmation", "sanitized": true },
+        { "checkId": "onboarding_handoff_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-onboarding-handoff", "sanitized": true },
+        { "checkId": "merchant_impact_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-merchant-impact", "sanitized": true }
+      ]
+    },
+    {
+      "roleId": "support_operator",
+      "holderRef": "opaque:solo-founder-holder-20260905",
+      "scopeRef": "opaque:closed-pilot-support-scope",
+      "manualSignatureRef": "opaque:thread-attestation-20260905",
+      "decision": "ACCEPTED",
+      "checks": [
+        { "checkId": "support_queue_defined", "status": "PASS", "evidenceRef": "opaque:risk-mvp-support-intake", "sanitized": true },
+        { "checkId": "severity_path_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-severity-path", "sanitized": true },
+        { "checkId": "escalation_owner_confirmed", "status": "PASS", "evidenceRef": "opaque:closed-pilot-owner-confirmation", "sanitized": true }
+      ]
+    },
+    {
+      "roleId": "finance_owner",
+      "holderRef": "opaque:solo-founder-holder-20260905",
+      "scopeRef": "opaque:closed-pilot-finance-scope",
+      "manualSignatureRef": "opaque:thread-attestation-20260905",
+      "decision": "ACCEPTED",
+      "checks": [
+        { "checkId": "sandbox_boundary_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-sandbox-results", "sanitized": true },
+        { "checkId": "refund_handoff_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-refund-sop", "sanitized": true },
+        { "checkId": "reconciliation_gap_acknowledged", "status": "PASS", "evidenceRef": "opaque:risk-mvp-reconciliation-results", "sanitized": true }
+      ]
+    },
+    {
+      "roleId": "privacy_policy_owner",
+      "holderRef": "opaque:solo-founder-holder-20260905",
+      "scopeRef": "opaque:closed-pilot-policy-scope",
+      "manualSignatureRef": "opaque:thread-attestation-20260905",
+      "decision": "ACCEPTED",
+      "checks": [
+        { "checkId": "privacy_review_assigned", "status": "PASS", "evidenceRef": "opaque:closed-pilot-owner-confirmation", "sanitized": true },
+        { "checkId": "data_request_path_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-data-request-path", "sanitized": true },
+        { "checkId": "retention_review_assigned", "status": "PASS", "evidenceRef": "opaque:risk-mvp-retention-policy", "sanitized": true }
+      ]
+    },
+    {
+      "roleId": "release_owner",
+      "holderRef": "opaque:solo-founder-holder-20260905",
+      "scopeRef": "opaque:closed-pilot-release-scope",
+      "manualSignatureRef": "opaque:thread-attestation-20260905",
+      "decision": "ACCEPTED",
+      "checks": [
+        { "checkId": "all_owner_packets_reviewed", "status": "PASS", "evidenceRef": "opaque:risk-mvp-owner-packet", "sanitized": true },
+        { "checkId": "blockers_aggregated", "status": "PASS", "evidenceRef": "opaque:risk-mvp-completion-audit", "sanitized": true },
+        { "checkId": "release_decision_recorded", "status": "PASS", "evidenceRef": "opaque:closed-pilot-owner-confirmation", "sanitized": true }
+      ]
+    }
+  ],
+  "policyReview": {
+    "terms": "ACCEPTED",
+    "privacy": "ACCEPTED",
+    "refunds": "ACCEPTED",
+    "retention": "ACCEPTED",
+    "dataRequest": "ACCEPTED"
+  },
+  "supportEscalation": {
+    "intakeDefined": true,
+    "severityPathDefined": true,
+    "escalationOwnerConfirmed": true,
+    "evidenceRef": "opaque:risk-mvp-support-escalation"
+  },
+  "legalComplianceSelfReview": true,
+  "notIndependentLegalCounsel": true,
+  "releaseDecision": "GO",
+  "productionApproval": false,
+  "sanitized": true,
+  "sensitiveDataPersisted": false
+}

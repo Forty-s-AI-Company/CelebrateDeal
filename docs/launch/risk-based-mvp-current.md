@@ -4,6 +4,8 @@ Updated: 2026-09-05 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Human owner acceptance is complete for the small closed pilot. The user explicitly accepted the current pilot policy and assumed support, finance, privacy/policy and release responsibility; under the existing solo-founder model the same opaque holder also carries merchant-owner responsibility for this scope. Canonical receipt `docs/ai-team/evidence/risk-mvp-human-owner-acceptance-receipt.json` validates as `PASS / CANDIDATE`; all five roles, 15 checks, five policy areas and support escalation are accepted. This is a self-review rather than independent legal counsel and keeps `productionApproval=false`. With the technical evidence below already complete, `MVP_RELEASE_CANDIDATE_READY=true` for the small closed pilot. Production deployment and formal sales remain separately unapproved.
+
 - Fixed buyer continuation `33905042609` completed SUCCESS with a canonical validated/uploaded receipt: `PASS / NONE`, exact app source `72e41910b1073603cf2848cc2fb0f7059374e11b`, original transaction source `8497ec1ad66a07b0a286585dc050915c998d0f67`. Initial paid state, one refund, one reconciliation query and final refunded state all passed; state POSTs 2, refund/provider-refund submissions 1, payment submissions 0. Saved `docs/ai-team/evidence/wp4-buyer-existing-continuation-33905042609-receipt.json`; local canonical validator passed. PR #202 passed both full CIs and Previews and was normally squash-merged to protected master `61abd3c`; the merged runner/workflow matched the reviewed files and master automatic deployment remains disabled. This closes the actual buyer Sandbox payment/callback/refund/reconciliation requirement. Never retry this refund or callback. Exact app CI `33902536007` is also SUCCESS. Remaining release blocker is human policy/operating acceptance; external provider and recovery evidence retains the explicitly bounded non-Production scope below.
 
 - Fixed buyer continuation runner is published as PR #202, head `c3bc84c78216c9afa72fe78dc56803fde1123722`, with CI `33903332232` confirmed running. It verifies PAID state, makes at most one refund, performs at most 12 queries only repeating REFUND_NOT_CONFIRMED, then verifies REFUNDED state; zero checkout/payment/callback retries. Exact response keys, phase/counter consistency, conservative network budgets and canonical receipt-before-write checks are tested. Sixty-five runner/workflow tests, scoped ESLint, four-file secret scan and narrow security review passed. New isolated workflow steps retain lineage-before-JOB and fixed egress; existing tasks unchanged. No actual continuation has executed. App CI `33902536007` is still running in PostgreSQL concurrency tests. Wait for protected PR checks/merge and retain verified app source `72e4191` before execution.
@@ -176,7 +178,7 @@ Updated: 2026-09-05 (Asia/Taipei). This checkpoint describes the approved launch
 - Historical `146f8db` provider receipts report Cloudflare, Resend, Sentry notification, PostHog and durable rate-limit PASS. Backup/isolated restore and alias rollback receipts also report PASS. Direct source snapshot comparison found no provider implementation or schema/migration changes, but payment, quota, billing and CI/secure-runner paths changed. Reuse is limited to those unchanged historical provider capabilities and recovery-drill evidence; it does not establish current payment delivery, runtime bindings, current backup availability or current-source execution. Production remains unverified.
 - Policy applicability, refund rules and named operating responsibilities remain `PENDING_HUMAN`; an agent cannot supply human acceptance.
 
-This section takes precedence over older in-progress observations retained below. All release-readiness flags remain false and `releaseDecision=NO_GO`.
+The latest verified checkpoint takes precedence over the historical observations retained here. Current flags are `MVP_RELEASE_CANDIDATE_READY=true`, `PAYMENT_RECONCILIATION_READY=true`, `SANDBOX_READY=true`, `PRODUCTION_READY=false`; the scoped closed-pilot decision is `GO` while Production remains `NO_GO`.
 
 ## Release scope
 
@@ -193,17 +195,17 @@ This section takes precedence over older in-progress observations retained below
 | Merchant invitation, login, MFA | PASS (bounded non-Production evidence) | Exact source `72e4191` CI `33902536007` passed both Browser gates and every required CI step. Action tests prove invitation creates the tenant-bound member and calls the reset sender; reset tests and Browser prove token consumption, password replacement and login/MFA, while historical unchanged-source Resend capability passed. No single test reads a delivered external invitation and completes acceptance, so Production delivery remains separately gated. |
 | Product/live creation, registration and viewing | PASS (current CI) | Exact source `72e4191` CI `33902536007` passed core Browser, build and release gates. Historical provider capability receipts retain their original source and documented scope. |
 | Buyer checkout, callback and delivery | PASS (Sandbox source 8497ec1) | The single submitted buyer transaction recovered in `33902802436`; continuation `33905042609` verified exact paid order, committed inventory and queued notification before refund, with zero new payment submissions. Current CI Browser tests cover safe delivery projection and refund revocation. Queued notification is not external inbox delivery proof; never retry the processed callback. |
-| Refund, reconciliation, merchant settlement | PARTIAL | Historical refund `33892202197`, actual SaaS refund `33894511275`, and same-order buyer refund/reconciliation `33905042609` all passed. The buyer run used one provider refund and one query, then verified exact REFUNDED state. Settlement policy and named operating-owner acceptance remain pending. |
+| Refund, reconciliation, merchant settlement | PASS (closed-pilot scope) | Historical refund `33892202197`, actual SaaS refund `33894511275`, and same-order buyer refund/reconciliation `33905042609` all passed. The buyer run used one provider refund and one query, then verified exact REFUNDED state. The human finance/support/release owner accepted the current pilot policy and operating responsibility. |
 | Fixed SaaS plan payment and entitlement | PASS (Sandbox source 8497ec1) | Actual run `33894511275` validated native checkout, payment, active entitlement/quota, refund, reconciliation and refunded entitlement; one payment/refund each. This does not approve Production or certify later source changes automatically. |
 | Disabled usage billing and commission accrual | PASS (current CI) | Server-boundary and legacy-refund tests plus exact source `72e4191` full CI passed. No threshold or assertion was relaxed. |
 | Backup, monitoring and deployment recovery | PASS (bounded non-Production evidence) | Historical `146f8db` provider, isolated restore and rollback/forward receipts passed; the applicable provider/recovery implementations are unchanged and the exact current CI passed the current runtime contracts. Evidence remains non-Production and does not approve Production bindings. |
-| Policies and operational responsibility | PENDING_HUMAN | Required decisions and acceptance cannot be signed by an agent. |
+| Policies and operational responsibility | PASS (closed-pilot scope) | Human acceptance receipt validates `CANDIDATE` for all five solo-founder roles, 15 checks, current terms/privacy/refund/retention/data-request policy and support escalation. It is not independent legal counsel or Production approval. |
 
 ## Current blockers and work order
 
 1. Completed technical gate: exact app CI `33902536007` passed. PR #202 passed two full CIs and both Previews, merged to protected master `61abd3c`, and fixed continuation `33905042609` passed with one refund/query and zero payments. Buyer and SaaS Sandbox payment/refund/reconciliation requirements are closed; never repeat these financial operations.
 2. Completed bounded P3 evidence: latest `146f8db` provider, restore and alias rollback/forward receipts remain valid within their original non-Production scope; applicable implementations are unchanged and current contracts passed. The older WP191 marker failure does not invalidate the later successful drill.
-3. Remaining blocker: human acceptance of policy applicability and named support, finance, privacy/policy and release responsibilities. No acceptance is inferred. Keep Production deployment separately gated.
+3. Human gate closed: the user accepted the small closed-pilot policy and assumed the required solo-founder responsibilities. The canonical receipt passed. Production deployment, bindings and formal sales remain separately gated and are outside this MVP acceptance.
 
 Previously identified accounting defect: full subscription refunds could retain paid quota, and manual/query completion omitted platform projections. The shared projection fix now has local tests and actual SaaS Sandbox payment/refund/reconciliation/entitlement PASS (`33894511275`).
 
@@ -277,14 +279,16 @@ New CI outcomes supersede the in-progress notes above: `33868635390` failed sole
 - Local PayUni query checkpoint `c9a1a24` adds bracket response decoding and fixed Sandbox query validation. Main-agent and independent reviewer each verified 44 mocked tests; changed-file secret scan passed. This does not establish a provider refund outcome.
 - Human policy and operating decisions remain pending. Historical opaque receipt schemas are not additional MVP requirements; actual refund rules, policy applicability and assigned operating responsibility are still necessary.
 
-`MVP_RELEASE_CANDIDATE_READY=false`
+`MVP_RELEASE_CANDIDATE_READY=true`
 
-`PAYMENT_RECONCILIATION_READY=false`
+`PAYMENT_RECONCILIATION_READY=true`
 
-`SANDBOX_READY=false`
+`SANDBOX_READY=true`
 
 `PRODUCTION_READY=false`
 
-`releaseDecision=NO_GO`
+`releaseDecision=GO` (small closed pilot only)
+
+`productionReleaseDecision=NO_GO`
 
 Post-launch: usage billing, affiliate/team commission activation, non-core integrations, exhaustive governance receipts. Deferral does not permit unsafe residual endpoints or conceal existing financial obligations.
