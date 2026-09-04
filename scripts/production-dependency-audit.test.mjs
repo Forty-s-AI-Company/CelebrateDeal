@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { summarizeAudit } from "./production-dependency-audit.mjs";
 
 const output = (high, critical) => JSON.stringify({ metadata: { vulnerabilities: { high, critical } } });
+test("CI retains a mandatory audit after the product verification steps", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const audit = "      - name: Production dependency audit";
+  assert.equal(workflow.split(audit).length, 2);
+  assert.ok(workflow.indexOf(audit) > workflow.indexOf("      - name: Preflight"));
+  assert.equal(workflow.slice(workflow.indexOf(audit)).trim(),
+    `${audit.trim()}\n        run: node scripts/production-dependency-audit.mjs`);
+});
 test("passes only a successful complete audit without High/Critical findings", () => {
   assert.equal(summarizeAudit({ status: 0, stdout: output(0, 0) }).exitCode, 0);
   for (const status of [1, null]) assert.equal(summarizeAudit({ status, stdout: output(0, 0) }).exitCode, 1);

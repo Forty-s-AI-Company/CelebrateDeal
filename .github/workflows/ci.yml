@@ -53,9 +53,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Production dependency audit
-        run: node scripts/production-dependency-audit.mjs
-
       - name: Repository secret and archive scan
         run: npm run secret:scan
 
@@ -164,3 +161,8 @@ jobs:
 
       - name: Preflight
         run: NODE_ENV=production npm run preflight
+
+      # Keep this required: a registry outage must fail CI, but should not
+      # prevent earlier local-only tests from identifying product regressions.
+      - name: Production dependency audit
+        run: node scripts/production-dependency-audit.mjs
