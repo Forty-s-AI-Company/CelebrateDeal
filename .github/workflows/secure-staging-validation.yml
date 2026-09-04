@@ -54,8 +54,26 @@ jobs:
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
         run: docker pull postgres:17-alpine
 
+      # Browser binaries are fetched before the secret-aware WP4 step. The
+      # execution step below is therefore the only step that receives the
+      # fixed Sandbox browser and job bindings.
+      - name: Preload Chromium before WP4 secret injection
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        run: npx playwright install --with-deps chromium
+
       - name: Verify secure runner contract
         run: npm run secure:staging:contract
+
+      - name: Validate fixed WP4 dispatch identity before secret injection
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+        run: |
+          set -euo pipefail
+          node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
       - name: Execute fixed WP2 task with bounded egress
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
@@ -134,18 +152,19 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           GITHUB_TOKEN: ${{ github.token }}
-          PAYUNI_MERCHANT_ID: ${{ secrets.PAYUNI_MERCHANT_ID }}
-          PAYUNI_HASH_KEY: ${{ secrets.PAYUNI_HASH_KEY }}
-          PAYUNI_HASH_IV: ${{ secrets.PAYUNI_HASH_IV }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO }}
+          PAYUNI_TEST_EXPIRY: ${{ secrets.PAYUNI_TEST_EXPIRY }}
+          PAYUNI_TEST_CVV: ${{ secrets.PAYUNI_TEST_CVV }}
+          PAYUNI_ENV: sandbox
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: |
           set -euo pipefail
 
           firewall_backup="$RUNNER_TEMP/celebratedeal-wp4-iptables.rules"
+          firewall6_backup="$RUNNER_TEMP/celebratedeal-wp4-ip6tables.rules"
           hosts_backup="$RUNNER_TEMP/celebratedeal-wp4-hosts.original"
           destinations="$RUNNER_TEMP/celebratedeal-wp4-egress.tsv"
           hosts_file="$RUNNER_TEMP/celebratedeal-wp4-hosts"
@@ -153,18 +172,14 @@ jobs:
           : > "$hosts_file"
 
           node <<'NODE' > "$destinations"
-          const required = ["STAGING_DATABASE_URL", "CELEBRATEDEAL_DEPLOYMENT_HOST"];
+          const required = ["CELEBRATEDEAL_DEPLOYMENT_HOST"];
           if (required.some((key) => !process.env[key])) process.exit(2);
-          const database = new URL(process.env.STAGING_DATABASE_URL);
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
-          if (!safeHost.test(database.hostname) || !safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
-          const port = database.port || "5432";
-          if (!/^\d{2,5}$/u.test(port)) process.exit(2);
+          if (!safeHost.test(deploymentHost) || !deploymentHost.endsWith(".vercel.app")) process.exit(2);
           process.stdout.write([
             ["api.github.com", "443"],
             [deploymentHost, "443"],
-            [database.hostname, port],
             ["sandbox-api.payuni.com.tw", "443"],
           ].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
@@ -181,11 +196,13 @@ jobs:
           done < "$destinations"
 
           sudo iptables-save > "$firewall_backup"
+          sudo ip6tables-save > "$firewall6_backup"
           sudo cp /etc/hosts "$hosts_backup"
           restore_network() {
             sudo iptables-restore < "$firewall_backup"
+            sudo ip6tables-restore < "$firewall6_backup"
             sudo cp "$hosts_backup" /etc/hosts
-            rm -f "$firewall_backup" "$hosts_backup" "$destinations" "$hosts_file"
+            rm -f "$firewall_backup" "$firewall6_backup" "$hosts_backup" "$destinations" "$hosts_file"
           }
           trap restore_network EXIT
 
@@ -200,6 +217,10 @@ jobs:
           while IFS=$'\t' read -r _host address port; do
             sudo iptables -A OUTPUT -p tcp -d "$address" --dport "$port" -j ACCEPT
           done < "$hosts_file"
+          sudo ip6tables -F OUTPUT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
           npm run secure:staging:wp4
 
@@ -212,8 +233,8 @@ jobs:
       - name: Validate sanitized WP4 receipt
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         env:
-          SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-sandbox-reconciliation-receipt.json
-        run: node --import tsx scripts/validate-secure-staging-wp4-receipt.mjs "$SECURE_RECEIPT_PATH"
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-receipt
 
       - name: Upload sanitized receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

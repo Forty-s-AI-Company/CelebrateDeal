@@ -18,20 +18,22 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 | Product/live creation, registration and viewing | NOT_PROVEN | Existing E2E inventory is not an execution result. |
 | Buyer checkout, callback and delivery | NOT_PROVEN | Verify current branch implementation, not another worktree's run. |
 | Refund, reconciliation, merchant settlement | NOT_PROVEN | Diagnose existing Sandbox transaction outcome before any repeat refund. |
-| Fixed SaaS plan payment and entitlement | FAIL | Refund review found full refunds can leave paid quota active; manual/query refund paths omit subscription projection. Correct shared transaction-bound refund projection and verify newer subscriptions are preserved. Actual Sandbox remains unverified. |
+| Fixed SaaS plan payment and entitlement | PARTIAL | Shared tenant-bound refund projection now covers webhook, manual completion and query reconciliation; scoped local tests cover newer-subscription preservation. Actual Sandbox payment/refund and quota projection remain unverified. The payer return page currently shows buyer-only details; an owner must view authenticated billing for subscription state. |
 | Disabled usage billing and commission accrual | PARTIAL | Server-side accrual, product/affiliate/live configuration guards and historical refund preservation pass scoped local tests. Reviewed billing correction is committed in `e9dfffc`; full DB/browser regression is still pending. |
 | Backup, monitoring and deployment recovery | NOT_PROVEN | Assess prior evidence applicability and recheck affected boundaries. |
 | Policies and operational responsibility | PENDING_HUMAN | Required decisions and acceptance cannot be signed by an agent. |
 
 ## Current blockers and work order
 
-1. P0: Exact candidate `d95331753cfc59aa744063635956b767033bc8d3`, CI `33856922240`, passed dependency installation/audit, lint, typecheck and strict index, then failed at unit tests/coverage. Available annotation reports exit 1 only; test failure versus threshold failure is not yet established.
+1. P0: Published candidate `203bbf6af133d012e4144955e4a8117296453f01`, CI `33866230418`, passed the unit/coverage stage but failed release browser gates. GitHub annotations contain only exit 1 and no artifact was published; the failing case is NOT_PROVEN without reading raw logs. Add a minimal sanitized file/line/status reporter before the next CI run. Prior coverage-stage failures were missing API registry entries and the root action-file size limit; both were fixed without weakening tests. Local `97bccb8` adds trusted Preview payer-return origin handling, with 145 scoped tests passing; it is not yet pushed.
 2. P0: Compare current branch with remote master `431e4f53df36bcf54f5fdc911175e9e10354f5f3`; selectively restore necessary security/product fixes, not the entire historical WP4 toolchain.
 3. P1: Implement first-release server-side exclusions and verify both retained business journeys.
 4. P2: Complete actual Sandbox payment/refund/reconciliation for product and fixed SaaS purposes through approved secure tasks only.
 5. P3: Verify minimum delivery, recovery, observability and operating responsibility, then audit the exact release candidate.
 
-Concrete accounting blocker: `payment-webhooks.ts` marks a fully refunded subscription but does not revoke its usage limits. Manual refund and `payuni-refund-reconciliation.ts` do not synchronize subscription or invoice status. The fix must share trusted, tenant-bound refund projection across completion paths, preserve partial-refund policy and never revoke a newer paid subscription.
+Previously identified accounting defect: full subscription refunds could retain paid quota, and manual/query completion omitted platform projections. The shared projection fix is implemented and locally tested. Remaining acceptance is actual Sandbox payment/refund/reconciliation and associated subscription/quota state; local tests are not provider evidence.
+
+Current buyer-runner integration is local only: fixed five-entity fixture, one browser submit with ambiguous confirmation stopping, no automatic PayUni form redirects, a minimal Chromium environment, and preserved operation counters when receipt validation fails. The existing protected workflow is wired to this buyer path, with Preview verification before job/card bindings and bounded IPv4/IPv6 egress. Secure contracts: 41 passed; typecheck and strict-index passed. No workflow dispatch or provider side effect occurred. SaaS actual execution is still pending and is not covered by this buyer-only runner.
 
 ## Verification and publication
 
