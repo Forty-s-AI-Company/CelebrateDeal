@@ -5,6 +5,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  retryFixedWp4BuyerCallback,
+  validateBuyerCallbackRetryReceipt,
+  writeBuyerCallbackRetryReceipt,
+  validateWrittenBuyerCallbackRetryReceipt,
   checkExistingWp4BuyerPayment,
   validateBuyerPaymentCheckReceipt,
   BUYER_PAYMENT_CHECK_SOURCE_SHA,
@@ -44,6 +48,56 @@ import {
   writeMvpPayUniReceipt,
   writeMvpPayUniSubscriptionReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
+
+test("fixed callback replay submits one empty request and validates persisted bounded evidence", async () => {
+  let calls = 0;
+  const receipt = await retryFixedWp4BuyerCallback({ sourceSha: "b".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" }, {
+    request: async (request) => {
+      calls++;
+      assert.equal(request.url, "https://fixed-preview.vercel.app/api/admin/ops/payuni/wp4-buyer-callback-retry");
+      assert.equal(request.body, undefined);
+      return { status: 200, body: { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" } };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.transactionSourceSha, BUYER_PAYMENT_CHECK_SOURCE_SHA);
+  assert.equal(validateBuyerCallbackRetryReceipt(receipt).ok, true);
+  for (const patch of [{ retryAttempts: 0 }, { queryAttempts: 1 }, { paymentSubmissions: 1 }, { refundSubmissions: 1 }, { raw: "secret" }, { failureCode: "unknown-raw" }, { transactionSourceSha: "b".repeat(40) }]) {
+    assert.equal(validateBuyerCallbackRetryReceipt({ ...receipt, ...patch }).ok, false);
+  }
+  const temp = await mkdtemp(path.join(os.tmpdir(), "wp4-callback-retry-"));
+  try {
+    await writeBuyerCallbackRetryReceipt(receipt, temp);
+    assert.equal(await validateWrittenBuyerCallbackRetryReceipt(temp), true);
+    await assert.rejects(writeBuyerCallbackRetryReceipt({ ...receipt, raw: "secret" }, temp));
+  } finally {
+    assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(temp).startsWith("wp4-callback-retry-"));
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("callback replay fails closed without repeating ambiguous requests or leaking errors", async () => {
+  const input = { sourceSha: "b".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" };
+  let calls = 0;
+  const failed = await retryFixedWp4BuyerCallback(input, { request: async () => {
+    calls++; return { status: 200, body: { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "database_transaction_failed" } };
+  } });
+  assert.equal(calls, 1);
+  assert.equal(failed.result, "BLOCKED");
+  assert.equal(validateBuyerCallbackRetryReceipt(failed).ok, true);
+  const lost = await retryFixedWp4BuyerCallback(input, { request: async () => { throw new Error("private error"); } });
+  assert.equal(lost.retryAttempts, 1);
+  assert.equal(lost.status, "NETWORK_REJECTED");
+  assert.equal(JSON.stringify(lost).includes("private error"), false);
+  assert.equal(validateBuyerCallbackRetryReceipt(lost).ok, true);
+  const invalid = await retryFixedWp4BuyerCallback(input, { request: async () => ({ status: 200, body: { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE", raw: "secret" } }) });
+  assert.equal(invalid.status, "RESPONSE_INVALID");
+  assert.equal(validateBuyerCallbackRetryReceipt(invalid).ok, true);
+  const denied = await retryFixedWp4BuyerCallback({}, { request: async () => assert.fail("must not call") });
+  assert.equal(validateBuyerCallbackRetryReceipt(denied).ok, true);
+});
 
 test("buyer payment check has one fixed read-only request and rejects forged receipts", async () => {
   let calls = 0;
