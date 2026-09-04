@@ -52,7 +52,7 @@ test("buyer payment check has one fixed read-only request and rejects forged rec
       calls++;
       assert.equal(request.url, "https://fixed-preview.vercel.app/api/admin/ops/payuni/wp4-buyer-payment-check");
       assert.equal(request.body, undefined);
-      return { status: 200, body: { status: "VERIFIED", localStatus: "PAID", providerStatus: "PAID", queryAttempts: 1 } };
+      return { status: 200, body: { status: "VERIFIED", localStatus: "PAID", providerStatus: "PAID", queryAttempts: 1, callbackStatus: "PROCESSED", callbackFailure: "NONE" } };
     },
   });
   assert.equal(calls, 1);
@@ -66,9 +66,14 @@ test("buyer payment check has one fixed read-only request and rejects forged rec
 
 test("buyer check records reference absence without a query and never leaks untrusted response", async () => {
   const input = { sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" };
-  const missing = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0 } }) });
+  const missing = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "FAILED", callbackFailure: "PROCESSING_FAILED" } }) });
   assert.equal(missing.result, "BLOCKED");
   assert.equal(missing.queryAttempts, 0);
+  assert.equal(missing.callbackStatus, "FAILED");
+  assert.equal(missing.callbackFailure, "PROCESSING_FAILED");
+  for (const patch of [{ callbackStatus: "raw-event" }, { callbackFailure: "secret" }, { callbackFailure: "NONE" }]) {
+    assert.equal(validateBuyerPaymentCheckReceipt({ ...missing, ...patch }).ok, false);
+  }
   assert.equal(validateBuyerPaymentCheckReceipt(missing).ok, true);
   const malformed = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "secret-token" } }) });
   assert.equal(malformed.status, "RESPONSE_INVALID");
