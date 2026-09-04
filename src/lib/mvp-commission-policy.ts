@@ -1,8 +1,8 @@
 /**
- * 首發 MVP 不再建立新的推薦／團隊佣金負債。
+ * 佣金 accrual 的伺服器端功能閘門。
  *
- * 這個 policy 僅控制新的 accrual；既有佣金的退款、reversal 與 dispute
- * 必須繼續走原本的 immutable ledger 流程。
+ * 第二階段已開放商家聯盟、課程團隊分潤與平台推薦；退款、reversal 與
+ * dispute 仍一律走各自的 immutable ledger 流程。
  */
 export type CommissionAccrualKind = "affiliate" | "team_course" | "platform_referral";
 
@@ -10,7 +10,7 @@ export interface MvpCommissionPolicy {
   allowsNewAccrual(kind: CommissionAccrualKind): boolean;
 }
 
-/** 正式首發預設：所有新佣金 accrual 一律停用。 */
+/** 第二階段預設：已支援的佣金領域全部允許建立新 accrual。 */
 export const mvpCommissionPolicy: MvpCommissionPolicy = {
-  allowsNewAccrual: () => false,
+  allowsNewAccrual: () => true,
 };

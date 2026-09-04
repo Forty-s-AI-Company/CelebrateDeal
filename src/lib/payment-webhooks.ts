@@ -288,6 +288,9 @@ async function upsertAffiliateCommission(
     payload.commissionRateBps ?? affiliate.commissionRateBps,
   );
   const calculatedCommissionCents = commissionAmountCents(grossAmountCents, commissionRateBps);
+  // A zero-rate partner remains a valid attribution target, but it must not
+  // create a zero-value liability because accrual ledger entries are positive.
+  if (calculatedCommissionCents === 0) return null;
   const sourceType = "webhook";
   const deduplicationKey = buildCommissionDeduplicationKey({
     affiliateId: affiliate.id,

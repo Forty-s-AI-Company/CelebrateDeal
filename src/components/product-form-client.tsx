@@ -307,7 +307,7 @@ export function ProductFormClient({
           <option value="physical">實體商品（需要收件地址與出貨）</option>
           <option value="digital">數位內容（付款後建立授權）</option>
           <option value="service">服務（付款後安排時間）</option>
-          <option value="course" disabled={!mvpCommissionPolicy.allowsNewAccrual("team_course") && product?.commerceDomain !== "course"}>課程（既有設定；首發不新增分潤）</option>
+          <option value="course" disabled={!mvpCommissionPolicy.allowsNewAccrual("team_course") && product?.commerceDomain !== "course"}>課程（支援團隊分潤）</option>
         </SelectField>
         <fieldset disabled={!mvpCommissionPolicy.allowsNewAccrual("team_course")}>
         <SelectField label="課程內容所有人 F" name="courseContentOwnerMembershipId" defaultValue={draft.courseContentOwnerMembershipId}>
@@ -317,7 +317,7 @@ export function ProductFormClient({
         </fieldset>
         <Field label="課程推廣者 G 比例（basis points）" name="coursePromoterShareBps" readOnly={!mvpCommissionPolicy.allowsNewAccrual("team_course")} type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
         {!mvpCommissionPolicy.allowsNewAccrual("team_course") ? <input type="hidden" name="courseContentOwnerMembershipId" value={product?.courseContentOwnerMembershipId ?? ""} /> : null}
-        <p className="self-end text-xs leading-5 text-slate-600">首發不新增課程分潤；既有設定與負債保留。新內容可選擇數位商品，付款後照常授權交付。</p>
+        <p className="self-end text-xs leading-5 text-slate-600">課程訂單付款成功後，會依當下版本將內容所有人 F 與實際推廣者 G 的分潤寫入不可變帳本。</p>
       </div>
       {selectedFulfillmentType !== "physical" ? (
         <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">

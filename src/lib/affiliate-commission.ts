@@ -8,6 +8,14 @@ export const AffiliateCommissionRateBps = z.number()
   .min(0)
   .max(MAX_COMMISSION_RATE_BPS);
 
+/** 商家可編輯欄位的伺服器端邊界；HTML required 不能取代這層驗證。 */
+export const AffiliateProfile = z.object({
+  name: z.string().trim().min(1).max(200),
+  code: z.string().trim().min(1).max(80).transform((value) => value.toUpperCase()),
+  source: z.string().trim().min(1).max(120).nullable(),
+  contactEmail: z.string().trim().email().max(254).nullable(),
+});
+
 export function commissionAmountCents(amountCents: number, rateBps: number) {
   const safeAmount = z.number().int().nonnegative().parse(amountCents);
   const safeRate = AffiliateCommissionRateBps.parse(rateBps);

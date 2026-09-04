@@ -10,12 +10,6 @@ import { reconcileWebhookEvent } from "@/lib/reconciliation";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/lib/product-delivery";
 
-// Historical accounting tests verify legacy commission domains explicitly.
-// Production uses the real MVP policy, which denies new accruals by default.
-vi.mock("@/lib/mvp-commission-policy", () => ({
-  mvpCommissionPolicy: { allowsNewAccrual: () => true },
-}));
-
 const createdVendorIds: string[] = [];
 const createdBillingPlanIds: string[] = [];
 const createdWebhookEventIds: string[] = [];
@@ -1635,6 +1629,28 @@ describe("payment webhook processing", () => {
     const commission = await db.affiliateCommission.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
     expect(commission.affiliateId).toBe(affiliate.id);
     expect(commission.commissionAmountCents).toBe(8000);
+  });
+
+  it("keeps a paid order successful without creating a zero-value accrual", async () => {
+    const suffix = `${Date.now()}-zero-rate`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    await db.affiliate.update({ where: { id: affiliate.id }, data: { commissionRateBps: 0 } });
+    const orderNumber = `ORDER-${suffix}`;
+
+    const result = await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `evt-paid-${suffix}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+    }));
+
+    expect(result.transaction.status).toBe("paid");
+    expect(result.commission).toBeNull();
+    expect(await db.affiliateCommission.count({ where: { vendorId: vendor.id, orderNumber } })).toBe(0);
+    expect(await db.affiliateCommissionLedgerEntry.count({ where: { vendorId: vendor.id } })).toBe(0);
   });
 
   it("retry worker only processes due webhook events", async () => {

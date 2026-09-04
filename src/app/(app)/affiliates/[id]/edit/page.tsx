@@ -12,7 +12,7 @@ export default async function EditAffiliatePage({ params }: { params: Promise<{ 
   if (!affiliate) notFound();
   return (
     <>
-      <PageHeader title="編輯聯盟夥伴" description="可更新推廣碼與來源資料；首發期間固定保留既有佣金比例。" />
+      <PageHeader title="編輯聯盟夥伴" description="更新推廣碼、來源資料與後續訂單適用的佣金比例。" />
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <AffiliateForm affiliate={affiliate} />
         <Card>

@@ -33,11 +33,12 @@ export default async function AffiliatesPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/affiliates/commissions" tone="secondary"><WalletCards size={16} />分潤報表</ButtonLink>
+            <ButtonLink href="/affiliates/new">新增聯盟夥伴</ButtonLink>
           </div>
         }
       />
       {affiliates.length === 0 ? (
-        <EmptyState title="還沒有聯盟夥伴" description="首發期間已停用新增聯盟夥伴；既有推廣碼、佣金與月結資料仍可查閱與處理。" />
+        <EmptyState title="還沒有聯盟夥伴" description="建立第一位聯盟夥伴，即可開始追蹤推廣來源與訂單佣金。" />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AffiliateCommissionRateBps,
+  AffiliateProfile,
   AffiliateCommissionStatus,
   assertAffiliateCommissionAmounts,
   assertAffiliateCommissionTransition,
@@ -12,6 +13,23 @@ import {
 } from "@/lib/affiliate-commission";
 
 describe("affiliate commission invariants", () => {
+  it("validates and canonicalizes merchant-managed affiliate fields", () => {
+    expect(AffiliateProfile.parse({
+      name: "  合作夥伴  ",
+      code: " partner_1 ",
+      source: "newsletter",
+      contactEmail: "partner@example.test",
+    })).toEqual({
+      name: "合作夥伴",
+      code: "PARTNER_1",
+      source: "newsletter",
+      contactEmail: "partner@example.test",
+    });
+    expect(AffiliateProfile.safeParse({ name: "", code: "x", source: null, contactEmail: null }).success).toBe(false);
+    expect(AffiliateProfile.safeParse({ name: "夥伴", code: "x".repeat(81), source: null, contactEmail: null }).success).toBe(false);
+    expect(AffiliateProfile.safeParse({ name: "夥伴", code: "x", source: null, contactEmail: "bad-email" }).success).toBe(false);
+  });
+
   it.each([0, 1, 500, MAX_COMMISSION_RATE_BPS])("accepts the bounded rate %s", (rate) => {
     expect(AffiliateCommissionRateBps.parse(rate)).toBe(rate);
   });

@@ -49,7 +49,7 @@ describe("/affiliates route", () => {
     expect(html).toContain("20%");
     expect(html).toContain("停用");
     expect(html).toContain("未設定");
-    expect(html).not.toContain('href="/affiliates/new"');
+    expect(html).toContain('href="/affiliates/new"');
   });
 
   it("renders the empty state when the vendor has no partners", async () => {
@@ -59,8 +59,8 @@ describe("/affiliates route", () => {
     const html = renderToStaticMarkup(await AffiliatesPage());
 
     expect(html).toContain("還沒有聯盟夥伴");
-    expect(html).toContain("首發期間已停用新增聯盟夥伴");
-    expect(html).not.toContain('href="/affiliates/new"');
+    expect(html).toContain("建立第一位聯盟夥伴");
+    expect(html).toContain('href="/affiliates/new"');
     expect(mocks.clickGroupBy).toHaveBeenCalledWith({
       by: ["affiliateId"],
       where: { vendorId: "vendor-1", affiliateId: { in: [] }, convertedAt: { not: null } },

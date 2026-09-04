@@ -43,6 +43,7 @@ describe("/affiliates/[id]/edit route", () => {
       include: { clicks: { orderBy: { createdAt: "desc" }, take: 10 } },
     });
     expect(html).toContain("編輯聯盟夥伴");
+    expect(html).toContain("後續訂單適用的佣金比例");
     expect(html).toContain('data-testid="affiliate-form">affiliate-1');
     expect(html).toContain("最近來源事件");
     expect(html).toContain("/live/demo");

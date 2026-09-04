@@ -17,12 +17,7 @@ const dependencies = vi.hoisted(() => {
     refundedAmountCents: 0,
     refunds: [],
     primaryCommerceOrder: null,
-    metadata: {
-      referralCode: "LEGACY-AFFILIATE",
-      platformSubscriptionId: "legacy-platform-subscription",
-      // The guard must run before this legacy course snapshot is evaluated.
-      coursePolicySnapshot: { productId: "legacy-course-product" },
-    },
+    metadata: {},
     occurredAt: new Date("2026-09-01T00:00:00.000Z"),
   };
   const paymentTransaction = {
@@ -67,7 +62,7 @@ const dependencies = vi.hoisted(() => {
 
 // This test has no database connection: the webhook boundary receives only a
 // transaction-shaped in-memory dependency. Do not mock mvpCommissionPolicy;
-// it exercises the real launch default.
+// it exercises the real phase-two default.
 vi.mock("@/lib/db", () => ({ getDb: () => dependencies.db }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: <T>(value: T) => value,
@@ -114,12 +109,7 @@ function defaultTransaction() {
     refundedAmountCents: 0,
     refunds: [],
     primaryCommerceOrder: null,
-    metadata: {
-      referralCode: "LEGACY-AFFILIATE",
-      platformSubscriptionId: "legacy-platform-subscription",
-      // The guard must run before this legacy course snapshot is evaluated.
-      coursePolicySnapshot: { productId: "legacy-course-product" },
-    },
+    metadata: {},
     occurredAt: new Date("2026-09-01T00:00:00.000Z"),
   };
 }
@@ -142,11 +132,12 @@ beforeEach(() => {
     commerceOrderRefund: null,
   });
   dependencies.platformReferralRefund.mockResolvedValue(null);
+  dependencies.platformReferralAccrual.mockResolvedValue(null);
   dependencies.platformRefundProjection.mockResolvedValue({ subscription: null, invoice: null });
 });
 
-describe("payment webhook MVP commission policy", () => {
-  it("以真實預設 policy 擋下三種新佣金，但仍處理付款與商品交付核心流程", async () => {
+describe("payment webhook phase-two commission policy", () => {
+  it("沒有受信任歸因資料時不建立佣金，但仍處理付款與商品交付核心流程", async () => {
     const result = await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: "evt-mvp-no-accrual-1",

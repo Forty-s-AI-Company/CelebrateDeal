@@ -54,19 +54,20 @@ describe("ProductForm fulfillment classification", () => {
     expect(html).not.toContain("交付方式尚未確認");
   });
 
-  it("disables new commission course selection but keeps digital delivery available", async () => {
+  it("enables course commission selection alongside digital delivery", async () => {
     const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
-    expect(html).toContain('<option value="course" disabled=""');
+    expect(html).toContain('<option value="course"');
+    expect(html).not.toContain('<option value="course" disabled=""');
     expect(html).toContain('<option value="digital"');
-    expect(html).toContain("首發不新增課程分潤");
-    expect(html).not.toContain("並啟用 F/G 分潤");
+    expect(html).toContain("實際推廣者 G 的分潤寫入不可變帳本");
   });
 
-  it("submits historical course ownership while locking commission inputs", async () => {
+  it("allows editing historical course ownership and commission inputs", async () => {
     const existing: Product = { ...product(true), commerceDomain: "course", fulfillmentType: "course", courseContentOwnerMembershipId: "owner-existing", coursePromoterShareBps: 2000 };
     const html = renderToStaticMarkup(await ProductForm({ product: existing }));
-    expect(html).toContain('type="hidden" name="courseContentOwnerMembershipId" value="owner-existing"');
-    expect(html).toContain('readOnly=""');
+    expect(html).toContain('name="courseContentOwnerMembershipId"');
+    expect(html).toContain('name="coursePromoterShareBps"');
+    expect(html).not.toContain('name="coursePromoterShareBps" readOnly=""');
     expect(html).not.toContain('<option value="course" disabled=""');
   });
 });

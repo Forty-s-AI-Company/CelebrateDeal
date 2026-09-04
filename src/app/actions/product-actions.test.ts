@@ -103,13 +103,17 @@ describe("upsertProductAction", () => {
     expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ commerceDomain: "course", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500 }) });
   });
 
-  it("rejects new course commission settings under the real MVP default", async () => {
-    const result = await upsertProductAction(initialProductActionState, validProduct({
+  it("creates new course commission settings under the phase-two default", async () => {
+    const data = validProduct({
       fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500",
-    }));
-    expect(result.error).toBe("commission_disabled");
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.productCreate).not.toHaveBeenCalled();
+    });
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=created");
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      commerceDomain: "course",
+      courseContentOwnerMembershipId: "membership-owner",
+      coursePromoterShareBps: 2500,
+    }) });
   });
 
   it("preserves an existing course policy while allowing ordinary product edits", async () => {
@@ -121,12 +125,13 @@ describe("upsertProductAction", () => {
     }));
   });
 
-  it("rejects changes to historical course shares under the real MVP default", async () => {
+  it("versions changes to existing course shares under the phase-two default", async () => {
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
-    const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" }));
-    expect(result.error).toBe("commission_disabled");
-    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
+    expect(mocks.productUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ coursePolicyVersion: 4, coursePromoterShareBps: 2500 }),
+    }));
   });
 
   it("fails closed for contradictory fulfillment policy", async () => {

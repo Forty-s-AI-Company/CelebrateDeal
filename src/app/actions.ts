@@ -11,7 +11,7 @@ import {
   requireVendorManager,
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
-import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
+import { AffiliateCommissionRateBps, AffiliateProfile } from "@/lib/affiliate-commission";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
@@ -652,10 +652,7 @@ function isMissingDefaultAffiliate(
   return code !== null && affiliate === null;
 }
 
-/**
- * MVP 首發不接受新的直播 affiliate 設定。既有直播保留資料庫中已存的
- * 歷史設定，讓一般直播與 quota 編輯可繼續完成，且不會新增佣金負債來源。
- */
+/** 在功能閘門關閉時保留歷史設定；第二階段開啟後直接採用商家送出的設定。 */
 function applyMvpLiveAffiliatePolicy(
   submitted: LiveQuotaPolicy,
   existingQuotaPolicy: unknown | undefined,
@@ -1495,30 +1492,34 @@ export async function upsertAffiliateAction(formData: FormData) {
   if (!commissionRate.success) {
     redirect("/affiliates?error=invalid_commission_rate");
   }
+  const profile = AffiliateProfile.safeParse({
+    name: text(formData, "name"),
+    code: text(formData, "code"),
+    source: optionalText(formData, "source"),
+    contactEmail: optionalText(formData, "contactEmail"),
+  });
+  if (!profile.success) {
+    redirect("/affiliates?error=invalid_affiliate");
+  }
+  const db = getDb();
+  const data = {
+    ...profile.data,
+    commissionRateBps: commissionRate.data,
+    isActive: formData.get("isActive") === "on",
+  };
+
   if (!id) {
-    redirect("/affiliates?error=affiliate_program_disabled");
+    await db.affiliate.create({ data: { vendorId: vendor.id, ...data } });
+    redirect("/affiliates");
   }
 
-  const db = getDb();
   const existing = await db.affiliate.findFirst({
     where: { id, vendorId: vendor.id },
-    select: { id: true, commissionRateBps: true },
+    select: { id: true },
   });
   if (!existing) {
     redirect("/affiliates?error=affiliate_not_found");
   }
-  if (commissionRate.data !== existing.commissionRateBps) {
-    redirect(`/affiliates/${encodeURIComponent(id)}/edit?error=commission_rate_locked`);
-  }
-  const data = {
-    name: text(formData, "name"),
-    code: text(formData, "code").toUpperCase(),
-    source: optionalText(formData, "source"),
-    contactEmail: optionalText(formData, "contactEmail"),
-    // Do not write the rate at all: a concurrent approved accounting change
-    // must not be overwritten by an ordinary contact-information edit.
-    isActive: formData.get("isActive") === "on",
-  };
 
   await db.affiliate.update({ where: { id, vendorId: vendor.id }, data });
 

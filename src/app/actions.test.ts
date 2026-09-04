@@ -1228,23 +1228,49 @@ describe("upsertAffiliateAction", () => {
     },
   );
 
-  it("fails closed after CSRF and manager authorization when creating a new affiliate", async () => {
+  it.each([
+    ["missing name", "name", ""],
+    ["oversized code", "code", "x".repeat(81)],
+    ["invalid email", "contactEmail", "not-an-email"],
+  ])("rejects %s before persistence", async (_label, field, value) => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = affiliateFormData("1250");
+    formData.set(field, value);
+
+    await expect(upsertAffiliateAction(formData)).rejects.toThrow(
+      "redirect:/affiliates?error=invalid_affiliate",
+    );
+    expect(mocks.affiliateCreate).not.toHaveBeenCalled();
+    expect(mocks.affiliateUpdate).not.toHaveBeenCalled();
+  });
+
+  it("creates a new affiliate after CSRF, manager authorization, and rate validation", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
 
     await expect(upsertAffiliateAction(affiliateFormData("10000"))).rejects.toThrow(
-      "redirect:/affiliates?error=affiliate_program_disabled",
+      "redirect:/affiliates",
     );
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledOnce();
     expect(mocks.requireVendor).toHaveBeenCalledOnce();
-    expect(mocks.affiliateCreate).not.toHaveBeenCalled();
+    expect(mocks.affiliateCreate).toHaveBeenCalledWith({
+      data: {
+        vendorId: "vendor-1",
+        name: "受控夥伴",
+        code: "PARTNER",
+        source: null,
+        contactEmail: null,
+        commissionRateBps: 10_000,
+        isActive: true,
+      },
+    });
     expect(mocks.affiliateFindFirst).not.toHaveBeenCalled();
   });
 
-  it("keeps an existing affiliate's historical rate while allowing non-financial edits", async () => {
+  it("updates an existing affiliate including the rate used by future orders", async () => {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
-    mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1", commissionRateBps: 1_250 });
-    const formData = affiliateFormData("1250");
+    mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1" });
+    const formData = affiliateFormData("1300");
     formData.set("id", "affiliate-1");
     formData.set("source", "newsletter");
 
@@ -1252,25 +1278,12 @@ describe("upsertAffiliateAction", () => {
 
     expect(mocks.affiliateFindFirst).toHaveBeenCalledWith({
       where: { id: "affiliate-1", vendorId: "vendor-1" },
-      select: { id: true, commissionRateBps: true },
+      select: { id: true },
     });
     expect(mocks.affiliateUpdate).toHaveBeenCalledWith({
       where: { id: "affiliate-1", vendorId: "vendor-1" },
-      data: expect.objectContaining({ source: "newsletter" }),
+      data: expect.objectContaining({ source: "newsletter", commissionRateBps: 1_300 }),
     });
-    expect(mocks.affiliateUpdate.mock.calls[0]?.[0]?.data).not.toHaveProperty("commissionRateBps");
-  });
-
-  it("rejects a changed historical commission rate without updating the affiliate", async () => {
-    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
-    mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1", commissionRateBps: 1_250 });
-    const formData = affiliateFormData("1300");
-    formData.set("id", "affiliate-1");
-
-    await expect(upsertAffiliateAction(formData)).rejects.toThrow(
-      "redirect:/affiliates/affiliate-1/edit?error=commission_rate_locked",
-    );
-    expect(mocks.affiliateUpdate).not.toHaveBeenCalled();
   });
 
   it("fails CSRF before manager authorization or affiliate lookup", async () => {
@@ -1790,7 +1803,7 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate.mock.calls[0]?.[0]?.data.quotaPolicy).toEqual({
       version: 2,
       affiliateMode: "disabled",
-      defaultAffiliateCode: null,
+      defaultAffiliateCode: "SUMMER_PARTNER",
       maxConcurrentViewers: 1200,
       stopWhenCreditsBelow: 450,
       quotaPayerScope: "VENDOR",
@@ -1820,7 +1833,7 @@ describe("upsertLiveAction", () => {
     });
   });
 
-  it("stores a new live with affiliate attribution disabled while preserving ordinary quota settings", async () => {
+  it("stores a new live with enabled affiliate attribution and a verified default code", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("affiliateMode", "enabled");
@@ -1831,8 +1844,8 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         quotaPolicy: expect.objectContaining({
-          affiliateMode: "disabled",
-          defaultAffiliateCode: null,
+          affiliateMode: "enabled",
+          defaultAffiliateCode: "SUMMER_PARTNER",
           quotaPayerScope: "VENDOR",
           usageAttributionMode: "PROMOTER",
         }),
@@ -1840,7 +1853,7 @@ describe("upsertLiveAction", () => {
     });
   });
 
-  it("preserves an existing live's historical affiliate settings during a normal edit", async () => {
+  it("allows a manager to disable an existing live's affiliate settings", async () => {
     allowCurrentVendorLiveReferences();
     mocks.liveFindFirst.mockResolvedValue({
       id: "live-1",
@@ -1875,8 +1888,8 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         quotaPolicy: expect.objectContaining({
-          affiliateMode: "enabled",
-          defaultAffiliateCode: "LEGACY_PARTNER",
+          affiliateMode: "disabled",
+          defaultAffiliateCode: null,
         }),
       }),
     }));
