@@ -4,6 +4,8 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Diagnostic application Preview is now ready: non-Production staging deployment `6267470823`, source `6fa8c763e749740775605f2f74c49c107a445f97`, immutable host `celebrate-deal-staging-831qqry2n-a25814740s-projects.vercel.app`. Anonymous health HEAD returned 200 and unauthenticated recovery POST returned 401. PR #199's two CI runs are still in Browser gates; no further authenticated recovery query has been dispatched.
+
 - Published diagnostic application source is `6fa8c763e749740775605f2f74c49c107a445f97`; product CI `33888838096` is confirmed running. PR #199 exact-head checks are `33888378579` and `33888350885`, also running. The matching application Preview has not yet appeared in deployment metadata, so no additional recovery dispatch is ready. Latest actual provider evidence remains `33887710723` below.
 
 - Product CI `33886472991` passed unit/coverage, PostgreSQL and the general Browser gate, then failed the required support Browser assertion at line 136 after successful case creation/redirect. Both the loading and completed page expose a status element; the test now selects the exact completion-status text while preserving role and visibility assertions. Browser execution of this correction remains pending; no timeout or product behavior changed.
