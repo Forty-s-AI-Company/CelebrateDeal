@@ -274,9 +274,8 @@ def adaptive_reasoning_recommendation(
 ) -> tuple[str, str, dict[str, str] | None]:
     model = recommendation["model"]
     difficulty = inferred_difficulty(task_summary, route, requested_difficulty)
-    effort_map = NATIVE_REASONING_BY_DIFFICULTY.get(model)
     policy = config.get("reasoning_policy", {}).get("models", {}).get(model)
-    if effort_map is None or not isinstance(policy, dict):
+    if not isinstance(policy, dict):
         return recommendation["reasoning_effort"], difficulty, None
 
     bounds = {
@@ -288,7 +287,17 @@ def adaptive_reasoning_recommendation(
     locked_effort = recommendation.get("reasoning_lock")
     if locked_effort in {"low", "medium", "high", "xhigh", "max"}:
         return str(locked_effort), difficulty, bounds
-    return effort_map[difficulty], difficulty, bounds
+
+    maximum = policy.get("maximum", "high")
+    if maximum in {"xhigh", "max"}:
+        if model == "gpt-5.6-luna":
+            effort_map = {"trivial": "high", "routine": "high", "complex": "xhigh", "critical": "max"}
+        else:
+            effort_map = {"trivial": "low", "routine": "medium", "complex": "high", "critical": "xhigh"}
+    else:
+        effort_map = {"trivial": "low", "routine": "medium", "complex": "high", "critical": "high"}
+
+    return effort_map.get(difficulty, recommendation["reasoning_effort"]), difficulty, bounds
 
 
 def luna_escalation_recommendation(
@@ -311,15 +320,19 @@ def luna_escalation_recommendation(
 
     recommendation = dict(escalation)
     recommendation["target"] = "luna_readonly_escalation"
-    effort, _, bounds = adaptive_reasoning_recommendation(
-        recommendation,
-        task_summary,
-        route,
-        difficulty,
-        config,
-    )
-    recommendation["reasoning_effort"] = effort
-    recommendation["reasoning_bounds"] = bounds
+    luna_policy = config.get("reasoning_policy", {}).get("models", {}).get("gpt-5.6-luna", {})
+    luna_max = luna_policy.get("maximum", "high")
+    if luna_max in {"xhigh", "max"}:
+        escalation_map = {"complex": "xhigh", "critical": "max"}
+    else:
+        escalation_map = {"complex": "high", "critical": "high"}
+    recommendation["reasoning_effort"] = escalation_map.get(difficulty, "high")
+    recommendation["reasoning_bounds"] = {
+        "strategy": str(config.get("reasoning_policy", {}).get("strategy", "adaptive_lowest_sufficient")),
+        "minimum": str(luna_policy.get("minimum", "low")),
+        "maximum": str(luna_policy.get("maximum", "high")),
+        "default": str(luna_policy.get("default", "medium")),
+    }
     recommendation["execution"] = "native_agent_handoff_only"
     return recommendation
 
@@ -360,6 +373,30 @@ def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto")
     route = normalized_task_type(task_summary, task_type)
     recommendation = dict(ROUTES[route])
     config = read_config()
+
+    if route == "planning":
+        planner_cfg = config.get("agents", {}).get("planner", {})
+        if isinstance(planner_cfg, dict) and planner_cfg.get("model"):
+            recommendation["model"] = planner_cfg["model"]
+            if planner_cfg["model"] == "gpt-5.6-sol":
+                recommendation["provider"] = "native_agent"
+                recommendation.pop("fallback_planner", None)
+            else:
+                recommendation["provider"] = "gemini_wrapper"
+                if "sol_fallback" in planner_cfg:
+                    recommendation["fallback_planner"] = planner_cfg["sol_fallback"].get("model", "gpt-5.6-sol")
+    elif route == "implement":
+        worker_cfg = config.get("agents", {}).get("worker", {})
+        if isinstance(worker_cfg, dict):
+            if worker_cfg.get("model"):
+                recommendation["model"] = worker_cfg["model"]
+            if "reasoning_lock" in worker_cfg:
+                recommendation["reasoning_lock"] = worker_cfg["reasoning_lock"]
+            else:
+                recommendation.pop("reasoning_lock", None)
+            if "reasoning_effort" in worker_cfg:
+                recommendation["reasoning_effort"] = worker_cfg["reasoning_effort"]
+
     reasoning_effort, selected_difficulty, reasoning_bounds = adaptive_reasoning_recommendation(
         recommendation,
         task_summary,
