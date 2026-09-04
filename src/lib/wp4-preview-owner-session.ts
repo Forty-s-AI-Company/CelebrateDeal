@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 import { resolveWp4ExpectedSourceSha } from "./wp4-preview-runtime";
+import { encryptMfaSecret, generateTotpSecret } from "./mfa";
 
 export const WP4_OWNER_SESSION_TTL = 15 * 60;
 
@@ -22,6 +23,21 @@ export async function createWp4PreviewOwnerSession(db: PrismaClient) {
       select: { id: true },
     });
     if (!member) throw new Error("Preview owner session unavailable");
+    const existingFactor = await tx.userMfaFactor.findUnique({
+      where: { userId: WP4_SANDBOX_FIXTURE.userId },
+      select: { id: true },
+    });
+    if (!existingFactor) {
+      const secret = generateTotpSecret();
+      await tx.userMfaFactor.create({
+        data: {
+          userId: WP4_SANDBOX_FIXTURE.userId,
+          factorType: "totp",
+          label: "WP4 synthetic owner",
+          secretEncrypted: encryptMfaSecret(secret),
+        },
+      });
+    }
     const token = randomBytes(32).toString("base64url");
     const now = new Date();
     const expiresAt = new Date(now.getTime() + WP4_OWNER_SESSION_TTL * 1000);
