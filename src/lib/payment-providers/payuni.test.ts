@@ -233,6 +233,7 @@ describe("PayUni provider", () => {
     await expect(payUniPaymentProvider.queryPayment?.({
       transaction: {
         id: "tx-query",
+        providerName: "payuni",
         orderNumber: "CD-QUERY-001",
         providerTradeNo: "trade-query-123",
         grossAmountCents: 168_000,
@@ -275,8 +276,57 @@ describe("PayUni provider", () => {
     await expect(payUniPaymentProvider.queryPayment?.({
       transaction: {
         id: "tx-query",
+        providerName: "payuni",
         orderNumber: "CD-QUERY-001",
         providerTradeNo: "trade-query-123",
+        grossAmountCents: 168_000,
+      } as PaymentTransaction,
+    })).rejects.toThrow("Payment provider query failed.");
+  });
+
+  it("accepts a bound PayUni bracket-encoded query Result row", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      "Result[0][MerTradeNo]": "CD-QUERY-BRACKET",
+      "Result[0][TradeNo]": "trade-query-bracket",
+      "Result[0][TradeAmt]": "1680",
+      "Result[0][TradeStatus]": "1",
+      "Result[0][RefundStatus]": "1",
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: {
+        id: "tx-query-bracket",
+        providerName: "payuni",
+        orderNumber: "CD-QUERY-BRACKET",
+        providerTradeNo: "trade-query-bracket",
+        grossAmountCents: 168_000,
+      } as PaymentTransaction,
+    })).resolves.toMatchObject({
+      providerTradeNo: "trade-query-bracket",
+      orderNumber: "CD-QUERY-BRACKET",
+      status: "refunded",
+    });
+  });
+
+  it("rejects a bracket-encoded query Result row for another transaction", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      "Result[0][MerTradeNo]": "CD-QUERY-BRACKET",
+      "Result[0][TradeNo]": "other-trade",
+      "Result[0][TradeAmt]": "1680",
+      "Result[0][TradeStatus]": "1",
+      "Result[0][RefundStatus]": "1",
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: {
+        id: "tx-query-bracket",
+        providerName: "payuni",
+        orderNumber: "CD-QUERY-BRACKET",
+        providerTradeNo: "trade-query-bracket",
         grossAmountCents: 168_000,
       } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
@@ -296,7 +346,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -314,7 +364,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -325,9 +375,50 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["provider", { providerName: "stripe" }],
+    ["amount", { grossAmountCents: 168_001 }],
+    ["order reference", { orderNumber: "CD QUERY 004" }],
+    ["provider reference", { providerTradeNo: " trade-query-456" }],
+  ])("fails closed before any Sandbox query for an invalid %s contract field", async (_label, patch) => {
+    stubPayUniEnv();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: {
+        id: "tx-query-invalid",
+        providerName: "payuni",
+        orderNumber: "CD-QUERY-004",
+        providerTradeNo: "trade-query-456",
+        grossAmountCents: 168_000,
+        ...patch,
+      } as PaymentTransaction,
+    })).rejects.toThrow("Payment provider query failed.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not interpret PayUni RefundStatus 8 as a successful query", async () => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify({
+        MerTradeNo: "CD-QUERY-STATUS-8",
+        TradeNo: "trade-query-status-8",
+        TradeAmt: "1680",
+        TradeStatus: "1",
+        RefundStatus: "8",
+      }),
+    }), { status: 200 })));
+
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STATUS-8", providerTradeNo: "trade-query-status-8", grossAmountCents: 168_000 } as PaymentTransaction,
+    })).rejects.toThrow("Payment provider query failed.");
   });
 
   it("fails closed when PayUni's close response cannot be authenticated", async () => {

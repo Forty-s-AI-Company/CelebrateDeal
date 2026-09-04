@@ -14,6 +14,7 @@ const PAYUNI_API_BASE_URLS = {
   sandbox: "https://sandbox-api.payuni.com.tw/api",
   production: "https://api.payuni.com.tw/api",
 } as const;
+const PAYUNI_SANDBOX_QUERY_URL = `${PAYUNI_API_BASE_URLS.sandbox}/trade/query`;
 const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
 const PAYUNI_MIN_TRADE_AMOUNT = 1;
 const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
@@ -200,7 +201,23 @@ function payUniResultRow(value: Record<string, unknown>) {
       return Object.keys(parsed).length > 0 ? parsed : undefined;
     }
   }
-  return result && typeof result === "object" ? result as Record<string, unknown> : undefined;
+  if (result && typeof result === "object") return result as Record<string, unknown>;
+
+  // PayUni may encode Result as PHP-style bracket fields in the encrypted
+  // query string. Normalize only the first result row before applying the
+  // usual transaction and amount bindings below.
+  const rows = new Map<number, Record<string, unknown>>();
+  for (const [key, fieldValue] of Object.entries(value)) {
+    const match = /^Result(?:\[(\d+)\])?\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const index = Number(match[1] ?? "0");
+    if (!Number.isSafeInteger(index) || index < 0) continue;
+    const row = rows.get(index) ?? {};
+    row[match[2]!] = fieldValue;
+    rows.set(index, row);
+  }
+  if (rows.size === 0) return undefined;
+  return rows.get(Math.min(...rows.keys()));
 }
 
 function queryAmountCents(value: unknown) {
@@ -311,8 +328,23 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
     throw new PaymentQueryProviderError("request_contract");
   }
   const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
-  const orderNumber = transaction.orderNumber?.trim();
-  if (!merchantId || !orderNumber) throw new PaymentQueryProviderError("request_contract");
+  const orderNumber = typeof transaction.orderNumber === "string" ? transaction.orderNumber.trim() : "";
+  const providerTradeNo = typeof transaction.providerTradeNo === "string" ? transaction.providerTradeNo.trim() : "";
+  if (
+    !merchantId
+    || !orderNumber
+    || transaction.orderNumber !== orderNumber
+    || !PAYUNI_ORDER_NUMBER.test(orderNumber)
+    || transaction.providerName !== "payuni"
+    || !providerTradeNo
+    || transaction.providerTradeNo !== providerTradeNo
+    || !Number.isSafeInteger(transaction.grossAmountCents)
+    || transaction.grossAmountCents <= 0
+    || transaction.grossAmountCents % 100 !== 0
+    || transaction.grossAmountCents / 100 > PAYUNI_MAX_CREDIT_TRADE_AMOUNT
+  ) {
+    throw new PaymentQueryProviderError("request_contract");
+  }
 
   let encrypted: string;
   try {
@@ -327,7 +359,7 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
 
   let response: Response;
   try {
-    response = await fetch(`${payUniApiBaseUrl().replace(/\/$/, "")}/trade/query`, {
+    response = await fetch(PAYUNI_SANDBOX_QUERY_URL, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -371,7 +403,7 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   const snapshot = payUniQueryRow(payload, orderNumber);
   // 驗簽只證明來源；仍須綁定本地交易及原始金額，避免錯帳對帳。
   if (
-    snapshot.providerTradeNo !== transaction.providerTradeNo
+    snapshot.providerTradeNo !== providerTradeNo
     || snapshot.grossAmountCents !== transaction.grossAmountCents
   ) {
     throw new PaymentQueryProviderError("provider_response");
