@@ -13,6 +13,7 @@ const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
 
 export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e2e/v1";
 export const FIXED_PURPOSE = "buyer_order";
+export const FIXED_SUBSCRIPTION_PURPOSE = "platform_subscription";
 export const FIXED_PAYUNI_ENV = "sandbox";
 export const EXISTING_REFUND_RECOVERY_SOURCE_SHA = "1052a46d002149b5c06104927ed0fab32b049214";
 export const EXISTING_REFUND_RECOVERY_SCHEMA = "celebratedeal-mvp-payuni-sandbox-refund-recovery/v2";
@@ -29,6 +30,20 @@ export const SIDE_EFFECT_BUDGET = Object.freeze({
   browserPaymentSubmissions: 1,
   refundPosts: 1,
   reconcilePosts: 12,
+  transactionsCreated: 1,
+  payments: 1,
+  refunds: 1,
+});
+const SUBSCRIPTION_SIDE_EFFECT_BUDGET = Object.freeze({
+  fixturePosts: 1,
+  sessionPosts: 1,
+  planSelections: 1,
+  paymentAttemptPosts: 1,
+  paymentReservationsCreated: 1,
+  browserPaymentSubmissions: 1,
+  refundPosts: 1,
+  reconcilePosts: 12,
+  statePosts: 2,
   transactionsCreated: 1,
   payments: 1,
   refunds: 1,
@@ -54,6 +69,18 @@ const CHECK_KEYS = Object.freeze([
   "returnCallbackMapped",
   "refundCompleted",
   "reconciled",
+]);
+const SUBSCRIPTION_CHECK_KEYS = Object.freeze([
+  "fixtureReady",
+  "ownerSessionIssued",
+  "nativePlanCheckoutCreated",
+  "paymentAttemptReserved",
+  "payuniFormSubmitted",
+  "trustedSubscriptionPayment",
+  "activeEntitlementVerified",
+  "refundCompleted",
+  "reconciled",
+  "refundedEntitlementVerified",
 ]);
 const SAFETY_KEYS = Object.freeze([
   "sanitized",
@@ -105,10 +132,12 @@ const FAILURE_CODES = new Set([
   "PAYMENT_METHOD_UNAVAILABLE",
   "PAYMENT_FIELDS_REJECTED",
   "PAYMENT_SUBMIT_REJECTED",
+  "PAYMENT_CONFIRMATION_AMBIGUOUS",
   "RETURN_CALLBACK_UNMAPPED",
   "RETURN_RESULT_UNMAPPED",
   "RETURN_CALLBACK_PROOF_REQUIRED",
   "REFUND_REJECTED",
+  "SUBSCRIPTION_STATE_REJECTED",
   "RECONCILE_REJECTED",
   "NETWORK_REJECTED",
   "INTERNAL_REJECTED",
@@ -119,7 +148,9 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
 const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
-const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME]);
+const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
+export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v2";
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
@@ -401,6 +432,54 @@ export function createReceipt(sourceSha = "0".repeat(40)) {
   };
 }
 
+export function createSubscriptionReceipt(sourceSha = "0".repeat(40)) {
+  return {
+    schemaVersion: MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA,
+    purpose: FIXED_SUBSCRIPTION_PURPOSE,
+    sourceSha: SOURCE_SHA.test(sourceSha) ? sourceSha : "0".repeat(40),
+    environment: FIXED_PAYUNI_ENV,
+    result: "BLOCKED",
+    failure: "INPUT_REJECTED",
+    checks: {
+      fixtureReady: false,
+      ownerSessionIssued: false,
+      nativePlanCheckoutCreated: false,
+      paymentAttemptReserved: false,
+      payuniFormSubmitted: false,
+      trustedSubscriptionPayment: false,
+      activeEntitlementVerified: false,
+      refundCompleted: false,
+      reconciled: false,
+      refundedEntitlementVerified: false,
+    },
+    sideEffects: {
+      fixturePosts: 0,
+      sessionPosts: 0,
+      planSelections: 0,
+      paymentAttemptPosts: 0,
+      paymentReservationsCreated: 0,
+      browserPaymentSubmissions: 0,
+      refundPosts: 0,
+      reconcilePosts: 0,
+      statePosts: 0,
+      transactionsCreated: 0,
+      payments: 0,
+      refunds: 0,
+    },
+    safety: {
+      sanitized: true,
+      envFilesRead: false,
+      envEnumerated: false,
+      rawLogsPersisted: false,
+      rawIdentifiersPersisted: false,
+      rawUrlsPersisted: false,
+      secretsPersisted: false,
+      arbitraryInputAccepted: false,
+      sideEffectBudgetExceeded: false,
+    },
+  };
+}
+
 function withinBudget(receipt) {
   return Object.entries(SIDE_EFFECT_BUDGET).every(([key, maximum]) => boundedInteger(receipt?.sideEffects?.[key], maximum));
 }
@@ -455,6 +534,66 @@ export function validateMvpPayUniReceipt(receipt) {
     errors.push("BLOCKED_COMPLETENESS");
   }
   return { ok: errors.length === 0, errors };
+}
+
+function completedSubscriptionPrefix(receipt) {
+  const checks = receipt.checks;
+  const effects = receipt.sideEffects;
+  if (checks.fixtureReady && effects.fixturePosts !== 1) return false;
+  if (checks.ownerSessionIssued && (!checks.fixtureReady || effects.sessionPosts !== 1)) return false;
+  if (checks.nativePlanCheckoutCreated && (!checks.ownerSessionIssued || effects.planSelections !== 1 || effects.transactionsCreated !== 1)) return false;
+  if (checks.paymentAttemptReserved && (!checks.nativePlanCheckoutCreated || effects.paymentAttemptPosts !== 1)) return false;
+  if (checks.payuniFormSubmitted && (!checks.paymentAttemptReserved || effects.browserPaymentSubmissions !== effects.paymentReservationsCreated)) return false;
+  if (checks.trustedSubscriptionPayment && (!checks.payuniFormSubmitted || effects.payments !== effects.paymentReservationsCreated)) return false;
+  if (checks.activeEntitlementVerified && (!checks.trustedSubscriptionPayment || effects.statePosts < 1)) return false;
+  if (checks.refundedEntitlementVerified && (!checks.reconciled || effects.statePosts !== 2)) return false;
+  if (checks.refundCompleted && (!checks.activeEntitlementVerified || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
+  if (checks.reconciled && (!checks.refundCompleted || effects.reconcilePosts < 1)) return false;
+  if (effects.sessionPosts > 0 && !checks.fixtureReady) return false;
+  if (effects.planSelections > 0 && !checks.ownerSessionIssued) return false;
+  if (effects.paymentAttemptPosts > 0 && !checks.nativePlanCheckoutCreated) return false;
+  if (effects.paymentReservationsCreated > 0 && !checks.paymentAttemptReserved) return false;
+  if (effects.browserPaymentSubmissions > 0 && !checks.paymentAttemptReserved) return false;
+  if (effects.statePosts > 0 && !checks.payuniFormSubmitted) return false;
+  if (effects.statePosts === 2 && !checks.reconciled) return false;
+  if (effects.refundPosts > 0 && !checks.activeEntitlementVerified) return false;
+  if (effects.reconcilePosts > 0 && !checks.refundCompleted && receipt.failure !== "RECONCILE_REJECTED") return false;
+  if (effects.transactionsCreated > 0 && !checks.nativePlanCheckoutCreated) return false;
+  if (effects.payments > 0 && !checks.trustedSubscriptionPayment) return false;
+  if (effects.refunds > 0 && !checks.refundCompleted) return false;
+  return true;
+}
+
+export function validateMvpPayUniSubscriptionReceipt(receipt) {
+  const errors = [];
+  if (!exactKeys(receipt, RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
+  if (!exactKeys(receipt?.checks, SUBSCRIPTION_CHECK_KEYS)) errors.push("CHECK_KEYS");
+  if (!exactKeys(receipt?.sideEffects, Object.keys(SUBSCRIPTION_SIDE_EFFECT_BUDGET))) errors.push("SIDE_EFFECT_KEYS");
+  if (!exactKeys(receipt?.safety, SAFETY_KEYS)) errors.push("SAFETY_KEYS");
+  if (receipt?.schemaVersion !== MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA || receipt?.purpose !== FIXED_SUBSCRIPTION_PURPOSE || receipt?.environment !== FIXED_PAYUNI_ENV) errors.push("FIXED_ENUMS");
+  if (!SOURCE_SHA.test(receipt?.sourceSha ?? "")) errors.push("SOURCE_SHA");
+  if (!new Set(["PASS", "BLOCKED"]).has(receipt?.result)) errors.push("RESULT");
+  if (!FAILURE_CODES.has(receipt?.failure)) errors.push("FAILURE");
+  if (!Object.entries(SUBSCRIPTION_SIDE_EFFECT_BUDGET).every(([key, maximum]) => boundedInteger(receipt?.sideEffects?.[key], maximum)) || receipt?.safety?.sideEffectBudgetExceeded !== false) errors.push("SIDE_EFFECT_BUDGET");
+  if (receipt?.safety?.sanitized !== true || !allFalse(receipt?.safety, SAFETY_KEYS.filter((key) => key !== "sanitized" && key !== "sideEffectBudgetExceeded"))) errors.push("SANITIZATION");
+  if (![...SUBSCRIPTION_CHECK_KEYS].every((key) => typeof receipt?.checks?.[key] === "boolean")) errors.push("CHECK_VALUES");
+  if (!completedSubscriptionPrefix(receipt)) errors.push("SEQUENCE");
+
+  const completed = SUBSCRIPTION_CHECK_KEYS.every((key) => receipt?.checks?.[key] === true);
+  if (receipt?.result === "PASS") {
+    if (!completed || receipt.failure !== "NONE") errors.push("PASS_COMPLETENESS");
+    const effects = receipt.sideEffects;
+    const fixedOne = ["fixturePosts", "sessionPosts", "planSelections", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds"];
+    const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
+    if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution || effects.statePosts !== 2) errors.push("PASS_EFFECTS");
+  } else if (receipt?.failure === "NONE" || completed) {
+    errors.push("BLOCKED_COMPLETENESS");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function finalizeMvpPayUniSubscriptionReceipt(receipt) {
+  return validateMvpPayUniSubscriptionReceipt(receipt).ok ? receipt : fail(receipt, "INTERNAL_REJECTED");
 }
 
 export const validateReceipt = validateMvpPayUniReceipt;
@@ -525,9 +664,18 @@ function assertFixtureResponse(response) {
   return response.status === 200
     && exactKeys(response.body, ["ready", "createdCount", "reusedCount"])
     && response.body.ready === true
-    && boundedInteger(response.body.createdCount, 6)
-    && boundedInteger(response.body.reusedCount, 6)
-    && response.body.createdCount + response.body.reusedCount === 6;
+    && boundedInteger(response.body.createdCount, 5)
+    && boundedInteger(response.body.reusedCount, 5)
+    && response.body.createdCount + response.body.reusedCount === 5;
+}
+
+function assertSubscriptionFixtureResponse(response) {
+  return response.status === 200
+    && exactKeys(response.body, ["ready", "createdCount", "reusedCount"])
+    && response.body.ready === true
+    && boundedInteger(response.body.createdCount, 5)
+    && boundedInteger(response.body.reusedCount, 5)
+    && response.body.createdCount + response.body.reusedCount === 5;
 }
 
 function assertAdmissionResponse(response) {
@@ -609,6 +757,12 @@ function cookieValue(cookies, prefix) {
 
 async function parseFetchResponse(response, cookiePrefix, outcomeHeader) {
   if (!response || !Number.isInteger(response.status)) throw new Error("NETWORK_REJECTED");
+  if (response.status === 204) {
+    return {
+      status: response.status,
+      ...(cookiePrefix ? { sessionCookie: cookieValue(safeSetCookie(response.headers), cookiePrefix) } : {}),
+    };
+  }
   let body;
   try {
     body = await response.json();
@@ -722,14 +876,16 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
   return receipt;
 }
 
-async function defaultBrowserSubmit(input) {
-  const { chromium, errors } = await import("playwright");
+export async function defaultBrowserSubmit(input, dependencies = {}) {
+  const { chromium, errors } = dependencies.playwright ?? await import("playwright");
   // The trusted runner already pins every allowlisted A record in /etc/hosts
   // and permits that exact set in iptables. Do not collapse a multi-edge host
   // to one address here: a single unhealthy edge would make the payment flow
   // fail even though another allowlisted address remains reachable.
   const browser = await chromium.launch({
     headless: true,
+    // Never inherit runner secrets or arbitrary environment into Chromium.
+    env: fixedBrowserEnvironment(),
     args: [
       "--no-proxy-server",
       "--disable-quic",
@@ -782,6 +938,7 @@ async function defaultBrowserSubmit(input) {
     const paymentDocument = await context.request.post(PAYUNI_UPP_URL, {
       form: input.formPayload,
       failOnStatusCode: false,
+      maxRedirects: 0,
       timeout: REQUEST_TIMEOUT_MS,
     });
     apiStatus = paymentDocument.status();
@@ -807,8 +964,7 @@ async function defaultBrowserSubmit(input) {
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
-      await confirmation.click();
-      await page.getByRole("button", { name: "確認送出", exact: true }).click();
+      return "PAYMENT_CONFIRMATION_AMBIGUOUS";
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
     }
@@ -822,6 +978,114 @@ async function defaultBrowserSubmit(input) {
     stage = "RETURN_RESULT_UNMAPPED";
     const resultText = await page.locator("body").innerText();
     return resultText.includes(input.orderNumber) && resultText.includes("付款完成");
+  } catch {
+    if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
+    if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
+    if (Number.isInteger(apiStatus) && apiStatus >= 400) return "PAYMENT_PROVIDER_HTTP_REJECTED";
+    if (apiNetworkRejected) return apiNetworkFailure;
+    return "PAYMENT_REDIRECT_UNOBSERVED";
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Opens only the fixed server-owned WP4 plan form. The pending checkout is
+ * reserved only after the native form rendered PayUni's server-created fields;
+ * no runner argument can select a plan, transaction, purpose, or amount.
+ */
+export async function defaultSubscriptionBrowserSubmit(input, dependencies = {}) {
+  const { chromium, errors } = dependencies.playwright ?? await import("playwright");
+  const browser = await chromium.launch({
+    headless: true,
+    env: fixedBrowserEnvironment(),
+    args: ["--no-proxy-server", "--disable-quic"],
+  });
+  const context = await browser.newContext({ locale: "zh-TW" });
+  const page = await context.newPage();
+  const origin = fixedOrigin(input.previewHost);
+  let stage = "CHECKOUT_REJECTED";
+  let apiPostSeen = false;
+  let apiStatus = null;
+  let apiNetworkRejected = false;
+  let apiNetworkFailure = "PAYMENT_API_NETWORK_REJECTED";
+  try {
+    page.on("request", (request) => {
+      try {
+        const url = new URL(request.url());
+        if (url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST && url.pathname === "/api/upp" && request.method() === "POST") apiPostSeen = true;
+      } catch {}
+    });
+    page.on("response", (response) => {
+      try {
+        const url = new URL(response.url());
+        if (url.protocol === "https:" && url.hostname === PAYUNI_PAYMENT_HOST && url.pathname === "/api/upp") apiStatus = response.status();
+      } catch {}
+    });
+    page.on("requestfailed", (request) => {
+      try {
+        const url = new URL(request.url());
+        if (request.isNavigationRequest() && request.method() === "POST" && isPayUniPaymentPageUrl(url)) {
+          apiNetworkRejected = true;
+          apiNetworkFailure = classifyPayUniApiNetworkFailure(request.failure()?.errorText);
+        }
+      } catch {}
+    });
+    const [name, value] = input.ownerSessionCookie.split("=", 2);
+    if (name !== "celebrate_session" || !value) return "PAYMENT_REJECTED";
+    await context.addCookies([{ name, value, url: origin, httpOnly: true, sameSite: "Lax", secure: true }]);
+    await page.goto(`${origin}/billing/plans`, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
+    const planForm = page.locator('form[action="/api/billing/plans/select"]:has(input[name="planId"][value="wp4_synthetic_plan_v1"])');
+    await Promise.all([
+      page.waitForURL((url) => url.origin === origin && url.pathname === "/billing/plans" && url.searchParams.get("status") === "checkout", { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS }),
+      planForm.getByRole("button", { name: "選擇方案", exact: true }).click(),
+    ]);
+    if (input.markNativePlanCheckoutCreated?.() !== true) return "CHECKOUT_REJECTED";
+    const formPayload = await page.locator(`form[action="${PAYUNI_UPP_URL}"] input[type="hidden"]`).evaluateAll((inputs) => Object.fromEntries(
+      inputs.map((element) => [element.getAttribute("name"), element.getAttribute("value")]),
+    ));
+    if (!validFormPayload(formPayload)) return "CHECKOUT_REJECTED";
+    const reservation = await input.reservePaymentAttempt();
+    if (reservation !== true) return typeof reservation === "string" && FAILURE_CODES.has(reservation)
+      ? reservation
+      : "PAYMENT_ATTEMPT_REJECTED";
+
+    stage = "PAYMENT_PAGE_UNREACHED";
+    apiPostSeen = true;
+    const paymentDocument = await context.request.post(PAYUNI_UPP_URL, {
+      form: formPayload,
+      failOnStatusCode: false,
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    apiStatus = paymentDocument.status();
+    if (!paymentDocument.ok()) throw new Error("PAYMENT_PROVIDER_HTTP_REJECTED");
+    await page.route(PAYUNI_UPP_URL, (route) => route.fulfill({ response: paymentDocument }), { times: 1 });
+    await page.goto(PAYUNI_UPP_URL, { waitUntil: "commit", timeout: REQUEST_TIMEOUT_MS });
+    stage = "PAYMENT_METHOD_UNAVAILABLE";
+    await page.getByText("一次付清", { exact: true }).click();
+    await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
+    stage = "PAYMENT_FIELDS_REJECTED";
+    await page.getByPlaceholder("16 碼或 19 碼").pressSequentially(input.cardNumber);
+    await page.getByPlaceholder("MM/YY").pressSequentially(input.cardExpiry);
+    await page.getByPlaceholder("***").pressSequentially(input.cardCvv);
+    await page.getByPlaceholder("example@example.com").fill("wp4-subscription-v1@invalid.example");
+    stage = "PAYMENT_SUBMIT_REJECTED";
+    if (input.markPaymentSubmission?.() !== true) return "PAYMENT_SUBMIT_REJECTED";
+    await page.getByRole("button", { name: "確認送出", exact: true }).click();
+    const confirmation = page.getByRole("button", { name: "確定", exact: true });
+    try {
+      await confirmation.waitFor({ state: "visible", timeout: 5_000 });
+      return "PAYMENT_CONFIRMATION_AMBIGUOUS";
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    }
+    stage = "RETURN_CALLBACK_UNMAPPED";
+    await page.waitForURL((url) => url.origin === origin && url.pathname === "/checkout/result" && url.searchParams.get("payment") === "updated", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    // This only observes the provider return. It is not payment proof: SaaS has
+    // no buyer-order capability on this page. The fixed subscription refund and
+    // reconciliation operations provide the trusted paid/refund evidence.
+    return true;
   } catch {
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
@@ -986,6 +1250,173 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
   return receipt;
 }
 
+function assertSubscriptionSessionResponse(response) {
+  return response?.status === 204
+    && typeof response.sessionCookie === "string"
+    && response.sessionCookie.startsWith("celebrate_session=")
+    && response.sessionCookie.length > "celebrate_session=".length;
+}
+
+function assertSubscriptionRefundResponse(response) {
+  return response.status === 200
+    && exactKeys(response.body, ["status", "purpose", "phase", "providerWriteAttempted"])
+    && response.body.status === "COMPLETED"
+    && response.body.purpose === FIXED_SUBSCRIPTION_PURPOSE
+    && response.body.phase === "remaining"
+    && response.body.providerWriteAttempted === true;
+}
+
+function assertSubscriptionRefundRequiresReconciliation(response) {
+  return response.status === 503
+    && exactKeys(response.body, ["status", "purpose", "phase", "providerWriteAttempted"])
+    && response.body.status === "RECONCILIATION_REQUIRED"
+    && response.body.purpose === FIXED_SUBSCRIPTION_PURPOSE
+    && response.body.phase === "remaining"
+    && response.body.providerWriteAttempted === true;
+}
+
+function fixedBrowserEnvironment() {
+  return process.platform === "win32"
+    ? { PATH: "C:\\Windows\\System32;C:\\Windows", SystemRoot: "C:\\Windows", TEMP: "C:\\Windows\\Temp", TMP: "C:\\Windows\\Temp" }
+    : { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", HOME: "/tmp", TMPDIR: "/tmp" };
+}
+
+/** Executes only the fixed, server-owned WP4 SaaS checkout and refund path. */
+export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {}) {
+  const invocation = validateInvocation(input);
+  const receipt = createSubscriptionReceipt(invocation.ok ? invocation.sourceSha : "0".repeat(40));
+  if (!invocation.ok) return fail(receipt, invocation.code);
+
+  const request = dependencies.request ?? defaultRequest;
+  const browserSubmit = dependencies.browserSubmit ?? defaultSubscriptionBrowserSubmit;
+  const wait = dependencies.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const guarded = guardedHeaders(invocation);
+  try {
+    receipt.sideEffects.fixturePosts = 1;
+    const fixture = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
+      headers: guarded,
+      body: undefined,
+      outcomeHeader: "x-celebratedeal-wp4-fixture",
+    }));
+    if (!assertSubscriptionFixtureResponse(fixture)) return fail(receipt, fixtureFailure(fixture));
+    receipt.checks.fixtureReady = true;
+
+    receipt.sideEffects.sessionPosts = 1;
+    const session = await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-session"),
+      headers: guarded,
+      body: undefined,
+      cookiePrefix: "celebrate_session=",
+    });
+    if (!assertSubscriptionSessionResponse(session)) return fail(receipt, "CHECKOUT_REJECTED");
+    receipt.checks.ownerSessionIssued = true;
+
+    receipt.sideEffects.planSelections = 1;
+    const callbackMapped = await browserSubmit({
+      previewHost: invocation.previewHost,
+      ownerSessionCookie: session.sessionCookie,
+      cardNumber: invocation.cardNumber,
+      cardExpiry: invocation.cardExpiry,
+      cardCvv: invocation.cardCvv,
+      markNativePlanCheckoutCreated: () => {
+        if (receipt.checks.nativePlanCheckoutCreated || receipt.sideEffects.transactionsCreated !== 0) return false;
+        receipt.checks.nativePlanCheckoutCreated = true;
+        receipt.sideEffects.transactionsCreated = 1;
+        return true;
+      },
+      reservePaymentAttempt: async () => {
+        receipt.sideEffects.paymentAttemptPosts = 1;
+        const paymentAttempt = responseJson(await request({
+          url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-payment-attempt"),
+          headers: guarded,
+          body: undefined,
+        }));
+        if (!assertPaymentAttemptResponse(paymentAttempt)) return paymentAttemptFailure(paymentAttempt);
+        if (paymentAttempt.body.status === "ALREADY_PAID") return "RETURN_CALLBACK_PROOF_REQUIRED";
+        receipt.checks.paymentAttemptReserved = true;
+        receipt.sideEffects.paymentReservationsCreated = 1;
+        return true;
+      },
+      markPaymentSubmission: () => {
+        if (receipt.sideEffects.browserPaymentSubmissions !== 0) return false;
+        receipt.sideEffects.browserPaymentSubmissions = 1;
+        return true;
+      },
+    });
+    if (callbackMapped !== true) {
+      const browserFailure = typeof callbackMapped === "string" && FAILURE_CODES.has(callbackMapped)
+        ? callbackMapped
+        : "RETURN_CALLBACK_UNMAPPED";
+      return fail(receipt, browserFailure);
+    }
+    receipt.checks.payuniFormSubmitted = true;
+
+    // Read only the server-owned subscription state. A provider return URL
+    // alone cannot prove activation or quota, and must not authorize a refund.
+    receipt.sideEffects.statePosts = 1;
+    const activeState = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      headers: guarded,
+      body: undefined,
+    }));
+    if (activeState?.status !== 200 || !exactKeys(activeState.body, ["status"]) || activeState.body.status !== "ACTIVE_VERIFIED") {
+      return fail(receipt, "SUBSCRIPTION_STATE_REJECTED");
+    }
+    receipt.sideEffects.payments = 1;
+    receipt.checks.trustedSubscriptionPayment = true;
+    receipt.checks.activeEntitlementVerified = true;
+
+    receipt.sideEffects.refundPosts = 1;
+    const refund = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-refund"),
+      headers: guarded,
+      body: undefined,
+    }));
+    const refundCompletedInline = assertSubscriptionRefundResponse(refund);
+    const refundRequiresReconciliation = assertSubscriptionRefundRequiresReconciliation(refund);
+    if (!refundCompletedInline && !refundRequiresReconciliation) return fail(receipt, "REFUND_REJECTED");
+    if (refundCompletedInline) {
+      receipt.checks.refundCompleted = true;
+      receipt.sideEffects.refunds = 1;
+    }
+
+    const maximumReconcileAttempts = refundRequiresReconciliation ? SUBSCRIPTION_SIDE_EFFECT_BUDGET.reconcilePosts : 1;
+    for (let attempt = 1; attempt <= maximumReconcileAttempts; attempt += 1) {
+      receipt.sideEffects.reconcilePosts = attempt;
+      const reconciliation = responseJson(await request({
+        url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-reconcile"),
+        headers: guarded,
+        body: undefined,
+      }));
+      if (assertReconcileResponse(reconciliation)) break;
+      if (!refundRequiresReconciliation || attempt === maximumReconcileAttempts) return fail(receipt, "RECONCILE_REJECTED");
+      await wait(10_000);
+    }
+    if (refundRequiresReconciliation) {
+      receipt.checks.refundCompleted = true;
+      receipt.sideEffects.refunds = 1;
+    }
+    receipt.checks.reconciled = true;
+    receipt.sideEffects.statePosts = 2;
+    const refundedState = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      headers: guarded,
+      body: undefined,
+    }));
+    if (refundedState?.status !== 200 || !exactKeys(refundedState.body, ["status"]) || refundedState.body.status !== "REFUNDED_VERIFIED") {
+      return fail(receipt, "SUBSCRIPTION_STATE_REJECTED");
+    }
+    receipt.checks.refundedEntitlementVerified = true;
+    receipt.result = "PASS";
+    receipt.failure = "NONE";
+  } catch (error) {
+    fail(receipt, error instanceof Error && error.message === "NETWORK_REJECTED" ? "NETWORK_REJECTED" : "INTERNAL_REJECTED");
+  }
+
+  return finalizeMvpPayUniSubscriptionReceipt(receipt);
+}
+
 function fixedReceiptPath(runnerTemp, receiptName) {
   if (typeof runnerTemp !== "string" || runnerTemp.trim().length === 0) throw new Error("RECEIPT_PATH_REJECTED");
   if (!FIXED_RECEIPT_FILENAMES.has(receiptName)) throw new Error("RECEIPT_PATH_REJECTED");
@@ -1008,6 +1439,10 @@ export async function writeExistingRefundRecoveryReceipt(receipt, runnerTemp) {
   return writeFixedReceipt(receipt, runnerTemp, RECOVERY_RECEIPT_FILENAME);
 }
 
+export async function writeMvpPayUniSubscriptionReceipt(receipt, runnerTemp) {
+  return writeFixedReceipt(receipt, runnerTemp, SUBSCRIPTION_RECEIPT_FILENAME);
+}
+
 export async function validateWrittenMvpPayUniReceipt(runnerTemp) {
   try {
     const { receiptPath } = fixedReceiptPath(runnerTemp, RECEIPT_FILENAME);
@@ -1023,6 +1458,16 @@ export async function validateWrittenExistingRefundRecoveryReceipt(runnerTemp) {
     const { receiptPath } = fixedReceiptPath(runnerTemp, RECOVERY_RECEIPT_FILENAME);
     const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
     return validateExistingRefundRecoveryReceipt(receipt).ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, SUBSCRIPTION_RECEIPT_FILENAME);
+    const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+    return validateMvpPayUniSubscriptionReceipt(receipt).ok;
   } catch {
     return false;
   }
@@ -1048,6 +1493,12 @@ async function main() {
     process.exitCode = valid ? 0 : 2;
     return;
   }
+  if (process.argv.length === 3 && process.argv[2] === "--validate-subscription-receipt") {
+    const valid = await validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp);
+    process.stdout.write(`mvp_payuni_subscription_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+    process.exitCode = valid ? 0 : 2;
+    return;
+  }
   if (process.argv.length === 3 && process.argv[2] === "--recover-existing-refund") {
     const receipt = await recoverExistingWp4BuyerRefund(readExistingRefundRecoveryInputs());
     try {
@@ -1056,6 +1507,23 @@ async function main() {
       process.exitCode = receipt.result === "RECONCILED" ? 0 : 2;
     } catch {
       process.stdout.write("mvp_payuni_refund_recovery=BLOCKED; status=RESPONSE_INVALID\n");
+      process.exitCode = 2;
+    }
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--subscription") {
+    let subscriptionReceipt;
+    try {
+      subscriptionReceipt = await runMvpPayUniSandboxSubscriptionE2E(readFixedInputs());
+    } catch {
+      subscriptionReceipt = fail(createSubscriptionReceipt(), "INTERNAL_REJECTED");
+    }
+    try {
+      await writeMvpPayUniSubscriptionReceipt(subscriptionReceipt, runnerTemp);
+      process.stdout.write(`mvp_payuni_subscription=${subscriptionReceipt.result}\n`);
+      process.exitCode = subscriptionReceipt.result === "PASS" ? 0 : 2;
+    } catch {
+      process.stdout.write("mvp_payuni_subscription=BLOCKED\n");
       process.exitCode = 2;
     }
     return;
