@@ -1,6 +1,7 @@
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
 import { getPaymentProvider } from "@/lib/payment-providers";
+import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 import type { PaymentTransaction, PrismaClient } from "@prisma/client";
 
 export const WP4_PAYUNI_PURPOSES = [
@@ -157,7 +158,12 @@ async function reconcileFixedWp4PayUniSandboxRefund(
   let snapshot;
   try {
     snapshot = await provider.queryPayment({ transaction: transaction as PaymentTransaction });
-  } catch {
+  } catch (error) {
+    if (error instanceof PaymentQueryProviderError && error.category === "pending") {
+      // Preserve the reservation while PAYUNi reports a requested/processing
+      // refund; no accounting projection or further provider write is allowed.
+      return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+    }
     return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
   }
   // PayUni's query projection is eventually consistent after a successful

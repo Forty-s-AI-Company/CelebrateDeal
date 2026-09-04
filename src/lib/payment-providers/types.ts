@@ -141,7 +141,7 @@ export class RefundProviderError extends Error {
   }
 }
 
-export type PaymentQueryFailureCategory = "authentication" | "request_contract" | "provider_response" | "network" | "unknown";
+export type PaymentQueryFailureCategory = "authentication" | "request_contract" | "provider_response" | "pending" | "network" | "unknown";
 
 export class PaymentQueryProviderError extends Error {
   constructor(public readonly category: PaymentQueryFailureCategory) {

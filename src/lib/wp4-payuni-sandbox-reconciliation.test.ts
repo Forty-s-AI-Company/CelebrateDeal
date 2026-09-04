@@ -18,6 +18,7 @@ import {
   wp4PayUniPurposeFromMetadata,
 } from "@/lib/wp4-payuni-sandbox-reconciliation";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
+import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 
 const sourceCommit = "a".repeat(40);
 
@@ -143,6 +144,20 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
 
     await expect(reconcileWp4PayUniSandboxSubscriptionRefund(db as never, sourceCommit))
       .resolves.toEqual({ reconciled: false, status: "PROJECTION_UNAVAILABLE" });
+    expect(mocks.queryPayment).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+  });
+
+  it.each(["buyer", "subscription"] as const)("preserves %s refund reservations while provider processing is pending", async (purpose) => {
+    const row = purpose === "buyer"
+      ? reconciliationRow({ metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: sourceCommit } })
+      : reconciliationRow();
+    findMany.mockResolvedValue([row]);
+    mocks.queryPayment.mockRejectedValueOnce(new PaymentQueryProviderError("pending"));
+    const reconcile = purpose === "buyer" ? reconcileWp4PayUniSandboxRefund : reconcileWp4PayUniSandboxSubscriptionRefund;
+
+    await expect(reconcile(db as never, sourceCommit))
+      .resolves.toEqual({ reconciled: false, status: "REFUND_NOT_CONFIRMED" });
     expect(mocks.queryPayment).toHaveBeenCalledTimes(1);
     expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
   });

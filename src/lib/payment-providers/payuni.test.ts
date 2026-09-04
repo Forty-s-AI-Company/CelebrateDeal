@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { buildPayUniSandboxWebhookFixture } from "@/lib/payment-providers/payuni-fixtures";
+import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 
 const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
@@ -37,6 +38,22 @@ function payUniEnvelope(payload: Record<string, unknown>) {
     EncryptInfo: encryptInfo,
     HashInfo: createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase(),
   }).toString();
+}
+
+function completedCreditRefundQueryRow(overrides: Record<string, string> = {}) {
+  return {
+    MerTradeNo: "CD-QUERY-001",
+    TradeNo: "trade-query-123",
+    TradeAmt: "1680",
+    PaymentType: "1",
+    TradeStatus: "1",
+    DataSource: "A",
+    RefundType: "2",
+    RefundStatus: "2",
+    RefundAmt: "1680",
+    RemainAmt: "0",
+    ...overrides,
+  };
 }
 
 afterEach(() => {
@@ -234,13 +251,7 @@ describe("PayUni provider", () => {
     stubPayUniEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
-      Result: JSON.stringify({
-        MerTradeNo: "CD-QUERY-001",
-        TradeNo: "trade-query-123",
-        TradeAmt: "1680",
-        TradeStatus: "1",
-        RefundStatus: "1",
-      }),
+      Result: JSON.stringify(completedCreditRefundQueryRow()),
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -280,12 +291,7 @@ describe("PayUni provider", () => {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
-      Result: JSON.stringify({
-        MerTradeNo: "CD-QUERY-001",
-        TradeStatus: "1",
-        RefundStatus: "1",
-        ...mismatch,
-      }),
+      Result: JSON.stringify(completedCreditRefundQueryRow(mismatch)),
     }), { status: 200 })));
     await expect(payUniPaymentProvider.queryPayment?.({
       transaction: {
@@ -305,8 +311,13 @@ describe("PayUni provider", () => {
       "Result[0][MerTradeNo]": "CD-QUERY-BRACKET",
       "Result[0][TradeNo]": "trade-query-bracket",
       "Result[0][TradeAmt]": "1680",
+      "Result[0][PaymentType]": "1",
       "Result[0][TradeStatus]": "1",
-      "Result[0][RefundStatus]": "1",
+      "Result[0][DataSource]": "A",
+      "Result[0][RefundType]": "2",
+      "Result[0][RefundStatus]": "2",
+      "Result[0][RefundAmt]": "1680",
+      "Result[0][RemainAmt]": "0",
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
@@ -331,8 +342,13 @@ describe("PayUni provider", () => {
       "Result[0][MerTradeNo]": "CD-QUERY-BRACKET",
       "Result[0][TradeNo]": "other-trade",
       "Result[0][TradeAmt]": "1680",
+      "Result[0][PaymentType]": "1",
       "Result[0][TradeStatus]": "1",
-      "Result[0][RefundStatus]": "1",
+      "Result[0][DataSource]": "A",
+      "Result[0][RefundType]": "2",
+      "Result[0][RefundStatus]": "2",
+      "Result[0][RefundAmt]": "1680",
+      "Result[0][RemainAmt]": "0",
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
@@ -350,13 +366,12 @@ describe("PayUni provider", () => {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
-      Result: JSON.stringify({
+      Result: JSON.stringify(completedCreditRefundQueryRow({
         MerTradeNo: "CD-QUERY-002",
         TradeNo: "trade-query-234",
-        TradeAmt: "1680",
-        TradeStatus: "1",
-        RefundStatus: "2",
-      }),
+        RemainAmt: "840",
+        RefundAmt: "",
+      })),
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
@@ -368,13 +383,11 @@ describe("PayUni provider", () => {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
-      Result: JSON.stringify({
+      Result: JSON.stringify(completedCreditRefundQueryRow({
         MerTradeNo: "CD-QUERY-STRICT",
         TradeNo: "trade-query-strict",
         TradeAmt: tradeAmount,
-        TradeStatus: "1",
-        RefundStatus: "1",
-      }),
+      })),
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
@@ -421,18 +434,99 @@ describe("PayUni provider", () => {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
-      Result: JSON.stringify({
+      Result: JSON.stringify(completedCreditRefundQueryRow({
         MerTradeNo: "CD-QUERY-STATUS-8",
         TradeNo: "trade-query-status-8",
-        TradeAmt: "1680",
-        TradeStatus: "1",
         RefundStatus: "8",
-      }),
+      })),
+    }), { status: 200 })));
+
+    const query = payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STATUS-8", providerTradeNo: "trade-query-status-8", grossAmountCents: 168_000 } as PaymentTransaction,
+    });
+    await expect(query).rejects.toBeInstanceOf(PaymentQueryProviderError);
+    await expect(query).rejects.toMatchObject({ category: "pending" });
+  });
+
+  it.each([
+    ["partial", { MerTradeNo: "CD-QUERY-PARTIAL", TradeNo: "trade-query-partial", RefundAmt: "600", RemainAmt: "1080" }, {
+      refundedAmountCents: 60_000,
+      remainingRefundableAmountCents: 108_000,
+      status: "partially_refunded",
+    }],
+    ["multiple refunds where the final RefundAmt is not cumulative", { MerTradeNo: "CD-QUERY-MULTI", TradeNo: "trade-query-multi", RefundAmt: "300", RemainAmt: "480" }, {
+      refundedAmountCents: 120_000,
+      remainingRefundableAmountCents: 48_000,
+      status: "partially_refunded",
+    }],
+  ])("normalizes a %s credit-card refund from cumulative gross minus RemainAmt", async (_label, row, expected) => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify(completedCreditRefundQueryRow(row)),
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STATUS-8", providerTradeNo: "trade-query-status-8", grossAmountCents: 168_000 } as PaymentTransaction,
-    })).rejects.toThrow("Payment provider query failed.");
+      transaction: {
+        id: "tx-query-refund",
+        providerName: "payuni",
+        orderNumber: row.MerTradeNo,
+        providerTradeNo: row.TradeNo,
+        grossAmountCents: 168_000,
+      } as PaymentTransaction,
+    })).resolves.toMatchObject(expected);
+  });
+
+  it.each([
+    ["RefundStatus 1 application", { RefundStatus: "1" }],
+    ["RefundStatus 8 processing", { RefundStatus: "8" }],
+    ["DataSource B processing", { DataSource: "B" }],
+    ["RefundType 3 scheduled", { RefundType: "3" }],
+  ])("treats %s as pending and never as a refund success", async (_label, patch) => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify(completedCreditRefundQueryRow({
+        MerTradeNo: "CD-QUERY-PENDING",
+        TradeNo: "trade-query-pending",
+        ...patch,
+      })),
+    }), { status: 200 })));
+
+    const query = payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query-pending", providerName: "payuni", orderNumber: "CD-QUERY-PENDING", providerTradeNo: "trade-query-pending", grossAmountCents: 168_000 } as PaymentTransaction,
+    });
+    await expect(query).rejects.toBeInstanceOf(PaymentQueryProviderError);
+    await expect(query).rejects.toMatchObject({ category: "pending" });
+  });
+
+  it.each([
+    ["missing PaymentType", { PaymentType: "" }],
+    ["non-credit PaymentType", { PaymentType: "2" }],
+    ["cancelled refund", { RefundStatus: "3" }],
+    ["unknown refund status", { RefundStatus: "99" }],
+    ["missing final RefundAmt", { RefundAmt: "" }],
+    ["CloseAmt cannot replace RefundAmt", { RefundAmt: "", CloseAmt: "1680" }],
+    ["missing RemainAmt", { RemainAmt: "" }],
+    ["remaining balance above gross", { RemainAmt: "1681" }],
+    ["final refund greater than cumulative refund", { RefundAmt: "1200", RemainAmt: "600" }],
+    ["zero final refund", { RefundAmt: "0", RemainAmt: "840" }],
+  ])("fails closed for unsupported or inconsistent credit query result: %s", async (_label, patch) => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify(completedCreditRefundQueryRow({
+        MerTradeNo: "CD-QUERY-INVALID-REFUND",
+        TradeNo: "trade-query-invalid-refund",
+        ...patch,
+      })),
+    }), { status: 200 })));
+
+    const query = payUniPaymentProvider.queryPayment?.({
+      transaction: { id: "tx-query-invalid-refund", providerName: "payuni", orderNumber: "CD-QUERY-INVALID-REFUND", providerTradeNo: "trade-query-invalid-refund", grossAmountCents: 168_000 } as PaymentTransaction,
+    });
+    await expect(query).rejects.toBeInstanceOf(PaymentQueryProviderError);
+    await expect(query).rejects.toMatchObject({ category: "provider_response" });
   });
 
   it("fails closed when PayUni's close response cannot be authenticated", async () => {
