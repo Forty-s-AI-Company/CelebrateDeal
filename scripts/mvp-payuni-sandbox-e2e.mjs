@@ -149,10 +149,13 @@ const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
 const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
 const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
+const BUYER_CONTINUATION_RECEIPT_FILENAME = "wp4-payuni-buyer-existing-continuation-receipt.json";
 export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v2";
+export const MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA = "celebratedeal-wp4-buyer-existing-continuation/v1";
+export const BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
 const BUYER_PAYMENT_CHECK_FILE = "wp4-payuni-buyer-payment-check-receipt.json";
 const BUYER_CALLBACK_RETRY_FILE = "wp4-payuni-buyer-callback-retry-receipt.json";
-const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE, BUYER_CALLBACK_RETRY_FILE]);
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE, BUYER_CALLBACK_RETRY_FILE, BUYER_CONTINUATION_RECEIPT_FILENAME]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
@@ -1602,6 +1605,99 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
   return finalizeMvpPayUniSubscriptionReceipt(receipt);
 }
 
+const BUYER_CONTINUATION_FAILURES = new Set(["NONE", "INPUT_REJECTED", "NETWORK_REJECTED", "RESPONSE_INVALID", "STATE_REJECTED", "REFUND_REJECTED", "RECONCILE_REJECTED", "REFUNDED_STATE_REJECTED", "INTERNAL_REJECTED"]);
+function createBuyerContinuationReceipt(sourceSha = "0".repeat(40)) {
+  return {
+    schemaVersion: MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA,
+    purpose: FIXED_PURPOSE,
+    sourceSha: SOURCE_SHA.test(sourceSha) ? sourceSha : "0".repeat(40),
+    transactionSourceSha: BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA,
+    environment: FIXED_PAYUNI_ENV,
+    result: "BLOCKED",
+    failure: "INPUT_REJECTED",
+    checks: { stateVerified: false, refundAttempted: false, reconciled: false, refundedStateVerified: false },
+    sideEffects: { statePosts: 0, refundPosts: 0, reconcilePosts: 0, queryAttempts: 0, paymentSubmissions: 0, providerRefundSubmissions: 0 },
+    safety: { sanitized: true, envFilesRead: false, envEnumerated: false, rawLogsPersisted: false, rawIdentifiersPersisted: false, rawUrlsPersisted: false, secretsPersisted: false, arbitraryInputAccepted: false, sideEffectBudgetExceeded: false },
+  };
+}
+
+function validBuyerContinuationState(body, refunded) {
+  return body && exactKeys(body, ["status", "paymentStatus", "orderPaid", "inventoryCommitted", "notificationQueued", "refundReconciled"])
+    && body.status === "VERIFIED"
+    && body.paymentStatus === (refunded ? "REFUNDED" : "PAID")
+    && body.orderPaid === true && body.inventoryCommitted === true && body.notificationQueued === true
+    && body.refundReconciled === refunded;
+}
+
+export function validateBuyerContinuationReceipt(receipt) {
+  const errors = [];
+  if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "failure", "checks", "sideEffects", "safety"]) || !exactKeys(receipt?.checks, ["stateVerified", "refundAttempted", "reconciled", "refundedStateVerified"])
+    || !exactKeys(receipt?.sideEffects, ["statePosts", "refundPosts", "reconcilePosts", "queryAttempts", "paymentSubmissions", "providerRefundSubmissions"])
+    || !exactKeys(receipt?.safety, SAFETY_KEYS)) errors.push("SCHEMA_KEYS");
+  if (errors.length) return { ok: false, errors };
+  if (receipt?.schemaVersion !== MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || receipt?.environment !== FIXED_PAYUNI_ENV
+    || !SOURCE_SHA.test(receipt?.sourceSha ?? "") || receipt?.transactionSourceSha !== BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA) errors.push("FIXED_IDENTITY");
+  if (!BUYER_CONTINUATION_FAILURES.has(receipt?.failure) || !["PASS", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
+  if (!["PASS", "BLOCKED"].includes(receipt?.result) || !Object.values(receipt?.checks ?? {}).every((value) => typeof value === "boolean")) errors.push("CHECK_VALUES");
+  const effects = receipt?.sideEffects;
+  if (!boundedInteger(effects?.statePosts, 2) || !boundedInteger(effects?.refundPosts, 1) || !boundedInteger(effects?.reconcilePosts, 12) || !boundedInteger(effects?.queryAttempts, 12)
+    || effects?.paymentSubmissions !== 0 || !boundedInteger(effects?.providerRefundSubmissions, 1)) errors.push("SIDE_EFFECT_BUDGET");
+  if (effects?.queryAttempts !== effects?.reconcilePosts || effects?.providerRefundSubmissions > effects?.refundPosts || receipt?.safety?.sideEffectBudgetExceeded !== false) errors.push("COUNTER_SEQUENCE");
+  if (receipt?.safety?.sanitized !== true || !allFalse(receipt?.safety, SAFETY_KEYS.filter((key) => key !== "sanitized" && key !== "sideEffectBudgetExceeded"))) errors.push("SANITIZATION");
+  if (receipt?.checks?.stateVerified && effects?.statePosts < 1) errors.push("STATE_SEQUENCE");
+  if (effects?.refundPosts > 0 && !receipt.checks.stateVerified) errors.push("REFUND_SEQUENCE");
+  if (receipt?.checks?.refundAttempted && (!receipt.checks.stateVerified || effects?.refundPosts !== 1 || effects?.providerRefundSubmissions !== 1)) errors.push("REFUND_SEQUENCE");
+  if (effects?.reconcilePosts > 0 && !receipt.checks.refundAttempted) errors.push("RECONCILE_SEQUENCE");
+  if (receipt?.checks?.reconciled && (!receipt.checks.refundAttempted || effects?.reconcilePosts < 1)) errors.push("RECONCILE_SEQUENCE");
+  if (receipt?.checks?.refundedStateVerified && (!receipt.checks.reconciled || effects?.statePosts !== 2)) errors.push("FINAL_STATE_SEQUENCE");
+  if (effects?.statePosts === 2 && !receipt?.checks?.reconciled) errors.push("FINAL_STATE_SEQUENCE");
+  if (receipt?.result === "PASS" && (!Object.values(receipt.checks).every(Boolean) || receipt.failure !== "NONE" || effects?.paymentSubmissions !== 0 || effects?.queryAttempts !== effects?.reconcilePosts)) errors.push("PASS_COMPLETENESS");
+  if (receipt?.result === "BLOCKED" && (receipt.failure === "NONE" || Object.values(receipt.checks).every(Boolean))) errors.push("BLOCKED_COMPLETENESS");
+  return { ok: errors.length === 0, errors };
+}
+
+export async function runMvpPayUniBuyerExistingContinuation(input, dependencies = {}) {
+  const invocation = validateExistingRefundRecoveryInvocation(input);
+  const receipt = createBuyerContinuationReceipt(invocation.ok ? invocation.sourceSha : "0".repeat(40));
+  if (!invocation.ok) return receipt;
+  const request = dependencies.request ?? defaultRequest;
+  const wait = dependencies.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const headers = guardedHeaders(invocation);
+  const get = async (path) => responseJson(await request({ url: fixedUrl(invocation.previewHost, path), headers, body: undefined }));
+  try {
+    receipt.sideEffects.statePosts = 1;
+    const initial = await get("/api/admin/ops/payuni/wp4-buyer-existing-state");
+    if (initial.status !== 200 || !validBuyerContinuationState(initial.body, false)) return fail(receipt, "STATE_REJECTED");
+    receipt.checks.stateVerified = true;
+    receipt.sideEffects.refundPosts = 1;
+    receipt.sideEffects.providerRefundSubmissions = 1;
+    const refund = await get("/api/admin/ops/payuni/wp4-buyer-existing-refund");
+    if (refund.status !== 200 || !exactKeys(refund.body, ["status", "providerWriteAttempted"]) || !["COMPLETED", "RECONCILIATION_REQUIRED"].includes(refund.body.status) || refund.body.providerWriteAttempted !== true) return fail(receipt, "REFUND_REJECTED");
+    receipt.checks.refundAttempted = true;
+    let reconciled = false;
+    for (let attempt = 1; attempt <= 12; attempt += 1) {
+      receipt.sideEffects.reconcilePosts = attempt;
+      receipt.sideEffects.queryAttempts = attempt;
+      const reconciliation = await get("/api/admin/ops/payuni/wp4-buyer-existing-reconcile");
+      if (reconciliation.status === 200 && exactKeys(reconciliation.body, ["status", "reconciled"]) && reconciliation.body.status === "RECONCILED" && reconciliation.body.reconciled === true) { reconciled = true; break; }
+      if (reconciliation.status !== 200 || !exactKeys(reconciliation.body, ["status", "reconciled"]) || reconciliation.body.status !== "REFUND_NOT_CONFIRMED" || reconciliation.body.reconciled !== false) return fail(receipt, "RECONCILE_REJECTED");
+      if (attempt === 12) return fail(receipt, "RECONCILE_REJECTED");
+      await wait(10_000);
+    }
+    if (!reconciled) return fail(receipt, "RECONCILE_REJECTED");
+    receipt.checks.reconciled = true;
+    receipt.sideEffects.statePosts = 2;
+    const finalState = await get("/api/admin/ops/payuni/wp4-buyer-existing-state");
+    if (finalState.status !== 200 || !validBuyerContinuationState(finalState.body, true)) return fail(receipt, "REFUNDED_STATE_REJECTED");
+    receipt.checks.refundedStateVerified = true;
+    receipt.result = "PASS";
+    receipt.failure = "NONE";
+  } catch {
+    fail(receipt, "NETWORK_REJECTED");
+  }
+  return validateBuyerContinuationReceipt(receipt).ok ? receipt : fail(receipt, "INTERNAL_REJECTED");
+}
+
 function fixedReceiptPath(runnerTemp, receiptName) {
   if (typeof runnerTemp !== "string" || runnerTemp.trim().length === 0) throw new Error("RECEIPT_PATH_REJECTED");
   if (!FIXED_RECEIPT_FILENAMES.has(receiptName)) throw new Error("RECEIPT_PATH_REJECTED");
@@ -1682,6 +1778,18 @@ export async function validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp) {
   }
 }
 
+export async function writeBuyerExistingContinuationReceipt(receipt, runnerTemp) {
+  if (!validateBuyerContinuationReceipt(receipt).ok) throw new Error("RECEIPT_INVALID");
+  return writeFixedReceipt(receipt, runnerTemp, BUYER_CONTINUATION_RECEIPT_FILENAME);
+}
+
+export async function validateWrittenBuyerExistingContinuationReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, BUYER_CONTINUATION_RECEIPT_FILENAME);
+    return validateBuyerContinuationReceipt(JSON.parse(await readFile(receiptPath, "utf8"))).ok;
+  } catch { return false; }
+}
+
 async function main() {
   const runnerTemp = process.env.RUNNER_TEMP;
   if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-callback-retry-receipt") {
@@ -1735,6 +1843,20 @@ async function main() {
     const valid = await validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp);
     process.stdout.write(`mvp_payuni_subscription_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
     process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-continuation-receipt") {
+    const valid = await validateWrittenBuyerExistingContinuationReceipt(runnerTemp);
+    process.stdout.write(`wp4_buyer_existing_continuation_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+    process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--continue-existing-buyer") {
+    const receipt = await runMvpPayUniBuyerExistingContinuation(readExistingRefundRecoveryInputs());
+    if (!validateBuyerContinuationReceipt(receipt).ok) { process.exitCode = 2; return; }
+    await writeBuyerExistingContinuationReceipt(receipt, runnerTemp);
+    process.stdout.write(`wp4_buyer_existing_continuation=${receipt.result}; failure=${receipt.failure}\n`);
+    process.exitCode = receipt.result === "PASS" ? 0 : 2;
     return;
   }
   if (process.argv.length === 3 && process.argv[2] === "--recover-existing-refund") {
