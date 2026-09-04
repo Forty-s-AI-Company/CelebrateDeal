@@ -6,28 +6,37 @@ import test from "node:test";
 
 import {
   classifyPayUniApiNetworkFailure,
+  defaultSubscriptionBrowserSubmit,
+  finalizeMvpPayUniSubscriptionReceipt,
   isPayUniPaymentPageUrl,
   FIXED_PAYUNI_ENV,
+  FIXED_SUBSCRIPTION_PURPOSE,
   EXISTING_REFUND_RECOVERY_SOURCE_SHA,
   EXISTING_REFUND_RECOVERY_SCHEMA,
   MVP_PAYUNI_SANDBOX_E2E_SCHEMA,
+  MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA,
   SIDE_EFFECT_BUDGET,
   createExistingRefundRecoveryReceipt,
   createReceipt,
+  createSubscriptionReceipt,
   fixedCheckoutIdempotencyKey,
   readFixedInputs,
   readExistingRefundRecoveryInputs,
   recoverExistingWp4BuyerRefund,
   runMvpPayUniSandboxE2E,
+  runMvpPayUniSandboxSubscriptionE2E,
   validateExistingRefundRecoveryInvocation,
   validateExistingRefundRecoveryReceipt,
   validateInvocation,
   validateMvpPayUniReceipt,
+  validateMvpPayUniSubscriptionReceipt,
   validateWrittenExistingRefundRecoveryReceipt,
   validateWrittenMvpPayUniReceipt,
+  validateWrittenMvpPayUniSubscriptionReceipt,
   verifyMvpPayUniLineage,
   writeExistingRefundRecoveryReceipt,
   writeMvpPayUniReceipt,
+  writeMvpPayUniSubscriptionReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
 
 test("classifies Chromium PayUni API network failures without persisting raw errors", () => {
@@ -127,6 +136,417 @@ function successfulDependencies(calls = []) {
     },
   };
 }
+
+function successfulSubscriptionDependencies(calls = []) {
+  let stateReads = 0;
+  return {
+    async request(request) {
+      calls.push(request);
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-session")) {
+        return { status: 204, sessionCookie: "celebrate_session=opaque-owner-session" };
+      }
+      if (request.url.endsWith("/wp4-subscription-payment-attempt")) {
+        return response(200, { status: "SUBMIT_ALLOWED", reservationCreated: true });
+      }
+      if (request.url.endsWith("/wp4-subscription-state")) {
+        stateReads += 1;
+        return response(200, { status: stateReads === 1 ? "ACTIVE_VERIFIED" : "REFUNDED_VERIFIED" });
+      }
+      if (request.url.endsWith("/wp4-subscription-refund")) {
+        return response(200, { status: "COMPLETED", purpose: FIXED_SUBSCRIPTION_PURPOSE, phase: "remaining", providerWriteAttempted: true });
+      }
+      if (request.url.endsWith("/wp4-subscription-reconcile")) return response(200, { reconciled: true, status: "RECONCILED" });
+      throw new Error("unexpected request");
+    },
+    async browserSubmit(browserInput) {
+      calls.push({ browserInput });
+      assert.equal(browserInput.previewHost, previewHost);
+      assert.equal(browserInput.ownerSessionCookie, "celebrate_session=opaque-owner-session");
+      assert.equal(browserInput.markNativePlanCheckoutCreated(), true);
+      assert.equal(await browserInput.reservePaymentAttempt(), true);
+      assert.equal(browserInput.markPaymentSubmission(), true);
+      return true;
+    },
+  };
+}
+
+test("uses the native fixed plan browser flow once without treating the return page as subscription payment proof", async () => {
+  class TimeoutError extends Error {}
+  let selected = 0;
+  let submitted = 0;
+  let reserved = 0;
+  let marked = 0;
+  let nativeCheckouts = 0;
+  let confirmationVisible = false;
+  let confirmationClicks = 0;
+  let ownerCookie;
+  let closed = 0;
+  const page = {
+    on() {},
+    async goto() {},
+    async route() {},
+    async waitForURL() {},
+    getByText() { return { async click() {} }; },
+    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByRole(_role, options) {
+      if (options.name === "確認送出") return { async click() { submitted += 1; } };
+      if (options.name === "確定") {
+        return {
+          async waitFor() { if (!confirmationVisible) throw new TimeoutError(); },
+          async click() { confirmationClicks += 1; },
+        };
+      }
+      throw new Error("unexpected role");
+    },
+    locator(selector) {
+      if (selector.includes('/api/billing/plans/select')) {
+        return { getByRole() { return { async click() { selected += 1; } }; } };
+      }
+      if (selector.includes('https://sandbox-api.payuni.com.tw/api/upp')) {
+        return {
+          async evaluateAll(callback) {
+            return callback([
+              { getAttribute: (name) => name === "name" ? "MerID" : "merchant" },
+              { getAttribute: (name) => name === "name" ? "Version" : "2.0" },
+              { getAttribute: (name) => name === "name" ? "EncryptInfo" : "cipher" },
+              { getAttribute: (name) => name === "name" ? "HashInfo" : "hash" },
+            ]);
+          },
+        };
+      }
+      return { async check() {} };
+    },
+  };
+  const browser = {
+    async newContext() {
+      return {
+        async addCookies(cookies) { ownerCookie = cookies[0]; },
+        async newPage() { return page; },
+        request: { async post() { return { status: () => 200, ok: () => true }; } },
+      };
+    },
+    async close() { closed += 1; },
+  };
+
+  const result = await defaultSubscriptionBrowserSubmit({
+    previewHost,
+    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    cardNumber: "4147631000000001",
+    cardExpiry: "1230",
+    cardCvv: "123",
+    markNativePlanCheckoutCreated() { nativeCheckouts += 1; return nativeCheckouts === 1; },
+    async reservePaymentAttempt() { reserved += 1; return true; },
+    markPaymentSubmission() { marked += 1; return marked === 1; },
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+
+  assert.equal(result, true);
+  assert.equal(selected, 1);
+  assert.equal(reserved, 1);
+  assert.equal(marked, 1);
+  assert.equal(nativeCheckouts, 1);
+  assert.equal(submitted, 1);
+  assert.equal(ownerCookie.name, "celebrate_session");
+  assert.equal(closed, 1);
+
+  selected = 0;
+  submitted = 0;
+  reserved = 0;
+  marked = 0;
+  nativeCheckouts = 0;
+  confirmationVisible = true;
+  const ambiguous = await defaultSubscriptionBrowserSubmit({
+    previewHost,
+    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    cardNumber: "4147631000000001",
+    cardExpiry: "1230",
+    cardCvv: "123",
+    markNativePlanCheckoutCreated() { nativeCheckouts += 1; return nativeCheckouts === 1; },
+    async reservePaymentAttempt() { reserved += 1; return true; },
+    markPaymentSubmission() { marked += 1; return marked === 1; },
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+
+  assert.equal(ambiguous, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(selected, 1);
+  assert.equal(reserved, 1);
+  assert.equal(marked, 1);
+  assert.equal(nativeCheckouts, 1);
+  assert.equal(submitted, 1);
+  assert.equal(confirmationClicks, 0);
+});
+
+test("subscription runner accepts only fixed server-owned subscription operations in mocked orchestration", async () => {
+  const calls = [];
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, successfulSubscriptionDependencies(calls));
+
+  assert.equal(receipt.schemaVersion, MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA);
+  assert.equal(receipt.purpose, FIXED_SUBSCRIPTION_PURPOSE);
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.checks.trustedSubscriptionPayment, true);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-payment-attempt")), true);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), true);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-reconcile")), true);
+  assert.equal(JSON.stringify(receipt).includes("opaque-owner-session"), false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription marks the native transaction before rejecting an invalid server-rendered PayUni form", async () => {
+  let marked = 0;
+  let reservations = 0;
+  let providerPosts = 0;
+  const page = {
+    on() {},
+    async goto() {},
+    async waitForURL() {},
+    locator(selector) {
+      if (selector.includes('/api/billing/plans/select')) {
+        return { getByRole() { return { async click() {} }; } };
+      }
+      return {
+        async evaluateAll(callback) {
+          return callback([{ getAttribute: (name) => name === "name" ? "MerID" : "merchant" }]);
+        },
+      };
+    },
+  };
+  const browser = {
+    async newContext() {
+      return {
+        async addCookies() {},
+        async newPage() { return page; },
+        request: { async post() { providerPosts += 1; throw new Error("must not submit"); } },
+      };
+    },
+    async close() {},
+  };
+
+  const result = await defaultSubscriptionBrowserSubmit({
+    previewHost,
+    ownerSessionCookie: "celebrate_session=opaque-owner-session",
+    cardNumber: "4147631000000001",
+    cardExpiry: "1230",
+    cardCvv: "123",
+    markNativePlanCheckoutCreated() { marked += 1; return true; },
+    async reservePaymentAttempt() { reservations += 1; return true; },
+    markPaymentSubmission() { throw new Error("must not submit"); },
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError: class TimeoutError extends Error {} } } });
+
+  assert.equal(result, "CHECKOUT_REJECTED");
+  assert.equal(marked, 1);
+  assert.equal(reservations, 0);
+  assert.equal(providerPosts, 0);
+});
+
+test("subscription checkout failure before the native redirect preserves zero transaction creation", async () => {
+  const dependencies = successfulSubscriptionDependencies();
+  dependencies.browserSubmit = async () => "CHECKOUT_REJECTED";
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.failure, "CHECKOUT_REJECTED");
+  assert.equal(receipt.sideEffects.planSelections, 1);
+  assert.equal(receipt.sideEffects.transactionsCreated, 0);
+  assert.equal(receipt.sideEffects.paymentAttemptPosts, 0);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription existing reservation stops before a second browser submission and preserves attempted counters", async () => {
+  const calls = [];
+  const dependencies = successfulSubscriptionDependencies(calls);
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-payment-attempt")
+    ? response(409, { status: "ALREADY_RESERVED", reservationCreated: false })
+    : originalRequest(request);
+  dependencies.browserSubmit = async (browserInput) => {
+    assert.equal(browserInput.markNativePlanCheckoutCreated(), true);
+    assert.equal(await browserInput.reservePaymentAttempt(), "PAYMENT_ATTEMPT_ALREADY_RESERVED");
+    return "PAYMENT_ATTEMPT_ALREADY_RESERVED";
+  };
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.failure, "PAYMENT_ATTEMPT_ALREADY_RESERVED");
+  assert.equal(receipt.sideEffects.planSelections, 1);
+  assert.equal(receipt.sideEffects.transactionsCreated, 1);
+  assert.equal(receipt.sideEffects.paymentAttemptPosts, 1);
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 0);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription rejects invalid or production input without any request or browser side effect", async () => {
+  for (const input of [
+    { ...validInput, payuniEnv: "production" },
+    { ...validInput, previewHost: "app.example.test" },
+    { ...validInput, sourceSha: "not-a-sha" },
+  ]) {
+    let requests = 0;
+    let browserSubmissions = 0;
+    const receipt = await runMvpPayUniSandboxSubscriptionE2E(input, {
+      async request() { requests += 1; throw new Error("must not run"); },
+      async browserSubmit() { browserSubmissions += 1; throw new Error("must not run"); },
+    });
+    assert.equal(receipt.failure, "INPUT_REJECTED");
+    assert.equal(receipt.sideEffects.fixturePosts, 0);
+    assert.equal(requests, 0);
+    assert.equal(browserSubmissions, 0);
+    assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+  }
+});
+
+test("subscription already-paid candidate does not submit, refund, or reconcile without a dedicated payment proof", async () => {
+  const calls = [];
+  const dependencies = successfulSubscriptionDependencies(calls);
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-payment-attempt")
+    ? response(200, { status: "ALREADY_PAID", reservationCreated: false })
+    : originalRequest(request);
+  dependencies.browserSubmit = async (browserInput) => {
+    assert.equal(browserInput.markNativePlanCheckoutCreated(), true);
+    assert.equal(await browserInput.reservePaymentAttempt(), "RETURN_CALLBACK_PROOF_REQUIRED");
+    return "RETURN_CALLBACK_PROOF_REQUIRED";
+  };
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.failure, "RETURN_CALLBACK_PROOF_REQUIRED");
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 0);
+  assert.equal(receipt.sideEffects.payments, 0);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription ambiguous browser outcome keeps its one submission counter and stops before refund", async () => {
+  const calls = [];
+  const dependencies = successfulSubscriptionDependencies(calls);
+  dependencies.browserSubmit = async (browserInput) => {
+    assert.equal(browserInput.markNativePlanCheckoutCreated(), true);
+    assert.equal(await browserInput.reservePaymentAttempt(), true);
+    assert.equal(browserInput.markPaymentSubmission(), true);
+    return "PAYMENT_CONFIRMATION_AMBIGUOUS";
+  };
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.failure, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+  assert.equal(receipt.sideEffects.payments, 0);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription unresolved refund performs one refund request and only the bounded reconciliation queries", async () => {
+  const calls = [];
+  const dependencies = successfulSubscriptionDependencies(calls);
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => {
+    if (request.url.endsWith("/wp4-subscription-refund")) {
+      calls.push(request);
+      return response(503, { status: "RECONCILIATION_REQUIRED", purpose: FIXED_SUBSCRIPTION_PURPOSE, phase: "remaining", providerWriteAttempted: true });
+    }
+    if (request.url.endsWith("/wp4-subscription-reconcile")) {
+      calls.push(request);
+      return response(409, { reconciled: false, status: "UNKNOWN" });
+    }
+    return originalRequest(request);
+  };
+  dependencies.wait = async () => {};
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.failure, "RECONCILE_REJECTED");
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+  assert.equal(receipt.sideEffects.refundPosts, 1);
+  assert.equal(receipt.sideEffects.refunds, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 12);
+  assert.equal(calls.filter((call) => call.url?.endsWith("/wp4-subscription-refund")).length, 1);
+  assert.equal(calls.filter((call) => call.url?.endsWith("/wp4-subscription-reconcile")).length, 12);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription wrong-purpose refund cannot produce a refund PASS despite verified activation", async () => {
+  const dependencies = successfulSubscriptionDependencies();
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-refund")
+    ? response(200, { status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true })
+    : originalRequest(request);
+
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "REFUND_REJECTED");
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+  assert.equal(receipt.sideEffects.refundPosts, 1);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(receipt.checks.trustedSubscriptionPayment, true);
+  assert.equal(receipt.checks.refundCompleted, false);
+  assert.equal(receipt.sideEffects.refunds, 0);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription stops before refund when activation or quota is unverified", async () => {
+  for (const body of [{ status: "STATE_UNVERIFIED" }, { status: "REFUNDED_VERIFIED" }, { status: "ACTIVE_VERIFIED", raw: "not-allowed" }]) {
+    const calls = [];
+    const dependencies = successfulSubscriptionDependencies(calls);
+    const originalRequest = dependencies.request;
+    dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-state")
+      ? response(200, body) : originalRequest(request);
+    const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+    assert.equal(receipt.failure, "SUBSCRIPTION_STATE_REJECTED");
+    assert.equal(receipt.sideEffects.statePosts, 1);
+    assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+    assert.equal(receipt.sideEffects.refundPosts, 0);
+    assert.equal(receipt.checks.activeEntitlementVerified, false);
+    assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), false);
+    assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+  }
+});
+
+test("subscription cannot PASS while refunded entitlements remain active", async () => {
+  const dependencies = successfulSubscriptionDependencies();
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-state")
+    ? response(200, { status: "ACTIVE_VERIFIED" }) : originalRequest(request);
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+  assert.equal(receipt.failure, "SUBSCRIPTION_STATE_REJECTED");
+  assert.equal(receipt.sideEffects.statePosts, 2);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(receipt.sideEffects.refunds, 1);
+  assert.equal(receipt.checks.reconciled, true);
+  assert.equal(receipt.checks.refundedEntitlementVerified, false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(validateMvpPayUniSubscriptionReceipt({ ...receipt, result: "PASS", failure: "NONE" }).ok, false);
+});
+
+test("subscription receipt rejects a wrong purpose or persisted session material", async () => {
+  const receipt = createSubscriptionReceipt(sourceSha);
+  receipt.purpose = "buyer_order";
+  assert.equal(validateMvpPayUniSubscriptionReceipt(receipt).errors.includes("FIXED_ENUMS"), true);
+
+  const unsafe = createSubscriptionReceipt(sourceSha);
+  unsafe.ownerSessionCookie = "opaque-owner-session";
+  assert.equal(validateMvpPayUniSubscriptionReceipt(unsafe).errors.includes("SCHEMA_KEYS"), true);
+});
+
+test("subscription receipt uses its fixed filename and rejects fabricated completion", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "celebratedeal-wp4-subscription-"));
+  try {
+    const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, successfulSubscriptionDependencies());
+    receipt.checks.trustedSubscriptionPayment = false;
+    await writeMvpPayUniSubscriptionReceipt(receipt, temporaryRoot);
+    assert.equal(await validateWrittenMvpPayUniSubscriptionReceipt(temporaryRoot), false);
+    assert.equal(finalizeMvpPayUniSubscriptionReceipt(receipt).failure, "INTERNAL_REJECTED");
+  } finally {
+    assert.equal(path.dirname(temporaryRoot), os.tmpdir());
+    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 0 });
+  }
+});
 
 test("reads only the fixed documented process inputs", () => {
   const input = readFixedInputs({
