@@ -30,7 +30,10 @@ function invitationRedirectOutcome(page: { url(): string }) {
 
 async function expectInvitationFailureRedirect(page: Page) {
   try {
-    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u);
+    // CI's intentionally invalid mail provider can take roughly 30 seconds to
+    // fail closed, so keep the URL assertion strict while allowing that bounded
+    // provider timeout to finish before Playwright classifies the run as flaky.
+    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u, { timeout: 60_000 });
   } catch (error) {
     test.info().annotations.push({ type: "security-action-outcome", description: invitationRedirectOutcome(page) });
     throw error;
