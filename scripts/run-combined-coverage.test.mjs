@@ -6,6 +6,7 @@ import {
   isOwnedCoverageContainer,
   isProductionScriptCoverage,
   parseCoverageContainerInspection,
+  formatCoverageFailureAnnotation,
   selectedCoverageEnvironment,
   stripNodeTapOwnedVitestCoverage,
 } from "./run-combined-coverage.mjs";
@@ -56,6 +57,7 @@ test("selects a hermetic environment without inheriting developer secrets", () =
     assert.equal(environment.HOME, undefined);
     assert.equal(environment.USERPROFILE, undefined);
     assert.equal(environment.NODE_ENV, "test");
+    assert.equal(environment.GITHUB_ACTIONS, "false");
   } finally {
     delete process.env.HOST_FAKE_SENSITIVE_VALUE;
   }
@@ -68,6 +70,15 @@ test("does not enable disposable DB tests without an explicit owned database add
     selectedCoverageEnvironment(tempRoot, { RT01_D2_DISPOSABLE_DB: "true" }).RT01_D2_DISPOSABLE_DB,
     "true",
   );
+});
+
+test("formats coverage failures from fixed stages only", () => {
+  assert.equal(formatCoverageFailureAnnotation("threshold"), "::error::coverage stage=threshold status=failed");
+  assert.equal(
+    formatCoverageFailureAnnotation("threshold", { scope: "global", metric: "statements", actual: 62.5, threshold: 63 }),
+    "::error::coverage stage=threshold status=failed scope=global metric=statements actual=62.5 threshold=63",
+  );
+  assert.throws(() => formatCoverageFailureAnnotation("unexpected-sensitive-message"));
 });
 
 test("requires exact container identity, labels, and ephemeral data mount", () => {

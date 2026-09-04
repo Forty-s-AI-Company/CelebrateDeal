@@ -13,6 +13,7 @@ import libReport from "istanbul-lib-report";
 import reports from "istanbul-reports";
 import { parseAstAsync } from "vitest/node";
 
+import { sanitizedVitestFailureAnnotations } from "./coverage-sanitized-github-reporter.mjs";
 import { listCanonicalMigrations, writeMirror } from "./prisma-loopback-disposable-migration-runner.mjs";
 
 const workspaceRoot = process.cwd();
@@ -23,15 +24,73 @@ const coverageThresholds = { statements: 63, branches: 57, functions: 60, lines:
 const libThresholds = { statements: 86, branches: 80, functions: 88, lines: 88 };
 const dockerImage = "postgres:16-alpine";
 const coverageRunNamePattern = /^celebratedeal-combined-coverage-[a-f0-9]{16}$/;
+const coverageFailureStages = new Set(["setup", "vitest", "tap", "merge", "threshold", "cleanup"]);
+const thresholdScopes = new Set(["global", "src_lib"]);
+const coverageMetrics = new Set(["statements", "branches", "functions", "lines"]);
+
+class CoverageThresholdFailure extends Error {
+  constructor(failures) {
+    super("Coverage threshold failure.");
+    this.failures = failures;
+  }
+}
+
+/**
+ * Coverage jobs deliberately emit only fixed metadata when a stage fails.
+ * Child test output can contain assertion payloads, so it is never forwarded
+ * into CI logs or annotations by this runner.
+ */
+export function formatCoverageFailureAnnotation(stage, thresholdFailure) {
+  if (!coverageFailureStages.has(stage)) throw new Error("Invalid coverage failure stage.");
+  if (stage === "threshold" && thresholdScopes.has(thresholdFailure?.scope) && coverageMetrics.has(thresholdFailure?.metric)) {
+    const actual = Number(thresholdFailure.actual);
+    const threshold = Number(thresholdFailure.threshold);
+    if (Number.isFinite(actual) && actual >= 0 && actual <= 100 && Number.isFinite(threshold) && threshold >= 0 && threshold <= 100) {
+      return `::error::coverage stage=threshold status=failed scope=${thresholdFailure.scope} metric=${thresholdFailure.metric} actual=${actual} threshold=${threshold}`;
+    }
+  }
+  return `::error::coverage stage=${stage} status=failed`;
+}
+
+function emitCoverageFailureAnnotation(stage, error) {
+  const failures = stage === "threshold" && error instanceof CoverageThresholdFailure
+    ? error.failures
+    : [null];
+  for (const failure of failures) {
+    process.stdout.write(`${formatCoverageFailureAnnotation(stage, failure)}\n`);
+  }
+}
 
 function run(command, args, environment) {
   const result = spawnSync(command, args, {
     cwd: workspaceRoot,
     env: environment,
-    stdio: "inherit",
+    // Do not forward test output: titles, assertion values, and stacks may
+    // contain sensitive fixture data. The dedicated reporter emits safe
+    // source-location annotations for failed Vitest cases instead.
+    stdio: "ignore",
     shell: false,
     windowsHide: true,
   });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Command failed with exit code ${result.status ?? 1}: ${path.basename(command)}`);
+}
+
+function runVitest(command, args, environment) {
+  const result = spawnSync(command, args, {
+    cwd: workspaceRoot,
+    env: environment,
+    // Capture stdout only long enough to filter the reporter's constrained
+    // annotations. Nothing else is forwarded or persisted.
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+    shell: false,
+    windowsHide: true,
+  });
+  for (const annotation of sanitizedVitestFailureAnnotations(result.stdout)) {
+    process.stdout.write(`${annotation}\n`);
+  }
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Command failed with exit code ${result.status ?? 1}: ${path.basename(command)}`);
 }
@@ -65,6 +124,9 @@ export function selectedCoverageEnvironment(tempRoot, additions = {}) {
     DOCKER_CONFIG: path.join(tempRoot, "docker-config"),
     NODE_ENV: "test",
     CI: "true",
+    // Prevent Vitest from enabling its built-in GitHub reporter, which emits
+    // test titles and error details. The runner supplies a sanitized reporter.
+    GITHUB_ACTIONS: "false",
     NEXT_TELEMETRY_DISABLED: "1",
     PRISMA_HIDE_UPDATE_MESSAGE: "true",
     NO_COLOR: "1",
@@ -298,8 +360,8 @@ function percentage(summary, metric) {
 
 function enforceThresholds(coverageMap) {
   const checks = [
-    { label: "global", thresholds: coverageThresholds, files: coverageMap.files() },
-    { label: "src/lib/**.ts", thresholds: libThresholds, files: coverageMap.files().filter((filename) => filename.replace(/\\/g, "/").includes("/src/lib/") && filename.endsWith(".ts")) },
+    { scope: "global", thresholds: coverageThresholds, files: coverageMap.files() },
+    { scope: "src_lib", thresholds: libThresholds, files: coverageMap.files().filter((filename) => filename.replace(/\\/g, "/").includes("/src/lib/") && filename.endsWith(".ts")) },
   ];
   const failures = [];
   for (const check of checks) {
@@ -308,29 +370,35 @@ function enforceThresholds(coverageMap) {
     const summary = map.getCoverageSummary();
     for (const [metric, threshold] of Object.entries(check.thresholds)) {
       const actual = percentage(summary, metric);
-      if (actual < threshold) failures.push(`${check.label} ${metric}: ${actual}% < ${threshold}%`);
+      if (actual < threshold) failures.push({ scope: check.scope, metric, actual, threshold });
     }
   }
-  if (failures.length > 0) throw new Error(`Coverage threshold failure: ${failures.join("; ")}`);
+  if (failures.length > 0) throw new CoverageThresholdFailure(failures);
 }
 
 async function main() {
-  const disposable = await createDisposableDatabase();
+  let disposable = null;
   let taskError = null;
+  let stage = "setup";
   try {
+    disposable = await createDisposableDatabase();
     await fs.rm(nodeTapCoverageDirectory, { recursive: true, force: true });
     await fs.mkdir(nodeTapCoverageDirectory, { recursive: true });
     // Vitest transforms its own modules; thresholds are enforced after the map
     // is merged with Node TAP's V8 coverage below.
     const vitestCli = path.join(workspaceRoot, "node_modules", "vitest", "vitest.mjs");
-    run(process.execPath, [vitestCli, "run", "--coverage"], {
+    const sanitizedVitestReporter = path.join(workspaceRoot, "scripts", "coverage-sanitized-github-reporter.mjs");
+    stage = "vitest";
+    runVitest(process.execPath, [vitestCli, "run", "--coverage", "--reporter", sanitizedVitestReporter], {
       ...disposable.environment,
       COMBINED_COVERAGE_COLLECTION: "true",
     });
+    stage = "tap";
     run(process.execPath, ["--import", "tsx", "scripts/run-node-tap-contracts.ts"], {
       ...disposable.environment,
       NODE_V8_COVERAGE: nodeTapCoverageDirectory,
     });
+    stage = "merge";
     if (!existsSync(coverageFinalPath)) throw new Error("Vitest did not write coverage-final.json.");
 
     const vitestCoverage = JSON.parse(await fs.readFile(coverageFinalPath, "utf8"));
@@ -340,15 +408,25 @@ async function main() {
     reports.create("text-summary").execute(context);
     reports.create("json-summary").execute(context);
     reports.create("json").execute(context);
+    stage = "threshold";
     enforceThresholds(coverageMap);
     process.stdout.write(`${JSON.stringify({ disposableDatabase: "PASS", migrationCount: disposable.migrationCount })}\n`);
   } catch (error) {
     taskError = error;
+    emitCoverageFailureAnnotation(stage, error);
   } finally {
-    const cleanup = await cleanupDisposableDatabase(disposable);
-    process.stdout.write(`${JSON.stringify({ disposableCleanup: cleanup })}\n`);
-    if (cleanup.container !== "PASS" || cleanup.tempRoot !== "PASS") {
-      taskError ??= new Error(`Disposable coverage cleanup failed: ${JSON.stringify(cleanup)}`);
+    if (disposable) {
+      try {
+        const cleanup = await cleanupDisposableDatabase(disposable);
+        process.stdout.write(`${JSON.stringify({ disposableCleanup: cleanup })}\n`);
+        if (cleanup.container !== "PASS" || cleanup.tempRoot !== "PASS") {
+          taskError ??= new Error("Disposable coverage cleanup failed.");
+          emitCoverageFailureAnnotation("cleanup");
+        }
+      } catch (error) {
+        taskError ??= error;
+        emitCoverageFailureAnnotation("cleanup");
+      }
     }
   }
   if (taskError) throw taskError;
@@ -358,8 +436,7 @@ const invokedScript = process.argv[1] ? path.resolve(process.argv[1]) : null;
 const currentScript = fileURLToPath(import.meta.url);
 
 if (invokedScript === currentScript) {
-  void main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+  void main().catch(() => {
     process.exitCode = 1;
   });
 }
