@@ -3,9 +3,10 @@ import {
   PayUniRefundReconciliationError,
   reconcilePayUniRefund,
 } from "@/lib/payuni-refund-reconciliation";
+import { PlatformRefundProjectionConflictError } from "@/lib/platform-refund-projection";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
-import type { PaymentTransaction, PrismaClient } from "@prisma/client";
+import { Prisma, type PaymentTransaction, type PrismaClient } from "@prisma/client";
 
 export const WP4_PAYUNI_PURPOSES = [
   "buyer_order",
@@ -102,7 +103,10 @@ export type Wp4PayUniSandboxReconciliationResult = {
     | "QUERY_AUTHENTICATION_FAILED" | "QUERY_REQUEST_REJECTED" | "QUERY_RESPONSE_REJECTED" | "QUERY_NETWORK_FAILED" | "QUERY_UNKNOWN_FAILED"
     | "RECONCILIATION_TRANSACTION_NOT_FOUND" | "RECONCILIATION_PROVIDER_MISMATCH" | "RECONCILIATION_PROVIDER_REF_MISMATCH"
     | "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH" | "RECONCILIATION_UNSUPPORTED_STATUS" | "RECONCILIATION_LOCAL_AMOUNT_MISMATCH"
-    | "RECONCILIATION_LOCAL_STATE_AMBIGUOUS" | "RECONCILIATION_UNKNOWN_FAILED";
+    | "RECONCILIATION_LOCAL_STATE_AMBIGUOUS" | "RECONCILIATION_DATABASE_TRANSACTION_FAILED" | "RECONCILIATION_DATABASE_CONFLICT"
+    | "RECONCILIATION_DATABASE_CONSTRAINT_FAILED" | "RECONCILIATION_DATABASE_SCHEMA_MISMATCH" | "RECONCILIATION_DATABASE_RECORD_MISSING"
+    | "RECONCILIATION_DATABASE_REQUEST_FAILED" | "RECONCILIATION_DATABASE_VALIDATION_FAILED" | "RECONCILIATION_DATABASE_UNAVAILABLE"
+    | "RECONCILIATION_DATABASE_ENGINE_FAILED" | "RECONCILIATION_PLATFORM_PROJECTION_REJECTED" | "RECONCILIATION_UNKNOWN_FAILED";
 };
 
 /** Historical buyer refund source used only by the bounded recovery endpoint. */
@@ -119,6 +123,24 @@ type CandidateTransaction = TransactionIdentity & {
 };
 
 function historicalReconciliationFailureStatus(error: unknown): Wp4PayUniSandboxReconciliationResult["status"] {
+  if (error instanceof PlatformRefundProjectionConflictError) return "RECONCILIATION_PLATFORM_PROJECTION_REJECTED";
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const statuses: Record<string, Wp4PayUniSandboxReconciliationResult["status"]> = {
+      P2028: "RECONCILIATION_DATABASE_TRANSACTION_FAILED",
+      P2034: "RECONCILIATION_DATABASE_CONFLICT",
+      P2002: "RECONCILIATION_DATABASE_CONSTRAINT_FAILED",
+      P2003: "RECONCILIATION_DATABASE_CONSTRAINT_FAILED",
+      P2021: "RECONCILIATION_DATABASE_SCHEMA_MISMATCH",
+      P2022: "RECONCILIATION_DATABASE_SCHEMA_MISMATCH",
+      P2025: "RECONCILIATION_DATABASE_RECORD_MISSING",
+    };
+    return Object.hasOwn(statuses, error.code) ? statuses[error.code]! : "RECONCILIATION_DATABASE_REQUEST_FAILED";
+  }
+  if (error instanceof Prisma.PrismaClientValidationError) return "RECONCILIATION_DATABASE_VALIDATION_FAILED";
+  if (error instanceof Prisma.PrismaClientInitializationError) return "RECONCILIATION_DATABASE_UNAVAILABLE";
+  if (error instanceof Prisma.PrismaClientUnknownRequestError || error instanceof Prisma.PrismaClientRustPanicError) {
+    return "RECONCILIATION_DATABASE_ENGINE_FAILED";
+  }
   if (!(error instanceof PayUniRefundReconciliationError)) return "RECONCILIATION_UNKNOWN_FAILED";
   const statuses = {
     transaction_not_found: "RECONCILIATION_TRANSACTION_NOT_FOUND",

@@ -25,6 +25,8 @@ import {
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 import { PayUniRefundReconciliationError } from "@/lib/payuni-refund-reconciliation";
+import { PlatformRefundProjectionConflictError } from "@/lib/platform-refund-projection";
+import { Prisma } from "@prisma/client";
 
 const sourceCommit = "a".repeat(40);
 
@@ -296,5 +298,51 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
 
     await expect(reconcileWp4PayUniSandboxRefund(db as never, sourceCommit))
       .resolves.toEqual({ reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" });
+  });
+
+  it.each([
+    ["P2028", "RECONCILIATION_DATABASE_TRANSACTION_FAILED"],
+    ["P2034", "RECONCILIATION_DATABASE_CONFLICT"],
+    ["P2002", "RECONCILIATION_DATABASE_CONSTRAINT_FAILED"],
+    ["P2003", "RECONCILIATION_DATABASE_CONSTRAINT_FAILED"],
+    ["P2021", "RECONCILIATION_DATABASE_SCHEMA_MISMATCH"],
+    ["P2022", "RECONCILIATION_DATABASE_SCHEMA_MISMATCH"],
+    ["P2025", "RECONCILIATION_DATABASE_RECORD_MISSING"],
+    ["P9999", "RECONCILIATION_DATABASE_REQUEST_FAILED"],
+  ] as const)("maps known Prisma code %s only during historical recovery", async (code, status) => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code, clientVersion: "test" }));
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status });
+  });
+
+  it.each([
+    [new Prisma.PrismaClientValidationError("synthetic-secret", { clientVersion: "test" }), "RECONCILIATION_DATABASE_VALIDATION_FAILED"],
+    [new Prisma.PrismaClientInitializationError("synthetic-secret", "test"), "RECONCILIATION_DATABASE_UNAVAILABLE"],
+    [new Prisma.PrismaClientUnknownRequestError("synthetic-secret", { clientVersion: "test" }), "RECONCILIATION_DATABASE_ENGINE_FAILED"],
+    [new Prisma.PrismaClientRustPanicError("synthetic-secret", "test"), "RECONCILIATION_DATABASE_ENGINE_FAILED"],
+    [new PlatformRefundProjectionConflictError("payment_mode"), "RECONCILIATION_PLATFORM_PROJECTION_REJECTED"],
+  ] as const)("maps typed recovery error to %s without exposing its message", async (error, status) => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(error);
+
+    const result = await reconcileWp4PayUniSandboxHistoricalRefund(db as never);
+    expect(result).toEqual({ reconciled: false, status });
+    expect(JSON.stringify(result)).not.toContain("synthetic-secret");
+  });
+
+  it("does not classify plain objects that imitate known Prisma errors", async () => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce({ code: "P2028", message: "synthetic-secret" });
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status: "RECONCILIATION_UNKNOWN_FAILED" });
   });
 });
