@@ -1,8 +1,11 @@
 # Risk-Based MVP execution checkpoint
 
-Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch scope; it does not supersede historical evidence or declare Production readiness.
+Updated: 2026-09-05 (Asia/Taipei). This checkpoint describes the approved launch scope; it does not supersede historical evidence or declare Production readiness.
 
 ## Latest verified checkpoint
+
+- Callback-retry app Preview is verified: deployment `6269573989`, source `1c21c2bc876e0823b3a909ec5b0cbc97ff01c9a1`, non-Production staging host `celebrate-deal-staging-hxrrtv251-a25814740s-projects.vercel.app`, successful deployment status, anonymous health HEAD 200 and unauthenticated retry POST 401. PR #201 checks remain running; no authenticated retry has executed.
+- Prepared local fixed buyer refund/reconciliation continuation for source `8497ec1`, requiring a unique reserved buyer fixture, provider reference and processed paid callback. Refund requires paid NT$1 with no prior refund. Narrow review found identity drift between precheck and delegate re-selection; delegates now check the server-selected expected ID before any provider action. Existing callers and historical selector remain unchanged. Nineteen continuation/route tests plus 65 delegate tests passed, scoped lint/typecheck and ten-file secret scan passed; re-review closed the identity blocker. No external operation or continuation publication occurred. A protected fixed runner and current-source Preview are still required before actual continuation; successful callback recovery does not itself prove buyer refund or delivery acceptance. Rollback: scoped revert of added continuation routes/helper and optional delegate ID checks.
 
 - Published callback-retry app source `1c21c2bc876e0823b3a909ec5b0cbc97ff01c9a1`; CI `33900232471` is confirmed running. PR #201 remains open with checks `33900031203` / `33900031213` running. Previous app source `8ca40c2` full CI `33896586787` is authoritatively SUCCESS. No new Sandbox attempt has occurred; wait for current exact Preview lineage and protected runner checks/merge. Release summary now reflects the completed read-only check and remaining callback recovery instead of stale PR #200 status.
 
@@ -167,10 +170,10 @@ This section takes precedence over older in-progress observations retained below
 
 | Journey | Current status | Evidence / next check |
 | --- | --- | --- |
-| Merchant invitation, login, MFA | PARTIAL | Full prior-source CI `33888838096` passed. Later CI `33891833255` failed on a flaky invitation redirect assertion; current CI `33894327280` must resolve it. Fixed synthetic owner MFA correction passed unit/DB and actual SaaS session checks. External invitation delivery is not proved by a deliberate local mail-failure scenario. |
-| Product/live creation, registration and viewing | PARTIAL | Prior-source CI `33888838096` executed core Browser successfully; exact current RC remains pending. Historical provider capability receipts retain only their documented scope. |
-| Buyer checkout, callback and delivery | PARTIAL | Local/demo Browser passed in prior-source CI. Fresh actual buyer run `33894828505` is dispatched on `8497ec1`; wait for its validated receipt, not an inferred result. |
-| Refund, reconciliation, merchant settlement | PARTIAL | Historical refund recovery `33892202197` reconciled with one query and no submissions. Actual SaaS refund also passed; fresh buyer result and settlement operating acceptance remain pending. |
+| Merchant invitation, login, MFA | PARTIAL | Full CI `33894327280` and `33896586787` passed, resolving the earlier invitation Browser gate failure without weakening fail-on-flaky. Fixed synthetic owner MFA passed unit/DB and actual SaaS session checks. New callback-retry source CI `33900232471` is pending. External invitation delivery is not proved by a deliberate local mail-failure scenario. |
+| Product/live creation, registration and viewing | PARTIAL | CI `33896586787` passed the core Browser gates at source `8ca40c2`; new callback-retry source CI `33900232471` remains pending. Historical provider capability receipts retain only their documented scope. |
+| Buyer checkout, callback and delivery | PARTIAL | Actual buyer `33894828505` submitted once but returned CALLBACK_UNMAPPED. Read-only check `33898475457` confirms pending local state and failed stored paid callback, with no provider reference/query. Callback retry has 13 unit and 2 real DB tests passing but no actual Sandbox recovery yet. |
+| Refund, reconciliation, merchant settlement | PARTIAL | Historical refund recovery `33892202197` reconciled with one query and no submissions. Actual SaaS refund passed. Current buyer refund/reconciliation await callback recovery and source-fixed continuation; settlement operating acceptance remains pending. |
 | Fixed SaaS plan payment and entitlement | PASS (Sandbox source 8497ec1) | Actual run `33894511275` validated native checkout, payment, active entitlement/quota, refund, reconciliation and refunded entitlement; one payment/refund each. This does not approve Production or certify later source changes automatically. |
 | Disabled usage billing and commission accrual | PARTIAL | Scoped server-boundary/legacy-refund tests and prior-source full CI passed; exact current RC gate remains pending. No threshold or assertion was relaxed. |
 | Backup, monitoring and deployment recovery | PARTIAL | Historical `146f8db` provider/restore/rollback receipts passed; unchanged capability evidence is reusable with the limitations above. Current runtime and Production readiness are not established. |
@@ -178,8 +181,8 @@ This section takes precedence over older in-progress observations retained below
 
 ## Current blockers and work order
 
-1. P0: Current published source `b6aa35d` has CI `33894327280` running with fixed invitation outcome diagnostics. Keep the fail-on-flaky gate and inspect its actual result; source `8497ec1` CI `33893997112` is also running.
-2. P2: Historical refund recovery and actual SaaS acceptance passed. Fresh buyer run `33894828505` is in progress on `8497ec1`; inspect only validated sanitized receipt and do not duplicate its payment/refund.
+1. P0: Published callback-retry source `1c21c2b` has CI `33900232471` running; runner PR #201 also awaits protected checks. Earlier full CIs `33893997112`, `33894327280` and `33896586787` passed. Verify exact Preview lineage before execution.
+2. P2: Historical refund recovery and actual SaaS acceptance passed. Buyer `33894828505` and read-only check `33898475457` are terminal; the stored paid callback failed while the local transaction remains pending. Execute only the bounded retry after protected merge. Prepare fixed-source refund/reconciliation continuation; never repeat payment or reuse the historical selector.
 3. P1/P3: Confirm exact RC Browser gates and assess unchanged delivery/runtime/recovery evidence. SaaS provider evidence is now present; local invitation mail-failure tests still do not prove external email delivery.
 5. P3: Human acceptance of refund/policy applicability and named operating responsibility remains pending. An asynchronous responsibility question is awaiting the user; no acceptance is inferred. Audit exact RC after remaining evidence closes, and keep Production deployment separately gated.
 

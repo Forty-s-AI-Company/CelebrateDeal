@@ -63,6 +63,17 @@ describe("WP4 fixed refund execution", () => {
     }));
   });
 
+  it("retains the prevalidated continuation identity if candidates change", async () => {
+    findMany.mockResolvedValue([row({ id: "different-transaction" })]);
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit, undefined, "opaque-transaction"))
+      .resolves.toMatchObject({ status: "REFUND_NOT_ELIGIBLE", providerWriteAttempted: false });
+    expect(mocks.execute).not.toHaveBeenCalled();
+    findMany.mockResolvedValue([row()]);
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit, undefined, "opaque-transaction"))
+      .resolves.toMatchObject({ status: "COMPLETED", providerWriteAttempted: true });
+    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ transactionId: "opaque-transaction" }));
+  });
+
   it("uses the remaining phase only after the fixed partial state", async () => {
     findMany.mockResolvedValue([row({ grossAmountCents: 300, status: "partially_refunded", refundedAmountCents: 100 })]);
     await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))

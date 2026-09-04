@@ -50,6 +50,24 @@ function reconciliationRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("WP4 PayUni Sandbox transaction boundary", () => {
+  it("never queries a different continuation transaction after re-selection", async () => {
+    vi.clearAllMocks();
+    const row = reconciliationRow({ metadata: {
+      billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: sourceCommit,
+    } });
+    const db = { paymentTransaction: { findMany: vi.fn().mockResolvedValue([row]) } };
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, sourceCommit, "original-transaction"))
+      .resolves.toEqual({ reconciled: false, status: "FIXTURE_UNAVAILABLE" });
+    expect(mocks.getPaymentProvider).not.toHaveBeenCalled();
+    expect(mocks.queryPayment).not.toHaveBeenCalled();
+    expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+    mocks.getPaymentProvider.mockReturnValue({ queryPayment: mocks.queryPayment });
+    mocks.queryPayment.mockResolvedValue({ status: "refunded" });
+    mocks.reconcilePayUniRefund.mockResolvedValue({ disposition: "reconciled" });
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, sourceCommit, row.id))
+      .resolves.toEqual({ reconciled: true, status: "RECONCILED" });
+    expect(mocks.reconcilePayUniRefund).toHaveBeenCalledWith(expect.objectContaining({ transactionId: row.id }));
+  });
   it("recognizes only the fixed server-owned purposes", () => {
     expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "buyer_order" })).toBe("buyer_order");
     expect(wp4PayUniPurposeFromMetadata({ billingPurpose: "platform_subscription_checkout" })).toBe("platform_subscription");

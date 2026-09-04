@@ -176,6 +176,7 @@ async function reconcileFixedWp4PayUniSandboxRefund(
   sourceCommit: string,
   purpose: Wp4RefundPurpose,
   queryFailureStatuses = false,
+  expectedTransactionId?: string,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
   const selected = await db.paymentTransaction.findMany({
     where: {
@@ -198,6 +199,10 @@ async function reconcileFixedWp4PayUniSandboxRefund(
   if (candidates.length > 1) return { reconciled: false, status: "CANDIDATE_AMBIGUOUS" };
 
   const row = candidates[0]!;
+  // Do not query or project a different row if a continuation's candidate changed.
+  if (expectedTransactionId !== undefined && row.id !== expectedTransactionId) {
+    return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
+  }
   const transaction = selected.find((item) => candidateTransaction(item)?.id === row.id);
   if (!transaction || !row.providerTradeNo || !row.orderNumber) {
     return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
@@ -273,8 +278,9 @@ async function reconcileFixedWp4PayUniSandboxRefund(
 export async function reconcileWp4PayUniSandboxRefund(
   db: Wp4ReconciliationDb,
   sourceCommit: string,
+  expectedTransactionId?: string,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
-  return reconcileFixedWp4PayUniSandboxRefund(db, sourceCommit, "buyer_order");
+  return reconcileFixedWp4PayUniSandboxRefund(db, sourceCommit, "buyer_order", false, expectedTransactionId);
 }
 
 /**

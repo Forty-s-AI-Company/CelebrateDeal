@@ -53,6 +53,7 @@ async function executeFixedWp4PayUniSandboxRefund(
   sourceCommit: string,
   purpose: Wp4RefundPurpose,
   now = new Date(),
+  expectedTransactionId?: string,
 ): Promise<Wp4PayUniSandboxRefundExecutionResult> {
   const rows = await db.paymentTransaction.findMany({
     where: {
@@ -80,6 +81,10 @@ async function executeFixedWp4PayUniSandboxRefund(
   const candidate = candidates[0];
   if (!candidate) {
     return { status: "FIXTURE_UNAVAILABLE", purpose: null, phase: null, providerWriteAttempted: false };
+  }
+  // Continuations must retain the server-validated identity across re-selection.
+  if (expectedTransactionId !== undefined && candidate.id !== expectedTransactionId) {
+    return { status: "REFUND_NOT_ELIGIBLE", purpose, phase: null, providerWriteAttempted: false };
   }
   // PayUni accepts whole TWD units only. The fixed NT$1 fixture therefore
   // uses one full (remaining) refund; larger fixtures may still exercise a
@@ -126,8 +131,9 @@ export async function executeNextWp4PayUniSandboxRefund(
   db: RefundExecutionDb,
   sourceCommit: string,
   now = new Date(),
+  expectedTransactionId?: string,
 ): Promise<Wp4PayUniSandboxRefundExecutionResult> {
-  return executeFixedWp4PayUniSandboxRefund(db, sourceCommit, "buyer_order", now);
+  return executeFixedWp4PayUniSandboxRefund(db, sourceCommit, "buyer_order", now, expectedTransactionId);
 }
 
 /** Executes only the platform-subscription refund. Buyer rows cannot satisfy this wrapper. */
