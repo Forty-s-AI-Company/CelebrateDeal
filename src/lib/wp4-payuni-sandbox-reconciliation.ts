@@ -1,5 +1,8 @@
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
-import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
+import {
+  PayUniRefundReconciliationError,
+  reconcilePayUniRefund,
+} from "@/lib/payuni-refund-reconciliation";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 import type { PaymentTransaction, PrismaClient } from "@prisma/client";
@@ -96,7 +99,10 @@ export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity):
 export type Wp4PayUniSandboxReconciliationResult = {
   reconciled: boolean;
   status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE"
-    | "QUERY_AUTHENTICATION_FAILED" | "QUERY_REQUEST_REJECTED" | "QUERY_RESPONSE_REJECTED" | "QUERY_NETWORK_FAILED" | "QUERY_UNKNOWN_FAILED";
+    | "QUERY_AUTHENTICATION_FAILED" | "QUERY_REQUEST_REJECTED" | "QUERY_RESPONSE_REJECTED" | "QUERY_NETWORK_FAILED" | "QUERY_UNKNOWN_FAILED"
+    | "RECONCILIATION_TRANSACTION_NOT_FOUND" | "RECONCILIATION_PROVIDER_MISMATCH" | "RECONCILIATION_PROVIDER_REF_MISMATCH"
+    | "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH" | "RECONCILIATION_UNSUPPORTED_STATUS" | "RECONCILIATION_LOCAL_AMOUNT_MISMATCH"
+    | "RECONCILIATION_LOCAL_STATE_AMBIGUOUS" | "RECONCILIATION_UNKNOWN_FAILED";
 };
 
 /** Historical buyer refund source used only by the bounded recovery endpoint. */
@@ -111,6 +117,22 @@ type CandidateTransaction = TransactionIdentity & {
   providerTradeNo: string | null;
   orderNumber: string | null;
 };
+
+function historicalReconciliationFailureStatus(error: unknown): Wp4PayUniSandboxReconciliationResult["status"] {
+  if (!(error instanceof PayUniRefundReconciliationError)) return "RECONCILIATION_UNKNOWN_FAILED";
+  const statuses = {
+    transaction_not_found: "RECONCILIATION_TRANSACTION_NOT_FOUND",
+    provider_mismatch: "RECONCILIATION_PROVIDER_MISMATCH",
+    provider_ref_mismatch: "RECONCILIATION_PROVIDER_REF_MISMATCH",
+    provider_amount_mismatch: "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH",
+    unsupported_status: "RECONCILIATION_UNSUPPORTED_STATUS",
+    local_amount_mismatch: "RECONCILIATION_LOCAL_AMOUNT_MISMATCH",
+    local_state_ambiguous: "RECONCILIATION_LOCAL_STATE_AMBIGUOUS",
+  } as const;
+  return Object.hasOwn(statuses, error.reason)
+    ? statuses[error.reason]
+    : "RECONCILIATION_UNKNOWN_FAILED";
+}
 
 function candidateTransaction(value: unknown): CandidateTransaction | null {
   const row = objectValue(value);
@@ -200,7 +222,8 @@ async function reconcileFixedWp4PayUniSandboxRefund(
       return { reconciled: true, status: "RECONCILED" };
     }
     return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
-  } catch {
+  } catch (error) {
+    if (queryFailureStatuses) return { reconciled: false, status: historicalReconciliationFailureStatus(error) };
     return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
   }
 }

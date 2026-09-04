@@ -712,6 +712,23 @@ test("recovery preserves fixed query diagnostics without accepting raw provider 
     assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, transactionSourceSha: sourceSha }).ok, false);
     assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, queryAttempts: 0 }).ok, false);
   }
+  for (const status of [
+    "RECONCILIATION_TRANSACTION_NOT_FOUND",
+    "RECONCILIATION_PROVIDER_MISMATCH",
+    "RECONCILIATION_PROVIDER_REF_MISMATCH",
+    "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH",
+    "RECONCILIATION_UNSUPPORTED_STATUS",
+    "RECONCILIATION_LOCAL_AMOUNT_MISMATCH",
+    "RECONCILIATION_LOCAL_STATE_AMBIGUOUS",
+    "RECONCILIATION_UNKNOWN_FAILED",
+  ]) {
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+      request: async () => response(503, { reconciled: false, status }),
+    });
+    assert.equal(receipt.result, "UNRESOLVED");
+    assert.equal(receipt.status, status);
+    assert.deepEqual(validateExistingRefundRecoveryReceipt(receipt), { ok: true, errors: [] });
+  }
   for (const body of [
     { reconciled: false, status: "QUERY_RESPONSE_REJECTED", raw: "must-not-escape" },
     { reconciled: true, status: "QUERY_RESPONSE_REJECTED" },
@@ -720,6 +737,10 @@ test("recovery preserves fixed query diagnostics without accepting raw provider 
     assert.equal(receipt.status, "RESPONSE_INVALID");
     assert.equal(JSON.stringify(receipt).includes("must-not-escape"), false);
   }
+  const arbitrary = await recoverExistingWp4BuyerRefund(recoveryInput, {
+    request: async () => response(503, { reconciled: false, status: "RECONCILIATION_FORGED" }),
+  });
+  assert.equal(arbitrary.status, "RESPONSE_INVALID");
 });
 
 test("recovery receipt is separately validated and cannot gain payment or refund submissions", async () => {

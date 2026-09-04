@@ -169,8 +169,19 @@ const RECOVERY_QUERY_FAILURES = Object.freeze([
   "QUERY_NETWORK_FAILED",
   "QUERY_UNKNOWN_FAILED",
 ]);
+const RECOVERY_RECONCILIATION_FAILURES = Object.freeze([
+  "RECONCILIATION_TRANSACTION_NOT_FOUND",
+  "RECONCILIATION_PROVIDER_MISMATCH",
+  "RECONCILIATION_PROVIDER_REF_MISMATCH",
+  "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH",
+  "RECONCILIATION_UNSUPPORTED_STATUS",
+  "RECONCILIATION_LOCAL_AMOUNT_MISMATCH",
+  "RECONCILIATION_LOCAL_STATE_AMBIGUOUS",
+  "RECONCILIATION_UNKNOWN_FAILED",
+]);
 const RECOVERY_STATUSES = new Set([
   ...RECOVERY_QUERY_FAILURES,
+  ...RECOVERY_RECONCILIATION_FAILURES,
   "RECONCILED",
   "FIXTURE_UNAVAILABLE",
   "CANDIDATE_AMBIGUOUS",
@@ -625,6 +636,7 @@ export function validateExistingRefundRecoveryReceipt(receipt) {
 
   const queriedStatuses = new Set([
     ...RECOVERY_QUERY_FAILURES,
+    ...RECOVERY_RECONCILIATION_FAILURES,
     "RECONCILED",
     "FIXTURE_UNAVAILABLE",
     "CANDIDATE_AMBIGUOUS",
@@ -641,7 +653,7 @@ export function validateExistingRefundRecoveryReceipt(receipt) {
   }
   if (receipt?.status === "RECONCILED" && receipt?.result !== "RECONCILED") errors.push("RECONCILED_RESULT");
   if (["NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status) && receipt?.result !== "BLOCKED") errors.push("BLOCKED_RESULT");
-  if ([...RECOVERY_QUERY_FAILURES, "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "PENDING_RESERVATION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "PROJECTION_UNAVAILABLE"].includes(receipt?.status) && receipt?.result !== "UNRESOLVED") {
+  if ([...RECOVERY_QUERY_FAILURES, ...RECOVERY_RECONCILIATION_FAILURES, "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "PENDING_RESERVATION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "PROJECTION_UNAVAILABLE"].includes(receipt?.status) && receipt?.result !== "UNRESOLVED") {
     errors.push("UNRESOLVED_RESULT");
   }
   return { ok: errors.length === 0, errors };
@@ -834,6 +846,7 @@ function recoveryResult(response) {
     REFUND_NOT_CONFIRMED: 409,
     PROJECTION_UNAVAILABLE: 503,
   };
+  for (const status of RECOVERY_RECONCILIATION_FAILURES) expectedStatus[status] = 503;
   if (!response || !Number.isInteger(response.status) || !exactKeys(response.body, ["reconciled", "status"])) return null;
   const status = response.body.status;
   if (typeof response.body.reconciled !== "boolean" || !Object.hasOwn(expectedStatus, status) || response.status !== expectedStatus[status]) return null;

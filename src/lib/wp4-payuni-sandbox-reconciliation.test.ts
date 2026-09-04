@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
-vi.mock("@/lib/payuni-refund-reconciliation", () => ({ reconcilePayUniRefund: mocks.reconcilePayUniRefund }));
+vi.mock("@/lib/payuni-refund-reconciliation", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/payuni-refund-reconciliation")>(),
+  reconcilePayUniRefund: mocks.reconcilePayUniRefund,
+}));
 
 import {
   isWp4PayUniSandboxTransactionForSource,
@@ -21,6 +24,7 @@ import {
 } from "@/lib/wp4-payuni-sandbox-reconciliation";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
+import { PayUniRefundReconciliationError } from "@/lib/payuni-refund-reconciliation";
 
 const sourceCommit = "a".repeat(40);
 
@@ -241,5 +245,56 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
     await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
       .resolves.toEqual({ reconciled: false, status: "REFUND_NOT_CONFIRMED" });
     expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["transaction_not_found", "RECONCILIATION_TRANSACTION_NOT_FOUND"],
+    ["provider_mismatch", "RECONCILIATION_PROVIDER_MISMATCH"],
+    ["provider_ref_mismatch", "RECONCILIATION_PROVIDER_REF_MISMATCH"],
+    ["provider_amount_mismatch", "RECONCILIATION_PROVIDER_AMOUNT_MISMATCH"],
+    ["unsupported_status", "RECONCILIATION_UNSUPPORTED_STATUS"],
+    ["local_amount_mismatch", "RECONCILIATION_LOCAL_AMOUNT_MISMATCH"],
+    ["local_state_ambiguous", "RECONCILIATION_LOCAL_STATE_AMBIGUOUS"],
+  ] as const)("maps %s reconciliation errors only on historical recovery", async (reason, status) => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(new PayUniRefundReconciliationError(reason));
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status });
+  });
+
+  it("maps unknown recovery failures to a fixed status without exposing the error", async () => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(new Error("secret-provider-payload"));
+
+    const result = await reconcileWp4PayUniSandboxHistoricalRefund(db as never);
+    expect(result).toEqual({ reconciled: false, status: "RECONCILIATION_UNKNOWN_FAILED" });
+    expect(JSON.stringify(result)).not.toContain("secret-provider-payload");
+  });
+
+  it("maps an unexpected reconciliation reason to the fixed unknown status", async () => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    const error = new PayUniRefundReconciliationError("provider_ref_mismatch");
+    Object.defineProperty(error, "reason", { value: "unexpected_reason" });
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(error);
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status: "RECONCILIATION_UNKNOWN_FAILED" });
+  });
+
+  it("keeps ordinary buyer recovery on the legacy pending status", async () => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: sourceCommit },
+    })]);
+    mocks.reconcilePayUniRefund.mockRejectedValueOnce(new PayUniRefundReconciliationError("provider_ref_mismatch"));
+
+    await expect(reconcileWp4PayUniSandboxRefund(db as never, sourceCommit))
+      .resolves.toEqual({ reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" });
   });
 });
