@@ -5,7 +5,7 @@
 | 能力 | 可用角色 | 說明 |
 | --- | --- | --- |
 | scan／planning | AGY Fast、AGY Deep、Sol、Explorer、Analyst | Explorer／Analyst 預設唯讀；complex／critical 時可升級 Luna read-only |
-| implementation | Worker／Luna max、Worker Deep／Terra high | 一般實作固定由 Worker 使用 `gpt-5.6-luna max`；複雜跨檔與困難診斷由 Worker Deep 使用 Terra |
+| implementation | Worker／Luna high、Worker Deep／Terra high | 一般實作由 Worker 使用 `gpt-5.6-luna high`；複雜跨檔與困難診斷由 Worker Deep 使用 Terra |
 | tests／coverage | Worker／Luna、Worker Deep／Terra | 依產品價值選 targeted、integration 或 full run |
 | QA／browser／E2E | AGY Fast、AGY Deep、Luna、Terra | AGY Fast 使用 `gemini-3.8-flash-high`，可在功能與環境證據具備後執行 |
 | plan review | Claude Sonnet 4.6 thinking、Reviewer、Sol | Claude 只作可選 advisory review；額度不足可跳過 |
@@ -16,7 +16,7 @@
 
 不相交的檔案、資料表、container 或外部 sandbox 可以並行；同一資源同一時間只允許一個 writer。所有既有使用者變更必須保留。
 
-一般 Worker 使用 Luna max 並維持 workspace-write；Worker Deep 使用 Terra high。Explorer／Analyst 的 Luna 升級維持 read-only，不能取得寫入權限或取代 deterministic evidence。
+一般 Worker 使用 Luna high 並維持 workspace-write；Worker Deep 使用 Terra high。Explorer／Analyst 的 Luna 升級維持 read-only，不能取得寫入權限或取代 deterministic evidence。
 
 ## 安全規則
 

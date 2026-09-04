@@ -18,7 +18,7 @@ CelebrateDeal 的 Goal 是持續任務，不以固定時間或單一 Work Packag
 - Sol 可以在需求改變、scope 擴大、根因改變或需要 acceptance 時重新規劃。
 - AGY Fast、AGY Deep 與 native Luna 可依需要自動使用，不要求固定順序或固定次數。
 - Sol 完成 complex／critical 或安全、金流、migration、release plan 後，可選擇一次 Claude Sonnet 4.6 thinking advisory review；額度不足時直接跳過。
-- 一般實作固定使用 `gpt-5.6-luna max` Worker；Reviewer 固定使用 `gpt-5.6-terra` read-only。Explorer／Analyst 在 `complex`／`critical` 時可升級至 Luna read-only。
+- 一般實作固定使用 `gpt-5.6-luna high` Worker；Reviewer 固定使用 `gpt-5.6-terra` read-only。Explorer／Analyst 在 `complex`／`critical` 時可升級至 Luna read-only。
 - 同一檔案或資料資源維持單一 writer；不相交 scope 可並行。
 - 測試、coverage、Browser、Preview、staging、sandbox 與 disposable DB 依價值與風險選擇，不必每個 WP 全部執行。
 

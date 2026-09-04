@@ -9,7 +9,7 @@ CelebrateDeal 目前是尚未對外營運的專案，採長程 `PRELAUNCH_DEV_AU
 
 - 主代理負責整合、價值排序與最終判斷。
 - Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY Fast、AGY Deep 與 native Luna 唯讀升級可依工作內容協作。
-- 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `max` 執行；複雜跨檔工作由 Worker Deep／Terra 負責，Reviewer 固定使用 Terra read-only。
+- 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `high` 執行；複雜跨檔工作由 Worker Deep／Terra 負責，Reviewer 固定使用 Terra read-only。
 - Explorer／Analyst 預設走 AGY 唯讀路徑；任務達到 `complex`／`critical` 時，可視情況升級至 `gpt-5.6-luna` read-only。
 - Sol 的 complex／critical plan 可選擇一次 Claude Sonnet 4.6 thinking advisory review；額度不足時跳過並如實記錄。
 - 推理程度採 `adaptive_lowest_sufficient`：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般工作使用中間值；`low`、`xhigh`、`max` 只在任務難度真的落在該端點時使用。其他模型維持既有設定。

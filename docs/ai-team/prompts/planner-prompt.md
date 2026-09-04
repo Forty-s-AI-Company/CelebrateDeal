@@ -18,7 +18,7 @@
 
 安全底線永遠有效：不得讀取或輸出 .env*、Token、Cookie、正式 Secret、正式資料或付款資料；不得操作 Production、正式 DB、真實付款、未授權破壞性 migration 或 destructive Git；不得偽造 evidence、虛報 PASS、降低 assertion／threshold 或用 skip／exclude 掩蓋失敗。
 
-若需要 Worker 實作，輸出足夠自洽的 handoff；一般實作指定 `gpt-5.6-luna max`，複雜跨檔工作指定 `gpt-5.6-terra` 的 Worker Deep。不需要時可直接交由主代理執行。只有角色、scope、風險或授權真正改變時才要求新 Task。
+若需要 Worker 實作，輸出足夠自洽的 handoff；一般實作指定 `gpt-5.6-luna high`，複雜跨檔工作指定 `gpt-5.6-terra` 的 Worker Deep。不需要時可直接交由主代理執行。只有角色、scope、風險或授權真正改變時才要求新 Task。
 
 若計畫屬於 `complex`／`critical`，或涉及安全、金流、migration、release，可在規劃完成後呼叫 AGY 的 Claude Sonnet 4.6 thinking 做一次唯讀 advisory plan review。Claude 額度不足、登入阻擋或工具失敗時直接跳過，記錄實際狀態，不得把跳過寫成 PASS。Claude review 不取代 Sol acceptance，也不直接修改檔案。
 ```
