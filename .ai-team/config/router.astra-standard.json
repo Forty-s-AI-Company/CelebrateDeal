@@ -46,19 +46,18 @@
     "default_difficulty": "auto",
     "difficulty_levels": ["trivial", "routine", "complex", "critical"],
     "models": {
-      "gpt-5.6-sol": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gpt-5.6-terra": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gpt-5.6-luna": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gemini-3.8-flash-high": {"minimum": "low", "maximum": "high", "default": "high"}
+      "gpt-5.6-sol": {"minimum": "low", "maximum": "xhigh", "default": "high"},
+      "gpt-5.6-terra": {"minimum": "low", "maximum": "xhigh", "default": "medium"},
+      "gpt-5.6-luna": {"minimum": "high", "maximum": "max", "default": "high"}
     }
   },
   "agents": {
-    "planner": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "sandbox_mode": "read-only", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1", "sol_fallback": {"enabled": true, "model": "gpt-5.6-sol", "reasoning_effort": "medium"}},
-    "explorer": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
-    "analyst": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
-    "worker": {"profile": "luna_worker", "model": "gpt-5.6-luna", "reasoning_effort": "medium", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "workspace-write", "provider": "native_agent", "availability": "runtime_dependent", "fallback_only": false},
-    "worker-deep": {"model": "gpt-5.6-terra", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "workspace-write"},
-    "reviewer": {"model": "gpt-5.6-terra", "reasoning_effort": "medium", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "read-only", "provider": "native_agent", "availability": "runtime_dependent"}
+    "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "xhigh", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "read-only"},
+    "explorer": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "high", "reasoning_maximum": "max", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
+    "analyst": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "high", "reasoning_maximum": "max", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
+    "worker": {"profile": "luna_worker", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "high", "reasoning_maximum": "max", "reasoning_selection": "adaptive_lowest_sufficient", "reasoning_lock": "high", "sandbox_mode": "workspace-write", "provider": "native_agent", "availability": "runtime_dependent", "fallback_only": false},
+    "worker-deep": {"model": "gpt-5.6-terra", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "xhigh", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "workspace-write"},
+    "reviewer": {"model": "gpt-5.6-terra", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "xhigh", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "read-only", "provider": "native_agent", "availability": "runtime_dependent"}
   },
   "gemini_profiles": {
     "fast": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"},
@@ -83,25 +82,24 @@
         "tier": 1,
         "profile": "claude_plan_review",
         "model": "claude-sonnet-4.6-thinking",
-        "alt_model": "claude-opus",
         "role": "anti_overengineering_review",
-        "description": "Primary plan reviewer (Claude Sonnet 4.6 / Claude Opus) targeting over-engineering and logic flaws"
+        "description": "Primary reviewer targeting over-engineering and critical architectural flaws"
       },
       {
         "tier": 2,
-        "profile": "sol_plan_review",
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "medium",
-        "role": "sol_fallback_review",
-        "description": "Fallback reviewer when Claude Sonnet / Opus quota is exhausted"
-      },
-      {
-        "tier": 3,
         "profile": "gemini_flash_review",
         "model": "gemini-3.8-flash-high",
         "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
         "role": "fast_sanity_check",
         "description": "Zero-quota-anxiety fast sanity check and safety boundary verification"
+      },
+      {
+        "tier": 3,
+        "profile": "terra_review",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium",
+        "role": "disciplined_code_review",
+        "description": "Objective GPT reviewer avoiding Sol self-review bias and rabbit holes"
       },
       {
         "tier": 4,
@@ -126,15 +124,16 @@
     },
     "luna_worker": {
       "model": "gpt-5.6-luna",
-      "reasoning_effort": "medium",
-      "reasoning_minimum": "low",
-      "reasoning_maximum": "high",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "high",
+      "reasoning_maximum": "max",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "workspace-write",
       "provider": "native_agent",
       "fallback_only": false,
       "availability": "runtime_dependent",
-      "invocation": "native_agent_handoff_only"
+      "invocation": "native_agent_handoff_only",
+      "reasoning_lock": "high"
     },
     "luna_readonly_escalation": {
       "model": "gpt-5.6-luna",

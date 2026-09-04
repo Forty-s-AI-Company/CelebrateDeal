@@ -69,6 +69,9 @@ Concrete accounting blocker: `payment-webhooks.ts` marks a fully refunded subscr
 
 ### Current checkpoint, superseding historical in-progress notes above
 
+- User requested a pause after this checkpoint. Published source is `7f81976e604e07f1faf57097906abfef7c651a55`; CI `33860682400` was still installing dependencies at the pause observation. Local watcher stopped; remote CI was not cancelled. No further Sandbox operation was started.
+- Additional local verification: 13 suites / 158 tests passed; `tenant-ledger-invariants.test.ts` failed all 4 tests because disposable PostgreSQL at loopback port 54329 was unavailable. Tenant DB invariants remain NOT_PROVEN; this is not an assertion failure or a PASS.
+
 - Latest CI `33859530599` for `8ef054c` failed at the Vitest coverage stage. Sanitized annotations do not yet distinguish a test failure from runner failure; later DB concurrency, Browser, build and audit were not completed. The older `33856922240` audit PASS applies only to that source, not this candidate.
 - Current local integration: 22 suites / 562 tests passed for refund projection/recovery, source binding, fixed buyer/SaaS ops, checkout and synthetic owner session. Typecheck, strict-index, scoped lint and changed-source secret scan passed. Independent review confirmed known-purpose payment-mode conflicts fail closed and fixed Preview session does not alter ordinary login/MFA. These mocked results do not prove DB concurrency or actual provider behavior.
 - Older CI `33856503982` completed with sanitized `AUDIT_ENDPOINT_UNAVAILABLE`, high/critical counts unavailable. It does not supersede the current candidate's successful audit.

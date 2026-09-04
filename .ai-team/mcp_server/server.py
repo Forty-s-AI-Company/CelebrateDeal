@@ -35,9 +35,10 @@ SENSITIVE_PATTERN = re.compile(
 ROUTES: dict[str, dict[str, Any]] = {
     "planning": {
         "target": "planner",
-        "provider": "native_agent",
-        "model": "gpt-5.6-sol",
+        "provider": "gemini_wrapper",
+        "model": "gemini-3.8-flash-high",
         "reasoning_effort": "high",
+        "fallback_planner": "gpt-5.6-sol",
     },
     "explore": {
         "target": "Invoke-AgyFast.ps1",
@@ -56,8 +57,7 @@ ROUTES: dict[str, dict[str, Any]] = {
         "profile": "luna_worker",
         "provider": "native_agent",
         "model": "gpt-5.6-luna",
-        "reasoning_effort": "high",
-        "reasoning_lock": "high",
+        "reasoning_effort": "medium",
     },
     "complex_implementation": {
         "target": "worker-deep",
@@ -125,19 +125,25 @@ NATIVE_REASONING_BY_DIFFICULTY = {
         "trivial": "low",
         "routine": "medium",
         "complex": "high",
-        "critical": "xhigh",
+        "critical": "high",
     },
     "gpt-5.6-terra": {
         "trivial": "low",
         "routine": "medium",
         "complex": "high",
-        "critical": "xhigh",
+        "critical": "high",
     },
     "gpt-5.6-luna": {
-        "trivial": "high",
-        "routine": "high",
-        "complex": "xhigh",
-        "critical": "max",
+        "trivial": "low",
+        "routine": "medium",
+        "complex": "high",
+        "critical": "high",
+    },
+    "gemini-3.8-flash-high": {
+        "trivial": "low",
+        "routine": "medium",
+        "complex": "high",
+        "critical": "high",
     },
 }
 CRITICAL_TASK_TERMS = (

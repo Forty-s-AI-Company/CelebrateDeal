@@ -49,14 +49,15 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 - **主代理端到端直通（Direct Autonomous Delivery）**：主代理負責整合與最終判斷，具備直接規劃、編碼、自測與 checkpoint 提交權限，毋須進行多代理強制 handoff。
 - **日常任務免複審（Skip Routine Review）**：非重大金流、資安、資料庫 Migration 的日常任務（UI、文案、一般 Bug 修復），跑過本地 `typecheck` 與 targeted tests 即可直接交付，跳過 AI 複審以極限節省額度。
 - **高風險任務四級審查降級鏈（Review Fallback Ladder）**：
-  1. **Tier 1 首選**：`Claude Sonnet 4.6 thinking`（以奧坎剃刀原則審核：嚴禁過度設計、抓真實致命漏洞，防止 Sol 鑽牛角尖）。
-  2. **Tier 2 備選（Claude 額度不足時）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
-  3. **Tier 3 備選（若需 GPT 接手）**：`GPT-5.6-Terra (medium)`（客觀嚴謹，嚴禁用 Sol 自審避免發散）。
+  1. **Tier 1 首選**：`Claude Sonnet 4.6 thinking` 或 `Claude Opus`（以奧坎剃刀原則審核：嚴禁過度設計、抓真實致命漏洞，防止鑽牛角尖）。
+  2. **Tier 2 備選（Claude 額度不足時）**：`GPT-5.6-Sol (medium)`（當 Claude 額度竭盡時由 Sol 接手複審，平時由 Gemini Flash 規劃以節省 Sol 85%+ 額度）。
+  3. **Tier 3 備選（若 Sol 額度不足）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
   4. **Tier 4 終極防線（額度全竭時）**：直接跳過 AI 複審，以本地型別檢查與 3,134 個單元測試為最終驗證防線。
-- **模型分工與推理成本**：
-  - 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `high` 執行（解除 max 鎖定，大幅降低思考 Token 浪費）；複雜跨檔或困難診斷由 Worker Deep 使用 `gpt-5.6-terra`，Reviewer 固定使用 Terra read-only。
-  - Explorer 與 Analyst 預設維持低成本唯讀路徑；任務達到 `complex`／`critical` 時，可升級至 `gpt-5.6-luna` read-only。
-  - 推理程度依任務難度動態選擇，以最低足夠成本完成工作：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般任務優先採中間值，只有高風險關鍵任務才啟用端點。
+- **省額度模式（Low-Quota AI Team Mode）與模型分工**：
+  - **規劃端（Planner）**：由 `gemini-3.8-flash-high` 負責草擬與架構，出圖／出文零焦慮；Sol 僅作為後備與 Tier 2 複審，大幅省下高階思考 Token。
+  - **動態推理（Unfrozen Reasoning）**：其他模型不固定鎖死高階推理，全面依任務難度在 `low`～`high` 彈性調整（`trivial: low`、`routine: medium`、`complex: high`、`critical: high`）。解除 Luna 鎖死 high/max，日常寫入以 medium 推進。
+  - **各司其職**：一般寫入 Worker 為 `gpt-5.6-luna`；困難診斷與跨檔 Worker Deep 為 `gpt-5.6-terra`；Reviewer 為 `gpt-5.6-terra` read-only；Explorer／Analyst 維持 AGY Fast／Deep。
+  - **標準設定備份**：原標準 team 設定已安全備份至 `.ai-team/config/router.astra-standard.json`，額度重置時可一鍵切回。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 

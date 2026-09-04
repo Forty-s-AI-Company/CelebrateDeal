@@ -49,9 +49,11 @@ class LiteRouterTest(unittest.TestCase):
         self.assertEqual(config["agents"]["reviewer"]["model"], "gpt-5.6-terra")
         self.assertEqual(config["agents"]["reviewer"]["sandbox_mode"], "read-only")
         self.assertEqual(config["agents"]["reviewer"]["availability"], "runtime_dependent")
+        self.assertEqual(config["agents"]["planner"]["model"], "gemini-3.8-flash-high")
+        self.assertEqual(config["agents"]["planner"]["sol_fallback"]["model"], "gpt-5.6-sol")
         self.assertEqual(config["agents"]["worker"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["agents"]["worker"]["reasoning_effort"], "high")
-        self.assertEqual(config["agents"]["worker"]["reasoning_lock"], "high")
+        self.assertEqual(config["agents"]["worker"]["reasoning_effort"], "medium")
+        self.assertNotIn("reasoning_lock", config["agents"]["worker"])
         self.assertNotIn("worker-critical", config["agents"])
         self.assertNotIn("luna_critical_worker", config["codex_profiles"])
         self.assertEqual(config["codex_profiles"]["luna_worker"]["model"], "gpt-5.6-luna")
@@ -73,11 +75,15 @@ class LiteRouterTest(unittest.TestCase):
         self.assertEqual(config["codex_profiles"]["luna"]["reasoning_maximum"], "max")
         self.assertEqual(
             config["reasoning_policy"]["models"]["gpt-5.6-sol"],
-            {"minimum": "low", "maximum": "xhigh", "default": "high"},
+            {"minimum": "low", "maximum": "high", "default": "medium"},
         )
         self.assertEqual(
             config["reasoning_policy"]["models"]["gpt-5.6-terra"],
-            {"minimum": "low", "maximum": "xhigh", "default": "medium"},
+            {"minimum": "low", "maximum": "high", "default": "medium"},
+        )
+        self.assertEqual(
+            config["reasoning_policy"]["models"]["gpt-5.6-luna"],
+            {"minimum": "low", "maximum": "high", "default": "medium"},
         )
         self.assertTrue(config["codex_profiles"]["luna"]["fallback_only"])
         self.assertEqual(config["codex_profiles"]["luna"]["availability"], "runtime_dependent")
@@ -135,24 +141,24 @@ class LiteRouterTest(unittest.TestCase):
             worker = module.route_task("implement a bounded feature", "bug_fix")
             self.assertEqual(worker["model"], "gpt-5.6-luna")
             self.assertEqual(worker["profile"], "luna_worker")
-            self.assertEqual(worker["reasoning_effort"], "high")
-            self.assertEqual(worker["reasoning_lock"], "high")
+            self.assertEqual(worker["reasoning_effort"], "medium")
+            self.assertNotIn("reasoning_lock", worker)
             complex_explore = module.route_task("complex dependency exploration", "find_files", "complex")
             self.assertEqual(complex_explore["target"], "Invoke-AgyFast.ps1")
             self.assertEqual(complex_explore["escalation"]["model"], "gpt-5.6-luna")
             self.assertEqual(complex_explore["escalation"]["sandbox_mode"], "read-only")
-            self.assertEqual(complex_explore["escalation"]["reasoning_effort"], "xhigh")
+            self.assertEqual(complex_explore["escalation"]["reasoning_effort"], "high")
             routine_explore = module.route_task("read-only lookup", "find_files")
             self.assertIsNone(routine_explore["escalation"])
             critical_analysis = module.route_task("critical security root cause", "root_cause", "critical")
             self.assertEqual(critical_analysis["escalation"]["model"], "gpt-5.6-luna")
-            self.assertEqual(critical_analysis["escalation"]["reasoning_effort"], "max")
+            self.assertEqual(critical_analysis["escalation"]["reasoning_effort"], "high")
             routine_review = module.route_task("routine security review", "security_review")
             critical_review = module.route_task("critical security review", "security_review", "critical")
             self.assertEqual(routine_review["model"], "gpt-5.6-terra")
             self.assertEqual(routine_review["reasoning_effort"], "medium")
             self.assertEqual(critical_review["model"], "gpt-5.6-terra")
-            self.assertEqual(critical_review["reasoning_effort"], "xhigh")
+            self.assertEqual(critical_review["reasoning_effort"], "high")
 
     def test_native_reasoning_is_adaptive_and_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -164,13 +170,13 @@ class LiteRouterTest(unittest.TestCase):
             planner = module.route_task("plan a multi-step product flow", "planning")
             other_model = module.route_task("critical browser QA", "browser_qa", "critical")
 
-            self.assertEqual((trivial["difficulty"], trivial["reasoning_effort"]), ("trivial", "high"))
-            self.assertEqual((routine["difficulty"], routine["reasoning_effort"]), ("routine", "high"))
+            self.assertEqual((trivial["difficulty"], trivial["reasoning_effort"]), ("trivial", "low"))
+            self.assertEqual((routine["difficulty"], routine["reasoning_effort"]), ("routine", "medium"))
             self.assertEqual((complex_task["difficulty"], complex_task["reasoning_effort"]), ("complex", "high"))
-            self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "xhigh"))
+            self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "high"))
             self.assertEqual((planner["difficulty"], planner["reasoning_effort"]), ("complex", "high"))
             self.assertEqual(other_model["reasoning_effort"], "high")
-            self.assertIsNone(other_model["reasoning_bounds"])
+            self.assertEqual(other_model["reasoning_bounds"]["maximum"], "high")
 
             luna_effort, luna_difficulty, luna_bounds = module.adaptive_reasoning_recommendation(
                 {"model": "gpt-5.6-luna", "reasoning_effort": "high"},
@@ -179,9 +185,9 @@ class LiteRouterTest(unittest.TestCase):
                 "critical",
                 module.read_config(),
             )
-            self.assertEqual((luna_difficulty, luna_effort), ("critical", "max"))
-            self.assertEqual(luna_bounds["minimum"], "high")
-            self.assertEqual(luna_bounds["maximum"], "max")
+            self.assertEqual((luna_difficulty, luna_effort), ("critical", "high"))
+            self.assertEqual(luna_bounds["minimum"], "low")
+            self.assertEqual(luna_bounds["maximum"], "high")
 
     def test_goal_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
