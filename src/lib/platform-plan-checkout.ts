@@ -4,6 +4,7 @@ import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
 import { requireVendorOwnerFinance } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import {
@@ -324,6 +325,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
                   platformSubscriptionId: subscription.id,
                   billingPlanId: plan.id,
                   billingPlanCode: plan.code,
+                  ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: plan.id }) ?? {}),
                 } as Prisma.InputJsonObject,
               },
             })
@@ -417,6 +419,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               platformSubscriptionId: result.subscription.id,
               billingPlanId: result.plan.id,
               billingPlanCode: result.plan.code,
+              ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: result.plan.id }) ?? {}),
               checkoutSession: checkoutSessionMetadata(checkoutSession),
             } as Prisma.InputJsonObject,
           },

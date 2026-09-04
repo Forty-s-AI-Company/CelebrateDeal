@@ -53,6 +53,7 @@ import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
 import { createCustomCheckoutIdentityHash } from "@/lib/commerce-custom-checkout";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const idempotencyKey = "123e4567-e89b-12d3-a456-426614174000";
 const admissionToken = `ca1.${"a".repeat(64)}.${"b".repeat(43)}`;
@@ -432,6 +433,45 @@ describe("successful checkout response", () => {
     expect(JSON.stringify(metadata)).not.toContain(buyer.email);
     expect(JSON.stringify(metadata)).not.toContain(shipping.addressLine1);
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ expectedProductRevision: 4 }));
+  });
+
+  it("persists only the server-owned source marker for a synthetic Preview checkout", async () => {
+    const source = "a".repeat(40);
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", source);
+    vi.stubEnv("WP4_EXPECTED_SOURCE_SHA", "");
+    checkoutReadiness.mockReturnValue("ready");
+    createCheckoutSession.mockResolvedValue({
+      provider: "demo", mode: "redirect", checkoutUrl: "https://checkout.example.test/synthetic",
+    });
+    db.product.findFirst.mockResolvedValue({
+      ...(await db.product.findFirst()), id: WP4_SANDBOX_FIXTURE.productId,
+    });
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({
+      vendorId: "vendor-1", productId: WP4_SANDBOX_FIXTURE.productId,
+      productRevision: 4, idempotencyKey, expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+    const response = await POST(checkoutRequest(undefined, {
+      productId: WP4_SANDBOX_FIXTURE.productId,
+    }));
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
+      billingPurpose: "buyer_order", wp4SourceCommit: source,
+    });
+    expect(db.paymentTransaction.update.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
+      billingPurpose: "buyer_order", wp4SourceCommit: source,
+    });
+  });
+
+  it("rejects caller-owned source and purpose before any transaction write", async () => {
+    const response = await POST(checkoutRequest(undefined, {
+      wp4SourceCommit: "b".repeat(40), billingPurpose: "invoice_payment",
+    }));
+    expect(response.status).toBe(400);
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
   it("strictly validates custom answers from the database definition and never writes them to transaction metadata", async () => {

@@ -4,6 +4,7 @@ import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
+import { applyPlatformRefundProjection } from "@/lib/platform-refund-projection";
 import type { PaymentQueryResult } from "@/lib/payment-providers/types";
 
 export type RefundReconciliationDisposition = "reconciled" | "already_reconciled" | "provider_not_refunded";
@@ -67,7 +68,7 @@ export function validatePayUniRefundSnapshot(
 type ReconciliationDb = Pick<PrismaClient, "paymentTransaction" | "refundRecord" | "auditLog" | "$transaction">;
 
 type TransactionRow = Pick<PaymentTransaction,
-  "id" | "vendorId" | "providerName" | "providerTradeNo" | "orderNumber" | "grossAmountCents" | "netAmountCents" | "refundedAmountCents" | "status" | "refundReason" | "refundedAt" | "occurredAt"
+  "id" | "vendorId" | "providerName" | "providerTradeNo" | "orderNumber" | "paymentMode" | "grossAmountCents" | "netAmountCents" | "currency" | "refundedAmountCents" | "status" | "refundReason" | "refundedAt" | "occurredAt" | "metadata"
 >;
 
 type RefundRow = Pick<RefundRecord, "id" | "refundAmountCents" | "status" | "providerEventId">;
@@ -117,6 +118,7 @@ export async function reconcilePayUniRefund(input: {
     const reservedAmountCents = records._sum.refundAmountCents ?? 0;
     const pendingAmountCents = pending.reduce((sum, refund) => sum + refund.refundAmountCents, 0);
     const processedAmountCents = reservedAmountCents - pendingAmountCents;
+    const now = input.now ?? new Date();
 
     if (
       pending.length === 0
@@ -125,6 +127,10 @@ export async function reconcilePayUniRefund(input: {
       && transaction.refundedAmountCents === input.providerSnapshot.refundedAmountCents
       && reservedAmountCents === input.providerSnapshot.refundedAmountCents
     ) {
+      // This is intentionally non-ledger recovery only. A historical terminal
+      // row can predate the quota/invoice projection; the verified local and
+      // provider totals above make it safe to reapply that idempotent state.
+      await applyPlatformRefundProjection(tx, transaction, now);
       return {
         disposition: "already_reconciled",
         transactionId: transaction.id,
@@ -148,7 +154,6 @@ export async function reconcilePayUniRefund(input: {
     if (processedAmountCents !== transaction.refundedAmountCents) {
       throw new PayUniRefundReconciliationError("local_amount_mismatch");
     }
-    const now = input.now ?? new Date();
     // A no-refund snapshot may only release a reservation after the issuing
     // action has durably marked its provider outcome ambiguous. A plain
     // request:* reservation may still be in-flight, so it must remain locked.
@@ -226,6 +231,7 @@ export async function reconcilePayUniRefund(input: {
         refundedAt: now,
       },
     });
+    await applyPlatformRefundProjection(tx, updated, now);
     await applyPaymentRefundAccounting(tx, {
       vendorId: transaction.vendorId,
       transactionId: transaction.id,

@@ -7,6 +7,7 @@ const accountingMocks = vi.hoisted(() => ({
     commerceOrderRefund: null,
   })),
 }));
+const projectionMocks = vi.hoisted(() => ({ applyPlatformRefundProjection: vi.fn(async () => ({ subscription: null, invoice: null })) }));
 
 vi.mock("@/lib/payment-refund-accounting", () => ({
   applyPaymentRefundAccounting: accountingMocks.applyPaymentRefundAccounting,
@@ -19,6 +20,9 @@ vi.mock("@/lib/payment-refund-accounting", () => ({
     0,
     netAmountCents - refundedAmountCents + gatewayFeeRefundCents + platformFeeRefundCents,
   ),
+}));
+vi.mock("@/lib/platform-refund-projection", () => ({
+  applyPlatformRefundProjection: projectionMocks.applyPlatformRefundProjection,
 }));
 import {
   PayUniRefundReconciliationError,
@@ -163,6 +167,7 @@ describe("PayUni refund reconciliation", () => {
 
   it("processes the pending reservation and writes one audit inside the transaction", async () => {
     accountingMocks.applyPaymentRefundAccounting.mockClear();
+    projectionMocks.applyPlatformRefundProjection.mockClear();
     const { db, tx, refunds, transaction, auditLogs } = fakeDb();
     const result = await reconcilePayUniRefund({
       db: db as never,
@@ -179,6 +184,11 @@ describe("PayUni refund reconciliation", () => {
     expect(transaction.refundedAmountCents).toBe(168_000);
     expect(tx.refundRecord.update).toHaveBeenCalledOnce();
     expect(tx.paymentTransaction.update).toHaveBeenCalledOnce();
+    expect(projectionMocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ status: "refunded", refundedAmountCents: 168_000 }),
+      expect.any(Date),
+    );
     expect(accountingMocks.applyPaymentRefundAccounting).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -193,6 +203,7 @@ describe("PayUni refund reconciliation", () => {
   });
 
   it("is idempotent after the local terminal state is already complete", async () => {
+    projectionMocks.applyPlatformRefundProjection.mockClear();
     const { db, tx, auditLogs } = fakeDb({
       transaction: {
         id: "tx-1", vendorId: "vendor-1", providerName: "payuni", providerTradeNo: "trade-1", orderNumber: "CD-RECON-001",
@@ -209,6 +220,11 @@ describe("PayUni refund reconciliation", () => {
     })).resolves.toMatchObject({ disposition: "already_reconciled" });
     expect(tx.refundRecord.update).not.toHaveBeenCalled();
     expect(tx.paymentTransaction.update).not.toHaveBeenCalled();
+    expect(projectionMocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ status: "refunded", refundedAmountCents: 168_000 }),
+      expect.any(Date),
+    );
     expect(auditLogs).toHaveLength(0);
   });
 
@@ -386,6 +402,7 @@ describe("FIN-07 refund reconciliation closure", () => {
       transaction: { ...fakeDb().transaction, status: "paid", refundedAmountCents: 0 },
       refunds: [{ id: "refund-pending", refundAmountCents: 84_000, status: "pending", providerEventId: requestReservationId }],
     });
+    projectionMocks.applyPlatformRefundProjection.mockClear();
 
     expect(() => validatePayUniRefundSnapshot(transaction as never, partialSnapshot)).not.toThrow();
     await expect(reconcilePayUniRefund({
@@ -403,6 +420,11 @@ describe("FIN-07 refund reconciliation closure", () => {
     expect(refunds[0]?.status).toBe("processed");
     expect(tx.refundRecord.update).toHaveBeenCalledOnce();
     expect(tx.paymentTransaction.update).toHaveBeenCalledOnce();
+    expect(projectionMocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ status: "partially_refunded", refundedAmountCents: 84_000 }),
+      expect.any(Date),
+    );
   });
 
   it("does not treat a terminal transaction with an incomplete processed ledger as already reconciled", async () => {
@@ -428,6 +450,7 @@ describe("FIN-07 refund reconciliation closure", () => {
       refundedAmountCents: 84_000,
       remainingRefundableAmountCents: 84_000,
     };
+    projectionMocks.applyPlatformRefundProjection.mockClear();
     const { db, tx, auditLogs } = fakeDb({
       transaction: { ...fakeDb().transaction, status: "partially_refunded", refundedAmountCents: 84_000 },
       refunds: [{ id: "refund-processed", refundAmountCents: 84_000, status: "processed", providerEventId: "close-1" }],
@@ -441,6 +464,11 @@ describe("FIN-07 refund reconciliation closure", () => {
     })).resolves.toMatchObject({ disposition: "already_reconciled", refundedAmountCents: 84_000 });
     expect(tx.refundRecord.update).not.toHaveBeenCalled();
     expect(tx.paymentTransaction.update).not.toHaveBeenCalled();
+    expect(projectionMocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ status: "partially_refunded", refundedAmountCents: 84_000 }),
+      expect.any(Date),
+    );
     expect(auditLogs).toHaveLength(0);
   });
 });

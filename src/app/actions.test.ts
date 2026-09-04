@@ -143,6 +143,7 @@ const mocks = vi.hoisted(() => ({
   writeAuditLog: vi.fn(),
   requestAuditMeta: vi.fn(),
   auditLogCreate: vi.fn(),
+  applyPlatformRefundProjection: vi.fn(async () => ({ subscription: null, invoice: null })),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -152,6 +153,9 @@ vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
   requestAuditMeta: mocks.requestAuditMeta,
+}));
+vi.mock("@/lib/platform-refund-projection", () => ({
+  applyPlatformRefundProjection: mocks.applyPlatformRefundProjection,
 }));
 vi.mock("@/lib/auth", () => ({
   AUTH_COOKIE: "celebrate_session",
@@ -5248,6 +5252,28 @@ describe("refundPaymentTransactionAction", () => {
       where: { id: transaction.id },
       data: expect.objectContaining({ status: "refunded", refundedAmountCents: 10_000 }),
     });
+    expect(mocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "refunded", refundedAmountCents: 10_000 }),
+      expect.any(Date),
+    );
+  });
+
+  it("passes a PayUni partial refund through the same transaction-bound projection", async () => {
+    const payUniTransaction = { ...transaction, providerName: "payuni", providerTradeNo: "trade-123" };
+    mocks.findUnique.mockResolvedValue(payUniTransaction);
+    mocks.paymentTransactionUpdate.mockImplementation(async ({ data }) => ({ ...payUniTransaction, ...data }));
+    mocks.getPaymentProvider.mockReturnValue({ refundPayment: vi.fn().mockResolvedValue({ providerEventId: "refund-456" }) });
+
+    await expect(refundPaymentTransactionAction(refundFormData("20"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "partially_refunded", refundedAmountCents: 8_000 }),
+      expect.any(Date),
+    );
   });
 
   it("releases the reserved PayUni refund only for a pre-provider request contract failure", async () => {
@@ -5448,6 +5474,25 @@ describe("refundPaymentTransactionAction", () => {
     expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "Serializable",
     });
+    expect(mocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "refunded", refundedAmountCents: transaction.grossAmountCents }),
+      expect.any(Date),
+    );
+  });
+
+  it("passes a local partial refund through the same transaction-bound projection", async () => {
+    mocks.paymentTransactionUpdate.mockImplementation(async ({ data }) => ({ ...transaction, ...data }));
+
+    await expect(refundPaymentTransactionAction(refundFormData("20"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.applyPlatformRefundProjection).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "partially_refunded", refundedAmountCents: 8_000 }),
+      expect.any(Date),
+    );
   });
 
   it.each([

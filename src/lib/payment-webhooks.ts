@@ -21,6 +21,7 @@ import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
+import { applyPlatformRefundProjection } from "@/lib/platform-refund-projection";
 import {
   accruePlatformReferralCommission,
   applyPlatformReferralDispute,
@@ -718,13 +719,6 @@ async function reconcilePlatformSubscription(
     });
   }
 
-  if (input.eventType === "refunded" && subscription.status === "active") {
-    return db.vendorSubscription.update({
-      where: { id: subscription.id },
-      data: { status: "payment_refunded", endedAt: input.occurredAt },
-    });
-  }
-
   return subscription;
 }
 
@@ -738,8 +732,31 @@ async function applyPaymentRefundsInWebhook(
     occurredAt: Date;
   },
 ) {
-  if (!isRefundEvent(input.payload.eventType) || input.payload.refundAmountCents <= 0 || input.duplicateRefundEvent) {
-    return { refundCommission: null, platformReferralRefund: null, courseRefundAllocations: [], commerceOrderRefund: null };
+  if (!isRefundEvent(input.payload.eventType) || input.payload.refundAmountCents <= 0) {
+    return {
+      refundCommission: null,
+      platformReferralRefund: null,
+      courseRefundAllocations: [],
+      commerceOrderRefund: null,
+      platformRefundProjection: { subscription: null, invoice: null },
+    };
+  }
+  if (input.duplicateRefundEvent) {
+    // A duplicate callback never creates another refund record or ledger
+    // reversal. It may still repair the idempotent SaaS quota/invoice state of
+    // a verified historical terminal transaction.
+    const platformRefundProjection = await applyPlatformRefundProjection(
+      db,
+      input.transaction,
+      input.occurredAt,
+    );
+    return {
+      refundCommission: null,
+      platformReferralRefund: null,
+      courseRefundAllocations: [],
+      commerceOrderRefund: null,
+      platformRefundProjection,
+    };
   }
 
   const refundRecord = await db.refundRecord.create({
@@ -754,7 +771,7 @@ async function applyPaymentRefundsInWebhook(
       reason: input.payload.refundReason,
     },
   });
-  await db.paymentTransaction.update({
+  const updatedTransaction = await db.paymentTransaction.update({
     where: { id: input.transaction.id },
     data: {
       refundedAmountCents: input.transaction.refundedAmountCents + input.payload.refundAmountCents,
@@ -762,6 +779,11 @@ async function applyPaymentRefundsInWebhook(
       refundedAt: input.occurredAt,
     },
   });
+  const platformRefundProjection = await applyPlatformRefundProjection(
+    db,
+    updatedTransaction,
+    input.occurredAt,
+  );
   const refundedFeeTotals = await db.refundRecord.aggregate({
     where: { paymentTransactionId: input.transaction.id, status: "processed" },
     _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
@@ -789,6 +811,7 @@ async function applyPaymentRefundsInWebhook(
     refundCommission: refundAccounting.affiliateCommission,
     courseRefundAllocations: refundAccounting.courseRefundAllocations,
     commerceOrderRefund: refundAccounting.commerceOrderRefund,
+    platformRefundProjection,
     platformReferralRefund: await reconcilePlatformReferralRefund(db, {
       eventType: input.payload.eventType,
       paymentTransactionId: input.transaction.id,
@@ -853,26 +876,6 @@ async function reconcileInvoicePayment(
     const current = await db.invoice.findFirst({ where: { id: invoice.id, vendorId: input.vendorId } });
     if (current && ["paid", "partially_refunded", "refunded"].includes(current.status)) return current;
     throw new Error("帳單付款更新發生狀態衝突。 ");
-  }
-
-  if (input.eventType === "partially_refunded") {
-    if (invoice.status === "partially_refunded" || invoice.status === "refunded") return invoice;
-    if (invoice.status !== "paid") throw new Error("部分退款的帳單尚未完成付款。 ");
-    return db.invoice.update({
-      where: { id: invoice.id },
-      data: { status: "partially_refunded" },
-    });
-  }
-
-  if (input.eventType === "refunded") {
-    if (invoice.status === "refunded") return invoice;
-    if (!["paid", "partially_refunded"].includes(invoice.status)) {
-      throw new Error("退款的帳單尚未完成付款。 ");
-    }
-    return db.invoice.update({
-      where: { id: invoice.id },
-      data: { status: "refunded" },
-    });
   }
 
   return invoice;
@@ -1026,7 +1029,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           },
         });
 
-    const platformSubscription = await reconcilePlatformSubscription(tx, {
+    const reconciledPlatformSubscription = await reconcilePlatformSubscription(tx, {
       vendorId: vendor.id,
       eventType: payload.eventType,
       transaction: savedTransaction,
@@ -1057,7 +1060,13 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       }
     }
 
-    const { refundCommission, platformReferralRefund, courseRefundAllocations, commerceOrderRefund } = await applyPaymentRefundsInWebhook(tx, {
+    const {
+      refundCommission,
+      platformReferralRefund,
+      courseRefundAllocations,
+      commerceOrderRefund,
+      platformRefundProjection,
+    } = await applyPaymentRefundsInWebhook(tx, {
       payload,
       vendorId: vendor.id,
       transaction: savedTransaction,
@@ -1065,7 +1074,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       occurredAt,
     });
 
-    const invoicePayment = await reconcileInvoicePayment(tx, {
+    const reconciledInvoicePayment = await reconcileInvoicePayment(tx, {
       vendorId: vendor.id,
       eventType: payload.eventType,
       transaction: savedTransaction,
@@ -1073,6 +1082,9 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       currentTransactionExists: Boolean(currentTransaction),
       occurredAt,
     });
+
+    const platformSubscription = platformRefundProjection.subscription ?? reconciledPlatformSubscription;
+    const invoicePayment = platformRefundProjection.invoice ?? reconciledInvoicePayment;
 
     const disputeEntry = await applyDisputeToCommission(tx, payload, vendor.id, savedTransaction.id);
     const courseDisputeEntries = await applyDisputeToCourseAllocations(tx, payload, vendor.id, savedTransaction.id);

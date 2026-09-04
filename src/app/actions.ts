@@ -25,6 +25,7 @@ import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
+import { applyPlatformRefundProjection } from "@/lib/platform-refund-projection";
 import { toSlug } from "@/lib/format";
 import { parseLiveQuotaPolicy, parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
@@ -2322,6 +2323,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
                   refundedAt: refundOccurredAt,
                 },
               });
+              await applyPlatformRefundProjection(tx, completedTransaction, refundOccurredAt);
               const refundedFeeTotals = await tx.refundRecord.aggregate({
                 where: { paymentTransactionId: completedTransaction.id, status: "processed" },
                 _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
@@ -2405,6 +2407,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
           const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
           const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
+          const refundOccurredAt = new Date();
           const refund = await tx.refundRecord.create({
             data: {
               vendorId: transaction.vendorId,
@@ -2422,9 +2425,10 @@ export async function refundPaymentTransactionAction(formData: FormData) {
               status,
               refundedAmountCents,
               refundReason: reason,
-              refundedAt: new Date(),
+              refundedAt: refundOccurredAt,
             },
           });
+          await applyPlatformRefundProjection(tx, updated, refundOccurredAt);
           const refundedFeeTotals = await tx.refundRecord.aggregate({
             where: { paymentTransactionId: updated.id, status: "processed" },
             _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
@@ -2445,7 +2449,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             }),
             isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
             transactionOccurredAt: transaction.occurredAt,
-            occurredAt: new Date(),
+            occurredAt: refundOccurredAt,
           });
 
           return { transaction, updated };

@@ -27,6 +27,7 @@ import {
   validateCustomCheckoutAnswers,
 } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
+import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 import {
   CheckoutIdempotencyConflictError,
   createReservedPaymentTransaction,
@@ -149,6 +150,8 @@ function checkoutTransactionMetadata(input: {
   sourceLiveId?: string;
 }) {
   return {
+    // The browser cannot choose a transaction purpose or source marker.
+    billingPurpose: "buyer_order",
     productId: input.productId,
     productName: input.productName,
     ...(input.coursePolicySnapshot ? { coursePolicySnapshot: input.coursePolicySnapshot } : {}),
@@ -156,6 +159,7 @@ function checkoutTransactionMetadata(input: {
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
+    ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
 
