@@ -145,5 +145,26 @@ if (-not (Test-Path -LiteralPath $sourceFile)) {
 }
 
 Copy-Item -LiteralPath $sourceFile -Destination $targetPath -Force
-Write-Host "`n>> 切換成功！已載入: $sourceFile -> $targetPath`n" -ForegroundColor Green
+
+# 同步專案 .codex/config.toml 與 .codex/agents/worker.toml，確保 Codex 原生執行環境 100% 一致
+$localCodexConfig = Join-Path $repoRoot '.codex/config.toml'
+$workerAgentToml = Join-Path $repoRoot '.codex/agents/worker.toml'
+
+if (Test-Path -LiteralPath $localCodexConfig) {
+    $rawConfig = Get-Content -LiteralPath $localCodexConfig -Raw
+    $targetEffort = if ($isHighTarget) { "high" } else { "medium" }
+    $updatedConfig = $rawConfig `
+        -replace '(?m)^#?model\s*=.*', 'model = "gpt-5.6-luna"' `
+        -replace '(?m)^#?model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetEffort`""
+    $updatedConfig | Set-Content -LiteralPath $localCodexConfig -Encoding utf8
+}
+
+if (Test-Path -LiteralPath $workerAgentToml) {
+    $rawWorker = Get-Content -LiteralPath $workerAgentToml -Raw
+    $targetWorkerEffort = if ($isHighTarget) { "high" } else { "medium" }
+    $updatedWorker = $rawWorker -replace '(?m)^model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetWorkerEffort`""
+    $updatedWorker | Set-Content -LiteralPath $workerAgentToml -Encoding utf8
+}
+
+Write-Host "`n>> 切換成功！已同步更新 router.json 與 .codex 設定`n" -ForegroundColor Green
 Show-AiTeamStatus
