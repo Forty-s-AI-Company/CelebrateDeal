@@ -151,7 +151,8 @@ const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.js
 const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
 export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v2";
 const BUYER_PAYMENT_CHECK_FILE = "wp4-payuni-buyer-payment-check-receipt.json";
-const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE]);
+const BUYER_CALLBACK_RETRY_FILE = "wp4-payuni-buyer-callback-retry-receipt.json";
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE, BUYER_CALLBACK_RETRY_FILE]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
@@ -1000,6 +1001,66 @@ export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
   return receipt;
 }
 
+const buyerRetryStatuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE", "RETRY_REJECTED", "RETRY_FAILED"]);
+const buyerRetryFailures = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_claim_lost", "processing_failed", "database_transaction_failed", "database_conflict"]);
+
+function validBuyerRetryBody(body) {
+  if (!exactKeys(body, ["status", "retryAttempts", "failureCode"]) || !buyerRetryStatuses.has(body.status)
+    || !boundedInteger(body.retryAttempts, 1) || !buyerRetryFailures.has(body.failureCode)) return false;
+  if (body.status === "PROCESSED" && (body.retryAttempts !== 1 || body.failureCode !== "NONE")) return false;
+  if (body.status === "ALREADY_PROCESSED" && (body.retryAttempts !== 0 || body.failureCode !== "NONE")) return false;
+  if (["FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE"].includes(body.status) && body.retryAttempts !== 0) return false;
+  if (body.status === "RETRY_FAILED" && (body.retryAttempts !== 1 || body.failureCode === "NONE")) return false;
+  return true;
+}
+
+export function validateBuyerCallbackRetryReceipt(receipt) {
+  const errors = [];
+  if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "status", "failureCode", "retryPosts", "retryAttempts", "queryAttempts", "paymentSubmissions", "refundSubmissions"])) errors.push("SCHEMA_KEYS");
+  if (receipt?.schemaVersion !== "celebratedeal-wp4-buyer-callback-retry/v1" || receipt?.purpose !== FIXED_PURPOSE
+    || receipt?.environment !== "sandbox" || !SOURCE_SHA.test(receipt?.sourceSha ?? "")
+    || receipt?.transactionSourceSha !== BUYER_PAYMENT_CHECK_SOURCE_SHA) errors.push("FIXED_IDENTITY");
+  if (!boundedInteger(receipt?.retryPosts, 1) || !boundedInteger(receipt?.retryAttempts, 1)
+    || receipt?.queryAttempts !== 0 || receipt?.paymentSubmissions !== 0 || receipt?.refundSubmissions !== 0) errors.push("SIDE_EFFECT_BUDGET");
+  if (!["PASS", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
+  if (["INPUT_REJECTED", "NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status)) {
+    const attempts = receipt.status === "INPUT_REJECTED" ? 0 : 1;
+    if (receipt.retryPosts !== attempts || receipt.retryAttempts !== attempts || receipt.failureCode !== "UNKNOWN" || receipt.result !== "BLOCKED") errors.push("TRANSPORT_STATE");
+  } else if (!validBuyerRetryBody({ status: receipt?.status, retryAttempts: receipt?.retryAttempts, failureCode: receipt?.failureCode })
+    || receipt?.retryPosts !== 1 || (receipt?.result === "PASS") !== ["PROCESSED", "ALREADY_PROCESSED"].includes(receipt?.status)) errors.push("RETRY_STATE");
+  return { ok: errors.length === 0, errors };
+}
+
+/** Replays only one stored, authenticated callback through the server's fixed CAS boundary. */
+export async function retryFixedWp4BuyerCallback(input, dependencies = {}) {
+  const invocation = validateExistingRefundRecoveryInvocation(input);
+  const receipt = {
+    schemaVersion: "celebratedeal-wp4-buyer-callback-retry/v1", purpose: FIXED_PURPOSE,
+    sourceSha: invocation.ok ? invocation.sourceSha : "0".repeat(40), transactionSourceSha: BUYER_PAYMENT_CHECK_SOURCE_SHA,
+    environment: "sandbox", result: "BLOCKED", status: "INPUT_REJECTED", failureCode: "UNKNOWN",
+    retryPosts: 0, retryAttempts: 0, queryAttempts: 0, paymentSubmissions: 0, refundSubmissions: 0,
+  };
+  if (!invocation.ok) return receipt;
+  // Reserve the full attempt budget before dispatch; a lost response is not zero effects.
+  receipt.retryPosts = 1;
+  receipt.retryAttempts = 1;
+  try {
+    const response = await (dependencies.request ?? defaultRequest)({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-callback-retry"),
+      headers: guardedHeaders(invocation), body: undefined,
+    });
+    if (response?.status !== 200 || !validBuyerRetryBody(response.body)) {
+      receipt.status = "RESPONSE_INVALID";
+      return receipt;
+    }
+    receipt.status = response.body.status;
+    receipt.failureCode = response.body.failureCode;
+    receipt.retryAttempts = response.body.retryAttempts;
+    receipt.result = ["PROCESSED", "ALREADY_PROCESSED"].includes(receipt.status) ? "PASS" : "BLOCKED";
+  } catch { receipt.status = "NETWORK_REJECTED"; }
+  return receipt;
+}
+
 export async function defaultBrowserSubmit(input, dependencies = {}) {
   const { chromium, errors } = dependencies.playwright ?? await import("playwright");
   // The trusted runner already pins every allowlisted A record in /etc/hosts
@@ -1564,6 +1625,18 @@ export async function writeBuyerPaymentCheckReceipt(receipt, runnerTemp) {
   return writeFixedReceipt(receipt, runnerTemp, BUYER_PAYMENT_CHECK_FILE);
 }
 
+export async function writeBuyerCallbackRetryReceipt(receipt, runnerTemp) {
+  if (!validateBuyerCallbackRetryReceipt(receipt).ok) throw new Error("RECEIPT_INVALID");
+  return writeFixedReceipt(receipt, runnerTemp, BUYER_CALLBACK_RETRY_FILE);
+}
+
+export async function validateWrittenBuyerCallbackRetryReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, BUYER_CALLBACK_RETRY_FILE);
+    return validateBuyerCallbackRetryReceipt(JSON.parse(await readFile(receiptPath, "utf8"))).ok;
+  } catch { return false; }
+}
+
 export async function validateWrittenBuyerPaymentCheckReceipt(runnerTemp) {
   try {
     const { receiptPath } = fixedReceiptPath(runnerTemp, BUYER_PAYMENT_CHECK_FILE);
@@ -1611,6 +1684,19 @@ export async function validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp) {
 
 async function main() {
   const runnerTemp = process.env.RUNNER_TEMP;
+  if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-callback-retry-receipt") {
+    const valid = await validateWrittenBuyerCallbackRetryReceipt(runnerTemp);
+    process.stdout.write(`wp4_buyer_callback_retry_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+    process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--retry-buyer-callback") {
+    const receipt = await retryFixedWp4BuyerCallback(readExistingRefundRecoveryInputs());
+    await writeBuyerCallbackRetryReceipt(receipt, runnerTemp);
+    process.stdout.write(`wp4_buyer_callback_retry=${receipt.result}; status=${receipt.status}\n`);
+    process.exitCode = receipt.result === "PASS" ? 0 : 2;
+    return;
+  }
   if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-payment-check-receipt") {
     try {
       const valid = await validateWrittenBuyerPaymentCheckReceipt(runnerTemp);
