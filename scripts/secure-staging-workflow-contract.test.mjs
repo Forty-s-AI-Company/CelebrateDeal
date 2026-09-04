@@ -30,6 +30,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
     "wp2-readonly-restore",
     "wp4-payuni-sandbox-binding-preflight",
     "wp4-payuni-sandbox-reconciliation",
+    "wp4-payuni-sandbox-refund-recovery",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -39,11 +40,12 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
   assert.match(source, /steps\.execute-wp4\.outcome != 'success'/u);
   assert.ok(source.indexOf("Validate sanitized WP2 receipt") < source.indexOf("Enforce fixed WP2 task success"));
   assert.ok(source.indexOf("Validate sanitized WP4 receipt") < source.indexOf("Enforce fixed WP4 task success"));
+  assert.ok(source.indexOf("Validate sanitized existing-refund recovery receipt") < source.indexOf("Enforce fixed existing-refund recovery success"));
   assert.ok(source.indexOf("Upload sanitized receipt only") < source.indexOf("Enforce fixed WP2 task success"));
   assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
   assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
-  assert.equal(actionUses.length, 3);
+  assert.equal(actionUses.length, 4);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
 });
 
@@ -53,11 +55,12 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.match(source, /npx playwright install --with-deps chromium/u);
-  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 2);
+  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 3);
+  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 1);
   assert.match(source, /api\.github\.com/u);
   assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);
-  assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 1);
+  assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 2);
   assert.match(source, /iptables-restore/u);
   assert.match(runner, /"--network", "host"/u);
   assert.match(runner, /\/etc\/hosts:\/etc\/hosts:ro/u);
@@ -123,4 +126,44 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   assert.doesNotMatch(JSON.stringify(wp4.env), /STAGING_DATABASE_URL|PAYUNI_(?:MERCHANT|HASH)/u);
   assert.equal(wp4.run.includes("npm run secure:staging:wp4"), true);
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
+});
+
+test("existing-refund recovery verifies the fixed source before JOB binding and runs only one query-only command", () => {
+  const source = fs.readFileSync(workflowPath, "utf8");
+  const workflow = yaml.load(source);
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const chromium = steps.find((step) => step.name === "Preload Chromium before WP4 secret injection");
+  const lineage = steps.find((step) => step.name === "Validate fixed existing-refund recovery identity before JOB binding");
+  const recovery = steps.find((step) => step.id === "execute-wp4-existing-refund-recovery");
+  const validate = steps.find((step) => step.name === "Validate sanitized existing-refund recovery receipt");
+  const upload = steps.find((step) => step.name === "Upload sanitized existing-refund recovery receipt only");
+  const enforce = steps.find((step) => step.name === "Enforce fixed existing-refund recovery success");
+
+  assert.equal(chromium.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}");
+  assert.equal(lineage.if, "${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}");
+  assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
+  assert.match(lineage.run, /CELEBRATEDEAL_SOURCE_SHA" != "1052a46d002149b5c06104927ed0fab32b049214"/u);
+  assert.match(lineage.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --verify-lineage/u);
+  assert.doesNotMatch(lineage.run, /secrets\.|\$\{\{\s*inputs\./u);
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(recovery));
+
+  assert.equal(recovery.if, "${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}");
+  assert.deepEqual(Object.keys(recovery.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "JOB_SECRET"]);
+  assert.equal(recovery.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
+  assert.match(recovery.run, /\["api\.github\.com", "443"\]/u);
+  assert.match(recovery.run, /\[deploymentHost, "443"\]/u);
+  assert.match(recovery.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --recover-existing-refund/u);
+  assert.match(recovery.run, /sudo iptables -P OUTPUT DROP/u);
+  assert.match(recovery.run, /sudo ip6tables -P OUTPUT DROP/u);
+  assert.match(recovery.run, /sudo iptables-restore/u);
+  assert.match(recovery.run, /sudo ip6tables-restore/u);
+  assert.doesNotMatch(JSON.stringify(recovery.env), /GITHUB_TOKEN|PAYUNI|CARD|STAGING_DATABASE_URL|MERCHANT|HASH/u);
+  assert.doesNotMatch(recovery.run, /playwright|chromium|sandbox-api\.payuni|sandbox-vendor\.payuni|wp4-(?:fixture|payment-attempt|refund)/iu);
+  assert.doesNotMatch(recovery.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
+
+  assert.equal(validate.run, "node scripts/mvp-payuni-sandbox-e2e.mjs --validate-recovery-receipt");
+  assert.equal(upload.with.path, "${{ runner.temp }}/celebratedeal-secure-receipts/wp4-payuni-sandbox-refund-recovery-receipt.json");
+  assert.match(String(enforce.if), /steps\.execute-wp4-existing-refund-recovery\.outcome != 'success'/u);
+  assert.ok(steps.indexOf(validate) < steps.indexOf(upload));
+  assert.ok(steps.indexOf(upload) < steps.indexOf(enforce));
 });
