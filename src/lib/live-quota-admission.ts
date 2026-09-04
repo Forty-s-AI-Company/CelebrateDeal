@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -253,6 +254,14 @@ function isPrismaCode(error: unknown, code: string) {
     && error.code === code;
 }
 
+/** 衝突後短暫退避，避免立即重試再次撞上相同交易；不增加重試次數。 */
+export function liveAdmissionRetryDelayMs(attempt: number, jitter: number) {
+  const safeAttempt = Number.isFinite(attempt) ? Math.trunc(attempt) : 1;
+  const safeJitter = Number.isFinite(jitter) ? Math.trunc(jitter) : 0;
+  return 20 * Math.max(1, Math.min(LIVE_ADMISSION_MAX_ATTEMPTS - 1, safeAttempt))
+    + Math.max(0, Math.min(20, safeJitter));
+}
+
 export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
   const now = input.now ?? new Date();
   const transactionInput = { ...input, now };
@@ -278,6 +287,7 @@ export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
       if (attempt === LIVE_ADMISSION_MAX_ATTEMPTS) {
         throw new LiveQuotaAdmissionError("admission_busy");
       }
+      await sleep(liveAdmissionRetryDelayMs(attempt, randomInt(0, 21)));
     }
   }
 

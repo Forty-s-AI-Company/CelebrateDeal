@@ -368,7 +368,15 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   if (optionalPayloadText(payload.Status) !== "SUCCESS") {
     throw new PaymentQueryProviderError("provider_response");
   }
-  return payUniQueryRow(payload, orderNumber);
+  const snapshot = payUniQueryRow(payload, orderNumber);
+  // 驗簽只證明來源；仍須綁定本地交易及原始金額，避免錯帳對帳。
+  if (
+    snapshot.providerTradeNo !== transaction.providerTradeNo
+    || snapshot.grossAmountCents !== transaction.grossAmountCents
+  ) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  return snapshot;
 }
 
 /**

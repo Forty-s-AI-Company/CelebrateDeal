@@ -4,6 +4,7 @@ import {
   admitLiveViewer,
   hasActiveLiveViewerSession,
   hashLiveViewerToken,
+  liveAdmissionRetryDelayMs,
   LIVE_VIEWER_SESSION_TTL_MS,
   releaseLiveViewer,
 } from "@/lib/live-quota-admission";
@@ -23,6 +24,15 @@ const db = {
 } as unknown as PrismaClient;
 
 const now = new Date("2026-08-07T06:00:00.000Z");
+describe("live admission retry backoff", () => {
+  it("keeps retry delay bounded for valid and invalid inputs", () => {
+    expect(liveAdmissionRetryDelayMs(1, 0)).toBe(20);
+    expect(liveAdmissionRetryDelayMs(2, 20)).toBe(60);
+    expect(liveAdmissionRetryDelayMs(-100, -100)).toBe(20);
+    expect(liveAdmissionRetryDelayMs(100, 100)).toBe(60);
+    expect(liveAdmissionRetryDelayMs(Number.NaN, Number.POSITIVE_INFINITY)).toBe(20);
+  });
+});
 const runtimeReadyContent = {
   streamMode: "live",
   scheduledAt: new Date("2026-08-07T05:59:00.000Z"),

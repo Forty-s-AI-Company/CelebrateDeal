@@ -258,6 +258,30 @@ describe("PayUni provider", () => {
     expect(JSON.stringify(request)).not.toContain(hashIv);
   });
 
+  it.each([
+    { TradeNo: "different-trade", TradeAmt: "1680" },
+    { TradeNo: "trade-query-123", TradeAmt: "1681" },
+  ])("rejects a signed query with mismatched local identity or amount: %j", async (mismatch) => {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
+      Status: "SUCCESS",
+      Result: JSON.stringify({
+        MerTradeNo: "CD-QUERY-001",
+        TradeStatus: "1",
+        RefundStatus: "1",
+        ...mismatch,
+      }),
+    }), { status: 200 })));
+    await expect(payUniPaymentProvider.queryPayment?.({
+      transaction: {
+        id: "tx-query",
+        orderNumber: "CD-QUERY-001",
+        providerTradeNo: "trade-query-123",
+        grossAmountCents: 168_000,
+      } as PaymentTransaction,
+    })).rejects.toThrow("Payment provider query failed.");
+  });
+
   it("fails closed when a partial query has no provider refund amount", async () => {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({
