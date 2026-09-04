@@ -88,6 +88,7 @@
 | `POST /api/admin/ops/payuni/wp4-payment-attempt` | 買家交易付款前的單次 reservation；已付款不重送 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-reconcile` | 查核固定買家退款並依可信 provider 結果同步站內狀態；不送新退款 | 200 reconciled；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-refund-recovery` | 以 server 固定歷史 source SHA 查核 buyer refund；不送新退款、不接受 source override | 200 reconciled；401／404／409／503；查詢失敗只回傳固定 QUERY_* enum |
+| `POST /api/admin/ops/payuni/wp4-buyer-payment-check` | 僅查核固定 8497ec1 buyer 交易；Preview／Sandbox／JOB／部署來源驗證，空 body、最多一次 query，零寫入與付款退款 | 200 固定 status/localStatus/providerStatus/queryAttempts；401／404／503 guard |
 | `POST /api/admin/ops/payuni/wp4-refund` | server 選定買家交易、金額及階段，最多一次退款嘗試；不明結果不得重送 | 200 COMPLETED；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-session` | 僅固定 synthetic owner，驗證 active membership 後建立 15 分鐘 session；不更動一般登入或 MFA | 204 空 body 與 HttpOnly／Secure／SameSite=Lax cookie；401／404／503；不得記錄 cookie |
 | `POST /api/admin/ops/payuni/wp4-subscription-payment-attempt` | 固定 SaaS purpose 的單次付款 reservation，與買家 purpose 分離 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |
