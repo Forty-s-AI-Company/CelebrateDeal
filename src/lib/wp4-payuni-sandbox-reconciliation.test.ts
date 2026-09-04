@@ -24,7 +24,7 @@ import {
 } from "@/lib/wp4-payuni-sandbox-reconciliation";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
-import { PayUniRefundReconciliationError } from "@/lib/payuni-refund-reconciliation";
+import { PayUniRefundReconciliationError, type RefundReconciliationDiagnostics } from "@/lib/payuni-refund-reconciliation";
 import { PlatformRefundProjectionConflictError } from "@/lib/platform-refund-projection";
 import { Prisma } from "@prisma/client";
 
@@ -218,7 +218,10 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
     await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
       .resolves.toEqual({ reconciled: true, status: "RECONCILED" });
     expect(mocks.queryPayment).toHaveBeenCalledExactlyOnceWith({ transaction: historicalBuyer });
-    expect(mocks.reconcilePayUniRefund).toHaveBeenCalledWith(expect.objectContaining({ transactionId: historicalBuyer.id }));
+    expect(mocks.reconcilePayUniRefund).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: historicalBuyer.id,
+      diagnostics: expect.objectContaining({ stage: "TRANSACTION_START" }),
+    }));
   });
 
   it.each([
@@ -333,6 +336,22 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
 
     const result = await reconcileWp4PayUniSandboxHistoricalRefund(db as never);
     expect(result).toEqual({ reconciled: false, status });
+    expect(JSON.stringify(result)).not.toContain("synthetic-secret");
+  });
+
+  it.each(["P2028", "P2034"])("exposes collected transaction diagnostics only for P2028, not %s", async (code) => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    const transactionFailure = { stage: "PAYMENT_ACCOUNTING", elapsedBucket: "FROM_5S_TO_15S" } as const;
+    mocks.reconcilePayUniRefund.mockImplementationOnce(async ({ diagnostics }: { diagnostics: RefundReconciliationDiagnostics }) => {
+      diagnostics.transactionFailure = transactionFailure;
+      throw new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code, clientVersion: "test" });
+    });
+    const result = await reconcileWp4PayUniSandboxHistoricalRefund(db as never);
+    expect(result).toEqual(code === "P2028"
+      ? { reconciled: false, status: "RECONCILIATION_DATABASE_TRANSACTION_FAILED", transactionFailure }
+      : { reconciled: false, status: "RECONCILIATION_DATABASE_CONFLICT" });
     expect(JSON.stringify(result)).not.toContain("synthetic-secret");
   });
 

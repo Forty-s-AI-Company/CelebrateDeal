@@ -26,10 +26,12 @@ vi.mock("@/lib/platform-refund-projection", () => ({
 }));
 import {
   PayUniRefundReconciliationError,
+  type RefundReconciliationDiagnostics,
   reconcilePayUniRefund,
   validatePayUniRefundSnapshot,
 } from "@/lib/payuni-refund-reconciliation";
 import type { PaymentQueryResult } from "@/lib/payment-providers/types";
+import { Prisma } from "@prisma/client";
 
 const snapshot: PaymentQueryResult = {
   providerTradeNo: "trade-1",
@@ -98,6 +100,68 @@ function fakeDb(initial: {
 }
 
 describe("PayUni refund reconciliation", () => {
+  it("records a fixed start-stage bucket for a P2028 without replacing the error", async () => {
+    const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code: "P2028", clientVersion: "test" });
+    const db = { $transaction: vi.fn().mockRejectedValue(error) };
+
+    await expect(reconcilePayUniRefund({
+      db: db as never,
+      transactionId: "tx-1",
+      providerSnapshot: snapshot,
+      actor: { id: "admin-1", label: "platform_admin" },
+      diagnostics,
+    })).rejects.toBe(error);
+    expect(diagnostics.transactionFailure).toMatchObject({ stage: "TRANSACTION_START", elapsedBucket: "LT_5S" });
+  });
+
+  it.each([
+    [4_999, "LT_5S"], [5_000, "FROM_5S_TO_15S"], [14_999, "FROM_5S_TO_15S"], [15_000, "GE_15S"],
+  ] as const)("uses fixed elapsed bucket at %sms", async (elapsed, elapsedBucket) => {
+    const clock = vi.spyOn(performance, "now").mockReturnValueOnce(10_000).mockReturnValueOnce(10_000 + elapsed);
+    const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code: "P2028", clientVersion: "test" });
+    try {
+      await expect(reconcilePayUniRefund({
+        db: { $transaction: vi.fn().mockRejectedValue(error) } as never,
+        transactionId: "tx-1", providerSnapshot: snapshot, actor: { id: "admin-1", label: "test" }, diagnostics,
+      })).rejects.toBe(error);
+      expect(diagnostics.transactionFailure).toEqual({ stage: "TRANSACTION_START", elapsedBucket });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("keeps a mid-stage PAYMENT_ACCOUNTING P2028 and original error", async () => {
+    const { db } = fakeDb();
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code: "P2028", clientVersion: "test" });
+    accountingMocks.applyPaymentRefundAccounting.mockRejectedValueOnce(error);
+    const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
+
+    await expect(reconcilePayUniRefund({
+      db: db as never, transactionId: "tx-1", providerSnapshot: snapshot,
+      actor: { id: "admin-1", label: "test" }, diagnostics,
+    })).rejects.toBe(error);
+    expect(diagnostics.transactionFailure).toMatchObject({ stage: "PAYMENT_ACCOUNTING" });
+  });
+
+  it("marks COMMIT as the last attempted stage when the transaction rejects", async () => {
+    const { db } = fakeDb();
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic-secret", { code: "P2028", clientVersion: "test" });
+    const originalTransaction = db.$transaction;
+    db.$transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      await originalTransaction(callback);
+      throw error;
+    }) as typeof db.$transaction;
+    const diagnostics: RefundReconciliationDiagnostics = { stage: "TRANSACTION_START" };
+
+    await expect(reconcilePayUniRefund({
+      db: db as never, transactionId: "tx-1", providerSnapshot: snapshot,
+      actor: { id: "admin-1", label: "test" }, diagnostics,
+    })).rejects.toBe(error);
+    expect(diagnostics.transactionFailure).toMatchObject({ stage: "COMMIT" });
+  });
+
   it("requires a matching terminal provider snapshot", () => {
     expect(() => validatePayUniRefundSnapshot(
       { providerName: "payuni", providerTradeNo: "trade-1", orderNumber: "CD-RECON-001", grossAmountCents: 168_000 },

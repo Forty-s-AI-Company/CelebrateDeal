@@ -169,6 +169,18 @@ const RECOVERY_QUERY_FAILURES = Object.freeze([
   "QUERY_NETWORK_FAILED",
   "QUERY_UNKNOWN_FAILED",
 ]);
+// Application-owned stages and coarse elapsed bands only; never copy error fields.
+const RECOVERY_TRANSACTION_STAGES = new Set([
+  "TRANSACTION_START", "LOAD_TRANSACTION", "LOAD_RESERVATIONS", "LOAD_TOTALS",
+  "RELEASE_RESERVATION", "UPDATE_RESERVATION", "UPDATE_TRANSACTION",
+  "PLATFORM_PROJECTION", "PAYMENT_ACCOUNTING", "AUDIT", "COMMIT",
+]);
+const RECOVERY_TRANSACTION_ELAPSED = new Set(["LT_5S", "FROM_5S_TO_15S", "GE_15S"]);
+function validRecoveryTransactionFailure(value) {
+  return exactKeys(value, ["stage", "elapsedBucket"])
+    && RECOVERY_TRANSACTION_STAGES.has(value.stage)
+    && RECOVERY_TRANSACTION_ELAPSED.has(value.elapsedBucket);
+}
 const RECOVERY_RECONCILIATION_FAILURES = Object.freeze([
   "RECONCILIATION_TRANSACTION_NOT_FOUND",
   "RECONCILIATION_PROVIDER_MISMATCH",
@@ -635,7 +647,10 @@ export function createExistingRefundRecoveryReceipt(sourceSha = "0".repeat(40)) 
 
 export function validateExistingRefundRecoveryReceipt(receipt) {
   const errors = [];
-  if (!exactKeys(receipt, RECOVERY_RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
+  const hasDiagnostic = receipt != null && Object.hasOwn(receipt, "transactionFailure");
+  if (!exactKeys(receipt, hasDiagnostic ? [...RECOVERY_RECEIPT_KEYS, "transactionFailure"] : RECOVERY_RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
+  if (hasDiagnostic && (receipt.status !== "RECONCILIATION_DATABASE_TRANSACTION_FAILED"
+    || !validRecoveryTransactionFailure(receipt.transactionFailure))) errors.push("TRANSACTION_DIAGNOSTIC");
   if (receipt?.schemaVersion !== EXISTING_REFUND_RECOVERY_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || !SOURCE_SHA.test(receipt?.sourceSha ?? "") || receipt?.transactionSourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA) {
     errors.push("FIXED_IDENTITY");
   }
@@ -857,8 +872,12 @@ function recoveryResult(response) {
     PROJECTION_UNAVAILABLE: 503,
   };
   for (const status of RECOVERY_RECONCILIATION_FAILURES) expectedStatus[status] = 503;
-  if (!response || !Number.isInteger(response.status) || !exactKeys(response.body, ["reconciled", "status"])) return null;
+  if (!response || !Number.isInteger(response.status)) return null;
+  const hasDiagnostic = response.body != null && Object.hasOwn(response.body, "transactionFailure");
+  if (!exactKeys(response.body, hasDiagnostic ? ["reconciled", "status", "transactionFailure"] : ["reconciled", "status"])) return null;
   const status = response.body.status;
+  if (hasDiagnostic && (status !== "RECONCILIATION_DATABASE_TRANSACTION_FAILED"
+    || !validRecoveryTransactionFailure(response.body.transactionFailure))) return null;
   if (typeof response.body.reconciled !== "boolean" || !Object.hasOwn(expectedStatus, status) || response.status !== expectedStatus[status]) return null;
   if ((status === "RECONCILED") !== response.body.reconciled) return null;
   return status;
@@ -890,6 +909,13 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
     }
     receipt.status = status;
     receipt.result = status === "RECONCILED" ? "RECONCILED" : "UNRESOLVED";
+    if (Object.hasOwn(response.body, "transactionFailure")) {
+      // Reconstruct the exact validated shape, without retaining the response object.
+      receipt.transactionFailure = {
+        stage: response.body.transactionFailure.stage,
+        elapsedBucket: response.body.transactionFailure.elapsedBucket,
+      };
+    }
   } catch {
     receipt.status = "NETWORK_REJECTED";
   }

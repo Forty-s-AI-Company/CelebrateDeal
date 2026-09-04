@@ -1,6 +1,7 @@
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import {
   PayUniRefundReconciliationError,
+  type RefundReconciliationDiagnostics,
   reconcilePayUniRefund,
 } from "@/lib/payuni-refund-reconciliation";
 import { PlatformRefundProjectionConflictError } from "@/lib/platform-refund-projection";
@@ -107,6 +108,7 @@ export type Wp4PayUniSandboxReconciliationResult = {
     | "RECONCILIATION_DATABASE_CONSTRAINT_FAILED" | "RECONCILIATION_DATABASE_SCHEMA_MISMATCH" | "RECONCILIATION_DATABASE_RECORD_MISSING"
     | "RECONCILIATION_DATABASE_REQUEST_FAILED" | "RECONCILIATION_DATABASE_VALIDATION_FAILED" | "RECONCILIATION_DATABASE_UNAVAILABLE"
     | "RECONCILIATION_DATABASE_ENGINE_FAILED" | "RECONCILIATION_PLATFORM_PROJECTION_REJECTED" | "RECONCILIATION_UNKNOWN_FAILED";
+  transactionFailure?: NonNullable<RefundReconciliationDiagnostics["transactionFailure"]>;
 };
 
 /** Historical buyer refund source used only by the bounded recovery endpoint. */
@@ -233,19 +235,32 @@ async function reconcileFixedWp4PayUniSandboxRefund(
   // still reports paid; the bounded runner may safely query again later.
   if (snapshot.status === "paid") return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
 
+  const diagnostics: RefundReconciliationDiagnostics | undefined = queryFailureStatuses
+    ? { stage: "TRANSACTION_START" }
+    : undefined;
   try {
     const outcome = await reconcilePayUniRefund({
       db,
       transactionId: row.id,
       providerSnapshot: snapshot,
       actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
+      diagnostics,
     });
     if (outcome.disposition === "reconciled" || outcome.disposition === "already_reconciled") {
       return { reconciled: true, status: "RECONCILED" };
     }
     return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
   } catch (error) {
-    if (queryFailureStatuses) return { reconciled: false, status: historicalReconciliationFailureStatus(error) };
+    if (queryFailureStatuses) {
+      const status = historicalReconciliationFailureStatus(error);
+      return {
+        reconciled: false,
+        status,
+        ...(status === "RECONCILIATION_DATABASE_TRANSACTION_FAILED" && diagnostics?.transactionFailure
+          ? { transactionFailure: diagnostics.transactionFailure }
+          : {}),
+      };
+    }
     return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
   }
 }

@@ -133,7 +133,8 @@ test.describe.serial("客服案件 browser journey", () => {
     const caseUrl = new URL(page.url());
     const caseId = caseUrl.pathname.split("/").at(-1);
     if (!caseId) throw new Error("SUPPORT_CASE_ID_MISSING");
-    await expect(page.getByRole("status")).toContainText("客服案件已更新");
+    // Select the completion status, excluding the route's loading status.
+    await expect(page.getByRole("status").filter({ hasText: /^客服案件已更新。$/u })).toBeVisible();
 
     await page.context().clearCookies();
     await page.context().addCookies([{

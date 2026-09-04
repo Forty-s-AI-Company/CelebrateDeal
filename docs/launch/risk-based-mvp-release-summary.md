@@ -12,8 +12,8 @@
 
 - 既有 Browser 與 local DB 測試涵蓋桌機／行動登入、商家商品與直播流程、demo checkout、付款結果頁、交付／查單／客服入口、SaaS subscription quota projection，以及跨租戶隔離。這些測試使用 synthetic fixture、demo callback 或 local projection；不能代替 PayUni、Resend、Cloudflare 或正式資料的證據。
 - CI `33885169141` 曾通過 unit／coverage；其 PostgreSQL concurrency collection 曾誤載入 Playwright-only support suite，已在 `vitest.synthetic-db-coverage.config.ts` 補上分流規則。這是 runner routing 修正，不是 DB invariant 或完整 Browser PASS。
-- 最新產品 source `fb004d442494f0273bb622df7d869d30152cb19e` 的 CI `33886472991` 仍在執行；PR `#198`（`0d862d9`）checks `33885801591`／`33885777222` 仍在執行，尚不能標示為通過。
-- 最新實際退款 recovery receipt [33885139996](../ai-team/evidence/wp4-existing-refund-recovery-33885139996-receipt.json) 為 `UNRESOLVED / RECONCILIATION_UNKNOWN_FAILED`；query 1 次、payment submissions 0、refund submissions 0。它證明受控查詢已停止並保留未知結果，不證明退款成功、失敗或帳務已收斂。
+- 產品 source `fb004d442494f0273bb622df7d869d30152cb19e` 的 CI `33886472991` 已通過 unit／coverage、PostgreSQL 與一般 Browser gate，但在獨立客服 Browser gate 的狀態訊息 assertion 失敗，完整 CI 尚未通過。PR `#198` 的兩輪 CI 與 Preview 檢查全通過，已合併至受保護 master `6705297`。
+- 最新實際退款 recovery receipt [33887710723](../ai-team/evidence/wp4-existing-refund-recovery-33887710723-receipt.json) 為 `UNRESOLVED / RECONCILIATION_DATABASE_TRANSACTION_FAILED`；query 1 次、payment submissions 0、refund submissions 0。這確認 Prisma P2028 交易錯誤，尚未確認根因或帳務是否收斂。後續診斷維持固定階段與粗略耗時區間，不把它直接判定為逾時。
 
 ## 未完成與發布限制
 

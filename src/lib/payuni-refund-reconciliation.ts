@@ -16,6 +16,14 @@ export type RefundReconciliationResult = {
   refundedAmountCents: number;
 };
 
+export const RECONCILIATION_STAGES = ["TRANSACTION_START", "LOAD_TRANSACTION", "LOAD_RESERVATIONS", "LOAD_TOTALS", "RELEASE_RESERVATION", "UPDATE_RESERVATION", "UPDATE_TRANSACTION", "PLATFORM_PROJECTION", "PAYMENT_ACCOUNTING", "AUDIT", "COMMIT"] as const;
+export type ReconciliationStage = typeof RECONCILIATION_STAGES[number];
+export type ReconciliationElapsedBucket = "LT_5S" | "FROM_5S_TO_15S" | "GE_15S";
+export type RefundReconciliationDiagnostics = {
+  stage: ReconciliationStage;
+  transactionFailure?: { stage: ReconciliationStage; elapsedBucket: ReconciliationElapsedBucket };
+};
+
 export class PayUniRefundReconciliationError extends Error {
   constructor(public readonly reason:
     | "provider_mismatch"
@@ -100,17 +108,26 @@ export async function reconcilePayUniRefund(input: {
   providerSnapshot: PaymentQueryResult;
   actor: RefundReconciliationActor;
   now?: Date;
+  diagnostics?: RefundReconciliationDiagnostics;
 }): Promise<RefundReconciliationResult> {
-  return input.db.$transaction(async (tx) => {
+  const diagnostics = input.diagnostics;
+  const mark = (stage: ReconciliationStage) => { if (diagnostics) diagnostics.stage = stage; };
+  const startedAt = diagnostics ? performance.now() : 0;
+  mark("TRANSACTION_START");
+  try {
+    return await input.db.$transaction(async (tx) => {
+    mark("LOAD_TRANSACTION");
     const transaction = await tx.paymentTransaction.findUnique({ where: { id: input.transactionId } }) as TransactionRow | null;
     if (!transaction) throw new PayUniRefundReconciliationError("transaction_not_found");
     validatePayUniRefundSnapshot(transaction, input.providerSnapshot);
 
+    mark("LOAD_RESERVATIONS");
     const pending = await tx.refundRecord.findMany({
       where: { paymentTransactionId: transaction.id, status: "pending" },
       orderBy: { createdAt: "asc" },
       select: { id: true, refundAmountCents: true, status: true, providerEventId: true },
     }) as RefundRow[];
+    mark("LOAD_TOTALS");
     const records = await tx.refundRecord.aggregate({
       where: { paymentTransactionId: transaction.id, status: { in: ["pending", "processed"] } },
       _sum: { refundAmountCents: true, gatewayFeeRefundCents: true, platformFeeRefundCents: true },
@@ -130,7 +147,9 @@ export async function reconcilePayUniRefund(input: {
       // This is intentionally non-ledger recovery only. A historical terminal
       // row can predate the quota/invoice projection; the verified local and
       // provider totals above make it safe to reapply that idempotent state.
+      mark("PLATFORM_PROJECTION");
       await applyPlatformRefundProjection(tx, transaction, now);
+      mark("COMMIT");
       return {
         disposition: "already_reconciled",
         transactionId: transaction.id,
@@ -164,6 +183,7 @@ export async function reconcilePayUniRefund(input: {
       if (!isAmbiguousReservationId(pendingRefund.providerEventId)) {
         throw new PayUniRefundReconciliationError("local_state_ambiguous");
       }
+      mark("RELEASE_RESERVATION");
       await tx.refundRecord.update({
         where: {
           id: pendingRefund.id,
@@ -172,6 +192,7 @@ export async function reconcilePayUniRefund(input: {
         },
         data: { status: "failed" },
       });
+      mark("AUDIT");
       await tx.auditLog.create({
         data: {
           vendorId: transaction.vendorId,
@@ -192,6 +213,7 @@ export async function reconcilePayUniRefund(input: {
           } satisfies Prisma.InputJsonValue,
         },
       });
+      mark("COMMIT");
       return {
         disposition: "provider_not_refunded",
         transactionId: transaction.id,
@@ -211,6 +233,7 @@ export async function reconcilePayUniRefund(input: {
       pendingRefund.id,
       pendingRefund.providerEventId,
     );
+    mark("UPDATE_RESERVATION");
     await tx.refundRecord.update({
       where: {
         id: pendingRefund.id,
@@ -223,6 +246,7 @@ export async function reconcilePayUniRefund(input: {
         providerEventId: eventIdentity,
       },
     });
+    mark("UPDATE_TRANSACTION");
     const updated = await tx.paymentTransaction.update({
       where: { id: transaction.id },
       data: {
@@ -231,7 +255,9 @@ export async function reconcilePayUniRefund(input: {
         refundedAt: now,
       },
     });
+    mark("PLATFORM_PROJECTION");
     await applyPlatformRefundProjection(tx, updated, now);
+    mark("PAYMENT_ACCOUNTING");
     await applyPaymentRefundAccounting(tx, {
       vendorId: transaction.vendorId,
       transactionId: transaction.id,
@@ -252,6 +278,7 @@ export async function reconcilePayUniRefund(input: {
       transactionOccurredAt: transaction.occurredAt instanceof Date ? transaction.occurredAt : now,
       occurredAt: now,
     });
+    mark("AUDIT");
     await tx.auditLog.create({
       data: {
         vendorId: transaction.vendorId,
@@ -273,11 +300,22 @@ export async function reconcilePayUniRefund(input: {
       },
     });
 
+    mark("COMMIT");
     return {
       disposition: "reconciled",
       transactionId: transaction.id,
       processedRefundRecordCount: pending.length,
       refundedAmountCents: updated.refundedAmountCents,
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (diagnostics && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028") {
+      const elapsed = performance.now() - startedAt;
+      diagnostics.transactionFailure = {
+        stage: diagnostics.stage,
+        elapsedBucket: elapsed < 5_000 ? "LT_5S" : elapsed < 15_000 ? "FROM_5S_TO_15S" : "GE_15S",
+      };
+    }
+    throw error;
+  }
 }
