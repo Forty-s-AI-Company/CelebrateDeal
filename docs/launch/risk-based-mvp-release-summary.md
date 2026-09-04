@@ -18,9 +18,9 @@
 
 ## 未完成與發布限制
 
-商品付款首次執行與只讀查核曾因回呼失敗而阻擋。固定回呼重試 [33901847171](../ai-team/evidence/wp4-buyer-retry-33901847171-receipt.json) 確認 Prisma 交易錯誤後，已以真實 PostgreSQL 驗證 5 秒回滾、15 秒完成且不重複通知；修正後實際恢復 [33902802436](../ai-team/evidence/wp4-buyer-retry-33902802436-receipt.json) 已達 `PASS / PROCESSED`，付款／退款／provider query 均未新增。這筆回呼不再重試。買家同一訂單的實際狀態、一次退款與對帳仍待固定 continuation runner 完成受保護檢查後執行。SaaS 全流程與 current-head 完整 CI 已通過。公開隱私保存／刪除期限、買家／SaaS 退款資格與時限、客服實際聯絡管道及營運責任仍待真人 owner 確認；現有政策頁均標示草稿。
+商品付款首次執行與只讀查核曾因回呼失敗而阻擋。固定回呼重試 [33901847171](../ai-team/evidence/wp4-buyer-retry-33901847171-receipt.json) 確認 Prisma 交易錯誤後，已以真實 PostgreSQL 驗證 5 秒回滾、15 秒完成且不重複通知；修正後實際恢復 [33902802436](../ai-team/evidence/wp4-buyer-retry-33902802436-receipt.json) 已達 `PASS / PROCESSED`。同訂單 continuation [33905042609](../ai-team/evidence/wp4-buyer-existing-continuation-33905042609-receipt.json) 進一步驗證 PAID 狀態、一次退款、一次對帳查詢及最終 REFUNDED 狀態，付款提交 0、provider 退款 1，canonical validator 通過。這筆回呼與退款都不得再執行。商品、SaaS Sandbox 流程與 current-head 完整 CI 已通過。公開隱私保存／刪除期限、買家／SaaS 退款資格與時限、客服實際聯絡管道及營運責任仍待真人 owner 確認；現有政策頁均標示草稿。
 
-因此 `MVP_RELEASE_CANDIDATE_READY=false`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`。在 current-head CI、實際 Sandbox 證據與人工政策／責任確認完成前，發布決策維持 `NO_GO`。
+因此技術面已達 `PAYMENT_RECONCILIATION_READY=true`、`SANDBOX_READY=true`；人工政策／責任確認尚未完成，所以 `MVP_RELEASE_CANDIDATE_READY=false`、`PRODUCTION_READY=false`，發布決策維持 `NO_GO`。
 
 ## 回滾與 Production 界線
 
