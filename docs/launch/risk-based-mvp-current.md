@@ -145,24 +145,25 @@ This section takes precedence over older in-progress observations retained below
 
 | Journey | Current status | Evidence / next check |
 | --- | --- | --- |
-| Merchant invitation, login, MFA | PARTIAL | Local auth, MFA and MFA enrollment tests passed; merchant invitation and current browser journey remain unverified. |
-| Product/live creation, registration and viewing | NOT_PROVEN | Existing E2E inventory is not an execution result. |
-| Buyer checkout, callback and delivery | NOT_PROVEN | Verify current branch implementation, not another worktree's run. |
-| Refund, reconciliation, merchant settlement | NOT_PROVEN | Diagnose existing Sandbox transaction outcome before any repeat refund. |
-| Fixed SaaS plan payment and entitlement | PARTIAL | Shared tenant-bound refund projection now covers webhook, manual completion and query reconciliation; scoped local tests cover newer-subscription preservation. Actual Sandbox payment/refund and quota projection remain unverified. The payer return page currently shows buyer-only details; an owner must view authenticated billing for subscription state. |
-| Disabled usage billing and commission accrual | PARTIAL | Server-side accrual, product/affiliate/live configuration guards and historical refund preservation pass scoped local tests. Reviewed billing correction is committed in `e9dfffc`; full DB/browser regression is still pending. |
+| Merchant invitation, login, MFA | PARTIAL | Full prior-source CI `33888838096` passed. Later CI `33891833255` failed on a flaky invitation redirect assertion; current CI `33894327280` must resolve it. Fixed synthetic owner MFA correction passed unit/DB and actual SaaS session checks. External invitation delivery is not proved by a deliberate local mail-failure scenario. |
+| Product/live creation, registration and viewing | PARTIAL | Prior-source CI `33888838096` executed core Browser successfully; exact current RC remains pending. Historical provider capability receipts retain only their documented scope. |
+| Buyer checkout, callback and delivery | PARTIAL | Local/demo Browser passed in prior-source CI. Fresh actual buyer run `33894828505` is dispatched on `8497ec1`; wait for its validated receipt, not an inferred result. |
+| Refund, reconciliation, merchant settlement | PARTIAL | Historical refund recovery `33892202197` reconciled with one query and no submissions. Actual SaaS refund also passed; fresh buyer result and settlement operating acceptance remain pending. |
+| Fixed SaaS plan payment and entitlement | PASS (Sandbox source 8497ec1) | Actual run `33894511275` validated native checkout, payment, active entitlement/quota, refund, reconciliation and refunded entitlement; one payment/refund each. This does not approve Production or certify later source changes automatically. |
+| Disabled usage billing and commission accrual | PARTIAL | Scoped server-boundary/legacy-refund tests and prior-source full CI passed; exact current RC gate remains pending. No threshold or assertion was relaxed. |
 | Backup, monitoring and deployment recovery | PARTIAL | Historical `146f8db` provider/restore/rollback receipts passed; unchanged capability evidence is reusable with the limitations above. Current runtime and Production readiness are not established. |
 | Policies and operational responsibility | PENDING_HUMAN | Required decisions and acceptance cannot be signed by an agent. |
 
 ## Current blockers and work order
 
-1. P0: Current product source `3f410137292da8156d0604b6f18554360a0c6ed9` has CI `33883013727` running. It includes mobile login correction, invitation/support Browser tests and sanitized MFA submit diagnostics. CI `33880406686` showed one flaky MFA regeneration case; root cause is not yet proven. Do not relax the fail-on-flaky gate.
-2. P2: Recovery `33882253135` produced a valid unresolved receipt after one query and zero submissions. Application recovery now preserves seven fixed local reconciliation error reasons; protected runner PR #197 (`ba69689e0f01e5a373023b030d0925b36c825b7a`) requires checks `33883046865` / `33883023003`, merge and matching Preview verification before a further bounded query. No additional dispatch is authorized solely by an unchanged failure.
-3. P2: After resolving the historical transaction, complete actual buyer and fixed SaaS Sandbox payment/refund/reconciliation, including activation and quota state. The protected master now contains the reviewed SaaS runner task from PR #196, but actual SaaS evidence remains absent.
-4. P1/P3: Verify new invitation and support-case Browser scenarios and current delivery/runtime/recovery applicability. Local/demo tests do not establish external email delivery or actual provider results.
+1. P0: Current published source `b6aa35d` has CI `33894327280` running with fixed invitation outcome diagnostics. Keep the fail-on-flaky gate and inspect its actual result; source `8497ec1` CI `33893997112` is also running.
+2. P2: Historical refund recovery and actual SaaS acceptance passed. Fresh buyer run `33894828505` is in progress on `8497ec1`; inspect only validated sanitized receipt and do not duplicate its payment/refund.
+3. P1/P3: Confirm exact RC Browser gates and assess unchanged delivery/runtime/recovery evidence. SaaS provider evidence is now present; local invitation mail-failure tests still do not prove external email delivery.
 5. P3: Human acceptance of refund/policy applicability and named operating responsibility remains pending. An asynchronous responsibility question is awaiting the user; no acceptance is inferred. Audit exact RC after remaining evidence closes, and keep Production deployment separately gated.
 
-Previously identified accounting defect: full subscription refunds could retain paid quota, and manual/query completion omitted platform projections. The shared projection fix is implemented and locally tested. Remaining acceptance is actual Sandbox payment/refund/reconciliation and associated subscription/quota state; local tests are not provider evidence.
+Previously identified accounting defect: full subscription refunds could retain paid quota, and manual/query completion omitted platform projections. The shared projection fix now has local tests and actual SaaS Sandbox payment/refund/reconciliation/entitlement PASS (`33894511275`).
+
+### Historical implementation notes (superseded by the current blockers above)
 
 Current buyer-runner integration is local only: fixed five-entity fixture, one browser submit with ambiguous confirmation stopping, no automatic PayUni form redirects, a minimal Chromium environment, and preserved operation counters when receipt validation fails. The existing protected workflow is wired to this buyer path, with Preview verification before job/card bindings and bounded IPv4/IPv6 egress. Secure contracts: 41 passed; typecheck and strict-index passed. No workflow dispatch or provider side effect occurred. SaaS actual execution is still pending and is not covered by this buyer-only runner.
 
@@ -210,7 +211,7 @@ New CI outcomes supersede the in-progress notes above: `33868635390` failed sole
 
 ## Release decision
 
-### Current checkpoint, superseding historical in-progress notes above
+### Historical release checkpoints (the latest verified checkpoint above is authoritative)
 
 - Published `203bbf6af133d012e4144955e4a8117296453f01` includes AGY repair and both diagnosed CI fixes. CI `33866230418` is running; latest observed step is Typecheck, not a full PASS.
 - Local next change restores trusted Preview payer-return routing for buyer checkout and native SaaS plan checkout, leaving NotifyURL canonical and all non-Preview/non-Sandbox returns canonical. Six suites passed 145 tests, including SaaS Production fallback; typecheck, strict-index, scoped lint and 11-source-file secret scan passed. Independent actual-diff review found no blocking issue; changes are not pushed pending the running CI. Claude's last response contained no substantive review despite process success and is not accepted as review evidence.
