@@ -1,0 +1,20 @@
+{
+  "sourceSha": "1c21c2bc876e0823b3a909ec5b0cbc97ff01c9a1",
+  "runId": "33900232471",
+  "checkRunId": "101112322736",
+  "conclusion": "failure",
+  "gate": "Release browser gates",
+  "evidenceSource": "GitHub check-run sanitized Playwright annotations; no raw logs",
+  "failed": 0,
+  "timedout": 0,
+  "flaky": 1,
+  "globalErrors": 0,
+  "testPath": "tests/e2e/smoke.spec.ts",
+  "testLine": 1302,
+  "stepLine": 1374,
+  "firstStatus": "timedOut",
+  "firstDurationMs": 30023,
+  "stepCategory": "expect",
+  "stepDurationMs": 28432,
+  "rootCause": "NOT_PROVEN"
+}

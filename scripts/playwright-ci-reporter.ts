@@ -18,6 +18,9 @@ const allowedSecurityActionOutcomes = new Set([
   "recovery_rate_limited",
   "recovery_unavailable",
   "mfa_code",
+  "invalid",
+  "rate_limited",
+  "temporarily_unavailable",
   "UNCLASSIFIED",
 ]);
 const allowedMfaSubmitStates = new Set([

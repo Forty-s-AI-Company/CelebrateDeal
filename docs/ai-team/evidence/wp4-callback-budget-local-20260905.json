@@ -1,0 +1,19 @@
+{
+  "environment": "owned disposable loopback PostgreSQL",
+  "date": "2026-09-05",
+  "testFile": "src/lib/wp4-payuni-buyer-callback-retry.db.test.ts",
+  "testCount": 3,
+  "result": "PASS",
+  "controlledDelayMs": 5500,
+  "delayLocation": "webhookEvent processed update inside Serializable transaction",
+  "shortBudgetMs": 5000,
+  "shortBudgetFailure": "database_transaction_failed",
+  "shortBudgetRollbackVerified": true,
+  "productBudgetMs": 15000,
+  "productBudgetCommitVerified": true,
+  "repeatedCallHasNoAdditionalNotification": true,
+  "paymentWebhookRegressionTests": 48,
+  "paymentWebhookRegressionResult": "PASS",
+  "ownedDatabaseStopped": true,
+  "limitation": "Controlled local latency reproduces P2028; it does not establish the exact Sandbox failure cause or prove recovery."
+}

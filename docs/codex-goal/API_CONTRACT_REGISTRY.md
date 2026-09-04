@@ -92,6 +92,7 @@
 | `POST /api/admin/ops/payuni/wp4-buyer-callback-retry` | 僅重試固定 8497ec1 buyer 已接收的單一 failed callback；沿用 CAS claim／上限／付款 invariant；最多一次本地重試，零 provider 付款退款查詢 | 200 固定 status/retryAttempts/failureCode；401／404／503 guard |
 | `POST /api/admin/ops/payuni/wp4-buyer-existing-refund` | 僅接續固定 8497ec1 已處理 paid callback 的 NT$1 buyer 交易；唯一交易與既有退款檢查，delegate 綁定伺服器驗證的 ID；Preview／Sandbox／JOB／部署來源／空 body | 200 固定 status/providerWriteAttempted；401／404／503 guard |
 | `POST /api/admin/ops/payuni/wp4-buyer-existing-reconcile` | 僅對帳固定 8497ec1 已處理 paid callback 的 buyer 交易；delegate 綁定伺服器驗證的 ID，沿用 provider 與金額驗證；Preview／Sandbox／JOB／部署來源／空 body | 200 固定 status/reconciled；401／404／503 guard |
+| `POST /api/admin/ops/payuni/wp4-buyer-existing-state` | 唯讀固定 8497ec1 buyer 同一交易的訂單、庫存、該訂單通知佇列及退款狀態；通知佇列不代表已送達；Preview／Sandbox／JOB／部署來源／空 body | 200 固定 status/paymentStatus/orderPaid/inventoryCommitted/notificationQueued/refundReconciled；401／404／503 guard |
 | `POST /api/admin/ops/payuni/wp4-refund` | server 選定買家交易、金額及階段，最多一次退款嘗試；不明結果不得重送 | 200 COMPLETED；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-session` | 僅固定 synthetic owner，驗證 active membership 後建立 15 分鐘 session；不更動一般登入或 MFA | 204 空 body 與 HttpOnly／Secure／SameSite=Lax cookie；401／404／503；不得記錄 cookie |
 | `POST /api/admin/ops/payuni/wp4-subscription-payment-attempt` | 固定 SaaS purpose 的單次付款 reservation，與買家 purpose 分離 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |

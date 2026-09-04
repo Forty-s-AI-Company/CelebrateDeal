@@ -1206,7 +1206,12 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       invoicePayment,
       commerceOrderRefund,
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    // Payment, stock, accounting and delivery projection commit atomically.
+    // Keep a bounded budget for the full set of database writes on remote DBs.
+    timeout: 15_000,
+  });
 
   await writeAuditLog({
     vendorId: vendor.id,

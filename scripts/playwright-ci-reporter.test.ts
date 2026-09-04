@@ -108,6 +108,15 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(sanitizedMfaSubmitState({ annotations: [{ type: "other", description: "RESPONSE_2XX" }] })).toBeNull();
   });
 
+  it.each(["invalid", "rate_limited", "temporarily_unavailable"])(
+    "allows the fixed MFA verification outcome %s",
+    (outcome) => {
+      expect(sanitizedSecurityActionOutcome({
+        annotations: [{ type: "security-action-outcome", description: outcome }],
+      })).toBe(outcome);
+    },
+  );
+
   it("retains the sanitized failed attempt outcome when a retry succeeds", () => {
     let output = "";
     const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });

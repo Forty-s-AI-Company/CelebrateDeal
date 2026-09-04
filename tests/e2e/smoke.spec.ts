@@ -35,6 +35,9 @@ type SecurityActionOutcome =
   | "recovery_rate_limited"
   | "recovery_unavailable"
   | "mfa_code"
+  | "invalid"
+  | "rate_limited"
+  | "temporarily_unavailable"
   | "UNCLASSIFIED";
 
 type MfaSubmitState = "NOT_OBSERVED" | "REQUEST_PENDING" | "RESPONSE_2XX" | "RESPONSE_3XX" | "RESPONSE_4XX" | "RESPONSE_5XX" | "NETWORK_FAILED";
@@ -1371,7 +1374,11 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
   await page.context().clearCookies();
   await loginMfaAdmin(page, mfaUser, /\/mfa\/verify\?next=%2Fadmin%2Fbilling%2Fdashboard/);
   await verifyMfa(page, oldRecoveryCode);
-  await expect(page).toHaveURL(/\/mfa\/verify\?error=invalid/);
+  await expectSecurityActionUrl(page, testInfo, /\/mfa\/verify\?error=invalid/, [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable",
+  ]);
   await expect(page.locator('p[role="alert"]')).toHaveText("驗證碼不正確，請重新輸入。");
 
   await page.context().clearCookies();
