@@ -15,7 +15,7 @@ export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e
 export const FIXED_PURPOSE = "buyer_order";
 export const FIXED_PAYUNI_ENV = "sandbox";
 export const EXISTING_REFUND_RECOVERY_SOURCE_SHA = "1052a46d002149b5c06104927ed0fab32b049214";
-export const EXISTING_REFUND_RECOVERY_SCHEMA = "celebratedeal-mvp-payuni-sandbox-refund-recovery/v1";
+export const EXISTING_REFUND_RECOVERY_SCHEMA = "celebratedeal-mvp-payuni-sandbox-refund-recovery/v2";
 export const FIXED_FIXTURE = Object.freeze({
   vendorId: "wp4_synthetic_vendor_v1",
   productId: "wp4_synthetic_product_v1",
@@ -124,13 +124,22 @@ const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
   "sourceSha",
+  "transactionSourceSha",
   "result",
   "status",
   "queryAttempts",
   "paymentSubmissions",
   "refundSubmissions",
 ]);
+const RECOVERY_QUERY_FAILURES = Object.freeze([
+  "QUERY_AUTHENTICATION_FAILED",
+  "QUERY_REQUEST_REJECTED",
+  "QUERY_RESPONSE_REJECTED",
+  "QUERY_NETWORK_FAILED",
+  "QUERY_UNKNOWN_FAILED",
+]);
 const RECOVERY_STATUSES = new Set([
+  ...RECOVERY_QUERY_FAILURES,
   "RECONCILED",
   "FIXTURE_UNAVAILABLE",
   "CANDIDATE_AMBIGUOUS",
@@ -303,7 +312,7 @@ export function validateInvocation(input) {
 export function validateExistingRefundRecoveryInvocation(input) {
   const sourceSha = typeof input?.sourceSha === "string" ? input.sourceSha.trim().toLowerCase() : "";
   const previewHost = typeof input?.previewHost === "string" ? input.previewHost.trim().toLowerCase() : "";
-  if (sourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA || !PREVIEW_HOST.test(previewHost) || !requiredText(input?.jobSecret)) {
+  if (!SOURCE_SHA.test(sourceSha) || !PREVIEW_HOST.test(previewHost) || !requiredText(input?.jobSecret)) {
     return { ok: false };
   }
   return { ok: true, sourceSha, previewHost, jobSecret: input.jobSecret };
@@ -450,11 +459,12 @@ export function validateMvpPayUniReceipt(receipt) {
 
 export const validateReceipt = validateMvpPayUniReceipt;
 
-export function createExistingRefundRecoveryReceipt() {
+export function createExistingRefundRecoveryReceipt(sourceSha = "0".repeat(40)) {
   return {
     schemaVersion: EXISTING_REFUND_RECOVERY_SCHEMA,
     purpose: FIXED_PURPOSE,
-    sourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+    sourceSha: SOURCE_SHA.test(sourceSha) ? sourceSha : "0".repeat(40),
+    transactionSourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
     result: "BLOCKED",
     status: "INPUT_REJECTED",
     queryAttempts: 0,
@@ -466,7 +476,7 @@ export function createExistingRefundRecoveryReceipt() {
 export function validateExistingRefundRecoveryReceipt(receipt) {
   const errors = [];
   if (!exactKeys(receipt, RECOVERY_RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
-  if (receipt?.schemaVersion !== EXISTING_REFUND_RECOVERY_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || receipt?.sourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA) {
+  if (receipt?.schemaVersion !== EXISTING_REFUND_RECOVERY_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || !SOURCE_SHA.test(receipt?.sourceSha ?? "") || receipt?.transactionSourceSha !== EXISTING_REFUND_RECOVERY_SOURCE_SHA) {
     errors.push("FIXED_IDENTITY");
   }
   if (!new Set(["RECONCILED", "UNRESOLVED", "BLOCKED"]).has(receipt?.result)) errors.push("RESULT");
@@ -475,6 +485,7 @@ export function validateExistingRefundRecoveryReceipt(receipt) {
   if (receipt?.paymentSubmissions !== 0 || receipt?.refundSubmissions !== 0) errors.push("SUBMISSION_BUDGET");
 
   const queriedStatuses = new Set([
+    ...RECOVERY_QUERY_FAILURES,
     "RECONCILED",
     "FIXTURE_UNAVAILABLE",
     "CANDIDATE_AMBIGUOUS",
@@ -491,7 +502,7 @@ export function validateExistingRefundRecoveryReceipt(receipt) {
   }
   if (receipt?.status === "RECONCILED" && receipt?.result !== "RECONCILED") errors.push("RECONCILED_RESULT");
   if (["NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status) && receipt?.result !== "BLOCKED") errors.push("BLOCKED_RESULT");
-  if (["FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "PENDING_RESERVATION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "PROJECTION_UNAVAILABLE"].includes(receipt?.status) && receipt?.result !== "UNRESOLVED") {
+  if ([...RECOVERY_QUERY_FAILURES, "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "PENDING_RESERVATION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "PROJECTION_UNAVAILABLE"].includes(receipt?.status) && receipt?.result !== "UNRESOLVED") {
     errors.push("UNRESOLVED_RESULT");
   }
   return { ok: errors.length === 0, errors };
@@ -664,6 +675,7 @@ function guardedHeaders(invocation) {
 
 function recoveryResult(response) {
   const expectedStatus = {
+    ...Object.fromEntries(RECOVERY_QUERY_FAILURES.map((status) => [status, 503])),
     RECONCILED: 200,
     FIXTURE_UNAVAILABLE: 404,
     CANDIDATE_AMBIGUOUS: 409,
@@ -679,20 +691,21 @@ function recoveryResult(response) {
 }
 
 /**
- * Performs one query-only recovery against the exact historical Preview.
+ * Performs one query-only recovery using an exact verified current Preview.
+ * The server fixes the historical transaction source; it is never caller input.
  * The endpoint may repair local reconciliation state after its provider query,
  * but this command never creates a checkout, reserves payment, or sends a refund.
  */
 export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
-  const receipt = createExistingRefundRecoveryReceipt();
   const invocation = validateExistingRefundRecoveryInvocation(input);
+  const receipt = createExistingRefundRecoveryReceipt(invocation.ok ? invocation.sourceSha : "0".repeat(40));
   if (!invocation.ok) return receipt;
 
   const request = dependencies.request ?? defaultRequest;
   receipt.queryAttempts = 1;
   try {
     const response = await request({
-      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-reconcile"),
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-refund-recovery"),
       headers: guardedHeaders(invocation),
       body: undefined,
     });
