@@ -37,6 +37,8 @@ describe("SanitizedPlaywrightCiReporter", () => {
       .toBe("::error file=tests/e2e/smoke.spec.ts,line=42::playwright status=failed retry=0");
     expect(formatSanitizedPlaywrightAnnotation({ file: safeFile, line: 2, status: "timedout", retry: 1 }))
       .toBe("::error file=tests/e2e/smoke.spec.ts,line=2::playwright status=timedout retry=1");
+    expect(formatSanitizedPlaywrightAnnotation({ file: path.join(process.cwd(), "tests", "e2e-support", "support-case-journey.spec.ts"), line: 1, status: "failed", retry: 0 }))
+      .toBe("::error file=tests/e2e-support/support-case-journey.spec.ts,line=1::playwright status=failed retry=0");
   });
 
   it("rejects paths that escape the repository test directory", () => {

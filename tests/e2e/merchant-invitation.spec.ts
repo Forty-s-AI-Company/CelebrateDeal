@@ -87,7 +87,7 @@ test("local invitation state records member and mail failure without proving ema
   await expect(invitationForm).toHaveCount(1);
   await invitationForm.getByLabel("姓名", { exact: true }).fill("Invited Support Member");
   await invitationForm.getByLabel("Email", { exact: true }).fill(invitedEmail);
-  await invitationForm.getByLabel("角色", { exact: true }).selectOption("support");
+  await invitationForm.locator('select[name="role"]').selectOption("support");
   await invitationForm.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }).click();
 
   await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u);

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
-const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
+const allowedTestPath = /^tests\/(?:e2e|e2e-support)\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
 const allowedSecurityActionOutcomes = new Set([
   "password_reset_smoke",
