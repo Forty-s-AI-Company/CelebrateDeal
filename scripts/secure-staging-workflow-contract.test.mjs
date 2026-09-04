@@ -128,7 +128,7 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   assert.doesNotMatch(wp4.run, /\$\{\{\s*inputs\.(?:command|script|args)/u);
 });
 
-test("existing-refund recovery verifies the fixed source before JOB binding and runs only one query-only command", () => {
+test("existing-refund recovery verifies the current Preview before JOB binding and runs only one query-only command", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
   const steps = workflow.jobs["trusted-runner"].steps;
@@ -142,7 +142,13 @@ test("existing-refund recovery verifies the fixed source before JOB binding and 
   assert.equal(chromium.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}");
   assert.equal(lineage.if, "${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}");
   assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
-  assert.match(lineage.run, /CELEBRATEDEAL_SOURCE_SHA" != "1052a46d002149b5c06104927ed0fab32b049214"/u);
+  assert.doesNotMatch(lineage.run, /CELEBRATEDEAL_SOURCE_SHA" !=/u);
+  assert.match(lineage.run, /set -euo pipefail/u);
+  // Recovery selection stays fixed in code; dispatch only selects a verified
+  // execution deployment, never a transaction or historical source override.
+  const runner = fs.readFileSync(new URL("./mvp-payuni-sandbox-e2e.mjs", import.meta.url), "utf8");
+  assert.match(runner, /transactionSourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA/u);
+  assert.match(runner, /EXISTING_REFUND_RECOVERY_SOURCE_SHA = "1052a46d002149b5c06104927ed0fab32b049214"/u);
   assert.match(lineage.run, /node scripts\/mvp-payuni-sandbox-e2e\.mjs --verify-lineage/u);
   assert.doesNotMatch(lineage.run, /secrets\.|\$\{\{\s*inputs\./u);
   assert.ok(steps.indexOf(lineage) < steps.indexOf(recovery));

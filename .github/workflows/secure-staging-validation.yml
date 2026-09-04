@@ -159,10 +159,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$CELEBRATEDEAL_SOURCE_SHA" != "1052a46d002149b5c06104927ed0fab32b049214" ]; then
-            printf '%s\n' "secure_wp4_existing_refund_recovery_lineage=BLOCKED"
-            exit 2
-          fi
+          # Verify execution against the exact current Preview. The recovery
+          # endpoint owns the immutable historical transaction source.
           node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
       - name: Validate fixed WP4 Sandbox bindings without execution
