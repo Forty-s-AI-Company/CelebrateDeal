@@ -14,6 +14,15 @@ const allowedSecurityActionOutcomes = new Set([
   "mfa_code",
   "UNCLASSIFIED",
 ]);
+const allowedMfaSubmitStates = new Set([
+  "NOT_OBSERVED",
+  "REQUEST_PENDING",
+  "RESPONSE_2XX",
+  "RESPONSE_3XX",
+  "RESPONSE_4XX",
+  "RESPONSE_5XX",
+  "NETWORK_FAILED",
+]);
 
 type AnnotationStatus = "failed" | "timedout" | "flaky";
 
@@ -65,6 +74,14 @@ export function sanitizedSecurityActionOutcome(test: Pick<TestCase, "annotations
     : "UNCLASSIFIED";
 }
 
+export function sanitizedMfaSubmitState(test: Pick<TestCase, "annotations">) {
+  const annotation = test.annotations.find(({ type }) => type === "mfa-submit-state");
+  if (!annotation) return null;
+  return typeof annotation.description === "string" && allowedMfaSubmitStates.has(annotation.description)
+    ? annotation.description
+    : "UNCLASSIFIED";
+}
+
 /**
  * CI-only reporter: never forwards test titles, error messages, stack traces,
  * body output, attachments, or arbitrary paths into GitHub annotations.
@@ -73,6 +90,7 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
   private readonly write: (value: string) => void;
   private readonly tests = new Map<string, TestCase>();
   private readonly securityActionOutcomes = new Map<string, string>();
+  private readonly mfaSubmitStates = new Map<string, string>();
   private globalErrors = 0;
   private readonly failedSteps = new WeakMap<TestResult, string>();
 
@@ -88,6 +106,8 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
     if (status !== "failed" && status !== "timedOut") return;
     const securityActionOutcome = sanitizedSecurityActionOutcome(test);
     if (securityActionOutcome) this.securityActionOutcomes.set(test.id, securityActionOutcome);
+    const mfaSubmitState = sanitizedMfaSubmitState(test);
+    if (mfaSubmitState) this.mfaSubmitStates.set(test.id, mfaSubmitState);
   }
 
   onError() {
@@ -132,9 +152,10 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
       });
       if (!annotation) continue;
       const securityActionOutcome = this.securityActionOutcomes.get(test.id);
+      const mfaSubmitState = this.mfaSubmitStates.get(test.id);
       const first = test.results[0];
       const firstStatus = first && ["passed", "failed", "timedOut", "skipped", "interrupted"].includes(first.status) ? first.status : "unknown";
-      this.write(`${annotation} first_status=${firstStatus} first_duration_ms=${sanitizedDuration(first?.duration)}${securityActionOutcome ? ` security_action_outcome=${securityActionOutcome}` : ""}\n`);
+      this.write(`${annotation} first_status=${firstStatus} first_duration_ms=${sanitizedDuration(first?.duration)}${securityActionOutcome ? ` security_action_outcome=${securityActionOutcome}` : ""}${mfaSubmitState ? ` mfa_submit_state=${mfaSubmitState}` : ""}\n`);
     }
 
     const status = result.status === "passed" || result.status === "failed" || result.status === "timedout" || result.status === "interrupted"

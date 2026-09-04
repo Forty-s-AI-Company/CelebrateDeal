@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import SanitizedPlaywrightCiReporter, { formatSanitizedPlaywrightAnnotation, sanitizedSecurityActionOutcome } from "./playwright-ci-reporter";
+import SanitizedPlaywrightCiReporter, { formatSanitizedPlaywrightAnnotation, sanitizedMfaSubmitState, sanitizedSecurityActionOutcome } from "./playwright-ci-reporter";
 
 const safeFile = path.join(process.cwd(), "tests", "e2e", "smoke.spec.ts");
 
@@ -10,12 +10,16 @@ function testCase(input: {
   statuses: Array<"failed" | "passed" | "timedOut">;
   file?: string;
   annotation?: string;
+  mfaSubmitState?: string;
 }) {
   return {
     id: input.id,
     title: "Authorization: Bearer secret-token-must-not-appear",
     location: { file: input.file ?? safeFile, line: 42, column: 1 },
-    annotations: input.annotation ? [{ type: "security-action-outcome", description: input.annotation }] : [],
+    annotations: [
+      ...(input.annotation ? [{ type: "security-action-outcome", description: input.annotation }] : []),
+      ...(input.mfaSubmitState ? [{ type: "mfa-submit-state", description: input.mfaSubmitState }] : []),
+    ],
     outcome: () => input.outcome,
     results: input.statuses.map((status) => ({
       status,
@@ -81,6 +85,9 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "security-action-outcome", description: "secret=token" }] })).toBe("UNCLASSIFIED");
     expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "security-action-outcome", description: "recovery_unavailable" }] })).toBe("recovery_unavailable");
     expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "other", description: "mfa_code" }] })).toBeNull();
+    expect(sanitizedMfaSubmitState({ annotations: [{ type: "mfa-submit-state", description: "RESPONSE_2XX" }] })).toBe("RESPONSE_2XX");
+    expect(sanitizedMfaSubmitState({ annotations: [{ type: "mfa-submit-state", description: "secret=token" }] })).toBe("UNCLASSIFIED");
+    expect(sanitizedMfaSubmitState({ annotations: [{ type: "other", description: "RESPONSE_2XX" }] })).toBeNull();
   });
 
   it("retains the sanitized failed attempt outcome when a retry succeeds", () => {
@@ -93,6 +100,18 @@ describe("SanitizedPlaywrightCiReporter", () => {
     reporter.onEnd({ status: "passed" } as never);
 
     expect(output).toContain("security_action_outcome=mfa_code");
+  });
+
+  it("retains the sanitized MFA submit state when a retry succeeds", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "flaky-mfa", outcome: "flaky", statuses: ["failed", "passed"], mfaSubmitState: "REQUEST_PENDING" });
+    reporter.onTestEnd(current as never, current.results[0] as never);
+    current.annotations = [];
+    reporter.onTestEnd(current as never, current.results[1] as never);
+    reporter.onEnd({ status: "passed" } as never);
+
+    expect(output).toContain("mfa_submit_state=REQUEST_PENDING");
   });
 
   it("reports one failed step per attempt without reading error text or titles", () => {

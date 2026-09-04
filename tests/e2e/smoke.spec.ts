@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request as PlaywrightRequest, type TestInfo } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request as PlaywrightRequest, type Response as PlaywrightResponse, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -36,6 +36,8 @@ type SecurityActionOutcome =
   | "recovery_unavailable"
   | "mfa_code"
   | "UNCLASSIFIED";
+
+type MfaSubmitState = "NOT_OBSERVED" | "REQUEST_PENDING" | "RESPONSE_2XX" | "RESPONSE_3XX" | "RESPONSE_4XX" | "RESPONSE_5XX" | "NETWORK_FAILED";
 
 async function expectSecurityActionUrl(
   page: Page,
@@ -1317,14 +1319,45 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
       }
     });
   });
-  await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
-  await confirmationHandled;
-  await expectSecurityActionUrl(page, testInfo, /\/mfa\/setup\?updated=recovery_regenerated/, [
-    "mfa_required",
-    "recovery_rate_limited",
-    "recovery_unavailable",
-    "mfa_code",
-  ]);
+  let mfaSubmitState: MfaSubmitState = "NOT_OBSERVED";
+  const isMfaSubmit = (request: { method(): string; url(): string }) => {
+    try {
+      return request.method() === "POST" && new URL(request.url()).pathname === "/mfa/setup";
+    } catch {
+      return false;
+    }
+  };
+  const onRequest = (request: PlaywrightRequest) => {
+    if (isMfaSubmit(request)) mfaSubmitState = "REQUEST_PENDING";
+  };
+  const onResponse = (response: PlaywrightResponse) => {
+    if (!isMfaSubmit(response.request())) return;
+    const status = response.status();
+    mfaSubmitState = status >= 200 && status < 300 ? "RESPONSE_2XX" : status >= 300 && status < 400 ? "RESPONSE_3XX" : status >= 400 && status < 500 ? "RESPONSE_4XX" : "RESPONSE_5XX";
+  };
+  const onRequestFailed = (request: PlaywrightRequest) => {
+    if (isMfaSubmit(request)) mfaSubmitState = "NETWORK_FAILED";
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  page.on("requestfailed", onRequestFailed);
+  try {
+    await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
+    await confirmationHandled;
+    await expectSecurityActionUrl(page, testInfo, /\/mfa\/setup\?updated=recovery_regenerated/, [
+      "mfa_required",
+      "recovery_rate_limited",
+      "recovery_unavailable",
+      "mfa_code",
+    ]);
+  } catch (error) {
+    testInfo.annotations.push({ type: "mfa-submit-state", description: mfaSubmitState });
+    throw error;
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+    page.off("requestfailed", onRequestFailed);
+  }
   const newRecoveryCode = await displayedRecoveryCode(page);
   expect(oldRecoveryCode === newRecoveryCode).toBe(false);
 
