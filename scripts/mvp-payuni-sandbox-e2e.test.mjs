@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   classifyPayUniApiNetworkFailure,
+  defaultBrowserSubmit,
   defaultSubscriptionBrowserSubmit,
   finalizeMvpPayUniSubscriptionReceipt,
   isPayUniPaymentPageUrl,
@@ -87,7 +88,7 @@ function successfulDependencies(calls = []) {
   return {
     async request(request) {
       calls.push(request);
-      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
       if (request.url.endsWith("/checkout/admission")) {
         return {
           status: 200,
@@ -170,6 +171,67 @@ function successfulSubscriptionDependencies(calls = []) {
     },
   };
 }
+
+test("buyer browser submission uses a fixed environment and fails closed on confirmation", async () => {
+  let submitted = 0;
+  let confirmationClicks = 0;
+  let launchOptions;
+  let postOptions;
+  class TimeoutError extends Error {}
+  const page = {
+    on() {},
+    async goto() {},
+    async route() {},
+    async waitForURL() {},
+    getByText() { return { async click() {} }; },
+    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByRole(_role, options) {
+      if (options.name === "確認送出") return { async click() { submitted += 1; } };
+      if (options.name === "確定") return { async waitFor() {}, async click() { confirmationClicks += 1; } };
+      throw new Error("unexpected role");
+    },
+    locator() { return { async check() {} }; },
+  };
+  const browser = {
+    async newContext() {
+      return {
+        async addCookies() {},
+        async newPage() { return page; },
+        request: { async post(_url, options) { postOptions = options; return { status: () => 200, ok: () => true }; } },
+      };
+    },
+    async close() {},
+  };
+  const result = await defaultBrowserSubmit({
+    previewHost,
+    cardNumber: "4147631000000001",
+    cardExpiry: "1230",
+    cardCvv: "123",
+    formPayload: { MerID: "merchant", Version: "2.0", EncryptInfo: "cipher", HashInfo: "hash" },
+    supportCookie: "celebrate_support_wp4=opaque-support-grant",
+    orderNumber: "CD-20300101000000-WP4A1",
+  }, { playwright: { chromium: { async launch(options) { launchOptions = options; return browser; } }, errors: { TimeoutError } } });
+
+  assert.equal(result, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(submitted, 1);
+  assert.equal(confirmationClicks, 0);
+  assert.deepEqual(Object.keys(launchOptions.env).sort(), process.platform === "win32"
+    ? ["PATH", "SystemRoot", "TEMP", "TMP"].sort()
+    : ["HOME", "PATH", "TMPDIR"].sort());
+  assert.equal(postOptions.maxRedirects, 0);
+});
+
+test("buyer fixture contract rejects retired six-entity and invalid counts", async () => {
+  for (const createdCount of [6, 4]) {
+    let browserCalled = false;
+    const receipt = await runMvpPayUniSandboxE2E(validInput, {
+      request: async () => response(200, { ready: true, createdCount, reusedCount: 0 }),
+      browserSubmit: async () => { browserCalled = true; return true; },
+    });
+    assert.equal(receipt.failure, "FIXTURE_HTTP_REJECTED");
+    assert.equal(browserCalled, false);
+  }
+});
 
 test("uses the native fixed plan browser flow once without treating the return page as subscription payment proof", async () => {
   class TimeoutError extends Error {}

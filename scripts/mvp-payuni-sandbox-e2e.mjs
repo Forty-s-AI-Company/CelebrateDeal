@@ -664,9 +664,9 @@ function assertFixtureResponse(response) {
   return response.status === 200
     && exactKeys(response.body, ["ready", "createdCount", "reusedCount"])
     && response.body.ready === true
-    && boundedInteger(response.body.createdCount, 6)
-    && boundedInteger(response.body.reusedCount, 6)
-    && response.body.createdCount + response.body.reusedCount === 6;
+    && boundedInteger(response.body.createdCount, 5)
+    && boundedInteger(response.body.reusedCount, 5)
+    && response.body.createdCount + response.body.reusedCount === 5;
 }
 
 function assertSubscriptionFixtureResponse(response) {
@@ -884,6 +884,8 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   // fail even though another allowlisted address remains reachable.
   const browser = await chromium.launch({
     headless: true,
+    // Never inherit runner secrets or arbitrary environment into Chromium.
+    env: fixedBrowserEnvironment(),
     args: [
       "--no-proxy-server",
       "--disable-quic",
@@ -936,6 +938,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     const paymentDocument = await context.request.post(PAYUNI_UPP_URL, {
       form: input.formPayload,
       failOnStatusCode: false,
+      maxRedirects: 0,
       timeout: REQUEST_TIMEOUT_MS,
     });
     apiStatus = paymentDocument.status();
@@ -961,8 +964,7 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
-      await confirmation.click();
-      await page.getByRole("button", { name: "確認送出", exact: true }).click();
+      return "PAYMENT_CONFIRMATION_AMBIGUOUS";
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
     }
