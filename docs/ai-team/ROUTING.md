@@ -13,12 +13,13 @@
 | Luna | `low` | `high` | `medium` | trivial=`low`、routine=`medium`、complex=`high`、critical=`high` |
 | Gemini Flash | `low` | `high` | `high` | trivial=`low`、routine=`medium`、complex=`high`、critical=`high` |
 
-- **雙模式配置（低階模式 vs. 高階模式）**：
-  - **低階模式（預設，`router.low.json`）**：Planner 為 `gemini-3.8-flash-high`，複審為 Claude -> Sol (medium) -> Gemini -> Skip；Worker 與全隊解除推理鎖定，依難度在 `low`～`high` 彈性調整（routine 為 `medium`）。
-  - **高階模式（`router.high.json`）**：Planner 為 `gpt-5.6-sol`，複審為 Claude -> Gemini -> Terra -> Skip；Worker Luna 鎖定 `high`，支援 `xhigh`／`max` 深度診斷。
-  - **一鍵切換方式**：
-    - 口頭切換：使用者只要說「**請使用 ai team 高階模式**」或「**請使用 ai team 低階模式**」即可由 Agent 自動切換。
-    - 腳本切換：`pwsh -NoProfile -File .ai-team/scripts/Switch-AiTeamMode.ps1 -Mode high` 或 `-Mode low`；查詢狀態使用 `-Status`。
+- **雙模式配置（高階模式 `ai-team` vs. 低階模式 `ai-team-lite`）**：
+  - **低階模式（`ai-team-lite`，預設推薦，`router.low.json`）**：Planner 為 `gemini-3.8-flash-high`，複審為 Claude -> Sol (medium) -> Gemini -> Skip；Worker 與全隊解除推理鎖定，依難度在 `low`～`high` 彈性調整（routine 為 `medium`）。
+  - **高階模式（`ai-team`，`router.high.json`）**：Planner 為 `gpt-5.6-sol`，複審為 Claude -> Gemini -> Terra -> Skip；Worker Luna 鎖定 `high`，支援 `xhigh`／`max` 深度診斷。
+  - **中英文切換與調閱指令**：
+    - 切換高階：說「**請使用 ai team 高階模式**」或「**use ai-team**」，執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team`。
+    - 切換低階：說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」，執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-lite`。
+    - 調閱清單：說「**叫出 ai team 清單**」或「**list ai-team**」，執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 顯示雙模式完整隊伍名冊。
 - `low` 用於錯字、單行、格式修復或唯讀查找；`medium` 用於日常 routine 寫入與一般 review；`high` 僅用於 complex/critical 核心邏輯。
 - AGY Fast 使用 `gemini-3.8-flash-high`；AGY Deep 維持 `gemini-3.1-pro-high`。
 - Native Explorer 維持 `gpt-5.4-mini`，Native Analyst 維持 `gpt-5.4`；普通查找不固定消耗 Luna，但 `complex`／`critical` 任務可由 Router 升級至 `gpt-5.6-luna` read-only。

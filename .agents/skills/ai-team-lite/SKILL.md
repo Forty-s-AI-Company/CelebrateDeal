@@ -8,11 +8,13 @@ description: 使用原生 Codex 子代理、Lite 狀態與可選 AGY／Luna 協�
 CelebrateDeal 目前是尚未對外營運的專案，採長程 `PRELAUNCH_DEV_AUTONOMOUS`。Goal 可以連續處理多個 Work Package，不受固定 30～90 分鐘、固定角色順序或完成後停止限制。
 
 - 主代理負責整合、價值排序與最終判斷。
-- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY Fast、AGY Deep 與 native Luna 唯讀升級可依工作內容協作。
-- 一般實作固定由 `gpt-5.6-luna` 的 Worker 以 `high` 執行；複雜跨檔工作由 Worker Deep／Terra 負責，Reviewer 固定使用 Terra read-only。
-- Explorer／Analyst 預設走 AGY 唯讀路徑；任務達到 `complex`／`critical` 時，可視情況升級至 `gpt-5.6-luna` read-only。
-- Sol 的 complex／critical plan 可選擇一次 Claude Sonnet 4.6 thinking advisory review；額度不足時跳過並如實記錄。
-- 推理程度採 `adaptive_lowest_sufficient`：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般工作使用中間值；`low`、`xhigh`、`max` 只在任務難度真的落在該端點時使用。其他模型維持既有設定。
+- **雙模式配置（Dual Team Modes）**：
+  - **低階模式 (`ai-team-lite`)**：由 `gemini-3.8-flash-high` 規劃，Claude Sonnet/Opus 複審（Sol 為 medium 後備），全隊解除推理鎖定，動態在 `low`～`high` 之間調整（routine 採 `medium`）。極致節省高階思考 Token。
+  - **高階模式 (`ai-team`)**：由 `gpt-5.6-sol` 深度規劃，Claude Sonnet 4.6 複審，Worker Luna 鎖定 `high` 推理，支援 `xhigh`／`max` 深度診斷。
+  - **快速切換與清單調閱**：
+    - 切換高階：使用者說「**請使用 ai team 高階模式**」或「**use ai-team**」。
+    - 切換低階：使用者說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」。
+    - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，即可執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 查看完整名冊。
 - 不相交的檔案、資料資源與唯讀工作可以並行；同一檔案或資源同一時間只允許一個 writer。
 - 可自動從 Fast → Deep → Luna fallback，但每層結果必須如實記錄，不能把工具錯誤標成 PASS。
 - 可使用本機、loopback、disposable、Preview、staging、sandbox、Docker、Browser 與 PayUni Sandbox；不需要每個 WP 都執行全部測試或建立完整 handoff。

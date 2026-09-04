@@ -1,7 +1,9 @@
 {
   "version": "5.4-lite",
   "active_mode": "high",
+  "active_mode_id": "ai-team",
   "active_mode_name": "高階模式",
+  "active_mode_display": "高階模式 (ai-team)",
   "router": {
     "mode": "recommendation_only",
     "external_execution": false,

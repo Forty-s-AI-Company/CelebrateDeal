@@ -53,18 +53,21 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
   2. **Tier 2 備選（Claude 額度不足時）**：`GPT-5.6-Sol (medium)`（當 Claude 額度竭盡時由 Sol 接手複審，平時由 Gemini Flash 規劃以節省 Sol 85%+ 額度）。
   3. **Tier 3 備選（若 Sol 額度不足）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
   4. **Tier 4 終極防線（額度全竭時）**：直接跳過 AI 複審，以本地型別檢查與 3,134 個單元測試為最終驗證防線。
-- **雙模式架構與一鍵切換（Dual Team Modes: 低階模式 vs. 高階模式）**：
-  - **低階模式（預設推薦，Low-Quota Eco Mode）**：
+- **雙模式架構與一鍵切換（Dual Team Modes: 高階模式 ai-team vs. 低階模式 ai-team-lite）**：
+  - **低階模式（英文代稱 `ai-team-lite`，預設推薦省額度）**：
     - **主規劃（Planner）**：由 `gemini-3.8-flash-high` 負責草擬與架構，出圖／出文零額度焦慮。
     - **審查階梯**：Tier 1 Claude Sonnet 4.6 / Claude Opus -> Tier 2 Sol (medium，二線後備省 85%+ 額度) -> Tier 3 Gemini Flash -> Tier 4 Skip。
     - **動態推理**：全隊解除鎖定，依難度在 `low`～`high` 彈性調整（routine 任務以 `medium` 推進，上限收斂至 `high`）。
     - **適用時機**：ASTRA 剛發布額度吃緊、日常 UI/CRUD 功能迭代。
-  - **高階模式（Full-Power Standard Mode）**：
+  - **高階模式（英文代稱 `ai-team`，Full-Power 標準全開）**：
     - **主規劃（Planner）**：由 `gpt-5.6-sol` 負責端到端全域深度架構規劃。
     - **審查階梯**：Tier 1 Claude Sonnet 4.6 -> Tier 2 Gemini Flash -> Tier 3 Terra -> Tier 4 Skip。
     - **推理鎖定**：Worker Luna 鎖定 `high` 推理，支援 `xhigh`／`max` 高難度深度診斷。
     - **適用時機**：ASTRA 額度充足、重大資安／金流架構改版。
-  - **切換指令**：使用者只需說「**請使用 ai team 高階模式**」或「**請使用 ai team 低階模式**」，Agent 即自動執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -Mode <high|low>` 即時切換並驗證生效。
+  - **中英文切換指令**：
+    - 切換高階：使用者說「**請使用 ai team 高階模式**」或「**use ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team`。
+    - 切換低階：使用者說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-lite`。
+    - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 輸出雙隊伍完整陣容。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 
