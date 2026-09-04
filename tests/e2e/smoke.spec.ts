@@ -1303,6 +1303,10 @@ mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, 
 });
 
 mfaTest("regenerating recovery codes invalidates old codes and accepts newly issued codes", async ({ page, mfaUser }, testInfo) => {
+  // This scenario intentionally performs enrollment, regeneration, and two
+  // fresh login/verification cycles, which can exceed the shared 30s budget
+  // under the single-worker CI release gate.
+  test.setTimeout(60_000);
   const totpSeed = await enrollMfa(page, mfaUser);
   const oldRecoveryCode = await displayedRecoveryCode(page);
   await page.getByRole("button", { name: "我已保存 recovery codes" }).click();

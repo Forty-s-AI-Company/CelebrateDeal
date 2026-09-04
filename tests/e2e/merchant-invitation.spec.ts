@@ -103,6 +103,9 @@ test.afterAll(async () => {
 });
 
 test("local invitation state records member and mail failure without proving email delivery", async ({ page }) => {
+  // The fail-closed mail-provider request can consume about 30 seconds by
+  // itself; leave bounded room for login, persistence checks, and cleanup.
+  test.setTimeout(90_000);
   await page.goto("/login");
   await page.getByLabel("Email").fill(ownerEmail);
   await page.getByLabel("密碼").fill(ownerPassword);
