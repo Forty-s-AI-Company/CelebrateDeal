@@ -287,6 +287,27 @@ test("login keyboard focus is visible and follows the form order", async ({ page
   await expect(page.getByRole("button", { name: "登入" })).toBeFocused();
 });
 
+test("mobile login succeeds after rejecting invalid email input", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoStableRoute(page, "/login");
+
+  const email = page.getByLabel("Email");
+  const passwordInput = page.getByLabel("密碼");
+  await email.fill("not-an-email");
+  await passwordInput.fill(password);
+  await page.getByRole("button", { name: "登入" }).click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => email.evaluate((element) => (element as HTMLInputElement).validity.typeMismatch)).toBe(true);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await email.fill(fixture.email);
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await waitForStableRoute(page, "/dashboard");
+  await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
+});
+
 test("authenticated shell exposes a working skip link and passes axe", async ({ page }) => {
   await loginOwner(page);
   await page.keyboard.press("Tab");

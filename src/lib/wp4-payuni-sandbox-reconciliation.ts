@@ -95,8 +95,12 @@ export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity):
 
 export type Wp4PayUniSandboxReconciliationResult = {
   reconciled: boolean;
-  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE";
+  status: "RECONCILED" | "FIXTURE_UNAVAILABLE" | "CANDIDATE_AMBIGUOUS" | "PENDING_RESERVATION_UNAVAILABLE" | "REFUND_NOT_CONFIRMED" | "PROJECTION_UNAVAILABLE"
+    | "QUERY_AUTHENTICATION_FAILED" | "QUERY_REQUEST_REJECTED" | "QUERY_RESPONSE_REJECTED" | "QUERY_NETWORK_FAILED" | "QUERY_UNKNOWN_FAILED";
 };
+
+/** Historical buyer refund source used only by the bounded recovery endpoint. */
+export const WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA = "1052a46d002149b5c06104927ed0fab32b049214";
 
 type Wp4RefundPurpose = "buyer_order" | "platform_subscription";
 
@@ -125,6 +129,7 @@ async function reconcileFixedWp4PayUniSandboxRefund(
   db: Wp4ReconciliationDb,
   sourceCommit: string,
   purpose: Wp4RefundPurpose,
+  queryFailureStatuses = false,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
   const selected = await db.paymentTransaction.findMany({
     where: {
@@ -164,6 +169,19 @@ async function reconcileFixedWp4PayUniSandboxRefund(
       // refund; no accounting projection or further provider write is allowed.
       return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
     }
+    if (queryFailureStatuses && error instanceof PaymentQueryProviderError) {
+      const status = error.category === "authentication"
+        ? "QUERY_AUTHENTICATION_FAILED"
+        : error.category === "request_contract"
+          ? "QUERY_REQUEST_REJECTED"
+          : error.category === "provider_response"
+            ? "QUERY_RESPONSE_REJECTED"
+            : error.category === "network"
+              ? "QUERY_NETWORK_FAILED"
+              : "QUERY_UNKNOWN_FAILED";
+      return { reconciled: false, status };
+    }
+    if (queryFailureStatuses) return { reconciled: false, status: "QUERY_UNKNOWN_FAILED" };
     return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
   }
   // PayUni's query projection is eventually consistent after a successful
@@ -208,4 +226,20 @@ export async function reconcileWp4PayUniSandboxSubscriptionRefund(
   sourceCommit: string,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
   return reconcileFixedWp4PayUniSandboxRefund(db, sourceCommit, "platform_subscription");
+}
+
+/**
+ * Recovers only the historical buyer-order fixture. The source SHA and purpose
+ * are intentionally server-owned constants; this function accepts no caller
+ * supplied transaction or source selector.
+ */
+export async function reconcileWp4PayUniSandboxHistoricalRefund(
+  db: Wp4ReconciliationDb,
+): Promise<Wp4PayUniSandboxReconciliationResult> {
+  return reconcileFixedWp4PayUniSandboxRefund(
+    db,
+    WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA,
+    "buyer_order",
+    true,
+  );
 }

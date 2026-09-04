@@ -146,7 +146,7 @@ const validInput = Object.freeze({
   payuniEnv: FIXED_PAYUNI_ENV,
 });
 const recoveryInput = Object.freeze({
-  sourceSha: EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+  sourceSha,
   previewHost,
   jobSecret: "test-job-secret",
 });
@@ -612,10 +612,10 @@ test("fixed existing-refund recovery performs one reconcile query with zero paym
   const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
     request: async (request) => {
       calls.push(request);
-      assert.equal(request.url, `https://${previewHost}/api/admin/ops/payuni/wp4-reconcile`);
+      assert.equal(request.url, `https://${previewHost}/api/admin/ops/payuni/wp4-refund-recovery`);
       assert.deepEqual(request.headers, {
         authorization: "Bearer test-job-secret",
-        "x-celebratedeal-source-sha": EXISTING_REFUND_RECOVERY_SOURCE_SHA,
+        "x-celebratedeal-source-sha": sourceSha,
       });
       assert.equal(request.body, undefined);
       return response(200, { reconciled: true, status: "RECONCILED" });
@@ -623,6 +623,8 @@ test("fixed existing-refund recovery performs one reconcile query with zero paym
   });
   assert.equal(calls.length, 1);
   assert.equal(receipt.schemaVersion, EXISTING_REFUND_RECOVERY_SCHEMA);
+  assert.equal(receipt.sourceSha, sourceSha);
+  assert.equal(receipt.transactionSourceSha, EXISTING_REFUND_RECOVERY_SOURCE_SHA);
   assert.equal(receipt.result, "RECONCILED");
   assert.equal(receipt.status, "RECONCILED");
   assert.equal(receipt.queryAttempts, 1);
@@ -643,7 +645,7 @@ test("existing-refund recovery fails closed for unknown responses and never quer
   assert.deepEqual(validateExistingRefundRecoveryReceipt(unknown), { ok: true, errors: [] });
 
   let requests = 0;
-  const wrongSource = await recoverExistingWp4BuyerRefund({ ...recoveryInput, sourceSha: sourceSha }, {
+  const wrongSource = await recoverExistingWp4BuyerRefund({ ...recoveryInput, sourceSha: "invalid" }, {
     request: async () => { requests += 1; throw new Error("must not run"); },
   });
   assert.equal(requests, 0);
@@ -653,6 +655,30 @@ test("existing-refund recovery fails closed for unknown responses and never quer
   assert.equal(wrongSource.paymentSubmissions, 0);
   assert.equal(wrongSource.refundSubmissions, 0);
   assert.deepEqual(validateExistingRefundRecoveryReceipt(wrongSource), { ok: true, errors: [] });
+});
+
+test("recovery preserves fixed query diagnostics without accepting raw provider fields", async () => {
+  for (const status of ["QUERY_AUTHENTICATION_FAILED", "QUERY_REQUEST_REJECTED", "QUERY_RESPONSE_REJECTED", "QUERY_NETWORK_FAILED", "QUERY_UNKNOWN_FAILED"]) {
+    let calls = 0;
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, {
+      request: async () => { calls += 1; return response(503, { reconciled: false, status }); },
+    });
+    assert.equal(calls, 1);
+    assert.equal(receipt.result, "UNRESOLVED");
+    assert.equal(receipt.status, status);
+    assert.deepEqual(validateExistingRefundRecoveryReceipt(receipt), { ok: true, errors: [] });
+    assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, result: "RECONCILED" }).ok, false);
+    assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, transactionSourceSha: sourceSha }).ok, false);
+    assert.equal(validateExistingRefundRecoveryReceipt({ ...receipt, queryAttempts: 0 }).ok, false);
+  }
+  for (const body of [
+    { reconciled: false, status: "QUERY_RESPONSE_REJECTED", raw: "must-not-escape" },
+    { reconciled: true, status: "QUERY_RESPONSE_REJECTED" },
+  ]) {
+    const receipt = await recoverExistingWp4BuyerRefund(recoveryInput, { request: async () => response(503, body) });
+    assert.equal(receipt.status, "RESPONSE_INVALID");
+    assert.equal(JSON.stringify(receipt).includes("must-not-escape"), false);
+  }
 });
 
 test("recovery receipt is separately validated and cannot gain payment or refund submissions", async () => {

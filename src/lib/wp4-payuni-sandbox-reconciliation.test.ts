@@ -14,6 +14,8 @@ import {
   isWp4PayUniSandboxTransaction,
   reconcileWp4PayUniSandboxRefund,
   reconcileWp4PayUniSandboxSubscriptionRefund,
+  reconcileWp4PayUniSandboxHistoricalRefund,
+  WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA,
   wp4SourceCommitFromMetadata,
   wp4PayUniPurposeFromMetadata,
 } from "@/lib/wp4-payuni-sandbox-reconciliation";
@@ -197,6 +199,47 @@ describe("WP4 PayUni Sandbox refund reconciliation", () => {
     await expect(reconcileWp4PayUniSandboxSubscriptionRefund(db as never, sourceCommit))
       .resolves.toEqual({ reconciled: false, status: "PROJECTION_UNAVAILABLE" });
     expect(mocks.queryPayment).not.toHaveBeenCalled();
+    expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+  });
+
+  it("keeps historical recovery source and buyer purpose isolated", async () => {
+    const historicalBuyer = reconciliationRow({
+      id: "historical_buyer_refund_fixture",
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    });
+    findMany.mockResolvedValue([reconciliationRow(), historicalBuyer]);
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: true, status: "RECONCILED" });
+    expect(mocks.queryPayment).toHaveBeenCalledExactlyOnceWith({ transaction: historicalBuyer });
+    expect(mocks.reconcilePayUniRefund).toHaveBeenCalledWith(expect.objectContaining({ transactionId: historicalBuyer.id }));
+  });
+
+  it.each([
+    ["authentication", "QUERY_AUTHENTICATION_FAILED"],
+    ["request_contract", "QUERY_REQUEST_REJECTED"],
+    ["provider_response", "QUERY_RESPONSE_REJECTED"],
+    ["network", "QUERY_NETWORK_FAILED"],
+    ["unknown", "QUERY_UNKNOWN_FAILED"],
+  ] as const)("maps %s query errors to a fixed recovery status", async (category, status) => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.queryPayment.mockRejectedValueOnce(new PaymentQueryProviderError(category));
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status });
+    expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+  });
+
+  it("preserves pending recovery reservations without projection", async () => {
+    findMany.mockResolvedValue([reconciliationRow({
+      metadata: { billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId, wp4SourceCommit: WP4_HISTORICAL_BUYER_REFUND_SOURCE_SHA },
+    })]);
+    mocks.queryPayment.mockRejectedValueOnce(new PaymentQueryProviderError("pending"));
+
+    await expect(reconcileWp4PayUniSandboxHistoricalRefund(db as never))
+      .resolves.toEqual({ reconciled: false, status: "REFUND_NOT_CONFIRMED" });
     expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
   });
 });
