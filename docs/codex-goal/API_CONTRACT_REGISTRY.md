@@ -78,6 +78,23 @@
 | 59 | `POST /api/settings/security/mfa/start` | native same-origin form；shared enrollment helper 驗證 CSRF、Origin、session 與既有 factor state | bounded FormData；CSRF 欄位 | current authenticated owner／platform admin session | 建立或重建短效 enrollment cookie；既有 factor 只回固定 `mfa_exists` state | 303 到固定 query state；不回傳 TOTP secret、recovery code 或帳號資料 | 同路徑 route unit + MFA Browser acceptance |
 | 60 | `POST /api/settings/security/mfa/recovery-codes/dismiss` | native same-origin form；shared enrollment helper 驗證 CSRF、Origin、session 與 recovery-code acknowledgement state | bounded FormData；CSRF 欄位 | current authenticated owner／platform admin session | 清除短效 recovery-code acknowledgement cookie；不修改 MFA factor 或 recovery code | 303 到固定安全設定頁；不回傳 recovery code、帳號資料或原始錯誤 | 同路徑 route unit + helper unit + MFA Browser acceptance |
 
+## 固定 WP4 Sandbox ops
+
+以下八個 POST 入口先驗證 `JOB_SECRET`，再限制 Preview、PayUni Sandbox、executor enabled 與完整 server-owned source SHA。只接受空 body，不接受 caller 指定交易、金額、provider host 或租戶；回應均為 no-store。它們的存在與本機測試不代表實際 Sandbox 已通過。
+
+| Route／method | 固定用途與副作用 | Response／error contract |
+|---|---|---|
+| `POST /api/admin/ops/payuni/wp4-fixture` | 建立或重用固定 synthetic 商家、owner、membership、商品與方案；identity conflict 拒絕 | 200 安全計數；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-payment-attempt` | 買家交易付款前的單次 reservation；已付款不重送 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-reconcile` | 查核固定買家退款並依可信 provider 結果同步站內狀態；不送新退款 | 200 reconciled；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-refund` | server 選定買家交易、金額及階段，最多一次退款嘗試；不明結果不得重送 | 200 COMPLETED；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-session` | 僅固定 synthetic owner，驗證 active membership 後建立 15 分鐘 session；不更動一般登入或 MFA | 204 空 body 與 HttpOnly／Secure／SameSite=Lax cookie；401／404／503；不得記錄 cookie |
+| `POST /api/admin/ops/payuni/wp4-subscription-payment-attempt` | 固定 SaaS purpose 的單次付款 reservation，與買家 purpose 分離 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-subscription-reconcile` | 查核固定 SaaS 退款並同步 subscription／quota；不送新退款 | 200 reconciled；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-subscription-refund` | server 選定固定 SaaS 交易與退款額；不得接受 caller 自訂 purpose | 200 COMPLETED；401／404／409／503 |
+
+每個入口皆有同路徑 `route.test.ts`；實際 DB／provider 證據另行驗證。
+
 ## 已確認的 contract 缺口
 
 | ID | 範圍 | 缺口 | 風險 | 下一個可重現證據 |
@@ -90,8 +107,7 @@
 
 ## 驗收判定
 
-- Static inventory：59/59 route handlers 已登錄。
-- Same-path test：59/59。
+- Static inventory 與 same-path test：以 `scripts/api-contract-registry.test.ts` 的當次結果為準，不沿用歷史固定數量。
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。

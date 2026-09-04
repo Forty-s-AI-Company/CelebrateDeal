@@ -17,7 +17,6 @@ import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
 import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { RefundProviderError } from "@/lib/payment-providers/types";
@@ -109,6 +108,7 @@ import {
   updatePasswordAction as updatePasswordActionImpl,
   verifyMfaAction as verifyMfaActionImpl,
 } from "./actions/auth-security-actions";
+import { retryWebhookEventAction as retryWebhookEventActionImpl } from "./actions/webhook-actions";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -2486,20 +2486,5 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 }
 
 export async function retryWebhookEventAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { member } = await requireFinanceAdmin();
-  const id = text(formData, "id");
-  const event = await getDb().webhookEvent.findUnique({ where: { id } });
-  if (!event) {
-    redirect("/admin/billing/dashboard?error=webhook");
-  }
-  if (event.retryCount >= event.maxRetries) {
-    redirect("/admin/billing/dashboard?error=max_retries");
-  }
-  await retryWebhookEvent(id, member.role);
-
-  revalidatePath("/admin/billing/dashboard");
-  revalidatePath("/admin/billing/webhooks");
-  revalidatePath(`/admin/billing/webhooks/${id}`);
-  redirect("/admin/billing/dashboard");
+  return retryWebhookEventActionImpl(formData);
 }

@@ -69,6 +69,10 @@ Concrete accounting blocker: `payment-webhooks.ts` marks a fully refunded subscr
 
 ### Current checkpoint, superseding historical in-progress notes above
 
+- 2026-09-04 resumed by explicit user request with ai-team-lite. Base local/remote SHA is `6a5994209a5ca7b1a856b9be2918898ee4bf9a09`, and CI `33864990134` failed on API registry and root-action line-count tests. Reading annotation paths identified the actual cases; no additional diagnostic framework was required.
+- Local remediation registers eight existing fixed Sandbox ops and extracts the existing webhook retry action without changing its security/order/retry behavior or raising the 2,500-line ceiling. Four targeted suites passed 337 tests; scoped lint passed. Full candidate CI and actual Sandbox remain unproven.
+- AGY Gemini `gemini-3.8-flash-high` and Claude `claude-sonnet-4-6` each returned a successful no-tool smoke response after correcting blank-line collection and Claude model/effort parameters. Router tests passed 8 cases and PowerShell resilience passed. Gemini subsequently returned a bounded planning recommendation; model output is advisory, not release evidence.
+
 - User requested a pause after this checkpoint. Published source is `7f81976e604e07f1faf57097906abfef7c651a55`; CI `33860682400` was still installing dependencies at the pause observation. Local watcher stopped; remote CI was not cancelled. No further Sandbox operation was started.
 - Additional local verification: 13 suites / 158 tests passed; `tenant-ledger-invariants.test.ts` failed all 4 tests because disposable PostgreSQL at loopback port 54329 was unavailable. Tenant DB invariants remain NOT_PROVEN; this is not an assertion failure or a PASS.
 
