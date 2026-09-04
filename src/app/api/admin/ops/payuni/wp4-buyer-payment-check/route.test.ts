@@ -17,7 +17,7 @@ function request(options: { authorization?: string; sha?: string; body?: BodyIni
 beforeEach(() => {
   vi.clearAllMocks(); vi.stubEnv("JOB_SECRET", secret); vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true"); vi.stubEnv("VERCEL_GIT_COMMIT_SHA", source);
-  mocks.check.mockResolvedValue({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0 });
+  mocks.check.mockResolvedValue({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -35,7 +35,7 @@ describe("WP4 current buyer payment check route", () => {
     const response = await POST(request({ authorization: `Bearer ${secret}` }));
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    await expect(response.json()).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0 });
+    await expect(response.json()).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
     expect(mocks.check).toHaveBeenCalledExactlyOnceWith(mocks.db);
   });
 });

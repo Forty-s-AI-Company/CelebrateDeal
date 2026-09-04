@@ -3,10 +3,10 @@ import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 import { checkWp4PayUniBuyerPayment, WP4_CURRENT_BUYER_PAYMENT_SOURCE_SHA } from "./wp4-payuni-buyer-payment-check";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 
-const mocks = vi.hoisted(() => ({ findMany: vi.fn(), queryPayment: vi.fn() }));
+const mocks = vi.hoisted(() => ({ findMany: vi.fn(), webhookFindMany: vi.fn(), queryPayment: vi.fn() }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: () => ({ queryPayment: mocks.queryPayment }) }));
 
-const db = { paymentTransaction: { findMany: mocks.findMany } };
+const db = { paymentTransaction: { findMany: mocks.findMany }, webhookEvent: { findMany: mocks.webhookFindMany } };
 function row(status: string, overrides: Record<string, unknown> = {}) {
   return {
     id: "tx-current-buyer", vendorId: WP4_SANDBOX_FIXTURE.vendorId, providerName: "payuni",
@@ -22,12 +22,13 @@ function row(status: string, overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.findMany.mockResolvedValue([]);
+  mocks.webhookFindMany.mockResolvedValue([]);
   mocks.queryPayment.mockResolvedValue({ providerTradeNo: "trade-current", orderNumber: "CD-20260905-ABC123", grossAmountCents: 100, refundedAmountCents: 0, remainingRefundableAmountCents: 100, status: "paid" });
 });
 
 describe("current fixed buyer payment check", () => {
   it("returns missing without querying", async () => {
-    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", queryAttempts: 0 });
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" });
     expect(mocks.queryPayment).not.toHaveBeenCalled();
   });
   it("rejects ambiguous candidates without querying", async () => {
@@ -37,7 +38,26 @@ describe("current fixed buyer payment check", () => {
   });
   it("reports pending without a provider reference", async () => {
     mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
-    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0 });
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
+    expect(mocks.webhookFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ provider: "payuni", eventType: "paid", payload: { path: ["normalized", "orderNumber"], equals: "CD-20260905-ABC123" } }),
+      select: { status: true, errorMessage: true }, take: 2,
+    }));
+  });
+  it.each([
+    [{ status: "received", errorMessage: null }, "RECEIVED", "NONE"],
+    [{ status: "processed", errorMessage: null }, "PROCESSED", "NONE"],
+    [{ status: "failed", errorMessage: "Payment webhook processing failed (amount_mismatch)." }, "FAILED", "AMOUNT_MISMATCH"],
+    [{ status: "failed", errorMessage: "secret callback details" }, "FAILED", "UNKNOWN"],
+  ])("maps fixed callback evidence without returning error text", async (event, status, failure) => {
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    mocks.webhookFindMany.mockResolvedValue([event]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toMatchObject({ status: "REFERENCE_UNAVAILABLE", callbackStatus: status, callbackFailure: failure });
+  });
+  it("marks multiple matching callback events ambiguous", async () => {
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    mocks.webhookFindMany.mockResolvedValue([{ status: "processed", errorMessage: null }, { status: "failed", errorMessage: null }]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toMatchObject({ status: "REFERENCE_UNAVAILABLE", callbackStatus: "AMBIGUOUS", callbackFailure: "UNKNOWN" });
   });
   it.each([
     ["paid", "paid", "PAID"],
