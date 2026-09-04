@@ -174,6 +174,21 @@ describe("generateSettlementForVendor", () => {
     expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
   });
 
+  it("persists the calculated metered usage fee on a newly generated invoice", async () => {
+    mocks.calculateSettlement.mockResolvedValueOnce({ ...calculation, overflowFeeCents: 8_100 });
+
+    await generateSettlementForVendor("vendor-1", "2026-07");
+
+    expect(mocks.settlementCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ overflowFeeCents: 8_100 }),
+    });
+    expect(mocks.invoiceUpsert).toHaveBeenCalledWith({
+      where: { invoiceNumber: "vendor-2026-07-vendor-1" },
+      create: expect.objectContaining({ overflowFeeCents: 8_100, totalCents: 10_300 }),
+      update: expect.objectContaining({ overflowFeeCents: 8_100, totalCents: 10_300 }),
+    });
+  });
+
   it("rolls back the regeneration path when a terminal invoice amount drifts", async () => {
     mocks.settlementFindUnique.mockResolvedValue(settlement);
     mocks.settlementFindUniqueInTransaction.mockResolvedValue(settlement);
@@ -217,7 +232,8 @@ describe("generateSettlementForVendor", () => {
     expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
   });
 
-  it("preserves an existing invoice's metered liability during MVP regeneration", async () => {
+  it("preserves an existing invoice's metered liability after the billing policy changes", async () => {
+    mocks.calculateSettlement.mockResolvedValueOnce({ ...calculation, overflowFeeCents: 8_100 });
     mocks.settlementFindUnique.mockResolvedValue({ ...settlement, overflowFeeCents: 200 });
     mocks.settlementFindUniqueInTransaction.mockResolvedValue({ ...settlement, overflowFeeCents: 200 });
     mocks.invoiceFindUnique.mockResolvedValue({ ...invoice, status: "overdue" });

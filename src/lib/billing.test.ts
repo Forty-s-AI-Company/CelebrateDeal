@@ -362,7 +362,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     });
   });
 
-  it("keeps the highest observed usage totals for quota while disabling new metered charges", async () => {
+  it("charges WatchMinutes, Events, Affiliates, and StorageMinutes overages on new billing", async () => {
     dependencies.db.usageRecord.findMany.mockResolvedValueOnce([
       {
         recordType: "stream_minutes",
@@ -405,7 +405,8 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.overflowEvents).toBe(15);
     expect(settlement.overflowAffiliates).toBe(8);
     expect(settlement.overflowStorageMinutes).toBe(7_200);
-    expect(settlement.overflowFeeCents).toBe(0);
+    // Watch 200 + events 400 + affiliates 300 + storage 7,200.
+    expect(settlement.overflowFeeCents).toBe(8_100);
   });
 
   it("includes the immutable page/member stream ledger without double-counting aggregates", async () => {

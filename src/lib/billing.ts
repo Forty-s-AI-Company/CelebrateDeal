@@ -416,8 +416,8 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     ceilCharge(overflowEvents, 10, plan.overflowEventUnitPriceCents) +
     ceilCharge(overflowAffiliates, 10, plan.overflowAffiliateUnitPriceCents) +
     ceilCharge(overflowStorageMinutes, 100, plan.overflowStorageMinutePriceCents * 100);
-  // Keep measuring quota and reconciliation totals, while the MVP launch
-  // explicitly excludes metered charges from newly generated billing.
+  // Apply the auditable metered-usage policy only to newly generated billing.
+  // Existing invoice snapshots are preserved by the billing-cycle write path.
   const overflowFeeCents = usageFeeForNewBillingGeneration(calculatedOverflowFeeCents);
 
   const paymentMode = subscription.paymentMode;
