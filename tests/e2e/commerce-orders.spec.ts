@@ -1268,6 +1268,13 @@ test("desktop merchant can recover upload and validation errors, then publish an
     }));
     await expect(db.vendorSubscription.findUniqueOrThrow({ where: { id: firstSubscriptionId! } }))
       .resolves.toMatchObject({ status: "payment_refunded" });
+    await expect(db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: fixture.vendorIds[0] } }))
+      .resolves.toMatchObject({
+        billingPlanId: null,
+        streamMinutesLimit: 0,
+        storageMinutesLimit: 0,
+        creditsLimit: 0,
+      });
   });
 
   test("buyer order capability shows only exact safe fulfillment projection on desktop and mobile", async ({ page }) => {

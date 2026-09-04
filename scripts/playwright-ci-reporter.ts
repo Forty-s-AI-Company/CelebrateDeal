@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { FullResult, Reporter, TestCase } from "@playwright/test/reporter";
+import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
@@ -18,6 +18,10 @@ function sanitizedLine(value: unknown) {
 
 function sanitizedRetry(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100 ? value : 0;
+}
+
+function sanitizedDuration(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 3_600_000 ? value : 0;
 }
 
 export function formatSanitizedPlaywrightAnnotation(input: {
@@ -50,6 +54,7 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
   private readonly write: (value: string) => void;
   private readonly tests = new Map<string, TestCase>();
   private globalErrors = 0;
+  private readonly failedSteps = new WeakMap<TestResult, string>();
 
   constructor(optionsOrWrite: unknown = {}) {
     this.write = typeof optionsOrWrite === "function"
@@ -66,6 +71,19 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
     this.write("::error::playwright status=failed class=global_error\n");
   }
 
+  onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
+    if (!step.error || this.failedSteps.has(result)) return;
+    const annotation = formatSanitizedPlaywrightAnnotation({
+      file: step.location?.file ?? test.location.file,
+      line: step.location?.line ?? test.location.line,
+      status: "failed",
+      retry: result.retry,
+    });
+    if (!annotation) return;
+    const category = ["expect", "pw:api", "test.step", "hook", "fixture"].includes(step.category) ? step.category : "other";
+    this.failedSteps.set(result, `${annotation} class=step_error category=${category} duration_ms=${sanitizedDuration(step.duration)}\n`);
+  }
+
   onEnd(result: FullResult) {
     let failed = 0;
     let timedout = 0;
@@ -77,6 +95,11 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
       if (status === "failed") failed += 1;
       if (status === "timedout") timedout += 1;
       if (status === "flaky") flaky += 1;
+      // Caught/expected step errors in a passing test are not CI failures.
+      for (const attempt of test.results) {
+        const stepAnnotation = this.failedSteps.get(attempt);
+        if (stepAnnotation) this.write(stepAnnotation);
+      }
       const annotation = formatSanitizedPlaywrightAnnotation({
         file: test.location.file,
         line: test.location.line,
@@ -84,7 +107,9 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
         retry: test.results.length - 1,
       });
       if (!annotation) continue;
-      this.write(`${annotation}\n`);
+      const first = test.results[0];
+      const firstStatus = first && ["passed", "failed", "timedOut", "skipped", "interrupted"].includes(first.status) ? first.status : "unknown";
+      this.write(`${annotation} first_status=${firstStatus} first_duration_ms=${sanitizedDuration(first?.duration)}\n`);
     }
 
     const status = result.status === "passed" || result.status === "failed" || result.status === "timedout" || result.status === "interrupted"
