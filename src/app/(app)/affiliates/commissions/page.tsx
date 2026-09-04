@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MvpBillingNotice } from "@/components/mvp-billing-notice";
 import { recordAffiliatePayoutOutcomeAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
@@ -48,6 +49,7 @@ export default async function AffiliateCommissionsPage({
         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
       />
 
+      <MvpBillingNotice kind="commission" />
       {query?.error && payoutErrorMessages[query.error] ? (
         <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
           {payoutErrorMessages[query.error]}

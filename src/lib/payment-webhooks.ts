@@ -16,6 +16,7 @@ import {
 } from "@/lib/course-commission-accounting";
 import { calculateCourseAllocationPlan } from "@/lib/course-commission";
 import { coursePolicySnapshotFromMetadata } from "@/lib/course-policy-snapshot";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
@@ -268,6 +269,7 @@ async function upsertAffiliateCommission(
   hasRefundedOrder: boolean,
   referralCode: string | null | undefined,
 ) {
+  if (!mvpCommissionPolicy.allowsNewAccrual("affiliate")) return null;
   if (!referralCode || payload.eventType !== "paid") return null;
 
   const normalizedReferralCode = referralCode.toUpperCase();
@@ -373,6 +375,7 @@ async function upsertCourseCommissionAllocations(
   trustedCheckoutMetadata: unknown,
   hasExistingCheckoutTransaction: boolean,
 ) {
+  if (!mvpCommissionPolicy.allowsNewAccrual("team_course")) return [];
   // A course allocation is only eligible when the product identity came from
   // the server-created checkout row. Provider metadata alone cannot select a
   // tenant or a recipient.
@@ -553,6 +556,7 @@ async function accruePlatformReferralFromTrustedTransaction(
     subscriptionStatus: string | null;
   },
 ) {
+  if (!mvpCommissionPolicy.allowsNewAccrual("platform_referral")) return null;
   // Legacy server-created platform referral fixtures may predate the explicit
   // billing-purpose metadata. Keep those trusted subscription snapshots
   // compatible; an explicitly reconciled non-active subscription is never

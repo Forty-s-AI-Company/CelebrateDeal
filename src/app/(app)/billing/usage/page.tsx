@@ -1,4 +1,5 @@
 import { Card, PageHeader, Badge } from "@/components/ui";
+import { MvpBillingNotice } from "@/components/mvp-billing-notice";
 import Link from "next/link";
 import { requireVendorFinance } from "@/lib/auth";
 import { calculateStreamUsageMinutes, monthRange } from "@/lib/billing";
@@ -246,6 +247,7 @@ export default async function BillingUsagePage() {
   return (
     <>
        <PageHeader title="用量與扣點" description="追蹤 Cloudflare Stream 播放、活動場次、推廣者、儲存分鐘與交易服務費估算；Stream 額度用完後會暫停新播放。" />
+       <MvpBillingNotice kind="usage" />
       <div className="mb-6 grid gap-4 lg:grid-cols-4">
         <Card className="bg-gradient-to-br from-white to-blue-50">
           <p className="text-sm font-medium text-slate-500">目前方案</p>

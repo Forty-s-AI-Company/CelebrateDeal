@@ -10,6 +10,12 @@ import { reconcileWebhookEvent } from "@/lib/reconciliation";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
 import { protectProductDeliveryConfig, validateProductDeliveryDraft } from "@/lib/product-delivery";
 
+// Historical accounting tests verify legacy commission domains explicitly.
+// Production uses the real MVP policy, which denies new accruals by default.
+vi.mock("@/lib/mvp-commission-policy", () => ({
+  mvpCommissionPolicy: { allowsNewAccrual: () => true },
+}));
+
 const createdVendorIds: string[] = [];
 const createdBillingPlanIds: string[] = [];
 const createdWebhookEventIds: string[] = [];

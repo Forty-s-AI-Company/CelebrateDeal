@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 import { coursePolicySnapshotFromProduct } from "@/lib/course-policy-snapshot";
+
+// These are historical accounting-domain tests. They opt into the legacy
+// policy without changing the real MVP default used by production webhooks.
+vi.mock("@/lib/mvp-commission-policy", () => ({
+  mvpCommissionPolicy: { allowsNewAccrual: () => true },
+}));
 
 const createdVendorIds: string[] = [];
 const createdPlanIds: string[] = [];
