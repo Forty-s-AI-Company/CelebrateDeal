@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request as PlaywrightRequest } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request as PlaywrightRequest, type TestInfo } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 import { totpCodeForTimestamp, verifyRecoveryCode, verifyTotpCode } from "../../src/lib/mfa";
@@ -24,6 +24,41 @@ const e2eProductPriceCents = 12_300;
 
 function redactedEmail(email: string) {
   return `[redacted length=${email.length}]`;
+}
+
+type SecurityActionOutcome =
+  | "password_reset_smoke"
+  | "password_reset_smoke_recipient"
+  | "password_reset_smoke_rate_limited"
+  | "password_reset_smoke_unavailable"
+  | "mfa_required"
+  | "recovery_rate_limited"
+  | "recovery_unavailable"
+  | "mfa_code"
+  | "UNCLASSIFIED";
+
+async function expectSecurityActionUrl(
+  page: Page,
+  testInfo: TestInfo,
+  expected: RegExp,
+  allowedErrors: readonly SecurityActionOutcome[],
+) {
+  try {
+    await expect(page).toHaveURL(expected);
+  } catch (error) {
+    // Keep the diagnostic useful without exposing the URL, query, or IDs.
+    let errorParam: string | null = null;
+    try {
+      errorParam = new URL(page.url()).searchParams.get("error");
+    } catch {
+      // Keep the original assertion failure when the browser URL is unavailable.
+    }
+    const outcome: SecurityActionOutcome = errorParam && allowedErrors.includes(errorParam as SecurityActionOutcome)
+      ? errorParam as SecurityActionOutcome
+      : "UNCLASSIFIED";
+    testInfo.annotations.push({ type: "security-action-outcome", description: outcome });
+    throw error;
+  }
 }
 
 const e2eOrigin = new URL(
@@ -887,7 +922,7 @@ passwordResetTest("password reset request hides account existence and revokes an
   });
 });
 
-passwordResetTest("security password reset smoke targets only the signed-in user and remains locally isolated", async ({ page, passwordResetUser }) => {
+passwordResetTest("security password reset smoke targets only the signed-in user and remains locally isolated", async ({ page, passwordResetUser }, testInfo) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill(passwordResetUser.email);
   await page.getByLabel("密碼").fill(previousCredential);
@@ -902,7 +937,12 @@ passwordResetTest("security password reset smoke targets only the signed-in user
   await expect(smokeForm.locator('input:not([type="hidden"])')).toHaveCount(0);
 
   await smokeForm.getByRole("button", { name: "寄送目前帳號的 reset 測試信" }).click();
-  await expect(page).toHaveURL(/\/settings\/security\?error=password_reset_smoke$/);
+  await expectSecurityActionUrl(page, testInfo, /\/settings\/security\?error=password_reset_smoke$/, [
+    "password_reset_smoke",
+    "password_reset_smoke_recipient",
+    "password_reset_smoke_rate_limited",
+    "password_reset_smoke_unavailable",
+  ]);
   await expect(page.getByText("密碼重設測試信寄送失敗，請檢查 Resend 設定。")).toBeVisible();
 
   const resetRecords = await db.passwordResetToken.findMany({
@@ -1257,7 +1297,7 @@ mfaTest("recovery code completes MFA once and cannot be reused", async ({ page, 
   await expectMfaAuditActions(mfaUser.id, ["mfa_verify_recovery_code", "mfa_verify_failed"]);
 });
 
-mfaTest("regenerating recovery codes invalidates old codes and accepts newly issued codes", async ({ page, mfaUser }) => {
+mfaTest("regenerating recovery codes invalidates old codes and accepts newly issued codes", async ({ page, mfaUser }, testInfo) => {
   const totpSeed = await enrollMfa(page, mfaUser);
   const oldRecoveryCode = await displayedRecoveryCode(page);
   await page.getByRole("button", { name: "我已保存 recovery codes" }).click();
@@ -1279,7 +1319,12 @@ mfaTest("regenerating recovery codes invalidates old codes and accepts newly iss
   });
   await page.getByRole("button", { name: "重新產生 recovery codes" }).click();
   await confirmationHandled;
-  await expect(page).toHaveURL(/\/mfa\/setup\?updated=recovery_regenerated/);
+  await expectSecurityActionUrl(page, testInfo, /\/mfa\/setup\?updated=recovery_regenerated/, [
+    "mfa_required",
+    "recovery_rate_limited",
+    "recovery_unavailable",
+    "mfa_code",
+  ]);
   const newRecoveryCode = await displayedRecoveryCode(page);
   expect(oldRecoveryCode === newRecoveryCode).toBe(false);
 

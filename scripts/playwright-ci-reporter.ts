@@ -3,6 +3,17 @@ import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@play
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
+const allowedSecurityActionOutcomes = new Set([
+  "password_reset_smoke",
+  "password_reset_smoke_recipient",
+  "password_reset_smoke_rate_limited",
+  "password_reset_smoke_unavailable",
+  "mfa_required",
+  "recovery_rate_limited",
+  "recovery_unavailable",
+  "mfa_code",
+  "UNCLASSIFIED",
+]);
 
 type AnnotationStatus = "failed" | "timedout" | "flaky";
 
@@ -46,6 +57,14 @@ function finalAnnotationStatus(test: TestCase): AnnotationStatus | null {
   return null;
 }
 
+export function sanitizedSecurityActionOutcome(test: Pick<TestCase, "annotations">) {
+  const annotation = test.annotations.find(({ type }) => type === "security-action-outcome");
+  if (!annotation) return null;
+  return typeof annotation.description === "string" && allowedSecurityActionOutcomes.has(annotation.description)
+    ? annotation.description
+    : "UNCLASSIFIED";
+}
+
 /**
  * CI-only reporter: never forwards test titles, error messages, stack traces,
  * body output, attachments, or arbitrary paths into GitHub annotations.
@@ -53,6 +72,7 @@ function finalAnnotationStatus(test: TestCase): AnnotationStatus | null {
 export default class SanitizedPlaywrightCiReporter implements Reporter {
   private readonly write: (value: string) => void;
   private readonly tests = new Map<string, TestCase>();
+  private readonly securityActionOutcomes = new Map<string, string>();
   private globalErrors = 0;
   private readonly failedSteps = new WeakMap<TestResult, string>();
 
@@ -62,8 +82,12 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
       : (value) => process.stdout.write(value);
   }
 
-  onTestEnd(test: TestCase) {
+  onTestEnd(test: TestCase, result?: TestResult) {
     this.tests.set(test.id, test);
+    const status = result?.status ?? test.results.at(-1)?.status;
+    if (status !== "failed" && status !== "timedOut") return;
+    const securityActionOutcome = sanitizedSecurityActionOutcome(test);
+    if (securityActionOutcome) this.securityActionOutcomes.set(test.id, securityActionOutcome);
   }
 
   onError() {
@@ -107,9 +131,10 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
         retry: test.results.length - 1,
       });
       if (!annotation) continue;
+      const securityActionOutcome = this.securityActionOutcomes.get(test.id);
       const first = test.results[0];
       const firstStatus = first && ["passed", "failed", "timedOut", "skipped", "interrupted"].includes(first.status) ? first.status : "unknown";
-      this.write(`${annotation} first_status=${firstStatus} first_duration_ms=${sanitizedDuration(first?.duration)}\n`);
+      this.write(`${annotation} first_status=${firstStatus} first_duration_ms=${sanitizedDuration(first?.duration)}${securityActionOutcome ? ` security_action_outcome=${securityActionOutcome}` : ""}\n`);
     }
 
     const status = result.status === "passed" || result.status === "failed" || result.status === "timedout" || result.status === "interrupted"

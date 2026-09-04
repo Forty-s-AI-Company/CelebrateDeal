@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import SanitizedPlaywrightCiReporter, { formatSanitizedPlaywrightAnnotation } from "./playwright-ci-reporter";
+import SanitizedPlaywrightCiReporter, { formatSanitizedPlaywrightAnnotation, sanitizedSecurityActionOutcome } from "./playwright-ci-reporter";
 
 const safeFile = path.join(process.cwd(), "tests", "e2e", "smoke.spec.ts");
 
@@ -9,11 +9,13 @@ function testCase(input: {
   outcome: "unexpected" | "flaky" | "expected";
   statuses: Array<"failed" | "passed" | "timedOut">;
   file?: string;
+  annotation?: string;
 }) {
   return {
     id: input.id,
     title: "Authorization: Bearer secret-token-must-not-appear",
     location: { file: input.file ?? safeFile, line: 42, column: 1 },
+    annotations: input.annotation ? [{ type: "security-action-outcome", description: input.annotation }] : [],
     outcome: () => input.outcome,
     results: input.statuses.map((status) => ({
       status,
@@ -54,6 +56,43 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(output).not.toContain("secret-token-must-not-appear");
     expect(output).not.toContain("Authorization");
     expect(output).not.toContain("attachments");
+  });
+
+  it("emits only allowlisted security action outcomes for failed or flaky cases", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const failed = testCase({ id: "action", outcome: "unexpected", statuses: ["failed"], annotation: "password_reset_smoke" });
+    const unknown = testCase({ id: "unknown", outcome: "unexpected", statuses: ["failed"], annotation: "Authorization: bearer secret" });
+    const passing = testCase({ id: "passing", outcome: "expected", statuses: ["passed"], annotation: "mfa_code" });
+    reporter.onTestEnd(failed as never);
+    reporter.onTestEnd(unknown as never);
+    reporter.onTestEnd(passing as never);
+    reporter.onEnd({ status: "failed" } as never);
+
+    expect(output).toContain("security_action_outcome=password_reset_smoke");
+    expect(output).toContain("security_action_outcome=UNCLASSIFIED");
+    expect(output).not.toContain("Authorization");
+    expect(output).not.toContain("bearer secret");
+    expect(output).not.toContain("security_action_outcome=mfa_code");
+  });
+
+  it("maps missing or unknown action annotations to UNCLASSIFIED without exposing text", () => {
+    expect(sanitizedSecurityActionOutcome({ annotations: [] })).toBeNull();
+    expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "security-action-outcome", description: "secret=token" }] })).toBe("UNCLASSIFIED");
+    expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "security-action-outcome", description: "recovery_unavailable" }] })).toBe("recovery_unavailable");
+    expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "other", description: "mfa_code" }] })).toBeNull();
+  });
+
+  it("retains the sanitized failed attempt outcome when a retry succeeds", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "flaky-action", outcome: "flaky", statuses: ["failed", "passed"], annotation: "mfa_code" });
+    reporter.onTestEnd(current as never, current.results[0] as never);
+    current.annotations = [];
+    reporter.onTestEnd(current as never, current.results[1] as never);
+    reporter.onEnd({ status: "passed" } as never);
+
+    expect(output).toContain("security_action_outcome=mfa_code");
   });
 
   it("reports one failed step per attempt without reading error text or titles", () => {
