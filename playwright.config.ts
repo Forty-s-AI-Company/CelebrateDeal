@@ -82,7 +82,9 @@ export default defineConfig({
   // and avoid turning pool contention into false page-loading timeouts.
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: [["list"]],
+  reporter: process.env.CI
+    ? [["./scripts/playwright-ci-reporter.ts"]]
+    : [["list"]],
   use: {
     baseURL,
     ...(executablePath ? { launchOptions: { executablePath } } : {}),

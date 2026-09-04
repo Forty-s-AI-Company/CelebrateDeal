@@ -35,6 +35,10 @@ Previously identified accounting defect: full subscription refunds could retain 
 
 Current buyer-runner integration is local only: fixed five-entity fixture, one browser submit with ambiguous confirmation stopping, no automatic PayUni form redirects, a minimal Chromium environment, and preserved operation counters when receipt validation fails. The existing protected workflow is wired to this buyer path, with Preview verification before job/card bindings and bounded IPv4/IPv6 egress. Secure contracts: 41 passed; typecheck and strict-index passed. No workflow dispatch or provider side effect occurred. SaaS actual execution is still pending and is not covered by this buyer-only runner.
 
+Latest retrieved historical provider receipt: secure workflow run `33766531639`, source `1052a46d002149b5c06104927ed0fab32b049214`, canonical buyer receipt reports `BLOCKED / RECONCILE_REJECTED`, one browser submission, one confirmed payment, one refund POST, zero confirmed refunds, and twelve reconciliation POSTs. This is old-source evidence, not current-source readiness. Prioritize query/recovery of that uncertain refund before fresh payment or refund submission. Retrieved only the sanitized receipt artifact, not raw logs or provider payloads.
+
+Local checkpoint `5f7fe65` contains the bounded buyer runner wiring. Full Node TAP contracts: 891 passed, zero failed/skipped. A minimal CI Playwright reporter is being added to expose only test file, line, fixed outcome/retry and aggregate counts, without titles/errors/attachments; fail-on-flaky, retry count and assertions are unchanged.
+
 ## Verification and publication
 
 - Working tree was clean before this checkpoint was added.
