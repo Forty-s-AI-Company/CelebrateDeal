@@ -14,11 +14,11 @@
 - source `6fa8c763e749740775605f2f74c49c107a445f97` 的完整 CI `33888838096` 已通過，包含一般／客服 Browser、PostgreSQL、coverage、build、preflight 與 audit。後續 source `d0562b8` 的 CI `33891833255` 因商家邀請 Browser 首次逾時、重試才通過而失敗；門檻保持不變。MFA fixture 修正 source `8497ec1ad66a07b0a286585dc050915c998d0f67` 的 CI `33893997112` 正在執行，前版結果不等於新版通過。受保護 runner PR `#199` 已通過並合併至 master `4912dc3`。
 - 最新歷史退款 receipt [33892202197](../ai-team/evidence/wp4-existing-refund-recovery-33892202197-receipt.json) 已達 `RECONCILED / RECONCILED`，query 1 次、付款／退款提交皆 0 次；workflow 與本機 canonical validator 通過。這關閉固定歷史交易的退款恢復，不代表新的商品與 SaaS 全流程均已驗收。
 - [本機 PostgreSQL 證據](../ai-team/evidence/wp4-refund-transaction-budget-local-20260904.json) 已重現相同帳務查詢延遲在 5 秒預算下完整回滾、15 秒產品預算下完成且重跑不重複入帳；4 項 DB 與 72 項單元測試通過，修正後的歷史 Sandbox 查核也已收斂。
-- SaaS receipt [33892546107](../ai-team/evidence/wp4-subscription-33892546107-receipt.json) 為 `BLOCKED / CHECKOUT_REJECTED`，fixture／session 成功，但原生 checkout 尚未確認，付款／退款提交皆 0 次。已補齊固定 synthetic owner 缺少的 MFA factor，9 項單元測試與 1 項真實 PostgreSQL 測試通過；實際 SaaS 驗收待新版 Preview。
+- 補齊固定 synthetic owner MFA 後，SaaS receipt [33894511275](../ai-team/evidence/wp4-subscription-33894511275-receipt.json) 已達 `PASS / NONE`：原生 checkout、可信付款、方案／額度啟用、退款、對帳與退款後權限全部通過；付款與退款各 1 次、對帳 1 次、權限查核 2 次。Workflow 與本機 canonical validator 均通過，適用 source `8497ec1`。這取代先前 checkout 阻擋，尚不代表商品流程或 Production 驗收完成。
 
 ## 未完成與發布限制
 
-商品與 SaaS 尚未具備可接受的 actual Sandbox payment → callback → refund → reconciliation 證據；SaaS activation／quota 的實際 provider 結果仍未確認。退款狀態不明時不得重送付款或退款。公開隱私保存／刪除期限、買家／SaaS 退款資格與時限、客服實際聯絡管道及營運責任仍待真人 owner 確認；現有政策頁均標示草稿。
+商品 actual Sandbox run `33894828505` 正在執行，結果尚未確認；SaaS 全流程已通過。新版 CI `33894327280` 尚未完成，退款狀態不明時不得重送付款或退款。公開隱私保存／刪除期限、買家／SaaS 退款資格與時限、客服實際聯絡管道及營運責任仍待真人 owner 確認；現有政策頁均標示草稿。
 
 因此 `MVP_RELEASE_CANDIDATE_READY=false`、`PAYMENT_RECONCILIATION_READY=false`、`SANDBOX_READY=false`、`PRODUCTION_READY=false`。在 current-head CI、實際 Sandbox 證據與人工政策／責任確認完成前，發布決策維持 `NO_GO`。
 
