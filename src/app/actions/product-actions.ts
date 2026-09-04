@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { CourseCommerceDomain } from "@/lib/course-commission";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
@@ -419,6 +420,13 @@ export async function mutateProduct(
       || existingProduct.courseContentOwnerMembershipId !== request.courseContentOwnerMembershipId
       || existingProduct.coursePromoterShareBps !== request.coursePromoterShareBps
     );
+  // Keep historical course configuration intact, but do not allow either
+  // transport to create or alter a deferred commission arrangement.
+  if (request.commerceDomain === "course"
+    && (!existingProduct || policyChanged)
+    && !mvpCommissionPolicy.allowsNewAccrual("team_course")) {
+    return { ok: false, state: productFailure(previousState, formData, "commission_disabled") };
+  }
   const productId = request.id ?? randomUUID();
   const data = {
     ...request.productInput,

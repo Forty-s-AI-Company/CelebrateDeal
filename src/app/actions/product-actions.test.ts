@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
@@ -33,6 +33,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { initialProductActionState } from "@/lib/product-action-state";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import { upsertProductAction } from "./product-server-actions";
 
 function formData(fields: Record<string, string> = {}) {
@@ -60,6 +61,8 @@ beforeEach(() => {
   mocks.transaction.mockImplementation((callback: (tx: unknown) => unknown, delegates: unknown) => callback(delegates));
   process.env.CSRF_SECRET = "g7-48-product-action-test-secret-32-bytes";
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("upsertProductAction", () => {
   it("creates a draft merchant product using merchant-facing major currency units", async () => {
@@ -91,12 +94,39 @@ describe("upsertProductAction", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
-  it("requires a valid course owner and promoter share", async () => {
+  it("retains legacy course owner and promoter validation when accrual is enabled", async () => {
+    vi.spyOn(mvpCommissionPolicy, "allowsNewAccrual").mockReturnValue(true);
     const data = validProduct({ fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
 
     await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=created");
     expect(mocks.teamMembershipFindFirst).toHaveBeenCalledWith({ where: { id: "membership-owner", vendorId: "vendor-1", status: "ACTIVE", leftAt: null }, select: { id: true } });
     expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ commerceDomain: "course", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500 }) });
+  });
+
+  it("rejects new course commission settings under the real MVP default", async () => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({
+      fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500",
+    }));
+    expect(result.error).toBe("commission_disabled");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
+
+  it("preserves an existing course policy while allowing ordinary product edits", async () => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500, coursePolicyVersion: 3, revision: 7 });
+    const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
+    expect(mocks.productUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ coursePolicyVersion: 3, coursePromoterShareBps: 2500 }),
+    }));
+  });
+
+  it("rejects changes to historical course shares under the real MVP default", async () => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
+    const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" }));
+    expect(result.error).toBe("commission_disabled");
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   it("fails closed for contradictory fulfillment policy", async () => {
@@ -168,7 +198,8 @@ describe("upsertProductAction", () => {
     expect(mocks.productCreate).not.toHaveBeenCalled();
   });
 
-  it("uses optimistic concurrency and increments policy version on an edit", async () => {
+  it("retains optimistic concurrency and policy versioning when legacy accrual is enabled", async () => {
+    vi.spyOn(mvpCommissionPolicy, "allowsNewAccrual").mockReturnValue(true);
     mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "course", courseContentOwnerMembershipId: "membership-old", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
     const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
 

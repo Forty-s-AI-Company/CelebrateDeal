@@ -53,4 +53,20 @@ describe("ProductForm fulfillment classification", () => {
     const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
     expect(html).not.toContain("交付方式尚未確認");
   });
+
+  it("disables new commission course selection but keeps digital delivery available", async () => {
+    const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
+    expect(html).toContain('<option value="course" disabled=""');
+    expect(html).toContain('<option value="digital"');
+    expect(html).toContain("首發不新增課程分潤");
+    expect(html).not.toContain("並啟用 F/G 分潤");
+  });
+
+  it("submits historical course ownership while locking commission inputs", async () => {
+    const existing: Product = { ...product(true), commerceDomain: "course", fulfillmentType: "course", courseContentOwnerMembershipId: "owner-existing", coursePromoterShareBps: 2000 };
+    const html = renderToStaticMarkup(await ProductForm({ product: existing }));
+    expect(html).toContain('type="hidden" name="courseContentOwnerMembershipId" value="owner-existing"');
+    expect(html).toContain('readOnly=""');
+    expect(html).not.toContain('<option value="course" disabled=""');
+  });
 });

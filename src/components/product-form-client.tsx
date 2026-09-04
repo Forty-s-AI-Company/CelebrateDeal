@@ -11,6 +11,7 @@ import {
   type ProductFormDraft,
 } from "@/lib/product-action-state";
 import type { CustomCheckoutField, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 
 export type ProductFormProduct = {
   id: string;
@@ -89,6 +90,7 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "invalid_image_asset") return "商品圖片不是目前商家的已完成資產，請重新上傳或移除。";
   if (error === "invalid_course_policy") return "課程商品需要有效的內容所有人與推廣者分潤比例。";
   if (error === "invalid_course_owner") return "課程內容所有人必須是目前商家內有效的團隊成員。";
+  if (error === "commission_disabled") return "首發暫停新增或修改課程分潤。新內容請使用數位商品；既有課程可保留原分潤設定並修改一般商品資訊。";
   if (error === "invalid_fulfillment") return "商品交付方式與課程設定不一致，請重新選擇。";
   if (error === "invalid_delivery") return "交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。";
   if (error === "invalid_custom_checkout_fields") return "自訂結帳欄位格式不正確；請確認欄位 key、標題與選項後再儲存。";
@@ -101,7 +103,7 @@ function errorMessage(error: ProductActionError | undefined) {
 }
 
 const PRODUCT_ACTION_ERRORS = new Set<ProductActionError>([
-  "invalid_product", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner",
+  "invalid_product", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner", "commission_disabled",
   "invalid_fulfillment", "invalid_delivery", "invalid_custom_checkout_fields",
   "media_upload_incomplete", "duplicate_slug", "conflict", "not_found", "unavailable",
 ]);
@@ -305,14 +307,17 @@ export function ProductFormClient({
           <option value="physical">實體商品（需要收件地址與出貨）</option>
           <option value="digital">數位內容（付款後建立授權）</option>
           <option value="service">服務（付款後安排時間）</option>
-          <option value="course">課程（付款後授權並啟用 F/G 分潤）</option>
+          <option value="course" disabled={!mvpCommissionPolicy.allowsNewAccrual("team_course") && product?.commerceDomain !== "course"}>課程（既有設定；首發不新增分潤）</option>
         </SelectField>
+        <fieldset disabled={!mvpCommissionPolicy.allowsNewAccrual("team_course")}>
         <SelectField label="課程內容所有人 F" name="courseContentOwnerMembershipId" defaultValue={draft.courseContentOwnerMembershipId}>
           <option value="">一般商品／直購不指定</option>
           {memberships.map((membership) => <option key={membership.id} value={membership.id}>{membership.memberName} · {membership.teamName}</option>)}
         </SelectField>
-        <Field label="課程推廣者 G 比例（basis points）" name="coursePromoterShareBps" type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
-        <p className="self-end text-xs leading-5 text-slate-600">只有「課程」需要設定 F/G。付款成功會鎖定比例與收款人；沒有實際 G 歸因時，款項 100% 給 F，且不會沿上線關係展開 H。</p>
+        </fieldset>
+        <Field label="課程推廣者 G 比例（basis points）" name="coursePromoterShareBps" readOnly={!mvpCommissionPolicy.allowsNewAccrual("team_course")} type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
+        {!mvpCommissionPolicy.allowsNewAccrual("team_course") ? <input type="hidden" name="courseContentOwnerMembershipId" value={product?.courseContentOwnerMembershipId ?? ""} /> : null}
+        <p className="self-end text-xs leading-5 text-slate-600">首發不新增課程分潤；既有設定與負債保留。新內容可選擇數位商品，付款後照常授權交付。</p>
       </div>
       {selectedFulfillmentType !== "physical" ? (
         <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">

@@ -11,6 +11,7 @@ const ERROR_STATUS: Record<ProductActionError, number> = {
   invalid_image_asset: 422,
   invalid_course_policy: 422,
   invalid_course_owner: 422,
+  commission_disabled: 403,
   invalid_fulfillment: 422,
   invalid_delivery: 422,
   invalid_custom_checkout_fields: 422,

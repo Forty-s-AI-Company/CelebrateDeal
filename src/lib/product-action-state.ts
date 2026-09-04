@@ -5,6 +5,7 @@ export type ProductActionError =
   | "invalid_image_asset"
   | "invalid_course_policy"
   | "invalid_course_owner"
+  | "commission_disabled"
   | "invalid_fulfillment"
   | "invalid_delivery"
   | "invalid_custom_checkout_fields"
