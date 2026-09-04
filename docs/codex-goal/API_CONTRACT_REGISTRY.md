@@ -93,6 +93,7 @@
 | `POST /api/admin/ops/payuni/wp4-subscription-payment-attempt` | 固定 SaaS purpose 的單次付款 reservation，與買家 purpose 分離 | 200 SUBMIT_ALLOWED／ALREADY_PAID；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-subscription-reconcile` | 查核固定 SaaS 退款並同步 subscription／quota；不送新退款 | 200 reconciled；401／404／409／503 |
 | `POST /api/admin/ops/payuni/wp4-subscription-refund` | server 選定固定 SaaS 交易與退款額；不得接受 caller 自訂 purpose | 200 COMPLETED；401／404／409／503 |
+| `POST /api/admin/ops/payuni/wp4-subscription-state` | 唯讀驗證固定 SaaS 付款後 activation／quota，及退款後 state 收斂；不回傳識別或配額 | 200 ACTIVE_VERIFIED／REFUNDED_VERIFIED；401／404／409／503 |
 
 每個入口皆有同路徑 `route.test.ts`；實際 DB／provider 證據另行驗證。
 

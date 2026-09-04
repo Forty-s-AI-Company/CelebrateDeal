@@ -210,6 +210,7 @@ function successfulDependencies(calls = []) {
 }
 
 function successfulSubscriptionDependencies(calls = []) {
+  let stateReads = 0;
   return {
     async request(request) {
       calls.push(request);
@@ -219,6 +220,10 @@ function successfulSubscriptionDependencies(calls = []) {
       }
       if (request.url.endsWith("/wp4-subscription-payment-attempt")) {
         return response(200, { status: "SUBMIT_ALLOWED", reservationCreated: true });
+      }
+      if (request.url.endsWith("/wp4-subscription-state")) {
+        stateReads += 1;
+        return response(200, { status: stateReads === 1 ? "ACTIVE_VERIFIED" : "REFUNDED_VERIFIED" });
       }
       if (request.url.endsWith("/wp4-subscription-refund")) {
         return response(200, { status: "COMPLETED", purpose: FIXED_SUBSCRIPTION_PURPOSE, phase: "remaining", providerWriteAttempted: true });
@@ -537,7 +542,7 @@ test("subscription unresolved refund performs one refund request and only the bo
   assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
 });
 
-test("subscription wrong-purpose refund is not trusted payment proof and cannot produce a receipt PASS", async () => {
+test("subscription wrong-purpose refund cannot produce a refund PASS despite verified activation", async () => {
   const dependencies = successfulSubscriptionDependencies();
   const originalRequest = dependencies.request;
   dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-refund")
@@ -550,9 +555,45 @@ test("subscription wrong-purpose refund is not trusted payment proof and cannot 
   assert.equal(receipt.failure, "REFUND_REJECTED");
   assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
   assert.equal(receipt.sideEffects.refundPosts, 1);
-  assert.equal(receipt.sideEffects.payments, 0);
-  assert.equal(receipt.checks.trustedSubscriptionPayment, false);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(receipt.checks.trustedSubscriptionPayment, true);
+  assert.equal(receipt.checks.refundCompleted, false);
+  assert.equal(receipt.sideEffects.refunds, 0);
   assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("subscription stops before refund when activation or quota is unverified", async () => {
+  for (const body of [{ status: "STATE_UNVERIFIED" }, { status: "REFUNDED_VERIFIED" }, { status: "ACTIVE_VERIFIED", raw: "not-allowed" }]) {
+    const calls = [];
+    const dependencies = successfulSubscriptionDependencies(calls);
+    const originalRequest = dependencies.request;
+    dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-state")
+      ? response(200, body) : originalRequest(request);
+    const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+    assert.equal(receipt.failure, "SUBSCRIPTION_STATE_REJECTED");
+    assert.equal(receipt.sideEffects.statePosts, 1);
+    assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+    assert.equal(receipt.sideEffects.refundPosts, 0);
+    assert.equal(receipt.checks.activeEntitlementVerified, false);
+    assert.equal(calls.some((call) => call.url?.endsWith("/wp4-subscription-refund")), false);
+    assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+  }
+});
+
+test("subscription cannot PASS while refunded entitlements remain active", async () => {
+  const dependencies = successfulSubscriptionDependencies();
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/wp4-subscription-state")
+    ? response(200, { status: "ACTIVE_VERIFIED" }) : originalRequest(request);
+  const receipt = await runMvpPayUniSandboxSubscriptionE2E(validInput, dependencies);
+  assert.equal(receipt.failure, "SUBSCRIPTION_STATE_REJECTED");
+  assert.equal(receipt.sideEffects.statePosts, 2);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(receipt.sideEffects.refunds, 1);
+  assert.equal(receipt.checks.reconciled, true);
+  assert.equal(receipt.checks.refundedEntitlementVerified, false);
+  assert.deepEqual(validateMvpPayUniSubscriptionReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(validateMvpPayUniSubscriptionReceipt({ ...receipt, result: "PASS", failure: "NONE" }).ok, false);
 });
 
 test("subscription receipt rejects a wrong purpose or persisted session material", async () => {

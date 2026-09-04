@@ -43,6 +43,7 @@ const SUBSCRIPTION_SIDE_EFFECT_BUDGET = Object.freeze({
   browserPaymentSubmissions: 1,
   refundPosts: 1,
   reconcilePosts: 12,
+  statePosts: 2,
   transactionsCreated: 1,
   payments: 1,
   refunds: 1,
@@ -76,8 +77,10 @@ const SUBSCRIPTION_CHECK_KEYS = Object.freeze([
   "paymentAttemptReserved",
   "payuniFormSubmitted",
   "trustedSubscriptionPayment",
+  "activeEntitlementVerified",
   "refundCompleted",
   "reconciled",
+  "refundedEntitlementVerified",
 ]);
 const SAFETY_KEYS = Object.freeze([
   "sanitized",
@@ -134,6 +137,7 @@ const FAILURE_CODES = new Set([
   "RETURN_RESULT_UNMAPPED",
   "RETURN_CALLBACK_PROOF_REQUIRED",
   "REFUND_REJECTED",
+  "SUBSCRIPTION_STATE_REJECTED",
   "RECONCILE_REJECTED",
   "NETWORK_REJECTED",
   "INTERNAL_REJECTED",
@@ -145,7 +149,7 @@ const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
 const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
 const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
-export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v1";
+export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v2";
 const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
@@ -443,8 +447,10 @@ export function createSubscriptionReceipt(sourceSha = "0".repeat(40)) {
       paymentAttemptReserved: false,
       payuniFormSubmitted: false,
       trustedSubscriptionPayment: false,
+      activeEntitlementVerified: false,
       refundCompleted: false,
       reconciled: false,
+      refundedEntitlementVerified: false,
     },
     sideEffects: {
       fixturePosts: 0,
@@ -455,6 +461,7 @@ export function createSubscriptionReceipt(sourceSha = "0".repeat(40)) {
       browserPaymentSubmissions: 0,
       refundPosts: 0,
       reconcilePosts: 0,
+      statePosts: 0,
       transactionsCreated: 0,
       payments: 0,
       refunds: 0,
@@ -538,14 +545,18 @@ function completedSubscriptionPrefix(receipt) {
   if (checks.paymentAttemptReserved && (!checks.nativePlanCheckoutCreated || effects.paymentAttemptPosts !== 1)) return false;
   if (checks.payuniFormSubmitted && (!checks.paymentAttemptReserved || effects.browserPaymentSubmissions !== effects.paymentReservationsCreated)) return false;
   if (checks.trustedSubscriptionPayment && (!checks.payuniFormSubmitted || effects.payments !== effects.paymentReservationsCreated)) return false;
-  if (checks.refundCompleted && (!checks.trustedSubscriptionPayment || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
+  if (checks.activeEntitlementVerified && (!checks.trustedSubscriptionPayment || effects.statePosts < 1)) return false;
+  if (checks.refundedEntitlementVerified && (!checks.reconciled || effects.statePosts !== 2)) return false;
+  if (checks.refundCompleted && (!checks.activeEntitlementVerified || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
   if (checks.reconciled && (!checks.refundCompleted || effects.reconcilePosts < 1)) return false;
   if (effects.sessionPosts > 0 && !checks.fixtureReady) return false;
   if (effects.planSelections > 0 && !checks.ownerSessionIssued) return false;
   if (effects.paymentAttemptPosts > 0 && !checks.nativePlanCheckoutCreated) return false;
   if (effects.paymentReservationsCreated > 0 && !checks.paymentAttemptReserved) return false;
   if (effects.browserPaymentSubmissions > 0 && !checks.paymentAttemptReserved) return false;
-  if (effects.refundPosts > 0 && !checks.payuniFormSubmitted) return false;
+  if (effects.statePosts > 0 && !checks.payuniFormSubmitted) return false;
+  if (effects.statePosts === 2 && !checks.reconciled) return false;
+  if (effects.refundPosts > 0 && !checks.activeEntitlementVerified) return false;
   if (effects.reconcilePosts > 0 && !checks.refundCompleted && receipt.failure !== "RECONCILE_REJECTED") return false;
   if (effects.transactionsCreated > 0 && !checks.nativePlanCheckoutCreated) return false;
   if (effects.payments > 0 && !checks.trustedSubscriptionPayment) return false;
@@ -574,7 +585,7 @@ export function validateMvpPayUniSubscriptionReceipt(receipt) {
     const effects = receipt.sideEffects;
     const fixedOne = ["fixturePosts", "sessionPosts", "planSelections", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds"];
     const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
-    if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution) errors.push("PASS_EFFECTS");
+    if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution || effects.statePosts !== 2) errors.push("PASS_EFFECTS");
   } else if (receipt?.failure === "NONE" || completed) {
     errors.push("BLOCKED_COMPLETENESS");
   }
@@ -1351,6 +1362,21 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
     }
     receipt.checks.payuniFormSubmitted = true;
 
+    // Read only the server-owned subscription state. A provider return URL
+    // alone cannot prove activation or quota, and must not authorize a refund.
+    receipt.sideEffects.statePosts = 1;
+    const activeState = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      headers: guarded,
+      body: undefined,
+    }));
+    if (activeState?.status !== 200 || !exactKeys(activeState.body, ["status"]) || activeState.body.status !== "ACTIVE_VERIFIED") {
+      return fail(receipt, "SUBSCRIPTION_STATE_REJECTED");
+    }
+    receipt.sideEffects.payments = 1;
+    receipt.checks.trustedSubscriptionPayment = true;
+    receipt.checks.activeEntitlementVerified = true;
+
     receipt.sideEffects.refundPosts = 1;
     const refund = responseJson(await request({
       url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-refund"),
@@ -1361,8 +1387,6 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
     const refundRequiresReconciliation = assertSubscriptionRefundRequiresReconciliation(refund);
     if (!refundCompletedInline && !refundRequiresReconciliation) return fail(receipt, "REFUND_REJECTED");
     if (refundCompletedInline) {
-      receipt.sideEffects.payments = 1;
-      receipt.checks.trustedSubscriptionPayment = true;
       receipt.checks.refundCompleted = true;
       receipt.sideEffects.refunds = 1;
     }
@@ -1380,12 +1404,20 @@ export async function runMvpPayUniSandboxSubscriptionE2E(input, dependencies = {
       await wait(10_000);
     }
     if (refundRequiresReconciliation) {
-      receipt.sideEffects.payments = 1;
-      receipt.checks.trustedSubscriptionPayment = true;
       receipt.checks.refundCompleted = true;
       receipt.sideEffects.refunds = 1;
     }
     receipt.checks.reconciled = true;
+    receipt.sideEffects.statePosts = 2;
+    const refundedState = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-subscription-state"),
+      headers: guarded,
+      body: undefined,
+    }));
+    if (refundedState?.status !== 200 || !exactKeys(refundedState.body, ["status"]) || refundedState.body.status !== "REFUNDED_VERIFIED") {
+      return fail(receipt, "SUBSCRIPTION_STATE_REJECTED");
+    }
+    receipt.checks.refundedEntitlementVerified = true;
     receipt.result = "PASS";
     receipt.failure = "NONE";
   } catch (error) {
