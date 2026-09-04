@@ -5,6 +5,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  checkExistingWp4BuyerPayment,
+  validateBuyerPaymentCheckReceipt,
+  BUYER_PAYMENT_CHECK_SOURCE_SHA,
+  writeBuyerPaymentCheckReceipt,
+  validateWrittenBuyerPaymentCheckReceipt,
   classifyPayUniApiNetworkFailure,
   defaultBrowserSubmit,
   defaultSubscriptionBrowserSubmit,
@@ -39,6 +44,59 @@ import {
   writeMvpPayUniReceipt,
   writeMvpPayUniSubscriptionReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
+
+test("buyer payment check has one fixed read-only request and rejects forged receipts", async () => {
+  let calls = 0;
+  const receipt = await checkExistingWp4BuyerPayment({ sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" }, {
+    request: async (request) => {
+      calls++;
+      assert.equal(request.url, "https://fixed-preview.vercel.app/api/admin/ops/payuni/wp4-buyer-payment-check");
+      assert.equal(request.body, undefined);
+      return { status: 200, body: { status: "VERIFIED", localStatus: "PAID", providerStatus: "PAID", queryAttempts: 1 } };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(receipt.transactionSourceSha, BUYER_PAYMENT_CHECK_SOURCE_SHA);
+  assert.equal(receipt.result, "PASS");
+  assert.deepEqual(validateBuyerPaymentCheckReceipt(receipt), { ok: true, errors: [] });
+  for (const patch of [{ paymentSubmissions: 1 }, { refundSubmissions: 1 }, { queryAttempts: 2 }, { queryAttempts: 0 }, { localStatus: "PENDING" }, { transactionSourceSha: "a".repeat(40) }, { raw: "secret" }]) {
+    assert.equal(validateBuyerPaymentCheckReceipt({ ...receipt, ...patch }).ok, false);
+  }
+});
+
+test("buyer check records reference absence without a query and never leaks untrusted response", async () => {
+  const input = { sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" };
+  const missing = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0 } }) });
+  assert.equal(missing.result, "BLOCKED");
+  assert.equal(missing.queryAttempts, 0);
+  assert.equal(validateBuyerPaymentCheckReceipt(missing).ok, true);
+  const malformed = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "secret-token" } }) });
+  assert.equal(malformed.status, "RESPONSE_INVALID");
+  assert.equal(malformed.queryAttempts, 1);
+  assert.equal(JSON.stringify(malformed).includes("secret-token"), false);
+  assert.equal(validateBuyerPaymentCheckReceipt(malformed).ok, true);
+  const network = await checkExistingWp4BuyerPayment(input, { request: async () => { throw new Error("secret-token"); } });
+  assert.equal(network.status, "NETWORK_REJECTED");
+  assert.equal(network.queryAttempts, 1);
+  assert.equal(validateBuyerPaymentCheckReceipt(network).ok, true);
+  const rejected = await checkExistingWp4BuyerPayment({}, { request: async () => { assert.fail("must not send"); } });
+  assert.equal(validateBuyerPaymentCheckReceipt(rejected).ok, true);
+});
+
+test("buyer check receipt is written to its fixed allowlisted path and validated", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "wp4-buyer-check-"));
+  try {
+    const receipt = await checkExistingWp4BuyerPayment({});
+    await writeBuyerPaymentCheckReceipt(receipt, temp);
+    assert.equal(await validateWrittenBuyerPaymentCheckReceipt(temp), true);
+    await assert.rejects(writeBuyerPaymentCheckReceipt({ ...receipt, raw: "must-not-persist" }, temp));
+    assert.equal(await validateWrittenBuyerPaymentCheckReceipt(temp), true);
+  } finally {
+    assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(temp).startsWith("wp4-buyer-check-"));
+    await rm(temp, { recursive: true, force: true });
+  }
+});
 
 test("classifies Chromium PayUni API network failures without persisting raw errors", () => {
   assert.equal(classifyPayUniApiNetworkFailure("net::ERR_NAME_NOT_RESOLVED"), "PAYMENT_API_DNS_REJECTED");

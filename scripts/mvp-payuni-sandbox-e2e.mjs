@@ -150,7 +150,8 @@ const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
 const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
 const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
 export const MVP_PAYUNI_SANDBOX_SUBSCRIPTION_SCHEMA = "celebratedeal-mvp-payuni-sandbox-subscription-e2e/v2";
-const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME]);
+const BUYER_PAYMENT_CHECK_FILE = "wp4-payuni-buyer-payment-check-receipt.json";
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
@@ -925,6 +926,71 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
   return receipt;
 }
 
+export const BUYER_PAYMENT_CHECK_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
+const buyerCheckStatuses = new Set(["VERIFIED", "MISSING", "AMBIGUOUS", "REFERENCE_UNAVAILABLE", "QUERY_REJECTED", "QUERY_FAILED", "STATE_MISMATCH"]);
+const buyerLocalStatuses = new Set(["UNKNOWN", "PENDING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED", "FAILED"]);
+const buyerProviderStatuses = new Set(["UNKNOWN", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"]);
+
+function validBuyerCheckBody(body) {
+  if (!exactKeys(body, ["status", "localStatus", "providerStatus", "queryAttempts"])
+    || !buyerCheckStatuses.has(body.status) || !buyerLocalStatuses.has(body.localStatus)
+    || !buyerProviderStatuses.has(body.providerStatus) || !boundedInteger(body.queryAttempts, 1)) return false;
+  if (body.queryAttempts === 0 && body.providerStatus !== "UNKNOWN") return false;
+  if (body.status === "VERIFIED" && (body.queryAttempts !== 1 || body.providerStatus === "UNKNOWN" || body.localStatus !== body.providerStatus)) return false;
+  return true;
+}
+
+export function validateBuyerPaymentCheckReceipt(receipt) {
+  const errors = [];
+  if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "status", "localStatus", "providerStatus", "checkPosts", "queryAttempts", "paymentSubmissions", "refundSubmissions"])) errors.push("SCHEMA_KEYS");
+  if (receipt?.schemaVersion !== "celebratedeal-wp4-buyer-payment-check/v1" || receipt?.purpose !== FIXED_PURPOSE
+    || receipt?.environment !== "sandbox" || !SOURCE_SHA.test(receipt?.sourceSha ?? "")
+    || receipt?.transactionSourceSha !== BUYER_PAYMENT_CHECK_SOURCE_SHA) errors.push("FIXED_IDENTITY");
+  if (!boundedInteger(receipt?.checkPosts, 1) || !boundedInteger(receipt?.queryAttempts, 1)
+    || receipt?.paymentSubmissions !== 0 || receipt?.refundSubmissions !== 0) errors.push("SIDE_EFFECT_BUDGET");
+  if (!["PASS", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
+  const transportFailure = ["INPUT_REJECTED", "NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status);
+  if (transportFailure) {
+    if (receipt.result !== "BLOCKED" || receipt.queryAttempts !== (receipt.status === "INPUT_REJECTED" ? 0 : 1) || receipt.localStatus !== "UNKNOWN" || receipt.providerStatus !== "UNKNOWN"
+      || receipt.checkPosts !== (receipt.status === "INPUT_REJECTED" ? 0 : 1)) errors.push("TRANSPORT_STATE");
+  } else if (!validBuyerCheckBody({ status: receipt?.status, localStatus: receipt?.localStatus, providerStatus: receipt?.providerStatus, queryAttempts: receipt?.queryAttempts })
+    || receipt?.checkPosts !== 1 || (receipt?.result === "PASS") !== (receipt?.status === "VERIFIED")) errors.push("OBSERVED_STATE");
+  return { ok: errors.length === 0, errors };
+}
+
+/** A single fixed, read-only observation. No checkout, payment or refund path is called. */
+export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
+  const invocation = validateExistingRefundRecoveryInvocation(input);
+  const receipt = {
+    schemaVersion: "celebratedeal-wp4-buyer-payment-check/v1", purpose: FIXED_PURPOSE,
+    sourceSha: invocation.ok ? invocation.sourceSha : "0".repeat(40), transactionSourceSha: BUYER_PAYMENT_CHECK_SOURCE_SHA,
+    environment: "sandbox", result: "BLOCKED", status: "INPUT_REJECTED", localStatus: "UNKNOWN", providerStatus: "UNKNOWN",
+    checkPosts: 0, queryAttempts: 0, paymentSubmissions: 0, refundSubmissions: 0,
+  };
+  if (!invocation.ok) return receipt;
+  receipt.checkPosts = 1;
+  // Reserve the maximum query count before sending; a lost response cannot prove zero queries.
+  receipt.queryAttempts = 1;
+  try {
+    const response = await (dependencies.request ?? defaultRequest)({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-payment-check"),
+      headers: guardedHeaders(invocation), body: undefined,
+    });
+    if (response?.status !== 200 || !validBuyerCheckBody(response.body)) {
+      receipt.status = "RESPONSE_INVALID";
+      return receipt;
+    }
+    receipt.status = response.body.status;
+    receipt.localStatus = response.body.localStatus;
+    receipt.providerStatus = response.body.providerStatus;
+    receipt.queryAttempts = response.body.queryAttempts;
+    receipt.result = receipt.status === "VERIFIED" ? "PASS" : "BLOCKED";
+  } catch {
+    receipt.status = "NETWORK_REJECTED";
+  }
+  return receipt;
+}
+
 export async function defaultBrowserSubmit(input, dependencies = {}) {
   const { chromium, errors } = dependencies.playwright ?? await import("playwright");
   // The trusted runner already pins every allowlisted A record in /etc/hosts
@@ -1484,6 +1550,18 @@ export async function writeMvpPayUniReceipt(receipt, runnerTemp) {
   return writeFixedReceipt(receipt, runnerTemp, RECEIPT_FILENAME);
 }
 
+export async function writeBuyerPaymentCheckReceipt(receipt, runnerTemp) {
+  if (!validateBuyerPaymentCheckReceipt(receipt).ok) throw new Error("RECEIPT_INVALID");
+  return writeFixedReceipt(receipt, runnerTemp, BUYER_PAYMENT_CHECK_FILE);
+}
+
+export async function validateWrittenBuyerPaymentCheckReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, BUYER_PAYMENT_CHECK_FILE);
+    return validateBuyerPaymentCheckReceipt(JSON.parse(await readFile(receiptPath, "utf8"))).ok;
+  } catch { return false; }
+}
+
 export async function writeExistingRefundRecoveryReceipt(receipt, runnerTemp) {
   return writeFixedReceipt(receipt, runnerTemp, RECOVERY_RECEIPT_FILENAME);
 }
@@ -1524,6 +1602,22 @@ export async function validateWrittenMvpPayUniSubscriptionReceipt(runnerTemp) {
 
 async function main() {
   const runnerTemp = process.env.RUNNER_TEMP;
+  if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-payment-check-receipt") {
+    try {
+      const valid = await validateWrittenBuyerPaymentCheckReceipt(runnerTemp);
+      process.stdout.write(`wp4_buyer_payment_check_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+      process.exitCode = valid ? 0 : 2;
+    } catch { process.exitCode = 2; }
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--check-buyer-payment") {
+    const receipt = await checkExistingWp4BuyerPayment(readExistingRefundRecoveryInputs());
+    if (!validateBuyerPaymentCheckReceipt(receipt).ok) { process.exitCode = 2; return; }
+    await writeBuyerPaymentCheckReceipt(receipt, runnerTemp);
+    process.stdout.write(`wp4_buyer_payment_check=${receipt.result}; status=${receipt.status}\n`);
+    process.exitCode = receipt.result === "PASS" ? 0 : 2;
+    return;
+  }
   if (process.argv.length === 3 && process.argv[2] === "--verify-lineage") {
     const valid = await verifyMvpPayUniLineage();
     process.stdout.write(`mvp_payuni_lineage=${valid ? "PASS" : "BLOCKED"}\n`);
