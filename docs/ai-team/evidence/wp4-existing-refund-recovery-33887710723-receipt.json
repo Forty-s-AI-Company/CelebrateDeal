@@ -1,0 +1,1 @@
+{"schemaVersion":"celebratedeal-mvp-payuni-sandbox-refund-recovery/v2","purpose":"buyer_order","sourceSha":"cdab40c56403850d69d044d9d1e7dcd40b1e3ef2","transactionSourceSha":"1052a46d002149b5c06104927ed0fab32b049214","result":"UNRESOLVED","status":"RECONCILIATION_DATABASE_TRANSACTION_FAILED","queryAttempts":1,"paymentSubmissions":0,"refundSubmissions":0}

@@ -4,6 +4,8 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Recovery `33887710723` finished with validated/uploaded `UNRESOLVED / RECONCILIATION_DATABASE_TRANSACTION_FAILED`; canonical local validator also passed. Query attempts 1, payment/refund submissions 0. Receipt saved at `docs/ai-team/evidence/wp4-existing-refund-recovery-33887710723-receipt.json`. This identifies a typed Prisma P2028 transaction error, not its cause or refund completion; timeout is not established. No repeat query was dispatched. Next step is narrow transaction-boundary analysis and a justified local reproduction before changing reconciliation behavior.
+
 - Fixed recovery run `33887710723` has been dispatched and is confirmed running from protected master `67052972b9daae341a23ae65e0e58d7378dcddba`. Receipt is pending; do not dispatch a duplicate. Product CI `33886472991` passed PostgreSQL tests and is running Release browser gates.
 
 - PR #198 merged normally to protected master `67052972b9daae341a23ae65e0e58d7378dcddba` after both exact-head CI runs and both Preview checks passed. Both runner files match reviewed `0d862d9`; automatic master deployment remains disabled. Approved next fixed recovery budget: one query, zero payment submissions, zero refund submissions, application source `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2`, staging deployment `6266878866`, immutable host `celebrate-deal-staging-pre6eeges-a25814740s-projects.vercel.app`. Historical transaction selector remains unchanged. Stop after this dispatch and inspect only the validated sanitized receipt; no refund success is inferred.
