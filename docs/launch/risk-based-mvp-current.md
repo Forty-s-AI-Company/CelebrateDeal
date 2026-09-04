@@ -4,6 +4,10 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Fixed recovery run `33887710723` has been dispatched and is confirmed running from protected master `67052972b9daae341a23ae65e0e58d7378dcddba`. Receipt is pending; do not dispatch a duplicate. Product CI `33886472991` passed PostgreSQL tests and is running Release browser gates.
+
+- PR #198 merged normally to protected master `67052972b9daae341a23ae65e0e58d7378dcddba` after both exact-head CI runs and both Preview checks passed. Both runner files match reviewed `0d862d9`; automatic master deployment remains disabled. Approved next fixed recovery budget: one query, zero payment submissions, zero refund submissions, application source `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2`, staging deployment `6266878866`, immutable host `celebrate-deal-staging-pre6eeges-a25814740s-projects.vercel.app`. Historical transaction selector remains unchanged. Stop after this dispatch and inspect only the validated sanitized receipt; no refund success is inferred.
+
 - Published product source is `fb004d442494f0273bb622df7d869d30152cb19e`; CI `33886472991` is running with both Vitest routing fixes. Superseded `33885775225` was cancelled before repeating the known collection failure; no secure validation run was cancelled.
 - Application diagnostic source `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2` has successful non-Production staging deployment `6266878866`, immutable host `celebrate-deal-staging-pre6eeges-a25814740s-projects.vercel.app`. Anonymous health HEAD returned 200 and unauthenticated recovery POST returned 401. PR #198 checks remain running; no further query was dispatched.
 - Draft release summary is available at `docs/launch/risk-based-mvp-release-summary.md`, preserving the complete first-release scope and all unproven provider, Browser and human acceptance requirements. It explicitly remains NOT_READY and is not release approval.
