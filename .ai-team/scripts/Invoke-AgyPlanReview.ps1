@@ -22,8 +22,8 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Invoke-AiTeamProcess.ps1')
 
-$model = 'claude-sonnet-4.6-thinking'
-$effort = 'high'
+$model = 'claude-sonnet-4-6'
+$effort = 'model-default'
 $profile = 'claude_plan_review'
 
 function Write-AiTeamPlanReviewResult {
@@ -89,7 +89,8 @@ if ($null -eq $agy) {
 $arguments = @(
     '--print', $Prompt,
     '--model', $model,
-    '--effort', $effort,
+    # This AGY Claude model uses its own thinking default; an explicit effort
+    # override is not portable across AGY model adapters.
     '--mode', 'plan',
     '--sandbox',
     '--print-timeout', "${TimeoutSeconds}s"

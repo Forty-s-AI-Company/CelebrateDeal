@@ -48,7 +48,7 @@ $routerConfig = Get-Content -LiteralPath $routerPath -Raw | ConvertFrom-Json
 Assert-AiTeam ($routerConfig.git_policy.auto_push.enabled -and $routerConfig.git_policy.auto_merge.enabled) 'controlled Git promotion policy is not enabled'
 Assert-AiTeam (-not $routerConfig.git_policy.auto_push.force_push -and -not $routerConfig.git_policy.auto_push.direct_default_branch_push) 'Git promotion policy allows unsafe direct or force push'
 Assert-AiTeam (-not $routerConfig.git_policy.production_deploy.enabled -and $routerConfig.git_policy.production_deploy.approval -eq 'manual') 'Production deployment policy is not manual-only'
-Assert-AiTeam ($routerConfig.plan_review.model -eq 'claude-sonnet-4.6-thinking' -and -not $routerConfig.plan_review.required) 'optional Claude plan review policy is invalid'
+Assert-AiTeam ($routerConfig.plan_review.model -eq 'claude-sonnet-4-6' -and -not $routerConfig.plan_review.required) 'optional Claude plan review policy is invalid'
 $workerLock = if ($routerConfig.agents.worker.PSObject.Properties['reasoning_lock']) { $routerConfig.agents.worker.reasoning_lock } else { $null }
 Assert-AiTeam ($routerConfig.agents.worker.model -eq 'gpt-5.6-luna' -and ($null -eq $workerLock -or $workerLock -in @('low', 'medium', 'high', 'max'))) 'general Worker reasoning configuration is invalid'
 $agentNames = @($routerConfig.agents.PSObject.Properties.Name)
@@ -59,8 +59,9 @@ Assert-AiTeam ($routerConfig.agents.explorer.luna_escalation.model -eq 'gpt-5.6-
 $fastSource = Get-Content -LiteralPath $fastPath -Raw
 Assert-AiTeam ($fastSource -match "gemini-3\.8-flash-high") 'AGY Fast model is not pinned to gemini-3.8-flash-high'
 $planReviewSource = Get-Content -LiteralPath $planReviewPath -Raw
-Assert-AiTeam ($planReviewSource -match "claude-sonnet-4\.6-thinking" -and $planReviewSource -match "skip_if_unavailable") 'Claude plan-review wrapper policy missing'
+Assert-AiTeam ($planReviewSource -match "claude-sonnet-4-6" -and $planReviewSource -match "skip_if_unavailable") 'Claude plan-review wrapper policy missing'
 Assert-AiTeam ($planReviewSource -match "--mode', 'plan" -and $planReviewSource -match "--sandbox") 'Claude plan-review wrapper is not read-only plan mode'
+Assert-AiTeam ($planReviewSource -notmatch "'--effort'" -and $routerConfig.plan_review.reasoning_effort -eq 'model-default') 'Claude adapter must use its supported model-default thinking'
 
 $continuous = Invoke-AiTeamProcess `
     -FilePath $pwsh.Source `
@@ -74,6 +75,15 @@ $continuous = Invoke-AiTeamProcess `
 Assert-AiTeam ($continuous.status -eq 'SUCCESS') 'continuous output should complete'
 Assert-AiTeam ($null -ne $continuous.firstOutputAt) 'first output timestamp missing'
 Assert-AiTeam ($null -ne $continuous.lastActivityAt) 'last activity timestamp missing'
+
+# AGY can emit blank lines on either stream; preserve them without a binding failure.
+$blankLines = Invoke-AiTeamProcess `
+    -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs '[Console]::Out.WriteLine(""); [Console]::Error.WriteLine(""); [Console]::Out.WriteLine("ready")') `
+    -Profile 'synthetic' -Model 'synthetic-child' -ReasoningEffort 'none' `
+    -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10
+Assert-AiTeam ($blankLines.status -eq 'SUCCESS' -and $blankLines.stdout.Contains('ready')) 'blank stdout/stderr interrupted process collection'
+Assert-AiTeam ($blankLines.cleanupResult -eq 'process_exited') 'blank-line process did not exit normally'
 
 $hardTimeout = Invoke-AiTeamProcess `
     -FilePath $pwsh.Source `

@@ -24,9 +24,11 @@ function Limit-AiTeamText {
 function Add-AiTeamBoundedLine {
     param(
         [AllowEmptyCollection()]
+        [AllowEmptyString()]
         [Parameter(Mandatory)]
         [System.Collections.Generic.List[string]]$Buffer,
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Line,
         [Parameter(Mandatory)]
         [ValidateRange(10, 1000)]

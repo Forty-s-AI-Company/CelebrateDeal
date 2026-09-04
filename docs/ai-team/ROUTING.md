@@ -54,6 +54,14 @@
 
 ## AGY fallback
 
+### 已驗證的 AGY 模型識別碼（2026-09-04）
+
+- 使用 `agy models` 查詢當前可用模型；顯示名稱不可直接當作 CLI 識別碼。
+- Fast：`gemini-3.8-flash-high`，經 `Invoke-AgyFast.ps1` 單次無工具 smoke 回覆成功。
+- Claude：`claude-sonnet-4-6`，經 `Invoke-AgyPlanReview.ps1` 單次無工具 smoke 回覆成功。使用模型預設 thinking，不傳 `--effort`；帶 high override 的探測失敗。
+- Opus 清單識別碼為 `claude-opus-4-6-thinking`；本次只確認清單存在，未執行 Opus smoke。
+- Process collector 允許 stdout／stderr 空行；`Test-AiTeamResilience.ps1` 涵蓋該回歸。模型 smoke 成功僅證明呼叫可用，不代表專案已完成審查或 release 驗收。
+
 重要工作可自動採用：
 
 1. AGY Fast

@@ -75,8 +75,8 @@
     "trigger_difficulties": ["complex", "critical"],
     "trigger_risk_domains": ["security", "payment", "refund", "payout", "migration", "release"],
     "profile": "claude_plan_review",
-    "model": "claude-sonnet-4.6-thinking",
-    "reasoning_effort": "high",
+    "model": "claude-sonnet-4-6",
+    "reasoning_effort": "model-default",
     "wrapper": ".ai-team/scripts/Invoke-AgyPlanReview.ps1",
     "sandbox_mode": "agy-wrapper-read-only",
     "availability": "runtime_dependent",
@@ -86,8 +86,8 @@
       {
         "tier": 1,
         "profile": "claude_plan_review",
-        "model": "claude-sonnet-4.6-thinking",
-        "alt_model": "claude-opus",
+        "model": "claude-sonnet-4-6",
+        "alt_model": "claude-opus-4-6-thinking",
         "role": "anti_overengineering_review",
         "description": "Primary plan reviewer (Claude Sonnet 4.6 / Claude Opus) targeting over-engineering and logic flaws"
       },

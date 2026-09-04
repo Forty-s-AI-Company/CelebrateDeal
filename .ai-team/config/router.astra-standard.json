@@ -74,8 +74,8 @@
     "trigger_difficulties": ["complex", "critical"],
     "trigger_risk_domains": ["security", "payment", "refund", "payout", "migration", "release"],
     "profile": "claude_plan_review",
-    "model": "claude-sonnet-4.6-thinking",
-    "reasoning_effort": "high",
+    "model": "claude-sonnet-4-6",
+    "reasoning_effort": "model-default",
     "wrapper": ".ai-team/scripts/Invoke-AgyPlanReview.ps1",
     "sandbox_mode": "agy-wrapper-read-only",
     "availability": "runtime_dependent",
@@ -85,7 +85,7 @@
       {
         "tier": 1,
         "profile": "claude_plan_review",
-        "model": "claude-sonnet-4.6-thinking",
+        "model": "claude-sonnet-4-6",
         "role": "anti_overengineering_review",
         "description": "Primary reviewer targeting over-engineering and critical architectural flaws"
       },

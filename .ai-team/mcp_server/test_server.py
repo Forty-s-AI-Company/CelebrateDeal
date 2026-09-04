@@ -91,7 +91,7 @@ class LiteRouterTest(unittest.TestCase):
         self.assertEqual(config["codex_profiles"]["luna_worker"]["sandbox_mode"], "workspace-write")
         self.assertEqual(config["agents"]["explorer"]["luna_escalation"]["model"], "gpt-5.6-luna")
         self.assertEqual(config["agents"]["analyst"]["luna_escalation"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["plan_review"]["model"], "claude-sonnet-4.6-thinking")
+        self.assertEqual(config["plan_review"]["model"], "claude-sonnet-4-6")
         self.assertFalse(config["plan_review"]["required"])
         self.assertTrue(config["plan_review"]["skip_routine_tasks"])
         self.assertEqual(len(config["plan_review"]["fallback_chain"]), 4)
