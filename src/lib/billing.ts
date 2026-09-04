@@ -1,9 +1,140 @@
 import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { usageFeeForNewBillingGeneration } from "@/lib/mvp-usage-billing-policy";
 import { estimateVendorUsage, MONTHLY_USAGE_SNAPSHOT_RECORD_TYPE } from "@/lib/usage-estimation";
 
 type SubscriptionWithPlan = VendorSubscription & { plan: BillingPlan };
+
+const PLATFORM_BILLING_PURPOSES = new Set([
+  "platform_subscription_checkout",
+  "invoice_payment",
+]);
+const PLATFORM_SUBSCRIPTION_CHECKOUT_PURPOSE = "platform_subscription_checkout";
+const SETTLED_MERCHANT_TRANSACTION_STATUSES = new Set(["paid", "partially_refunded", "refunded"]);
+
+function billingPurposeFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const billingPurpose = (metadata as Record<string, unknown>).billingPurpose;
+  return typeof billingPurpose === "string" && billingPurpose.trim() ? billingPurpose.trim() : null;
+}
+
+function metadataString(metadata: unknown, key: string) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export class PlatformSubscriptionMonthlyFeeCreditConflictError extends Error {
+  readonly code = "platform_subscription_monthly_fee_credit_conflict" as const;
+
+  constructor() {
+    super("platform_subscription_monthly_fee_credit_conflict");
+    this.name = "PlatformSubscriptionMonthlyFeeCreditConflictError";
+  }
+}
+
+export type PlatformSubscriptionCheckoutPaymentSnapshot = ReadonlyArray<{
+  id: string;
+  vendorId: string;
+  status: string;
+  grossAmountCents: number;
+  currency: string;
+  occurredAt: string;
+  refundedAmountCents: number;
+  billingPurpose: string | null;
+  platformSubscriptionId: string | null;
+  billingPlanId: string | null;
+}>;
+
+/** Fixed platform-checkout evidence used only by the settlement write path. */
+export function platformSubscriptionCheckoutPaymentSnapshot(
+  transactions: Array<Pick<PaymentTransaction,
+    "id" | "vendorId" | "status" | "grossAmountCents" | "currency" | "occurredAt" | "refundedAmountCents" | "metadata"
+  >>,
+): PlatformSubscriptionCheckoutPaymentSnapshot {
+  return transactions
+    .filter((transaction) => billingPurposeFromMetadata(transaction.metadata) === PLATFORM_SUBSCRIPTION_CHECKOUT_PURPOSE)
+    .map((transaction) => ({
+      id: transaction.id,
+      vendorId: transaction.vendorId,
+      status: transaction.status,
+      grossAmountCents: transaction.grossAmountCents,
+      currency: transaction.currency,
+      occurredAt: transaction.occurredAt.toISOString(),
+      refundedAmountCents: transaction.refundedAmountCents,
+      billingPurpose: billingPurposeFromMetadata(transaction.metadata),
+      platformSubscriptionId: metadataString(transaction.metadata, "platformSubscriptionId"),
+      billingPlanId: metadataString(transaction.metadata, "billingPlanId"),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function platformSubscriptionCheckoutPaymentSnapshotsMatch(
+  left: PlatformSubscriptionCheckoutPaymentSnapshot,
+  right: PlatformSubscriptionCheckoutPaymentSnapshot,
+) {
+  return left.length === right.length && left.every((checkout, index) => {
+    const current = right[index];
+    return current !== undefined
+      && checkout.id === current.id
+      && checkout.vendorId === current.vendorId
+      && checkout.status === current.status
+      && checkout.grossAmountCents === current.grossAmountCents
+      && checkout.currency === current.currency
+      && checkout.occurredAt === current.occurredAt
+      && checkout.refundedAmountCents === current.refundedAmountCents
+      && checkout.billingPurpose === current.billingPurpose
+      && checkout.platformSubscriptionId === current.platformSubscriptionId
+      && checkout.billingPlanId === current.billingPlanId;
+  });
+}
+
+/**
+ * Platform subscription and invoice collections are not merchant sales. Keep
+ * their raw transactions available to billing for later credits or audit, but
+ * exclude them from merchant revenue, fees, and payout calculations.
+ */
+export function isMerchantRevenueTransaction(transaction: Pick<PaymentTransaction, "metadata">) {
+  return !PLATFORM_BILLING_PURPOSES.has(billingPurposeFromMetadata(transaction.metadata) ?? "");
+}
+
+function monthlyFeeAfterPlatformCheckoutCredit(
+  subscription: SubscriptionWithPlan,
+  vendorId: string,
+  start: Date,
+  end: Date,
+  transactions: PaymentTransaction[],
+) {
+  const platformCheckouts = transactions.filter(
+    (transaction) => billingPurposeFromMetadata(transaction.metadata) === PLATFORM_SUBSCRIPTION_CHECKOUT_PURPOSE,
+  );
+  if (platformCheckouts.length === 0) {
+    return { monthlyFeeCents: subscription.plan.monthlyPriceCents, platformSubscriptionCheckoutCreditApplied: false };
+  }
+  if (platformCheckouts.length !== 1) throw new PlatformSubscriptionMonthlyFeeCreditConflictError();
+
+  const checkout = platformCheckouts[0]!;
+  const belongsToCurrentSubscription = checkout.vendorId === vendorId
+    && metadataString(checkout.metadata, "platformSubscriptionId") === subscription.id
+    && metadataString(checkout.metadata, "billingPlanId") === subscription.planId
+    && checkout.grossAmountCents === subscription.plan.monthlyPriceCents
+    && checkout.currency === "TWD"
+    && checkout.occurredAt >= start
+    && checkout.occurredAt < end;
+  if (!belongsToCurrentSubscription) throw new PlatformSubscriptionMonthlyFeeCreditConflictError();
+
+  // Pending and failed attempts can become paid later. Charging the invoice
+  // now would race that outcome, so reject the billing run until it resolves.
+  if (["pending", "failed"].includes(checkout.status)) {
+    throw new PlatformSubscriptionMonthlyFeeCreditConflictError();
+  }
+  if (checkout.status !== "paid" || checkout.refundedAmountCents !== 0) {
+    throw new PlatformSubscriptionMonthlyFeeCreditConflictError();
+  }
+
+  return { monthlyFeeCents: 0, platformSubscriptionCheckoutCreditApplied: true };
+}
 
 export class StreamUsageReconciliationRequiredError extends Error {
   readonly code = "stream_reconciliation_required" as const;
@@ -181,7 +312,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, processedRefunds, commissionTotal] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -203,20 +334,19 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     db.paymentTransaction.findMany({
       where: {
         vendorId,
-        status: { in: ["paid", "partially_refunded", "refunded"] },
         occurredAt: { gte: start, lt: end },
       },
     }),
-    db.refundRecord.aggregate({
+    db.refundRecord.findMany({
       where: {
         vendorId,
         monthKey,
         status: "processed",
       },
-      _sum: {
-        refundAmountCents: true,
-        gatewayFeeRefundCents: true,
-        platformFeeRefundCents: true,
+      include: {
+        paymentTransaction: {
+          select: { metadata: true },
+        },
       },
     }),
     db.affiliateCommissionLedgerEntry.aggregate({
@@ -281,22 +411,40 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const overflowAffiliates = Math.max(0, totals.totalAffiliates - plan.includedAffiliates);
   const overflowStorageMinutes = Math.max(0, totals.totalStorageMinutes - plan.includedStorageMinutes);
 
-  const overflowFeeCents =
+  const calculatedOverflowFeeCents =
     ceilCharge(overflowWatchMinutes / 60, 100, plan.overflowWatchHourPriceCents) +
     ceilCharge(overflowEvents, 10, plan.overflowEventUnitPriceCents) +
     ceilCharge(overflowAffiliates, 10, plan.overflowAffiliateUnitPriceCents) +
     ceilCharge(overflowStorageMinutes, 100, plan.overflowStorageMinutePriceCents * 100);
+  // Keep measuring quota and reconciliation totals, while the MVP launch
+  // explicitly excludes metered charges from newly generated billing.
+  const overflowFeeCents = usageFeeForNewBillingGeneration(calculatedOverflowFeeCents);
 
   const paymentMode = subscription.paymentMode;
-  const refundAmountCents = refundTotal._sum.refundAmountCents ?? 0;
-  const gatewayFeeRefundCents = refundTotal._sum.gatewayFeeRefundCents ?? 0;
-  const platformFeeRefundCents = refundTotal._sum.platformFeeRefundCents ?? 0;
-  const grossRevenueBeforeRefundCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
+  // Do not filter the raw transaction query: later billing policies need the
+  // platform payment proof. Derive a separate merchant-only financial view.
+  const merchantRevenueTransactions = transactions.filter(
+    (transaction) => SETTLED_MERCHANT_TRANSACTION_STATUSES.has(transaction.status) && isMerchantRevenueTransaction(transaction),
+  );
+  const merchantRefunds = processedRefunds.filter((refund) => isMerchantRevenueTransaction(refund.paymentTransaction));
+  const refundTotals = merchantRefunds.reduce((totals, refund) => ({
+    refundAmountCents: totals.refundAmountCents + refund.refundAmountCents,
+    gatewayFeeRefundCents: totals.gatewayFeeRefundCents + refund.gatewayFeeRefundCents,
+    platformFeeRefundCents: totals.platformFeeRefundCents + refund.platformFeeRefundCents,
+  }), {
+    refundAmountCents: 0,
+    gatewayFeeRefundCents: 0,
+    platformFeeRefundCents: 0,
+  });
+  const grossRevenueBeforeRefundCents = merchantRevenueTransactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
+  const refundAmountCents = refundTotals.refundAmountCents;
+  const gatewayFeeRefundCents = refundTotals.gatewayFeeRefundCents;
+  const platformFeeRefundCents = refundTotals.platformFeeRefundCents;
   const grossRevenueCents = Math.max(0, grossRevenueBeforeRefundCents - refundAmountCents);
   const paymentGatewayFeeCents = paymentMode === "platform"
-    ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
+    ? Math.max(0, merchantRevenueTransactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
     : 0;
-  const recordedPlatformFeeCents = transactions.reduce(
+  const recordedPlatformFeeCents = merchantRevenueTransactions.reduce(
     (sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents,
     0,
   );
@@ -305,7 +453,8 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     : 0;
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
-  const monthlyFeeCents = plan.monthlyPriceCents;
+  const monthlyFeeDecision = monthlyFeeAfterPlatformCheckoutCredit(subscription, vendorId, start, end, transactions);
+  const monthlyFeeCents = monthlyFeeDecision.monthlyFeeCents;
   const payoutableAmountCents = paymentMode === "platform"
     ? grossRevenueCents - paymentGatewayFeeCents - transactionServiceFeeCents - (commissionTotal._sum.amountCents ?? 0)
     : 0;
@@ -334,6 +483,8 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     platformFeeRefundCents,
     payoutableAmountCents,
     finalPayoutAmountCents: payoutableAmountCents,
+    platformSubscriptionCheckoutCreditApplied: monthlyFeeDecision.platformSubscriptionCheckoutCreditApplied,
+    platformSubscriptionCheckoutPaymentSnapshot: platformSubscriptionCheckoutPaymentSnapshot(transactions),
   };
 }
 

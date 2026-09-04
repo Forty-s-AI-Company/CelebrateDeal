@@ -9,7 +9,7 @@ const dependencies = vi.hoisted(() => ({
     streamUsageAllocationEntry: { findMany: vi.fn() },
     streamUsageReconciliation: { findFirst: vi.fn() },
     paymentTransaction: { findMany: vi.fn() },
-    refundRecord: { aggregate: vi.fn() },
+    refundRecord: { findMany: vi.fn() },
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
   },
 }));
@@ -42,18 +42,45 @@ const subscription = {
 };
 
 const transactions = [
-  { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400 },
-  { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200 },
+  { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400, status: "paid" },
+  { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200, status: "paid" },
 ];
 
-function processedRefund(platformFeeRefundCents: number) {
+const subscriptionWithPaidPlan = {
+  ...subscription,
+  id: "subscription-current",
+  vendorId: "vendor-1",
+  planId: "plan-current",
+  plan: { ...subscription.plan, id: "plan-current", monthlyPriceCents: 1_000 },
+};
+
+function platformSubscriptionCheckout(overrides: Record<string, unknown> = {}) {
   return {
-    _sum: {
-      refundAmountCents: 0,
-      gatewayFeeRefundCents: 0,
-      platformFeeRefundCents,
+    id: "platform-checkout-1",
+    vendorId: "vendor-1",
+    status: "paid",
+    grossAmountCents: 1_000,
+    gatewayFeeCents: 30,
+    platformFeeCents: 40,
+    currency: "TWD",
+    occurredAt: new Date("2026-07-15T00:00:00.000Z"),
+    refundedAmountCents: 0,
+    metadata: {
+      billingPurpose: "platform_subscription_checkout",
+      platformSubscriptionId: "subscription-current",
+      billingPlanId: "plan-current",
     },
+    ...overrides,
   };
+}
+
+function processedRefund(platformFeeRefundCents: number) {
+  return [{
+    refundAmountCents: 0,
+    gatewayFeeRefundCents: 0,
+    platformFeeRefundCents,
+    paymentTransaction: { metadata: null },
+  }];
 }
 
 beforeEach(() => {
@@ -70,7 +97,7 @@ beforeEach(() => {
   dependencies.db.streamUsageAllocationEntry.findMany.mockResolvedValue([]);
   dependencies.db.streamUsageReconciliation.findFirst.mockResolvedValue(null);
   dependencies.db.paymentTransaction.findMany.mockResolvedValue(transactions);
-  dependencies.db.refundRecord.aggregate.mockResolvedValue(processedRefund(0));
+  dependencies.db.refundRecord.findMany.mockResolvedValue(processedRefund(0));
   dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValue({
     _sum: { amountCents: 0 },
   });
@@ -136,7 +163,7 @@ describe("invoiceDueAt", () => {
 
 describe("calculateSettlement transaction service fee", () => {
   it("deducts a partial processed platform-fee refund from recorded transaction fees", async () => {
-    dependencies.db.refundRecord.aggregate.mockResolvedValueOnce(processedRefund(125));
+    dependencies.db.refundRecord.findMany.mockResolvedValueOnce(processedRefund(125));
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
@@ -144,7 +171,7 @@ describe("calculateSettlement transaction service fee", () => {
   });
 
   it("deducts a full processed platform-fee refund from recorded transaction fees", async () => {
-    dependencies.db.refundRecord.aggregate.mockResolvedValueOnce(processedRefund(600));
+    dependencies.db.refundRecord.findMany.mockResolvedValueOnce(processedRefund(600));
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
@@ -155,18 +182,18 @@ describe("calculateSettlement transaction service fee", () => {
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
     expect(settlement.transactionServiceFeeCents).toBe(600);
-    expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith({
+    expect(dependencies.db.refundRecord.findMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", monthKey: "2026-07", status: "processed" },
-      _sum: {
-        refundAmountCents: true,
-        gatewayFeeRefundCents: true,
-        platformFeeRefundCents: true,
+      include: {
+        paymentTransaction: {
+          select: { metadata: true },
+        },
       },
     });
   });
 
   it("never makes transaction service fees negative when processed refunds exceed recorded fees", async () => {
-    dependencies.db.refundRecord.aggregate.mockResolvedValueOnce(processedRefund(750));
+    dependencies.db.refundRecord.findMany.mockResolvedValueOnce(processedRefund(750));
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
@@ -190,7 +217,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     });
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
       ...transactions,
-      { grossAmountCents: 50_000, gatewayFeeCents: 500, platformFeeCents: 700 },
+      { grossAmountCents: 50_000, gatewayFeeCents: 500, platformFeeCents: 700, status: "paid" },
     ]);
     dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValueOnce({
       _sum: { amountCents: 9_999 },
@@ -207,15 +234,14 @@ describe("FIN-01 settlement boundary coverage", () => {
 
   it("clamps gross revenue and gateway fees after processed refunds", async () => {
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
-      { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100 },
+      { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100, status: "paid" },
     ]);
-    dependencies.db.refundRecord.aggregate.mockResolvedValueOnce({
-      _sum: {
-        refundAmountCents: 1_500,
-        gatewayFeeRefundCents: 450,
-        platformFeeRefundCents: 50,
-      },
-    });
+    dependencies.db.refundRecord.findMany.mockResolvedValueOnce([{
+      refundAmountCents: 1_500,
+      gatewayFeeRefundCents: 450,
+      platformFeeRefundCents: 50,
+      paymentTransaction: { metadata: null },
+    }]);
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
@@ -224,7 +250,119 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.transactionServiceFeeCents).toBe(50);
   });
 
-  it("uses the highest observed usage totals and charges only positive overflow", async () => {
+  it("excludes platform checkout and invoice collections, including their refunds, from merchant payout", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400, status: "paid", metadata: null },
+      platformSubscriptionCheckout(),
+      {
+        grossAmountCents: 2_000,
+        gatewayFeeCents: 60,
+        platformFeeCents: 80,
+        status: "paid",
+        metadata: { billingPurpose: "invoice_payment" },
+      },
+    ]);
+    dependencies.db.refundRecord.findMany.mockResolvedValueOnce([
+      {
+        refundAmountCents: 1_000,
+        gatewayFeeRefundCents: 30,
+        platformFeeRefundCents: 40,
+        paymentTransaction: { metadata: null },
+      },
+      {
+        refundAmountCents: 1_000,
+        gatewayFeeRefundCents: 30,
+        platformFeeRefundCents: 40,
+        paymentTransaction: { metadata: { billingPurpose: "platform_subscription_checkout" } },
+      },
+      {
+        refundAmountCents: 2_000,
+        gatewayFeeRefundCents: 60,
+        platformFeeRefundCents: 80,
+        paymentTransaction: { metadata: { billingPurpose: "invoice_payment" } },
+      },
+    ]);
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement).toMatchObject({
+      grossRevenueBeforeRefundCents: 10_000,
+      refundAmountCents: 1_000,
+      gatewayFeeRefundCents: 30,
+      platformFeeRefundCents: 40,
+      grossRevenueCents: 9_000,
+      paymentGatewayFeeCents: 270,
+      transactionServiceFeeCents: 360,
+      payoutableAmountCents: 8_370,
+    });
+  });
+
+  it("credits the first month only when exactly one complete platform checkout was paid", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([platformSubscriptionCheckout()]);
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement.monthlyFeeCents).toBe(0);
+  });
+
+  it("charges the fixed SaaS fee again in the following month without an in-period checkout", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([]);
+
+    const settlement = await calculateSettlement("vendor-1", "2026-08");
+
+    expect(settlement.monthlyFeeCents).toBe(1_000);
+  });
+
+  it("fails closed when the month contains duplicate platform subscription checkouts", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      platformSubscriptionCheckout(),
+      platformSubscriptionCheckout({ occurredAt: new Date("2026-07-16T00:00:00.000Z") }),
+    ]);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({
+      code: "platform_subscription_monthly_fee_credit_conflict",
+    });
+  });
+
+  it.each(["partially_refunded", "refunded"])("fails closed when the platform checkout is %s", async (status) => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      platformSubscriptionCheckout({ status, refundedAmountCents: 1 }),
+    ]);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({
+      code: "platform_subscription_monthly_fee_credit_conflict",
+    });
+  });
+
+  it.each([
+    platformSubscriptionCheckout({ metadata: { billingPurpose: "platform_subscription_checkout", platformSubscriptionId: "subscription-old", billingPlanId: "plan-current" } }),
+    platformSubscriptionCheckout({ metadata: { billingPurpose: "platform_subscription_checkout", platformSubscriptionId: "subscription-current", billingPlanId: "plan-old" } }),
+    platformSubscriptionCheckout({ grossAmountCents: 999 }),
+    platformSubscriptionCheckout({ currency: "USD" }),
+  ])("fails closed when platform checkout identity or price evidence is invalid", async (checkout) => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([checkout]);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({
+      code: "platform_subscription_monthly_fee_credit_conflict",
+    });
+  });
+
+  it.each(["pending", "failed"])("fails closed for a %s checkout that could be paid later", async (status) => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(subscriptionWithPaidPlan);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([platformSubscriptionCheckout({ status })]);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({
+      code: "platform_subscription_monthly_fee_credit_conflict",
+    });
+  });
+
+  it("keeps the highest observed usage totals for quota while disabling new metered charges", async () => {
     dependencies.db.usageRecord.findMany.mockResolvedValueOnce([
       {
         recordType: "stream_minutes",
@@ -244,6 +382,16 @@ describe("FIN-01 settlement boundary coverage", () => {
       },
     ]);
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([]);
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce({
+      ...subscription,
+      plan: {
+        ...subscription.plan,
+        overflowWatchHourPriceCents: 100,
+        overflowEventUnitPriceCents: 200,
+        overflowAffiliateUnitPriceCents: 300,
+        overflowStorageMinutePriceCents: 1,
+      },
+    });
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
@@ -257,6 +405,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.overflowEvents).toBe(15);
     expect(settlement.overflowAffiliates).toBe(8);
     expect(settlement.overflowStorageMinutes).toBe(7_200);
+    expect(settlement.overflowFeeCents).toBe(0);
   });
 
   it("includes the immutable page/member stream ledger without double-counting aggregates", async () => {

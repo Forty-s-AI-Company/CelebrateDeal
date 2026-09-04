@@ -178,6 +178,20 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         const requiresPayment = plan.monthlyPriceCents > 0;
 
         if (requiresPayment) {
+          // Do not open a second collection path for a month already billed.
+          // This read shares the Serializable transaction with checkout
+          // creation, protecting the concurrent monthly-generation boundary.
+          const monthKey = selectedAt.toISOString().slice(0, 7);
+          const billedMonth = await tx.invoice.findFirst({
+            where: {
+              vendorId: vendor.id,
+              monthKey,
+              monthlyFeeCents: { gt: 0 },
+            },
+            select: { id: true },
+          });
+          if (billedMonth) return { outcome: "conflict" as const };
+
           const checkoutIdempotencyKey = platformPlanCheckoutIdempotencyKey(vendor.id, plan.id);
           const existingCheckout = await tx.paymentTransaction.findUnique({
             where: {

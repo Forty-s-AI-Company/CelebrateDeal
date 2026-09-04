@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   }),
   transaction: vi.fn(),
   billingPlanFindFirst: vi.fn(),
+  invoiceFindFirst: vi.fn(),
   subscriptionFindMany: vi.fn(),
   subscriptionFindUnique: vi.fn(),
   subscriptionUpdateMany: vi.fn(),
@@ -107,6 +108,7 @@ beforeEach(() => {
     member: { id: "member-owner", role: "owner" },
   });
   mocks.billingPlanFindFirst.mockResolvedValue(plan);
+  mocks.invoiceFindFirst.mockResolvedValue(null);
   mocks.subscriptionFindMany.mockResolvedValue([previousSubscription]);
   mocks.subscriptionFindUnique.mockResolvedValue(null);
   mocks.subscriptionUpdateMany.mockResolvedValue({ count: 1 });
@@ -134,6 +136,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.transaction.mockImplementation(async (callback) => callback({
     billingPlan: { findFirst: mocks.billingPlanFindFirst },
+    invoice: { findFirst: mocks.invoiceFindFirst },
     vendorSubscription: {
       findMany: mocks.subscriptionFindMany,
       findUnique: mocks.subscriptionFindUnique,
@@ -153,6 +156,15 @@ beforeEach(() => {
 });
 
 describe("selectBillingPlanAction", () => {
+  it("rejects the action without creating a provider checkout when the month is already billed", async () => {
+    mocks.invoiceFindFirst.mockResolvedValue({ id: "existing-monthly-invoice" });
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("redirect:/billing/plans?error=conflict");
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+    expect(mocks.subscriptionCreate).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionCreate).not.toHaveBeenCalled();
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledOnce();
+    expect(mocks.requireVendorOwnerFinance).toHaveBeenCalledOnce();
+  });
   it("validates CSRF and owner access before changing the current vendor plan", async () => {
     const data = formData();
 

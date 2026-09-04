@@ -116,6 +116,26 @@ export async function payInvoiceAction(formData: FormData) {
           return { outcome: "not_payable" as const, invoice };
         }
 
+        // An older invoice can still contain a fixed fee already covered by
+        // a plan checkout. Block payment until billing reconciles it, including
+        // unresolved attempts which may receive a late paid callback.
+        if (invoice.monthlyFeeCents > 0) {
+          if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(invoice.monthKey)) {
+            return { outcome: "conflict" as const, invoice };
+          }
+          const periodStart = new Date(`${invoice.monthKey}-01T00:00:00.000Z`);
+          const periodEnd = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1, 1));
+          const planCheckout = await tx.paymentTransaction.findFirst({
+            where: {
+              vendorId: vendor.id,
+              occurredAt: { gte: periodStart, lt: periodEnd },
+              metadata: { path: ["billingPurpose"], equals: "platform_subscription_checkout" },
+            },
+            select: { id: true },
+          });
+          if (planCheckout) return { outcome: "conflict" as const, invoice };
+        }
+
         const existing = await tx.paymentTransaction.findUnique({
           where: { vendorId_checkoutIdempotencyKey: { vendorId: vendor.id, checkoutIdempotencyKey } },
         });

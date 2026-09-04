@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   invoiceFindFirst: vi.fn(),
   paymentTransactionFindUnique: vi.fn(),
+  paymentTransactionFindFirst: vi.fn(),
   paymentTransactionCreate: vi.fn(),
   paymentTransactionUpdate: vi.fn(),
   paymentTransactionUpdateMany: vi.fn(),
@@ -47,6 +48,8 @@ const invoice = {
   vendorId: "vendor-current",
   invoiceNumber: "INV-2026-07-001",
   totalCents: 14385,
+  monthlyFeeCents: 1000,
+  monthKey: "2026-07",
   status: "issued",
 };
 
@@ -80,6 +83,7 @@ beforeEach(() => {
   });
   mocks.invoiceFindFirst.mockResolvedValue(invoice);
   mocks.paymentTransactionFindUnique.mockResolvedValue(null);
+  mocks.paymentTransactionFindFirst.mockResolvedValue(null);
   mocks.paymentTransactionCreate.mockResolvedValue(createdTransaction);
   mocks.paymentTransactionUpdate.mockResolvedValue(createdTransaction);
   mocks.paymentTransactionUpdateMany.mockResolvedValue({ count: 1 });
@@ -103,6 +107,7 @@ beforeEach(() => {
     invoice: { findFirst: mocks.invoiceFindFirst },
     paymentTransaction: {
       findUnique: mocks.paymentTransactionFindUnique,
+      findFirst: mocks.paymentTransactionFindFirst,
       create: mocks.paymentTransactionCreate,
       update: mocks.paymentTransactionUpdate,
     },
@@ -110,6 +115,29 @@ beforeEach(() => {
 });
 
 describe("payInvoiceAction", () => {
+  it.each(["pending", "failed", "paid", "partially_refunded", "refunded"])("blocks a stale monthly fee when a %s plan checkout exists", async (status) => {
+    mocks.paymentTransactionFindFirst.mockResolvedValue({ id: "existing-plan-checkout", status });
+    await expect(payInvoiceAction(formData())).rejects.toThrow("redirect:/billing/invoices/invoice-current?error=conflict");
+    expect(mocks.paymentTransactionFindFirst).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-current",
+        occurredAt: { gte: new Date("2026-07-01T00:00:00.000Z"), lt: new Date("2026-08-01T00:00:00.000Z") },
+        metadata: { path: ["billingPurpose"], equals: "platform_subscription_checkout" },
+      },
+      select: { id: true },
+    });
+    expect(mocks.paymentTransactionCreate).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+    expect(mocks.getPaymentProvider).not.toHaveBeenCalled();
+  });
+
+  it("allows the remaining merchant fees after the fixed plan fee was reconciled to zero", async () => {
+    mocks.invoiceFindFirst.mockResolvedValue({ ...invoice, monthlyFeeCents: 0 });
+    await expect(payInvoiceAction(formData())).rejects.toThrow("?status=checkout&transactionId=");
+    expect(mocks.paymentTransactionFindFirst).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionCreate).toHaveBeenCalledOnce();
+  });
+
   it("uses the server invoice total, stores a checkout snapshot, and redirects to the scoped detail page", async () => {
     await expect(payInvoiceAction(formData())).rejects.toThrow(
       "redirect:/billing/invoices/invoice-current?status=checkout&transactionId=transaction-invoice-checkout",
