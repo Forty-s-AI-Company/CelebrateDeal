@@ -2,6 +2,19 @@
 
 Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch scope; it does not supersede historical evidence or declare Production readiness.
 
+## Latest verified checkpoint
+
+- Published product source: `3a87d0978fa98e8b82fc71c79015b5c271026b1d`. Exact CI `33870860171` completed successfully, including Browser with fail-on-flaky, dependency audit, coverage, DB concurrency, build and preflight. Uncommitted subscription runner changes are not covered by that run. Earlier intermittent Browser failures are not claimed root-cause-fixed merely because this run passed.
+- Recovery-only protected PR #194 passed both CI runs `33870213066` and `33870208853` plus both Vercel Preview checks. It was merged normally as protected master `202d9d2390362d50e561d906e1b91202f6f3ae06`. The merged runner files match reviewed source `fea1e5fff68d26fec725eca49f7eefea7ad5e76a`; automatic master Vercel deployment remains disabled.
+- Fixed historical-refund query workflow `33872271035` completed with failure from that protected master for source `1052a46d002149b5c06104927ed0fab32b049214`. Its canonical receipt is `UNRESOLVED / PROJECTION_UNAVAILABLE`, query attempts 1, payment/refund submissions 0. Receipt validator passed. Evidence: `docs/ai-team/evidence/wp4-existing-refund-recovery-33872271035-receipt.json`. No repeat dispatch was made.
+- The old source maps unavailable/thrown `queryPayment` results to this generic classification before local refund reconciliation. The implementation exists, so query failure is the remaining diagnostic boundary; the receipt cannot distinguish authentication, request validation, provider response or network failure. It proves neither a successful refund nor a successful local projection. Do not resubmit the historical refund.
+- Historical uncertain buyer refund remains unresolved: one prior payment and one refund request, no confirmed refund. Next external action is the fixed single-query recovery, never another payment/refund submission.
+- SaaS fixed protected ops now have a local fixed subscription runner/task. Combined runner/workflow tests passed 45 cases, with lint, typecheck, strict index, six-file secret scan and diff check passing. Scoped review found a checkout-counter timing defect; the fix records transaction creation before hidden-form validation, and its regressions plus focused re-review passed. No subscription workflow was dispatched. The runner covers fixed payment/refund reconciliation, not independent proof of activation or quota state; those remain required acceptance checks.
+- Historical `146f8db` provider receipts report Cloudflare, Resend, Sentry notification, PostHog and durable rate-limit PASS. Backup/isolated restore and alias rollback receipts also report PASS. Direct source snapshot comparison found no provider implementation or schema/migration changes, but payment, quota, billing and CI/secure-runner paths changed. Reuse is limited to those unchanged historical provider capabilities and recovery-drill evidence; it does not establish current payment delivery, runtime bindings, current backup availability or current-source execution. Production remains unverified.
+- Policy applicability, refund rules and named operating responsibilities remain `PENDING_HUMAN`; an agent cannot supply human acceptance.
+
+This section takes precedence over older in-progress observations retained below. All release-readiness flags remain false and `releaseDecision=NO_GO`.
+
 ## Release scope
 
 - Baseline: `codex/one-stop-webinar-flow`, inspected HEAD `54d52b62616b70ec40e7f11ca0a265f9e46ce691`.
@@ -20,7 +33,7 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 | Refund, reconciliation, merchant settlement | NOT_PROVEN | Diagnose existing Sandbox transaction outcome before any repeat refund. |
 | Fixed SaaS plan payment and entitlement | PARTIAL | Shared tenant-bound refund projection now covers webhook, manual completion and query reconciliation; scoped local tests cover newer-subscription preservation. Actual Sandbox payment/refund and quota projection remain unverified. The payer return page currently shows buyer-only details; an owner must view authenticated billing for subscription state. |
 | Disabled usage billing and commission accrual | PARTIAL | Server-side accrual, product/affiliate/live configuration guards and historical refund preservation pass scoped local tests. Reviewed billing correction is committed in `e9dfffc`; full DB/browser regression is still pending. |
-| Backup, monitoring and deployment recovery | NOT_PROVEN | Assess prior evidence applicability and recheck affected boundaries. |
+| Backup, monitoring and deployment recovery | PARTIAL | Historical `146f8db` provider/restore/rollback receipts passed; unchanged capability evidence is reusable with the limitations above. Current runtime and Production readiness are not established. |
 | Policies and operational responsibility | PENDING_HUMAN | Required decisions and acceptance cannot be signed by an agent. |
 
 ## Current blockers and work order

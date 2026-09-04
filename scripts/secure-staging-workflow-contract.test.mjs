@@ -30,6 +30,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
     "wp2-readonly-restore",
     "wp4-payuni-sandbox-reconciliation",
     "wp4-payuni-sandbox-refund-recovery",
+    "wp4-payuni-sandbox-subscription",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -79,7 +80,7 @@ test("WP4 buyer runner verifies lineage before fixed bindings and cannot execute
   assert.match(String(wp4.if), /inputs\.task == 'wp4-payuni-sandbox-reconciliation'/u);
   assert.equal(wp4.env.JOB_SECRET, "${{ secrets.JOB_SECRET }}");
   for (const binding of ["PAYUNI_SANDBOX_ONETIME_CARD_NO", "PAYUNI_TEST_EXPIRY", "PAYUNI_TEST_CVV"]) {
-    assert.equal(wp4.env[binding], "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets." + binding + " || '' }}");
+    assert.equal(wp4.env[binding], "${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription') && secrets." + binding + " || '' }}");
   }
   assert.equal(wp4.env.PAYUNI_ENV, "sandbox");
   for (const forbiddenBinding of ["GITHUB_TOKEN", "STAGING_DATABASE_URL", "PAYUNI_MERCHANT_ID", "PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "NEXT_PUBLIC_SUPABASE_URL"]) {
@@ -104,12 +105,33 @@ test("existing-refund recovery uses one fixed command without card or browser se
   const preload = steps.find((step) => step.name === "Preload Chromium before WP4 secret injection");
   const lineage = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
   const validate = steps.find((step) => step.name === "Validate sanitized existing-refund recovery receipt");
-  assert.equal(preload.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}");
+  assert.equal(preload.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}");
   assert.match(lineage.if, /wp4-payuni-sandbox-refund-recovery/u);
   assert.match(execute.if, /wp4-payuni-sandbox-refund-recovery/u);
   assert.equal(execute.env.WP4_TASK, "${{ inputs.task }}");
   assert.match(execute.run, /if \[ "\$WP4_TASK" = "wp4-payuni-sandbox-refund-recovery" \]; then\s+node scripts\/mvp-payuni-sandbox-e2e\.mjs --recover-existing-refund/u);
-  assert.match(execute.run, /if \(process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation"\) \{\s+destinations.push\(\["sandbox-api.payuni.com.tw", "443"\]\);/u);
+  assert.match(execute.run, /if \(process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation" \|\| process.env.WP4_TASK === "wp4-payuni-sandbox-subscription"\) \{\s+destinations.push\(\["sandbox-api.payuni.com.tw", "443"\]\);/u);
   assert.equal(validate.run, "node scripts/mvp-payuni-sandbox-e2e.mjs --validate-recovery-receipt");
   assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
+});
+
+test("fixed subscription task has its own command and receipt without broadening secret access", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const execute = steps.find((step) => step.id === "execute-wp4");
+  const lineage = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
+  const validate = steps.find((step) => step.name === "Validate sanitized subscription receipt");
+  const enforce = steps.find((step) => step.name === "Enforce fixed WP4 task success");
+  for (const step of [lineage, execute, validate, enforce]) {
+    assert.match(step.if, /inputs.task == 'wp4-payuni-sandbox-subscription'/u);
+  }
+  assert.match(execute.run, /elif \[ "\$WP4_TASK" = "wp4-payuni-sandbox-subscription" \]; then\s+node scripts\/mvp-payuni-sandbox-e2e\.mjs --subscription/u);
+  assert.equal(validate.run, "node scripts/mvp-payuni-sandbox-e2e.mjs --validate-subscription-receipt");
+  assert.deepEqual(Object.keys(execute.env).sort(), [
+    "CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "JOB_SECRET", "PAYUNI_ENV",
+    "PAYUNI_SANDBOX_ONETIME_CARD_NO", "PAYUNI_TEST_CVV", "PAYUNI_TEST_EXPIRY", "WP4_TASK",
+  ]);
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
+  assert.ok(steps.indexOf(execute) < steps.indexOf(validate));
+  assert.ok(steps.indexOf(validate) < steps.indexOf(enforce));
 });

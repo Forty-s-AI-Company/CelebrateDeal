@@ -11,6 +11,7 @@ on:
           - wp2-readonly-restore
           - wp4-payuni-sandbox-reconciliation
           - wp4-payuni-sandbox-refund-recovery
+          - wp4-payuni-sandbox-subscription
       source_sha:
         description: Exact 40-character Preview source SHA
         required: true
@@ -59,14 +60,14 @@ jobs:
       # execution step below is therefore the only step that receives the
       # fixed Sandbox browser and job bindings.
       - name: Preload Chromium before WP4 secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         run: npx playwright install --with-deps chromium
 
       - name: Verify secure runner contract
         run: npm run secure:staging:contract
 
       - name: Validate fixed WP4 dispatch identity before secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -148,15 +149,15 @@ jobs:
           npm run secure:staging:wp2
 
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         id: execute-wp4
         continue-on-error: true
         shell: bash
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO || '' }}
-          PAYUNI_TEST_EXPIRY: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_TEST_EXPIRY || '' }}
-          PAYUNI_TEST_CVV: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' && secrets.PAYUNI_TEST_CVV || '' }}
+          PAYUNI_SANDBOX_ONETIME_CARD_NO: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription') && secrets.PAYUNI_SANDBOX_ONETIME_CARD_NO || '' }}
+          PAYUNI_TEST_EXPIRY: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription') && secrets.PAYUNI_TEST_EXPIRY || '' }}
+          PAYUNI_TEST_CVV: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription') && secrets.PAYUNI_TEST_CVV || '' }}
           WP4_TASK: ${{ inputs.task }}
           PAYUNI_ENV: sandbox
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -182,7 +183,7 @@ jobs:
             ["api.github.com", "443"],
             [deploymentHost, "443"],
           ];
-          if (process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation") {
+          if (process.env.WP4_TASK === "wp4-payuni-sandbox-reconciliation" || process.env.WP4_TASK === "wp4-payuni-sandbox-subscription") {
             destinations.push(["sandbox-api.payuni.com.tw", "443"]);
           } else if (process.env.WP4_TASK !== "wp4-payuni-sandbox-refund-recovery") {
             process.exit(2);
@@ -230,6 +231,8 @@ jobs:
 
           if [ "$WP4_TASK" = "wp4-payuni-sandbox-refund-recovery" ]; then
             node scripts/mvp-payuni-sandbox-e2e.mjs --recover-existing-refund
+          elif [ "$WP4_TASK" = "wp4-payuni-sandbox-subscription" ]; then
+            node scripts/mvp-payuni-sandbox-e2e.mjs --subscription
           else
             npm run secure:staging:wp4
           fi
@@ -252,6 +255,12 @@ jobs:
           RUNNER_TEMP: ${{ runner.temp }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-recovery-receipt
 
+      - name: Validate sanitized subscription receipt
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-subscription' }}
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-subscription-receipt
+
       - name: Upload sanitized receipt only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -265,5 +274,5 @@ jobs:
         run: exit 2
 
       - name: Enforce fixed WP4 task success
-        if: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery') && steps.execute-wp4.outcome != 'success' }}
+        if: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-refund-recovery' || inputs.task == 'wp4-payuni-sandbox-subscription') && steps.execute-wp4.outcome != 'success' }}
         run: exit 2
