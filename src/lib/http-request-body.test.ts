@@ -37,4 +37,3 @@ describe("requestHasNonEmptyBody", () => {
     await expect(requestHasNonEmptyBody(postRequest(failingStream))).resolves.toBe(true);
   });
 });
-

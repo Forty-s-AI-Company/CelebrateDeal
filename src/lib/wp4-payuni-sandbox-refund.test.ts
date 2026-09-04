@@ -47,4 +47,3 @@ describe("WP4 fixed PayUni Sandbox refund selection", () => {
     expect(selectWp4PayUniFixedRefund({ ...base, grossAmountCents: 150 }, "remaining")).toBeNull();
   });
 });
-

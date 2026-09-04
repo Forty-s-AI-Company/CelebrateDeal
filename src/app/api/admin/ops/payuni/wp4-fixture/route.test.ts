@@ -139,4 +139,3 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     await expect(response.json()).resolves.toEqual({ error: "Service unavailable" });
   });
 });
-

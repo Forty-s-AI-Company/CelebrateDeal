@@ -68,4 +68,3 @@ describe("POST /api/admin/ops/payuni/wp4-payment-attempt", () => {
     await expect(response.json()).resolves.toEqual(result);
   });
 });
-

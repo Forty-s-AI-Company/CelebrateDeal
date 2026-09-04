@@ -36,4 +36,3 @@ describe("WP4 Preview source identity", () => {
     expect(wp4SourceMatchesRequest(request, "d".repeat(40))).toBe(false);
   });
 });
-

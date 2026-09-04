@@ -23,4 +23,3 @@ export function wp4SourceMatchesRequest(request: Request, expectedSha: string) {
   const expected = Buffer.from(expectedSha);
   return source.length === expected.length && timingSafeEqual(source, expected);
 }
-

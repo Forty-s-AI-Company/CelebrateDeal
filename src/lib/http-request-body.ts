@@ -29,4 +29,3 @@ export async function requestHasNonEmptyBody(request: Request) {
     reader.releaseLock();
   }
 }
-

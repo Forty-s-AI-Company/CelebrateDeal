@@ -60,4 +60,3 @@ export async function POST(request: Request) {
     return unavailableResponse(503);
   }
 }
-

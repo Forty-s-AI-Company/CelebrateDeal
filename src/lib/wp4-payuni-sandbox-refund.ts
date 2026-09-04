@@ -71,4 +71,3 @@ export function selectWp4PayUniFixedRefund(
   if (!isWholeAmountFullRefund && !isRemainingRefund) return null;
   return { purpose, phase, refundAmountCents: remainingCents, gatewayFeeRefundCents: 0, platformFeeRefundCents: 0 };
 }
-
