@@ -56,6 +56,14 @@
 - 每次修改前記錄 ownership；每次 checkpoint 後執行必要的 diff/status 檢查。
 - 回滾只移除本輪明確新增的 hunks、檔案或 disposable 資源，不碰既有使用者變更。
 
+## 上下文效率與快取優化 (Context Efficiency & Prompt Caching)
+
+- 上下文效率是第一級工程約束：預設嚴禁載入或向子代理分發全專案上下文（Repository-Wide Context）。
+- 每個子代理或任務只接收嚴格必要的檔案（2~5 檔）、合約與最小驗證資訊；嚴禁無差別廣播全專案歷史。
+- 子代理進場前必須宣告 `[Unique Work]` 與 `[Minimum Context]`；主代理能獨立完成的日常 90% 任務一律直通，不開子代理。
+- 固定專案規範與前綴保持 100% 穩定，嚴禁插入隨機 ID 或動態時間戳記，最大化 Prompt Cache 命中率。
+- 嚴禁盲目 Reset：同一 Goal 內維持 Session 連續以累積 Cache；上下文污染時透過 `goal_checkpoint` 精確接手。
+
 ## 迴圈與價值檢查
 
 - 每次工作開始前確認它是否推進重要功能、產品安全或必要上線證據。

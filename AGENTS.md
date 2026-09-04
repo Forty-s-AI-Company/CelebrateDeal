@@ -71,6 +71,13 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 
+## 上下文效率與快取優化（Context Efficiency & Caching）
+
+- **上下文效率為第一級約束（Context Efficiency as First-Class Constraint）**：預設嚴禁載入或向子代理分發全專案上下文（Repository-Wide Context）。每個子代理或任務只允許接收其分派工作嚴格必要的檔案、規範、合約與前置結果；優先採用結構化摘要與明確檔案路徑，禁止複製完整歷史紀錄。
+- **子代理進場門檻（Subagent Spawning Gate）**：只有在平行專業化能實質提高正確性或大幅縮減工時的情況下才允許 Spawn 子代理。進場前必須明確宣告該子代理的「唯一獨立工作（Unique Work）」與「最小必要上下文（Minimum Context）」；嚴禁衍生多個代理重複探索相同的程式碼庫上下文。
+- **Prompt Cache 友善原則（Cache-Friendly Prefix）**：固定專案指令、架構規範與角色定義必須保持完全穩定，嚴禁在前綴中插入隨機 ID、動態時間戳記或多變目錄樹，以最大化 OpenAI / Codex 的 Prompt Cache 命中率（享 1/10 成本優勢）。
+- **Checkpoint 接手代替盲目 Reset**：同一 Goal 內維持連續 Session 以累積快取效益；僅在上下文嚴重污染時透過精確的 `goal_checkpoint` 結構化摘要接手，不使用盲目 Reset 浪費重複探索成本。
+
 ## 驗證與進度
 
 - 依產品價值選擇 targeted tests、integration tests、coverage、Browser、staging 或 sandbox 驗證，不強制每輪執行全部命令。
