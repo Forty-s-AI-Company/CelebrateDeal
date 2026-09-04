@@ -4,6 +4,12 @@ import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@play
 const allowedTestPath = /^tests\/(?:e2e|e2e-support)\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
 const allowedSecurityActionOutcomes = new Set([
+  "member_invitation",
+  "member_invitation_rate_limited",
+  "member_invitation_unavailable",
+  "platform_user",
+  "inactive_user",
+  "last_owner",
   "password_reset_smoke",
   "password_reset_smoke_recipient",
   "password_reset_smoke_rate_limited",

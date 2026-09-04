@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 
@@ -10,6 +10,32 @@ const ownerEmail = "e2e-invitation-owner-" + runId + "@celebratedeal.local";
 const invitedEmail = "e2e-invited-member-" + runId + "@celebratedeal.local";
 const foreignMemberEmail = "e2e-foreign-member-" + runId + "@celebratedeal.local";
 const fixture = { vendorId: "", ownerId: "", foreignVendorId: "", foreignMemberId: "" };
+const invitationRedirectErrors = new Set([
+  "member_invitation",
+  "member_invitation_rate_limited",
+  "member_invitation_unavailable",
+  "platform_user",
+  "inactive_user",
+  "last_owner",
+]);
+
+function invitationRedirectOutcome(page: { url(): string }) {
+  try {
+    const error = new URL(page.url()).searchParams.get("error");
+    return error && invitationRedirectErrors.has(error) ? error : "UNCLASSIFIED";
+  } catch {
+    return "UNCLASSIFIED";
+  }
+}
+
+async function expectInvitationFailureRedirect(page: Page) {
+  try {
+    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u);
+  } catch (error) {
+    test.info().annotations.push({ type: "security-action-outcome", description: invitationRedirectOutcome(page) });
+    throw error;
+  }
+}
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -90,7 +116,7 @@ test("local invitation state records member and mail failure without proving ema
   await invitationForm.locator('select[name="role"]').selectOption("support");
   await invitationForm.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u);
+  await expectInvitationFailureRedirect(page);
   await expect(page.getByText("成員已更新，但邀請信寄送失敗，請稍後重新邀請。", { exact: true })).toBeVisible();
   await expect(page.getByText("Foreign Member Canary", { exact: true })).toHaveCount(0);
   await expect(page.getByText(foreignMemberEmail, { exact: true })).toHaveCount(0);

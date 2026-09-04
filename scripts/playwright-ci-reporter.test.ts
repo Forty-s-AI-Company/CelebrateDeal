@@ -82,6 +82,22 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(output).not.toContain("security_action_outcome=mfa_code");
   });
 
+  it("allows only fixed invitation redirect outcomes and preserves them across retries", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const flaky = testCase({ id: "invitation", outcome: "flaky", statuses: ["failed", "passed"], annotation: "member_invitation_rate_limited" });
+    const unknown = testCase({ id: "invitation-unknown", outcome: "unexpected", statuses: ["failed"], annotation: "member_invitation?token=secret" });
+    reporter.onTestEnd(flaky as never, flaky.results[0] as never);
+    flaky.annotations = [];
+    reporter.onTestEnd(flaky as never, flaky.results[1] as never);
+    reporter.onTestEnd(unknown as never);
+    reporter.onEnd({ status: "failed" } as never);
+
+    expect(output).toContain("security_action_outcome=member_invitation_rate_limited");
+    expect(output).toContain("security_action_outcome=UNCLASSIFIED");
+    expect(output).not.toContain("token=secret");
+  });
+
   it("maps missing or unknown action annotations to UNCLASSIFIED without exposing text", () => {
     expect(sanitizedSecurityActionOutcome({ annotations: [] })).toBeNull();
     expect(sanitizedSecurityActionOutcome({ annotations: [{ type: "security-action-outcome", description: "secret=token" }] })).toBe("UNCLASSIFIED");
