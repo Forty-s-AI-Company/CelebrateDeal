@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   try {
     // Keep the native transport on the same tenant-scoped mutation core as the
     // Server Action. Only the transport owns the 303 response.
-    const result = await createPlatformPlanCheckout(formData);
+    const result = await createPlatformPlanCheckout(formData, request);
     return nativeRedirect(platformPlanCheckoutPath(result));
   } catch (error) {
     const destination = redirectPathFromError(error, request);

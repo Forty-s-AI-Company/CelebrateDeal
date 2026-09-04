@@ -5,7 +5,7 @@ import { requireVendorOwnerFinance } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
-import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
+import { getCanonicalAppUrl, getPaymentReturnAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import {
   checkoutReadinessAllowsNewTransaction,
@@ -121,7 +121,7 @@ async function failPlatformPlanCheckout(input: { transactionId: string; subscrip
  * redirect handling cannot change the payment, idempotency, or authorization
  * semantics.
  */
-export async function createPlatformPlanCheckout(formData: FormData): Promise<PlatformPlanCheckoutResult> {
+export async function createPlatformPlanCheckout(formData: FormData, request?: Request): Promise<PlatformPlanCheckoutResult> {
   await assertServerActionSecurity(formData);
   const { vendor, member } = await requireVendorOwnerFinance("/billing/plans");
   const planId = formText(formData, "planId");
@@ -391,6 +391,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               billingPlan: result.plan,
               vendor,
               appUrl: getCanonicalAppUrl(),
+              returnAppUrl: request ? getPaymentReturnAppUrl(request) : getCanonicalAppUrl(),
             })
           : {
               provider: provider.id,

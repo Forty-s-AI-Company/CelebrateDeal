@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
+import { getCanonicalAppUrl, getPaymentReturnAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
 
 describe("getCanonicalAppUrl", () => {
   it("returns only the trusted origin from the configured URL", () => {
@@ -57,5 +57,67 @@ describe("getCanonicalAppUrl", () => {
 
   it.each(unsafeProductionEnvironments)("fails closed for an unsafe production URL", (env, error) => {
     expect(() => getCanonicalAppUrl(env)).toThrow(error);
+  });
+});
+
+describe("getPaymentReturnAppUrl", () => {
+  const canonicalEnvironment: NodeJS.ProcessEnv = {
+    NODE_ENV: "production",
+    NEXT_PUBLIC_APP_URL: "https://app.example.test",
+  };
+  const previewHost = "celebratedeal-git-safe-preview.vercel.app";
+
+  it("keeps an exact verified Preview Sandbox callback on its issuing origin", () => {
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}/api/payments/checkout`),
+      { ...canonicalEnvironment, VERCEL_ENV: "preview", PAYUNI_ENV: "sandbox", VERCEL_URL: previewHost },
+    )).toBe(`https://${previewHost}`);
+  });
+
+  it("uses the canonical origin for canonical, default, and production requests", () => {
+    expect(getPaymentReturnAppUrl(
+      new Request("https://app.example.test/api/payments/checkout"),
+      { ...canonicalEnvironment, VERCEL_ENV: "preview", PAYUNI_ENV: "sandbox", VERCEL_URL: previewHost },
+    )).toBe("https://app.example.test");
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}/api/payments/checkout`),
+      canonicalEnvironment,
+    )).toBe("https://app.example.test");
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}/api/payments/checkout`),
+      { ...canonicalEnvironment, VERCEL_ENV: "production", PAYUNI_ENV: "sandbox", VERCEL_URL: previewHost },
+    )).toBe("https://app.example.test");
+  });
+
+  it("does not use Preview returns for PayUni Production", () => {
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}/api/payments/checkout`),
+      { ...canonicalEnvironment, VERCEL_ENV: "preview", PAYUNI_ENV: "production", VERCEL_URL: previewHost },
+    )).toBe("https://app.example.test");
+  });
+
+  const malformedBindings = [
+    "https://celebratedeal-git-safe-preview.vercel.app",
+    "celebratedeal-git-safe-preview.vercel.app:443",
+    "celebratedeal-git-safe-preview.vercel.app/path",
+    "celebratedeal-git-safe-preview.vercel.app?query=1",
+    "user@celebratedeal-git-safe-preview.vercel.app",
+    "celebratedeal-git-safe-preview.preview.vercel.app",
+    "celebratedeal-git-safe-preview.vercel.app.evil.example",
+    " celebratedeal-git-safe-preview.vercel.app",
+  ];
+
+  it.each(malformedBindings)("fails closed for malformed server deployment binding %s", (binding) => {
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}/api/payments/checkout`),
+      { ...canonicalEnvironment, VERCEL_ENV: "preview", PAYUNI_ENV: "sandbox", VERCEL_URL: binding },
+    )).toBe("https://app.example.test");
+  });
+
+  it("rejects a hostile request-origin lookalike even with a valid server binding", () => {
+    expect(getPaymentReturnAppUrl(
+      new Request(`https://${previewHost}.evil.example/api/payments/checkout`),
+      { ...canonicalEnvironment, VERCEL_ENV: "preview", PAYUNI_ENV: "sandbox", VERCEL_URL: previewHost },
+    )).toBe("https://app.example.test");
   });
 });

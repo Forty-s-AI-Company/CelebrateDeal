@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
@@ -51,6 +51,9 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { selectBillingPlanAction } from "./actions";
+import { createPlatformPlanCheckout } from "@/lib/platform-plan-checkout";
+
+afterEach(() => vi.unstubAllEnvs());
 
 const plan = {
   id: "plan-pro",
@@ -156,6 +159,28 @@ beforeEach(() => {
 });
 
 describe("selectBillingPlanAction", () => {
+  it.each([
+    ["https://exact-preview.vercel.app", "https://exact-preview.vercel.app", "sandbox"],
+    ["https://untrusted.vercel.app", "https://app.example.test", "sandbox"],
+    ["https://exact-preview.vercel.app", "https://app.example.test", "production"],
+  ])("selects the trusted native SaaS return origin for %s with %s in %s", async (origin, expectedReturn, payuniEnvironment) => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", payuniEnvironment);
+    vi.stubEnv("VERCEL_URL", "exact-preview.vercel.app");
+    const data = formData();
+    data.set("returnAppUrl", "https://attacker.example.test");
+    const result = await createPlatformPlanCheckout(data, new Request(`${origin}/api/billing/plans/select`));
+    expect(result.kind).toBe("checkout");
+    expect(mocks.createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+      appUrl: "https://app.example.test", returnAppUrl: expectedReturn,
+      vendor: expect.objectContaining({ id: "vendor-current" }),
+    }));
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(data);
+    expect(mocks.requireVendorOwnerFinance).toHaveBeenCalledOnce();
+    expect(mocks.usageLimitUpsert).not.toHaveBeenCalled();
+  });
+
   it("rejects the action without creating a provider checkout when the month is already billed", async () => {
     mocks.invoiceFindFirst.mockResolvedValue({ id: "existing-monthly-invoice" });
     await expect(selectBillingPlanAction(formData())).rejects.toThrow("redirect:/billing/plans?error=conflict");

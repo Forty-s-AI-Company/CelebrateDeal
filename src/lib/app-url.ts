@@ -1,4 +1,5 @@
 const DEVELOPMENT_APP_URL = "http://localhost:31023";
+const VERCEL_PREVIEW_DEPLOYMENT_HOST = /^(?=.{1,63}\.vercel\.app$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
 
 function isExplicitLocalE2eUrl(url: URL, env: NodeJS.ProcessEnv) {
   return (
@@ -56,4 +57,36 @@ export function getCanonicalAppUrl(env: NodeJS.ProcessEnv = process.env) {
   }
 
   return url.origin;
+}
+
+function verifiedPreviewOrigin(env: NodeJS.ProcessEnv) {
+  // VERCEL_URL is a server-owned binding, but accept only the documented bare
+  // deployment hostname. This rejects credentials, paths, queries, ports and
+  // lookalike multi-label hosts before they can influence a payment return.
+  const deploymentHost = env.VERCEL_URL;
+  if (typeof deploymentHost !== "string" || !VERCEL_PREVIEW_DEPLOYMENT_HOST.test(deploymentHost)) {
+    return null;
+  }
+  return `https://${deploymentHost}`;
+}
+
+/**
+ * Retain browser-return state on the origin that issued checkout only for an
+ * exact, server-verified Vercel Preview running against PayUni Sandbox.
+ * Every other deployment and provider mode remains pinned to the canonical
+ * public URL so request URLs and Host headers cannot select a redirect target.
+ */
+export function getPaymentReturnAppUrl(request: Request, env: NodeJS.ProcessEnv = process.env) {
+  const canonical = getCanonicalAppUrl(env);
+  let requestOrigin: string;
+  try {
+    requestOrigin = new URL(request.url).origin;
+  } catch {
+    return canonical;
+  }
+  if (requestOrigin === canonical) return canonical;
+  if (env.VERCEL_ENV !== "preview" || env.PAYUNI_ENV !== "sandbox") return canonical;
+
+  const previewOrigin = verifiedPreviewOrigin(env);
+  return requestOrigin === previewOrigin ? previewOrigin : canonical;
 }

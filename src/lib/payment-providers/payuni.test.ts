@@ -103,6 +103,20 @@ describe("PayUni provider", () => {
     expect(JSON.stringify(session?.formPayload)).not.toContain(hashIv);
   });
 
+  it("keeps notification canonical while using the server-selected payer return origin", async () => {
+    stubPayUniEnv();
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_return", orderNumber: "CD-RETURN", grossAmountCents: 100 } as PaymentTransaction,
+      product: { name: "Sandbox Product" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://canonical.example.test",
+      returnAppUrl: "https://exact-preview.vercel.app",
+    });
+    const payload = decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "");
+    expect(payload.ReturnURL).toBe("https://exact-preview.vercel.app/api/webhooks/payments?provider=payuni&source=return");
+    expect(payload.NotifyURL).toBe("https://canonical.example.test/api/webhooks/payments?provider=payuni&source=notify");
+  });
+
   it("never adds a Vercel preview protection bypass to PayUni callbacks", async () => {
     stubPayUniEnv();
     vi.stubEnv("VERCEL_ENV", "preview");

@@ -82,13 +82,13 @@ function identityHash(
   });
 }
 
-function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}) {
-  return new Request("https://app.example.test/api/payments/checkout", {
+function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}, origin = "https://app.example.test") {
+  return new Request(`${origin}/api/payments/checkout`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      origin: "https://app.example.test",
-      referer: "https://app.example.test/products/product-1",
+      origin,
+      referer: `${origin}/products/product-1`,
       "x-celebratedeal-client": "web",
       ...(cookie ? { cookie } : {}),
     },
@@ -187,6 +187,22 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it.each([
+    ["https://exact-preview.vercel.app", "https://exact-preview.vercel.app"],
+    ["https://attacker.vercel.app", "https://app.example.test"],
+  ])("binds payer return for request origin %s without changing canonical notifications", async (origin, expectedReturn) => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    vi.stubEnv("VERCEL_URL", "exact-preview.vercel.app");
+    const response = await POST(checkoutRequest(undefined, {}, origin));
+    expect(response.status).toBe(200);
+    expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+      appUrl: "https://app.example.test",
+      returnAppUrl: expectedReturn,
+    }));
+  });
+
   it("requires a bounded caller idempotency key", async () => {
     const response = await POST(checkoutRequest(undefined, { idempotencyKey: undefined }));
 

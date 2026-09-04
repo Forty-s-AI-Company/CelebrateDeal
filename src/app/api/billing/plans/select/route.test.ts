@@ -38,13 +38,14 @@ beforeEach(() => {
 
 describe("POST /api/billing/plans/select", () => {
   it("returns the shared checkout result as a native 303", async () => {
-    const response = await POST(request());
+    const incomingRequest = request();
+    const response = await POST(incomingRequest);
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
       "/billing/plans?status=checkout&transactionId=synthetic-transaction",
     );
-    expect(mocks.createPlatformPlanCheckout).toHaveBeenCalledWith(expect.any(FormData));
+    expect(mocks.createPlatformPlanCheckout).toHaveBeenCalledWith(expect.any(FormData), incomingRequest);
     expect(mocks.platformPlanCheckoutPath).toHaveBeenCalledWith({
       kind: "checkout",
       transactionId: "synthetic-transaction",

@@ -18,6 +18,8 @@ export type CheckoutSessionInput = {
   vendor: Vendor;
   referralCode?: string;
   appUrl: string;
+  /** Server-validated payer origin; notification delivery stays canonical. */
+  returnAppUrl?: string;
 };
 
 export type CheckoutSessionResult = {
