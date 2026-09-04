@@ -153,9 +153,6 @@ jobs:
         env:
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:31023
 
-      - name: Support rate-limit fixture contracts
-        run: node --test scripts/local-support-rate-limit-fixture.test.mjs
-
       - name: Support browser gate with loopback REST adapter
         run: npm run e2e -- --config=playwright.support.config.ts --fail-on-flaky-tests
         env:

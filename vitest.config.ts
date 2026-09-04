@@ -41,6 +41,9 @@ export default defineConfig({
     exclude: [
       ...configDefaults.exclude,
       "tests/e2e/**",
+      // This Playwright suite runs in its own required CI Browser gate with
+      // the loopback REST adapter, not in Vitest's unit-test process.
+      "tests/e2e-support/**",
       // Historical AI Team snapshots are evidence, not active test sources.
       ".ai-team/tmp/**",
       // Browser QA mirrors are disposable copies of the source tree, not
