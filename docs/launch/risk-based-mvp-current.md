@@ -4,6 +4,10 @@ Updated: 2026-09-04 (Asia/Taipei). This checkpoint describes the approved launch
 
 ## Latest verified checkpoint
 
+- Published product source is `fb004d442494f0273bb622df7d869d30152cb19e`; CI `33886472991` is running with both Vitest routing fixes. Superseded `33885775225` was cancelled before repeating the known collection failure; no secure validation run was cancelled.
+- Application diagnostic source `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2` has successful non-Production staging deployment `6266878866`, immutable host `celebrate-deal-staging-pre6eeges-a25814740s-projects.vercel.app`. Anonymous health HEAD returned 200 and unauthenticated recovery POST returned 401. PR #198 checks remain running; no further query was dispatched.
+- Draft release summary is available at `docs/launch/risk-based-mvp-release-summary.md`, preserving the complete first-release scope and all unproven provider, Browser and human acceptance requirements. It explicitly remains NOT_READY and is not release approval.
+
 - CI `33885169141` passed unit/coverage but failed PostgreSQL concurrency collection when its separate Vitest configuration loaded the Playwright-only support suite. Added the same routing boundary to `vitest.synthetic-db-coverage.config.ts`; collection no longer includes that Browser file, lint/typecheck and diff check passed. Other dedicated DB configurations explicitly include their own test files and were left unchanged. The mandatory support Playwright gate and all Browser assertions remain intact. This is a runner configuration fix, not a database invariant PASS.
 
 - Current published product source is `cdab40c56403850d69d044d9d1e7dcd40b1e3ef2`, CI `33885775225` running. Earlier `a9dc22b` CI `33885169141` passed unit/coverage and is running PostgreSQL concurrency tests; this confirms the Browser/Vitest routing correction at that source, not full Browser acceptance.
