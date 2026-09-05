@@ -6,6 +6,7 @@ import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -97,9 +98,22 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
       .filter((event) => event.eventType !== "chat_message" && event.eventType !== "reminder")
       .filter((event) => (
         event.eventType !== "product_spotlight"
+        && event.eventType !== "flash_voucher"
         || Boolean(event.productId && liveProductIds.has(event.productId))
+        || (event.eventType === "flash_voucher" && !event.productId)
       ))
-      .map((event) => ({
+      .flatMap((event) => {
+        const advanced = event.eventType === "lucky_draw" || event.eventType === "poll" || event.eventType === "flash_voucher"
+          ? normalizeInteractionEventDraft({
+              eventType: event.eventType,
+              triggerSec: event.triggerSec,
+              title: event.title,
+              productId: event.productId,
+              metadata: event.metadata,
+            })
+          : null;
+        if (advanced && !advanced.success) return [];
+        return [{
         id: event.id,
         eventType: event.eventType,
         triggerSec: event.triggerSec,
@@ -108,6 +122,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         productId: event.productId,
         ctaLabel: event.ctaLabel,
         ctaUrl: event.ctaUrl,
+        ...(advanced?.success ? { metadata: advanced.data.metadata } : {}),
         role: event.role?.vendorId === live.vendorId
           ? {
               name: event.role.name,
@@ -115,7 +130,8 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
               label: event.role.label,
             }
           : null,
-      }))
+        }];
+      });
 
   return (
     <PersistentLivePlaybackRegistration

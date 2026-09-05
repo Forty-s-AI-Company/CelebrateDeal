@@ -128,6 +128,39 @@ const checkoutInput = {
 } as const;
 
 describe("commerce orders database service", () => {
+  it("persists a server-authorized voucher as subtotal minus discount while preserving the product line price", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValue(product("physical"));
+
+    await createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 1_000,
+      discountAmountCents: 200,
+    });
+
+    expect(tx.commerceOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ subtotalAmountCents: 1_200, totalAmountCents: 1_000 }),
+    }));
+    expect(tx.commerceOrderItem.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        unitPriceCents: 1_200,
+        lineTotalCents: 1_200,
+        nonSensitiveSnapshot: expect.objectContaining({ discountAmountCents: 200 }),
+      }),
+    }));
+  });
+
+  it("rejects browser-shaped discounts that make the order free or do not reconcile", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValue(product("physical"));
+    await expect(createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 0,
+      discountAmountCents: 1_200,
+    })).rejects.toBeInstanceOf(CommerceOrderValidationError);
+    expect(tx.commerceOrder.create).not.toHaveBeenCalled();
+  });
+
   it.each(["physical", "digital", "service", "course"] as const)("creates a sanitized %s fulfillment placeholder", async (fulfillmentType) => {
     const tx = transaction();
     tx.product.findFirst.mockResolvedValue(product(fulfillmentType));

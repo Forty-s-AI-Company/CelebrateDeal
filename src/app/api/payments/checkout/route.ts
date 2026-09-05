@@ -57,6 +57,10 @@ import {
   normalizeReferralCode,
   visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
+import {
+  FLASH_VOUCHER_COOKIE,
+  resolveEligibleVoucherClaim,
+} from "@/lib/live-interaction";
 
 const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
   // Kept only for backward-compatible request parsing. Attribution remains
@@ -71,6 +75,46 @@ type CheckoutAdmission = NonNullable<ReturnType<typeof verifyCheckoutAdmission>>
 type CheckoutAdmissionResult =
   | { ok: true; admission: CheckoutAdmission }
   | { ok: false; response: NextResponse };
+
+class VoucherClaimConflictError extends Error {}
+
+type EligibleVoucherClaim = { id: string; discountAmountCents: number } | null;
+
+function checkoutPromotion(voucherClaim: EligibleVoucherClaim, priceCents: number) {
+  const discountAmountCents = voucherClaim ? voucherClaim.discountAmountCents : 0;
+  return { discountAmountCents, checkoutAmountCents: priceCents - discountAmountCents };
+}
+
+async function consumeVoucherClaim(
+  tx: Prisma.TransactionClient,
+  voucherClaim: EligibleVoucherClaim,
+  input: { vendorId: string; orderId: string; now: Date },
+) {
+  if (!voucherClaim) return;
+  const claimed = await tx.liveInteractionResponse.updateMany({
+    where: { id: voucherClaim.id, vendorId: input.vendorId, usedOrderId: null, expiresAt: { gt: input.now } },
+    data: { usedOrderId: input.orderId, discountAmountCents: voucherClaim.discountAmountCents },
+  });
+  if (claimed.count !== 1) throw new VoucherClaimConflictError();
+}
+
+function requestCookie(request: Request, name: string) {
+  for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
+    const separator = segment.indexOf("=");
+    if (separator <= 0 || segment.slice(0, separator).trim() !== name) continue;
+    const value = segment.slice(separator + 1).trim();
+    return /^[A-Za-z0-9_-]{43}$/u.test(value) ? value : null;
+  }
+  return null;
+}
+
+async function eligibleVoucherClaim(
+  request: Request,
+  input: { vendorId: string; productId: string; priceCents: number; currency: string },
+) {
+  const bearer = requestCookie(request, FLASH_VOUCHER_COOKIE);
+  return resolveEligibleVoucherClaim(getDb(), bearer, input);
+}
 
 function validatedCheckoutAdmission(
   request: Request,
@@ -148,6 +192,9 @@ function checkoutTransactionMetadata(input: {
   formSubmissionId?: string;
   /** Only assigned from a server-validated, verified registration. */
   sourceLiveId?: string;
+  voucherClaimId?: string;
+  discountAmountCents?: number;
+  checkoutAmountCents?: number;
 }) {
   return {
     // The browser cannot choose a transaction purpose or source marker.
@@ -159,6 +206,9 @@ function checkoutTransactionMetadata(input: {
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
+    ...(input.voucherClaimId ? { voucherClaimId: input.voucherClaimId } : {}),
+    ...(input.discountAmountCents ? { discountAmountCents: input.discountAmountCents } : {}),
+    ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
     ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
@@ -390,7 +440,9 @@ async function existingCheckoutResponse({
   if (
     transaction.vendorId !== product.vendorId
     || metadata.productId !== product.id
-    || transaction.grossAmountCents !== product.priceCents
+    || transaction.grossAmountCents !== (
+      typeof metadata.checkoutAmountCents === "number" ? metadata.checkoutAmountCents : product.priceCents
+    )
     || transaction.currency !== product.currency
   ) {
     return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
@@ -421,6 +473,26 @@ async function existingCheckoutResponse({
   } catch {
     return NextResponse.json({ error: "Checkout support access unavailable" }, { status: 503 });
   }
+}
+
+async function checkoutCreationErrorResponse(input: {
+  error: unknown;
+  request: Request;
+  db: ReturnType<typeof getDb>;
+  product: { id: string; vendorId: string; priceCents: number; currency: string };
+  checkoutIdentityHash: string;
+}) {
+  if (input.error instanceof CheckoutIdempotencyConflictError) {
+    const winner = await input.db.paymentTransaction.findUnique({
+      where: { id: input.error.transactionId },
+      include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
+    });
+    if (winner) return existingCheckoutResponse({ request: input.request, transaction: winner, product: input.product, checkoutIdentityHash: input.checkoutIdentityHash });
+  }
+  if (input.error instanceof InventoryUnavailableError) return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
+  if (input.error instanceof ProductChangedError) return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
+  if (input.error instanceof VoucherClaimConflictError) return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
+  return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
 }
 
 export async function POST(request: Request) {
@@ -513,6 +585,13 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
+  const voucherClaim = await eligibleVoucherClaim(request, {
+    vendorId: parsed.data.vendorId,
+    productId: product.id,
+    priceCents: product.priceCents,
+    currency: product.currency,
+  });
+  const { discountAmountCents, checkoutAmountCents } = checkoutPromotion(voucherClaim, product.priceCents);
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
     productName: product.name,
@@ -521,6 +600,9 @@ export async function POST(request: Request) {
     affiliateClickId: affiliateAttribution?.affiliateClickId,
     formSubmissionId,
     sourceLiveId,
+    voucherClaimId: voucherClaim?.id,
+    discountAmountCents,
+    checkoutAmountCents,
   });
 
   const order = orderNumber();
@@ -538,8 +620,8 @@ export async function POST(request: Request) {
         providerName: provider.id,
         orderNumber: order,
         paymentMode: "platform",
-        grossAmountCents: product.priceCents,
-        netAmountCents: product.priceCents,
+        grossAmountCents: checkoutAmountCents,
+        netAmountCents: checkoutAmountCents,
         currency: product.currency,
         status: "pending",
         metadata: transactionMetadata,
@@ -551,30 +633,23 @@ export async function POST(request: Request) {
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
-          totalAmountCents: product.priceCents,
+          totalAmountCents: checkoutAmountCents,
+          discountAmountCents,
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
           customCheckoutAnswers: customCheckout.answers,
         });
+        await consumeVoucherClaim(tx, voucherClaim, {
+          vendorId: parsed.data.vendorId,
+          orderId: commerceOrder.id,
+          now: new Date(),
+        });
         commerceOrderId = commerceOrder.id;
       },
     });
   } catch (error) {
-    if (error instanceof CheckoutIdempotencyConflictError) {
-      const winner = await db.paymentTransaction.findUnique({
-        where: { id: error.transactionId },
-        include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
-      });
-      if (winner) return await existingCheckoutResponse({ request, transaction: winner, product, checkoutIdentityHash });
-    }
-    if (error instanceof InventoryUnavailableError) {
-      return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
-    }
-    if (error instanceof ProductChangedError) {
-      return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
-    }
-    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+    return checkoutCreationErrorResponse({ error, request, db, product, checkoutIdentityHash });
   }
   let checkoutSession: CheckoutSessionResult;
   try {

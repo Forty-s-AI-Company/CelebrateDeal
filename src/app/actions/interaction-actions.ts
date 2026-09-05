@@ -22,6 +22,7 @@ import {
 import type { InteractionRoleActionState, InteractionRoleFormValues } from "@/lib/interaction-role-action-state";
 import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { isEligibleScheduledRole } from "@/lib/live-chat-contract";
+import { interactionEndsAt, pickLuckyDrawWinner } from "@/lib/live-interaction";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -31,6 +32,105 @@ function text(formData: FormData, key: string, fallback = "") {
 function optionalText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
+}
+
+export type LiveInteractionStudioState = {
+  status: "idle" | "success" | "error";
+  message: string;
+  runId?: string;
+};
+
+export async function startLiveInteractionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const liveId = text(formData, "liveId");
+  const eventType = text(formData, "eventType");
+  const title = text(formData, "title");
+  const durationSec = Number(text(formData, "durationSec"));
+  const productId = optionalText(formData, "productId");
+  const metadata = eventType === "lucky_draw"
+    ? { kind: eventType, durationSec, slogan: text(formData, "slogan") }
+    : eventType === "poll"
+      ? { kind: eventType, durationSec, question: text(formData, "question"), options: text(formData, "options").split(/\r?\n/u) }
+      : {
+          kind: eventType,
+          durationSec,
+          maxClaims: Number(text(formData, "maxClaims")),
+          discountType: text(formData, "discountType"),
+          discountValue: Number(text(formData, "discountValue")) * (text(formData, "discountType") === "fixed" ? 100 : 1),
+          productId,
+        };
+  const normalized = normalizeInteractionEventDraft({ eventType, triggerSec: 0, title, productId, metadata });
+  if (!normalized.success || !normalized.data.metadata) return { status: "error", message: normalized.success ? "互動設定不完整。" : normalized.error };
+  const live = await getDb().live.findFirst({
+    where: { id: liveId, vendorId: vendor.id, status: "live" },
+    select: {
+      id: true,
+      products: {
+        where: productId ? { productId, product: { checkoutUrl: null } } : undefined,
+        take: 1,
+        select: { productId: true },
+      },
+    },
+  });
+  if (!live) return { status: "error", message: "只有正在直播中的直播間可以手動發起互動。" };
+  if (productId && live.products.length !== 1) return { status: "error", message: "紅包適用商品不在這場直播的銷售清單中。" };
+  const now = new Date();
+  const run = await getDb().liveInteractionRun.create({
+    data: {
+      vendorId: vendor.id,
+      liveId,
+      source: "manual",
+      eventType: normalized.data.eventType,
+      title: normalized.data.title,
+      configuration: normalized.data.metadata as unknown as Prisma.InputJsonValue,
+      startsAt: now,
+      endsAt: interactionEndsAt(now, normalized.data.metadata),
+      createdByMemberId: auth.member?.id ?? null,
+    },
+  });
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_started",
+    targetType: "LiveInteractionRun",
+    targetId: run.id,
+    after: auditSnapshot({ liveId, eventType: run.eventType, endsAt: run.endsAt }),
+  });
+  return { status: "success", message: "互動已即時送到觀眾端。", runId: run.id };
+}
+
+export async function drawLiveInteractionWinnerAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  const run = await getDb().liveInteractionRun.findFirst({
+    where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: null },
+    include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true } } },
+  });
+  if (!run) return { status: "error", message: "抽獎場次不存在或已經抽過獎。" };
+  const winner = pickLuckyDrawWinner(run.responses);
+  if (!winner) return { status: "error", message: "目前還沒有符合口號的抽獎留言。" };
+  const updated = await getDb().liveInteractionRun.updateMany({
+    where: { id: run.id, vendorId: vendor.id, winnerResponseId: null },
+    data: { winnerResponseId: winner.id, status: "closed", endsAt: new Date() },
+  });
+  if (updated.count !== 1) return { status: "error", message: "另一個 Studio 已完成抽獎，請重新整理。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_winner_drawn",
+    targetType: "LiveInteractionRun",
+    targetId: run.id,
+    after: auditSnapshot({ winnerResponseId: winner.id }),
+  });
+  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶。", runId: run.id };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
@@ -371,6 +471,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
   const productIds = formData.getAll("productId").map(String);
   const ctaLabels = formData.getAll("ctaLabel").map(String);
   const ctaUrls = formData.getAll("ctaUrl").map(String);
+  const submittedMetadata = formData.getAll("eventMetadata").map(String);
   const invalidEventPath = id
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_event`
     : "/interaction-scripts/new?error=invalid_event";
@@ -382,6 +483,9 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     .some((column) => column.length !== eventTypes.length)) {
     redirect(invalidEventPath);
   }
+  if (submittedMetadata.length > 0 && submittedMetadata.length !== eventTypes.length) {
+    redirect(invalidEventPath);
+  }
   if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
     redirect(invalidEventPath);
   }
@@ -390,6 +494,15 @@ export async function upsertInteractionScriptAction(formData: FormData) {
     return triggerSec;
   });
 
+  const metadata = eventTypes.map((_, index) => {
+    const raw = submittedMetadata[index];
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      redirect(invalidEventPath);
+    }
+  });
   const eventResults = eventTypes.map((eventType, index) => {
     const triggerSec = triggerSecs[index];
     if (triggerSec === undefined) redirect(invalidEventPath);
@@ -403,6 +516,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
       ctaLabel: ctaLabels[index],
       ctaUrl: ctaUrls[index],
       roleId: roleIds[index],
+      metadata: metadata[index],
     }, index);
   });
   if (eventResults.some((result) => !result.success)) redirect(invalidEventPath);
@@ -410,6 +524,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
 
   const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
   const referencedProductIds = [...new Set(events.flatMap((event) => event.productId ? [event.productId] : []))];
+  const voucherProductIds = new Set(events.flatMap((event) => event.eventType === "flash_voucher" && event.productId ? [event.productId] : []));
   const invalidReferencePath = id
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : "/interaction-scripts/new?error=invalid_reference";
@@ -455,7 +570,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
         referencedProductIds.length > 0
           ? tx.product.findMany({
               where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
-              select: { id: true },
+              select: { id: true, checkoutUrl: true },
             })
           : Promise.resolve([]),
       ]);
@@ -463,6 +578,7 @@ export async function upsertInteractionScriptAction(formData: FormData) {
         referencedRoles.length !== referencedRoleIds.length
         || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
         || referencedProducts.length !== referencedProductIds.length
+        || referencedProducts.some((product) => voucherProductIds.has(product.id) && Boolean(product.checkoutUrl))
       ) {
         throw new InteractionScriptReferenceError();
       }
@@ -472,7 +588,13 @@ export async function upsertInteractionScriptAction(formData: FormData) {
           await tx.interactionScript.update({ where: { id, vendorId: vendor.id }, data });
           await tx.interactionEvent.deleteMany({ where: { scriptId: id } });
           for (const event of events) {
-            await tx.interactionEvent.create({ data: { ...event, scriptId: id } });
+            await tx.interactionEvent.create({
+              data: {
+                ...event,
+                metadata: event.metadata as Prisma.InputJsonValue | undefined,
+                scriptId: id,
+              },
+            });
           }
         } catch (error) {
           if (isRecordNotFoundError(error)) throw new InteractionScriptMissingError();
@@ -485,7 +607,12 @@ export async function upsertInteractionScriptAction(formData: FormData) {
         data: {
           ...data,
           vendorId: vendor.id,
-          events: { create: events },
+          events: {
+            create: events.map((event) => ({
+              ...event,
+              metadata: event.metadata as Prisma.InputJsonValue | undefined,
+            })),
+          },
         },
       });
       return script.id;
@@ -590,6 +717,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         ctaLabel: event.ctaLabel,
         ctaUrl: event.ctaUrl,
         roleId: event.roleId,
+        metadata: event.metadata,
       }, index));
       if (eventResults.some((result) => !result.success)) {
         throw new InteractionScriptInvalidEventError();
@@ -597,6 +725,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
       const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
       const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
       const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
+      const voucherProductIds = new Set(normalizedEvents.flatMap((event) => event.eventType === "flash_voucher" && event.productId ? [event.productId] : []));
       const [referencedRoles, referencedProducts] = await Promise.all([
         referencedRoleIds.length > 0
           ? tx.interactionRole.findMany({
@@ -616,7 +745,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         referencedProductIds.length > 0
           ? tx.product.findMany({
               where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
-              select: { id: true },
+              select: { id: true, checkoutUrl: true },
             })
           : Promise.resolve([]),
       ]);
@@ -624,6 +753,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         referencedRoles.length !== referencedRoleIds.length
         || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
         || referencedProducts.length !== referencedProductIds.length
+        || referencedProducts.some((product) => voucherProductIds.has(product.id) && Boolean(product.checkoutUrl))
       ) {
         throw new InteractionScriptReferenceError();
       }
@@ -636,7 +766,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
           description: script.description,
           status: "draft",
           events: {
-            create: normalizedEvents.map((event, index) => ({
+            create: normalizedEvents.map((event) => ({
               eventType: event.eventType,
               triggerSec: event.triggerSec,
               title: event.title,
@@ -645,7 +775,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
               ctaLabel: event.ctaLabel,
               ctaUrl: event.ctaUrl,
               roleId: event.roleId,
-              metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
+              metadata: event.metadata as Prisma.InputJsonValue | undefined,
             })),
           },
         },

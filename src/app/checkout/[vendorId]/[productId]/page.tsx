@@ -1,10 +1,12 @@
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
 import type { CommerceCheckoutFulfillmentType } from "@/lib/commerce-checkout";
 import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { FLASH_VOUCHER_COOKIE, resolveEligibleVoucherClaim } from "@/lib/live-interaction";
 
 const fulfillmentLabels: Record<CommerceCheckoutFulfillmentType, string> = {
   physical: "實體商品 · 付款後由商家安排出貨",
@@ -65,6 +67,17 @@ export default async function CommerceCheckoutPage({
   const isAvailable = product.inventory > 0;
   const customCheckoutFields = safeParseCustomCheckoutFields(product.customCheckoutFields);
   if (!customCheckoutFields.success) notFound();
+  const voucherClaim = await resolveEligibleVoucherClaim(
+    getDb(),
+    (await cookies()).get(FLASH_VOUCHER_COOKIE)?.value,
+    {
+      vendorId: product.vendorId,
+      productId: product.id,
+      priceCents: product.priceCents,
+      currency: product.currency,
+    },
+  );
+  const checkoutPriceCents = product.priceCents - (voucherClaim?.discountAmountCents ?? 0);
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 sm:py-12">
@@ -84,14 +97,15 @@ export default async function CommerceCheckoutPage({
             <h1 id="checkout-product-title" className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
               {product.name}
             </h1>
-            <p className="mt-3 text-2xl font-black text-slate-950">{formatPrice(product.priceCents, product.currency)}</p>
+            <p className="mt-3 text-2xl font-black text-slate-950">{formatPrice(checkoutPriceCents, product.currency)}</p>
+            {voucherClaim ? <p className="mt-1 text-sm font-bold text-red-700"><span className="mr-2 text-slate-400 line-through">{formatPrice(product.priceCents, product.currency)}</span>直播紅包已自動折抵 {formatPrice(voucherClaim.discountAmountCents, product.currency)}</p> : null}
             <p className="mt-2 text-sm font-medium text-slate-600">{fulfillmentLabels[fulfillmentType]}</p>
             {product.description ? <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-600">{product.description}</p> : null}
             <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
               <p className="font-semibold">訂單摘要</p>
               <div className="mt-2 flex items-center justify-between gap-4">
                 <span>{product.name} × 1</span>
-                <span className="font-bold">{formatPrice(product.priceCents, product.currency)}</span>
+                <span className="font-bold">{formatPrice(checkoutPriceCents, product.currency)}</span>
               </div>
             </div>
           </div>

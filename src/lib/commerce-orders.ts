@@ -193,6 +193,8 @@ export type CreateCommerceOrderForCheckoutInput = {
   paymentTransactionId: string;
   /** The server-authorized order amount, in the product currency's minor unit. */
   totalAmountCents: number;
+  /** Optional server-authorized promotion. Never accept this value directly from a browser. */
+  discountAmountCents?: number;
   quantity?: number;
   currency: string;
   buyer: CommerceOrderBuyerContact;
@@ -259,7 +261,14 @@ export async function createCommerceOrderForCheckout(
   assertPositiveAmount(product.priceCents, "product price");
   if (product.currency !== input.currency) throw new CommerceOrderValidationError("currency does not match product.");
   const calculatedTotal = product.priceCents * quantity;
-  if (!Number.isSafeInteger(calculatedTotal) || calculatedTotal !== input.totalAmountCents) {
+  const discountAmountCents = input.discountAmountCents ?? 0;
+  if (
+    !Number.isSafeInteger(calculatedTotal)
+    || !Number.isSafeInteger(discountAmountCents)
+    || discountAmountCents < 0
+    || discountAmountCents >= calculatedTotal
+    || calculatedTotal - discountAmountCents !== input.totalAmountCents
+  ) {
     throw new CommerceOrderValidationError("totalAmountCents does not match the immutable product price.");
   }
 
@@ -304,7 +313,7 @@ export async function createCommerceOrderForCheckout(
     status: "pending_payment" as const,
     currency: input.currency,
     subtotalAmountCents: calculatedTotal,
-    totalAmountCents: calculatedTotal,
+    totalAmountCents: calculatedTotal - discountAmountCents,
     paidAmountCents: 0,
     refundedAmountCents: 0,
     buyerEncryptedEnvelope: pii.buyerEncrypted,
@@ -341,6 +350,7 @@ export async function createCommerceOrderForCheckout(
         unitPriceCents: product.priceCents,
         quantity,
         lineTotalCents: calculatedTotal,
+        ...(discountAmountCents > 0 ? { discountAmountCents } : {}),
         imageUrl: product.imageUrl,
         // Definition only: answers stay in the separate encrypted envelope.
         customCheckoutFields,

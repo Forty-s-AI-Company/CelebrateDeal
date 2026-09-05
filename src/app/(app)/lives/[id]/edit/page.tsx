@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { LiveStepperForm } from "@/components/live-stepper-form";
+import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
@@ -111,7 +112,7 @@ export default async function EditLivePage({
     }),
     db.product.findMany({
       where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true, name: true, inventory: true },
+      select: { id: true, name: true, inventory: true, checkoutUrl: true },
       orderBy: { createdAt: "desc" },
     }),
     db.registrationForm.findMany({
@@ -232,6 +233,14 @@ export default async function EditLivePage({
         updatedAt: savedDraft.updatedAt.toISOString(),
       }
     : undefined;
+  const activeDrawRuns = live.status === "live"
+    ? await db.liveInteractionRun.findMany({
+        where: { vendorId: vendor.id, liveId: live.id, eventType: "lucky_draw", winnerResponseId: null },
+        orderBy: { startsAt: "desc" },
+        take: 5,
+        select: { id: true, title: true, _count: { select: { responses: true } } },
+      })
+    : [];
 
   return (
     <>
@@ -254,6 +263,12 @@ export default async function EditLivePage({
         hasUnavailableTemplate={hasUnavailableTemplate}
         hasUnavailableReminderTemplate={hasUnavailableReminderTemplate}
         hasUnavailableNotificationRuleTemplate={hasUnavailableNotificationRuleTemplate}
+      />
+      <LiveInteractionStudio
+        liveId={live.id}
+        csrfToken={csrfToken}
+        products={products}
+        initialDrawRuns={activeDrawRuns.map((run) => ({ id: run.id, title: run.title, responseCount: run._count.responses }))}
       />
       <LiveStepperForm
         videos={videos}

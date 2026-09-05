@@ -6,6 +6,7 @@ import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pau
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveChatPanel } from "@/components/live-chat-panel";
+import { LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -109,6 +110,7 @@ export type LivePageData = {
     productId: string | null;
     ctaLabel: string | null;
     ctaUrl: string | null;
+    metadata?: unknown;
     role: null | {
       name: string;
       avatarUrl: string | null;
@@ -1353,6 +1355,14 @@ function LivePlaybackExperience({
       </div>
 
       <PlaybackNavigation panel={visiblePanel} onPanelChange={onPanelChange} productsAvailable={productsAvailable} />
+
+      <LiveAdvancedInteractions
+        vendorId={live.vendorId}
+        liveId={live.id}
+        currentSeconds={currentSeconds}
+        events={live.interactionEvents}
+        enabled={admissionStatus === "admitted"}
+      />
 
       {checkoutError ? (
         <p role="alert" className="absolute bottom-24 left-3 right-3 z-40 rounded-xl bg-red-700 px-4 py-3 text-sm font-bold text-white shadow-xl">

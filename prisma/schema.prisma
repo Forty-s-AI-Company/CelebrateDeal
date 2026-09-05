@@ -138,6 +138,8 @@ model Vendor {
   supportCaseEvents                SupportCaseEvent[]
   supportRefundHandoffs            SupportRefundHandoff[]
   buyerSupportOrderGrants          BuyerSupportOrderGrant[]
+  liveInteractionRuns              LiveInteractionRun[]
+  liveInteractionResponses         LiveInteractionResponse[]
 }
 
 model User {
@@ -486,6 +488,8 @@ model Live {
   reminderReconciliationJobs LiveReminderReconciliationJob[]
   liveChatMessages           LiveChatMessage[]
   notificationRules          LiveNotificationRule[]
+  interactionRuns            LiveInteractionRun[]
+  interactionResponses       LiveInteractionResponse[]
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
@@ -919,6 +923,61 @@ model InteractionEvent {
 
   script InteractionScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
   role   InteractionRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+}
+
+/// One server-authoritative activation of an advanced live interaction. Script
+/// activations are idempotent per live/event; manual activations are independent.
+model LiveInteractionRun {
+  id                String   @id @default(cuid())
+  vendorId          String
+  liveId            String
+  source            String
+  sourceEventId     String?
+  eventType         String
+  title             String
+  configuration     Json
+  status            String   @default("active")
+  startsAt          DateTime @default(now())
+  endsAt            DateTime
+  winnerResponseId  String?
+  createdByMemberId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vendor    Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live      Live                      @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  responses LiveInteractionResponse[]
+
+  @@unique([liveId, sourceEventId])
+  @@unique([vendorId, id])
+  @@index([vendorId, liveId, status, endsAt])
+}
+
+/// A single viewer's immutable choice/entry/claim for one run. Viewer tokens and
+/// voucher bearer tokens are stored only as hashes.
+model LiveInteractionResponse {
+  id                  String    @id @default(cuid())
+  vendorId            String
+  liveId              String
+  runId               String
+  participantHash     String
+  eventType           String
+  value               String
+  displayName         String?
+  claimTokenHash      String?   @unique
+  productId           String?
+  discountAmountCents Int?
+  expiresAt           DateTime?
+  usedOrderId         String?
+  createdAt           DateTime  @default(now())
+
+  vendor Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live   Live               @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  run    LiveInteractionRun @relation(fields: [vendorId, runId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([runId, participantHash])
+  @@index([vendorId, liveId, eventType, createdAt])
+  @@index([usedOrderId])
 }
 
 model Blacklist {

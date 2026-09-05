@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
-import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
+import { BadgeCheck, BarChart3, ChevronDown, ChevronUp, Gift, GripVertical, Link2Off, MessageCircle, Megaphone, PartyPopper, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
 import { unbindInteractionScriptFromLiveAction, upsertInteractionScriptAction } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
@@ -29,7 +29,7 @@ type BoundLive = Live & {
 };
 
 type TimelineEvent = Pick<InteractionEvent, "eventType" | "triggerSec" | "title"> &
-  Partial<Pick<InteractionEvent, "message" | "roleId" | "productId" | "ctaLabel" | "ctaUrl">>;
+  Partial<Pick<InteractionEvent, "message" | "roleId" | "productId" | "ctaLabel" | "ctaUrl" | "metadata">>;
 
 type TimelineTemplate = {
   name: string;
@@ -83,7 +83,64 @@ function eventSummary(event: TimelineEvent, products: Product[]) {
     return products.find((product) => product.id === event.productId)?.name ?? "尚未選擇商品";
   }
   if (event.eventType === "cta_switch") return event.ctaLabel || "尚未設定 CTA";
+  const metadata = eventMetadata(event);
+  if (event.eventType === "lucky_draw") return typeof metadata.slogan === "string" ? metadata.slogan : "尚未設定抽獎口號";
+  if (event.eventType === "poll") return typeof metadata.question === "string" ? metadata.question : "尚未設定投票問題";
+  if (event.eventType === "flash_voucher") {
+    const count = typeof metadata.maxClaims === "number" ? metadata.maxClaims : 0;
+    return count > 0 ? `限量 ${count} 份` : "尚未設定紅包份數";
+  }
   return event.message || event.title || "尚未輸入訊息";
+}
+
+function eventMetadata(event: TimelineEvent): Record<string, unknown> {
+  return typeof event.metadata === "object" && event.metadata !== null && !Array.isArray(event.metadata)
+    ? event.metadata as Record<string, unknown>
+    : {};
+}
+
+function metadataNumber(event: TimelineEvent, key: string, fallback: number) {
+  const value = eventMetadata(event)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function metadataText(event: TimelineEvent, key: string, fallback = "") {
+  const value = eventMetadata(event)[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function voucherDiscountInputValue(event: TimelineEvent) {
+  const value = metadataNumber(event, "discountValue", 10);
+  return metadataText(event, "discountType", "percentage") === "fixed" ? value / 100 : value;
+}
+
+function voucherDiscountMetadataValue(event: TimelineEvent, inputValue: string) {
+  const value = Number(inputValue);
+  return metadataText(event, "discountType", "percentage") === "fixed" ? value * 100 : value;
+}
+
+function isScheduledMessageEvent(eventType: string) {
+  return eventType === "chat_message" || eventType === "reminder";
+}
+
+function hasInvalidRoleReference(event: TimelineEvent, selectedRole: InteractionRole | undefined) {
+  return isScheduledMessageEvent(event.eventType) && Boolean(event.roleId) && !selectedRole;
+}
+
+function renderAdvancedEventFields(
+  event: TimelineEvent,
+  index: number,
+  products: Product[],
+  updateEvent: (index: number, patch: Partial<TimelineEvent>) => void,
+) {
+  const commonHiddenFields = <><input type="hidden" name="roleId" value="" /><input type="hidden" name="message" value="" /><input type="hidden" name="ctaLabel" value="" /><input type="hidden" name="ctaUrl" value="" /></>;
+  if (event.eventType === "lucky_draw") return <>{commonHiddenFields}<input type="hidden" name="productId" value="" /><div className="grid gap-2 sm:grid-cols-[1fr_160px]"><label className="grid gap-1 text-xs font-semibold text-slate-600">留言抽獎口號<input value={metadataText(event, "slogan")} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "lucky_draw", slogan: inputEvent.target.value } })} maxLength={80} required className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" placeholder="例如：週年快樂" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">開放秒數<input type="number" min={5} max={600} value={metadataNumber(event, "durationSec", 30)} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "lucky_draw", durationSec: Number(inputEvent.target.value) } })} required className="h-11 rounded-md border border-border px-3 text-sm" /></label></div></>;
+  if (event.eventType === "poll") {
+    const rawOptions = Array.isArray(eventMetadata(event).options) ? eventMetadata(event).options as unknown[] : [];
+    const optionText = rawOptions.map((option) => typeof option === "string" ? option : typeof option === "object" && option !== null && "label" in option ? String(option.label) : "").join("\n");
+    return <>{commonHiddenFields}<input type="hidden" name="productId" value="" /><div className="grid gap-2 sm:grid-cols-[1fr_1fr_140px]"><label className="grid gap-1 text-xs font-semibold text-slate-600">投票問題<input value={metadataText(event, "question")} onChange={(inputEvent) => updateEvent(index, { title: inputEvent.target.value.slice(0, 160) || "即時投票", metadata: { ...eventMetadata(event), kind: "poll", question: inputEvent.target.value } })} maxLength={160} required className="h-11 rounded-md border border-border px-3 text-sm" placeholder="例如：最喜歡哪一款？" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">選項（每行一個）<textarea value={optionText} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "poll", options: inputEvent.target.value.split(/\r?\n/u) } })} rows={2} required className="min-h-11 resize-y rounded-md border border-border px-3 py-2 text-sm" placeholder={"藍色\n紅色"} /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">開放秒數<input type="number" min={5} max={600} value={metadataNumber(event, "durationSec", 60)} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "poll", durationSec: Number(inputEvent.target.value) } })} required className="h-11 rounded-md border border-border px-3 text-sm" /></label></div></>;
+  }
+  return <>{commonHiddenFields}<div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5"><label className="grid gap-1 text-xs font-semibold text-slate-600">折扣類型<select value={metadataText(event, "discountType", "percentage")} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "flash_voucher", discountType: inputEvent.target.value } })} className="h-11 rounded-md border border-border bg-white px-2 text-sm"><option value="percentage">百分比折扣</option><option value="fixed">固定金額折抵</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">{metadataText(event, "discountType", "percentage") === "fixed" ? "折抵金額（元）" : "折扣百分比"}<input type="number" min={1} max={metadataText(event, "discountType", "percentage") === "percentage" ? 90 : 10000} value={voucherDiscountInputValue(event)} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "flash_voucher", discountValue: voucherDiscountMetadataValue(event, inputEvent.target.value) } })} required className="h-11 rounded-md border border-border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">限量份數<input type="number" min={1} max={100000} value={metadataNumber(event, "maxClaims", 100)} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "flash_voucher", maxClaims: Number(inputEvent.target.value) } })} required className="h-11 rounded-md border border-border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">開放秒數<input type="number" min={5} max={600} value={metadataNumber(event, "durationSec", 60)} onChange={(inputEvent) => updateEvent(index, { metadata: { ...eventMetadata(event), kind: "flash_voucher", durationSec: Number(inputEvent.target.value) } })} required className="h-11 rounded-md border border-border px-3 text-sm" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">適用商品<select name="productId" value={metadataText(event, "productId")} onChange={(inputEvent) => updateEvent(index, { productId: inputEvent.target.value || null, metadata: { ...eventMetadata(event), kind: "flash_voucher", productId: inputEvent.target.value || null } })} className="h-11 rounded-md border border-border bg-white px-2 text-sm"><option value="">全部站內結帳商品</option>{products.filter((product) => !product.checkoutUrl).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label></div></>;
 }
 
 function initialTimelineEvents(
@@ -241,9 +298,9 @@ function renderInteractionEventRow({
   handleDrop: (event: DragEvent<HTMLElement>, targetIndex: number) => void;
   finishDrag: () => void;
 }) {
-  const isMessageEvent = event.eventType === "chat_message" || event.eventType === "reminder";
+  const isMessageEvent = isScheduledMessageEvent(event.eventType);
   const selectedRole = roles.find((role) => role.id === event.roleId);
-  const invalidRoleReference = isMessageEvent && Boolean(event.roleId) && !selectedRole;
+  const invalidRoleReference = hasInvalidRoleReference(event, selectedRole);
   const selectedProduct = products.find((product) => product.id === event.productId) ?? products[0];
 
   return (
@@ -289,6 +346,7 @@ function renderInteractionEventRow({
 
       <div className="grid gap-3">
         <input type="hidden" name="eventTitle" value={event.title || eventSummary(event, products)} />
+        <input type="hidden" name="eventMetadata" value={JSON.stringify(event.metadata ?? null)} />
         {isMessageEvent ? (
           <>
             <div className="grid gap-2 sm:grid-cols-[minmax(150px,0.45fr)_1fr]">
@@ -358,7 +416,7 @@ function renderInteractionEventRow({
             <input type="hidden" name="ctaLabel" value="" />
             <input type="hidden" name="ctaUrl" value="" />
           </>
-        ) : (
+        ) : event.eventType === "cta_switch" ? (
           <>
             <input type="hidden" name="roleId" value="" />
             <input type="hidden" name="message" value="" />
@@ -394,7 +452,7 @@ function renderInteractionEventRow({
               </label>
             </div>
           </>
-        )}
+        ) : renderAdvancedEventFields(event, index, products, updateEvent)}
         {eventError ? <p id={`event-error-${index}`} role="alert" className="text-xs font-medium text-red-600">{eventError}</p> : null}
       </div>
 
@@ -469,7 +527,13 @@ export function InteractionScriptForm({
       ? { eventType, triggerSec: 0, title: "商品聚焦", productId: products[0]?.id }
       : eventType === "cta_switch"
         ? { eventType, triggerSec: 0, title: "查看優惠", ctaLabel: "查看優惠", ctaUrl: "" }
-        : { eventType, triggerSec: 0, title: eventType === "reminder" ? "新提醒" : "新留言", message: "", roleId: availableRoles[0]?.id ?? null };
+        : eventType === "lucky_draw"
+          ? { eventType, triggerSec: 0, title: "幸運大抽獎", metadata: { kind: "lucky_draw", durationSec: 30, slogan: "週年快樂" } }
+          : eventType === "poll"
+            ? { eventType, triggerSec: 0, title: "即時投票", metadata: { kind: "poll", durationSec: 60, question: "最喜歡哪一款？", options: ["選項一", "選項二"] } }
+            : eventType === "flash_voucher"
+              ? { eventType, triggerSec: 0, title: "空投限時紅包", metadata: { kind: "flash_voucher", durationSec: 60, maxClaims: 100, discountType: "percentage", discountValue: 10, productId: null } }
+              : { eventType, triggerSec: 0, title: eventType === "reminder" ? "新提醒" : "新留言", message: "", roleId: availableRoles[0]?.id ?? null };
     setEvents((current) => [
       event,
       ...current,
@@ -485,6 +549,12 @@ export function InteractionScriptForm({
       ? { eventType, title: "商品聚焦", message: null, roleId: null, productId: products[0]?.id, ctaLabel: null, ctaUrl: null }
       : eventType === "cta_switch"
         ? { eventType, title: "查看優惠", message: null, roleId: null, productId: null, ctaLabel: "查看優惠", ctaUrl: "" }
+        : eventType === "lucky_draw"
+          ? { eventType, title: "幸運大抽獎", message: null, roleId: null, productId: null, ctaLabel: null, ctaUrl: null, metadata: { kind: "lucky_draw", durationSec: 30, slogan: "週年快樂" } }
+          : eventType === "poll"
+            ? { eventType, title: "即時投票", message: null, roleId: null, productId: null, ctaLabel: null, ctaUrl: null, metadata: { kind: "poll", durationSec: 60, question: "最喜歡哪一款？", options: ["選項一", "選項二"] } }
+            : eventType === "flash_voucher"
+              ? { eventType, title: "空投限時紅包", message: null, roleId: null, productId: null, ctaLabel: null, ctaUrl: null, metadata: { kind: "flash_voucher", durationSec: 60, maxClaims: 100, discountType: "percentage", discountValue: 10, productId: null } }
         : {
             eventType,
             title: eventType === "reminder" ? "提醒" : "官方留言",
@@ -666,6 +736,9 @@ export function InteractionScriptForm({
                 <Megaphone size={16} aria-hidden="true" />
                 新增 CTA
               </button>
+              <button type="button" onClick={() => addEvent("lucky_draw")} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-fuchsia-200 bg-white px-3 text-sm font-semibold text-fuchsia-700 hover:bg-fuchsia-50"><PartyPopper size={16} aria-hidden="true" />新增抽獎</button>
+              <button type="button" onClick={() => addEvent("poll")} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-700 hover:bg-violet-50"><BarChart3 size={16} aria-hidden="true" />新增投票</button>
+              <button type="button" onClick={() => addEvent("flash_voucher")} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50"><Gift size={16} aria-hidden="true" />新增紅包</button>
             </div>
           </div>
 

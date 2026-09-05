@@ -5,6 +5,7 @@ const db = {
   affiliateClick: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
   paymentTransaction: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+  liveInteractionResponse: { findUnique: vi.fn(), updateMany: vi.fn() },
 };
 
 const inventoryMocks = vi.hoisted(() => {
@@ -127,6 +128,8 @@ beforeEach(() => {
   db.affiliateClick.findFirst.mockResolvedValue(null);
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", liveId: "live-1" });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
+  db.liveInteractionResponse.findUnique.mockResolvedValue(null);
+  db.liveInteractionResponse.updateMany.mockResolvedValue({ count: 1 });
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -152,7 +155,10 @@ beforeEach(() => {
     },
   ) => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
-    if (createCommerceOrder) await createCommerceOrder({ transaction: true }, transaction);
+    if (createCommerceOrder) await createCommerceOrder({
+      transaction: true,
+      liveInteractionResponse: db.liveInteractionResponse,
+    }, transaction);
     return transaction;
   });
   inventoryMocks.failPendingCheckoutAndReleaseInventory.mockImplementation(
@@ -187,6 +193,48 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("derives a matching flash-voucher discount on the server and consumes it once", async () => {
+    db.liveInteractionResponse.findUnique.mockResolvedValueOnce({
+      id: "claim-1",
+      vendorId: "vendor-1",
+      eventType: "flash_voucher",
+      usedOrderId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      productId: "product-1",
+      run: {
+        eventType: "flash_voucher",
+        title: "限時紅包",
+        configuration: {
+          kind: "flash_voucher", durationSec: 60, maxClaims: 10,
+          discountType: "percentage", discountValue: 15, productId: "product-1",
+        },
+      },
+    });
+
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+
+    expect(response.status).toBe(200);
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      transactionData: expect.objectContaining({
+        grossAmountCents: 1_100,
+        netAmountCents: 1_100,
+        metadata: expect.objectContaining({
+          voucherClaimId: "claim-1",
+          discountAmountCents: 100,
+          checkoutAmountCents: 1_100,
+        }),
+      }),
+    }));
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ discountAmountCents: 100, totalAmountCents: 1_100 }),
+    );
+    expect(db.liveInteractionResponse.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "claim-1", vendorId: "vendor-1", usedOrderId: null }),
+      data: { usedOrderId: "order-1", discountAmountCents: 100 },
+    });
+  });
+
   it.each([
     ["https://exact-preview.vercel.app", "https://exact-preview.vercel.app"],
     ["https://attacker.vercel.app", "https://app.example.test"],

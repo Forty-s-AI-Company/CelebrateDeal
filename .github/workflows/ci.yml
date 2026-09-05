@@ -127,6 +127,9 @@ jobs:
       - name: LINE integration contract
         run: npm run test:line
 
+      - name: Advanced live interaction contract
+        run: npm run test:interactions
+
       - name: Node TAP contract tests
         run: npm run test:contracts
 

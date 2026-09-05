@@ -87,6 +87,9 @@ import {
   upsertInteractionRoleAction as upsertInteractionRoleActionImpl,
   upsertInteractionRoleActionState as upsertInteractionRoleActionStateImpl,
   upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
+  startLiveInteractionAction as startLiveInteractionActionImpl,
+  drawLiveInteractionWinnerAction as drawLiveInteractionWinnerActionImpl,
+  type LiveInteractionStudioState,
 } from "./actions/interaction-actions";
 import {
   archiveVideoAction as archiveVideoActionImpl,
@@ -1462,6 +1465,14 @@ export async function importSystemRolesAction(formData: FormData) {
 
 export async function upsertInteractionScriptAction(formData: FormData) {
   return upsertInteractionScriptActionImpl(formData);
+}
+
+export async function startLiveInteractionAction(previous: LiveInteractionStudioState, formData: FormData) {
+  return startLiveInteractionActionImpl(previous, formData);
+}
+
+export async function drawLiveInteractionWinnerAction(previous: LiveInteractionStudioState, formData: FormData) {
+  return drawLiveInteractionWinnerActionImpl(previous, formData);
 }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {

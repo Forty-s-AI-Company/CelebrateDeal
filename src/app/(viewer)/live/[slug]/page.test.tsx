@@ -614,4 +614,39 @@ describe("PublicLivePage", () => {
       "id", "title", "slug", "status", "runtimeState", "scheduledAt", "serverNow", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
   });
+
+  it("projects only normalized advanced interaction metadata to the viewer", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      interactionScript: {
+        vendorId: "vendor-1",
+        status: "published",
+        events: [{
+          id: "poll-1",
+          eventType: "poll",
+          triggerSec: 45,
+          title: "人氣投票",
+          message: null,
+          productId: null,
+          ctaLabel: null,
+          ctaUrl: null,
+          role: null,
+          metadata: { question: "最喜歡哪一款？", options: ["A 款", "B 款"], durationSec: 30 },
+        }],
+      },
+    });
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live.interactionEvents).toEqual([expect.objectContaining({
+      id: "poll-1",
+      eventType: "poll",
+      triggerSec: 45,
+      metadata: {
+        kind: "poll",
+        durationSec: 30,
+        question: "最喜歡哪一款？",
+        options: [{ id: "option-1", label: "A 款" }, { id: "option-2", label: "B 款" }],
+      },
+    })]);
+  });
 });

@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({ product: { findFirst: mocks.findProduct } }),
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: vi.fn(() => undefined) }) }));
 
 import CommerceCheckoutPage from "@/app/checkout/[vendorId]/[productId]/page";
 
