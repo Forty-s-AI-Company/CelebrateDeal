@@ -7,6 +7,8 @@ import {
   processLegacyReminderCutovers,
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
+import { materializeLineNotifications } from "@/lib/line-notification-materializer";
+import { processDueLineDeliveries } from "@/lib/line-notification";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -50,6 +52,8 @@ async function processEmailDeliveries() {
     const followups = await processDuePostLiveFollowups();
     const reconciliations = await processLiveReminderReconciliationJobs();
     const results = await processDueEmailDeliveries();
+    const lineMaterialized = await materializeLineNotifications();
+    const lineResults = await processDueLineDeliveries();
     let futureRepairs: Array<{ status: string }> = [];
     try {
       futureRepairs = await processDueLiveNotifications({ includeFuture: true, writeBudget: 100 });
@@ -85,6 +89,11 @@ async function processEmailDeliveries() {
       })),
       processed: results.length,
       results: results.slice(0, 20).map((result) => ({
+        status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
+      })),
+      lineMaterialized: lineMaterialized.length,
+      lineProcessed: lineResults.length,
+      lineResults: lineResults.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
     });

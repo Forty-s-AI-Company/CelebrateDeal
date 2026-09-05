@@ -3929,7 +3929,6 @@ describe("message template actions", () => {
 
   it.each([
     ["an unavailable SMS channel", "channel", "sms"],
-    ["an unavailable LINE channel", "channel", "line"],
     ["an unknown trigger", "trigger", "provider_magic"],
     ["an unknown variable", "body", "{{provider_secret}}"],
     ["a missing email subject", "subject", ""],

@@ -8,6 +8,7 @@ import { getAffiliatePortalDashboard } from "@/lib/affiliate-portal";
 import { maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { LineLoginButton } from "@/components/line-login-button";
 
 const commissionLabels = {
   pending: { label: "待確認", tone: "orange" },
@@ -66,6 +67,7 @@ export default async function AffiliatePortalPage({
     <main className="mx-auto max-w-6xl px-4 py-8">
       <PageHeader title={`嗨，${affiliate.name}`} description={`${vendor.name} · 推廣碼 ${affiliate.code}`} />
       {feedback ? <p role={params.error ? "alert" : "status"} className={`mb-5 rounded-md px-4 py-3 text-sm ${params.error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{feedback}</p> : null}
+      <div className="mb-5"><LineLoginButton request={{ mode: "promoter", redirectPath: "/affiliate-portal" }}>綁定 LINE 接收佣金通知</LineLoginButton></div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="即時點擊數" value={dashboard.metrics.clickCount.toLocaleString("zh-TW")} />

@@ -11,6 +11,10 @@ type MessageTemplateStatus = "active" | "inactive";
 const triggerLabels: Record<MessageTemplateTrigger, string> = {
   registration_confirmed: "報名成功",
   live_reminder: "開播提醒",
+  live_started: "開播即時通知",
+  order_created: "訂單成立",
+  order_paid: "付款成功",
+  commission_credited: "佣金入帳",
   post_live_followup: "課後通知",
 };
 
@@ -39,7 +43,9 @@ function triggerLabel(value: string) {
 }
 
 function channelLabel(value: string) {
-  return value === "email" ? "Email" : value;
+  if (value === "email") return "Email";
+  if (value === "line") return "LINE";
+  return value;
 }
 
 export default async function MessageTemplatesPage({

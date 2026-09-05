@@ -1,6 +1,7 @@
 import { affiliatePortalLoginAction } from "@/app/actions/affiliate-portal-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { LineQuickLoginForm } from "@/components/line-login-button";
 
 const errors: Record<string, string> = {
   invalid: "登入資料不正確，或這組推廣碼尚未開通 Portal。",
@@ -45,6 +46,7 @@ export default async function AffiliatePortalLoginPage({
             登入工作台
           </FormSubmitButton>
         </form>
+        <LineQuickLoginForm />
       </section>
     </main>
   );

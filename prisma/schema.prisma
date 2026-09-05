@@ -130,6 +130,10 @@ model Vendor {
   liveChatMessages                 LiveChatMessage[]
   liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
+  lineOfficialAccount              LineOfficialAccount?
+  lineUserIdentities               LineUserIdentity[]
+  lineLoginStates                  LineLoginState[]
+  lineDeliveries                   LineDelivery[]
   supportCases                     SupportCase[]
   supportCaseEvents                SupportCaseEvent[]
   supportRefundHandoffs            SupportRefundHandoff[]
@@ -590,8 +594,114 @@ model MessageTemplate {
   lives             Live[]                 @relation("LiveRegistrationTemplate")
   reminderLives     Live[]                 @relation("LiveReminderTemplate")
   notificationRules LiveNotificationRule[] @relation("LiveNotificationRuleTemplate")
+  lineDeliveries    LineDelivery[]
 
   @@unique([vendorId, id])
+}
+
+/// A tenant-owned LINE channel connection. Every provider credential, including
+/// channel identifiers, is encrypted at rest with a vendor/field-specific AES-GCM key.
+model LineOfficialAccount {
+  id                              String    @id @default(cuid())
+  vendorId                        String    @unique
+  messagingChannelIdEncrypted     String
+  messagingChannelSecretEncrypted String
+  messagingAccessTokenEncrypted   String
+  loginChannelIdEncrypted         String?
+  loginChannelSecretEncrypted     String?
+  status                          String    @default("active")
+  connectedAt                     DateTime  @default(now())
+  lastValidatedAt                 DateTime?
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
+
+  vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  deliveries LineDelivery[]
+
+  @@unique([vendorId, id])
+  @@index([status, updatedAt])
+}
+
+/// Tenant-scoped LINE identity for a buyer (FormSubmission) or promoter
+/// (Affiliate/User). subjectType + subjectId is validated against the live domain
+/// record before linking; the provider user id is never stored as plaintext.
+model LineUserIdentity {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  subjectType           String
+  subjectId             String
+  lineUserIdHash        String
+  lineUserIdEncrypted   String
+  displayNameEncrypted  String?
+  pictureUrlEncrypted   String?
+  linkedAt              DateTime  @default(now())
+  lastMaterializedAt    DateTime?
+  materializationCursor String?
+  revokedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  deliveries LineDelivery[]
+
+  @@unique([vendorId, subjectType, subjectId])
+  @@unique([vendorId, lineUserIdHash])
+  @@unique([vendorId, id])
+  @@index([vendorId, subjectType, revokedAt])
+  @@index([revokedAt, lastMaterializedAt])
+}
+
+/// One-time OAuth state. Only the hash is persisted so a database read cannot be
+/// turned into a usable login callback token.
+model LineLoginState {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  stateHash             String    @unique
+  nonceHash             String
+  codeVerifierEncrypted String
+  subjectType           String
+  subjectId             String
+  redirectPath          String
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  createdAt             DateTime  @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, expiresAt, consumedAt])
+}
+
+/// Durable outbox record for LINE pushes. The tenant idempotency key is unique,
+/// making event retries safe even when provider responses are ambiguous.
+model LineDelivery {
+  id                    String    @id @default(cuid())
+  vendorId              String
+  lineOfficialAccountId String
+  lineUserIdentityId    String
+  sourceTemplateId      String?
+  trigger               String
+  idempotencyKey        String
+  payloadEncrypted      String
+  status                String    @default("queued")
+  attemptCount          Int       @default(0)
+  maxAttempts           Int       @default(5)
+  nextAttemptAt         DateTime?
+  claimedAt             DateTime?
+  sentAt                DateTime?
+  lastErrorCode         String?
+  providerRequestId     String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  account        LineOfficialAccount @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: Restrict)
+  identity       LineUserIdentity    @relation(fields: [vendorId, lineUserIdentityId], references: [vendorId, id], onDelete: Restrict)
+  sourceTemplate MessageTemplate?    @relation(fields: [vendorId, sourceTemplateId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, idempotencyKey])
+  @@index([status, nextAttemptAt, claimedAt])
+  @@index([vendorId, trigger, createdAt])
+  @@index([lineUserIdentityId, createdAt])
 }
 
 model LiveChatMessage {

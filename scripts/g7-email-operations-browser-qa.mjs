@@ -13,7 +13,7 @@ const image = "postgres:16-alpine";
 const runNamePattern = /^celebratedeal-g7-email-operations-browser-[a-f0-9]{16}$/u;
 const schemaPattern = /^g7_55_browser_[a-f0-9]{16}$/u;
 const migrationPattern = /^\d{12,14}_[a-z0-9_]+$/u;
-export const EXPECTED_CANONICAL_MIGRATIONS = 60;
+export const EXPECTED_CANONICAL_MIGRATIONS = 61;
 const sourceDigestPaths = [
   "prisma/schema.prisma",
   "prisma/migrations/20260810060000_g7_55_email_delivery_operations/migration.sql",

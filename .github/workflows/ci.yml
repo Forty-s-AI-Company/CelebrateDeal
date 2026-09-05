@@ -124,6 +124,9 @@ jobs:
       - name: Unit tests and coverage thresholds
         run: npm run test:coverage
 
+      - name: LINE integration contract
+        run: npm run test:line
+
       - name: Node TAP contract tests
         run: npm run test:contracts
 

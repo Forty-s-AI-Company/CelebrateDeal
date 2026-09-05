@@ -1,4 +1,5 @@
 import { NativePostForm } from "@/components/native-post-form";
+import { LineLoginButton } from "@/components/line-login-button";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function VerifyRegistrationPage({
           <div role="status" aria-live="polite" className="mt-4 rounded-xl bg-emerald-50 p-4 text-emerald-800">
             <h1 className="text-xl font-black">Email 已確認</h1>
             <p className="mt-2 text-sm leading-6">你的報名已列入正式名單，可以關閉這個頁面。</p>
+            <div className="mt-4"><LineLoginButton request={{ mode: "registration", redirectPath: "/verify-registration?status=verified" }} /></div>
           </div>
         ) : invalid ? (
           <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
