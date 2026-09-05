@@ -30,10 +30,10 @@ function invitationRedirectOutcome(page: { url(): string }) {
 
 async function expectInvitationFailureRedirect(page: Page) {
   try {
-    // CI's intentionally invalid mail provider can take roughly 30 seconds to
-    // fail closed, so keep the URL assertion strict while allowing that bounded
-    // provider timeout to finish before Playwright classifies the run as flaky.
-    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u, { timeout: 60_000 });
+    // The first invitation also derives a one-time scrypt password. Under the
+    // full parallel E2E load that work can queue behind other crypto jobs, so
+    // keep the redirect assertion strict while allowing a bounded CI margin.
+    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u, { timeout: 75_000 });
   } catch (error) {
     test.info().annotations.push({ type: "security-action-outcome", description: invitationRedirectOutcome(page) });
     throw error;
@@ -103,9 +103,9 @@ test.afterAll(async () => {
 });
 
 test("local invitation state records member and mail failure without proving email delivery", async ({ page }) => {
-  // The fail-closed mail-provider request can consume about 30 seconds by
-  // itself; leave bounded room for login, persistence checks, and cleanup.
-  test.setTimeout(90_000);
+  // Leave bounded room for first-user scrypt derivation, the fail-closed mail
+  // provider request, persistence checks, and cleanup under the full CI load.
+  test.setTimeout(105_000);
   await page.goto("/login");
   await page.getByLabel("Email").fill(ownerEmail);
   await page.getByLabel("密碼").fill(ownerPassword);
