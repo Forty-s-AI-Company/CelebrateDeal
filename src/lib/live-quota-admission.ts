@@ -91,6 +91,20 @@ export async function hasActiveLiveViewerSession(
   );
 }
 
+/** Returns only the non-secret session identity needed by server-side lifecycle hooks. */
+export async function getActiveLiveViewerSession(
+  db: PrismaClient,
+  input: { vendorId: string; liveId: string; token: string; now?: Date },
+) {
+  const session = await db.liveViewerSession.findUnique({
+    where: { tokenHash: hashLiveViewerToken(input.token) },
+    select: { id: true, vendorId: true, liveId: true, tokenHash: true, expiresAt: true },
+  });
+  const now = input.now ?? new Date();
+  if (!session || session.vendorId !== input.vendorId || session.liveId !== input.liveId || session.expiresAt <= now) return null;
+  return session;
+}
+
 export function liveViewerCookieOptions(request: Request) {
   return {
     httpOnly: true,

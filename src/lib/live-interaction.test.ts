@@ -5,6 +5,7 @@ import {
   pickLuckyDrawWinner,
   pollPercentages,
   resolveEligibleVoucherClaim,
+  resolveEligibleAutomationVoucherClaim,
 } from "./live-interaction";
 
 describe("advanced live interaction algorithms", () => {
@@ -72,5 +73,25 @@ describe("advanced live interaction algorithms", () => {
       currency: "TWD",
       now: new Date("2026-09-06T00:00:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("applies the same bounded checkout discount to automation voucher grants", async () => {
+    const db = { automationVoucherGrant: { findUnique: vi.fn().mockResolvedValue({
+      id: "grant-1",
+      vendorId: "vendor-1",
+      productId: "product-1",
+      usedOrderId: null,
+      expiresAt: new Date("2026-09-07T00:00:00.000Z"),
+      currency: "TWD",
+      discountType: "percentage",
+      discountValue: 15,
+    }) } } as unknown as PrismaClient;
+    await expect(resolveEligibleAutomationVoucherClaim(db, "B".repeat(43), {
+      vendorId: "vendor-1",
+      productId: "product-1",
+      priceCents: 9_900,
+      currency: "TWD",
+      now: new Date("2026-09-06T00:00:00.000Z"),
+    })).resolves.toEqual({ id: "grant-1", source: "automation", discountAmountCents: 1_400 });
   });
 });

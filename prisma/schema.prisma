@@ -140,6 +140,10 @@ model Vendor {
   buyerSupportOrderGrants          BuyerSupportOrderGrant[]
   liveInteractionRuns              LiveInteractionRun[]
   liveInteractionResponses         LiveInteractionResponse[]
+  automationRules                 AutomationRule[]
+  automationExecutionLogs         AutomationExecutionLog[]
+  customerTagAssignments          CustomerTagAssignment[]
+  automationVoucherGrants         AutomationVoucherGrant[]
 }
 
 model User {
@@ -358,6 +362,7 @@ model Product {
   courseCommissionAllocations CourseCommissionAllocation[]
   commerceOrderItems          CommerceOrderItem[]
   deliveryConfig              ProductDeliveryConfig?
+  automationVoucherGrants     AutomationVoucherGrant[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
@@ -2646,6 +2651,7 @@ model PartnerFunnelPage {
 model StreamUsageLedgerEntry {
   id                       String   @id @default(cuid())
   vendorId                 String
+  viewerKeyHash             String?
   liveId                   String
   sourcePageId             String?
   teamId                   String?
@@ -2674,6 +2680,7 @@ model StreamUsageLedgerEntry {
   @@index([sourcePageId, monthKey])
   @@index([promoterMembershipId, monthKey])
   @@index([liveId, capturedAt])
+  @@index([liveId, viewerKeyHash, capturedAt])
 }
 
 /// Immutable provider-report comparison against the server-owned usage ledger.
@@ -2920,4 +2927,95 @@ model TeamConversionAttribution {
   @@index([teamId, promoterMembershipId, attributedAt])
   @@index([teamId, leaderMembershipId, attributedAt])
   @@index([leadAttributionId])
+}
+
+model AutomationRule {
+  id              String                    @id @default(cuid())
+  vendorId        String
+  name            String
+  description     String?
+  trigger         String
+  condition       Json
+  actions         Json
+  isActive        Boolean                   @default(true)
+  version         Int                       @default(1)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  vendor          Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  executionLogs   AutomationExecutionLog[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, trigger, isActive])
+}
+
+model AutomationExecutionLog {
+  id                String             @id @default(cuid())
+  vendorId          String
+  ruleId            String
+  idempotencyKey    String
+  eventId           String
+  trigger           String
+  subjectType       String
+  subjectKeyHash    String?
+  status            String             @default("running")
+  conditionMatched  Boolean?
+  actionResults     Json?
+  errorCode         String?
+  startedAt         DateTime           @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime           @default(now())
+
+  vendor            Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  rule              AutomationRule     @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
+  customerTagAssignments  CustomerTagAssignment[]
+  voucherGrants           AutomationVoucherGrant[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, idempotencyKey])
+  @@index([vendorId, ruleId, createdAt])
+  @@index([vendorId, eventId])
+  @@index([vendorId, status, startedAt])
+}
+
+model CustomerTagAssignment {
+  id                  String                  @id @default(cuid())
+  vendorId            String
+  customerKeyHash     String
+  tag                 String
+  sourceExecutionLogId String?
+  createdAt           DateTime                @default(now())
+
+  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, customerKeyHash, tag])
+  @@index([vendorId, customerKeyHash])
+  @@index([vendorId, tag, createdAt])
+}
+
+model AutomationVoucherGrant {
+  id                  String                  @id @default(cuid())
+  vendorId            String
+  customerKeyHash     String
+  productId           String
+  claimTokenHash      String                  @unique
+  discountType        String
+  discountValue       Int
+  currency            String                  @default("TWD")
+  sourceExecutionLogId String?
+  expiresAt           DateTime
+  redeemedAt          DateTime?
+  usedOrderId         String?
+  createdAt           DateTime                @default(now())
+
+  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product             Product                 @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, customerKeyHash, expiresAt])
+  @@index([vendorId, productId, expiresAt])
+  @@index([usedOrderId])
 }

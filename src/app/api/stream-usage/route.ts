@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+import { dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
-import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+import { getActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   recordStreamUsageLedgerEntry,
@@ -18,6 +20,32 @@ const StreamUsagePayload = z.object({
   eventId: z.string().uuid(),
   watchSeconds: z.number().int().min(1).max(STREAM_USAGE_MAX_HEARTBEAT_SECONDS),
 }).strict();
+
+const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+const FORM_SUBMISSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
+
+function requestCookie(request: Request, name: string) {
+  for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
+    const separator = segment.indexOf("=");
+    if (separator > 0 && segment.slice(0, separator).trim() === name) return segment.slice(separator + 1).trim();
+  }
+  return null;
+}
+
+async function verifiedRegistrationSubject(db: ReturnType<typeof getDb>, request: Request, vendorId: string, liveId: string) {
+  const submissionId = requestCookie(request, FORM_SUBMISSION_COOKIE);
+  if (!submissionId || !FORM_SUBMISSION_ID_PATTERN.test(submissionId)) return null;
+  const submission = await db.formSubmission.findFirst({
+    where: { id: submissionId, liveId, verificationStatus: "VERIFIED", form: { vendorId } },
+    select: { id: true },
+  });
+  if (!submission) return null;
+  return {
+    subjectType: "buyer_registration" as const,
+    subjectId: submission.id,
+    subjectKeyHash: createHash("sha256").update(`automation-registration:v1:${vendorId}:${submission.id}`).digest("hex"),
+  };
+}
 
 function errorResponse(error: StreamUsageValidationError) {
   if (error.code === "live_not_found" || error.code === "source_page_not_found") {
@@ -56,14 +84,33 @@ export async function POST(request: Request) {
     const token = liveViewerTokenFromRequest(request);
     if (!token) return admissionRequiredResponse();
 
-    const admitted = await hasActiveLiveViewerSession(getDb(), {
+    const db = getDb();
+    const admitted = await getActiveLiveViewerSession(db, {
       vendorId: parsed.data.vendorId,
       liveId: parsed.data.liveId,
       token,
     });
     if (!admitted) return admissionRequiredResponse();
 
-    const result = await recordStreamUsageLedgerEntry(parsed.data);
+    const result = await recordStreamUsageLedgerEntry({ ...parsed.data, viewerKeyHash: admitted.tokenHash });
+    const total = await db.streamUsageLedgerEntry.aggregate({
+      where: { vendorId: parsed.data.vendorId, liveId: parsed.data.liveId, viewerKeyHash: admitted.tokenHash },
+      _sum: { watchSeconds: true },
+    });
+    try {
+      const registration = await verifiedRegistrationSubject(db, request, parsed.data.vendorId, parsed.data.liveId);
+      await dispatchAutomationEvent(db, {
+        vendorId: parsed.data.vendorId,
+        eventId: parsed.data.eventId,
+        trigger: "viewer_watch_progress",
+        subjectType: registration?.subjectType ?? "viewer_session",
+        subjectId: registration?.subjectId ?? admitted.id,
+        subjectKeyHash: registration?.subjectKeyHash ?? admitted.tokenHash,
+        watchSecondsTotal: total._sum.watchSeconds ?? 0,
+      });
+    } catch {
+      // Usage is already committed; automation failures are isolated from quota accounting.
+    }
     return NextResponse.json({ ok: true, duplicate: result.duplicate });
   } catch (error) {
     if (error instanceof StreamUsageValidationError) return errorResponse(error);

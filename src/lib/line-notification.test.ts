@@ -3,6 +3,7 @@ import { MockLineMessagingClient } from "@/lib/line-client";
 import { protectLineOfficialAccountCredentials, protectLineProfileValue } from "@/lib/line-credentials";
 import {
   buildCommissionLineMessage,
+  buildAutomationLineMessage,
   buildLiveLineMessage,
   buildOrderLineMessage,
   enqueueLineNotification,
@@ -31,6 +32,11 @@ describe("LINE notification outbox", () => {
     })).toMatchObject({ type: "flex", altText: expect.stringContaining("付款成功電子收據") });
     expect(buildCommissionLineMessage({ amountCents: 12_800, currency: "TWD", orderNumber: "CD-001" }))
       .toMatchObject({ type: "text", text: expect.stringContaining("佣金已入帳") });
+    expect(buildAutomationLineMessage({
+      message: "回購優惠已送達",
+      buttonLabel: "立即使用",
+      buttonUrl: "https://celebratedeal.example/redeem",
+    })).toMatchObject({ type: "flex", contents: { footer: { contents: [{ action: { label: "立即使用" } }] } } });
   });
 
   it("queues one encrypted delivery for a linked identity", async () => {

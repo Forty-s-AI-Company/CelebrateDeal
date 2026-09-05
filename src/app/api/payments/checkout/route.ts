@@ -58,7 +58,9 @@ import {
   visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
 import {
+  AUTOMATION_VOUCHER_COOKIE,
   FLASH_VOUCHER_COOKIE,
+  resolveEligibleAutomationVoucherClaim,
   resolveEligibleVoucherClaim,
 } from "@/lib/live-interaction";
 
@@ -78,7 +80,7 @@ type CheckoutAdmissionResult =
 
 class VoucherClaimConflictError extends Error {}
 
-type EligibleVoucherClaim = { id: string; discountAmountCents: number } | null;
+type EligibleVoucherClaim = { id: string; source: "flash" | "automation"; discountAmountCents: number } | null;
 
 function checkoutPromotion(voucherClaim: EligibleVoucherClaim, priceCents: number) {
   const discountAmountCents = voucherClaim ? voucherClaim.discountAmountCents : 0;
@@ -91,10 +93,15 @@ async function consumeVoucherClaim(
   input: { vendorId: string; orderId: string; now: Date },
 ) {
   if (!voucherClaim) return;
-  const claimed = await tx.liveInteractionResponse.updateMany({
-    where: { id: voucherClaim.id, vendorId: input.vendorId, usedOrderId: null, expiresAt: { gt: input.now } },
-    data: { usedOrderId: input.orderId, discountAmountCents: voucherClaim.discountAmountCents },
-  });
+  const claimed = voucherClaim.source === "automation"
+    ? await tx.automationVoucherGrant.updateMany({
+        where: { id: voucherClaim.id, vendorId: input.vendorId, usedOrderId: null, expiresAt: { gt: input.now } },
+        data: { usedOrderId: input.orderId, redeemedAt: input.now },
+      })
+    : await tx.liveInteractionResponse.updateMany({
+        where: { id: voucherClaim.id, vendorId: input.vendorId, usedOrderId: null, expiresAt: { gt: input.now } },
+        data: { usedOrderId: input.orderId, discountAmountCents: voucherClaim.discountAmountCents },
+      });
   if (claimed.count !== 1) throw new VoucherClaimConflictError();
 }
 
@@ -112,8 +119,12 @@ async function eligibleVoucherClaim(
   request: Request,
   input: { vendorId: string; productId: string; priceCents: number; currency: string },
 ) {
-  const bearer = requestCookie(request, FLASH_VOUCHER_COOKIE);
-  return resolveEligibleVoucherClaim(getDb(), bearer, input);
+  const db = getDb();
+  const automationBearer = requestCookie(request, AUTOMATION_VOUCHER_COOKIE);
+  const automated = await resolveEligibleAutomationVoucherClaim(db, automationBearer, input);
+  if (automated) return automated;
+  const flash = await resolveEligibleVoucherClaim(db, requestCookie(request, FLASH_VOUCHER_COOKIE), input);
+  return flash ? { ...flash, source: "flash" as const } : null;
 }
 
 function validatedCheckoutAdmission(

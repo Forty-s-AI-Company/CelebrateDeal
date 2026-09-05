@@ -130,6 +130,9 @@ jobs:
       - name: Advanced live interaction contract
         run: npm run test:interactions
 
+      - name: Smart automation workflow contract
+        run: npm run test:automations
+
       - name: Node TAP contract tests
         run: npm run test:contracts
 

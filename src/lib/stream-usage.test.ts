@@ -216,6 +216,7 @@ describe("recordStreamUsageLedgerEntry", () => {
         source: "DIRECT_PLAYBACK",
         policyVersion: 2,
         attributionMode: "PROMOTER",
+        viewerKeyHash: null,
         capturedAt,
         allocations: {
           create: [{

@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   auditSnapshot: vi.fn(),
   buildPaymentWebhookDiagnostics: vi.fn(),
   processPaymentWebhook: vi.fn(),
+  dispatchPaymentPaidAutomation: vi.fn(),
+  dispatchPaymentPaidAutomationByOrder: vi.fn(),
   demoVerifySignature: vi.fn(),
   demoNormalizePayload: vi.fn(),
   payUniVerifySignature: vi.fn(),
@@ -25,6 +27,10 @@ vi.mock("@/lib/payment-webhook-diagnostics", () => ({
 }));
 vi.mock("@/lib/payment-webhooks", () => ({
   processPaymentWebhook: mocks.processPaymentWebhook,
+}));
+vi.mock("@/lib/automation-workflow", () => ({
+  dispatchPaymentPaidAutomation: mocks.dispatchPaymentPaidAutomation,
+  dispatchPaymentPaidAutomationByOrder: mocks.dispatchPaymentPaidAutomationByOrder,
 }));
 vi.mock("@/lib/payment-providers/demo", () => ({
   demoPaymentProvider: {
@@ -70,6 +76,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("PAYMENT_PROVIDER", "demo");
   vi.stubEnv("NODE_ENV", "test");
+  mocks.dispatchPaymentPaidAutomation.mockResolvedValue([]);
+  mocks.dispatchPaymentPaidAutomationByOrder.mockResolvedValue([]);
   mocks.getDb.mockReturnValue({
     webhookEvent: {
       findUnique: mocks.webhookEventFindUnique,
@@ -185,6 +193,11 @@ describe("payment webhook provider selection", () => {
     expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(mocks.dispatchPaymentPaidAutomation).toHaveBeenCalledWith({
+      vendorId: "vendor-private",
+      webhookEventId: "webhook-event-private",
+      transactionId: "transaction-private",
+    });
     const serialized = JSON.stringify({ location: response.headers.get("location"), body: await response.text() });
     for (const marker of ["provider-event-private", "CD-PRIVATE", "webhook-event-private", "vendor-private", "transaction-private"]) {
       expect(serialized).not.toContain(marker);
@@ -205,6 +218,45 @@ describe("payment webhook provider selection", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
     await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true, eventId: "webhook-event-notify" });
+  });
+
+  it("replays post-commit automation before acknowledging a duplicate paid callback", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-event-retry", eventType: "paid", orderNumber: "CD-RETRY", vendorId: "vendor-1" },
+      rawPayload: {},
+    });
+    mocks.webhookEventFindUnique.mockResolvedValue({ id: "webhook-event-retry", status: "processed" });
+
+    const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.dispatchPaymentPaidAutomationByOrder).toHaveBeenCalledWith({
+      webhookEventId: "webhook-event-retry",
+      providerName: "payuni",
+      orderNumber: "CD-RETRY",
+      vendorId: "vendor-1",
+    });
+  });
+
+  it("requests another callback retry when post-commit automation recovery is unavailable", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-event-retry", eventType: "paid", orderNumber: "CD-RETRY" },
+      rawPayload: {},
+    });
+    mocks.webhookEventFindUnique.mockResolvedValue({ id: "webhook-event-retry", status: "processed" });
+    mocks.dispatchPaymentPaidAutomationByOrder.mockRejectedValue(new Error("temporary"));
+
+    const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Payment automation pending",
+      eventId: "webhook-event-retry",
+    });
   });
 
   it("sends an unresolved PayUni payer return to a neutral pending result", async () => {

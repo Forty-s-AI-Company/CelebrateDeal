@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   getDb: vi.fn(),
-  hasActiveLiveViewerSession: vi.fn(),
+  getActiveLiveViewerSession: vi.fn(),
+  dispatchAutomationEvent: vi.fn(),
   liveViewerTokenFromRequest: vi.fn(),
   recordStreamUsageLedgerEntry: vi.fn(),
   StreamUsageValidationError: class StreamUsageValidationError extends Error {
@@ -19,9 +20,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/live-quota-admission", () => ({
-  hasActiveLiveViewerSession: mocks.hasActiveLiveViewerSession,
+  getActiveLiveViewerSession: mocks.getActiveLiveViewerSession,
   liveViewerTokenFromRequest: mocks.liveViewerTokenFromRequest,
 }));
+vi.mock("@/lib/automation-workflow", () => ({ dispatchAutomationEvent: mocks.dispatchAutomationEvent }));
 vi.mock("@/lib/stream-usage", () => ({
   recordStreamUsageLedgerEntry: mocks.recordStreamUsageLedgerEntry,
   StreamUsageValidationError: mocks.StreamUsageValidationError,
@@ -54,9 +56,13 @@ function request(body: unknown = payload, headers: Record<string, string> = {}) 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.checkRateLimit.mockResolvedValue(null);
-  mocks.getDb.mockReturnValue({});
+  mocks.getDb.mockReturnValue({
+    streamUsageLedgerEntry: { aggregate: vi.fn().mockResolvedValue({ _sum: { watchSeconds: 120 } }) },
+    formSubmission: { findFirst: vi.fn().mockResolvedValue(null) },
+  });
   mocks.liveViewerTokenFromRequest.mockReturnValue("A".repeat(43));
-  mocks.hasActiveLiveViewerSession.mockResolvedValue(true);
+  mocks.getActiveLiveViewerSession.mockResolvedValue({ id: "session-1", tokenHash: "viewer-hash" });
+  mocks.dispatchAutomationEvent.mockResolvedValue([]);
   mocks.recordStreamUsageLedgerEntry.mockResolvedValue({ duplicate: false, entryId: "usage-1", source: "TEAM_FUNNEL_PAGE" });
 });
 
@@ -66,12 +72,36 @@ describe("POST /api/stream-usage", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, duplicate: false });
-    expect(mocks.hasActiveLiveViewerSession).toHaveBeenCalledWith({}, {
+    expect(mocks.getActiveLiveViewerSession).toHaveBeenCalledWith(expect.any(Object), {
       vendorId: payload.vendorId,
       liveId: payload.liveId,
       token: "A".repeat(43),
     });
-    expect(mocks.recordStreamUsageLedgerEntry).toHaveBeenCalledWith(payload);
+    expect(mocks.recordStreamUsageLedgerEntry).toHaveBeenCalledWith({ ...payload, viewerKeyHash: "viewer-hash" });
+    expect(mocks.dispatchAutomationEvent).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      eventId: payload.eventId,
+      trigger: "viewer_watch_progress",
+      watchSecondsTotal: 120,
+    }));
+  });
+
+  it("uses a verified same-live registration as the automation recipient", async () => {
+    const db = {
+      streamUsageLedgerEntry: { aggregate: vi.fn().mockResolvedValue({ _sum: { watchSeconds: 300 } }) },
+      formSubmission: { findFirst: vi.fn().mockResolvedValue({ id: "submission-1" }) },
+    };
+    mocks.getDb.mockReturnValue(db);
+    const response = await POST(request(payload, { cookie: "celebratedeal_form_submission=submission-1" }));
+    expect(response.status).toBe(200);
+    expect(db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "submission-1", liveId: "live-1", verificationStatus: "VERIFIED" }),
+    }));
+    expect(mocks.dispatchAutomationEvent).toHaveBeenCalledWith(db, expect.objectContaining({
+      subjectType: "buyer_registration",
+      subjectId: "submission-1",
+      subjectKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      watchSecondsTotal: 300,
+    }));
   });
 
   it("rejects a missing admission cookie before the usage ledger", async () => {
@@ -80,12 +110,12 @@ describe("POST /api/stream-usage", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(403);
-    expect(mocks.hasActiveLiveViewerSession).not.toHaveBeenCalled();
+    expect(mocks.getActiveLiveViewerSession).not.toHaveBeenCalled();
     expect(mocks.recordStreamUsageLedgerEntry).not.toHaveBeenCalled();
   });
 
   it.each(["foreign vendor/live session", "expired session"])("rejects %s before the usage ledger", async () => {
-    mocks.hasActiveLiveViewerSession.mockResolvedValue(false);
+    mocks.getActiveLiveViewerSession.mockResolvedValue(null);
 
     const response = await POST(request());
 

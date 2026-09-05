@@ -39,6 +39,7 @@ type ExistingEntry = {
   source: string;
   policyVersion: number;
   attributionMode: string;
+  viewerKeyHash?: string | null;
 };
 
 function monthKey(date: Date) {
@@ -52,6 +53,12 @@ function normalizeSourcePageSlug(value: string | null | undefined) {
   return normalized;
 }
 
+function normalizeViewerKeyHash(value: string | null | undefined) {
+  if (value == null) return null;
+  if (!/^[a-f0-9]{64}$/u.test(value)) throw new StreamUsageValidationError("invalid_event");
+  return value;
+}
+
 function assertUsageInput(eventId: string, watchSeconds: number) {
   if (!STREAM_USAGE_EVENT_ID_PATTERN.test(eventId)) throw new StreamUsageValidationError("invalid_event");
   if (!Number.isInteger(watchSeconds) || watchSeconds < 1 || watchSeconds > STREAM_USAGE_MAX_HEARTBEAT_SECONDS) {
@@ -63,7 +70,11 @@ function matchesExisting(
   existing: ExistingEntry,
   expected: Omit<ExistingEntry, "id" | "capturedAt" | "createdAt">,
 ) {
-  return Object.entries(expected).every(([key, value]) => existing[key as keyof ExistingEntry] === value);
+  return Object.entries(expected).every(([key, value]) => (
+    key === "viewerKeyHash"
+      ? (existing.viewerKeyHash ?? null) === value
+      : existing[key as keyof ExistingEntry] === value
+  ));
 }
 
 function isUniqueConflict(error: unknown) {
@@ -255,6 +266,7 @@ export async function recordStreamUsageLedgerEntry(input: {
   liveShareCode?: string | null;
   eventId: string;
   watchSeconds: number;
+  viewerKeyHash?: string | null;
   capturedAt?: Date;
 }) {
   assertUsageInput(input.eventId, input.watchSeconds);
@@ -323,6 +335,7 @@ export async function recordStreamUsageLedgerEntry(input: {
     source,
     policyVersion: policy.version,
     attributionMode: policy.usageAttributionMode,
+    viewerKeyHash: normalizeViewerKeyHash(input.viewerKeyHash),
   } as const;
 
   try {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { dispatchPaymentPaidAutomation, dispatchPaymentPaidAutomationByOrder } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
@@ -160,6 +161,18 @@ export async function POST(request: Request) {
   });
 
   if (existing?.status === "processed") {
+    if (payload.eventType === "paid") {
+      try {
+        await dispatchPaymentPaidAutomationByOrder({
+          webhookEventId: existing.id,
+          providerName: payload.provider,
+          orderNumber: payload.orderNumber,
+          vendorId: payload.vendorId,
+        });
+      } catch {
+        return webhookResponse(requestUrl, 500, { error: "Payment automation pending", eventId: existing.id });
+      }
+    }
     return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
   }
 
@@ -180,6 +193,15 @@ export async function POST(request: Request) {
 
   try {
     const result = await processPaymentWebhook(payload, event);
+    if (payload.eventType === "paid") {
+      // The payment transaction is already committed here. Automation owns its
+      // own durable logs and must never roll a verified payment back.
+      await dispatchPaymentPaidAutomation({
+        vendorId: result.vendor.id,
+        webhookEventId: event.id,
+        transactionId: result.transaction.id,
+      });
+    }
     return webhookResponse(requestUrl, 200, {
       ok: true,
       eventId: event.id,
@@ -190,6 +212,14 @@ export async function POST(request: Request) {
     try {
       const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
       if (latestEvent?.status === "processed") {
+        if (payload.eventType === "paid") {
+          await dispatchPaymentPaidAutomationByOrder({
+            webhookEventId: event.id,
+            providerName: payload.provider,
+            orderNumber: payload.orderNumber,
+            vendorId: payload.vendorId,
+          });
+        }
         return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
       }
     } catch {

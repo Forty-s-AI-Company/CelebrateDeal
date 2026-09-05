@@ -11,6 +11,7 @@ export const LINE_NOTIFICATION_TRIGGERS = [
   "order_created",
   "order_paid",
   "commission_credited",
+  "automation",
 ] as const;
 export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
 
@@ -84,6 +85,22 @@ export function buildCommissionLineMessage(input: {
     text: [`佣金已入帳：${amountText}`, input.orderNumber ? `來源訂單：${input.orderNumber}` : null]
       .filter(Boolean)
       .join("\n"),
+  };
+}
+
+/** Builds merchant-authored automation copy without allowing arbitrary LINE payloads. */
+export function buildAutomationLineMessage(input: {
+  message: string;
+  buttonLabel?: string | null;
+  buttonUrl?: string | null;
+}): LineMessage {
+  const message = input.message.trim().slice(0, 1_500);
+  if (!message) throw new Error("Automation LINE message is required.");
+  if (!input.buttonLabel || !input.buttonUrl) return { type: "text", text: message };
+  return {
+    type: "flex",
+    altText: message.slice(0, 400),
+    contents: bubble("商家專屬通知", [message], actionButton(input.buttonLabel, input.buttonUrl)),
   };
 }
 
