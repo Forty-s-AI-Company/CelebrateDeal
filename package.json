@@ -11,6 +11,7 @@
     "typecheck:strict-index": "tsc --project tsconfig.strict-index.json --noEmit",
     "test": "vitest run",
     "test:contracts": "node --import tsx scripts/run-node-tap-contracts.ts",
+    "test:line": "vitest run src/lib/line-client.test.ts src/lib/line-credentials.test.ts src/lib/line-login.test.ts src/lib/line-notification.test.ts src/lib/line-notification-materializer.test.ts src/lib/line-schema-contract.test.ts src/app/actions/line-actions.test.ts src/app/api/webhooks/line/[vendorId]/route.test.ts src/app/api/jobs/email-deliveries/route.test.ts",
     "test:db:concurrency": "vitest run --config vitest.synthetic-db-coverage.config.ts",
     "security:bank-accounts:backfill": "tsx scripts/backfill-bank-account-encryption.ts",
     "test:coverage": "node --import tsx scripts/run-combined-coverage.mjs",

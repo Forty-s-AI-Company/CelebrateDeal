@@ -71,7 +71,12 @@ describe("message template draft", () => {
     });
   });
 
-  it.each(["sms", "line"])("rejects the unconnected %s channel", (channel) => {
+  it("accepts the connected LINE channel", () => {
+    expect(normalizeMessageTemplateDraft(validDraft({ channel: "line", trigger: "live_started" })))
+      .toEqual({ success: true, data: expect.objectContaining({ channel: "line", trigger: "live_started" }) });
+  });
+
+  it.each(["sms"])("rejects the unconnected %s channel", (channel) => {
     expect(normalizeMessageTemplateDraft(validDraft({ channel }))).toEqual({ success: false });
   });
 
