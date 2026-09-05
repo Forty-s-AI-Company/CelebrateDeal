@@ -89,6 +89,7 @@
 | `20260817120000_wp2_brand_sender_settings` | vendor sender identity、support Email and contact URL settings |
 | `20260818090000_custom_checkout_fields` | product custom checkout field definitions |
 | `20260819090000_wp1_video_archive_state` | tenant-scoped soft archive and restore state for videos; provider assets are retained |
+| `20260905090000_affiliate_portal` | one portal user per merchant affiliate, encrypted bank binding, and immutable payout-request bank snapshot |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -168,7 +169,7 @@
 ## 驗收判定
 
 - 92/92 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support 或 supporting/telemetry 類別。
-- 58 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 59 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。

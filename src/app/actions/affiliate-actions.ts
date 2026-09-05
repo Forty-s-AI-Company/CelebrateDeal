@@ -4,18 +4,102 @@ import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireFinanceAdmin } from "@/lib/auth";
+import { requireVendorManager } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
-import { assertAffiliateCommissionTransition } from "@/lib/affiliate-commission";
+import { AffiliateCommissionRateBps, AffiliateProfile, assertAffiliateCommissionTransition } from "@/lib/affiliate-commission";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { hashPasswordAsync } from "@/lib/password";
+import { z } from "zod";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+function optionalText(formData: FormData, key: string) {
+  const value = text(formData, key);
+  return value || null;
+}
+
 class PayoutBatchClaimConflict extends Error {}
+
+export async function upsertAffiliateAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const vendor = await requireVendorManager();
+  const id = optionalText(formData, "id");
+  const commissionRate = AffiliateCommissionRateBps.safeParse(Number(text(formData, "commissionRateBps")));
+  if (!commissionRate.success) redirect("/affiliates?error=invalid_commission_rate");
+
+  const profile = AffiliateProfile.safeParse({
+    name: text(formData, "name"),
+    code: text(formData, "code"),
+    source: optionalText(formData, "source"),
+    contactEmail: optionalText(formData, "contactEmail"),
+  });
+  if (!profile.success) redirect("/affiliates?error=invalid_affiliate");
+
+  const portalEmail = optionalText(formData, "portalEmail")?.toLowerCase() ?? null;
+  const portalPassword = text(formData, "portalPassword");
+  if (portalEmail && !z.string().email().max(254).safeParse(portalEmail).success) {
+    redirect("/affiliates?error=invalid_portal_email");
+  }
+  if (portalEmail && portalPassword && (portalPassword.length < 12 || portalPassword.length > 128)) {
+    redirect("/affiliates?error=weak_portal_password");
+  }
+
+  const data = {
+    ...profile.data,
+    commissionRateBps: commissionRate.data,
+    isActive: formData.get("isActive") === "on",
+  };
+  const newPortalPasswordHash = portalEmail && portalPassword ? await hashPasswordAsync(portalPassword) : null;
+  await getDb().$transaction(async (tx) => {
+    let portalUserId: string | undefined;
+    if (portalEmail) {
+      const existingPortalUser = await tx.user.findUnique({
+        where: { email: portalEmail },
+        select: { id: true, status: true },
+      });
+      if (existingPortalUser?.status !== undefined && existingPortalUser.status !== "active") {
+        redirect("/affiliates?error=inactive_portal_user");
+      }
+      if (existingPortalUser) {
+        portalUserId = existingPortalUser.id;
+      } else {
+        if (!newPortalPasswordHash) redirect("/affiliates?error=portal_password_required");
+        const user = await tx.user.create({
+          data: { email: portalEmail, name: profile.data.name, passwordHash: newPortalPasswordHash },
+          select: { id: true },
+        });
+        portalUserId = user.id;
+      }
+      const occupied = await tx.affiliate.findFirst({
+        where: { vendorId: vendor.id, userId: portalUserId, ...(id ? { id: { not: id } } : {}) },
+        select: { id: true },
+      });
+      if (occupied) redirect("/affiliates?error=portal_user_in_use");
+    }
+
+    if (!id) {
+      await tx.affiliate.create({
+        data: { vendorId: vendor.id, ...data, ...(portalUserId ? { userId: portalUserId } : {}) },
+      });
+      return;
+    }
+    const existing = await tx.affiliate.findFirst({
+      where: { id, vendorId: vendor.id },
+      select: { id: true },
+    });
+    if (!existing) redirect("/affiliates?error=affiliate_not_found");
+    await tx.affiliate.update({
+      where: { id, vendorId: vendor.id },
+      data: { ...data, ...(portalUserId ? { userId: portalUserId } : {}) },
+    });
+  });
+  redirect("/affiliates");
+}
 
 export async function voidAffiliateCommissionAction(formData: FormData) {
   await assertServerActionSecurity(formData);

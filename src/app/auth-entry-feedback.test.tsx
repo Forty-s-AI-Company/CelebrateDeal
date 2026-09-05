@@ -27,6 +27,7 @@ describe("auth entry pending feedback", () => {
     expect(html).toContain("正在驗證帳號並登入，請勿重複送出。");
     expect(html).toContain('data-loading-indicator="true"');
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('href="/affiliate-portal/login"');
   });
 
   it("shows action-specific request and confirmation loaders", async () => {

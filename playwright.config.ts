@@ -8,6 +8,10 @@ const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 const localE2eCsrfSecret = "celebratedeal-local-playwright-csrf-secret-v1";
 const localE2eCronSecret = "celebratedeal-local-playwright-cron-secret-v1";
 const localE2eLiveChatIngressSecret = "celebratedeal-local-playwright-live-chat-ingress-secret-v1";
+const localE2eBankKeyring = JSON.stringify({
+  activeKeyId: "playwright",
+  keys: { playwright: Buffer.alloc(32, 7).toString("base64url") },
+});
 const commerceLoopbackTlsBridgeEnvironmentName = "G7_COMMERCE_LOOPBACK_TLS_BRIDGE";
 
 function isLoopbackE2eUrl(value: string) {
@@ -40,7 +44,7 @@ process.env.CSRF_SECRET = localE2eCsrfSecret;
 // Browser fixtures may write data, so isolate them from the interactive local
 // development database. Provision this database from committed migrations
 // before running browser tests.
-const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
+const localPostgresUrl = "postgresql://postgres:postgres@127.0.0.1:54329/celebratedeal_test?schema=public";
 const resendApiKeyEnvironmentName = ["RESEND", "API", "KEY"].join("_");
 const emailFromEnvironmentName = ["EMAIL", "FROM"].join("_");
 const sentryDsnEnvironmentName = ["SENTRY", "DSN"].join("_");
@@ -56,6 +60,7 @@ process.env.E2E_SMOKE_TEST_EMAIL = e2eSmokeTestEmail;
 // Local browser QA verifies deterministic 429 behaviour without consuming the
 // shared Staging Upstash quota. Preview smoke validates Upstash separately.
 process.env.RATE_LIMIT_PROVIDER = e2eRateLimitProvider;
+process.env.BANK_ACCOUNT_KEYRING_JSON = localE2eBankKeyring;
 
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
   process.env.DATABASE_URL = localPostgresUrl;
@@ -114,6 +119,7 @@ export default defineConfig({
       // local or deployed runtime secrets.
       CRON_SECRET: localE2eCronSecret,
       LIVE_CHAT_INGRESS_SECRET: localE2eLiveChatIngressSecret,
+      BANK_ACCOUNT_KEYRING_JSON: localE2eBankKeyring,
       [commerceLoopbackTlsBridgeEnvironmentName]: "1",
       RATE_LIMIT_PROVIDER: e2eRateLimitProvider,
       SMOKE_TEST_EMAIL: e2eSmokeTestEmail,

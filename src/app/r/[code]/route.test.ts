@@ -1,50 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  getDb: vi.fn(),
-  recordPlatformReferralClick: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ affiliate: vi.fn(), live: vi.fn(), form: vi.fn() }));
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({
+  affiliate: { findFirst: mocks.affiliate },
+  live: { findFirst: mocks.live },
+  registrationForm: { findFirst: mocks.form },
+}) }));
 
-vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
-vi.mock("@/lib/platform-referral", () => ({
-  PLATFORM_REFERRAL_COOKIE: "celebratedeal_platform_referral",
-  platformReferralCookieOptions: () => ({
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    path: "/",
-    maxAge: 2_592_000,
-  }),
-  recordPlatformReferralClick: mocks.recordPlatformReferralClick,
-}));
+import { GET } from "@/app/r/[code]/route";
 
-import { GET } from "./route";
+describe("stable affiliate referral route", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("platform referral entry route", () => {
-  it("creates a server-side click and sets an httpOnly attribution cookie", async () => {
-    mocks.getDb.mockReturnValue({});
-    mocks.recordPlatformReferralClick.mockResolvedValue({ id: "click-1" });
-
-    const response = await GET(new Request("https://app.example.test/r/EDEN10"), { params: Promise.resolve({ code: "EDEN10" }) });
-
+  it("redirects an active code to the latest public live with referral attribution", async () => {
+    mocks.affiliate.mockResolvedValue({ vendorId: "vendor-a", code: "A-CODE" });
+    mocks.live.mockResolvedValue({ slug: "launch" });
+    mocks.form.mockResolvedValue({ slug: "signup" });
+    const response = await GET(new Request("https://app.example.test/r/a-code"), { params: Promise.resolve({ code: "a-code" }) });
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans?referral=1");
-    expect(response.headers.get("set-cookie")).toContain("celebratedeal_platform_referral=click-1");
-    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
-    expect(mocks.recordPlatformReferralClick).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: "EDEN10", landingPath: "/billing/plans" }));
+    expect(response.headers.get("location")).toBe("https://app.example.test/live/launch?ref=A-CODE");
   });
 
-  it("redirects malformed codes without touching the database", async () => {
-    const response = await GET(new Request("https://app.example.test/r/"), { params: Promise.resolve({ code: "   " }) });
-
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans?error=invalid_referral");
-    expect(mocks.getDb).not.toHaveBeenCalled();
-    expect(mocks.recordPlatformReferralClick).not.toHaveBeenCalled();
-    expect(response.headers.get("set-cookie")).toContain("celebratedeal_platform_referral=;");
+  it("falls back to an active form and rejects unknown codes", async () => {
+    mocks.affiliate.mockResolvedValueOnce({ vendorId: "vendor-a", code: "A-CODE" }).mockResolvedValueOnce(null);
+    mocks.live.mockResolvedValue(null);
+    mocks.form.mockResolvedValue({ slug: "signup" });
+    const redirect = await GET(new Request("https://app.example.test/r/a-code"), { params: Promise.resolve({ code: "a-code" }) });
+    expect(redirect.headers.get("location")).toBe("https://app.example.test/form/signup?ref=A-CODE");
+    const missing = await GET(new Request("https://app.example.test/r/missing"), { params: Promise.resolve({ code: "missing" }) });
+    expect(missing.status).toBe(404);
   });
 });

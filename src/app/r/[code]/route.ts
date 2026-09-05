@@ -1,30 +1,32 @@
 import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
-import {
-  PLATFORM_REFERRAL_COOKIE,
-  platformReferralCookieOptions,
-  recordPlatformReferralClick,
-} from "@/lib/platform-referral";
 
-export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
-  const { code } = await params;
-  const normalizedCode = code.trim();
-  if (!normalizedCode || normalizedCode.length > 100) {
-    const response = NextResponse.redirect(new URL("/billing/plans?error=invalid_referral", request.url));
-    response.cookies.set(PLATFORM_REFERRAL_COOKIE, "", { ...platformReferralCookieOptions(request), maxAge: 0 });
-    return response;
-  }
-
-  const click = await recordPlatformReferralClick(getDb(), {
-    code: normalizedCode,
-    visitorId: crypto.randomUUID(),
-    landingPath: "/billing/plans",
+export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+  const code = (await params).code.trim().toUpperCase();
+  const affiliate = await getDb().affiliate.findFirst({
+    where: { code, isActive: true },
+    select: { vendorId: true, code: true },
   });
-  const response = NextResponse.redirect(new URL("/billing/plans?referral=1", request.url));
-  if (click) {
-    response.cookies.set(PLATFORM_REFERRAL_COOKIE, click.id, platformReferralCookieOptions(request));
-  } else {
-    response.cookies.set(PLATFORM_REFERRAL_COOKIE, "", { ...platformReferralCookieOptions(request), maxAge: 0 });
-  }
-  return response;
+  if (!affiliate) return NextResponse.json({ error: "Referral not found" }, { status: 404 });
+
+  const [live, form] = await Promise.all([
+    getDb().live.findFirst({
+      where: {
+        vendorId: affiliate.vendorId,
+        OR: [{ status: { in: ["scheduled", "live"] } }, { status: "ended", replayEnabled: true }],
+      },
+      orderBy: [{ startedAt: "desc" }, { createdAt: "desc" }],
+      select: { slug: true },
+    }),
+    getDb().registrationForm.findFirst({
+      where: { vendorId: affiliate.vendorId, isActive: true },
+      orderBy: { createdAt: "desc" },
+      select: { slug: true },
+    }),
+  ]);
+  const path = live ? `/live/${encodeURIComponent(live.slug)}` : form ? `/form/${encodeURIComponent(form.slug)}` : "/";
+  const destination = new URL(path, getCanonicalAppUrl());
+  destination.searchParams.set("ref", affiliate.code);
+  return NextResponse.redirect(destination);
 }

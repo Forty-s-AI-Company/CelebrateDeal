@@ -11,7 +11,6 @@ import {
   requireVendorManager,
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
-import { AffiliateCommissionRateBps, AffiliateProfile } from "@/lib/affiliate-commission";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
@@ -73,7 +72,10 @@ import {
   deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
-import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import {
+  upsertAffiliateAction as upsertAffiliateActionImpl,
+  voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl,
+} from "./actions/affiliate-actions";
 import {
   deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
   deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
@@ -1483,47 +1485,7 @@ export async function unblockBlacklistAction(formData: FormData) {
 }
 
 export async function upsertAffiliateAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  const id = optionalText(formData, "id");
-  const commissionRate = AffiliateCommissionRateBps.safeParse(
-    Number(text(formData, "commissionRateBps")),
-  );
-  if (!commissionRate.success) {
-    redirect("/affiliates?error=invalid_commission_rate");
-  }
-  const profile = AffiliateProfile.safeParse({
-    name: text(formData, "name"),
-    code: text(formData, "code"),
-    source: optionalText(formData, "source"),
-    contactEmail: optionalText(formData, "contactEmail"),
-  });
-  if (!profile.success) {
-    redirect("/affiliates?error=invalid_affiliate");
-  }
-  const db = getDb();
-  const data = {
-    ...profile.data,
-    commissionRateBps: commissionRate.data,
-    isActive: formData.get("isActive") === "on",
-  };
-
-  if (!id) {
-    await db.affiliate.create({ data: { vendorId: vendor.id, ...data } });
-    redirect("/affiliates");
-  }
-
-  const existing = await db.affiliate.findFirst({
-    where: { id, vendorId: vendor.id },
-    select: { id: true },
-  });
-  if (!existing) {
-    redirect("/affiliates?error=affiliate_not_found");
-  }
-
-  await db.affiliate.update({ where: { id, vendorId: vendor.id }, data });
-
-  redirect("/affiliates");
+  return upsertAffiliateActionImpl(formData);
 }
 
 export async function generateSettlementAction(formData: FormData) {

@@ -141,6 +141,7 @@ export default async function AffiliateCommissionsPage({
                     <p className="mt-1 text-sm text-slate-500">調整 {formatCurrency(payout.adjustmentAmountCents)}</p>
                     <p className="mt-1 text-xs text-slate-500">出款 reference：{payout.outcomeReference ?? "未記錄"}</p>
                     <p className="mt-1 text-xs text-slate-500">付款備註／作廢原因：{payout.outcomeReason ?? "未記錄"}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-600">Portal 提領申請：{payout.requestedAt ? formatDateTime(payout.requestedAt) : "尚未送出"}</p>
                     <Link href={`/affiliates/commissions/${encodeURIComponent(payout.id)}`} className="mt-2 inline-flex text-sm font-semibold text-primary hover:underline">
                       查看 ledger 與 payout 明細
                     </Link>

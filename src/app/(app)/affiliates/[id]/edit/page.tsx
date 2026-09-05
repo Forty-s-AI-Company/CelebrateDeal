@@ -8,13 +8,13 @@ import { formatDateTime } from "@/lib/format";
 export default async function EditAffiliatePage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
-  const affiliate = await getDb().affiliate.findFirst({ where: { id, vendorId: vendor.id }, include: { clicks: { orderBy: { createdAt: "desc" }, take: 10 } } });
+  const affiliate = await getDb().affiliate.findFirst({ where: { id, vendorId: vendor.id }, include: { portalUser: { select: { email: true } }, clicks: { orderBy: { createdAt: "desc" }, take: 10 } } });
   if (!affiliate) notFound();
   return (
     <>
       <PageHeader title="編輯聯盟夥伴" description="更新推廣碼、來源資料與後續訂單適用的佣金比例。" />
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <AffiliateForm affiliate={affiliate} />
+        <AffiliateForm affiliate={affiliate} portalEmail={affiliate.portalUser?.email} />
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">最近來源事件</h2>
           <div className="grid gap-2">

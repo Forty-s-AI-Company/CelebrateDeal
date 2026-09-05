@@ -50,6 +50,7 @@ const pendingPayout = {
   payoutItemId: null,
   outcomeReference: null,
   outcomeReason: null,
+  requestedAt: new Date("2026-07-31T08:00:00.000Z"),
   affiliate: { id: "affiliate-1", name: "推廣夥伴" },
   createdAt: new Date("2026-07-31T00:00:00.000Z"),
 };
@@ -98,6 +99,7 @@ describe("/affiliates/commissions route", () => {
     expect(html).toContain('name="outcomeReference"');
     expect(html).toContain("人工出款 reference");
     expect(html).toContain("查看 ledger 與 payout 明細");
+    expect(html).toContain("Portal 提領申請");
     expect(html).toContain("/affiliates/commissions/affiliate-payout-pending");
     expect(html).toContain('name="reason"');
   });

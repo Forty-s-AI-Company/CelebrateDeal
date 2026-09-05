@@ -108,6 +108,7 @@ export default async function AffiliatePayoutDetailPage({ params }: { params: Pr
               <div><dt className="inline font-medium text-slate-700">Reference：</dt><dd className="inline break-all">{payout.outcomeReference ?? "未記錄"}</dd></div>
               <div><dt className="inline font-medium text-slate-700">付款備註／作廢原因：</dt><dd className="inline">{payout.outcomeReason ?? "未記錄"}</dd></div>
               <div><dt className="inline font-medium text-slate-700">完成時間：</dt><dd className="inline">{payout.paidAt ? formatDateTime(payout.paidAt) : "未記錄"}</dd></div>
+              <div><dt className="inline font-medium text-slate-700">Portal 申請時間：</dt><dd className="inline">{payout.requestedAt ? formatDateTime(payout.requestedAt) : "尚未送出"}</dd></div>
               {payout.payoutItemId ? <div><dt className="inline font-medium text-slate-700">處理方式：</dt><dd className="inline">已交由平台 payout item 管理，商家頁不提供人工結果操作。</dd></div> : null}
             </dl>
           </div>

@@ -40,7 +40,7 @@ describe("/affiliates/[id]/edit route", () => {
 
     expect(mocks.affiliateFindFirst).toHaveBeenCalledWith({
       where: { id: affiliate.id, vendorId: "vendor-1" },
-      include: { clicks: { orderBy: { createdAt: "desc" }, take: 10 } },
+      include: { portalUser: { select: { email: true } }, clicks: { orderBy: { createdAt: "desc" }, take: 10 } },
     });
     expect(html).toContain("編輯聯盟夥伴");
     expect(html).toContain("後續訂單適用的佣金比例");

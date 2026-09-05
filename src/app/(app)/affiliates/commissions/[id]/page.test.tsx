@@ -40,6 +40,7 @@ const payout = {
   payoutItemId: null,
   outcomeReference: "affiliate-transfer-reference",
   outcomeReason: "synthetic merchant payment note",
+  requestedAt: new Date("2026-08-01T08:00:00.000Z"),
   paidAt: new Date("2026-08-02T00:00:00.000Z"),
   affiliate: { id: "affiliate-current", name: "推廣夥伴", code: "PARTNER-1" },
 };
@@ -116,6 +117,7 @@ describe("/affiliates/commissions/[id]", () => {
     expect(html).toContain("ORDER-SYNTHETIC");
     expect(html).toContain("affiliate-transfer-reference");
     expect(html).toContain("synthetic merchant payment note");
+    expect(html).toContain("Portal 申請時間");
     expect(html).toContain("dispute_lost");
     expect(html).toContain("dispute-1");
     expect(html).toContain("case-123");

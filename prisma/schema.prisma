@@ -156,6 +156,7 @@ model User {
   platformReferralAttributions PlatformReferralAttribution[]
   platformReferralCommissions  PlatformReferralCommission[]
   platformReferralPayouts      PlatformReferralPayout[]
+  affiliatePortals             Affiliate[]
 }
 
 model UserSession {
@@ -826,24 +827,29 @@ model Blacklist {
 }
 
 model Affiliate {
-  id                String   @id @default(cuid())
-  vendorId          String
-  name              String
-  code              String   @unique
-  source            String?
-  contactEmail      String?
-  commissionRateBps Int      @default(0)
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  vendorId             String
+  userId               String?
+  name                 String
+  code                 String   @unique
+  source               String?
+  contactEmail         String?
+  commissionRateBps    Int      @default(0)
+  isActive             Boolean  @default(true)
+  bankAccountEncrypted String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   vendor          Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  portalUser      User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   clicks          AffiliateClick[]
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
   teamMemberships TeamMembership[]
 
   @@unique([vendorId, id])
+  @@unique([vendorId, userId])
+  @@index([userId, isActive])
 }
 
 model AffiliateClick {
@@ -1354,22 +1360,22 @@ model CommerceOrder {
 /// Immutable commercial terms captured at purchase time. Product fields remain
 /// snapshots so later catalogue edits cannot rewrite a completed order.
 model CommerceOrderItem {
-  id                   String                  @id @default(cuid())
-  vendorId             String
-  orderId              String
-  productId            String?
-  lineIndex            Int
-  productName          String
-  productSlug          String
-  commerceDomain       String
-  fulfillmentType      CommerceFulfillmentType
-  unitPriceCents       Int
-  quantity             Int
-  lineTotalCents       Int
-  imageUrl             String?
-  nonSensitiveSnapshot Json
+  id                                     String                  @id @default(cuid())
+  vendorId                               String
+  orderId                                String
+  productId                              String?
+  lineIndex                              Int
+  productName                            String
+  productSlug                            String
+  commerceDomain                         String
+  fulfillmentType                        CommerceFulfillmentType
+  unitPriceCents                         Int
+  quantity                               Int
+  lineTotalCents                         Int
+  imageUrl                               String?
+  nonSensitiveSnapshot                   Json
   customCheckoutAnswersEncryptedEnvelope String?
-  createdAt            DateTime                @default(now())
+  createdAt                              DateTime                @default(now())
 
   vendor              Vendor                             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   order               CommerceOrder                      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
@@ -2019,26 +2025,30 @@ enum AffiliateCommissionStatus {
 }
 
 model AffiliatePayout {
-  id                      String    @id @default(cuid())
-  vendorId                String
-  affiliateId             String
-  monthKey                String
-  commissionAmountCents   Int       @default(0)
-  adjustmentAmountCents   Int       @default(0)
-  finalAmountCents        Int       @default(0)
+  id                            String    @id @default(cuid())
+  vendorId                      String
+  affiliateId                   String
+  monthKey                      String
+  commissionAmountCents         Int       @default(0)
+  adjustmentAmountCents         Int       @default(0)
+  finalAmountCents              Int       @default(0)
   /// Human-entered sanitized transfer/provider reference required before paid.
-  outcomeReference        String?
+  outcomeReference              String?
   /// Human-entered payment note or void reason preserved on the payout read model.
-  outcomeReason           String?
+  outcomeReason                 String?
   /// Optional for payout rows created before the gross/net reference contract.
   /// New rows snapshot the source transaction reference; null is shown as unknown.
-  grossSalesAmountCents   Int?
-  netReferenceAmountCents Int?
-  status                  String    @default("pending")
-  payoutItemId            String?
-  paidAt                  DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  grossSalesAmountCents         Int?
+  netReferenceAmountCents       Int?
+  status                        String    @default("pending")
+  payoutItemId                  String?
+  /// The promoter explicitly requested this payable through the Affiliate Portal.
+  requestedAt                   DateTime?
+  /// Encrypted destination snapshot captured at request time.
+  requestedBankAccountEncrypted String?
+  paidAt                        DateTime?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
   vendor    Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
@@ -2046,6 +2056,7 @@ model AffiliatePayout {
   @@unique([vendorId, affiliateId, monthKey])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+  @@index([vendorId, affiliateId, requestedAt])
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate

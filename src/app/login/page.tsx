@@ -56,6 +56,9 @@ export default async function LoginPage({
           <Link href="/password-reset/request" className="font-semibold text-primary hover:underline">忘記密碼</Link>
           <Link href="/dashboard" className="font-medium text-slate-600 hover:text-slate-800">返回首頁</Link>
         </div>
+        <Link href="/affiliate-portal/login" className="mt-5 flex min-h-11 items-center justify-center rounded-md border border-blue-100 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100">
+          我是推廣者，前往專屬工作台
+        </Link>
         <div className="mt-6 border-t border-border pt-5">
           <p className="mb-3 text-center text-xs font-semibold text-slate-500">公開資訊與客服</p>
           <PublicResourceLinks compact />

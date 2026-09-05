@@ -875,6 +875,12 @@ beforeEach(() => {
     },
     emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
     product: { findMany: mocks.productFindMany },
+    affiliate: {
+      create: mocks.affiliateCreate,
+      findFirst: mocks.affiliateFindFirst,
+      update: mocks.affiliateUpdate,
+    },
+    user: { create: mocks.userCreate, findUnique: mocks.userFindUnique },
   }));
   mocks.redirect.mockImplementation((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -1284,6 +1290,40 @@ describe("upsertAffiliateAction", () => {
       where: { id: "affiliate-1", vendorId: "vendor-1" },
       data: expect.objectContaining({ source: "newsletter", commissionRateBps: 1_300 }),
     });
+  });
+
+  it("creates and binds a new portal user in the same transaction", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    mocks.userFindUnique.mockResolvedValue(null);
+    mocks.userCreate.mockResolvedValue({ id: "portal-user-1" });
+    mocks.affiliateFindFirst.mockResolvedValue(null);
+    const formData = affiliateFormData("1000");
+    formData.set("portalEmail", "partner@example.test");
+    formData.set("portalPassword", "safe-portal-password");
+
+    await expect(upsertAffiliateAction(formData)).rejects.toThrow("redirect:/affiliates");
+
+    expect(mocks.userCreate).toHaveBeenCalledWith({
+      data: {
+        email: "partner@example.test",
+        name: "受控夥伴",
+        passwordHash: expect.stringMatching(/^scrypt:/),
+      },
+      select: { id: true },
+    });
+    expect(mocks.affiliateCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ vendorId: "vendor-1", userId: "portal-user-1" }),
+    });
+  });
+
+  it("rejects a weak new portal password before opening a transaction", async () => {
+    mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
+    const formData = affiliateFormData("1000");
+    formData.set("portalEmail", "partner@example.test");
+    formData.set("portalPassword", "too-short");
+
+    await expect(upsertAffiliateAction(formData)).rejects.toThrow("redirect:/affiliates?error=weak_portal_password");
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   it("fails CSRF before manager authorization or affiliate lookup", async () => {
