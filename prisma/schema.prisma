@@ -81,6 +81,9 @@ model Vendor {
   affiliateCommissions             AffiliateCommission[]
   affiliateCommissionLedgerEntries AffiliateCommissionLedgerEntry[]
   affiliatePayouts                 AffiliatePayout[]
+  commissionRuleSets               CommissionRuleSet[]
+  commissionRateTiers              CommissionRateTier[]
+  commissionUplineLevels           CommissionUplineLevel[]
   courseCommissionAllocations      CourseCommissionAllocation[]
   courseCommissionLedgerEntries    CourseCommissionLedgerEntry[]
   coursePayouts                    CoursePayout[]
@@ -1907,20 +1910,87 @@ model AffiliateCommission {
   netReferenceAmountCents   Int                       @default(0)
   commissionRateBps         Int                       @default(0)
   commissionAmountCents     Int                       @default(0)
+  currency                  String                    @default("TWD")
+  recipientRole             String                    @default("promoter")
+  uplineLevel               Int?
+  commissionRuleSetId       String?
+  commissionRuleVersion     Int?
+  monthlySalesBeforeCents   Int?
+  monthlySalesAfterCents    Int?
   status                    AffiliateCommissionStatus @default(pending)
   attributedAt              DateTime                  @default(now())
   settledAt                 DateTime?
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 
-  vendor        Vendor                           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate     Affiliate?                       @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
-  ledgerEntries AffiliateCommissionLedgerEntry[]
+  vendor            Vendor                           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate         Affiliate?                       @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  commissionRuleSet CommissionRuleSet?               @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Restrict)
+  ledgerEntries     AffiliateCommissionLedgerEntry[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, deduplicationKey])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+  @@index([vendorId, sourceId, recipientRole])
+  @@index([vendorId, commissionRuleSetId])
+}
+
+enum CommissionRuleStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// Versioned merchant-owned policy. Saving a policy creates a new row so paid
+/// orders can retain their exact policy reference forever.
+model CommissionRuleSet {
+  id              String               @id @default(cuid())
+  vendorId        String
+  name            String
+  version         Int
+  status          CommissionRuleStatus @default(ACTIVE)
+  maxTotalRateBps Int
+  currency        String               @default("TWD")
+  activatedAt     DateTime             @default(now())
+  archivedAt      DateTime?
+  createdAt       DateTime             @default(now())
+
+  vendor       Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tiers        CommissionRateTier[]
+  uplineLevels CommissionUplineLevel[]
+  commissions  AffiliateCommission[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, version])
+  @@index([vendorId, status, activatedAt])
+}
+
+model CommissionRateTier {
+  id                   String @id @default(cuid())
+  vendorId             String
+  commissionRuleSetId  String
+  minMonthlySalesCents Int
+  rateBps              Int
+
+  vendor  Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ruleSet CommissionRuleSet @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([commissionRuleSetId, minMonthlySalesCents])
+  @@index([vendorId, commissionRuleSetId, minMonthlySalesCents])
+}
+
+model CommissionUplineLevel {
+  id                  String @id @default(cuid())
+  vendorId            String
+  commissionRuleSetId String
+  level               Int
+  bonusRateBps        Int
+
+  vendor  Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ruleSet CommissionRuleSet @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([commissionRuleSetId, level])
+  @@index([vendorId, commissionRuleSetId, level])
 }
 
 /// Immutable accounting entries. Operational commission status remains separate

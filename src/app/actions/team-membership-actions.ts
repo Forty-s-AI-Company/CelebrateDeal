@@ -311,6 +311,54 @@ export async function setTeamUplineAction(formData: FormData) {
   redirect(`${TEAM_PATH}?updated=relationship_saved`);
 }
 
+export async function setTeamMembershipAffiliateAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  const teamId = text(formData, "teamId");
+  const membershipId = text(formData, "membershipId");
+  const affiliateId = text(formData, "affiliateId") || null;
+  if (!teamId || !membershipId) redirectError("membership_invalid");
+
+  let membership;
+  try {
+    membership = await runSerializable(async (tx) => {
+      const current = await tx.teamMembership.findFirst({
+        where: { id: membershipId, vendorId: auth.vendor.id, teamId, status: "ACTIVE", leftAt: null },
+        select: { id: true, affiliateId: true },
+      });
+      if (!current) throw new TeamManagementError("membership_invalid");
+      if (affiliateId) {
+        const affiliate = await tx.affiliate.findFirst({
+          where: { id: affiliateId, vendorId: auth.vendor.id, isActive: true },
+          select: { id: true },
+        });
+        if (!affiliate) throw new TeamManagementError("affiliate_invalid");
+      }
+      return tx.teamMembership.update({
+        where: { id: current.id },
+        data: { affiliateId },
+      });
+    });
+  } catch (error) {
+    if (error instanceof TeamManagementError) redirectError(error.code);
+    if (isPrismaConflict(error)) redirectError("affiliate_conflict");
+    throw error;
+  }
+
+  await writeAuditLog({
+    vendorId: auth.vendor.id,
+    actorId: auth.user.id,
+    actorLabel: auth.member.role,
+    action: affiliateId ? "set_team_membership_affiliate" : "remove_team_membership_affiliate",
+    targetType: "TeamMembership",
+    targetId: membership.id,
+    after: auditSnapshot({ teamId, membershipId, affiliateId }),
+  });
+  revalidateTeamViews();
+  revalidatePath("/settings/commissions");
+  redirect(`${TEAM_PATH}?updated=affiliate_saved`);
+}
+
 export async function deactivateTeamMembershipAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();

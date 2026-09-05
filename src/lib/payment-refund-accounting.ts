@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import {
   commissionAmountCents,
 } from "@/lib/affiliate-commission";
+import { allocateCommissionAmounts } from "@/lib/commission-rule-engine";
 import {
   appendCommissionLedgerEntry,
   commissionLedgerBalance,
@@ -63,7 +64,7 @@ async function applyRefundToAffiliateCommission(
   db: PaymentRefundAccountingDb,
   input: PaymentRefundAccountingInput,
 ) {
-  const commission = await db.affiliateCommission.findFirst({
+  const commissions = await db.affiliateCommission.findMany({
     where: {
       vendorId: input.vendorId,
       // A vendor may reuse an order number across payment providers. The
@@ -71,86 +72,89 @@ async function applyRefundToAffiliateCommission(
       sourceType: "webhook",
       sourceId: input.transactionId,
     },
+    orderBy: [{ recipientRole: "asc" }, { uplineLevel: "asc" }],
   });
+  if (commissions.length === 0) return null;
+  const proportionalRefunds = input.isFullRefund
+    ? null
+    : allocateCommissionAmounts(
+        input.refundAmountCents,
+        commissions.map((commission) => commission.commissionRateBps),
+      );
 
-  if (!commission) return null;
-  const netReferenceUpdated = await db.affiliateCommission.updateMany({
-    where: { id: commission.id, vendorId: input.vendorId },
-    data: { netReferenceAmountCents: input.netReferenceAmountCents },
-  });
-  if (netReferenceUpdated.count !== 1) throw new Error("聯盟佣金淨額參考已被其他交易變更。");
-  const currentBalance = await commissionLedgerBalance(db, input.vendorId, commission.id);
-  const calculatedRefund = commissionAmountCents(input.refundAmountCents, commission.commissionRateBps);
-  const refundAmount = input.isFullRefund
-    ? currentBalance
-    : Math.min(currentBalance, calculatedRefund);
-
-  if (refundAmount > 0) {
-    await appendCommissionLedgerEntry(db, {
-      vendorId: input.vendorId,
-      affiliateCommissionId: commission.id,
-      entryType: "refund",
-      providerName: input.providerName,
-      eventIdentity: input.eventIdentity,
-      amountCents: -refundAmount,
-      occurredAt: input.occurredAt,
+  for (const [commissionIndex, commission] of commissions.entries()) {
+    const netReferenceUpdated = await db.affiliateCommission.updateMany({
+      where: { id: commission.id, vendorId: input.vendorId },
+      data: { netReferenceAmountCents: input.netReferenceAmountCents },
     });
-  }
+    if (netReferenceUpdated.count !== 1) throw new Error("聯盟佣金淨額參考已被其他交易變更。");
+    const currentBalance = await commissionLedgerBalance(db, input.vendorId, commission.id);
+    // Every recipient uses its immutable rate snapshot. New merchant rules can
+    // never alter the amount reversed from this paid order.
+    const calculatedRefund = proportionalRefunds?.[commissionIndex]
+      ?? commissionAmountCents(input.refundAmountCents, commission.commissionRateBps);
+    const refundAmount = input.isFullRefund ? currentBalance : Math.min(currentBalance, calculatedRefund);
 
-  const nextBalance = await commissionLedgerBalance(db, input.vendorId, commission.id);
-  const previousStatus = commission.status;
-  const nextStatus = commission.status !== "paid" && nextBalance === 0 ? "void" : commission.status;
-  if (nextStatus !== commission.status) {
-    const voided = await db.affiliateCommission.updateMany({
-      where: { id: commission.id, vendorId: input.vendorId, status: commission.status },
-      // Keep the original accrual immutable; the refund is represented by a
-      // separate negative ledger entry and an operational void transition.
-      data: { status: "void", settledAt: input.occurredAt },
-    });
-    if (voided.count !== 1) throw new Error("退款佣金狀態已被其他交易變更。");
-  }
-
-  // A locked commission may already have produced an unpaid merchant-owned
-  // payout. Recalculate it from all locked ledger balances before export.
-  if (previousStatus === "locked" && commission.affiliateId) {
-    const lockedCommissions = await db.affiliateCommission.findMany({
-      where: {
+    if (refundAmount > 0) {
+      await appendCommissionLedgerEntry(db, {
         vendorId: input.vendorId,
-        affiliateId: commission.affiliateId,
-        monthKey: commission.monthKey,
-        status: "locked",
-      },
-      select: { id: true },
-    });
-    let lockedBalanceCents = 0;
-    for (const lockedCommission of lockedCommissions) {
-      lockedBalanceCents += await commissionLedgerBalance(db, input.vendorId, lockedCommission.id);
+        affiliateCommissionId: commission.id,
+        entryType: "refund",
+        providerName: input.providerName,
+        eventIdentity: input.eventIdentity,
+        amountCents: -refundAmount,
+        occurredAt: input.occurredAt,
+      });
     }
 
-    const payout = await db.affiliatePayout.findUnique({
-      where: {
-        vendorId_affiliateId_monthKey: {
+    const nextBalance = await commissionLedgerBalance(db, input.vendorId, commission.id);
+    const previousStatus = commission.status;
+    if (commission.status !== "paid" && nextBalance === 0 && commission.status !== "void") {
+      const voided = await db.affiliateCommission.updateMany({
+        where: { id: commission.id, vendorId: input.vendorId, status: commission.status },
+        // The opening snapshot stays intact; refund is a negative append-only entry.
+        data: { status: "void", settledAt: input.occurredAt },
+      });
+      if (voided.count !== 1) throw new Error("退款佣金狀態已被其他交易變更。");
+    }
+
+    if (previousStatus === "locked" && commission.affiliateId) {
+      const lockedCommissions = await db.affiliateCommission.findMany({
+        where: {
           vendorId: input.vendorId,
           affiliateId: commission.affiliateId,
           monthKey: commission.monthKey,
+          status: "locked",
         },
-      },
-    });
-    if (payout?.status === "pending" && payout.payoutItemId === null) {
-      const finalAmountCents = lockedBalanceCents + payout.adjustmentAmountCents;
-      if (finalAmountCents < 0) throw new Error("退款後聯盟出款金額不可小於零。");
-      const updatedPayout = await db.affiliatePayout.updateMany({
-        where: { id: payout.id, status: "pending", payoutItemId: null },
-        data: {
-          commissionAmountCents: lockedBalanceCents,
-          finalAmountCents,
+        select: { id: true },
+      });
+      let lockedBalanceCents = 0;
+      for (const lockedCommission of lockedCommissions) {
+        lockedBalanceCents += await commissionLedgerBalance(db, input.vendorId, lockedCommission.id);
+      }
+      const payout = await db.affiliatePayout.findUnique({
+        where: {
+          vendorId_affiliateId_monthKey: {
+            vendorId: input.vendorId,
+            affiliateId: commission.affiliateId,
+            monthKey: commission.monthKey,
+          },
         },
       });
-      if (updatedPayout.count !== 1) throw new Error("聯盟出款狀態已被其他交易變更。");
+      if (payout?.status === "pending" && payout.payoutItemId === null) {
+        const finalAmountCents = lockedBalanceCents + payout.adjustmentAmountCents;
+        if (finalAmountCents < 0) throw new Error("退款後聯盟出款金額不可小於零。");
+        const updatedPayout = await db.affiliatePayout.updateMany({
+          where: { id: payout.id, status: "pending", payoutItemId: null },
+          data: { commissionAmountCents: lockedBalanceCents, finalAmountCents },
+        });
+        if (updatedPayout.count !== 1) throw new Error("聯盟出款狀態已被其他交易變更。");
+      }
     }
   }
 
-  return db.affiliateCommission.findUnique({ where: { id: commission.id } });
+  const promoter = commissions.find((commission) => commission.recipientRole === "promoter") ?? commissions[0]!;
+  return db.affiliateCommission.findUnique({ where: { id: promoter.id } });
 }
 
 async function applyRefundToCourseAllocations(

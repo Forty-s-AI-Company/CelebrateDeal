@@ -16,6 +16,7 @@ import {
 } from "@/lib/course-commission-accounting";
 import { calculateCourseAllocationPlan } from "@/lib/course-commission";
 import { coursePolicySnapshotFromMetadata } from "@/lib/course-policy-snapshot";
+import { calculateCommissionPlan } from "@/lib/commission-rule-engine";
 import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import {
   applyPaymentRefundAccounting,
@@ -260,110 +261,196 @@ async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
 }
 
 async function upsertAffiliateCommission(
-  db: Pick<Prisma.TransactionClient, "affiliate" | "affiliateCommission" | "affiliateCommissionLedgerEntry">,
+  db: Pick<Prisma.TransactionClient,
+    | "affiliate"
+    | "affiliateCommission"
+    | "affiliateCommissionLedgerEntry"
+    | "commissionRuleSet"
+    | "teamMembership"
+    | "teamMembershipRelationship"
+    | "teamConversionAttribution"
+  >,
   payload: PaymentWebhookPayloadInput,
   vendorId: string,
   transactionId: string,
   grossAmountCents: number,
   netReferenceAmountCents: number,
+  currency: string,
   occurredAt: Date,
   hasRefundedOrder: boolean,
   referralCode: string | null | undefined,
 ) {
   if (!mvpCommissionPolicy.allowsNewAccrual("affiliate")) return null;
-  if (!referralCode || payload.eventType !== "paid") return null;
+  if (payload.eventType !== "paid") return null;
 
-  const normalizedReferralCode = referralCode.toUpperCase();
-  const affiliate = await db.affiliate.findFirst({
-    where: {
-      vendorId,
-      code: normalizedReferralCode,
-      isActive: true,
-    },
-  });
+  const normalizedReferralCode = referralCode?.toUpperCase() ?? null;
+  const affiliate = normalizedReferralCode
+    ? await db.affiliate.findFirst({
+        where: { vendorId, code: normalizedReferralCode, isActive: true },
+      })
+    : (await db.teamConversionAttribution.findUnique({
+        // This row was reconciled earlier in the same transaction from trusted
+        // checkout attribution. Provider payload cannot choose this recipient.
+        where: { vendorId_paymentTransactionId: { vendorId, paymentTransactionId: transactionId } },
+        select: {
+          promoter: {
+            select: {
+              affiliate: true,
+            },
+          },
+        },
+      }))?.promoter.affiliate ?? null;
 
-  if (!affiliate) return null;
+  if (!affiliate || !affiliate.isActive) return null;
+  const commissionReferralCode = normalizedReferralCode ?? affiliate.code;
 
-  const commissionRateBps = AffiliateCommissionRateBps.parse(
-    payload.commissionRateBps ?? affiliate.commissionRateBps,
-  );
-  const calculatedCommissionCents = commissionAmountCents(grossAmountCents, commissionRateBps);
-  // A zero-rate partner remains a valid attribution target, but it must not
-  // create a zero-value liability because accrual ledger entries are positive.
-  if (calculatedCommissionCents === 0) return null;
   const sourceType = "webhook";
-  const deduplicationKey = buildCommissionDeduplicationKey({
-    affiliateId: affiliate.id,
-    sourceType,
-    sourceId: transactionId,
+  const existing = await db.affiliateCommission.findMany({
+    where: { vendorId, sourceType, sourceId: transactionId },
+    orderBy: [{ recipientRole: "asc" }, { uplineLevel: "asc" }],
   });
-  assertAffiliateCommissionAmounts({
-    sourceType,
-    orderAmountCents: grossAmountCents,
-    commissionAmountCents: calculatedCommissionCents,
-  });
-  const immutableData = {
-    affiliateId: affiliate.id,
-    sourceType,
-    sourceId: transactionId,
-    referralCode: normalizedReferralCode,
-    orderNumber: payload.orderNumber,
-    orderAmountCents: grossAmountCents,
-    commissionBaseAmountCents: grossAmountCents,
-    netReferenceAmountCents,
-    commissionRateBps,
-    commissionAmountCents: calculatedCommissionCents,
-  };
-  const uniqueCommission = {
-    vendorId,
-    deduplicationKey,
-  };
-  const existing = await db.affiliateCommission.findUnique({
-    where: { vendorId_deduplicationKey: uniqueCommission },
-  });
-
-  if (existing) {
-    for (const [field, value] of Object.entries(immutableData)) {
-      if (existing[field as keyof typeof immutableData] !== value) {
-        throw new Error(`相同佣金去重鍵的不可變身分不一致：${field}`);
-      }
+  if (existing.length > 0) {
+    const promoter = existing.find((item) => item.recipientRole === "promoter");
+    if (promoter && (promoter.affiliateId !== affiliate.id
+      || promoter.orderAmountCents !== grossAmountCents
+      || promoter.referralCode !== commissionReferralCode
+      || promoter.currency !== currency)) {
+      throw new Error("相同付款的不可變佣金 snapshot 不一致。 ");
     }
-    if (hasRefundedOrder || existing.status === "void") {
-      return existing;
-    }
-    return existing;
+    return promoter ?? existing[0]!;
   }
-
   if (hasRefundedOrder) return null;
-
-  const saved = await db.affiliateCommission.upsert({
-    where: { vendorId_deduplicationKey: uniqueCommission },
-    create: {
-      vendorId,
-      monthKey: monthKeyFromDate(occurredAt),
-      deduplicationKey,
-      ...immutableData,
-      status: "pending",
+  const ruleSet = await db.commissionRuleSet.findFirst({
+    where: { vendorId, currency, status: "ACTIVE", activatedAt: { lte: occurredAt } },
+    orderBy: [{ activatedAt: "desc" }, { version: "desc" }],
+    include: {
+      tiers: { orderBy: { minMonthlySalesCents: "asc" } },
+      uplineLevels: { orderBy: { level: "asc" } },
     },
-    // A concurrent winner must never have its immutable business identity
-    // rewritten by a duplicate webhook.
-    update: {},
   });
-  for (const [field, value] of Object.entries(immutableData)) {
-    if (saved[field as keyof typeof immutableData] !== value) {
-      throw new Error(`相同佣金去重鍵的不可變身分不一致：${field}`);
+
+  let allocationInputs: Array<{
+    affiliateId: string;
+    recipientRole: "promoter" | "upline_leader";
+    uplineLevel: number | null;
+    rateBps: number;
+    amountCents: number;
+  }>;
+  let monthlySalesBeforeCents: number | null = null;
+  let monthlySalesAfterCents: number | null = null;
+  if (!ruleSet) {
+    const rateBps = AffiliateCommissionRateBps.parse(payload.commissionRateBps ?? affiliate.commissionRateBps);
+    allocationInputs = [{
+      affiliateId: affiliate.id,
+      recipientRole: "promoter",
+      uplineLevel: null,
+      rateBps,
+      amountCents: commissionAmountCents(grossAmountCents, rateBps),
+    }];
+  } else {
+    const promoterMembership = await db.teamMembership.findFirst({
+      where: { vendorId, affiliateId: affiliate.id, status: "ACTIVE", leftAt: null },
+      select: { id: true, teamId: true },
+    });
+    const uplines: Array<{ affiliateId: string; membershipId: string; level: number }> = [];
+    let downlineMembershipId = promoterMembership?.id ?? null;
+    for (const configuredLevel of ruleSet.uplineLevels) {
+      if (!promoterMembership || !downlineMembershipId) break;
+      const relationship = await db.teamMembershipRelationship.findFirst({
+        where: {
+          teamId: promoterMembership.teamId,
+          downlineMembershipId,
+          effectiveAt: { lte: occurredAt },
+          OR: [{ endedAt: null }, { endedAt: { gt: occurredAt } }],
+          team: { vendorId },
+        },
+        select: {
+          upline: { select: { id: true, affiliateId: true, status: true, leftAt: true } },
+        },
+      });
+      if (!relationship || relationship.upline.status !== "ACTIVE" || relationship.upline.leftAt !== null) break;
+      if (relationship.upline.affiliateId) {
+        uplines.push({
+          affiliateId: relationship.upline.affiliateId,
+          membershipId: relationship.upline.id,
+          level: configuredLevel.level,
+        });
+      }
+      downlineMembershipId = relationship.upline.id;
     }
+    const monthKey = monthKeyFromDate(occurredAt);
+    const priorSales = await db.affiliateCommission.aggregate({
+      where: { vendorId, affiliateId: affiliate.id, monthKey, currency, sourceType, recipientRole: "promoter" },
+      _sum: { orderAmountCents: true },
+    });
+    const plan = calculateCommissionPlan({
+      grossAmountCents,
+      monthlySalesBeforeCents: priorSales._sum.orderAmountCents ?? 0,
+      promoterAffiliateId: affiliate.id,
+      promoterMembershipId: promoterMembership?.id,
+      uplines,
+      rule: {
+        maxTotalRateBps: ruleSet.maxTotalRateBps,
+        tiers: ruleSet.tiers,
+        uplineLevels: ruleSet.uplineLevels,
+      },
+    });
+    monthlySalesBeforeCents = plan.monthlySalesBeforeCents;
+    monthlySalesAfterCents = plan.monthlySalesAfterCents;
+    allocationInputs = plan.beneficiaries;
   }
-  await appendCommissionLedgerEntry(db, {
-    vendorId,
-    affiliateCommissionId: saved.id,
-    entryType: "accrual",
-    providerName: payload.provider,
-    eventIdentity: payload.eventId,
-    amountCents: saved.commissionAmountCents,
-    occurredAt,
-  });
-  return saved;
+
+  const created = [];
+  for (const allocation of allocationInputs.filter((item) => ruleSet || item.amountCents > 0)) {
+    assertAffiliateCommissionAmounts({
+      sourceType,
+      orderAmountCents: grossAmountCents,
+      commissionAmountCents: allocation.amountCents,
+    });
+    const deduplicationKey = buildCommissionDeduplicationKey({
+      affiliateId: allocation.affiliateId,
+      sourceType,
+      sourceId: transactionId,
+    });
+    const saved = await db.affiliateCommission.create({
+      data: {
+        vendorId,
+        affiliateId: allocation.affiliateId,
+        monthKey: monthKeyFromDate(occurredAt),
+        sourceType,
+        sourceId: transactionId,
+        deduplicationKey,
+        referralCode: commissionReferralCode,
+        orderNumber: payload.orderNumber,
+        orderAmountCents: grossAmountCents,
+        commissionBaseAmountCents: grossAmountCents,
+        netReferenceAmountCents,
+        commissionRateBps: allocation.rateBps,
+        commissionAmountCents: allocation.amountCents,
+        currency,
+        recipientRole: allocation.recipientRole,
+        uplineLevel: allocation.uplineLevel,
+        commissionRuleSetId: ruleSet?.id ?? null,
+        commissionRuleVersion: ruleSet?.version ?? null,
+        monthlySalesBeforeCents,
+        monthlySalesAfterCents,
+        status: allocation.amountCents > 0 ? "pending" : "void",
+      },
+    });
+    if (saved.commissionAmountCents > 0) {
+      await appendCommissionLedgerEntry(db, {
+        vendorId,
+        affiliateCommissionId: saved.id,
+        entryType: "accrual",
+        providerName: payload.provider,
+        eventIdentity: payload.eventId,
+        amountCents: saved.commissionAmountCents,
+        occurredAt,
+      });
+    }
+    created.push(saved);
+  }
+  return created.find((item) => item.recipientRole === "promoter") ?? created[0] ?? null;
 }
 
 type CourseCommissionDb = Pick<Prisma.TransactionClient, "courseCommissionAllocation" | "courseCommissionLedgerEntry" | "product" | "teamMembership" | "teamConversionAttribution">;
@@ -499,22 +586,26 @@ async function applyDisputeToCommission(
 ) {
   if (!isDisputeEvent(payload.eventType)) return null;
   if (!payload.disputeCaseId) throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
-  const commission = await db.affiliateCommission.findFirst({
+  const commissions = await db.affiliateCommission.findMany({
     // A vendor may legitimately receive the same order number from multiple
     // providers. The server-owned transaction identity is the only safe
     // boundary for applying a dispute to the matching commission.
     where: { vendorId, sourceType: "webhook", sourceId: transactionId },
   });
-  if (!commission) return null;
-  return appendDisputeLedgerEntry(db, {
-    vendorId,
-    affiliateCommissionId: commission.id,
-    entryType: payload.eventType,
-    providerName: payload.provider,
-    eventIdentity: payload.eventId,
-    disputeCaseId: payload.disputeCaseId,
-    occurredAt: new Date(payload.occurredAt ?? new Date().toISOString()),
-  });
+  if (commissions.length === 0) return null;
+  const entries = [];
+  for (const commission of commissions) {
+    entries.push(await appendDisputeLedgerEntry(db, {
+      vendorId,
+      affiliateCommissionId: commission.id,
+      entryType: payload.eventType,
+      providerName: payload.provider,
+      eventIdentity: payload.eventId,
+      disputeCaseId: payload.disputeCaseId,
+      occurredAt: new Date(payload.occurredAt ?? new Date().toISOString()),
+    }));
+  }
+  return entries[0] ?? null;
 }
 
 async function applyDisputeToCourseAllocations(
@@ -1135,6 +1226,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       savedTransaction.id,
       savedTransaction.grossAmountCents,
       savedTransaction.netAmountCents,
+      savedTransaction.currency,
       occurredAt,
       hasRefundedOrder,
       currentTransaction ? checkoutReferralCode : payload.referralCode,

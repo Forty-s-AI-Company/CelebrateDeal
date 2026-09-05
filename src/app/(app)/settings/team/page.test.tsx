@@ -5,15 +5,17 @@ const mocks = vi.hoisted(() => ({
   requireVendorOwner: vi.fn(),
   salesTeamFindMany: vi.fn(),
   vendorMemberFindMany: vi.fn(),
+  affiliateFindMany: vi.fn(),
   createSalesTeamAction: vi.fn(),
   addTeamMemberAction: vi.fn(),
   setTeamUplineAction: vi.fn(),
   deactivateTeamMembershipAction: vi.fn(),
   transferTeamMemberAction: vi.fn(),
+  setTeamMembershipAffiliateAction: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ salesTeam: { findMany: mocks.salesTeamFindMany }, vendorMember: { findMany: mocks.vendorMemberFindMany } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ salesTeam: { findMany: mocks.salesTeamFindMany }, vendorMember: { findMany: mocks.vendorMemberFindMany }, affiliate: { findMany: mocks.affiliateFindMany } }) }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="csrf-test-token" /> }));
 vi.mock("@/app/actions/team-membership-actions", () => ({
   createSalesTeamAction: mocks.createSalesTeamAction,
@@ -21,6 +23,7 @@ vi.mock("@/app/actions/team-membership-actions", () => ({
   setTeamUplineAction: mocks.setTeamUplineAction,
   deactivateTeamMembershipAction: mocks.deactivateTeamMembershipAction,
   transferTeamMemberAction: mocks.transferTeamMemberAction,
+  setTeamMembershipAffiliateAction: mocks.setTeamMembershipAffiliateAction,
 }));
 
 import TeamSettingsPage from "./page";
@@ -38,6 +41,7 @@ beforeEach(() => {
     slug: "north-partners",
     memberships: [{
       id: "membership-owner",
+      affiliateId: "affiliate-1",
       vendorMemberId: "member-owner",
       vendorMember: { user: { name: "Owner", email: "owner@example.com" } },
       downlineRelationships: [],
@@ -52,6 +56,7 @@ beforeEach(() => {
     { id: "member-owner", user: { name: "Owner", email: "owner@example.com" } },
     { id: "member-2", user: { name: "Partner", email: "partner@example.com" } },
   ]);
+  mocks.affiliateFindMany.mockResolvedValue([{ id: "affiliate-1", name: "Owner 推廣", code: "OWNER" }]);
 });
 
 describe("TeamSettingsPage", () => {
@@ -61,10 +66,12 @@ describe("TeamSettingsPage", () => {
     expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
     expect(mocks.salesTeamFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
     expect(mocks.vendorMemberFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", status: "active" } }));
+    expect(mocks.affiliateFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", isActive: true } }));
     expect(html).toContain("團隊與上下線");
     expect(html).toContain("北區夥伴");
     expect(html).toContain("加入既有商家成員");
     expect(html).toContain("無直接上線");
+    expect(html).toContain("推廣身分");
     expect(html).toContain("轉移成員");
     expect(html).toContain("南區夥伴");
     expect(html).toContain('name="_csrf" value="csrf-test-token"');

@@ -18,6 +18,7 @@ function requiredText(value: string, field: string) {
 
 /** The key deliberately excludes amount, reason and time so retries read back the same entry. */
 export function buildCommissionLedgerDeduplicationKey(input: {
+  affiliateCommissionId?: string;
   entryType: CommissionLedgerEntryType;
   providerName: string;
   eventIdentity: string;
@@ -27,8 +28,9 @@ export function buildCommissionLedgerDeduplicationKey(input: {
   const providerName = requiredText(input.providerName, "providerName").toLocaleLowerCase("en-US");
   const eventIdentity = requiredText(input.eventIdentity, "eventIdentity");
   const disputeCaseId = input.disputeCaseId == null ? "" : requiredText(input.disputeCaseId, "disputeCaseId");
-  const canonical = ["commission-ledger:v1", entryType, providerName, eventIdentity, disputeCaseId].join("|");
-  return `commission-ledger:v1|sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`;
+  const version = input.affiliateCommissionId ? "commission-ledger:v2" : "commission-ledger:v1";
+  const canonical = [version, input.affiliateCommissionId ?? "legacy", entryType, providerName, eventIdentity, disputeCaseId].join("|");
+  return `${version}|sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`;
 }
 
 export function assertCommissionLedgerAmount(entryType: CommissionLedgerEntryType, amountCents: number) {
@@ -80,7 +82,37 @@ export async function appendCommissionLedgerEntry(db: LedgerClient, input: Commi
   const disputeCaseId = input.disputeCaseId == null ? null : requiredText(input.disputeCaseId, "disputeCaseId");
   if (entryType.startsWith("dispute_") && !disputeCaseId) throw new Error("dispute entry 必須有穩定 case identity。");
   assertCommissionLedgerAmount(entryType, input.amountCents);
-  const deduplicationKey = buildCommissionLedgerDeduplicationKey({ entryType, providerName, eventIdentity, disputeCaseId });
+  // v2 includes the allocation identity so one provider event can fund the
+  // promoter and multiple upline leaders without colliding at vendor scope.
+  const deduplicationKey = buildCommissionLedgerDeduplicationKey({
+    affiliateCommissionId: input.affiliateCommissionId,
+    entryType,
+    providerName,
+    eventIdentity,
+    disputeCaseId,
+  });
+  const matchingEntries = await db.affiliateCommissionLedgerEntry.findMany({
+    where: {
+      vendorId: input.vendorId,
+      affiliateCommissionId: input.affiliateCommissionId,
+      entryType,
+      providerName,
+      eventIdentity,
+      disputeCaseId,
+    },
+  });
+  // This identity lookup also preserves idempotency for v1 rows created before
+  // multi-beneficiary ledger keys were introduced.
+  const matchingEntry = matchingEntries.find((entry) => immutableIdentity(
+    entry,
+    { ...input, entryType, providerName, eventIdentity, disputeCaseId },
+  ));
+  if (matchingEntry) {
+    if (!immutableIdentity(matchingEntry, { ...input, entryType, providerName, eventIdentity, disputeCaseId })) {
+      throw new Error("相同 ledger 事件的不可變身分不一致。 ");
+    }
+    return matchingEntry;
+  }
   const existing = await db.affiliateCommissionLedgerEntry.findUnique({
     where: { vendorId_deduplicationKey: { vendorId: input.vendorId, deduplicationKey } },
   });

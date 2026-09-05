@@ -55,6 +55,7 @@ const navGroups = [
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
       { href: "/settings/brand", label: "品牌", icon: Palette, managerOnly: true },
       { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
+      { href: "/settings/commissions", label: "分潤規則", icon: Handshake, managerOnly: true },
       { href: "/settings/security", label: "安全", icon: Shield },
     ],
   },

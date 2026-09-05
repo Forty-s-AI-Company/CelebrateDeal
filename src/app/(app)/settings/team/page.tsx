@@ -2,6 +2,7 @@ import {
   addTeamMemberAction,
   createSalesTeamAction,
   deactivateTeamMembershipAction,
+  setTeamMembershipAffiliateAction,
   setTeamUplineAction,
   transferTeamMemberAction,
 } from "@/app/actions/team-membership-actions";
@@ -26,6 +27,8 @@ const errorMessages: Record<string, string> = {
   self_membership: "不能停用自己目前使用中的團隊 membership。",
   team_move_invalid: "請確認來源團隊、目標團隊與成員資料，且不能移到同一團隊。",
   team_move_conflict: "這位成員已在目標團隊中，或轉組與其他操作衝突。",
+  affiliate_invalid: "指定的推廣者不屬於目前商家或已停用。",
+  affiliate_conflict: "這個推廣者已綁定其他團隊成員。",
 };
 
 const updatedMessages: Record<string, string> = {
@@ -34,6 +37,7 @@ const updatedMessages: Record<string, string> = {
   relationship_saved: "上下線關係已更新，歷史關係已保留。",
   member_deactivated: "團隊成員已停用，相關 active 上下線關係已結束。",
   member_transferred: "團隊成員已轉移，原團隊上下線關係已結束。",
+  affiliate_saved: "團隊成員的推廣身分已更新。",
 };
 
 export default async function TeamSettingsPage({
@@ -44,7 +48,7 @@ export default async function TeamSettingsPage({
   const params = await searchParams;
   const auth = await requireVendorOwner();
   const db = getDb();
-  const [teams, members] = await Promise.all([
+  const [teams, members, affiliates] = await Promise.all([
     db.salesTeam.findMany({
       where: { vendorId: auth.vendor.id },
       orderBy: { createdAt: "asc" },
@@ -63,6 +67,11 @@ export default async function TeamSettingsPage({
       where: { vendorId: auth.vendor.id, status: "active" },
       orderBy: { createdAt: "asc" },
       include: { user: { select: { name: true, email: true } } },
+    }),
+    db.affiliate.findMany({
+      where: { vendorId: auth.vendor.id, isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true },
     }),
   ]);
 
@@ -114,6 +123,7 @@ export default async function TeamSettingsPage({
                   <tr>
                     <th className="px-3 py-2 font-semibold">成員</th>
                     <th className="px-3 py-2 font-semibold">直接上線</th>
+                    <th className="px-3 py-2 font-semibold">推廣身分</th>
                     <th className="px-3 py-2 font-semibold">狀態</th>
                     <th className="px-3 py-2 font-semibold">操作</th>
                   </tr>
@@ -137,6 +147,18 @@ export default async function TeamSettingsPage({
                               {team.memberships.filter((candidate) => candidate.id !== membership.id).map((candidate) => (
                                 <option key={candidate.id} value={candidate.id}>{candidate.vendorMember.user.name || candidate.vendorMember.user.email}</option>
                               ))}
+                            </select>
+                            <SubmitButton pendingChildren="儲存中…">儲存</SubmitButton>
+                          </form>
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <form action={setTeamMembershipAffiliateAction} className="flex min-w-[15rem] gap-2">
+                            <CsrfField />
+                            <input type="hidden" name="teamId" value={team.id} />
+                            <input type="hidden" name="membershipId" value={membership.id} />
+                            <select name="affiliateId" defaultValue={membership.affiliateId ?? ""} className="h-10 min-w-0 flex-1 rounded-md border border-border bg-white px-2 text-sm">
+                              <option value="">（不參與推廣分潤）</option>
+                              {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.id}>{affiliate.name}（{affiliate.code}）</option>)}
                             </select>
                             <SubmitButton pendingChildren="儲存中…">儲存</SubmitButton>
                           </form>

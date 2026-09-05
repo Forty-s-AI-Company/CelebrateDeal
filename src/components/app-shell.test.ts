@@ -53,6 +53,7 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/team-performance");
     expect(links).not.toContain("/forms");
     expect(links).not.toContain("/settings/brand");
+    expect(links).not.toContain("/settings/commissions");
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 
@@ -80,6 +81,7 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/forms");
     expect(links).toContain("/onboarding");
     expect(links).toContain("/settings/brand");
+    expect(links).toContain("/settings/commissions");
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 

@@ -156,6 +156,7 @@ afterEach(async () => {
   await db.partnerFunnelPage.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.teamFunnelTemplateVersion.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.teamFunnelTemplate.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.teamMembershipRelationship.deleteMany({ where: { team: { vendorId: { in: vendorIds } } } });
   await db.teamMembership.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.salesTeam.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.registrationForm.deleteMany({ where: { vendorId: { in: vendorIds } } });
@@ -366,6 +367,90 @@ describe("payment webhook processing", () => {
     });
   });
 
+  it("applies the active monthly tier and multi-level leader bonuses, then refunds every snapshot", async () => {
+    const suffix = `${Date.now()}-tiered-upline`;
+    const { db, vendor, affiliate: promoterAffiliate } = await createFixture(suffix);
+    const team = await db.salesTeam.create({
+      data: { vendorId: vendor.id, name: `Tier Team ${suffix}`, slug: `tier-team-${suffix}` },
+    });
+    const memberships = [];
+    for (const role of ["promoter", "leader-1", "leader-2"] as const) {
+      const user = await db.user.create({
+        data: { email: `${role}-${suffix}@example.com`, passwordHash: "test", name: role },
+      });
+      createdUserIds.push(user.id);
+      const member = await db.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id } });
+      const affiliate = role === "promoter" ? promoterAffiliate : await db.affiliate.create({
+        data: { vendorId: vendor.id, name: role, code: `${role}-${suffix}`.toUpperCase(), commissionRateBps: 0 },
+      });
+      memberships.push(await db.teamMembership.create({
+        data: { vendorId: vendor.id, teamId: team.id, vendorMemberId: member.id, affiliateId: affiliate.id },
+      }));
+    }
+    await db.teamMembershipRelationship.createMany({
+      data: [
+        { teamId: team.id, downlineMembershipId: memberships[0]!.id, uplineMembershipId: memberships[1]!.id },
+        { teamId: team.id, downlineMembershipId: memberships[1]!.id, uplineMembershipId: memberships[2]!.id },
+      ],
+    });
+    const rule = await db.commissionRuleSet.create({
+      data: {
+        vendorId: vendor.id,
+        name: "TWD tiered rule",
+        version: 1,
+        currency: "TWD",
+        maxTotalRateBps: 1500,
+      },
+    });
+    await db.commissionRateTier.createMany({ data: [
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, minMonthlySalesCents: 0, rateBps: 800 },
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, minMonthlySalesCents: 100_000, rateBps: 1000 },
+    ] });
+    await db.commissionUplineLevel.createMany({ data: [
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, level: 1, bonusRateBps: 300 },
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, level: 2, bonusRateBps: 200 },
+    ] });
+
+    const pay = async (orderNumber: string, amount: number) => processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `paid-${orderNumber}`,
+      eventType: "paid",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      grossAmountCents: amount,
+      currency: "TWD",
+      referralCode: promoterAffiliate.code,
+    }));
+    await pay(`TIER-A-${suffix}`, 90_000);
+    const orderNumber = `TIER-B-${suffix}`;
+    const paid = await pay(orderNumber, 20_000);
+
+    const allocations = await db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, sourceId: paid.transaction.id },
+      orderBy: [{ recipientRole: "asc" }, { uplineLevel: "asc" }],
+    });
+    expect(allocations).toHaveLength(3);
+    expect(allocations.map((item) => item.commissionAmountCents).sort((a, b) => b - a)).toEqual([2000, 600, 400]);
+    expect(allocations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ recipientRole: "promoter", commissionRateBps: 1000, commissionRuleSetId: rule.id, commissionRuleVersion: 1, monthlySalesBeforeCents: 90_000, monthlySalesAfterCents: 110_000 }),
+      expect.objectContaining({ recipientRole: "upline_leader", uplineLevel: 1, commissionRateBps: 300 }),
+      expect.objectContaining({ recipientRole: "upline_leader", uplineLevel: 2, commissionRateBps: 200 }),
+    ]));
+
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `refund-${orderNumber}`,
+      eventType: "partially_refunded",
+      vendorSlug: vendor.slug,
+      orderNumber,
+      refundAmountCents: 10_000,
+    }));
+    const refundEntries = await db.affiliateCommissionLedgerEntry.findMany({
+      where: { vendorId: vendor.id, affiliateCommissionId: { in: allocations.map((item) => item.id) }, entryType: "refund" },
+    });
+    expect(refundEntries.map((item) => item.amountCents).sort((a, b) => a - b)).toEqual([-1000, -300, -200]);
+  });
+
   it("reconciles an invoice payment through paid, partial-refund, and full-refund webhooks", async () => {
     const suffix = `${Date.now()}-invoice-payment-lifecycle`;
     const { db, vendor } = await createFixture(suffix);
@@ -546,10 +631,20 @@ describe("payment webhook processing", () => {
     })).toMatchObject({ status: "released", releaseReason: "full_refund" });
   });
 
-  it("snapshots a same-vendor lead attribution for paid webhooks and deduplicates retries", async () => {
+  it("snapshots same-vendor team attribution, resolves its promoter rule, and deduplicates retries", async () => {
     const suffix = `${Date.now()}-team-conversion`;
-    const { db, vendor } = await createFixture(suffix);
+    const { db, vendor, affiliate } = await createFixture(suffix);
     const { formSubmission, leadAttribution } = await createTeamLeadAttributionFixture(vendor.id, suffix);
+    await db.teamMembership.update({
+      where: { id: leadAttribution.promoterMembershipId },
+      data: { affiliateId: affiliate.id },
+    });
+    const rule = await db.commissionRuleSet.create({
+      data: { vendorId: vendor.id, name: "Team conversion rule", version: 1, currency: "TWD", maxTotalRateBps: 1000 },
+    });
+    await db.commissionRateTier.create({
+      data: { vendorId: vendor.id, commissionRuleSetId: rule.id, minMonthlySalesCents: 0, rateBps: 900 },
+    });
     const orderNumber = `ORDER-TEAM-CONVERSION-${suffix}`;
     await db.paymentTransaction.create({
       data: {
@@ -593,6 +688,17 @@ describe("payment webhook processing", () => {
       source: leadAttribution.source,
       referralCode: leadAttribution.referralCode,
     });
+    await expect(db.affiliateCommission.findMany({
+      where: { vendorId: vendor.id, sourceId: transaction.id },
+    })).resolves.toEqual([
+      expect.objectContaining({
+        affiliateId: affiliate.id,
+        recipientRole: "promoter",
+        commissionRuleSetId: rule.id,
+        commissionRateBps: 900,
+        commissionAmountCents: 9000,
+      }),
+    ]);
   });
 
   it("does not attribute cross-vendor or non-payment webhooks", async () => {
