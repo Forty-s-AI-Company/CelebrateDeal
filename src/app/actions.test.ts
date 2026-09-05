@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   affiliateCommissionUpdateMany: vi.fn(),
   affiliateCommissionLedgerEntryAggregate: vi.fn(),
   affiliateCommissionLedgerEntryFindUnique: vi.fn(),
+  affiliateCommissionLedgerEntryFindMany: vi.fn(),
   affiliateCommissionLedgerEntryCreate: vi.fn(),
   affiliatePayoutFindFirst: vi.fn(),
   affiliatePayoutFindUnique: vi.fn(),
@@ -318,6 +319,7 @@ vi.mock("@/lib/db", () => ({
     affiliateCommissionLedgerEntry: {
       aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
       findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      findMany: mocks.affiliateCommissionLedgerEntryFindMany,
       create: mocks.affiliateCommissionLedgerEntryCreate,
     },
     affiliatePayout: {
@@ -714,6 +716,7 @@ beforeEach(() => {
   mocks.affiliateCommissionFindUnique.mockResolvedValue(null);
   mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
   mocks.affiliateCommissionLedgerEntryFindUnique.mockResolvedValue(null);
+  mocks.affiliateCommissionLedgerEntryFindMany.mockResolvedValue([]);
   mocks.affiliateCommissionLedgerEntryCreate.mockResolvedValue({ id: "ledger-entry-1" });
   mocks.affiliateCommissionUpdateMany.mockResolvedValue({ count: 1 });
   mocks.affiliatePayoutFindFirst.mockResolvedValue(null);
@@ -827,6 +830,7 @@ beforeEach(() => {
     affiliateCommissionLedgerEntry: {
       aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
       findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      findMany: mocks.affiliateCommissionLedgerEntryFindMany,
       create: mocks.affiliateCommissionLedgerEntryCreate,
     },
     affiliatePayout: {
@@ -5413,10 +5417,11 @@ describe("refundPaymentTransactionAction", () => {
           findUnique: mocks.affiliateCommissionFindUnique,
           updateMany: mocks.affiliateCommissionUpdateMany,
         },
-        affiliateCommissionLedgerEntry: {
-          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
-          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
-          create: mocks.affiliateCommissionLedgerEntryCreate,
+    affiliateCommissionLedgerEntry: {
+      aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+      findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      findMany: mocks.affiliateCommissionLedgerEntryFindMany,
+      create: mocks.affiliateCommissionLedgerEntryCreate,
         },
         affiliatePayout: {
           findFirst: mocks.affiliatePayoutFindFirst,
@@ -5606,14 +5611,16 @@ describe("refundPaymentTransactionAction", () => {
       orderNumber: "ORDER-REFUND-1",
     };
     mocks.findUnique.mockResolvedValue(accountableTransaction);
-    mocks.affiliateCommissionFindFirst.mockResolvedValue({
+    mocks.affiliateCommissionFindMany.mockResolvedValue([{
       id: "commission-1",
       vendorId: "vendor-1",
       affiliateId: null,
       monthKey: "2026-07",
+      recipientRole: "promoter",
+      uplineLevel: null,
       status: "pending",
       commissionRateBps: 1_000,
-    });
+    }]);
     mocks.affiliateCommissionLedgerEntryAggregate
       .mockResolvedValueOnce({ _sum: { amountCents: 1_000 } })
       .mockResolvedValueOnce({ _sum: { amountCents: 1_000 } })
@@ -5680,10 +5687,11 @@ describe("refundPaymentTransactionAction", () => {
           findUnique: mocks.affiliateCommissionFindUnique,
           updateMany: mocks.affiliateCommissionUpdateMany,
         },
-        affiliateCommissionLedgerEntry: {
-          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
-          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
-          create: mocks.affiliateCommissionLedgerEntryCreate,
+    affiliateCommissionLedgerEntry: {
+      aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+      findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      findMany: mocks.affiliateCommissionLedgerEntryFindMany,
+      create: mocks.affiliateCommissionLedgerEntryCreate,
         },
         affiliatePayout: {
           findFirst: mocks.affiliatePayoutFindFirst,
@@ -5766,10 +5774,11 @@ describe("refundPaymentTransactionAction", () => {
           findUnique: mocks.affiliateCommissionFindUnique,
           updateMany: mocks.affiliateCommissionUpdateMany,
         },
-        affiliateCommissionLedgerEntry: {
-          aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
-          findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
-          create: mocks.affiliateCommissionLedgerEntryCreate,
+    affiliateCommissionLedgerEntry: {
+      aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
+      findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+      findMany: mocks.affiliateCommissionLedgerEntryFindMany,
+      create: mocks.affiliateCommissionLedgerEntryCreate,
         },
         affiliatePayout: {
           findFirst: mocks.affiliatePayoutFindFirst,
@@ -6552,6 +6561,7 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
       affiliateCommissionLedgerEntry: {
         aggregate: mocks.affiliateCommissionLedgerEntryAggregate,
         findUnique: mocks.affiliateCommissionLedgerEntryFindUnique,
+        findMany: mocks.affiliateCommissionLedgerEntryFindMany,
         create: mocks.affiliateCommissionLedgerEntryCreate,
       },
       affiliatePayout: {
@@ -6686,7 +6696,7 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
           vendorId: "vendor-1",
           affiliateCommissionId: commission.id,
           entryType: "reversal",
-          deduplicationKey: expect.stringMatching(/^commission-ledger:v1\|sha256:[a-f0-9]{64}$/),
+          deduplicationKey: expect.stringMatching(/^commission-ledger:v2\|sha256:[a-f0-9]{64}$/),
           providerName: "merchant",
           eventIdentity: `affiliate-payout:void:${payout.id}:${commission.id}`,
           disputeCaseId: null,

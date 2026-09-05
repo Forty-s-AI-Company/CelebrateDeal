@@ -64,7 +64,7 @@ describe("PayUni ambiguous refund disposable PostgreSQL", () => {
     const delayedDb = db.$extends({
       query: {
         affiliateCommission: {
-          async findFirst({ args, query }) {
+          async findMany({ args, query }) {
             delayedQueries += 1;
             // Delay the real accounting query inside the active transaction.
             await new Promise((resolve) => setTimeout(resolve, 5_500));
