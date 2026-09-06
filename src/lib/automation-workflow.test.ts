@@ -105,6 +105,37 @@ describe("smart automation workflow engine", () => {
     expect(db.customerTagAssignment.upsert).not.toHaveBeenCalled();
   });
 
+  it("deduplicates different provider event ids for the same paid order", async () => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
+      code: "P2002",
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{
+        id: "rule-1", version: 1, createdAt: new Date(), condition: { type: "always" },
+        actions: [{ type: "add_customer_tag", tag: "buyer" }],
+      }]) },
+      automationExecutionLog: {
+        create: vi.fn().mockResolvedValueOnce({ id: "log-1" }).mockRejectedValueOnce(conflict),
+        findUnique: vi.fn().mockResolvedValue({ id: "log-1", status: "completed", startedAt: new Date() }),
+        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn(),
+      },
+      customerTagAssignment: { upsert: vi.fn().mockResolvedValue({}) },
+      automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+
+    await expect(dispatchAutomationEvent(db as never, event))
+      .resolves.toEqual([{ ruleId: "rule-1", status: "completed" }]);
+    await expect(dispatchAutomationEvent(db as never, { ...event, eventId: "provider-event-2" }))
+      .resolves.toEqual([{ ruleId: "rule-1", status: "duplicate" }]);
+
+    const firstKey = db.automationExecutionLog.create.mock.calls[0]?.[0].data.idempotencyKey;
+    const secondKey = db.automationExecutionLog.create.mock.calls[1]?.[0].data.idempotencyKey;
+    expect(firstKey).toBe(secondKey);
+    expect(db.customerTagAssignment.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it("runs a watch-threshold rule only once for the same viewer across heartbeat event IDs", async () => {
     const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
       code: "P2002",

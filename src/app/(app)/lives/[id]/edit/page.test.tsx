@@ -127,7 +127,7 @@ describe("EditLivePage unified Live Studio", () => {
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true, name: true, inventory: true },
+      select: { id: true, name: true, inventory: true, checkoutUrl: true },
       orderBy: { createdAt: "desc" },
     });
     expect(mocks.formFindMany).toHaveBeenCalledWith({

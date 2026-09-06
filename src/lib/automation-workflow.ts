@@ -94,9 +94,12 @@ export function automationConditionMatches(condition: AutomationCondition, event
 }
 
 function executionIdempotencyKey(rule: ParsedRule, event: AutomationEvent) {
+  // Provider retries do not always reuse the same webhook event id. Bind both
+  // supported triggers to their durable business subject so one paid order (or
+  // one viewer crossing a threshold) cannot execute the same rule twice.
   const eventIdentity = event.trigger === "viewer_watch_progress"
-    ? `subject:${event.subjectKeyHash}:version:${rule.version}`
-    : `event:${event.eventId}`;
+    ? `viewer:${event.subjectKeyHash}:version:${rule.version}`
+    : `order:${event.subjectId}:version:${rule.version}`;
   return createHash("sha256").update(`automation:v1:${event.vendorId}:${rule.id}:${event.trigger}:${eventIdentity}`).digest("hex");
 }
 

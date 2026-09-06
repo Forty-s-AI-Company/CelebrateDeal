@@ -6,6 +6,7 @@ const db = {
   formSubmission: { findFirst: vi.fn() },
   paymentTransaction: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   liveInteractionResponse: { findUnique: vi.fn(), updateMany: vi.fn() },
+  automationVoucherGrant: { findUnique: vi.fn(), updateMany: vi.fn() },
 };
 
 const inventoryMocks = vi.hoisted(() => {
@@ -130,6 +131,8 @@ beforeEach(() => {
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   db.liveInteractionResponse.findUnique.mockResolvedValue(null);
   db.liveInteractionResponse.updateMany.mockResolvedValue({ count: 1 });
+  db.automationVoucherGrant.findUnique.mockResolvedValue(null);
+  db.automationVoucherGrant.updateMany.mockResolvedValue({ count: 1 });
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -158,6 +161,7 @@ beforeEach(() => {
     if (createCommerceOrder) await createCommerceOrder({
       transaction: true,
       liveInteractionResponse: db.liveInteractionResponse,
+      automationVoucherGrant: db.automationVoucherGrant,
     }, transaction);
     return transaction;
   });
@@ -232,6 +236,39 @@ describe("successful checkout response", () => {
     expect(db.liveInteractionResponse.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "claim-1", vendorId: "vendor-1", usedOrderId: null }),
       data: { usedOrderId: "order-1", discountAmountCents: 100 },
+    });
+  });
+
+  it("applies an automation voucher before Flash Voucher fallback and consumes the grant once", async () => {
+    db.automationVoucherGrant.findUnique.mockResolvedValueOnce({
+      id: "automation-grant-1",
+      vendorId: "vendor-1",
+      productId: "product-1",
+      usedOrderId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      currency: "TWD",
+      discountType: "fixed",
+      discountValue: 300,
+    });
+
+    const response = await POST(checkoutRequest(`celebratedeal_automation_voucher=${"B".repeat(43)}`));
+
+    expect(response.status).toBe(200);
+    expect(db.liveInteractionResponse.findUnique).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      transactionData: expect.objectContaining({
+        grossAmountCents: 900,
+        netAmountCents: 900,
+        metadata: expect.objectContaining({
+          voucherClaimId: "automation-grant-1",
+          discountAmountCents: 300,
+          checkoutAmountCents: 900,
+        }),
+      }),
+    }));
+    expect(db.automationVoucherGrant.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "automation-grant-1", vendorId: "vendor-1", usedOrderId: null }),
+      data: { usedOrderId: "order-1", redeemedAt: expect.any(Date) },
     });
   });
 
