@@ -92,7 +92,7 @@ test("promoter can use the isolated dashboard, bank binding, and payout request"
   await page.goto("/affiliate-portal/login");
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
-  await page.getByLabel("推廣碼").fill(fixture.code.toLowerCase());
+  await page.locator('form input[name="code"]').fill(fixture.code.toLowerCase());
   await page.getByRole("button", { name: "登入工作台" }).click();
 
   await expect(page).toHaveURL(/\/affiliate-portal$/);

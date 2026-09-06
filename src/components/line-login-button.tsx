@@ -31,7 +31,7 @@ export function LineLoginButton({ request, children = "綁定 LINE 接收通知"
           setState("pending");
           void startLine(request).catch(() => setState("error"));
         }}
-        className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#06C755] px-4 text-sm font-bold text-white hover:bg-[#05b64d] disabled:opacity-60"
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#047a36] px-4 text-sm font-bold text-white hover:bg-[#03642d] disabled:opacity-60"
       >
         {state === "pending" ? "前往 LINE…" : children}
       </button>
@@ -57,7 +57,7 @@ export function LineQuickLoginForm() {
           setState("pending");
           void startLine({ mode: "login", affiliateCode: affiliateCode.trim(), redirectPath: "/affiliate-portal" }).catch(() => setState("error"));
         }}
-        className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[#06C755] px-4 font-bold text-white hover:bg-[#05b64d] disabled:opacity-60"
+        className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[#047a36] px-4 font-bold text-white hover:bg-[#03642d] disabled:opacity-60"
       >
         {state === "pending" ? "前往 LINE…" : "使用 LINE 快速登入"}
       </button>
