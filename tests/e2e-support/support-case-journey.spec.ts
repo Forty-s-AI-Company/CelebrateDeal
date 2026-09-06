@@ -41,14 +41,30 @@ async function waitForReactHydration(locator: Locator) {
 }
 
 async function submitServerAction(locator: Locator) {
-  await locator.evaluate((element) => {
-    if (!(element instanceof HTMLButtonElement) || !element.form) {
-      throw new Error("SUPPORT_E2E_SUBMIT_BUTTON_FORM_MISSING");
-    }
-    // requestSubmit performs native constraint validation and dispatches the
-    // same submit event as activation, without relying on synthetic pointer IO.
-    element.form.requestSubmit(element);
-  });
+  const page = locator.page();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForReactHydration(locator);
+    const actionPath = new URL(page.url()).pathname;
+    const requestStarted = page.waitForRequest(
+      (request) => request.method() === "POST" && new URL(request.url()).pathname === actionPath,
+      { timeout: 2_000 },
+    ).then(() => true, () => false);
+    await locator.evaluate((element) => {
+      if (!(element instanceof HTMLButtonElement) || !element.form) {
+        throw new Error("SUPPORT_E2E_SUBMIT_BUTTON_FORM_MISSING");
+      }
+      if (element.disabled || !element.form.checkValidity()) {
+        throw new Error("SUPPORT_E2E_SUBMIT_BUTTON_NOT_READY");
+      }
+      // DOM activation exercises the component click handler and native form
+      // submission without relying on flaky synthetic pointer coordinates.
+      element.click();
+    });
+    // React can discard an activation while an App Router transition settles.
+    // Retry only when the network layer proves no Server Action POST started.
+    if (await requestStarted) return;
+  }
+  throw new Error("SUPPORT_E2E_SERVER_ACTION_REQUEST_NOT_STARTED");
 }
 
 test.describe.serial("客服案件 browser journey", () => {
