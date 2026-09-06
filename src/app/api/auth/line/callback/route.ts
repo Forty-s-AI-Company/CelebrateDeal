@@ -23,19 +23,7 @@ export async function GET(request: Request) {
       return resultRedirect(result.redirectPath, "linked");
     }
 
-    let userId: string | null = result.identity.subjectType === "user" ? result.identity.subjectId : null;
-    if (result.identity.subjectType === "promoter") {
-      const affiliate = await getDb().affiliate.findFirst({
-        where: {
-          id: result.identity.subjectId,
-          vendorId: result.identity.vendorId,
-          isActive: true,
-          userId: { not: null },
-        },
-        select: { userId: true },
-      });
-      userId = affiliate?.userId ?? null;
-    }
+    const userId: string | null = result.identity.subjectType === "user" ? result.identity.subjectId : null;
     if (!userId) return resultRedirect("/login", "error");
     const session = await createUserSession({
       userId,

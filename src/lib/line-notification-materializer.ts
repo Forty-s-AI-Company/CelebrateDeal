@@ -139,7 +139,7 @@ export async function materializeLineNotifications(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       ...(identity.materializationCursor ? { cursor: { id: identity.materializationCursor }, skip: 1 } : {}),
       take: 20,
-      select: { id: true, commissionAmountCents: true, currency: true, orderNumber: true, createdAt: true },
+      select: { id: true, commissionAmountCents: true, orderNumber: true, createdAt: true },
     });
     for (const commission of commissions) {
       results.push(await enqueueLineNotification(db, {
@@ -150,7 +150,7 @@ export async function materializeLineNotifications(
         idempotencyKey: stableLineIdempotencyKey(["commission_credited", commission.id, commission.createdAt]),
         messages: [buildCommissionLineMessage({
           amountCents: commission.commissionAmountCents,
-          currency: commission.currency,
+          currency: "TWD",
           orderNumber: commission.orderNumber,
         })],
       }));

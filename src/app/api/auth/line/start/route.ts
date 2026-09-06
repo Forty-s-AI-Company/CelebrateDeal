@@ -15,7 +15,6 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 const StartRequest = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("user"), redirectPath: z.string().max(1_024).default("/dashboard") }).strict(),
-  z.object({ mode: z.literal("promoter"), redirectPath: z.string().max(1_024).default("/affiliate") }).strict(),
   z.object({ mode: z.literal("buyer"), grantId: z.string().min(1).max(128), redirectPath: z.string().max(1_024).default("/support/orders") }).strict(),
   z.object({ mode: z.literal("registration"), redirectPath: z.string().max(1_024).default("/verify-registration") }).strict(),
   z.object({
@@ -71,18 +70,8 @@ export async function POST(request: Request) {
     const auth = await getCurrentAuth();
     if (!auth?.vendor) return NextResponse.json({ error: "authentication_required" }, { status: 401 });
     vendorId = auth.vendor.id;
-    if (parsed.data.mode === "promoter") {
-      const affiliate = await getDb().affiliate.findFirst({
-        where: { vendorId, userId: auth.user.id, isActive: true },
-        select: { id: true },
-      });
-      if (!affiliate) return NextResponse.json({ error: "promoter_authorization_required" }, { status: 403 });
-      subjectType = "promoter";
-      subjectId = affiliate.id;
-    } else {
-      subjectType = "user";
-      subjectId = auth.user.id;
-    }
+    subjectType = "user";
+    subjectId = auth.user.id;
   }
 
   try {
