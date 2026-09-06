@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
 
@@ -19,6 +20,36 @@ const fixture = {
   orderId: "",
   grantId: "",
 };
+
+async function waitForReactHydration(locator: Locator) {
+  // A production App Router page can finish loading before React has attached
+  // the Server Action handler. The button can hydrate before its parent form,
+  // so wait until React has installed the function-valued form action itself.
+  await expect.poll(
+    () => locator.evaluate((element) => {
+      const form = element.closest("form");
+      if (!form) return false;
+      const reactPropsKey = Object.keys(form).find((key) => key.startsWith("__reactProps$"));
+      if (!reactPropsKey) return false;
+      const reactProps = (form as unknown as Record<string, unknown>)[reactPropsKey];
+      return typeof reactProps === "object"
+        && reactProps !== null
+        && typeof (reactProps as { action?: unknown }).action === "function";
+    }),
+    { timeout: 30_000 },
+  ).toBe(true);
+}
+
+async function submitServerAction(locator: Locator) {
+  await locator.evaluate((element) => {
+    if (!(element instanceof HTMLButtonElement) || !element.form) {
+      throw new Error("SUPPORT_E2E_SUBMIT_BUTTON_FORM_MISSING");
+    }
+    // requestSubmit performs native constraint validation and dispatches the
+    // same submit event as activation, without relying on synthetic pointer IO.
+    element.form.requestSubmit(element);
+  });
+}
 
 test.describe.serial("客服案件 browser journey", () => {
   test.beforeAll(async () => {
@@ -127,8 +158,10 @@ test.describe.serial("客服案件 browser journey", () => {
     }]);
 
     expect((await page.goto("/support/requests"))?.status()).toBe(200);
+    const createButton = page.getByRole("button", { name: "建立客服案件" });
+    await waitForReactHydration(createButton);
     await page.getByLabel("問題說明").fill("合成客服案件：需要確認訂單狀態。");
-    await page.getByRole("button", { name: "建立客服案件" }).click();
+    await submitServerAction(createButton);
     await expect(page).toHaveURL(/\/support\/requests\/[A-Za-z0-9_-]+\?updated=created/u);
     const caseUrl = new URL(page.url());
     const caseId = caseUrl.pathname.split("/").at(-1);
@@ -145,11 +178,21 @@ test.describe.serial("客服案件 browser journey", () => {
       sameSite: "Lax",
     }]);
     expect((await page.goto(`/support-cases/${caseId}`))?.status()).toBe(200);
+    await page.waitForLoadState("networkidle");
+    const noteButton = page.getByRole("button", { name: "保存紀錄" });
+    await waitForReactHydration(noteButton);
+    const previousRevision = await noteButton.locator("xpath=ancestor::form").locator('input[name="revision"]').inputValue();
     await page.getByLabel("處理紀錄").fill("合成內部處理紀錄，不應向買家公開。");
-    await page.getByRole("button", { name: "保存紀錄" }).click();
+    await submitServerAction(noteButton);
     await expect(page).toHaveURL(new RegExp(`/support-cases/${caseId}\\?updated=note$`, "u"));
+    await page.reload({ waitUntil: "networkidle" });
+    const replyButton = page.getByRole("button", { name: "傳送給買家" });
+    await expect.poll(
+      () => replyButton.locator("xpath=ancestor::form").locator('input[name="revision"]').inputValue(),
+    ).not.toBe(previousRevision);
+    await waitForReactHydration(replyButton);
     await page.getByLabel("公開回覆").fill("我們已收到案件，正在確認訂單狀態。");
-    await page.getByRole("button", { name: "傳送給買家" }).click();
+    await submitServerAction(replyButton);
     await expect(page).toHaveURL(new RegExp(`/support-cases/${caseId}\\?updated=customer_reply$`, "u"));
     await expect(page.getByText("我們已收到案件，正在確認訂單狀態。", { exact: true })).toBeVisible();
 
