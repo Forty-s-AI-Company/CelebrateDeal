@@ -116,7 +116,7 @@ export default async function PaymentResultPage({ searchParams }: {
                   <div><dt className="text-slate-500">退款金額</dt><dd className="mt-1 font-semibold text-slate-950">{formatAmount(grant.order.refundedAmountCents, grant.order.currency)}</dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">
-                  <LineLoginButton request={{ mode: "buyer", grantId: grant.id, redirectPath: "/checkout/result" }}>綁定 LINE 接收訂單通知</LineLoginButton>
+                  <LineLoginButton request={{ mode: "buyer", grantId: grant.id, redirectPath: "/checkout/result" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton>
                   <Link href={`/support/orders/${encodeURIComponent(grant.id)}`} className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">
                     查看商品與履約進度 →
                   </Link>

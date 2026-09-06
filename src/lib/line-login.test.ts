@@ -61,6 +61,7 @@ describe("LINE Login lifecycle", () => {
 
     expect(url.origin).toBe("https://access.line.me");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.get("bot_prompt")).toBe("aggressive");
     expect(url.searchParams.get("state")).toHaveLength(43);
     expect(saved.stateHash).not.toBe(url.searchParams.get("state"));
     expect(saved.redirectPath).toBe("/dashboard");

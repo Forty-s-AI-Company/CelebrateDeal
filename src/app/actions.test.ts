@@ -67,6 +67,7 @@ const mocks = vi.hoisted(() => ({
   createLiveReminderReconciliationSnapshot: vi.fn(),
   queueLiveReminderReconciliation: vi.fn(),
   materializeLiveNotificationRules: vi.fn(),
+  dispatchLiveStartedLineNotifications: vi.fn(),
   captureOperationalError: vi.fn(),
   productFindMany: vi.fn(),
   videoFindFirst: vi.fn(),
@@ -201,6 +202,9 @@ vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
   materializeLiveNotificationRules: mocks.materializeLiveNotificationRules,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/line-live-started", () => ({
+  dispatchLiveStartedLineNotifications: mocks.dispatchLiveStartedLineNotifications,
+}));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
@@ -810,6 +814,7 @@ beforeEach(() => {
     jobId: "reminder-job-1",
   }));
   mocks.materializeLiveNotificationRules.mockResolvedValue([]);
+  mocks.dispatchLiveStartedLineNotifications.mockResolvedValue({ queued: 0, sent: 0, failed: 0 });
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
@@ -2611,6 +2616,35 @@ describe("upsertLiveAction", () => {
       where: expect.objectContaining({ trigger: { in: ["before_live", "during_live"] } }),
       data: expect.objectContaining({ status: "superseded", lastErrorCode: "lifecycle_superseded" }),
     }));
+  });
+
+  it("eagerly dispatches the tenant-scoped LINE live-start event after the lifecycle commit", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({
+      id: "live-1",
+      slug: "tenant-live",
+      title: "租戶限定直播",
+      status: "scheduled",
+      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+      startedAt: null,
+      endedAt: null,
+      liveReminderTemplateId: "reminder-template-1",
+      liveReminderOffsetMinutes: 60,
+    });
+    const formData = liveFormData();
+    formData.set("id", "live-1");
+    formData.set("status", "live");
+    formData.set("liveReminderTemplateId", "reminder-template-1");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+
+    const lifecycleUpdate = mocks.liveUpdate.mock.calls.at(-1)?.[0];
+    expect(lifecycleUpdate.data).toEqual(expect.objectContaining({ status: "live", startedAt: expect.any(Date) }));
+    expect(mocks.dispatchLiveStartedLineNotifications).toHaveBeenCalledWith(expect.anything(), {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      startedAt: lifecycleUpdate.data.startedAt,
+    });
   });
 
   it.each(["ended", "draft"])("starts a new notification session when %s returns to scheduled", async (status) => {

@@ -6,6 +6,10 @@ import { getCurrentAuth } from "@/lib/auth";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { getDb } from "@/lib/db";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import {
+  FORM_SUBMISSION_LINE_BINDING_COOKIE,
+  verifyFormSubmissionLineBindingToken,
+} from "@/lib/form-submission-line-binding-session";
 import { beginLineLogin, type LineLoginSubjectType } from "@/lib/line-login";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -52,10 +56,11 @@ export async function POST(request: Request) {
     subjectId = grant.orderId;
   } else if (parsed.data.mode === "registration") {
     const cookieStore = await cookies();
-    const claim = verifyFormSubmissionChatSessionToken(cookieStore.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)?.value ?? "");
+    const claim = verifyFormSubmissionChatSessionToken(cookieStore.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)?.value ?? "")
+      ?? verifyFormSubmissionLineBindingToken(cookieStore.get(FORM_SUBMISSION_LINE_BINDING_COOKIE)?.value ?? "");
     if (!claim) return NextResponse.json({ error: "buyer_authorization_required" }, { status: 403 });
     const submission = await getDb().formSubmission.findFirst({
-      where: { id: claim.submissionId, verificationStatus: "VERIFIED" },
+      where: { id: claim.submissionId },
       select: { id: true, form: { select: { vendorId: true } } },
     });
     if (!submission) return NextResponse.json({ error: "buyer_authorization_required" }, { status: 403 });

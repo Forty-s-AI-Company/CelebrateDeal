@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MockLineMessagingClient } from "@/lib/line-client";
+import { LineMessagingError, MockLineMessagingClient } from "@/lib/line-client";
 import { protectLineOfficialAccountCredentials, protectLineProfileValue } from "@/lib/line-credentials";
 import {
   buildCommissionLineMessage,
@@ -57,6 +57,16 @@ describe("LINE notification outbox", () => {
     const payload = create.mock.calls[0]?.[0].data;
     expect(payload.payloadEncrypted).toMatch(/^v1\./u);
     expect(JSON.stringify(payload)).not.toContain("佣金已入帳");
+    expect(db.lineUserIdentity.findUnique).toHaveBeenCalledWith({
+      where: {
+        vendorId_subjectType_subjectId: {
+          vendorId: "vendor-1",
+          subjectType: "promoter",
+          subjectId: "affiliate-1",
+        },
+      },
+      select: { id: true, revokedAt: true },
+    });
   });
 
   it("claims and sends a due delivery through the offline mock client", async () => {
@@ -84,13 +94,11 @@ describe("LINE notification outbox", () => {
       account,
       identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
     };
-    const update = vi.fn().mockResolvedValue({});
     const db = {
       lineDelivery: {
         findMany: vi.fn().mockResolvedValue([due]),
-        findUnique: vi.fn().mockResolvedValue(due),
+        findFirst: vi.fn().mockResolvedValue(due),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        update,
       },
     };
     const client = new MockLineMessagingClient();
@@ -100,7 +108,16 @@ describe("LINE notification outbox", () => {
       where: expect.objectContaining({ status: "sending", claimedAt: { lt: new Date("2026-09-04T23:55:00Z") } }),
     }));
     expect(client.calls).toEqual([{ to: "U123", messages, retryKey: deliveryId }]);
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "sent" }) }));
+    expect(db.lineDelivery.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: deliveryId, vendorId: "vendor-1" },
+    }));
+    expect(db.lineDelivery.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: expect.objectContaining({ id: deliveryId, vendorId: "vendor-1" }),
+    }));
+    expect(db.lineDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: deliveryId, vendorId: "vendor-1", status: "sending" }),
+      data: expect.objectContaining({ status: "sent" }),
+    }));
   });
 
   it("suppresses an already queued delivery when the account is disabled before send", async () => {
@@ -114,19 +131,112 @@ describe("LINE notification outbox", () => {
       account: { vendorId: "vendor-1", status: "disabled" },
       identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: "unused" },
     };
-    const update = vi.fn().mockResolvedValue({});
     const db = { lineDelivery: {
       findMany: vi.fn().mockResolvedValue([due]),
-      findUnique: vi.fn().mockResolvedValue(due),
+      findFirst: vi.fn().mockResolvedValue(due),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      update,
     } };
     const client = new MockLineMessagingClient();
     await expect(processDueLineDeliveries(db as never, () => client, new Date("2026-09-05T00:00:00Z")))
       .resolves.toEqual([{ id: "123e4567-e89b-42d3-a456-426614174001", status: "suppressed" }]);
     expect(client.calls).toHaveLength(0);
-    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+    expect(db.lineDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: due.id, vendorId: "vendor-1", status: "sending" }),
       data: expect.objectContaining({ status: "suppressed", lastErrorCode: "line_consent_unavailable" }),
+    }));
+  });
+
+  it("treats a concurrent, tenant-scoped claim as unavailable without looking up or sending the delivery", async () => {
+    const db = {
+      lineDelivery: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: "delivery-1", vendorId: "vendor-1", status: "queued", attemptCount: 0,
+        }]),
+        findFirst: vi.fn(),
+        updateMany: vi.fn()
+          .mockResolvedValueOnce({ count: 0 }) // lease recovery is allowed to have nothing to recover
+          .mockResolvedValueOnce({ count: 0 }), // another worker claimed this same version
+      },
+    };
+
+    await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date("2026-09-05T00:00:00Z")))
+      .resolves.toEqual([{ id: "delivery-1", status: "claimed_elsewhere" }]);
+    expect(db.lineDelivery.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: {
+        id: "delivery-1",
+        vendorId: "vendor-1",
+        status: { in: ["queued", "failed"] },
+        attemptCount: 0,
+      },
+    }));
+    expect(db.lineDelivery.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("limits lease recovery and due selection to an explicit vendor and delivery IDs", async () => {
+    const db = {
+      lineDelivery: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const now = new Date("2026-09-05T00:00:00Z");
+
+    await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), now, {
+      vendorId: "vendor-1",
+      deliveryIds: ["delivery-1", "delivery-2"],
+    })).resolves.toEqual([]);
+
+    expect(db.lineDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", id: { in: ["delivery-1", "delivery-2"] } }),
+    }));
+    expect(db.lineDelivery.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", id: { in: ["delivery-1", "delivery-2"] } }),
+    }));
+  });
+
+  it("rejects a delivery-ID-only scope because it cannot establish tenant ownership", async () => {
+    const db = { lineDelivery: { findMany: vi.fn(), updateMany: vi.fn() } };
+    await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date(), {
+      deliveryIds: ["delivery-1"],
+    })).rejects.toThrow("LINE delivery ID scopes require a vendor ID.");
+    expect(db.lineDelivery.updateMany).not.toHaveBeenCalled();
+    expect(db.lineDelivery.findMany).not.toHaveBeenCalled();
+  });
+
+  it("records a retry-key conflict as sent because LINE already accepted the request", async () => {
+    const due = {
+      id: "123e4567-e89b-42d3-a456-426614174009",
+      vendorId: "vendor-1",
+      status: "failed",
+      attemptCount: 1,
+      maxAttempts: 5,
+      payloadEncrypted: encryptSensitiveValue(JSON.stringify([{ type: "text", text: "安全測試" }]), "line-delivery:vendor-1:123e4567-e89b-42d3-a456-426614174009"),
+      account: {
+        vendorId: "vendor-1",
+        status: "active",
+        ...protectLineOfficialAccountCredentials("vendor-1", {
+          messagingChannelId: "2000123456",
+          messagingChannelSecret: "messaging-secret-1234567890",
+          messagingAccessToken: "access-token-with-at-least-thirty-two-characters",
+          loginChannelId: null,
+          loginChannelSecret: null,
+        }),
+      },
+      identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
+    };
+    const updates = vi.fn().mockResolvedValue({ count: 1 });
+    const db = { lineDelivery: {
+      findMany: vi.fn().mockResolvedValue([due]),
+      findFirst: vi.fn().mockResolvedValue(due),
+      updateMany: updates,
+    } };
+    const client = new MockLineMessagingClient(new LineMessagingError("already accepted", 409));
+
+    await expect(processDueLineDeliveries(db as never, () => client, new Date("2026-09-05T00:00:00Z")))
+      .resolves.toEqual([{ id: due.id, status: "sent" }]);
+    expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { id: due.id, vendorId: "vendor-1", status: "sending" },
+      data: expect.objectContaining({ status: "sent", lastErrorCode: null }),
     }));
   });
 });

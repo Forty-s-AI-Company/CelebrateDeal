@@ -162,6 +162,7 @@ describe("team lead attribution", () => {
 
     await expect(response.json()).resolves.toEqual({ ok: true, verificationRequired: true });
     expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=submission-existing");
+    expect(response.headers.getSetCookie().join("\n")).not.toContain("celebratedeal_form_submission_line_binding");
     expect(db.formSubmission.create).not.toHaveBeenCalled();
     expect(db.teamLeadAttribution.upsert).not.toHaveBeenCalled();
   });
@@ -446,6 +447,7 @@ describe("team lead attribution", () => {
 
     const cookies = response.headers.getSetCookie().join("\n");
     expect(cookies).toMatch(/celebratedeal_form_submission=formsub_[a-f0-9]{32}/u);
+    expect(cookies).toMatch(/celebratedeal_form_submission_line_binding=fsl1\.formsub_[a-f0-9]{32}\./u);
     expect(cookies).toContain("HttpOnly");
     expect(cookies).toContain("Secure");
     expect(cookies).toContain("SameSite=lax");

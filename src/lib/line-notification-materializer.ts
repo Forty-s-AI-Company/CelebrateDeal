@@ -1,4 +1,5 @@
 import { getCanonicalAppUrl } from "@/lib/app-url";
+import type { PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import {
@@ -10,6 +11,14 @@ import {
 } from "@/lib/line-notification";
 
 const MATERIALIZE_LIMIT = 100;
+type LineMaterializationDatabase = Pick<PrismaClient,
+  | "lineOfficialAccount"
+  | "lineUserIdentity"
+  | "lineDelivery"
+  | "formSubmission"
+  | "commerceOrder"
+  | "affiliateCommission"
+>;
 
 function formatStart(value: Date) {
   return new Intl.DateTimeFormat("zh-TW", {
@@ -23,8 +32,19 @@ function formatStart(value: Date) {
  * Converts current domain facts into LINE outbox rows. Every event key is stable,
  * so cron retries and webhook overlap converge instead of double-pushing.
  */
-export async function materializeLineNotifications(now = new Date()) {
-  const db = getDb();
+export function materializeLineNotifications(now?: Date): Promise<Array<{ status: string }>>;
+export function materializeLineNotifications(
+  db: LineMaterializationDatabase,
+  now?: Date,
+): Promise<Array<{ status: string }>>;
+export async function materializeLineNotifications(
+  dbOrNow: LineMaterializationDatabase | Date = getDb(),
+  requestedNow = new Date(),
+) {
+  // Keep the date-only call shape for existing jobs while allowing a cron
+  // invocation to use one explicit database handle for its whole run.
+  const db = dbOrNow instanceof Date ? getDb() : dbOrNow;
+  const now = dbOrNow instanceof Date ? dbOrNow : requestedNow;
   const identities = await db.lineUserIdentity.findMany({
     where: { revokedAt: null, subjectType: { in: ["buyer_registration", "buyer_order", "promoter"] } },
     orderBy: [{ lastMaterializedAt: "asc" }, { id: "asc" }],

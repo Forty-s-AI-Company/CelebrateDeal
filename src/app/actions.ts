@@ -47,6 +47,7 @@ import {
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
+import { dispatchLiveStartedLineNotifications } from "@/lib/line-live-started";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
@@ -118,6 +119,29 @@ import { retryWebhookEventAction as retryWebhookEventActionImpl } from "./action
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : fallback;
+}
+
+async function dispatchLiveStartedLineNotificationsSafely(
+  db: PrismaClient,
+  vendorId: string,
+  committed: { id: string; liveStartedAt: Date | null },
+) {
+  if (!committed.liveStartedAt) return;
+  try {
+    await dispatchLiveStartedLineNotifications(db, {
+      vendorId,
+      liveId: committed.id,
+      startedAt: committed.liveStartedAt,
+    });
+  } catch (error) {
+    // The transition remains committed. Cron safely resumes the same stable
+    // idempotency keys if an eager provider call is unavailable.
+    try {
+      captureOperationalError(error, { source: "line_notification", operation: "live_started_dispatch", status: "failed" });
+    } catch {
+      // Monitoring must not roll back a successfully started live.
+    }
+  }
 }
 
 function optionalText(formData: FormData, key: string) {
@@ -839,6 +863,7 @@ async function commitLiveDraft(input: {
       return {
         id: input.liveId!,
         created: false,
+        liveStartedAt: currentLive.status === "scheduled" && input.data.status === "live" ? transitionAt : null,
         reminderReconciliationStatus: reminderReconciliation?.status ?? null,
         notificationRuleIds: notificationReconciliation.materializeRuleIds,
       };
@@ -883,7 +908,7 @@ async function commitLiveDraft(input: {
       liveId: live.id,
       rules: input.notificationRules,
     });
-    return { id: live.id, created: true, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
+    return { id: live.id, created: true, liveStartedAt: null, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
   });
 }
 
@@ -1424,6 +1449,7 @@ export async function upsertLiveAction(formData: FormData) {
     } : null,
   });
   if (!committed) redirect(draftClaim.conflictPath);
+  await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {
     await materializeLiveNotificationRules({
       vendorId: vendor.id,
