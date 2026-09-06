@@ -73,6 +73,17 @@ describe("LINE automatic notification materializer", () => {
     }
   });
 
+  it("accepts an injected database handle for one cron invocation", async () => {
+    const cronDb = {
+      lineUserIdentity: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+
+    await expect(materializeLineNotifications(cronDb as never, new Date("2026-09-05T12:01:00Z")))
+      .resolves.toEqual([]);
+    expect(cronDb.lineUserIdentity.findMany).toHaveBeenCalledOnce();
+    expect(runtime.db.lineUserIdentity.findMany).not.toHaveBeenCalled();
+  });
+
   it("persists a commission cursor so item 21 is reached on the next batch", async () => {
     runtime.db.lineUserIdentity.findMany.mockResolvedValue([
       { id: "identity-promoter", vendorId: "vendor-1", subjectType: "promoter", subjectId: "affiliate-1", materializationCursor: null },

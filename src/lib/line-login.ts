@@ -148,6 +148,9 @@ export async function beginLineLogin(
     nonce,
     code_challenge: sha256Base64Url(codeVerifier),
     code_challenge_method: "S256",
+    // When the Login channel is linked to the merchant OA, LINE shows the
+    // add-friend prompt as part of the same consent flow.
+    bot_prompt: "aggressive",
   }).toString();
   return { authorizationUrl: authorizationUrl.toString() };
 }

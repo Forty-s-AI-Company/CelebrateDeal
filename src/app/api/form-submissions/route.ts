@@ -27,6 +27,11 @@ import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
 import {
+  createFormSubmissionLineBindingToken,
+  FORM_SUBMISSION_LINE_BINDING_COOKIE,
+  formSubmissionLineBindingCookieOptions,
+} from "@/lib/form-submission-line-binding-session";
+import {
   hasPublicRegistrationSession,
   publicRegistrationSessionWhere,
 } from "@/lib/public-registration-form";
@@ -476,7 +481,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
   }
 
-  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id);
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
 }
 
 function submissionResponse(
@@ -484,6 +489,7 @@ function submissionResponse(
   redirectTo: string | undefined,
   isNativeFormPost: boolean,
   formSubmissionId: string,
+  issueLineBindingCapability = false,
 ) {
   const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
     ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
@@ -496,6 +502,13 @@ function submissionResponse(
     path: "/",
     maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
   });
+  if (issueLineBindingCapability) {
+    response.cookies.set(
+      FORM_SUBMISSION_LINE_BINDING_COOKIE,
+      createFormSubmissionLineBindingToken(formSubmissionId),
+      formSubmissionLineBindingCookieOptions(new URL(request.url).protocol === "https:"),
+    );
+  }
   return response;
 }
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
-import { LineFetchClient, type LineFlexContents, type LineMessage, type LineMessagingClient } from "@/lib/line-client";
+import { LineFetchClient, LineMessagingError, type LineFlexContents, type LineMessage, type LineMessagingClient } from "@/lib/line-client";
 import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } from "@/lib/line-credentials";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 
@@ -16,6 +16,12 @@ export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
 
 type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">;
 type LineClientFactory = (accessToken: string) => LineMessagingClient;
+export type LineDeliveryProcessingScope = {
+  /** Limits a worker invocation to one tenant without changing global cron behavior. */
+  vendorId?: string;
+  /** Limits a worker invocation to explicitly materialized delivery rows. */
+  deliveryIds?: readonly string[];
+};
 const DELIVERY_LEASE_MS = 5 * 60_000;
 
 const money = new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 });
@@ -159,13 +165,27 @@ export async function processDueLineDeliveries(
   db: LineNotificationDatabase = getDb(),
   clientFactory: LineClientFactory = (accessToken) => new LineFetchClient(accessToken),
   now = new Date(),
+  scope: LineDeliveryProcessingScope = {},
 ) {
+  if (scope.deliveryIds && !scope.vendorId) {
+    // Delivery IDs alone are not a tenant boundary. Internal callers that
+    // dispatch an event-specific batch must always prove its vendor first.
+    throw new Error("LINE delivery ID scopes require a vendor ID.");
+  }
+  const scopeWhere = {
+    ...(scope.vendorId ? { vendorId: scope.vendorId } : {}),
+    ...(scope.deliveryIds ? { id: { in: [...scope.deliveryIds] } } : {}),
+  };
   await db.lineDelivery.updateMany({
-    where: { status: "sending", claimedAt: { lt: new Date(now.getTime() - DELIVERY_LEASE_MS) } },
+    where: {
+      ...scopeWhere,
+      status: "sending",
+      claimedAt: { lt: new Date(now.getTime() - DELIVERY_LEASE_MS) },
+    },
     data: { status: "failed", claimedAt: null, nextAttemptAt: now, lastErrorCode: "worker_lease_expired" },
   });
   const due = await db.lineDelivery.findMany({
-    where: { status: { in: ["queued", "failed"] }, nextAttemptAt: { lte: now } },
+    where: { ...scopeWhere, status: { in: ["queued", "failed"] }, nextAttemptAt: { lte: now } },
     orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
     take: 50,
     include: { account: true, identity: true },
@@ -173,15 +193,20 @@ export async function processDueLineDeliveries(
   const results: Array<{ id: string; status: "sent" | "failed" | "exhausted" | "suppressed" | "claimed_elsewhere" }> = [];
   for (const delivery of due) {
     const claim = await db.lineDelivery.updateMany({
-      where: { id: delivery.id, status: { in: ["queued", "failed"] }, attemptCount: delivery.attemptCount },
+      where: {
+        id: delivery.id,
+        vendorId: delivery.vendorId,
+        status: { in: ["queued", "failed"] },
+        attemptCount: delivery.attemptCount,
+      },
       data: { status: "sending", claimedAt: now, attemptCount: { increment: 1 }, nextAttemptAt: null },
     });
     if (claim.count !== 1) {
       results.push({ id: delivery.id, status: "claimed_elsewhere" });
       continue;
     }
-    const current = await db.lineDelivery.findUnique({
-      where: { id: delivery.id },
+    const current = await db.lineDelivery.findFirst({
+      where: { id: delivery.id, vendorId: delivery.vendorId },
       include: { account: true, identity: true },
     });
     if (
@@ -191,8 +216,8 @@ export async function processDueLineDeliveries(
       || current.account.status !== "active"
       || current.identity.revokedAt
     ) {
-      await db.lineDelivery.update({
-        where: { id: delivery.id },
+      await db.lineDelivery.updateMany({
+        where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
         data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "line_consent_unavailable" },
       });
       results.push({ id: delivery.id, status: "suppressed" });
@@ -203,14 +228,32 @@ export async function processDueLineDeliveries(
       const recipient = unprotectLineProfileValue(current.vendorId, "userId", current.identity.lineUserIdEncrypted);
       const messages = safeMessages(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
       await clientFactory(credentials.messagingAccessToken).push(recipient, messages, { retryKey: current.id });
-      await db.lineDelivery.update({ where: { id: delivery.id }, data: { status: "sent", sentAt: now, claimedAt: null, lastErrorCode: null } });
+      await db.lineDelivery.updateMany({
+        where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+        data: { status: "sent", sentAt: now, claimedAt: null, lastErrorCode: null },
+      });
       results.push({ id: delivery.id, status: "sent" });
-    } catch {
-      const exhausted = delivery.attemptCount + 1 >= delivery.maxAttempts;
+    } catch (error) {
+      // LINE returns 409 when the same X-Line-Retry-Key was already accepted.
+      // Treat it as delivered so an ambiguous network response converges.
+      if (error instanceof LineMessagingError && error.status === 409) {
+        await db.lineDelivery.updateMany({
+          where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+          data: { status: "sent", sentAt: now, claimedAt: null, lastErrorCode: null },
+        });
+        results.push({ id: delivery.id, status: "sent" });
+        continue;
+      }
+      const permanentProviderRejection = error instanceof LineMessagingError
+        && error.status !== undefined
+        && error.status >= 400
+        && error.status < 500
+        && ![408, 429].includes(error.status);
+      const exhausted = permanentProviderRejection || delivery.attemptCount + 1 >= delivery.maxAttempts;
       const retryAt = exhausted ? null : new Date(now.getTime() + Math.min(60, 2 ** delivery.attemptCount) * 60_000);
-      await db.lineDelivery.update({
-        where: { id: delivery.id },
-        data: { status: exhausted ? "exhausted" : "failed", claimedAt: null, nextAttemptAt: retryAt, lastErrorCode: "provider_failed" },
+      await db.lineDelivery.updateMany({
+        where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+        data: { status: exhausted ? "exhausted" : "failed", claimedAt: null, nextAttemptAt: retryAt, lastErrorCode: permanentProviderRejection ? "provider_rejected" : "provider_failed" },
       });
       results.push({ id: delivery.id, status: exhausted ? "exhausted" : "failed" });
     }
