@@ -1,13 +1,14 @@
 import { demoPaymentProvider } from "@/lib/payment-providers/demo";
-import { ecpayLikePaymentProvider } from "@/lib/payment-providers/ecpay-like";
+import { ecpayPaymentProvider } from "@/lib/payment-providers/ecpay";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
 const providers: Record<string, PaymentProviderAdapter> = {
   demo: demoPaymentProvider,
   payuni: payUniPaymentProvider,
-  "platform-ecpay": ecpayLikePaymentProvider,
-  "ecpay-like": ecpayLikePaymentProvider,
+  ecpay: ecpayPaymentProvider,
+  "platform-ecpay": ecpayPaymentProvider,
+  "ecpay-like": ecpayPaymentProvider,
 };
 
 export function getPaymentProvider(providerId: string | null) {

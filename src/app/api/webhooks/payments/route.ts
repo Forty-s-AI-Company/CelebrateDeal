@@ -72,6 +72,12 @@ function isPayUniPayerReturn(requestUrl: URL) {
     && providerValues[0] === "payuni";
 }
 
+function isEcpayNotify(requestUrl: URL) {
+  const providerValues = requestUrl.searchParams.getAll("provider");
+  return classifyCallbackSource(requestUrl.searchParams) === "notify"
+    && providerValues.some((p) => p === "ecpay" || p === "ecpay-like" || p === "platform-ecpay");
+}
+
 function payerReturnOutcome(status: number): PayerReturnOutcome {
   if (status >= 200 && status < 300) return "updated";
   if (status >= 500) return "pending";
@@ -90,6 +96,11 @@ function webhookResponse(requestUrl: URL, status: number, payload: unknown) {
   }
 
   observeCallbackRequest(requestUrl, "POST", status);
+
+  if (isEcpayNotify(requestUrl) && status >= 200 && status < 300) {
+    return new NextResponse("1|OK", { status: 200, headers: { "content-type": "text/plain" } });
+  }
+
   return NextResponse.json(payload, { status });
 }
 
