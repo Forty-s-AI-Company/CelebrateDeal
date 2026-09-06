@@ -39,6 +39,8 @@
 ### Secure staging 驗收包（待乾淨分支執行）
 
 - exact Preview SHA／project／Ready lineage gate。
+- Preview 必須設定 `LINE_STAGING_VALIDATION_ENABLED=true`；在任何有效 Cron 前，先以一次性 DB sentinel HMAC proof 證明 Preview runtime 與 runner 連到同一個隔離 staging DB。
+- Protected Environment 的 `LINE_STAGING_DATABASE_IDENTITY_SHA256` 綁定 hostname、port、database、username 與 `public` schema；同 host 不同 project／role 無法冒充 staging。
 - 專用 staging DB、專用 LINE 測試 OA 與單一測試收件人。
 - 錯誤 Bearer 必須回 401 且零 DB 副作用。
 - 正確 Bearer 僅產生一筆 `live_started` delivery，狀態落為 `sent`。
