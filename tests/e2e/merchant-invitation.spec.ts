@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 
@@ -38,6 +38,30 @@ async function expectInvitationFailureRedirect(page: Page) {
     test.info().annotations.push({ type: "security-action-outcome", description: invitationRedirectOutcome(page) });
     throw error;
   }
+}
+
+async function submitServerAction(button: Locator) {
+  await expect.poll(() => button.evaluate((element) => {
+    const form = element.closest("form");
+    if (!form) return false;
+    const reactPropsKey = Object.keys(form).find((key) => key.startsWith("__reactProps$"));
+    if (!reactPropsKey) return false;
+    const reactProps = (form as unknown as Record<string, unknown>)[reactPropsKey];
+    return typeof reactProps === "object"
+      && reactProps !== null
+      && typeof (reactProps as { action?: unknown }).action === "function";
+  })).toBe(true);
+  await button.evaluate((element) => {
+    if (!(element instanceof HTMLButtonElement) || !element.form) {
+      throw new Error("INVITATION_E2E_SUBMIT_BUTTON_FORM_MISSING");
+    }
+    if (element.disabled || !element.form.checkValidity()) {
+      throw new Error("INVITATION_E2E_SUBMIT_BUTTON_NOT_READY");
+    }
+    // DOM activation exercises the component click handler and native form
+    // submission without relying on flaky synthetic pointer coordinates.
+    element.click();
+  });
 }
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -113,6 +137,7 @@ test("local invitation state records member and mail failure without proving ema
   await expect(page).toHaveURL(/\/dashboard/u);
 
   await page.goto("/settings/security");
+  await page.waitForLoadState("networkidle");
   const invitationForm = page.locator("form").filter({
     has: page.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }),
   });
@@ -120,7 +145,7 @@ test("local invitation state records member and mail failure without proving ema
   await invitationForm.getByLabel("姓名", { exact: true }).fill("Invited Support Member");
   await invitationForm.getByLabel("Email", { exact: true }).fill(invitedEmail);
   await invitationForm.locator('select[name="role"]').selectOption("support");
-  await invitationForm.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }).click();
+  await submitServerAction(invitationForm.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }));
 
   await expectInvitationFailureRedirect(page);
   await expect(page.getByText("成員已更新，但邀請信寄送失敗，請稍後重新邀請。", { exact: true })).toBeVisible();
