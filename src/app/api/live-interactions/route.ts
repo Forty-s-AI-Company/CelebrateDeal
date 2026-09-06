@@ -100,6 +100,8 @@ async function projectRun(runId: string, participantHash: string) {
     pollResults: metadata.kind === "poll" ? pollPercentagesFromCounts(metadata.options, countMap) : null,
     winner: winnerResponse ? winnerResponse.displayName ?? "幸運觀眾" : null,
     winnerIsViewer: Boolean(run.winnerResponseId && ownResponse?.id === run.winnerResponseId),
+    winnerRevealedAt: run.winnerResponseId ? run.updatedAt.toISOString() : null,
+    prizeName: metadata.kind === "lucky_draw" ? (metadata.prizeName ?? null) : null,
   };
 }
 
@@ -161,7 +163,7 @@ export async function POST(request: Request) {
         },
       },
     });
-    if (!event || !["lucky_draw", "poll", "flash_voucher"].includes(event.eventType)) {
+    if (!event || !["lucky_draw", "poll", "flash_voucher", "flash_sale"].includes(event.eventType)) {
       return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
     }
     const normalized = normalizeInteractionEventDraft({
@@ -211,8 +213,11 @@ export async function POST(request: Request) {
   if (metadata.kind === "poll" && !metadata.options.some(({ id }) => id === data.value)) {
     return NextResponse.json({ error: "Invalid poll option" }, { status: 400 });
   }
-  if (metadata.kind === "lucky_draw" && data.value !== metadata.slogan) {
-    return NextResponse.json({ error: "Draw slogan does not match" }, { status: 400 });
+  if (metadata.kind === "lucky_draw") {
+    const isSloganMode = !metadata.eligibility || metadata.eligibility === "slogan";
+    if (isSloganMode && data.value !== metadata.slogan) {
+      return NextResponse.json({ error: "Draw slogan does not match" }, { status: 400 });
+    }
   }
 
   let bearer: string | null = null;

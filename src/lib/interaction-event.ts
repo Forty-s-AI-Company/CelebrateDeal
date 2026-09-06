@@ -8,6 +8,7 @@ export const INTERACTION_EVENT_TYPES = [
   "lucky_draw",
   "poll",
   "flash_voucher",
+  "flash_sale",
 ] as const;
 
 export type InteractionEventType = (typeof INTERACTION_EVENT_TYPES)[number];
@@ -24,10 +25,15 @@ export type InteractionEventDraft = {
   metadata?: unknown;
 };
 
+export type LuckyDrawEligibility = "slogan" | "purchased" | "all_viewers";
+
 export type LuckyDrawInteractionMetadata = {
   kind: "lucky_draw";
   durationSec: number;
   slogan: string;
+  prizeName?: string;
+  eligibility?: LuckyDrawEligibility;
+  excludePreviousWinners?: boolean;
 };
 
 export type PollInteractionMetadata = {
@@ -46,10 +52,21 @@ export type FlashVoucherInteractionMetadata = {
   productId: string | null;
 };
 
+export type FlashSaleInteractionMetadata = {
+  kind: "flash_sale";
+  durationSec: number;
+  productId: string;
+  salePriceCents?: number;
+  originalPriceCents?: number;
+  stockLimit?: number;
+  announcementText?: string;
+};
+
 export type AdvancedInteractionMetadata =
   | LuckyDrawInteractionMetadata
   | PollInteractionMetadata
-  | FlashVoucherInteractionMetadata;
+  | FlashVoucherInteractionMetadata
+  | FlashSaleInteractionMetadata;
 
 export type NormalizedInteractionEvent = {
   eventType: InteractionEventType;
@@ -189,7 +206,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 
 function normalizedAdvancedBase(
   input: InteractionEventDraft,
-  eventType: "lucky_draw" | "poll" | "flash_voucher",
+  eventType: "lucky_draw" | "poll" | "flash_voucher" | "flash_sale",
   title: string,
   metadata: AdvancedInteractionMetadata,
   productId: string | null = null,
@@ -209,18 +226,28 @@ function normalizedAdvancedBase(
 
 function normalizeLuckyDrawEvent(input: InteractionEventDraft, eventLabel: string, suppliedTitle: string): InteractionEventValidation {
   const metadata = metadataRecord(input.metadata);
+  const eligibilityRaw = typeof metadata.eligibility === "string" ? metadata.eligibility : "slogan";
+  const eligibility: LuckyDrawEligibility = eligibilityRaw === "purchased" || eligibilityRaw === "all_viewers" ? eligibilityRaw : "slogan";
   const slogan = typeof metadata.slogan === "string" ? metadata.slogan.trim() : "";
-  if (!slogan || slogan.length > 80) {
+  if (eligibility === "slogan" && (!slogan || slogan.length > 80)) {
     return { success: false, error: `${eventLabel}的抽獎口號必須有 1～80 字。` };
   }
-  const titleResult = validatedTitle(suppliedTitle, "幸運大抽獎", eventLabel);
+  const prizeName = typeof metadata.prizeName === "string" && metadata.prizeName.trim() ? metadata.prizeName.trim() : undefined;
+  if (prizeName && prizeName.length > 100) {
+    return { success: false, error: `${eventLabel}的獎品名稱不可超過 100 字。` };
+  }
+  const excludePreviousWinners = Boolean(metadata.excludePreviousWinners);
+  const titleResult = validatedTitle(suppliedTitle, prizeName ? `抽獎：${prizeName}` : "幸運大抽獎", eventLabel);
   if (!titleResult.success) return titleResult;
   return {
     success: true,
     data: normalizedAdvancedBase(input, "lucky_draw", titleResult.title, {
       kind: "lucky_draw",
       durationSec: boundedInteger(metadata.durationSec, 30, 5, 600),
-      slogan,
+      slogan: slogan || "立即抽獎",
+      ...(prizeName ? { prizeName } : {}),
+      ...(eligibility !== "slogan" ? { eligibility } : {}),
+      ...(excludePreviousWinners ? { excludePreviousWinners } : {}),
     }),
   };
 }
@@ -277,6 +304,43 @@ function normalizeFlashVoucherEvent(input: InteractionEventDraft, eventLabel: st
   };
 }
 
+function normalizeFlashSaleEvent(input: InteractionEventDraft, eventLabel: string, suppliedTitle: string): InteractionEventValidation {
+  const metadata = metadataRecord(input.metadata);
+  const productId = typeof metadata.productId === "string" ? metadata.productId.trim() : (input.productId?.trim() ?? "");
+  if (!productId || productId.length > 128) {
+    return { success: false, error: `${eventLabel}必須選擇促銷商品。` };
+  }
+  const durationSec = boundedInteger(metadata.durationSec, 300, 10, 3600);
+  const salePriceCents = typeof metadata.salePriceCents === "number" && Number.isSafeInteger(metadata.salePriceCents) && metadata.salePriceCents >= 0
+    ? metadata.salePriceCents
+    : undefined;
+  const originalPriceCents = typeof metadata.originalPriceCents === "number" && Number.isSafeInteger(metadata.originalPriceCents) && metadata.originalPriceCents >= 0
+    ? metadata.originalPriceCents
+    : undefined;
+  const stockLimit = typeof metadata.stockLimit === "number" && Number.isSafeInteger(metadata.stockLimit) && metadata.stockLimit > 0
+    ? metadata.stockLimit
+    : undefined;
+  const announcementText = typeof metadata.announcementText === "string" && metadata.announcementText.trim()
+    ? metadata.announcementText.trim().slice(0, 200)
+    : undefined;
+
+  const titleResult = validatedTitle(suppliedTitle, announcementText || "限時快閃搶購", eventLabel);
+  if (!titleResult.success) return titleResult;
+
+  return {
+    success: true,
+    data: normalizedAdvancedBase(input, "flash_sale", titleResult.title, {
+      kind: "flash_sale",
+      durationSec,
+      productId,
+      ...(salePriceCents !== undefined ? { salePriceCents } : {}),
+      ...(originalPriceCents !== undefined ? { originalPriceCents } : {}),
+      ...(stockLimit !== undefined ? { stockLimit } : {}),
+      ...(announcementText ? { announcementText } : {}),
+    }, productId),
+  };
+}
+
 export function interactionEventTypeLabel(eventType: string) {
   if (eventType === "chat_message") return "官方留言";
   if (eventType === "reminder") return "提醒訊息";
@@ -285,6 +349,7 @@ export function interactionEventTypeLabel(eventType: string) {
   if (eventType === "lucky_draw") return "幸運大抽獎";
   if (eventType === "poll") return "即時投票";
   if (eventType === "flash_voucher") return "空投限時紅包";
+  if (eventType === "flash_sale") return "限時快閃搶購";
   return "未知事件";
 }
 
@@ -321,5 +386,6 @@ export function normalizeInteractionEventDraft(
   }
   if (eventType === "lucky_draw") return normalizeLuckyDrawEvent(input, eventLabel, suppliedTitle);
   if (eventType === "poll") return normalizePollEvent(input, eventLabel, suppliedTitle);
+  if (eventType === "flash_sale") return normalizeFlashSaleEvent(input, eventLabel, suppliedTitle);
   return normalizeFlashVoucherEvent(input, eventLabel, suppliedTitle);
 }

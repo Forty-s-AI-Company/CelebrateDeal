@@ -33,6 +33,33 @@ export function calculateVoucherDiscount(
   return currency === "TWD" ? Math.floor(bounded / 100) * 100 : bounded;
 }
 
+export type LivePurchaseBroadcastItem = {
+  id: string;
+  buyerMaskedName: string;
+  productName: string;
+  secondsAgo: number;
+  city?: string;
+};
+
+export function maskCustomerName(rawName: string): string {
+  const name = rawName.trim();
+  if (!name) return "熱門學員";
+  if (name.length <= 1) return `${name}*`;
+  if (name.length === 2) return `${name[0]}*`;
+  if (name.length === 3) return `${name[0]}*${name[2]}`;
+  return `${name[0]}${"*".repeat(name.length - 2)}${name[name.length - 1]}`;
+}
+
+export function filterEligibleLuckyDrawEntries<T extends { id: string; participantHash: string }>(
+  entries: readonly T[],
+  options?: { excludedParticipantHashes?: ReadonlySet<string> },
+): T[] {
+  if (!options?.excludedParticipantHashes || options.excludedParticipantHashes.size === 0) {
+    return [...entries];
+  }
+  return entries.filter((entry) => !options.excludedParticipantHashes?.has(entry.participantHash));
+}
+
 export function pickLuckyDrawWinner<T>(entries: readonly T[], randomIndex = randomInt) {
   if (entries.length === 0) return null;
   return entries[randomIndex(entries.length)] ?? null;

@@ -63,7 +63,12 @@ describe("Live Studio advanced interaction actions", () => {
   });
 
   it("draws the only eligible response exactly once", async () => {
-    mocks.findRun.mockResolvedValueOnce({ id: "run-1", responses: [{ id: "response-1" }] });
+    mocks.findRun.mockResolvedValueOnce({
+      id: "run-1",
+      liveId: "live-1",
+      configuration: { kind: "lucky_draw", excludePreviousWinners: false },
+      responses: [{ id: "response-1", participantHash: "hash-1" }],
+    });
     const form = new FormData();
     form.set("runId", "run-1");
     const result = await drawLiveInteractionWinnerAction({ status: "idle", message: "" }, form);
@@ -72,5 +77,35 @@ describe("Live Studio advanced interaction actions", () => {
       where: { id: "run-1", vendorId: "vendor-1", winnerResponseId: null },
       data: expect.objectContaining({ winnerResponseId: "response-1", status: "closed" }),
     }));
+  });
+
+  it("starts a flash sale interaction for a live product", async () => {
+    mocks.findLive.mockResolvedValueOnce({
+      id: "live-1",
+      products: [{ productId: "prod-1" }],
+    });
+    const form = new FormData();
+    form.set("liveId", "live-1");
+    form.set("eventType", "flash_sale");
+    form.set("title", "限時下殺");
+    form.set("durationSec", "300");
+    form.set("productId", "prod-1");
+    form.set("salePriceCents", "990");
+    form.set("originalPriceCents", "2980");
+    form.set("stockLimit", "30");
+    form.set("announcementText", "限時 3 折搶購！");
+
+    const result = await startLiveInteractionAction({ status: "idle", message: "" }, form);
+    expect(result).toMatchObject({ status: "success", runId: "run-1" });
+    expect(mocks.createRun).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventType: "flash_sale",
+        configuration: expect.objectContaining({
+          kind: "flash_sale",
+          productId: "prod-1",
+          salePriceCents: 99000,
+        }),
+      }),
+    });
   });
 });

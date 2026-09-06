@@ -52,17 +52,34 @@ export async function startLiveInteractionAction(
   const durationSec = Number(text(formData, "durationSec"));
   const productId = optionalText(formData, "productId");
   const metadata = eventType === "lucky_draw"
-    ? { kind: eventType, durationSec, slogan: text(formData, "slogan") }
+    ? {
+        kind: eventType,
+        durationSec,
+        slogan: text(formData, "slogan", "立即抽獎"),
+        prizeName: optionalText(formData, "prizeName") ?? undefined,
+        eligibility: text(formData, "eligibility", "slogan"),
+        excludePreviousWinners: text(formData, "excludePreviousWinners") === "true" || text(formData, "excludePreviousWinners") === "on",
+      }
     : eventType === "poll"
       ? { kind: eventType, durationSec, question: text(formData, "question"), options: text(formData, "options").split(/\r?\n/u) }
-      : {
-          kind: eventType,
-          durationSec,
-          maxClaims: Number(text(formData, "maxClaims")),
-          discountType: text(formData, "discountType"),
-          discountValue: Number(text(formData, "discountValue")) * (text(formData, "discountType") === "fixed" ? 100 : 1),
-          productId,
-        };
+      : eventType === "flash_sale"
+        ? {
+            kind: eventType,
+            durationSec,
+            productId: productId ?? "",
+            salePriceCents: text(formData, "salePriceCents") ? Number(text(formData, "salePriceCents")) * 100 : undefined,
+            originalPriceCents: text(formData, "originalPriceCents") ? Number(text(formData, "originalPriceCents")) * 100 : undefined,
+            stockLimit: text(formData, "stockLimit") ? Number(text(formData, "stockLimit")) : undefined,
+            announcementText: optionalText(formData, "announcementText") ?? undefined,
+          }
+        : {
+            kind: eventType,
+            durationSec,
+            maxClaims: Number(text(formData, "maxClaims")),
+            discountType: text(formData, "discountType"),
+            discountValue: Number(text(formData, "discountValue")) * (text(formData, "discountType") === "fixed" ? 100 : 1),
+            productId,
+          };
   const normalized = normalizeInteractionEventDraft({ eventType, triggerSec: 0, title, productId, metadata });
   if (!normalized.success || !normalized.data.metadata) return { status: "error", message: normalized.success ? "互動設定不完整。" : normalized.error };
   const live = await getDb().live.findFirst({
@@ -77,7 +94,7 @@ export async function startLiveInteractionAction(
     },
   });
   if (!live) return { status: "error", message: "只有正在直播中的直播間可以手動發起互動。" };
-  if (productId && live.products.length !== 1) return { status: "error", message: "紅包適用商品不在這場直播的銷售清單中。" };
+  if (productId && live.products.length !== 1) return { status: "error", message: "指定商品不在這場直播的銷售清單中。" };
   const now = new Date();
   const run = await getDb().liveInteractionRun.create({
     data: {
@@ -112,11 +129,39 @@ export async function drawLiveInteractionWinnerAction(
   const runId = text(formData, "runId");
   const run = await getDb().liveInteractionRun.findFirst({
     where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: null },
-    include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true } } },
+    include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true, participantHash: true } } },
   });
   if (!run) return { status: "error", message: "抽獎場次不存在或已經抽過獎。" };
-  const winner = pickLuckyDrawWinner(run.responses);
-  if (!winner) return { status: "error", message: "目前還沒有符合口號的抽獎留言。" };
+  const runConfig = typeof run.configuration === "object" && run.configuration !== null && !Array.isArray(run.configuration)
+    ? run.configuration as Record<string, unknown>
+    : {};
+  const excludePreviousWinners = Boolean(runConfig.excludePreviousWinners);
+  let eligibleResponses = run.responses;
+  if (excludePreviousWinners) {
+    const previousWinnerRuns = await getDb().liveInteractionRun.findMany({
+      where: { liveId: run.liveId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+      select: { winnerResponseId: true },
+    });
+    const previousWinnerResponseIds = previousWinnerRuns.map((r) => r.winnerResponseId).filter((id): id is string => id !== null);
+    if (previousWinnerResponseIds.length > 0) {
+      const winnerResponses = await getDb().liveInteractionResponse.findMany({
+        where: { id: { in: previousWinnerResponseIds } },
+        select: { participantHash: true },
+      });
+      const excludedHashes = new Set(winnerResponses.map((r) => r.participantHash));
+      eligibleResponses = run.responses.filter((r) => !excludedHashes.has(r.participantHash));
+    }
+  }
+
+  const winner = pickLuckyDrawWinner(eligibleResponses);
+  if (!winner) {
+    return {
+      status: "error",
+      message: run.responses.length === 0
+        ? "目前還沒有符合資格的抽獎留言或登記。"
+        : "所有參與者皆已在先前場次中過獎，無其他符合資格之參與者。",
+    };
+  }
   const updated = await getDb().liveInteractionRun.updateMany({
     where: { id: run.id, vendorId: vendor.id, winnerResponseId: null },
     data: { winnerResponseId: winner.id, status: "closed", endsAt: new Date() },
@@ -130,7 +175,7 @@ export async function drawLiveInteractionWinnerAction(
     targetId: run.id,
     after: auditSnapshot({ winnerResponseId: winner.id }),
   });
-  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶。", runId: run.id };
+  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶與動態特效。", runId: run.id };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {

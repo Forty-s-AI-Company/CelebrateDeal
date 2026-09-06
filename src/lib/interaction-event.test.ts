@@ -190,4 +190,72 @@ describe("normalizeInteractionEventDraft", () => {
       metadata: { maxClaims: 10, discountType: "percentage", discountValue: 100 },
     }).success).toBe(false);
   });
+
+  it("validates advanced lucky draw with eligibility, prize name and exclude previous winners", () => {
+    const result = normalizeInteractionEventDraft({
+      eventType: "lucky_draw",
+      triggerSec: 100,
+      title: "抽 iPhone 16",
+      metadata: {
+        durationSec: 60,
+        slogan: "恭喜發財",
+        prizeName: "iPhone 16 Pro",
+        eligibility: "purchased",
+        excludePreviousWinners: true,
+      },
+    });
+    expect(result).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "lucky_draw",
+        title: "抽 iPhone 16",
+        metadata: {
+          kind: "lucky_draw",
+          durationSec: 60,
+          slogan: "恭喜發財",
+          prizeName: "iPhone 16 Pro",
+          eligibility: "purchased",
+          excludePreviousWinners: true,
+        },
+      }),
+    });
+  });
+
+  it("validates flash sale promotions and rejects missing productId", () => {
+    const result = normalizeInteractionEventDraft({
+      eventType: "flash_sale",
+      triggerSec: 300,
+      title: "限時下殺",
+      metadata: {
+        durationSec: 300,
+        productId: "product-live-1",
+        salePriceCents: 99000,
+        originalPriceCents: 298000,
+        stockLimit: 20,
+        announcementText: "直播限定 3 折優惠！",
+      },
+    });
+    expect(result).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "flash_sale",
+        productId: "product-live-1",
+        metadata: {
+          kind: "flash_sale",
+          durationSec: 300,
+          productId: "product-live-1",
+          salePriceCents: 99000,
+          originalPriceCents: 298000,
+          stockLimit: 20,
+          announcementText: "直播限定 3 折優惠！",
+        },
+      }),
+    });
+    expect(normalizeInteractionEventDraft({
+      eventType: "flash_sale",
+      triggerSec: 300,
+      metadata: { durationSec: 300 },
+    }).success).toBe(false);
+    expect(interactionEventTypeLabel("flash_sale")).toBe("限時快閃搶購");
+  });
 });

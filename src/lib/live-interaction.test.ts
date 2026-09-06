@@ -2,6 +2,8 @@ import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import {
   calculateVoucherDiscount,
+  filterEligibleLuckyDrawEntries,
+  maskCustomerName,
   pickLuckyDrawWinner,
   pollPercentages,
   resolveEligibleVoucherClaim,
@@ -93,5 +95,26 @@ describe("advanced live interaction algorithms", () => {
       currency: "TWD",
       now: new Date("2026-09-06T00:00:00.000Z"),
     })).resolves.toEqual({ id: "grant-1", source: "automation", discountAmountCents: 1_400 });
+  });
+
+  it("masks customer names cleanly for real-time broadcasts without leaking plaintext PII", () => {
+    expect(maskCustomerName("王")).toBe("王*");
+    expect(maskCustomerName("陳明")).toBe("陳*");
+    expect(maskCustomerName("張小芬")).toBe("張*芬");
+    expect(maskCustomerName("諸葛孔明")).toBe("諸**明");
+    expect(maskCustomerName("")).toBe("熱門學員");
+  });
+
+  it("filters eligible lucky draw entries excluding previous winner participant hashes", () => {
+    const entries = [
+      { id: "1", participantHash: "hash-a" },
+      { id: "2", participantHash: "hash-b" },
+      { id: "3", participantHash: "hash-c" },
+    ];
+    const excluded = new Set(["hash-a", "hash-c"]);
+    const eligible = filterEligibleLuckyDrawEntries(entries, { excludedParticipantHashes: excluded });
+    expect(eligible).toEqual([{ id: "2", participantHash: "hash-b" }]);
+
+    expect(filterEligibleLuckyDrawEntries(entries)).toHaveLength(3);
   });
 });

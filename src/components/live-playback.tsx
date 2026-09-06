@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
+import { LivePurchaseTicker } from "@/components/live-purchase-ticker";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -1361,6 +1362,12 @@ function LivePlaybackExperience({
         liveId={live.id}
         currentSeconds={currentSeconds}
         events={live.interactionEvents}
+        enabled={admissionStatus === "admitted"}
+      />
+
+      <LivePurchaseTicker
+        vendorId={live.vendorId}
+        liveId={live.id}
         enabled={admissionStatus === "admitted"}
       />
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Gift, PartyPopper, Trophy, X } from "lucide-react";
+import { BarChart3, Flame, Gift, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
 
@@ -26,6 +26,8 @@ type PublicRun = {
   pollResults: Array<{ id: string; label: string; votes: number; percentage: number }> | null;
   winner: string | null;
   winnerIsViewer: boolean;
+  winnerRevealedAt?: string | null;
+  prizeName?: string | null;
 };
 
 function metadata(value: unknown): AdvancedInteractionMetadata | null {
@@ -62,6 +64,9 @@ export function LiveAdvancedInteractions({
   const [message, setMessage] = useState("");
   const [dismissedRunId, setDismissedRunId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [candidateName, setCandidateName] = useState("抽獎進行中…");
+
   const scriptedEvent = useMemo(() => [...events].reverse().find((event) => {
     const config = metadata(event.metadata);
     return config && event.triggerSec <= currentSeconds && currentSeconds < event.triggerSec + config.durationSec;
@@ -102,6 +107,32 @@ export function LiveAdvancedInteractions({
     return () => window.clearInterval(timer);
   }, [run]);
 
+  useEffect(() => {
+    if (!run?.winner) {
+      setIsSpinning(false);
+      return;
+    }
+    const revealedAt = run.winnerRevealedAt ? Date.parse(run.winnerRevealedAt) : Date.now();
+    const isRecent = Date.now() - revealedAt < 5_000;
+    if (isRecent) {
+      setIsSpinning(true);
+      const candidates = ["幸運觀眾", "VIP 學員", "直播鐵粉", "台北 陳**", "高雄 林**", "台中 黃**", run.winner];
+      let step = 0;
+      const interval = window.setInterval(() => {
+        step++;
+        const nextCandidate = candidates[step % candidates.length];
+        if (nextCandidate) setCandidateName(nextCandidate);
+        if (step > 12) {
+          window.clearInterval(interval);
+          setIsSpinning(false);
+        }
+      }, 150);
+      return () => window.clearInterval(interval);
+    } else {
+      setIsSpinning(false);
+    }
+  }, [run?.id, run?.winner, run?.winnerRevealedAt]);
+
   async function respond(value: string) {
     if (!run || isSubmitting) return;
     setIsSubmitting(true);
@@ -109,7 +140,13 @@ export function LiveAdvancedInteractions({
     try {
       const payload = await interactionRequest({ action: "respond", vendorId, liveId, runId: run.id, value, ...(displayName.trim() ? { displayName: displayName.trim() } : {}) });
       if (payload.run) setRun(payload.run);
-      setMessage(run.eventType === "flash_voucher" ? "紅包已放進你的結帳，購買時會自動折抵。" : "已收到，結果會即時更新。");
+      setMessage(
+        run.eventType === "flash_voucher"
+          ? "紅包已放進你的結帳，購買時會自動折抵。"
+          : run.eventType === "flash_sale"
+            ? "已收到搶購意願，立即點擊結帳！"
+            : "已收到，結果會即時更新。",
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "互動失敗，請再試一次。");
     } finally {
@@ -122,22 +159,111 @@ export function LiveAdvancedInteractions({
   const isWinner = run.winnerIsViewer;
 
   return (
-    <section className={`fixed inset-x-3 bottom-24 z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border p-5 text-slate-950 shadow-2xl ${run.eventType === "flash_voucher" ? "animate-pulse border-red-200 bg-gradient-to-br from-red-50 via-white to-amber-50" : "border-white/50 bg-white/95 backdrop-blur-xl"}`} aria-live="polite" data-testid="live-advanced-interaction">
+    <section className={`fixed inset-x-3 bottom-24 z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border p-5 text-slate-950 shadow-2xl ${run.eventType === "flash_voucher" || run.eventType === "flash_sale" ? "border-red-200 bg-gradient-to-br from-red-50 via-white to-amber-50" : "border-white/50 bg-white/95 backdrop-blur-xl"}`} aria-live="polite" data-testid="live-advanced-interaction">
       <button type="button" onClick={() => setDismissedRunId(run.id)} aria-label="關閉互動視窗" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={17} /></button>
       <div className="flex items-center gap-3 pr-10">
-        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${run.eventType === "lucky_draw" ? "bg-fuchsia-600" : run.eventType === "poll" ? "bg-violet-600" : "bg-red-600"}`}>
-          {run.eventType === "lucky_draw" ? <PartyPopper /> : run.eventType === "poll" ? <BarChart3 /> : <Gift />}
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${run.eventType === "lucky_draw" ? "bg-fuchsia-600" : run.eventType === "poll" ? "bg-violet-600" : run.eventType === "flash_sale" ? "bg-orange-600" : "bg-red-600"}`}>
+          {run.eventType === "lucky_draw" ? <PartyPopper /> : run.eventType === "poll" ? <BarChart3 /> : run.eventType === "flash_sale" ? <Flame /> : <Gift />}
         </span>
         <div><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">剩餘 {remainingSeconds} 秒 · {run.responseCount} 人參加</p><h2 className="text-xl font-black">{run.title}</h2></div>
       </div>
 
-      {run.winner ? <div className="mt-4 rounded-2xl bg-amber-100 p-4 text-center"><Trophy className="mx-auto text-amber-700" /><p className="mt-2 text-lg font-black">恭喜 {run.winner}！</p>{isWinner ? <div aria-label="得獎彩帶" className="mt-2 text-2xl">🎉 🎊 ✨ 🎊 🎉</div> : null}</div> : null}
+      {isSpinning ? (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50 p-4 text-center">
+          <Sparkles className="mx-auto animate-spin text-amber-600" size={24} />
+          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-amber-800">緊張開獎中…</p>
+          <p className="mt-1 text-2xl font-black text-slate-900">{candidateName}</p>
+        </div>
+      ) : run.winner ? (
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-gradient-to-b from-amber-100 to-yellow-50 p-4 text-center shadow-inner">
+          <Trophy className="mx-auto h-8 w-8 text-amber-700" />
+          <p className="mt-1 text-xs font-bold text-amber-800">
+            {run.prizeName ? `得獎獎項：${run.prizeName}` : "幸運大抽獎"}
+          </p>
+          <p className="mt-2 text-xl font-black text-slate-900">恭喜得獎者：{run.winner}！</p>
+          {isWinner ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-white/90 p-3 shadow-sm">
+              <div aria-label="得獎彩帶" className="text-2xl">🎉 🎊 ✨ 🎊 🎉</div>
+              <p className="mt-1 text-sm font-black text-emerald-700">你是中獎幸運兒！</p>
+              <p className="mt-1 inline-block rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-600">
+                領獎核銷碼：CD-{run.id.slice(-6).toUpperCase()}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">請截圖此畫面或向小幫手出示核銷碼領獎。</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
-      {run.metadata.kind === "lucky_draw" && !run.winner ? <div className="mt-4 grid gap-3"><p className="text-sm text-slate-600">在留言框輸入口號「<strong>{run.metadata.slogan}</strong>」，倒數結束後由主播隨機抽出得獎者。</p><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={80} disabled={run.responded || closed} className="h-11 rounded-xl border border-slate-300 px-3" placeholder="你的顯示名稱" /><button type="button" disabled={run.responded || closed || isSubmitting || !displayName.trim()} onClick={() => void respond(run.metadata.kind === "lucky_draw" ? run.metadata.slogan : "")} className="min-h-11 rounded-xl bg-fuchsia-600 px-4 font-bold text-white disabled:opacity-50">{run.responded ? "已取得抽獎資格" : `留言「${run.metadata.slogan}」參加`}</button></div> : null}
+      {run.metadata.kind === "lucky_draw" && !run.winner && !isSpinning ? (
+        <div className="mt-4 grid gap-3">
+          {run.metadata.prizeName ? (
+            <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-center">
+              <span className="text-xs font-black uppercase tracking-wider text-fuchsia-700">本輪獎項</span>
+              <p className="text-base font-black text-fuchsia-950">{run.metadata.prizeName}</p>
+            </div>
+          ) : null}
+          <p className="text-sm text-slate-600">
+            {run.metadata.eligibility === "purchased"
+              ? "限定本場購課學員參加，輸入你的登記名稱即可參加！"
+              : run.metadata.eligibility === "all_viewers"
+                ? "在線觀眾全員皆可參加！輸入名稱登記抽獎。"
+                : `在留言框輸入口號「${run.metadata.slogan}」，倒數結束後隨機抽出得獎者。`}
+          </p>
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            maxLength={80}
+            disabled={run.responded || closed}
+            className="h-11 rounded-xl border border-slate-300 px-3"
+            placeholder="你的顯示名稱"
+          />
+          <button
+            type="button"
+            disabled={run.responded || closed || isSubmitting || !displayName.trim()}
+            onClick={() => void respond(run.metadata.kind === "lucky_draw" ? (run.metadata.eligibility === "slogan" || !run.metadata.eligibility ? run.metadata.slogan : "entry") : "")}
+            className="min-h-11 rounded-xl bg-fuchsia-600 px-4 font-bold text-white disabled:opacity-50"
+          >
+            {run.responded ? "已取得抽獎資格" : run.metadata.eligibility === "slogan" || !run.metadata.eligibility ? `留言「${run.metadata.slogan}」參加` : "一鍵登記抽獎"}
+          </button>
+        </div>
+      ) : null}
 
       {run.metadata.kind === "poll" ? <div className="mt-4 grid gap-2"><p className="mb-1 font-bold">{run.metadata.question}</p>{(run.pollResults ?? []).map((option) => <button key={option.id} type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond(option.id)} className="relative min-h-12 overflow-hidden rounded-xl border border-violet-200 bg-white text-left disabled:opacity-90"><span className="absolute inset-y-0 left-0 bg-violet-100 transition-[width] duration-500" style={{ width: `${option.percentage}%` }} /><span className="relative flex justify-between gap-3 px-4 py-3 font-semibold"><span>{option.label}</span><span>{option.percentage}%</span></span></button>)}</div> : null}
 
       {run.metadata.kind === "flash_voucher" ? <div className="mt-4 grid gap-3 text-center"><p className="text-3xl font-black text-red-700">{run.metadata.discountType === "percentage" ? `${run.metadata.discountValue}% OFF` : `折抵 NT$${run.metadata.discountValue / 100}`}</p><p className="text-sm text-slate-600">限量 {run.metadata.maxClaims} 份，目前已有 {run.responseCount} 人領取。</p><button type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond("claim")} className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50">{run.responded ? "紅包已領取" : "一鍵領取折扣"}</button></div> : null}
+
+      {run.metadata.kind === "flash_sale" ? (
+        <div className="mt-4 grid gap-3 text-center">
+          <div className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 p-4 text-white shadow-lg shadow-red-200">
+            <div className="flex items-center justify-center gap-1 text-xs font-black uppercase tracking-widest text-amber-200">
+              <Zap size={15} /> 限時下殺搶購
+            </div>
+            {run.metadata.announcementText ? (
+              <p className="mt-1 text-sm font-semibold text-white/90">{run.metadata.announcementText}</p>
+            ) : null}
+            <div className="mt-2 flex items-baseline justify-center gap-2">
+              {run.metadata.salePriceCents !== undefined ? (
+                <span className="text-3xl font-black text-white">NT${run.metadata.salePriceCents / 100}</span>
+              ) : null}
+              {run.metadata.originalPriceCents !== undefined ? (
+                <span className="text-sm line-through text-white/70">NT${run.metadata.originalPriceCents / 100}</span>
+              ) : null}
+            </div>
+            {run.metadata.stockLimit ? (
+              <p className="mt-1 text-xs font-bold text-amber-100">限量 {run.metadata.stockLimit} 席 · 搶完即止</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            disabled={closed || isSubmitting}
+            onClick={() => void respond("view_deal")}
+            className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition"
+          >
+            立即搶購特惠方案
+          </button>
+        </div>
+      ) : null}
+
       {message ? <p role="status" className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold">{message}</p> : null}
     </section>
   );
