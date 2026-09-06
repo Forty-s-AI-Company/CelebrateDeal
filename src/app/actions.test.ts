@@ -66,7 +66,7 @@ const mocks = vi.hoisted(() => ({
   createLiveReminderReconciliationSnapshot: vi.fn(),
   queueLiveReminderReconciliation: vi.fn(),
   materializeLiveNotificationRules: vi.fn(),
-  dispatchLiveStartedLineNotifications: vi.fn(),
+  dispatchLiveStartedLineNotificationsSafely: vi.fn(),
   captureOperationalError: vi.fn(),
   productFindMany: vi.fn(),
   videoFindFirst: vi.fn(),
@@ -198,7 +198,7 @@ vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/line-live-started", () => ({
-  dispatchLiveStartedLineNotifications: mocks.dispatchLiveStartedLineNotifications,
+  dispatchLiveStartedLineNotificationsSafely: mocks.dispatchLiveStartedLineNotificationsSafely,
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/password-reset", () => ({
@@ -807,7 +807,7 @@ beforeEach(() => {
     jobId: "reminder-job-1",
   }));
   mocks.materializeLiveNotificationRules.mockResolvedValue([]);
-  mocks.dispatchLiveStartedLineNotifications.mockResolvedValue({ queued: 0, sent: 0, failed: 0 });
+  mocks.dispatchLiveStartedLineNotificationsSafely.mockResolvedValue(undefined);
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
@@ -2480,11 +2480,11 @@ describe("upsertLiveAction", () => {
 
     const lifecycleUpdate = mocks.liveUpdate.mock.calls.at(-1)?.[0];
     expect(lifecycleUpdate.data).toEqual(expect.objectContaining({ status: "live", startedAt: expect.any(Date) }));
-    expect(mocks.dispatchLiveStartedLineNotifications).toHaveBeenCalledWith(expect.anything(), {
-      vendorId: "vendor-1",
-      liveId: "live-1",
-      startedAt: lifecycleUpdate.data.startedAt,
-    });
+    expect(mocks.dispatchLiveStartedLineNotificationsSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      "vendor-1",
+      expect.objectContaining({ id: "live-1", liveStartedAt: lifecycleUpdate.data.startedAt }),
+    );
   });
 
   it.each(["ended", "draft"])("starts a new notification session when %s returns to scheduled", async (status) => {
