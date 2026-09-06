@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
   process: vi.fn(),
+  captureOperationalError: vi.fn(),
 }));
 
 vi.mock("@/lib/line-notification", async (importOriginal) => ({
@@ -10,8 +11,12 @@ vi.mock("@/lib/line-notification", async (importOriginal) => ({
   enqueueLineNotification: mocks.enqueue,
   processDueLineDeliveries: mocks.process,
 }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 
-import { dispatchLiveStartedLineNotifications } from "@/lib/line-live-started";
+import {
+  dispatchLiveStartedLineNotifications,
+  dispatchLiveStartedLineNotificationsSafely,
+} from "@/lib/line-live-started";
 
 describe("live-started LINE dispatch", () => {
   beforeEach(() => {
@@ -56,6 +61,26 @@ describe("live-started LINE dispatch", () => {
     expect(mocks.process).toHaveBeenCalledWith(db, undefined, startedAt, {
       vendorId: "vendor-1",
       deliveryIds: ["delivery-1", "delivery-2"],
+    });
+  });
+
+  it("keeps the committed live transition successful when eager LINE delivery fails", async () => {
+    const startedAt = new Date("2026-09-07T12:00:00.000Z");
+    const providerFailure = new Error("temporary provider failure");
+    const db = {
+      live: { findFirst: vi.fn().mockRejectedValue(providerFailure) },
+      formSubmission: { findMany: vi.fn() },
+    };
+
+    await expect(dispatchLiveStartedLineNotificationsSafely(db as never, "vendor-1", {
+      id: "live-1",
+      liveStartedAt: startedAt,
+    })).resolves.toBeUndefined();
+
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(providerFailure, {
+      source: "line_notification",
+      operation: "live_started_dispatch",
+      status: "failed",
     });
   });
 });

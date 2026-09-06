@@ -6,6 +6,7 @@ import {
   processDueLineDeliveries,
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
+import { captureOperationalError } from "@/lib/monitoring";
 
 const DISPATCH_BATCH_SIZE = 50;
 
@@ -75,4 +76,36 @@ export async function dispatchLiveStartedLineNotifications(
     sent: results.filter((result) => result.status === "sent").length,
     failed: results.filter((result) => result.status === "failed" || result.status === "exhausted").length,
   };
+}
+
+/**
+ * Best-effort eager delivery for the Studio transition.
+ *
+ * Starting the live is the source-of-truth mutation. If LINE is temporarily
+ * unavailable, the durable outbox and stable keys let the cron worker resume
+ * without rolling the live back or sending the same alert twice.
+ */
+export async function dispatchLiveStartedLineNotificationsSafely(
+  db: PrismaClient,
+  vendorId: string,
+  committed: { id: string; liveStartedAt: Date | null },
+) {
+  if (!committed.liveStartedAt) return;
+  try {
+    await dispatchLiveStartedLineNotifications(db, {
+      vendorId,
+      liveId: committed.id,
+      startedAt: committed.liveStartedAt,
+    });
+  } catch (error) {
+    try {
+      captureOperationalError(error, {
+        source: "line_notification",
+        operation: "live_started_dispatch",
+        status: "failed",
+      });
+    } catch {
+      // Monitoring must not roll back a successfully started live.
+    }
+  }
 }

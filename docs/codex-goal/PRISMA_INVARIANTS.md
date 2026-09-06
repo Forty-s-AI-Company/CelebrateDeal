@@ -1,6 +1,6 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-08-10（Asia/Taipei）
+最後更新：2026-09-07（Asia/Taipei）
 
 基準 revision：`35d8f59341bc`
 
@@ -8,11 +8,11 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 92 |
-| Migration directories | 58 |
+| Prisma models | 96 |
+| Migration directories | 59 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 57/57 current chain；由 no-dotenv mirror 在 loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
+| Applied migrations in isolated DB | 59/59 current chain；由 CI disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -26,6 +26,7 @@
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
 | Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
+| LINE identity／delivery | 4 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery` |
 
 ## Migration chain
 
@@ -89,6 +90,7 @@
 | `20260817120000_wp2_brand_sender_settings` | vendor sender identity、support Email and contact URL settings |
 | `20260818090000_custom_checkout_fields` | product custom checkout field definitions |
 | `20260819090000_wp1_video_archive_state` | tenant-scoped soft archive and restore state for videos; provider assets are retained |
+| `20260905113000_line_official_account` | tenant-scoped encrypted LINE OA credentials, identities, login state and idempotent delivery outbox |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -167,8 +169,8 @@
 
 ## 驗收判定
 
-- 92/92 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support 或 supporting/telemetry 類別。
-- 58 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 96/96 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE 或 supporting/telemetry 類別。
+- 59 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
