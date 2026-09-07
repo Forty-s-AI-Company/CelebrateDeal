@@ -74,6 +74,12 @@ test("LINE task verifies lineage before receiving fixed staging bindings", () =>
   ]);
   assert.equal(execute.env.LINE_STAGING_DATABASE_IDENTITY_SHA256, "${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}");
   assert.equal(execute.env.SECURE_RECEIPT_PATH, validate.env.SECURE_RECEIPT_PATH);
+  assert.match(execute.run, /mkdir -p "\$\(dirname "\$SECURE_RECEIPT_PATH"\)"/u);
+  assert.match(execute.run, /trap report_line_stage_failure ERR/u);
+  for (const stage of [
+    "prepare_receipt_root", "validate_bindings", "resolve_allowlist",
+    "backup_network_policy", "apply_network_policy", "execute_line_validation",
+  ]) assert.match(execute.run, new RegExp(`line_stage="${stage}"`, "u"));
   assert.equal(validate.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
   assert.match(execute.run, /iptables -P OUTPUT DROP/u);
   assert.match(execute.run, /ip6tables -P OUTPUT DROP/u);
