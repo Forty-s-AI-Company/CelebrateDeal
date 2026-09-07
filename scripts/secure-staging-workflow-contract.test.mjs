@@ -24,7 +24,7 @@ test("secure staging workflow is valid YAML and protected-default-branch only", 
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read" });
 });
 
-test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", () => {
+test("workflow exposes only fixed allowlisted tasks with pinned actions", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.task.options, [
@@ -36,6 +36,7 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
     "wp4-payuni-buyer-callback-retry",
     "wp4-payuni-buyer-existing-continuation",
     "wp4-payuni-sandbox-subscription",
+    "line-notifications-e2e",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -54,14 +55,43 @@ test("workflow exposes only the fixed WP2 and WP4 tasks with pinned actions", ()
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
 });
 
+test("LINE task verifies lineage before receiving fixed staging bindings", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const preload = steps.find((step) => step.name === "Generate Prisma client before LINE secret injection");
+  const lineage = steps.find((step) => step.name === "Validate fixed LINE dispatch identity before secret injection");
+  const execute = steps.find((step) => step.id === "execute-line");
+  const validate = steps.find((step) => step.name === "Validate sanitized LINE receipt");
+  const enforce = steps.find((step) => step.name === "Enforce fixed LINE task success");
+  assert.equal(preload.run, "npx prisma generate");
+  assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
+  assert.match(lineage.run, /--verify-lineage/u);
+  assert.deepEqual(Object.keys(execute.env).sort(), [
+    "CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "CRON_SECRET", "CSRF_SECRET",
+    "LINE_STAGING_DATABASE_IDENTITY_SHA256", "LINE_STAGING_MESSAGING_ACCESS_TOKEN",
+    "LINE_STAGING_MESSAGING_CHANNEL_ID", "LINE_STAGING_MESSAGING_CHANNEL_SECRET",
+    "LINE_STAGING_USER_ID", "STAGING_DATABASE_URL",
+  ]);
+  assert.equal(execute.env.LINE_STAGING_DATABASE_IDENTITY_SHA256, "${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}");
+  assert.equal(validate.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
+  assert.match(execute.run, /iptables -P OUTPUT DROP/u);
+  assert.match(execute.run, /ip6tables -P OUTPUT DROP/u);
+  assert.match(execute.run, /npm run secure:staging:line/u);
+  assert.doesNotMatch(execute.run, /api\.line\.me/u);
+  assert.ok(steps.indexOf(preload) < steps.indexOf(lineage));
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
+  assert.ok(steps.indexOf(execute) < steps.indexOf(validate));
+  assert.ok(steps.indexOf(validate) < steps.indexOf(enforce));
+});
+
 test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-runner.mjs"), "utf8");
   const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.match(source, /npx playwright install --with-deps chromium/u);
-  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 6);
-  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 4);
+  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 7);
+  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 5);
   assert.match(source, /api\.github\.com/u);
   assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);

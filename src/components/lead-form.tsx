@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LineLoginButton } from "@/components/line-login-button";
 
 type FieldSpec = {
   key: string;
@@ -143,6 +144,9 @@ export function LeadForm({
       <div role="status" aria-live="polite" className="grid gap-3">
         <p className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{successMessage}</p>
         <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm leading-6 text-emerald-800">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+        <LineLoginButton request={{ mode: "registration", redirectPath: window.location.pathname }}>
+          🟢 接收 LINE 開播提醒與電子票券
+        </LineLoginButton>
       </div>
     );
   }

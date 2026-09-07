@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   processLiveReminderReconciliationJobs: vi.fn(),
   processDueLiveNotifications: vi.fn(),
   processLegacyReminderCutovers: vi.fn(),
+  materializeLineNotifications: vi.fn(),
+  processDueLineDeliveries: vi.fn(),
   captureOperationalError: vi.fn(),
 }));
 
@@ -21,6 +23,8 @@ vi.mock("@/lib/live-notification-delivery", () => ({
   processLegacyReminderCutovers: mocks.processLegacyReminderCutovers,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/line-notification-materializer", () => ({ materializeLineNotifications: mocks.materializeLineNotifications }));
+vi.mock("@/lib/line-notification", () => ({ processDueLineDeliveries: mocks.processDueLineDeliveries }));
 
 import { GET, POST } from "./route";
 
@@ -33,6 +37,8 @@ beforeEach(() => {
   mocks.processDueEmailDeliveries.mockResolvedValue([]);
   mocks.processDueLiveNotifications.mockResolvedValue([]);
   mocks.processLegacyReminderCutovers.mockResolvedValue([]);
+  mocks.materializeLineNotifications.mockResolvedValue([]);
+  mocks.processDueLineDeliveries.mockResolvedValue([]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -96,6 +102,9 @@ describe("POST /api/jobs/email-deliveries", () => {
       reconciliationResults: [{ status: "completed" }, { status: "unknown" }],
       processed: 2,
       results: [{ status: "sent" }, { status: "unknown" }],
+      lineMaterialized: 0,
+      lineProcessed: 0,
+      lineResults: [],
     });
     expect(JSON.stringify(body)).not.toContain("private-delivery");
     expect(JSON.stringify(body)).not.toContain("private-job");

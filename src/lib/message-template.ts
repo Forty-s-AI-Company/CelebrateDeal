@@ -1,9 +1,13 @@
 import { z } from "zod";
 
-export const MESSAGE_TEMPLATE_CHANNELS = ["email"] as const;
+export const MESSAGE_TEMPLATE_CHANNELS = ["email", "line"] as const;
 export const MESSAGE_TEMPLATE_TRIGGERS = [
   "registration_confirmed",
   "live_reminder",
+  "live_started",
+  "order_created",
+  "order_paid",
+  "commission_credited",
   "post_live_followup",
 ] as const;
 export const MESSAGE_TEMPLATE_VARIABLES = [

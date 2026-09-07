@@ -48,6 +48,7 @@ import {
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
+import { dispatchLiveStartedLineNotificationsSafely } from "@/lib/line-live-started";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
@@ -832,6 +833,7 @@ async function commitLiveDraft(input: {
       return {
         id: input.liveId!,
         created: false,
+        liveStartedAt: currentLive.status === "scheduled" && input.data.status === "live" ? transitionAt : null,
         reminderReconciliationStatus: reminderReconciliation?.status ?? null,
         notificationRuleIds: notificationReconciliation.materializeRuleIds,
       };
@@ -876,7 +878,7 @@ async function commitLiveDraft(input: {
       liveId: live.id,
       rules: input.notificationRules,
     });
-    return { id: live.id, created: true, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
+    return { id: live.id, created: true, liveStartedAt: null, reminderReconciliationStatus: null, notificationRuleIds: notificationReconciliation.materializeRuleIds };
   });
 }
 
@@ -1412,6 +1414,7 @@ export async function upsertLiveAction(formData: FormData) {
     } : null,
   });
   if (!committed) redirect(draftClaim.conflictPath);
+  await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {
     await materializeLiveNotificationRules({
       vendorId: vendor.id,
