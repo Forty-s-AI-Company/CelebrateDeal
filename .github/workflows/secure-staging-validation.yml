@@ -655,13 +655,23 @@ jobs:
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
           SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/line-notifications-e2e-receipt.json
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          line_stage="prepare_receipt_root"
+          report_line_stage_failure() {
+            local status=$?
+            printf '::error title=Sanitized LINE runner stage::stage=%s\n' "$line_stage"
+            exit "$status"
+          }
+          trap report_line_stage_failure ERR
+
+          mkdir -p "$(dirname "$SECURE_RECEIPT_PATH")"
           firewall_backup="$RUNNER_TEMP/celebratedeal-line-iptables.rules"
           firewall6_backup="$RUNNER_TEMP/celebratedeal-line-ip6tables.rules"
           hosts_backup="$RUNNER_TEMP/celebratedeal-line-hosts.original"
           destinations="$RUNNER_TEMP/celebratedeal-line-egress.tsv"
           hosts_file="$RUNNER_TEMP/celebratedeal-line-hosts"
 
+          line_stage="validate_bindings"
           node <<'NODE' > "$destinations"
           const safeHost = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
           const deploymentHost = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "";
@@ -671,6 +681,7 @@ jobs:
           process.stdout.write([[deploymentHost, "443"], [database.hostname, port]].map((row) => row.join("\t")).join("\n") + "\n");
           NODE
 
+          line_stage="resolve_allowlist"
           : > "$hosts_file"
           while IFS=$'\t' read -r host port; do
             mapfile -t addresses < <(getent ahostsv4 "$host" | awk '{print $1}' | sort -u)
@@ -678,6 +689,7 @@ jobs:
             for address in "${addresses[@]}"; do printf '%s\t%s\t%s\n' "$host" "$address" "$port" >> "$hosts_file"; done
           done < "$destinations"
 
+          line_stage="backup_network_policy"
           sudo iptables-save > "$firewall_backup"
           sudo ip6tables-save > "$firewall6_backup"
           sudo cp /etc/hosts "$hosts_backup"
@@ -688,6 +700,7 @@ jobs:
             rm -f "$firewall_backup" "$firewall6_backup" "$hosts_backup" "$destinations" "$hosts_file"
           }
           trap restore_network EXIT
+          line_stage="apply_network_policy"
           while IFS=$'\t' read -r host address _port; do printf '%s %s\n' "$address" "$host" | sudo tee -a /etc/hosts > /dev/null; done < "$hosts_file"
           sudo iptables -F OUTPUT
           sudo iptables -P OUTPUT DROP
@@ -698,6 +711,7 @@ jobs:
           sudo ip6tables -P OUTPUT DROP
           sudo ip6tables -A OUTPUT -o lo -j ACCEPT
           sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          line_stage="execute_line_validation"
           npm run secure:staging:line
 
       - name: Validate sanitized LINE receipt
