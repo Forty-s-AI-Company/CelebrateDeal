@@ -77,7 +77,8 @@ test("LINE task verifies lineage before receiving fixed staging bindings", () =>
   assert.match(execute.run, /mkdir -p "\$\(dirname "\$SECURE_RECEIPT_PATH"\)"/u);
   assert.match(execute.run, /trap report_line_stage_failure ERR/u);
   for (const stage of [
-    "prepare_receipt_root", "validate_bindings", "resolve_allowlist",
+    "prepare_receipt_root", "require_database_binding", "require_preview_binding",
+    "validate_bindings", "resolve_allowlist",
     "backup_network_policy", "apply_network_policy", "execute_line_validation",
   ]) assert.match(execute.run, new RegExp(`line_stage="${stage}"`, "u"));
   assert.equal(validate.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
