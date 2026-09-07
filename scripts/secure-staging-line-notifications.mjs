@@ -21,6 +21,7 @@ const REQUIRED = [
   "LINE_STAGING_MESSAGING_ACCESS_TOKEN", "LINE_STAGING_USER_ID",
   "CELEBRATEDEAL_SOURCE_SHA", "CELEBRATEDEAL_DEPLOYMENT_HOST", "RUNNER_TEMP",
   "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "LINE_STAGING_DATABASE_IDENTITY_SHA256",
+  "SECURE_RECEIPT_PATH",
 ];
 const TOP_LEVEL_KEYS = [
   "schemaVersion", "task", "result", "sourceCommit", "runRefHash", "checks",
@@ -68,6 +69,8 @@ export function validateInvocation(source = process.env) {
   if (REQUIRED.some((key) => typeof source[key] !== "string" || source[key].length === 0)) return { ok: false, reason: "REQUIRED_BINDING_MISSING" };
   if (!SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA)) return { ok: false, reason: "SOURCE_SHA_INVALID" };
   if (!SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST) || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return { ok: false, reason: "DEPLOYMENT_HOST_INVALID" };
+  const expectedReceiptPath = path.resolve(source.RUNNER_TEMP, "celebratedeal-secure-receipts", RECEIPT_NAME);
+  if (path.resolve(source.SECURE_RECEIPT_PATH) !== expectedReceiptPath) return { ok: false, reason: "RECEIPT_PATH_INVALID" };
   try {
     const database = new URL(source.STAGING_DATABASE_URL);
     const parameters = [...database.searchParams.keys()];
@@ -308,9 +311,12 @@ async function main() {
   const receipt = await runLineStagingValidation();
   const root = path.resolve(process.env.RUNNER_TEMP, "celebratedeal-secure-receipts");
   await fsp.mkdir(root, { recursive: true });
-  const output = path.join(root, RECEIPT_NAME);
+  const output = path.resolve(process.env.SECURE_RECEIPT_PATH ?? "");
+  if (output !== path.join(root, RECEIPT_NAME)) throw new Error("RECEIPT_PATH_INVALID");
   if (fs.existsSync(output)) throw new Error("RECEIPT_ALREADY_EXISTS");
-  await fsp.writeFile(output, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", flag: "wx" });
+  const temporary = `${output}.${process.pid}.tmp`;
+  await fsp.writeFile(temporary, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", flag: "wx" });
+  await fsp.rename(temporary, output);
   process.stdout.write(`${JSON.stringify({ task: TASK, result: receipt.result, receipt: RECEIPT_NAME })}\n`);
   if (receipt.result !== "PASS") process.exitCode = 2;
 }

@@ -7,23 +7,33 @@ import { RECEIPT_NAME, validateReceipt } from "./secure-staging-line-notificatio
 export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_TEMP, expectedSource = process.env) {
   if (!candidate || !runnerTemp) return { ok: false, reason: "PATH_MISSING" };
   if (!expectedSource.CELEBRATEDEAL_SOURCE_SHA || !expectedSource.GITHUB_RUN_ID || !expectedSource.GITHUB_RUN_ATTEMPT) return { ok: false, reason: "EXPECTED_BINDING_MISSING" };
+  let allowedRoot;
+  try { allowedRoot = fs.realpathSync(path.resolve(runnerTemp, "celebratedeal-secure-receipts")); }
+  catch { return { ok: false, reason: "RECEIPT_ROOT_MISSING" }; }
+  let stat;
+  let canonical;
   try {
-    const allowedRoot = fs.realpathSync(path.resolve(runnerTemp, "celebratedeal-secure-receipts"));
-    const stat = fs.lstatSync(candidate);
-    const canonical = fs.realpathSync(candidate);
-    if (!stat.isFile() || stat.isSymbolicLink() || path.dirname(canonical) !== allowedRoot || path.basename(canonical) !== RECEIPT_NAME) {
-      return { ok: false, reason: "PATH_OUTSIDE_RUNNER_TEMP" };
-    }
-    const receipt = JSON.parse(fs.readFileSync(canonical, "utf8"));
-    const validation = validateReceipt(receipt, { sourceCommit: expectedSource.CELEBRATEDEAL_SOURCE_SHA, runId: expectedSource.GITHUB_RUN_ID, runAttempt: expectedSource.GITHUB_RUN_ATTEMPT });
-    return validation.ok
-      ? { ok: true, result: receipt.result }
-      : { ok: false, reason: "RECEIPT_INVALID", diagnostic: validation.errors[0] ?? "UNKNOWN" };
-  } catch { return { ok: false, reason: "RECEIPT_UNREADABLE" }; }
+    stat = fs.lstatSync(candidate);
+    canonical = fs.realpathSync(candidate);
+  } catch { return { ok: false, reason: "RECEIPT_FILE_MISSING" }; }
+  if (!stat.isFile() || stat.isSymbolicLink() || path.dirname(canonical) !== allowedRoot || path.basename(canonical) !== RECEIPT_NAME) {
+    return { ok: false, reason: "PATH_OUTSIDE_RUNNER_TEMP" };
+  }
+  let serialized;
+  try { serialized = fs.readFileSync(canonical, "utf8"); }
+  catch { return { ok: false, reason: "RECEIPT_READ_FAILED" }; }
+  if (serialized.length === 0) return { ok: false, reason: "RECEIPT_EMPTY" };
+  let receipt;
+  try { receipt = JSON.parse(serialized.replace(/^\uFEFF/u, "")); }
+  catch { return { ok: false, reason: "RECEIPT_JSON_INVALID" }; }
+  const validation = validateReceipt(receipt, { sourceCommit: expectedSource.CELEBRATEDEAL_SOURCE_SHA, runId: expectedSource.GITHUB_RUN_ID, runAttempt: expectedSource.GITHUB_RUN_ATTEMPT });
+  return validation.ok
+    ? { ok: true, result: receipt.result }
+    : { ok: false, reason: "RECEIPT_INVALID", diagnostic: validation.errors[0] ?? "UNKNOWN" };
 }
 
 function main() {
-  const result = validateReceiptPath(process.argv[2]);
+  const result = validateReceiptPath(process.env.SECURE_RECEIPT_PATH ?? process.argv[2]);
   // Only fixed validator codes are emitted. Receipt contents and bindings stay private.
   process.stdout.write(`secure_line_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}; reason=${result.reason ?? "NONE"}; diagnostic=${result.diagnostic ?? "NONE"}\n`);
   if (!result.ok && process.env.GITHUB_ACTIONS === "true") {

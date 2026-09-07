@@ -11,7 +11,7 @@ test("receipt validator rejects paths outside the canonical runner directory", (
   const candidate = path.join(root, "line-notifications-e2e-receipt.json");
   fs.writeFileSync(candidate, "{}\n");
   const expected = { CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40), GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1" };
-  assert.deepEqual(validateReceiptPath(candidate, root, expected), { ok: false, reason: "RECEIPT_UNREADABLE" });
+  assert.deepEqual(validateReceiptPath(candidate, root, expected), { ok: false, reason: "RECEIPT_ROOT_MISSING" });
   fs.rmSync(root, { recursive: true, force: true });
 });
 

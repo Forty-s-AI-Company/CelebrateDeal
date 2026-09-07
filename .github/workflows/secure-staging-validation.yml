@@ -653,6 +653,7 @@ jobs:
           LINE_STAGING_DATABASE_IDENTITY_SHA256: ${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+          SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/line-notifications-e2e-receipt.json
         run: |
           set -euo pipefail
           firewall_backup="$RUNNER_TEMP/celebratedeal-line-iptables.rules"
