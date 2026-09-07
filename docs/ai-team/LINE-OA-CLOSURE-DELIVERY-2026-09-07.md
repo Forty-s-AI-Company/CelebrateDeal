@@ -20,12 +20,12 @@
 
 | 命令 | 結果 |
 | --- | --- |
-| `npm run test:interactions` | PASS，11 files／206 tests |
-| `npm run test:contracts` | PASS，919 tests |
+| `npm run test:interactions` | PASS，167／167 tests |
+| `npm run test:contracts` | Linux CI PASS；Windows 本機 966／969，3 項為實體 SHA／CRLF evidence 差異，未將其誤列為 PASS |
 | `npm run typecheck:strict-index` | PASS |
 | `npm run typecheck` | PASS |
 | `npm run secret:scan` | PASS，`secret_scan_passed` |
-| `npm run test:line` | PASS，15 files／46 tests |
+| LINE feature tests | PASS，51／51 tests；actions 322／322 tests |
 | Targeted ESLint | PASS，0 errors／0 warnings |
 | `git diff --check` | PASS（僅工作樹 CRLF 提示，無 whitespace error） |
 
@@ -33,10 +33,13 @@
 
 - `vercel.json` 已具備每分鐘 Cron 宣告；部署後 Vercel 會以 `CRON_SECRET` Bearer 呼叫端點。
 - 本輪沒有 Production deployment、正式 LINE push 或正式客戶資料操作。
-- 現有受保護 `secure-staging-validation.yml` 的固定 task 僅涵蓋 WP2／PayUni WP4，沒有 LINE task；依安全政策不可用任意 command 取得 LINE secrets，因此真實 Preview／staging LINE 帳號驗證仍需後續由授權 owner 新增受保護固定 task 或人工驗收。
-- 現行 `codex/one-stop-webinar-flow` 與受保護 `master` 已分岔 64／454 個 commit，且相對差異約 3,033 個檔案；不得為了取得 staging secrets 直接合併這條累積分支。安全上線需先把本 checkpoint 移植到最新 `master` 的乾淨 `codex/*` 分支，走受保護 PR。
+- 受保護 `secure-staging-validation.yml` 已加入固定 `line-notifications-e2e` task；僅允許受保護 `master`、固定 Preview lineage、固定 outbound allowlist、固定副作用預算與 canonical sanitized receipt。
+- 功能主體已由 PR #203 合併（`aeb128e9d64c80a69170a036da58566e8644b066`）。後續 runner／receipt fail-closed 強化由 PR #204～#208 合併；PR #208 的兩條完整 quality pipeline 與兩個 Vercel Preview 均 PASS，合併 SHA 為 `354a1560aa48c67c8b941ea86d804841914581f2`。
+- 2026-09-07 受保護 staging run `34084016753` 已通過 checkout、locked dependencies、Prisma、runner contract 與 exact Preview dispatch identity；固定 LINE task在任何 LINE／DB 測試前 fail closed，sanitized annotation 為 `stage=require_database_binding`、`reason=RECEIPT_FILE_MISSING`。
+- 上述證據代表 GitHub Environment 的隔離綁定 `LINE_STAGING_DATABASE_URL` 缺少或為空。安全政策禁止 agent 讀取、建立或以較廣域的 `STAGING_DATABASE_URL` 代替；需由 Environment owner 補上後，重跑同一固定 task 才能完成真實 staging LINE push 驗收。
+- Production deployment、Production Cron 啟用與正式 LINE push 尚未獲獨立授權，因此本輪沒有執行，也不得宣稱已上線。
 
-### Secure staging 驗收包（待乾淨分支執行）
+### Secure staging 驗收包（runner 已就緒，待 owner 補齊隔離 DB 綁定後執行）
 
 - exact Preview SHA／project／Ready lineage gate。
 - Preview 必須設定 `LINE_STAGING_VALIDATION_ENABLED=true`；在任何有效 Cron 前，先以一次性 DB sentinel HMAC proof 證明 Preview runtime 與 runner 連到同一個隔離 staging DB。
