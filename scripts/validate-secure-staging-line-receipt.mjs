@@ -16,13 +16,16 @@ export function validateReceiptPath(candidate, runnerTemp = process.env.RUNNER_T
     }
     const receipt = JSON.parse(fs.readFileSync(canonical, "utf8"));
     const validation = validateReceipt(receipt, { sourceCommit: expectedSource.CELEBRATEDEAL_SOURCE_SHA, runId: expectedSource.GITHUB_RUN_ID, runAttempt: expectedSource.GITHUB_RUN_ATTEMPT });
-    return validation.ok ? { ok: true, result: receipt.result } : { ok: false, reason: "RECEIPT_INVALID" };
+    return validation.ok
+      ? { ok: true, result: receipt.result }
+      : { ok: false, reason: "RECEIPT_INVALID", diagnostic: validation.errors[0] ?? "UNKNOWN" };
   } catch { return { ok: false, reason: "RECEIPT_UNREADABLE" }; }
 }
 
 function main() {
   const result = validateReceiptPath(process.argv[2]);
-  process.stdout.write(`secure_line_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}\n`);
+  // Only fixed validator codes are emitted. Receipt contents and bindings stay private.
+  process.stdout.write(`secure_line_receipt_validation=${result.ok ? "PASS" : "FAIL"}; result=${result.result ?? "BLOCKED"}; reason=${result.reason ?? "NONE"}; diagnostic=${result.diagnostic ?? "NONE"}\n`);
   if (!result.ok) process.exitCode = 2;
 }
 

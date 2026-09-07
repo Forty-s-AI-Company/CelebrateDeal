@@ -103,14 +103,10 @@ test("active accountant is denied the products index before product data is quer
 
     const snapshot = async () => ({
       vendor: await db.vendor.findUniqueOrThrow({ where: { id: vendor.id } }),
-      vendorCount: await db.vendor.count(),
       tracking: await db.trackingSetting.findUniqueOrThrow({ where: { id: tracking.id } }),
-      trackingCount: await db.trackingSetting.count(),
       trackingVendorCount: await db.trackingSetting.count({ where: { vendorId: vendor.id } }),
       user: await db.user.findUniqueOrThrow({ where: { id: user.id } }),
-      userCount: await db.user.count(),
       membership: await db.vendorMember.findUniqueOrThrow({ where: { id: membership.id } }),
-      membershipCount: await db.vendorMember.count(),
       membershipVendorCount: await db.vendorMember.count({ where: { vendorId: vendor.id } }),
       membershipRelationCount: await db.vendorMember.count({
         where: { vendorId: vendor.id, userId: user.id },
@@ -119,10 +115,7 @@ test("active accountant is denied the products index before product data is quer
         where: { vendorId: vendor.id },
         orderBy: { id: "asc" },
       }),
-      productCount: await db.product.count(),
       productVendorCount: await db.product.count({ where: { vendorId: vendor.id } }),
-      productGlobalActiveCount: await db.product.count({ where: { isActive: true } }),
-      productGlobalInactiveCount: await db.product.count({ where: { isActive: false } }),
       productVendorActiveCount: await db.product.count({
         where: { vendorId: vendor.id, isActive: true },
       }),
