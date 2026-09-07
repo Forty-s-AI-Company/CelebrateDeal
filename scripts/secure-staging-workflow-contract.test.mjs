@@ -70,9 +70,10 @@ test("LINE task verifies lineage before receiving fixed staging bindings", () =>
     "CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "CRON_SECRET", "CSRF_SECRET",
     "LINE_STAGING_DATABASE_IDENTITY_SHA256", "LINE_STAGING_MESSAGING_ACCESS_TOKEN",
     "LINE_STAGING_MESSAGING_CHANNEL_ID", "LINE_STAGING_MESSAGING_CHANNEL_SECRET",
-    "LINE_STAGING_USER_ID", "STAGING_DATABASE_URL",
+    "LINE_STAGING_USER_ID", "SECURE_RECEIPT_PATH", "STAGING_DATABASE_URL",
   ]);
   assert.equal(execute.env.LINE_STAGING_DATABASE_IDENTITY_SHA256, "${{ vars.LINE_STAGING_DATABASE_IDENTITY_SHA256 }}");
+  assert.equal(execute.env.SECURE_RECEIPT_PATH, validate.env.SECURE_RECEIPT_PATH);
   assert.equal(validate.env.CELEBRATEDEAL_SOURCE_SHA, "${{ inputs.source_sha }}");
   assert.match(execute.run, /iptables -P OUTPUT DROP/u);
   assert.match(execute.run, /ip6tables -P OUTPUT DROP/u);

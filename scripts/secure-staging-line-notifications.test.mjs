@@ -11,6 +11,7 @@ const source = {
   LINE_STAGING_MESSAGING_ACCESS_TOKEN: "t".repeat(64), LINE_STAGING_USER_ID: "U".repeat(33),
   CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40), CELEBRATEDEAL_DEPLOYMENT_HOST: "preview.vercel.app",
   RUNNER_TEMP: "/tmp/runner", GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1",
+  SECURE_RECEIPT_PATH: "/tmp/runner/celebratedeal-secure-receipts/line-notifications-e2e-receipt.json",
   LINE_STAGING_DATABASE_IDENTITY_SHA256: crypto.createHash("sha256").update(["staging.invalid", "5432", "/postgres", "staging_user", "public"].join("\n")).digest("hex"),
 };
 
