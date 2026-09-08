@@ -200,7 +200,7 @@ describe.sequential("CelebrateDeal ultimate ten-step webinar funnel golden journ
     const links = navigationForRole("owner", false, enabled).flatMap((group) => group.items.map((item) => item.href));
     expect(links).not.toContain("/affiliates");
     navigationMocks.pathname = "/affiliates/commissions";
-    const html = renderToStaticMarkup(createElement(FeatureAccessBoundary, { enabledModules: enabled }, createElement("p", null, "private affiliate page")));
+    const html = renderToStaticMarkup(createElement(FeatureAccessBoundary, { enabledModules: enabled, children: createElement("p", null, "private affiliate page") }));
     expect(html).toContain("該功能目前尚未在此特店啟用");
     expect(html).not.toContain("private affiliate page");
 

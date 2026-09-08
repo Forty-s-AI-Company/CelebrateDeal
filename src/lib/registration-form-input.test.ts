@@ -49,6 +49,9 @@ describe("registration form input", () => {
       success: true,
       data: {
         id: null,
+        pageBlocks: null,
+        templateId: null,
+        archetype: null,
         name: "夏季活動報名",
         slug: "summer-launch",
         headline: "立即報名",

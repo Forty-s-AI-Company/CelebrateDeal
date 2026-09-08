@@ -1,6 +1,6 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-08-10（Asia/Taipei）
+最後更新：2026-09-09（Asia/Taipei）
 
 基準 revision：`35d8f59341bc`
 
@@ -8,8 +8,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 95 |
-| Migration directories | 60 |
+| Prisma models | 115 |
+| Migration directories | 77 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 60/60 current chain；由 CI loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
@@ -19,15 +19,15 @@
 
 | 類別 | 數量 | Models |
 |---|---:|---|
-| Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 21 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`LiveInteractionRun`、`LiveInteractionResponse`、`Blacklist` |
-| Affiliate／billing／payment／ops | 36 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry`、`CommissionRuleSet`、`CommissionRateTier`、`CommissionUplineLevel` |
+| Identity／tenant root | 9 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`StudentPortalAccessToken`、`VendorMember`、`TrackingSetting` |
+| Content／live／lead | 24 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveQuestion`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`LiveInteractionRun`、`LiveInteractionResponse`、`ConsultationEvent`、`ConsultationBooking`、`Blacklist` |
+| Affiliate／billing／payment／ops | 40 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`ElectronicInvoice`、`ElectronicInvoiceAllowance`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry`、`CommissionRuleSet`、`CommissionRateTier`、`CommissionUplineLevel`、`CommissionQuantityTier`、`CommissionProductOverride` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
 | Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE integration | 4 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery` |
-| Smart automation | 4 | `AutomationRule`、`AutomationExecutionLog`、`CustomerTagAssignment`、`AutomationVoucherGrant` |
+| Smart automation／CRM | 6 | `AutomationRule`、`AutomationExecutionLog`、`CustomerTagAssignment`、`AutomationVoucherGrant`、`CustomerCrmRecord`、`ConsultantNote` |
 
 ## Migration chain
 
@@ -96,6 +96,20 @@
 | `20260905160000_tiered_multilevel_commission` | versioned tiered rates, tenant-scoped upline bonuses, cap guard snapshots and immutable rule details |
 | `20260906003000_advanced_live_interactions` | tenant-bound live interaction runs, replay-safe viewer responses, lucky draw and Flash Voucher claims |
 | `20260906013000_smart_automation_workflows` | tenant-scoped trigger/condition/action rules, durable execution claims, customer tags and repurchase voucher grants |
+| `20260907090000_live_lucky_draw_purchase_claim` | purchase-qualified lucky draw claim identity |
+| `20260907180000_live_qa_spotlight` | tenant-scoped live Q&A and spotlight lifecycle |
+| `20260907200000_affiliate_payout_taiwan_withholding` | Taiwan affiliate payout withholding snapshots |
+| `20260907213000_versioned_tiered_commission_snapshots` | immutable versioned commission snapshots |
+| `20260907220000_quantity_commission_tiers` | tenant-scoped quantity commission tiers |
+| `20260907221500_quantity_commission_snapshot_contract` | immutable quantity-tier allocation contract |
+| `20260907230000_registration_form_funnel_blocks` | validated registration funnel block schema |
+| `20260908031500_taiwan_b2c_electronic_invoice` | Taiwan B2C invoice and allowance lifecycle |
+| `20260908090000_vendor_feature_toggles` | server-owned vendor feature-module toggles |
+| `20260908100000_consultation_booking` | tenant/customer-bound consultation events and bookings |
+| `20260908113000_automation_customer_funnel_identity` | automation customer identity normalization |
+| `20260908143000_customer_crm_cockpit` | customer CRM record and consultant notes |
+| `20260908230000_evergreen_webinar_vendor_settings` | tenant-owned evergreen webinar settings |
+| `20260909100000_student_portal_access_tokens` | single-use student portal magic/checkout token digests |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -174,8 +188,8 @@
 
 ## 驗收判定
 
-- 105/105 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、automation 或 supporting/telemetry 類別。
-- 63 migration directories 已納入 canonical inventory；本輪新增鏈已完成 schema／migration contract，外部 forward-apply 仍遵循獨立環境授權。
+- 115/115 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、automation 或 supporting/telemetry 類別。
+- 77 migration directories 已納入 canonical inventory；本輪新增鏈已完成 schema／migration contract，外部 forward-apply 仍遵循獨立環境授權。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。

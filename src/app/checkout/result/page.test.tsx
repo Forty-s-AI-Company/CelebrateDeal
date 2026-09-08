@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrants: mocks.resolveBuyerSupportGrants }));
+vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
+vi.mock("@/app/actions/student-portal-actions", () => ({ enterStudentPortalFromCheckoutAction: vi.fn() }));
 
 import { paymentReturnOutcome } from "@/lib/payment-return-outcome";
 

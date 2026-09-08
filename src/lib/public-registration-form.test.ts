@@ -42,7 +42,7 @@ function formRecord(overrides: Record<string, unknown> = {}) {
     seoDescription: "SEO 說明",
     maxVisibleSessions: 0,
     hideExpiredSessions: true,
-    vendor: { id: "vendor-1", name: "測試商家" },
+    vendor: { id: "vendor-1", name: "測試商家", consultationEvents: [] },
     promoVideo: {
       vendorId: "vendor-1",
       title: "預告",
@@ -73,7 +73,18 @@ describe("public registration form DAL", () => {
     const result = await loadPublicRegistrationForm("summer", new Date("2026-08-15T00:00:00Z"));
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { slug: "summer", isActive: true },
-      select: expect.objectContaining({ pageBlocks: true, templateId: true, archetype: true, vendor: { select: { id: true, name: true } } }),
+      select: expect.objectContaining({
+        pageBlocks: true,
+        templateId: true,
+        archetype: true,
+        vendor: {
+          select: expect.objectContaining({
+            id: true,
+            name: true,
+            consultationEvents: expect.any(Object),
+          }),
+        },
+      }),
     }));
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {

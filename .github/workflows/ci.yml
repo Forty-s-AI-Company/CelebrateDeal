@@ -71,6 +71,9 @@ jobs:
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
 
+      - name: Student portal unit and tenant-boundary tests
+        run: npx vitest run src/lib/student-portal-auth.test.ts src/lib/student-portal.test.ts src/app/actions/student-portal-actions.test.ts
+
       - name: Strict production index access
         run: npm run typecheck:strict-index
 

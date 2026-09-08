@@ -47,7 +47,7 @@ import {
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
-import { dispatchLiveStartedLineNotifications } from "@/lib/line-live-started";
+import { dispatchLiveStartedLineNotificationsSafely } from "@/lib/live-start-notifications";
 import { dispatchFormNoShowAutomationsForLive } from "@/lib/automation-workflow";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
@@ -122,29 +122,6 @@ function text(formData: FormData, key: string, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-async function dispatchLiveStartedLineNotificationsSafely(
-  db: PrismaClient,
-  vendorId: string,
-  committed: { id: string; liveStartedAt: Date | null },
-) {
-  if (!committed.liveStartedAt) return;
-  try {
-    await dispatchLiveStartedLineNotifications(db, {
-      vendorId,
-      liveId: committed.id,
-      startedAt: committed.liveStartedAt,
-    });
-  } catch (error) {
-    // The transition remains committed. Cron safely resumes the same stable
-    // idempotency keys if an eager provider call is unavailable.
-    try {
-      captureOperationalError(error, { source: "line_notification", operation: "live_started_dispatch", status: "failed" });
-    } catch {
-      // Monitoring must not roll back a successfully started live.
-    }
-  }
-}
-
 function optionalText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
@@ -188,7 +165,6 @@ function isAffiliatePayoutMutationConflict(error: unknown) {
 function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
-
 
 const REFUND_TRANSACTION_MAX_ATTEMPTS = 3;
 

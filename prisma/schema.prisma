@@ -162,6 +162,7 @@ model Vendor {
   consultationBookings             ConsultationBooking[]
   customerCrmRecords               CustomerCrmRecord[]
   consultantNotes                  ConsultantNote[]
+  studentPortalAccessTokens        StudentPortalAccessToken[]
 }
 
 model User {
@@ -3270,6 +3271,35 @@ enum ConsultationBookingStatus {
   completed
   cancelled
   no_show
+}
+
+/// Purpose is part of the signed capability and the persisted consume guard.
+/// Keeping these flows separate prevents a login-link token from being reused
+/// as a checkout-success capability (and vice versa).
+enum StudentPortalAccessTokenPurpose {
+  magic_link
+  checkout_redirect
+}
+
+/// One-time, tenant-bound capability record for the public student portal.
+/// The raw token and email are never persisted: tokenHash is a SHA-256 digest
+/// and customerKeyHash is the existing vendor-scoped irreversible identity.
+model StudentPortalAccessToken {
+  id              String                          @id @default(cuid())
+  vendorId        String
+  tokenHash       String                          @unique
+  customerKeyHash String
+  purpose         StudentPortalAccessTokenPurpose
+  issuedAt        DateTime
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime                        @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, customerKeyHash, expiresAt])
+  @@index([vendorId, purpose, expiresAt])
 }
 
 model ConsultationEvent {
