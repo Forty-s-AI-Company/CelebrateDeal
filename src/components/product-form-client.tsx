@@ -26,6 +26,9 @@ export type ProductFormProduct = {
   imageAssetId: string | null;
   checkoutUrl: string | null;
   customCheckoutFields?: CustomCheckoutFields;
+  upsellProductId: string | null;
+  upsellDiscountCents: number | null;
+  downsellProductId: string | null;
   inventory: number;
   isActive: boolean;
   commerceDomain: string;
@@ -58,6 +61,7 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
       deliveryTitle: "", deliveryUrl: "", deliveryInstructions: "", deliveryHostConfirmed: false,
       imageUrl: "", imageAssetId: "", checkoutUrl: "", isActive: false,
       customCheckoutFields: [],
+      upsellProductId: "", upsellDiscount: "", downsellProductId: "",
     };
   }
   return {
@@ -82,6 +86,9 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
     checkoutUrl: product.checkoutUrl ?? "",
     isActive: product.isActive,
     customCheckoutFields: product.customCheckoutFields ?? [],
+    upsellProductId: product.upsellProductId ?? "",
+    upsellDiscount: centsToMajor(product.upsellDiscountCents),
+    downsellProductId: product.downsellProductId ?? "",
   };
 }
 
@@ -367,6 +374,13 @@ export function ProductFormClient({
         </fieldset>
       ) : null}
       <CustomCheckoutFieldEditor fields={customCheckoutFields} onChange={setCustomCheckoutFields} />
+      <fieldset className="grid gap-4 rounded-md border border-amber-200 bg-amber-50/50 p-4 md:grid-cols-2">
+        <legend className="px-1 text-sm font-semibold text-amber-950">付款後一鍵加購（OTO）</legend>
+        <Field label="升級商品 ID" name="upsellProductId" maxLength={160} defaultValue={draft.upsellProductId} placeholder="同一商家的商品 ID" />
+        <Field label="升級額外折扣（元）" name="upsellDiscount" type="number" min={0} step={0.01} defaultValue={draft.upsellDiscount} />
+        <Field label="放棄後降級商品 ID" name="downsellProductId" maxLength={160} defaultValue={draft.downsellProductId} placeholder="選填；同一商家的商品 ID" />
+        <p className="self-end text-xs leading-5 text-amber-900">只接受同租戶、已上架且幣別相同的商品；加購金額會以目標價減原商品價與額外折扣計算。</p>
+      </fieldset>
       <TextArea label="商品描述" name="description" maxLength={10_000} defaultValue={draft.description} />
       <MediaUploadField
         kind="image"

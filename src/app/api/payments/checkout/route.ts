@@ -18,6 +18,7 @@ import {
   CommerceOrderPiiValidationError,
   createCommerceOrderIdentityHash,
   parseCommerceOrderPii,
+  revealCommerceOrderPii,
   type CommerceOrderPii,
 } from "@/lib/commerce-order-pii";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
@@ -49,8 +50,11 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import {
   buyerSupportCookieOptions,
   issueBuyerSupportGrant,
+  resolveBuyerSupportGrant,
   type BuyerSupportCookie,
 } from "@/lib/buyer-support-access";
+import { verifyPostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
+import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
 import { allowsLegacyAffiliateAttribution } from "@/lib/live-quota-policy";
 import {
   ATTRIBUTION_TTL_SECONDS,
@@ -116,6 +120,16 @@ function requestCookie(request: Request, name: string) {
     return /^[A-Za-z0-9_-]{43}$/u.test(value) ? value : null;
   }
   return null;
+}
+
+function requestCookieSource(request: Request) {
+  return {
+    getAll: () => (request.headers.get("cookie") ?? "").split(";").slice(0, 100).flatMap((segment) => {
+      const separator = segment.indexOf("=");
+      if (separator <= 0) return [];
+      return [{ name: segment.slice(0, separator).trim(), value: segment.slice(separator + 1).trim() }];
+    }),
+  };
 }
 
 async function eligibleVoucherClaim(
@@ -211,6 +225,8 @@ function checkoutTransactionMetadata(input: {
   checkoutAmountCents?: number;
   orderBumpProductId?: string;
   orderBumpPriceCents?: number;
+  postPurchaseSourceOrderId?: string;
+  postPurchaseSourceProductId?: string;
 }) {
   return {
     // The browser cannot choose a transaction purpose or source marker.
@@ -227,6 +243,8 @@ function checkoutTransactionMetadata(input: {
     ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
     ...(input.orderBumpProductId ? { orderBumpProductId: input.orderBumpProductId } : {}),
     ...(input.orderBumpPriceCents ? { orderBumpPriceCents: input.orderBumpPriceCents } : {}),
+    ...(input.postPurchaseSourceOrderId ? { postPurchaseSourceOrderId: input.postPurchaseSourceOrderId } : {}),
+    ...(input.postPurchaseSourceProductId ? { postPurchaseSourceProductId: input.postPurchaseSourceProductId } : {}),
     ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
@@ -236,7 +254,7 @@ type ValidatedCheckoutIdentity =
   | { ok: false; response: NextResponse };
 
 function validateCheckoutIdentity(
-  input: { buyer: unknown; shipping?: unknown },
+  input: { buyer?: unknown; shipping?: unknown },
   vendorId: string,
   fulfillmentType: CommerceCheckoutFulfillmentType,
   productId: string,
@@ -550,6 +568,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
   const requestedOrderBump = parsed.data.orderBump;
+  if (parsed.data.postPurchaseToken && requestedOrderBump) {
+    return NextResponse.json({ error: "Post-purchase checkout cannot include an order bump" }, { status: 409 });
+  }
   const orderBumpProduct = requestedOrderBump
     ? await db.product.findFirst({
         where: {
@@ -579,8 +600,38 @@ export async function POST(request: Request) {
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
   if (!customCheckout.ok) return customCheckout.response;
 
+  let postPurchase: { orderId: string; sourceProductId: string; amountCents: number } | null = null;
+  let postPurchasePii: CommerceOrderPii | null = null;
+  if (parsed.data.postPurchaseToken) {
+    const handoff = verifyPostPurchaseCheckoutToken(parsed.data.postPurchaseToken);
+    const grant = handoff ? await resolveBuyerSupportGrant(db, requestCookieSource(request), handoff.grantId) : null;
+    if (!handoff || !grant || grant.vendorId !== parsed.data.vendorId || grant.orderId !== handoff.orderId || grant.order.status !== "paid") {
+      return NextResponse.json({ error: "Post-purchase checkout expired or unavailable" }, { status: 409 });
+    }
+    const productIds = grant.order.items.map((item) => item.productId).filter((id): id is string => Boolean(id));
+    const resolved = await resolvePaidOrderPostPurchaseOffer(db, {
+      vendorId: grant.vendorId, status: grant.order.status, productIds, kind: handoff.kind,
+    });
+    if (!resolved || resolved.source.id !== handoff.sourceProductId || resolved.offer.productId !== product.id || resolved.offer.amountCents !== handoff.amountCents) {
+      return NextResponse.json({ error: "Post-purchase offer changed or unavailable" }, { status: 409 });
+    }
+    const originalOrder = await db.commerceOrder.findFirst({
+      where: { id: grant.orderId, vendorId: grant.vendorId, status: "paid" },
+      select: { buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
+    });
+    if (!originalOrder) return NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 409 });
+    try {
+      postPurchasePii = revealCommerceOrderPii({
+        buyerEncrypted: originalOrder.buyerEncryptedEnvelope,
+        shippingEncrypted: originalOrder.shippingEncryptedEnvelope,
+      }, { vendorId: grant.vendorId, orderId: grant.orderId });
+    } catch {
+      return NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 503 });
+    }
+    postPurchase = { orderId: grant.orderId, sourceProductId: resolved.source.id, amountCents: resolved.offer.amountCents };
+  }
   const identity = validateCheckoutIdentity(
-    parsed.data,
+    postPurchasePii ?? parsed.data,
     parsed.data.vendorId,
     product.fulfillmentType,
     product.id,
@@ -635,13 +686,15 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = await eligibleVoucherClaim(request, {
+  const voucherClaim = postPurchase ? null : await eligibleVoucherClaim(request, {
     vendorId: parsed.data.vendorId,
     productId: product.id,
     priceCents: product.priceCents,
     currency: product.currency,
   });
-  const { discountAmountCents, checkoutAmountCents: primaryCheckoutAmountCents } = checkoutPromotion(voucherClaim, product.priceCents);
+  const standardPromotion = checkoutPromotion(voucherClaim, product.priceCents);
+  const discountAmountCents = postPurchase ? product.priceCents - postPurchase.amountCents : standardPromotion.discountAmountCents;
+  const primaryCheckoutAmountCents = postPurchase?.amountCents ?? standardPromotion.checkoutAmountCents;
   const checkoutAmountCents = primaryCheckoutAmountCents + (orderBumpProduct?.priceCents ?? 0);
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
@@ -656,6 +709,7 @@ export async function POST(request: Request) {
     checkoutAmountCents,
     orderBumpProductId: orderBumpProduct?.id,
     orderBumpPriceCents: orderBumpProduct?.priceCents,
+    ...(postPurchase ? { postPurchaseSourceOrderId: postPurchase.orderId, postPurchaseSourceProductId: postPurchase.sourceProductId } : {}),
   });
 
   const order = orderNumber();

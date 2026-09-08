@@ -9,6 +9,7 @@ import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostic
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
+import { dispatchPaidCommerceOrderTracking, type ServerSideTrackingDatabase } from "@/lib/server-side-tracking";
 
 type CallbackSource = "return" | "notify" | "unknown";
 type ObservedMethod = "POST" | "HEAD" | "OTHER";
@@ -104,6 +105,33 @@ function webhookResponse(requestUrl: URL, status: number, payload: unknown) {
   return NextResponse.json(payload, { status });
 }
 
+/** A provider callback URL is not a customer page. Keep Meta's source URL on the checkout result route. */
+function purchaseEventSourceUrl(requestUrl: URL) {
+  return new URL("/checkout/result", requestUrl.origin).toString();
+}
+
+async function dispatchPurchaseTrackingSafely(input: {
+  vendorId: string;
+  transactionId?: string | null;
+  requestUrl: URL;
+  occurredAt?: Date;
+}) {
+  if (!input.transactionId) return;
+  try {
+    // The narrow facade has a stable, explicitly selected persistence shape;
+    // Prisma's generated generic cannot infer that shape through this helper.
+    await dispatchPaidCommerceOrderTracking(getDb() as unknown as ServerSideTrackingDatabase, {
+      vendorId: input.vendorId,
+      paymentTransactionId: input.transactionId,
+      eventSourceUrl: purchaseEventSourceUrl(input.requestUrl),
+      occurredAt: input.occurredAt ?? new Date(),
+    });
+  } catch {
+    // Marketing delivery is non-authoritative: it must never alter payment
+    // acknowledgement or expose a provider/token diagnostic in a webhook log.
+  }
+}
+
 export async function HEAD(request: Request) {
   const requestUrl = new URL(request.url);
   observeCallbackRequest(requestUrl, observedMethod(request.method), 405);
@@ -183,6 +211,9 @@ export async function POST(request: Request) {
       } catch {
         return webhookResponse(requestUrl, 500, { error: "Payment automation pending", eventId: existing.id });
       }
+      // The original successful callback emits Purchase after its transaction
+      // commits. A duplicate callback intentionally does not perform a new
+      // database lookup or re-send external measurement.
     }
     return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
   }
@@ -211,6 +242,12 @@ export async function POST(request: Request) {
         vendorId: result.vendor.id,
         webhookEventId: event.id,
         transactionId: result.transaction.id,
+      });
+      await dispatchPurchaseTrackingSafely({
+        vendorId: result.vendor.id,
+        transactionId: result.transaction.id,
+        requestUrl,
+        occurredAt: result.transaction.occurredAt,
       });
     }
     return webhookResponse(requestUrl, 200, {

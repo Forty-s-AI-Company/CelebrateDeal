@@ -7,6 +7,7 @@ import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { FLASH_VOUCHER_COOKIE, resolveEligibleVoucherClaim } from "@/lib/live-interaction";
+import { verifyPostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 
 const fulfillmentLabels: Record<CommerceCheckoutFulfillmentType, string> = {
   physical: "實體商品 · 付款後由商家安排出貨",
@@ -25,10 +26,16 @@ function formatPrice(priceCents: number, currency: string) {
 
 export default async function CommerceCheckoutPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ vendorId: string; productId: string }>;
+  searchParams?: Promise<{ postPurchaseToken?: string | string[] }>;
 }) {
   const { vendorId, productId } = await params;
+  const rawPostPurchaseToken = (await searchParams)?.postPurchaseToken;
+  const postPurchaseToken = typeof rawPostPurchaseToken === "string" ? rawPostPurchaseToken : null;
+  const postPurchase = postPurchaseToken ? verifyPostPurchaseCheckoutToken(postPurchaseToken) : null;
+  if (postPurchaseToken && (!postPurchase || postPurchase.vendorId !== vendorId || postPurchase.productId !== productId)) notFound();
   const product = await getDb().product.findFirst({
     where: { id: productId, vendorId, isActive: true, fulfillmentTypeConfirmed: true, priceCents: { gt: 0 } },
     select: {
@@ -67,7 +74,7 @@ export default async function CommerceCheckoutPage({
   const isAvailable = product.inventory > 0;
   const customCheckoutFields = safeParseCustomCheckoutFields(product.customCheckoutFields);
   if (!customCheckoutFields.success) notFound();
-  const voucherClaim = await resolveEligibleVoucherClaim(
+  const voucherClaim = postPurchase ? null : await resolveEligibleVoucherClaim(
     getDb(),
     (await cookies()).get(FLASH_VOUCHER_COOKIE)?.value,
     {
@@ -77,7 +84,7 @@ export default async function CommerceCheckoutPage({
       currency: product.currency,
     },
   );
-  const checkoutPriceCents = product.priceCents - (voucherClaim?.discountAmountCents ?? 0);
+  const checkoutPriceCents = postPurchase?.amountCents ?? product.priceCents - (voucherClaim?.discountAmountCents ?? 0);
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 sm:py-12">
@@ -99,6 +106,7 @@ export default async function CommerceCheckoutPage({
             </h1>
             <p className="mt-3 text-2xl font-black text-slate-950">{formatPrice(checkoutPriceCents, product.currency)}</p>
             {voucherClaim ? <p className="mt-1 text-sm font-bold text-red-700"><span className="mr-2 text-slate-400 line-through">{formatPrice(product.priceCents, product.currency)}</span>直播紅包已自動折抵 {formatPrice(voucherClaim.discountAmountCents, product.currency)}</p> : null}
+            {postPurchase ? <p className="mt-1 text-sm font-bold text-orange-700"><span className="mr-2 text-slate-400 line-through">{formatPrice(product.priceCents, product.currency)}</span>已套用購後專屬補差價</p> : null}
             <p className="mt-2 text-sm font-medium text-slate-600">{fulfillmentLabels[fulfillmentType]}</p>
             {product.description ? <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-600">{product.description}</p> : null}
             <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
@@ -125,6 +133,7 @@ export default async function CommerceCheckoutPage({
             recoveryOnly={!isAvailable}
             priceCents={checkoutPriceCents}
             currency={product.currency}
+            {...(postPurchaseToken ? { postPurchaseToken } : {})}
           />
         </section>
       </div>

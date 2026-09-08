@@ -103,7 +103,7 @@ export async function getStudentPortalDashboard(db: PrismaClient, scope: Student
       && (!item.entitlement.expiresAt || item.entitlement.expiresAt > now);
     const delivery = snapshot && accessActive ? revealDelivery(snapshot) : { destinationUrl: null, instructions: null };
     return [{
-      id: item.id, orderId: order.id, title: item.productName, productSlug: item.productSlug,
+      id: item.id, orderId: order.id, productId: item.productId, title: item.productName, productSlug: item.productSlug,
       imageUrl: safeHttpsUrl(item.imageUrl), fulfillmentType: item.fulfillmentType,
       deliveryTitle: snapshot?.title ?? null, deliveryKind: snapshot?.deliveryKind ?? null,
       destinationUrl: delivery.destinationUrl, instructions: delivery.instructions,

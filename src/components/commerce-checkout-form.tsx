@@ -40,6 +40,8 @@ type CommerceCheckoutFormProps = {
     sku?: string;
     badge?: string;
   };
+  /** Signed, short-lived server handoff; it contains no PII or card credential. */
+  postPurchaseToken?: string;
 };
 
 function formatCheckoutPrice(priceCents: number, currency: string) {
@@ -108,6 +110,7 @@ export function CommerceCheckoutForm({
   priceCents,
   currency = "TWD",
   orderBump,
+  postPurchaseToken,
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
@@ -244,8 +247,7 @@ export function CommerceCheckoutForm({
           productId,
           idempotencyKey: admission.current.idempotencyKey,
           admissionToken: admission.current.admissionToken,
-          buyer,
-          shipping,
+          ...(postPurchaseToken ? {} : { buyer, shipping }),
           invoice,
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
           ...(orderBumpSelected && orderBump ? {
@@ -254,6 +256,7 @@ export function CommerceCheckoutForm({
               ...(orderBump.sku ? { sku: orderBump.sku } : {}),
             },
           } : {}),
+          ...(postPurchaseToken ? { postPurchaseToken } : {}),
         }),
         signal: controller.signal,
       });
@@ -333,11 +336,11 @@ export function CommerceCheckoutForm({
       aria-busy={isPending}
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
-      <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />
+      {postPurchaseToken ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">已安全沿用上一筆已驗證訂單的聯絡資料；不會把資料放進網址或頁面。</p> : <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />}
 
       <CheckoutInvoiceFields disabled={isPending || phase === "success"} />
 
-      {requiresShipping ? (
+      {requiresShipping && !postPurchaseToken ? (
         <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={isPending || phase === "success"}>
           <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
           <div className="grid gap-4 sm:grid-cols-2">

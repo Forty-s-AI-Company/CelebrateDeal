@@ -76,6 +76,9 @@ function draftFrom(formData: FormData): ProductFormDraft {
     checkoutUrl: boundedDraftText(formData, "checkoutUrl", 2_048),
     isActive: formData.get("isActive") === "on",
     customCheckoutFields,
+    upsellProductId: boundedDraftText(formData, "upsellProductId", 160),
+    upsellDiscount: boundedDraftText(formData, "upsellDiscount", 32),
+    downsellProductId: boundedDraftText(formData, "downsellProductId", 160),
   };
 }
 
@@ -206,6 +209,17 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
   if (id && (!expectedRevision || expectedRevision < 1)) {
     return { success: false as const, state: productFailure(previousState, formData, "conflict") };
   }
+  const upsellProductId = optionalText(formData, "upsellProductId");
+  const downsellProductId = optionalText(formData, "downsellProductId");
+  const upsellDiscountRaw = optionalText(formData, "upsellDiscount");
+  const upsellDiscountCents = upsellDiscountRaw === null ? null : currencyAmountToCents(upsellDiscountRaw);
+  if ((upsellProductId && !ProductIdentifier.safeParse(upsellProductId).success)
+    || (downsellProductId && !ProductIdentifier.safeParse(downsellProductId).success)
+    || (upsellDiscountRaw !== null && upsellDiscountCents === null)
+    || (!upsellProductId && upsellDiscountCents !== null)
+    || (id && (upsellProductId === id || downsellProductId === id))) {
+    return { success: false as const, state: productFailure(previousState, formData, "invalid_product") };
+  }
   return {
     success: true as const, id, expectedRevision, productInput,
     commerceDomain: commercePolicy.commerceDomain,
@@ -215,6 +229,9 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
     imageAssetId: optionalText(formData, "imageAssetId"),
     delivery,
     customCheckoutFields,
+    upsellProductId,
+    upsellDiscountCents,
+    downsellProductId,
   };
 }
 
@@ -275,6 +292,11 @@ async function loadProductDependencies(db: ProductDb, vendorId: string, request:
       })
     : null;
   if (request.id && !existingProduct) return { success: false as const, error: "not_found" as const };
+  const offerIds = [request.upsellProductId, request.downsellProductId].filter((value): value is string => Boolean(value));
+  if (offerIds.length > 0) {
+    const targets = await db.product.findMany({ where: { vendorId, id: { in: offerIds }, isActive: true, currency: request.productInput.currency }, select: { id: true } });
+    if (new Set(targets.map((target) => target.id)).size !== new Set(offerIds).size) return { success: false as const, error: "invalid_product" as const };
+  }
   if (request.commerceDomain === "course") {
     const ownerMembership = await db.teamMembership.findFirst({
       where: { id: request.courseContentOwnerMembershipId!, vendorId, status: "ACTIVE", leftAt: null },
@@ -440,6 +462,9 @@ export async function mutateProduct(
     courseContentOwnerMembershipId: request.commerceDomain === "course" ? request.courseContentOwnerMembershipId : null,
     coursePromoterShareBps: request.commerceDomain === "course" ? request.coursePromoterShareBps : null,
     customCheckoutFields: request.customCheckoutFields,
+    upsellProductId: request.upsellProductId,
+    upsellDiscountCents: request.upsellDiscountCents,
+    downsellProductId: request.downsellProductId,
     ...(existingProduct ? { coursePolicyVersion: existingProduct.coursePolicyVersion + (policyChanged ? 1 : 0) } : {}),
   };
   let persistenceError: ProductActionError | null;

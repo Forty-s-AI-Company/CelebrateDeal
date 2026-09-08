@@ -21,11 +21,12 @@ export const CommerceCheckoutRequestSchema = z.object({
   productId: checkoutText,
   idempotencyKey: z.string().uuid(),
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
-  buyer: z.unknown(),
+  buyer: z.unknown().optional(),
   invoice: z.unknown().optional(),
   shipping: z.unknown().nullable().optional(),
   customCheckoutAnswers: z.unknown().optional(),
   orderBump: CommerceOrderBumpSelectionSchema.optional(),
+  postPurchaseToken: z.string().max(2_200).optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({

@@ -10,6 +10,7 @@ import { paymentReturnOutcome, type PaymentReturnOutcome } from "@/lib/payment-r
 import { LineLoginButton } from "@/components/line-login-button";
 import { CsrfField } from "@/components/csrf-field";
 import { enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
+import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -79,6 +80,16 @@ export default async function PaymentResultPage({ searchParams }: {
   const presentation = outcomePresentation[outcome];
   const grants = await resolveBuyerSupportGrants(getDb(), await cookies());
   const sortedGrants = [...grants].sort((left, right) => right.order.createdAt.getTime() - left.order.createdAt.getTime());
+  const upsellGrantIds = new Set((await Promise.all(sortedGrants.map(async (grant) => {
+    const productIds = grant.order.items.map((item) => item.productId).filter((id): id is string => Boolean(id));
+    const offer = await resolvePaidOrderPostPurchaseOffer(getDb(), {
+      vendorId: grant.vendorId,
+      status: grant.order.status,
+      productIds,
+      kind: "upsell",
+    });
+    return offer ? grant.id : null;
+  }))).filter((id): id is string => Boolean(id)));
 
   return (
     <PublicPolicyShell>
@@ -118,6 +129,9 @@ export default async function PaymentResultPage({ searchParams }: {
                   <div><dt className="text-slate-500">退款金額</dt><dd className="mt-1 font-semibold text-slate-950">{formatAmount(grant.order.refundedAmountCents, grant.order.currency)}</dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">
+                  {upsellGrantIds.has(grant.id) ? (
+                    <Link href={`/checkout/upsell?grant=${encodeURIComponent(grant.id)}`} className="inline-flex min-h-11 items-center rounded-md bg-orange-600 px-4 font-semibold text-white hover:bg-orange-700">🎉 查看購後專屬加購優惠</Link>
+                  ) : null}
                   {["paid", "partially_refunded", "refunded"].includes(grant.order.status) ? (
                     <form action={enterStudentPortalFromCheckoutAction}>
                       <CsrfField />

@@ -17,6 +17,7 @@ import { monthRange, payoutBatchNumber } from "@/lib/billing";
 import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { protectFacebookAccessToken } from "@/lib/tracking-credentials";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
@@ -486,11 +487,18 @@ export async function saveBrandSettingsActionState(
 export async function saveTrackingSettingsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
+  const facebookAccessToken = optionalText(formData, "facebookAccessToken");
+  const protectedFacebookAccessToken = facebookAccessToken
+    ? protectFacebookAccessToken(vendor.id, facebookAccessToken)
+    : null;
+  const facebookTestEventCode = optionalText(formData, "facebookTestEventCode");
   await getDb().trackingSetting.upsert({
     where: { vendorId: vendor.id },
     create: {
       vendorId: vendor.id,
       facebookPixelId: optionalText(formData, "facebookPixelId"),
+      facebookAccessTokenEncrypted: protectedFacebookAccessToken,
+      facebookTestEventCode,
       tiktokPixelId: optionalText(formData, "tiktokPixelId"),
       googleTagManagerId: optionalText(formData, "googleTagManagerId"),
       enablePageView: formData.get("enablePageView") === "on",
@@ -499,6 +507,10 @@ export async function saveTrackingSettingsAction(formData: FormData) {
     },
     update: {
       facebookPixelId: optionalText(formData, "facebookPixelId"),
+      // Empty password fields preserve the existing encrypted token rather
+      // than accidentally disabling a production tracking integration.
+      ...(protectedFacebookAccessToken ? { facebookAccessTokenEncrypted: protectedFacebookAccessToken } : {}),
+      facebookTestEventCode,
       tiktokPixelId: optionalText(formData, "tiktokPixelId"),
       googleTagManagerId: optionalText(formData, "googleTagManagerId"),
       enablePageView: formData.get("enablePageView") === "on",

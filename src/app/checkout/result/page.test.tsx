@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   getDb: vi.fn(),
   resolveBuyerSupportGrants: vi.fn(),
+  resolvePaidOrderPostPurchaseOffer: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrants: mocks.resolveBuyerSupportGrants }));
+vi.mock("@/lib/post-purchase-upsell-access", () => ({ resolvePaidOrderPostPurchaseOffer: mocks.resolvePaidOrderPostPurchaseOffer }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 vi.mock("@/app/actions/student-portal-actions", () => ({ enterStudentPortalFromCheckoutAction: vi.fn() }));
 
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ getAll: () => [] });
   mocks.getDb.mockReturnValue({ buyerSupportOrderGrant: {} });
   mocks.resolveBuyerSupportGrants.mockResolvedValue([grant()]);
+  mocks.resolvePaidOrderPostPurchaseOffer.mockResolvedValue(null);
 });
 
 describe("payment result page", () => {

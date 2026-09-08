@@ -164,6 +164,11 @@ model Vendor {
   customerCrmRecords               CustomerCrmRecord[]
   consultantNotes                  ConsultantNote[]
   studentPortalAccessTokens        StudentPortalAccessToken[]
+  courseLessons                    CourseLesson[]
+  courseLessonProgress             CourseLessonProgress[]
+  communityPosts                   CommunityPost[]
+  communityComments                CommunityComment[]
+  communityReactions               CommunityReaction[]
 }
 
 model User {
@@ -286,16 +291,18 @@ model VendorMember {
 }
 
 model TrackingSetting {
-  id                  String   @id @default(cuid())
-  vendorId            String   @unique
-  facebookPixelId     String?
-  tiktokPixelId       String?
-  googleTagManagerId  String?
-  enablePageView      Boolean  @default(true)
-  enableLeadEvent     Boolean  @default(true)
-  enablePurchaseEvent Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                           String   @id @default(cuid())
+  vendorId                     String   @unique
+  facebookPixelId              String?
+  tiktokPixelId                String?
+  googleTagManagerId           String?
+  facebookAccessTokenEncrypted String?
+  facebookTestEventCode        String?
+  enablePageView               Boolean  @default(true)
+  enableLeadEvent              Boolean  @default(true)
+  enablePurchaseEvent          Boolean  @default(true)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 }
@@ -360,6 +367,9 @@ model Product {
   imageAssetId                   String?
   checkoutUrl                    String?
   customCheckoutFields           Json?
+  upsellProductId                String?
+  upsellDiscountCents            Int?
+  downsellProductId              String?
   inventory                      Int                     @default(0)
   isActive                       Boolean                 @default(true)
   commerceDomain                 String                  @default("merchant")
@@ -384,12 +394,20 @@ model Product {
   commerceOrderItems          CommerceOrderItem[]
   deliveryConfig              ProductDeliveryConfig?
   automationVoucherGrants     AutomationVoucherGrant[]
+  upsellProduct               Product?                        @relation("ProductUpsell", fields: [vendorId, upsellProductId], references: [vendorId, id], onDelete: Restrict)
+  upsellForProducts           Product[]                       @relation("ProductUpsell")
+  downsellProduct             Product?                        @relation("ProductDownsell", fields: [vendorId, downsellProductId], references: [vendorId, id], onDelete: Restrict)
+  downsellForProducts         Product[]                       @relation("ProductDownsell")
+  courseLessons               CourseLesson[]
+  courseLessonProgress        CourseLessonProgress[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
   @@index([vendorId, fulfillmentType, isActive])
   @@index([imageAssetId])
+  @@index([vendorId, upsellProductId])
+  @@index([vendorId, downsellProductId])
 }
 
 model RegistrationForm {
@@ -471,46 +489,46 @@ enum FormSubmissionVerificationStatus {
 }
 
 model Live {
-  id                        String    @id @default(cuid())
-  vendorId                  String
-  videoId                   String?
-  formId                    String?
-  messageTemplateId         String?
-  liveReminderTemplateId    String?
-  liveReminderOffsetMinutes Int       @default(60)
-  interactionScriptId       String?
-  teamId                    String?
-  seminarOwnerMembershipId  String?
-  title                     String
-  slug                      String    @unique
-  description               String?
-  scheduledAt               DateTime
-  status                    String    @default("draft")
-  startedAt                 DateTime?
-  endedAt                   DateTime?
-  replayAvailableUntil      DateTime?
-  heroImageUrl              String?
-  heroImageAssetId          String?
-  accentCopy                String?
-  replayEnabled             Boolean   @default(true)
-  streamMode                String    @default("vod")
-  cloudflareLiveInputUid    String?
-  quotaPolicy               Json?
+  id                             String    @id @default(cuid())
+  vendorId                       String
+  videoId                        String?
+  formId                         String?
+  messageTemplateId              String?
+  liveReminderTemplateId         String?
+  liveReminderOffsetMinutes      Int       @default(60)
+  interactionScriptId            String?
+  teamId                         String?
+  seminarOwnerMembershipId       String?
+  title                          String
+  slug                           String    @unique
+  description                    String?
+  scheduledAt                    DateTime
+  status                         String    @default("draft")
+  startedAt                      DateTime?
+  endedAt                        DateTime?
+  replayAvailableUntil           DateTime?
+  heroImageUrl                   String?
+  heroImageAssetId               String?
+  accentCopy                     String?
+  replayEnabled                  Boolean   @default(true)
+  streamMode                     String    @default("vod")
+  cloudflareLiveInputUid         String?
+  quotaPolicy                    Json?
   /// Evergreen playback is configured per Live and continues to use videoId as
   /// its tenant-owned source; no second media relation is introduced here.
-  isEvergreen               Boolean   @default(false)
-  evergreenScheduleMode     String    @default("just_in_time")
-  evergreenIntervalMinutes  Int       @default(15)
-  evergreenDailyTimes       String[]  @default([])
-  evergreenSessionStartAt   DateTime?
-  evergreenPitchAtSeconds   Int?
+  isEvergreen                    Boolean   @default(false)
+  evergreenScheduleMode          String    @default("just_in_time")
+  evergreenIntervalMinutes       Int       @default(15)
+  evergreenDailyTimes            String[]  @default([])
+  evergreenSessionStartAt        DateTime?
+  evergreenPitchAtSeconds        Int?
   evergreenConsultationAtSeconds Int?
   /// These are merchant-preview controls only. Public viewers always play at
   /// normal speed and do not receive this configuration.
-  evergreenPreviewEnabled   Boolean   @default(false)
-  evergreenPreviewRate      Float     @default(1)
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
+  evergreenPreviewEnabled        Boolean   @default(false)
+  evergreenPreviewRate           Float     @default(1)
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
 
   vendor                     Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   heroImageAsset             ImageAsset?                     @relation("LiveHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
@@ -3325,6 +3343,95 @@ model StudentPortalAccessToken {
   @@unique([vendorId, id])
   @@index([vendorId, customerKeyHash, expiresAt])
   @@index([vendorId, purpose, expiresAt])
+}
+
+model CourseLesson {
+  id              String   @id @default(cuid())
+  vendorId        String
+  productId       String
+  chapterTitle    String
+  title           String
+  videoUrl        String?
+  durationSeconds Int      @default(0)
+  position        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor   Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  progress CourseLessonProgress[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, productId, position])
+  @@index([vendorId, productId])
+}
+
+model CourseLessonProgress {
+  id              String    @id @default(cuid())
+  vendorId        String
+  productId       String
+  lessonId        String
+  customerKeyHash String
+  watchedSeconds  Int       @default(0)
+  completedAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  lesson  CourseLesson @relation(fields: [vendorId, lessonId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, lessonId, customerKeyHash])
+  @@index([vendorId, productId, customerKeyHash])
+}
+
+model CommunityPost {
+  id              String   @id @default(cuid())
+  vendorId        String
+  customerKeyHash String
+  authorName      String
+  body            String
+  isPinned        Boolean  @default(false)
+  isAnnouncement  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor    Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  comments  CommunityComment[]
+  reactions CommunityReaction[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, isPinned, createdAt])
+  @@index([vendorId, customerKeyHash, createdAt])
+}
+
+model CommunityComment {
+  id              String   @id @default(cuid())
+  vendorId        String
+  postId          String
+  customerKeyHash String
+  authorName      String
+  body            String
+  createdAt       DateTime @default(now())
+
+  vendor Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  post   CommunityPost @relation(fields: [vendorId, postId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, postId, createdAt])
+}
+
+model CommunityReaction {
+  id              String   @id @default(cuid())
+  vendorId        String
+  postId          String
+  customerKeyHash String
+  createdAt       DateTime @default(now())
+
+  vendor Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  post   CommunityPost @relation(fields: [vendorId, postId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, postId, customerKeyHash])
+  @@index([vendorId, postId])
 }
 
 model ConsultationEvent {
