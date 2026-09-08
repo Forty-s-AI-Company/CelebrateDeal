@@ -17,6 +17,7 @@ import {
 import { calculateCourseAllocationPlan } from "@/lib/course-commission";
 import { coursePolicySnapshotFromMetadata } from "@/lib/course-policy-snapshot";
 import { calculateCommissionPlan } from "@/lib/commission-rule-engine";
+import { calculateTieredCommission } from "@/lib/tiered-commission-engine";
 import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import {
   applyPaymentRefundAccounting,
@@ -33,6 +34,7 @@ import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
+import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -84,6 +86,11 @@ function formSubmissionIdFromMetadata(metadata: unknown) {
 function referralCodeFromMetadata(metadata: unknown) {
   const referralCode = metadataObject(metadata).referralCode;
   return typeof referralCode === "string" && referralCode.trim().length > 0 ? referralCode.trim() : null;
+}
+
+function productIdFromTrustedMetadata(metadata: unknown) {
+  const productId = metadataObject(metadata).productId;
+  return typeof productId === "string" && productId.length > 0 ? productId : null;
 }
 
 function affiliateClickIdFromMetadata(metadata: unknown) {
@@ -266,6 +273,7 @@ async function upsertAffiliateCommission(
     | "affiliateCommission"
     | "affiliateCommissionLedgerEntry"
     | "commissionRuleSet"
+    | "commerceOrder"
     | "teamMembership"
     | "teamMembershipRelationship"
     | "teamConversionAttribution"
@@ -279,6 +287,8 @@ async function upsertAffiliateCommission(
   occurredAt: Date,
   hasRefundedOrder: boolean,
   referralCode: string | null | undefined,
+  trustedCheckoutMetadata: unknown,
+  hasExistingCheckoutTransaction: boolean,
 ) {
   if (!mvpCommissionPolicy.allowsNewAccrual("affiliate")) return null;
   if (payload.eventType !== "paid") return null;
@@ -321,11 +331,15 @@ async function upsertAffiliateCommission(
   }
   if (hasRefundedOrder) return null;
   const ruleSet = await db.commissionRuleSet.findFirst({
-    where: { vendorId, currency, status: "ACTIVE", activatedAt: { lte: occurredAt } },
+    // Select by business occurrence time, not current ACTIVE state. A delayed
+    // webhook for an older order must keep the policy that was effective then.
+    where: { vendorId, currency, activatedAt: { lte: occurredAt } },
     orderBy: [{ activatedAt: "desc" }, { version: "desc" }],
     include: {
       tiers: { orderBy: { minMonthlySalesCents: "asc" } },
+      quantityTiers: { orderBy: { minQuantity: "asc" } },
       uplineLevels: { orderBy: { level: "asc" } },
+      productOverrides: true,
     },
   });
 
@@ -338,6 +352,10 @@ async function upsertAffiliateCommission(
   }>;
   let monthlySalesBeforeCents: number | null = null;
   let monthlySalesAfterCents: number | null = null;
+  let orderQuantity: number | null = null;
+  let cumulativeSalesBeforeCount: number | null = null;
+  let cumulativeSalesAfterCount: number | null = null;
+  let matchedTierSnapshot: Record<string, number | string | null> | null = null;
   if (!ruleSet) {
     const rateBps = AffiliateCommissionRateBps.parse(payload.commissionRateBps ?? affiliate.commissionRateBps);
     allocationInputs = [{
@@ -379,25 +397,81 @@ async function upsertAffiliateCommission(
       downlineMembershipId = relationship.upline.id;
     }
     const monthKey = monthKeyFromDate(occurredAt);
-    const priorSales = await db.affiliateCommission.aggregate({
-      where: { vendorId, affiliateId: affiliate.id, monthKey, currency, sourceType, recipientRole: "promoter" },
-      _sum: { orderAmountCents: true },
+    const priorCommissionRows = await db.affiliateCommission.findMany({
+      // Quantity tiers are cumulative for this affiliate within the vendor,
+      // across policy versions and calendar months. Legacy amount tiers still
+      // filter the selected rows back to the current month below.
+      where: { vendorId, affiliateId: affiliate.id, currency, sourceType, recipientRole: "promoter" },
+      select: { monthKey: true, orderAmountCents: true, orderQuantity: true },
     });
-    const plan = calculateCommissionPlan({
-      grossAmountCents,
-      monthlySalesBeforeCents: priorSales._sum.orderAmountCents ?? 0,
-      promoterAffiliateId: affiliate.id,
-      promoterMembershipId: promoterMembership?.id,
-      uplines,
-      rule: {
-        maxTotalRateBps: ruleSet.maxTotalRateBps,
-        tiers: ruleSet.tiers,
-        uplineLevels: ruleSet.uplineLevels,
-      },
-    });
-    monthlySalesBeforeCents = plan.monthlySalesBeforeCents;
-    monthlySalesAfterCents = plan.monthlySalesAfterCents;
-    allocationInputs = plan.beneficiaries;
+    const trustedProductId = hasExistingCheckoutTransaction ? productIdFromTrustedMetadata(trustedCheckoutMetadata) : null;
+    const productOverride = trustedProductId
+      ? ruleSet.productOverrides?.find((item) => item.productId === trustedProductId)
+      : undefined;
+    if (ruleSet.quantityTiers.length > 0) {
+      const commerceOrder = hasExistingCheckoutTransaction
+        ? await db.commerceOrder.findFirst({
+            where: { vendorId, primaryPaymentTransactionId: transactionId },
+            select: { items: { select: { productId: true, quantity: true } } },
+          })
+        : null;
+      orderQuantity = commerceOrder?.items
+        .filter((item) => !trustedProductId || item.productId === trustedProductId)
+        .reduce((sum, item) => sum + item.quantity, 0) || 1;
+      cumulativeSalesBeforeCount = priorCommissionRows.reduce((sum, item) => sum + (item.orderQuantity ?? 1), 0);
+      const tiered = calculateTieredCommission({
+        unitPriceCents: Math.round(grossAmountCents / orderQuantity),
+        quantity: orderQuantity,
+        cumulativeSalesBeforeCount,
+        productId: trustedProductId,
+        policy: {
+          version: ruleSet.version,
+          tiers: ruleSet.quantityTiers,
+          productOverrides: ruleSet.productOverrides,
+        },
+      });
+      cumulativeSalesAfterCount = tiered.cumulativeSalesAfterCount;
+      const plan = calculateCommissionPlan({
+        grossAmountCents,
+        monthlySalesBeforeCents: 0,
+        promoterAffiliateId: affiliate.id,
+        promoterMembershipId: promoterMembership?.id,
+        uplines,
+        rule: {
+          maxTotalRateBps: ruleSet.maxTotalRateBps,
+          tiers: [{ minMonthlySalesCents: 0, rateBps: tiered.appliedRateBps }],
+          uplineLevels: ruleSet.uplineLevels,
+        },
+      });
+      matchedTierSnapshot = tiered.matchedTier;
+      allocationInputs = plan.beneficiaries;
+    } else {
+      const priorAmountCents = priorCommissionRows
+        .filter((item) => item.monthKey === monthKey)
+        .reduce((sum, item) => sum + item.orderAmountCents, 0);
+      const plan = calculateCommissionPlan({
+        grossAmountCents,
+        monthlySalesBeforeCents: priorAmountCents,
+        promoterAffiliateId: affiliate.id,
+        promoterMembershipId: promoterMembership?.id,
+        uplines,
+        rule: {
+          maxTotalRateBps: ruleSet.maxTotalRateBps,
+          tiers: productOverride
+            ? ruleSet.tiers.map((tier) => ({ ...tier, rateBps: productOverride.rateBps }))
+            : ruleSet.tiers,
+          uplineLevels: ruleSet.uplineLevels,
+        },
+      });
+      monthlySalesBeforeCents = plan.monthlySalesBeforeCents;
+      monthlySalesAfterCents = plan.monthlySalesAfterCents;
+      matchedTierSnapshot = {
+        minMonthlySalesCents: plan.selectedTier.minMonthlySalesCents,
+        rateBps: plan.selectedTier.rateBps,
+        source: productOverride ? "product_override" : "tier",
+      };
+      allocationInputs = plan.beneficiaries;
+    }
   }
 
   const created = [];
@@ -432,8 +506,25 @@ async function upsertAffiliateCommission(
         uplineLevel: allocation.uplineLevel,
         commissionRuleSetId: ruleSet?.id ?? null,
         commissionRuleVersion: ruleSet?.version ?? null,
+        policyVersion: ruleSet?.version ?? null,
+        matchedTier: matchedTierSnapshot ?? undefined,
+        appliedRateBps: ruleSet ? allocation.rateBps : null,
+        calculationSnapshot: ruleSet ? {
+          policyVersion: ruleSet.version,
+          matchedTier: matchedTierSnapshot,
+          appliedRateBps: allocation.rateBps,
+          grossSalesAmount: grossAmountCents,
+          commissionAmountCents: allocation.amountCents,
+          vendorNetAmountCents: grossAmountCents - allocation.amountCents,
+          orderQuantity,
+          cumulativeSalesBeforeCount,
+          cumulativeSalesAfterCount,
+        } : undefined,
         monthlySalesBeforeCents,
         monthlySalesAfterCents,
+        orderQuantity,
+        cumulativeSalesBeforeCount,
+        cumulativeSalesAfterCount,
         status: allocation.amountCents > 0 ? "pending" : "void",
       },
     });
@@ -1230,6 +1321,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       occurredAt,
       hasRefundedOrder,
       currentTransaction ? checkoutReferralCode : payload.referralCode,
+      existingMetadata,
+      Boolean(currentTransaction),
     );
     const platformReferralCommission = payload.eventType === "paid"
       ? await accruePlatformReferralFromTrustedTransaction(tx, {
@@ -1306,6 +1399,21 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     // Payment, stock, accounting and delivery projection commit atomically.
     // Keep a bounded budget for the full set of database writes on remote DBs.
     timeout: 15_000,
+  });
+
+  // Fiscal issuance is deliberately outside the payment transaction. A queue
+  // or adapter outage must never roll back an already-successful payment.
+  await reconcileElectronicInvoiceAfterPayment(db, {
+    vendorId: vendor.id,
+    paymentTransactionId: transaction.id,
+    eventType: payload.eventType,
+    occurredAt,
+    refund: commerceOrderRefund ? {
+      id: commerceOrderRefund.refundId,
+      orderId: commerceOrderRefund.orderId,
+      amountCents: payload.refundAmountCents,
+      cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + payload.refundAmountCents,
+    } : null,
   });
 
   await writeAuditLog({

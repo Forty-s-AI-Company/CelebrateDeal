@@ -14,6 +14,7 @@ import {
   shouldDiscardCheckoutAdmission,
 } from "@/lib/commerce-checkout";
 import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+import { CheckoutInvoiceFields } from "@/components/checkout-invoice-fields";
 import {
   clearCheckoutIdempotencyKey,
   getOrCreateCheckoutIdempotencyKey,
@@ -168,6 +169,16 @@ export function CommerceCheckoutForm({
       field.key,
       field.type === "checkbox" ? formData.get(`custom_${field.key}`) === "on" : text(`custom_${field.key}`),
     ]));
+    const invoiceType = text("invoiceType") as "personal" | "company" | "donation";
+    const invoice = invoiceType === "company"
+      ? { type: invoiceType, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") }
+      : invoiceType === "donation"
+        ? { type: invoiceType, donationCode: text("invoiceDonationCode") }
+        : {
+            type: "personal" as const,
+            carrier: text("invoiceCarrier") as "member" | "mobile" | "citizen_certificate",
+            ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}),
+          };
 
     setPhase("submitting");
     setMessage("正在確認商品與安全結帳資格，接著會建立訂單並保留庫存。");
@@ -217,6 +228,7 @@ export function CommerceCheckoutForm({
           admissionToken: admission.current.admissionToken,
           buyer,
           shipping,
+          invoice,
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
         }),
         signal: controller.signal,
@@ -298,6 +310,8 @@ export function CommerceCheckoutForm({
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
       <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />
+
+      <CheckoutInvoiceFields disabled={isPending || phase === "success"} />
 
       {requiresShipping ? (
         <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={isPending || phase === "success"}>

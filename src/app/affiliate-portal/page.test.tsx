@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/affiliate-portal-auth", () => ({ requireAffiliatePortal: mocks.requirePortal }));
 vi.mock("@/lib/affiliate-portal", () => ({ getAffiliatePortalDashboard: mocks.dashboard }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
+vi.mock("@/lib/bank-account", () => ({
+  resolveStoredBankAccount: () => ({ accountName: "王小美", bankCode: "812", accountNumber: "1234567890" }),
+  maskBankAccount: () => ({ accountName: "王＊＊", bankCode: "812", accountNumber: "****7890" }),
+}));
+vi.mock("@/lib/tax-identity", () => ({ decryptTaxIdentity: () => "A123456789", maskTaxIdentity: () => "A1*****789" }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="test" /> }));
 vi.mock("@/app/actions/affiliate-portal-actions", () => ({
   affiliatePortalLogoutAction: vi.fn(),
@@ -22,11 +27,11 @@ describe("affiliate portal page", () => {
   it("renders isolated metrics, wallet states, referral link and payout control", async () => {
     mocks.requirePortal.mockResolvedValue({
       auth: { user: { id: "user-a" } },
-      affiliate: { id: "affiliate-a", name: "小美", code: "MAY", bankAccountEncrypted: null },
+      affiliate: { id: "affiliate-a", name: "小美", code: "MAY", bankAccountEncrypted: "encrypted", taxIdentityEncrypted: "encrypted-tax" },
       vendor: { id: "vendor-a", name: "商家 A" },
     });
     mocks.dashboard.mockResolvedValue({
-      affiliate: { id: "affiliate-a", name: "小美", code: "MAY", bankAccountEncrypted: null },
+      affiliate: { id: "affiliate-a", name: "小美", code: "MAY", bankAccountEncrypted: "encrypted", taxIdentityEncrypted: "encrypted-tax" },
       metrics: { clickCount: 88, conversionCount: 5, salesAmountCents: 120_000 },
       wallet: { pending: 1_000, approved: 2_000, paid: 3_000 },
       referralUrl: "https://app.example.test/r/MAY",
@@ -47,6 +52,8 @@ describe("affiliate portal page", () => {
     expect(html).toContain("Approved");
     expect(html).toContain("Paid");
     expect(html).toContain("https://app.example.test/r/MAY");
-    expect(html).toContain("一鍵申請提領");
+    expect(html).toContain("勞務報酬明細與簽署確認");
+    expect(html).toContain("確認簽署並申請提領");
+    expect(html).toContain("A1*****789");
   });
 });

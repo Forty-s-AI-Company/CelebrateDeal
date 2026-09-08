@@ -85,6 +85,11 @@ export type LivePageData = {
   videoUrl?: string | null;
   vendorId: string;
   admissionRequired?: boolean;
+  evergreen?: {
+    sessionStartAt: string;
+    sessionEndAt: string;
+    initialOffsetSeconds: number;
+  } | null;
   /** Real viewer chat stays opt-in so isolated fixtures never start polling. */
   chatEnabled?: boolean;
   brand: {
@@ -298,13 +303,17 @@ function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; count
 }
 
 function LiveUnavailableNotice({ live }: { live: LivePageData }) {
+  const consultation = live.evergreen
+    ? [...live.interactionEvents].reverse().find((event) => event.eventType === "cta_switch" && event.ctaLabel && parseSafeExternalHttpUrl(event.ctaUrl))
+    : null;
   return (
     <div data-testid="live-unavailable" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
       <div className="mx-auto grid max-w-xs gap-3">
         <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">活動狀態</p>
-        <h2 className="text-2xl font-black">此活動目前無法觀看</h2>
-        <p className="text-sm leading-6 text-white/75">「{live.title}」目前沒有可用的直播或回放，可能尚未開放或回放期限已到。</p>
-        <p className="text-xs leading-5 text-white/55">這不是直播容量暫停；頁面不會建立播放或載入媒體來源。</p>
+        <h2 className="text-2xl font-black">{live.evergreen ? "本場講座已圓滿結束" : "此活動目前無法觀看"}</h2>
+        <p className="text-sm leading-6 text-white/75">{live.evergreen ? (live.description ?? `謝謝你參與「${live.title}」，下一場常青講座即將開放。`) : `「${live.title}」目前沒有可用的直播或回放，可能尚未開放或回放期限已到。`}</p>
+        {consultation ? <a href={consultation.ctaUrl!} rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-orange-700 px-4 text-sm font-black text-white hover:bg-orange-800">{consultation.ctaLabel}</a> : null}
+        <p className="text-xs leading-5 text-white/55">頁面不會繼續建立播放或載入媒體來源。</p>
       </div>
     </div>
   );
@@ -1514,7 +1523,19 @@ function useExternalNavigationIntent({
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
-  const runtimeState = getClientRuntimeState(live);
+  const [evergreenNowMs, setEvergreenNowMs] = useState(() => timestampMs(live.serverNow) ?? Date.now());
+  useEffect(() => {
+    if (!live.evergreen) return;
+    const serverAtHydration = timestampMs(live.serverNow) ?? Date.now();
+    const clientAtHydration = Date.now();
+    const timer = window.setInterval(() => setEvergreenNowMs(serverAtHydration + Date.now() - clientAtHydration), 1_000);
+    return () => window.clearInterval(timer);
+  }, [live.evergreen, live.serverNow]);
+  const evergreenStartMs = timestampMs(live.evergreen?.sessionStartAt);
+  const evergreenEndMs = timestampMs(live.evergreen?.sessionEndAt);
+  const runtimeState: LiveRuntimeState = evergreenStartMs !== null && evergreenEndMs !== null
+    ? evergreenNowMs < evergreenStartMs ? "waiting" : evergreenNowMs < evergreenEndMs ? "playing" : "unavailable"
+    : getClientRuntimeState(live);
   const isPlayableRuntime = isPlayableRuntimeState(runtimeState);
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
@@ -1545,6 +1566,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const visibleAdmissionStatus: LiveAdmissionStatus = isPlayableRuntime ? admissionStatus : "admitted";
   const visiblePlaybackSource = useLivePlaybackSource({
     ...live,
+    runtimeState,
     admissionRequired: isPlayableRuntime && live.admissionRequired === true,
   }, admissionStatus);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
@@ -1561,8 +1583,11 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const previousPlaybackUrlRef = useRef<string | null>(null);
   const previousPlaybackSeekIdentityRef = useRef<string | null>(null);
   const endedRefreshIdentityRef = useRef<string | null>(null);
+  const evergreenPlaybackSeconds = evergreenStartMs === null
+    ? null
+    : Math.max(0, (evergreenNowMs - evergreenStartMs) / 1_000);
   const playbackStartSeconds = playableSource && runtimeState !== "replay"
-    ? normalizePlaybackStartSeconds(playableSource.playbackStartSeconds)
+    ? normalizePlaybackStartSeconds(live.evergreen ? evergreenPlaybackSeconds : playableSource.playbackStartSeconds)
     : 0;
   const playbackSeekIdentity = playableSource
     ? `${live.id}:${runtimeState}:${playableSource.playbackUrl}:${playbackStartSeconds}`
@@ -1714,13 +1739,19 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               ref={videoRef}
               className={playbackVideoClass(isCheckoutOverlay)}
               src={playableUrl ?? undefined}
-              controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
+              controls={!live.evergreen && visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
+              controlsList={live.evergreen ? "nodownload noplaybackrate noremoteplayback" : undefined}
+              disablePictureInPicture={Boolean(live.evergreen)}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
               poster={live.heroImageUrl ?? undefined}
               onLoadedMetadata={(event) => applyPlaybackStart(event.currentTarget)}
               onTimeUpdate={(event) => {
                 if (streamQuotaExhausted) return;
+                if (live.evergreen && evergreenStartMs !== null) {
+                  const expected = Math.max(0, (evergreenNowMs - evergreenStartMs) / 1_000);
+                  if (Math.abs(event.currentTarget.currentTime - expected) > 3) event.currentTarget.currentTime = expected;
+                }
                 streamUsage.track(event.currentTarget.currentTime);
                 const seconds = Math.floor(event.currentTarget.currentTime);
                 setCurrentSeconds(seconds);
@@ -1741,6 +1772,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
                 });
               }}
               onPause={() => { setIsPlaybackPaused(true); streamUsage.stop(); }}
+              onRateChange={(event) => {
+                if (live.evergreen && event.currentTarget.playbackRate !== 1) event.currentTarget.playbackRate = 1;
+              }}
               onEnded={handlePlaybackEnded}
               onVolumeChange={(event) => setIsPlaybackMuted(event.currentTarget.muted)}
             />

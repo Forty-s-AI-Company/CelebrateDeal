@@ -7,6 +7,7 @@ const input = {
   affiliateId: "affiliate-a",
   userId: "user-a",
   bankAccountEncrypted: "v2.test.encrypted",
+  taxIdentityEncrypted: "v1.test.encrypted",
   requestedAt: new Date("2026-09-05T08:00:00.000Z"),
   ipAddress: null,
   userAgent: "test",
@@ -34,6 +35,14 @@ describe("affiliate payout request", () => {
       where: expect.objectContaining({ vendorId: "vendor-a", affiliateId: "affiliate-a", requestedAt: null }),
       data: expect.objectContaining({ requestedBankAccountEncrypted: "v2.test.encrypted" }),
     }));
+    expect(tx.affiliatePayout.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        signedAt: input.requestedAt,
+        requestedTaxIdentityEncrypted: "v1.test.encrypted",
+        grossAmountCents: 2_000,
+        netPayoutAmountCents: 500,
+      }),
+    }));
     expect(tx.auditLog.create).toHaveBeenCalledOnce();
   });
 
@@ -50,4 +59,3 @@ describe("affiliate payout request", () => {
     expect(tx.affiliatePayout.updateMany).not.toHaveBeenCalled();
   });
 });
-

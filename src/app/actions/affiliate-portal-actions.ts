@@ -15,6 +15,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { requestAffiliatePayout } from "@/lib/affiliate-portal-payout";
 import { encryptBankAccount } from "@/lib/bank-account";
+import { encryptTaxIdentity } from "@/lib/tax-identity";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -23,7 +24,9 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const BankAccountInput = z.object({
   accountName: z.string().trim().min(1).max(100),
   bankCode: z.string().trim().regex(/^\d{3,7}$/),
+  bankBranch: z.string().trim().max(40).optional(),
   accountNumber: z.string().trim().regex(/^\d{6,20}$/),
+  taxIdentity: z.string().trim().toUpperCase().regex(/^[A-Z][12]\d{8}$/),
 });
 
 function text(formData: FormData, key: string) {
@@ -104,14 +107,17 @@ export async function saveAffiliateBankAccountAction(formData: FormData) {
   const parsed = BankAccountInput.safeParse({
     accountName: text(formData, "accountName"),
     bankCode: text(formData, "bankCode"),
+    bankBranch: text(formData, "bankBranch"),
     accountNumber: text(formData, "accountNumber"),
+    taxIdentity: text(formData, "taxIdentity"),
   });
   if (!parsed.success) redirect("/affiliate-portal?error=invalid_bank");
 
   const encrypted = encryptBankAccount(parsed.data, affiliate.vendorId);
+  const taxIdentityEncrypted = encryptTaxIdentity(parsed.data.taxIdentity, affiliate.vendorId);
   const result = await getDb().affiliate.updateMany({
     where: { id: affiliate.id, vendorId: affiliate.vendorId, userId: auth.user.id, isActive: true },
-    data: { bankAccountEncrypted: encrypted },
+    data: { bankAccountEncrypted: encrypted, taxIdentityEncrypted },
   });
   if (result.count !== 1) redirect("/affiliate-portal/login?error=unauthorized");
   revalidatePath("/affiliate-portal");
@@ -124,6 +130,8 @@ export async function requestAffiliatePayoutAction(formData: FormData) {
   const payoutId = text(formData, "payoutId");
   if (!payoutId || payoutId.length > 200) redirect("/affiliate-portal?error=invalid_payout");
   if (!affiliate.bankAccountEncrypted) redirect("/affiliate-portal?error=bank_required");
+  if (!affiliate.taxIdentityEncrypted) redirect("/affiliate-portal?error=tax_identity_required");
+  if (text(formData, "remunerationConsent") !== "accepted") redirect("/affiliate-portal?error=consent_required");
 
   const auditMeta = await requestAuditMeta();
   const requestedAt = new Date();
@@ -133,6 +141,7 @@ export async function requestAffiliatePayoutAction(formData: FormData) {
     affiliateId: affiliate.id,
     userId: auth.user.id,
     bankAccountEncrypted: affiliate.bankAccountEncrypted,
+    taxIdentityEncrypted: affiliate.taxIdentityEncrypted,
     requestedAt,
     ipAddress: auditMeta.ipAddress,
     userAgent: auditMeta.userAgent,

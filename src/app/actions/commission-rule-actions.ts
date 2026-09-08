@@ -55,6 +55,15 @@ export async function saveCommissionRuleAction(formData: FormData) {
           ...tier,
         })),
       });
+      if (parsed.quantityTiers.length > 0) {
+        await tx.commissionQuantityTier.createMany({
+          data: parsed.quantityTiers.map((tier) => ({
+            vendorId: auth.vendor.id,
+            commissionRuleSetId: ruleSet.id,
+            ...tier,
+          })),
+        });
+      }
       if (parsed.uplineLevels.length > 0) {
         await tx.commissionUplineLevel.createMany({
           data: parsed.uplineLevels.map((level) => ({
@@ -64,9 +73,20 @@ export async function saveCommissionRuleAction(formData: FormData) {
           })),
         });
       }
+      if (parsed.productOverrides.length > 0) {
+        // Composite foreign keys reject cross-tenant product IDs even if a
+        // crafted request bypasses the page's product selector.
+        await tx.commissionProductOverride.createMany({
+          data: parsed.productOverrides.map((override) => ({
+            vendorId: auth.vendor.id,
+            commissionRuleSetId: ruleSet.id,
+            ...override,
+          })),
+        });
+      }
       return tx.commissionRuleSet.findUniqueOrThrow({
         where: { id: ruleSet.id },
-        include: { tiers: true, uplineLevels: true },
+        include: { tiers: true, quantityTiers: true, uplineLevels: true, productOverrides: true },
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {

@@ -412,6 +412,16 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
         commissionAmountCents: 750,
         finalAmountCents: 750,
         status: "pending",
+        requestedAt: new Date("2099-12-16T00:00:00.000Z"),
+        signedAt: new Date("2099-12-16T00:00:00.000Z"),
+        requestedBankAccountEncrypted: "synthetic-bank-envelope",
+        requestedTaxIdentityEncrypted: "synthetic-tax-envelope",
+        grossAmountCents: 750,
+        withholdingTaxCents: 0,
+        nhiSupplementaryTaxCents: 0,
+        bankFeeCents: 0,
+        netPayoutAmountCents: 750,
+        withholdingRuleVersion: "tw-affiliate-2026-v1",
       },
     });
 

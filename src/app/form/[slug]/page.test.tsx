@@ -32,6 +32,9 @@ const publicForm = {
   submitLabel: "送出",
   successMessage: "完成",
   fields: validFields,
+  pageBlocks: null,
+  templateId: null,
+  archetype: null,
   heroImageUrl: "https://cdn.example.test/hero.jpg",
   backgroundImageUrl: "https://cdn.example.test/background.jpg",
   themeColor: "#123456",
@@ -41,7 +44,7 @@ const publicForm = {
   seoTitle: "夏季活動報名",
   seoDescription: "夏季活動說明",
   promoVideo: { title: "活動預告", videoUrl: "https://cdn.example.test/promo.mp4" },
-  vendor: { name: "測試商家" },
+  vendor: { id: "vendor-1", name: "測試商家" },
   sessions: [{ id: "live-1", title: "第一場", description: null, scheduledAt: "2026-08-20T01:00:00.000Z", status: "scheduled" as const }],
 };
 
@@ -92,6 +95,23 @@ describe("public registration form", () => {
     expect(html).toContain("完成");
     expect(html).toContain("請到 Email 開啟確認連結");
     expect(html).not.toContain('data-testid="lead-form"');
+  });
+
+  it("switches to the sorted block renderer when pageBlocks is present", async () => {
+    mocks.getPublicRegistrationForm.mockResolvedValue({
+      ...publicForm,
+      pageBlocks: [
+        { id: "faq", type: "accordion_faq", sortOrder: 2, isVisible: true, settings: { title: "常見問題", items: [{ id: "answer", question: "可以回放嗎？", answer: "可以" }] } },
+        { id: "hero", type: "hero_banner", sortOrder: 1, isVisible: true, settings: { headline: "新版漏斗主標", imageAlt: "" } },
+        { id: "hidden", type: "hero_banner", sortOrder: 0, isVisible: false, settings: { headline: "不該出現", imageAlt: "" } },
+      ],
+    });
+    const html = renderToStaticMarkup(await PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({}) }));
+    expect(html).toContain("新版漏斗主標");
+    expect(html).toContain("常見問題");
+    expect(html.indexOf("新版漏斗主標")).toBeLessThan(html.indexOf("常見問題"));
+    expect(html).not.toContain("不該出現");
+    expect(html).not.toContain("活動預告");
   });
 
   it("fails closed when registration fields are invalid", async () => {

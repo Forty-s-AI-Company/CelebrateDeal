@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LineLoginButton } from "@/components/line-login-button";
 
 type FieldSpec = {
@@ -64,6 +64,7 @@ export function buildFormSubmissionRequestBody(input: {
   payload: Record<string, FormDataEntryValue>;
   referralCode: string | null;
   shareCode: string;
+  utm?: { source?: string; medium?: string; campaign?: string; content?: string; term?: string };
 }) {
   return {
     formId: input.formId,
@@ -71,6 +72,7 @@ export function buildFormSubmissionRequestBody(input: {
     payload: input.payload,
     referralCode: input.referralCode,
     ...(input.shareCode ? { shareCode: input.shareCode } : {}),
+    ...(input.utm && Object.values(input.utm).some(Boolean) ? { utm: input.utm } : {}),
   };
 }
 
@@ -102,10 +104,15 @@ export function LeadForm({
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const submissionInFlight = useRef(false);
   const [shareCode] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("share") ?? "");
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // State updates are asynchronous; this ref closes the tiny double-click
+    // window before React has a chance to disable the submit button.
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
     setStatus("loading");
     setErrorMessage("");
     const form = event.currentTarget;
@@ -116,6 +123,14 @@ export function LeadForm({
       [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo"].includes(key)),
     );
     const referralCode = new URLSearchParams(window.location.search).get("ref");
+    const query = new URLSearchParams(window.location.search);
+    const utm = {
+      source: query.get("utm_source")?.slice(0, 120) || undefined,
+      medium: query.get("utm_medium")?.slice(0, 120) || undefined,
+      campaign: query.get("utm_campaign")?.slice(0, 160) || undefined,
+      content: query.get("utm_content")?.slice(0, 160) || undefined,
+      term: query.get("utm_term")?.slice(0, 160) || undefined,
+    };
     try {
       const response = await fetch("/api/form-submissions", {
         method: "POST",
@@ -123,17 +138,19 @@ export function LeadForm({
           "Content-Type": "application/json",
           "X-CelebrateDeal-Client": "web",
         },
-        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode })),
+        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, utm })),
       });
 
       if (response.ok) {
         setStatus("success");
         form.reset();
       } else {
+        submissionInFlight.current = false;
         setStatus("error");
         setErrorMessage(formSubmissionErrorMessage(response.status));
       }
     } catch {
+      submissionInFlight.current = false;
       setStatus("error");
       setErrorMessage(formSubmissionErrorMessage());
     }

@@ -3,9 +3,11 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 
 import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lead-form";
+import { FunnelPageRenderer } from "@/components/funnel-blocks/funnel-page-renderer";
 import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { RichTextContent } from "@/components/rich-text-content";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
+import { getCsrfToken } from "@/lib/csrf";
 
 type PublicFormPageProps = {
   params: Promise<{ slug: string }>;
@@ -60,6 +62,11 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
 
   const themeColor = form.themeColor ?? "#2563eb";
   const style = { "--registration-theme": themeColor } as React.CSSProperties;
+
+  if (form.pageBlocks !== null) {
+    const consultationCsrfToken = form.consultationEvent ? await getCsrfToken() : undefined;
+    return <FunnelPageRenderer blocks={form.pageBlocks} form={form} themeColor={themeColor} consultationBooking={form.consultationEvent && consultationCsrfToken ? { eventId: form.consultationEvent.id, csrfToken: consultationCsrfToken } : undefined} />;
+  }
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-100 px-4 py-8 sm:px-6" style={style}>

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { AUTOMATION_TRIGGERS } from "@/lib/automation-workflow";
+import { AUTOMATION_TRIGGERS, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 
 const PATH = "/settings/automations";
@@ -20,7 +20,7 @@ function lineAction(form: FormData): Record<string, unknown> | null {
   const buttonLabel = text(form, "buttonLabel");
   const buttonUrl = text(form, "buttonUrl");
   if (!message || message.length > 1500 || (buttonLabel && !buttonUrl)) throw new Error("invalid");
-  if (buttonUrl && buttonUrl !== "{{voucher_url}}" && !/^https:\/\//i.test(buttonUrl)) throw new Error("invalid");
+  if (buttonUrl && !["{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}"].includes(buttonUrl) && !/^https:\/\//i.test(buttonUrl)) throw new Error("invalid");
   return { type: "line_push", message, buttonLabel: buttonLabel || null, buttonUrl: buttonUrl || null };
 }
 
@@ -47,19 +47,74 @@ function tagAction(form: FormData): Record<string, unknown> | null {
   return { type: "add_customer_tag", tag };
 }
 
+function emailAction(form: FormData): Record<string, unknown> | null {
+  if (form.get("actionEmail") !== "on") return null;
+  const template = text(form, "emailTemplate");
+  if (!["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"].includes(template)) throw new Error("invalid");
+  return { type: "send_email_notification", template };
+}
+
 function parseRule(form: FormData) {
   const name = text(form, "name");
   const trigger = text(form, "trigger");
   const conditionValue = number(form, "conditionValue");
   if (!name || name.length > 120 || !AUTOMATION_TRIGGERS.includes(trigger as typeof AUTOMATION_TRIGGERS[number])) throw new Error("invalid");
+  const needsThreshold = ["payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"].includes(trigger);
   const condition = trigger === "payment_paid"
     ? { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) }
-    : { type: "watch_seconds_gte", seconds: Math.round(conditionValue) };
-  if (!Number.isInteger(conditionValue) || conditionValue < 1) throw new Error("invalid");
-  const actions = [voucherAction(form), lineAction(form), tagAction(form)]
+    : ["viewer_watch_progress", "webinar_attended_duration_gte"].includes(trigger)
+      ? { type: "watch_seconds_gte", seconds: Math.round(conditionValue) }
+      : { type: "always" };
+  if (needsThreshold && (!Number.isInteger(conditionValue) || conditionValue < 1)) throw new Error("invalid");
+  const actions = [voucherAction(form), lineAction(form), emailAction(form), tagAction(form)]
     .filter((action): action is Record<string, unknown> => action !== null);
   if (!actions.length) throw new Error("no_action");
   return { name, trigger, condition, actions };
+}
+
+
+export async function createAutomationRecipeAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  const recipeId = text(formData, "recipeId");
+  const productId = text(formData, "productId") || undefined;
+  const recipe = materializeAutomationRecipe(recipeId, productId);
+  if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
+  if (recipe.actions.some((action) => action.type === "issue_repurchase_voucher")) {
+    const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: auth.vendor.id, isActive: true }, select: { id: true } });
+    if (!validProduct) fail("invalid_product");
+  }
+  const created = await getDb().automationRule.create({ data: {
+    vendorId: auth.vendor.id,
+    name: recipe.name,
+    description: recipe.description,
+    trigger: recipe.trigger,
+    condition: recipe.condition as Prisma.InputJsonValue,
+    actions: recipe.actions as Prisma.InputJsonArray,
+  } });
+  await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: "create_automation_recipe", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
+  revalidatePath(PATH);
+  redirect(`${PATH}?updated=recipe_created`);
+}
+
+export async function dryRunAutomationRuleAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  const id = text(formData, "ruleId");
+  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, condition: true, actions: true, trigger: true } });
+  if (!existing || !AUTOMATION_TRIGGERS.includes(existing.trigger as typeof AUTOMATION_TRIGGERS[number])) fail("not_found");
+  const result = dryRunAutomationRule({ condition: existing.condition, actions: existing.actions }, {
+    vendorId: auth.vendor.id,
+    eventId: "dry-run",
+    trigger: existing.trigger as typeof AUTOMATION_TRIGGERS[number],
+    subjectType: "buyer_registration",
+    subjectId: "dry-run",
+    subjectKeyHash: "dry-run",
+    orderAmountCents: Math.round(number(formData, "orderAmount") * 100),
+    watchSecondsTotal: Math.round(number(formData, "watchSeconds")),
+    hasPurchased: formData.get("hasPurchased") === "on",
+  });
+  redirect(`${PATH}?dryRun=${encodeURIComponent(result.status)}&rule=${encodeURIComponent(id)}`);
 }
 
 export async function createAutomationRuleAction(formData: FormData) {

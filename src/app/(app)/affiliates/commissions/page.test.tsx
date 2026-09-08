@@ -51,6 +51,12 @@ const pendingPayout = {
   outcomeReference: null,
   outcomeReason: null,
   requestedAt: new Date("2026-07-31T08:00:00.000Z"),
+  signedAt: new Date("2026-08-01T08:00:00.000Z"),
+  grossAmountCents: 500,
+  withholdingTaxCents: 50,
+  nhiSupplementaryTaxCents: 10,
+  bankFeeCents: 5,
+  netPayoutAmountCents: 435,
   affiliate: { id: "affiliate-1", name: "推廣夥伴" },
   createdAt: new Date("2026-07-31T00:00:00.000Z"),
 };
@@ -100,6 +106,19 @@ describe("/affiliates/commissions route", () => {
     expect(html).toContain("人工出款 reference");
     expect(html).toContain("查看 ledger 與 payout 明細");
     expect(html).toContain("Portal 提領申請");
+    expect(html).toContain("勞報單簽署");
+    expect(html).toContain("已簽署");
+    expect(html).toContain("給付總額");
+    expect(html).toContain("扣繳稅額");
+    expect(html).toContain("健保費");
+    expect(html).toContain("銀行費");
+    expect(html).toContain("實付金額");
+    expect(html).toContain("匯出銀行 CSV");
+    expect(html).toContain("匯出扣繳 CSV");
+    expect(html).toContain('action="/api/affiliates/payouts/export?type=bank"');
+    expect(html).toContain('action="/api/affiliates/payouts/export?type=tax"');
+    expect(html).toContain('name="type" value="bank"');
+    expect(html).toContain('name="type" value="tax"');
     expect(html).toContain("/affiliates/commissions/affiliate-payout-pending");
     expect(html).toContain('name="reason"');
   });

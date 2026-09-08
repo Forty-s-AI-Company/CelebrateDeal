@@ -41,6 +41,8 @@ export type PollInteractionMetadata = {
   durationSec: number;
   question: string;
   options: Array<{ id: string; label: string }>;
+  selectionMode?: "single" | "multiple";
+  maxSelections?: number;
 };
 
 export type FlashVoucherInteractionMetadata = {
@@ -269,6 +271,10 @@ function normalizePollEvent(input: InteractionEventDraft, eventLabel: string, su
   }
   const titleResult = validatedTitle(suppliedTitle, question, eventLabel);
   if (!titleResult.success) return titleResult;
+  const selectionMode = metadata.selectionMode === "multiple" ? "multiple" : "single";
+  const maxSelections = selectionMode === "multiple"
+    ? boundedInteger(metadata.maxSelections, Math.min(2, labels.length), 2, labels.length)
+    : 1;
   return {
     success: true,
     data: normalizedAdvancedBase(input, "poll", titleResult.title, {
@@ -276,6 +282,7 @@ function normalizePollEvent(input: InteractionEventDraft, eventLabel: string, su
       durationSec: boundedInteger(metadata.durationSec, 60, 5, 600),
       question,
       options: labels.map((label, index) => ({ id: `option-${index + 1}`, label })),
+      ...(selectionMode === "multiple" ? { selectionMode, maxSelections } : {}),
     }),
   };
 }

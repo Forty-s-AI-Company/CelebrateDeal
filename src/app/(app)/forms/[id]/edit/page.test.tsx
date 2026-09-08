@@ -6,7 +6,7 @@ vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findFirst: mocks.findFirst }, video: { findMany: mocks.videoFindMany } }) }));
 vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description }: { title: string; description: string }) => <header><h1>{title}</h1><p>{description}</p></header> }));
-vi.mock("@/components/form-builder", () => ({ FormBuilder: ({ form, error, promoVideos }: { form?: { id: string; name: string; fields: unknown }; error?: string; promoVideos: Array<{ id: string; title: string }> }) => <div data-testid="form-builder">{JSON.stringify({ id: form?.id, name: form?.name, fields: form?.fields, error, promoVideos })}</div> }));
+vi.mock("@/components/form-builder", () => ({ FormBuilder: ({ form, error, promoVideos, enableFunnelWizard }: { form?: { id: string; name: string; fields: unknown }; error?: string; promoVideos: Array<{ id: string; title: string }>; enableFunnelWizard?: boolean }) => <div data-testid="form-builder">{JSON.stringify({ id: form?.id, name: form?.name, fields: form?.fields, error, promoVideos, enableFunnelWizard })}</div> }));
 
 import EditFormPage from "./page";
 
@@ -30,6 +30,7 @@ describe("/forms/[id]/edit route", () => {
     expect(html).toContain("form-1");
     expect(html).toContain("invalid_fields");
     expect(html).toContain("宣傳影片");
+    expect(html).toContain("enableFunnelWizard");
   });
 
   it("fails closed when a foreign or missing form is not found", async () => {

@@ -8,6 +8,7 @@ const KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export type BankAccountDetails = {
   accountName: string;
   bankCode: string;
+  bankBranch?: string;
   accountNumber: string;
 };
 
@@ -51,6 +52,7 @@ function normalizedDetails(input: BankAccountDetails): BankAccountDetails {
   const details = {
     accountName: input.accountName.trim(),
     bankCode: input.bankCode.trim(),
+    bankBranch: input.bankBranch?.trim() || undefined,
     accountNumber: input.accountNumber.trim(),
   };
   if (!details.accountName || !details.bankCode || !details.accountNumber) {
@@ -239,6 +241,7 @@ export function maskBankAccount(details: BankAccountDetails) {
   return {
     accountName: visibleName,
     bankCode: normalized.bankCode,
+    ...(normalized.bankBranch ? { bankBranch: normalized.bankBranch } : {}),
     accountNumber: `****${accountCharacters.slice(-4).join("")}`,
   };
 }

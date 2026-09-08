@@ -14,7 +14,7 @@ export default async function NewFormPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="新增報名表" description="用視覺化欄位編輯與即時預覽，建立可直接分享或放入直播頁的報名流程。" />
-      <FormBuilder error={error} draftScope={vendor.id} promoVideos={promoVideos} />
+      <FormBuilder error={error} draftScope={vendor.id} promoVideos={promoVideos} enableFunnelWizard />
     </>
   );
 }

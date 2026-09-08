@@ -13,6 +13,7 @@ export const CommerceCheckoutRequestSchema = z.object({
   idempotencyKey: z.string().uuid(),
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
   buyer: z.unknown(),
+  invoice: z.unknown().optional(),
   shipping: z.unknown().nullable().optional(),
   customCheckoutAnswers: z.unknown().optional(),
 }).strict();

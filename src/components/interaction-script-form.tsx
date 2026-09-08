@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
-import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
+import type { InteractionEvent, InteractionRole, InteractionScript, Product, Video } from "@prisma/client";
 import { BadgeCheck, BarChart3, ChevronDown, ChevronUp, Gift, GripVertical, Link2Off, MessageCircle, Megaphone, PartyPopper, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
 import { unbindInteractionScriptFromLiveAction, upsertInteractionScriptAction } from "@/app/actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { LiveMobilePreviewSimulator } from "@/components/live-mobile-preview-simulator";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import {
   INTERACTION_EVENT_TYPES,
@@ -24,8 +25,11 @@ type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
 };
 
-type BoundLive = Live & {
-  video: Video | null;
+type BoundLive = {
+  id: string;
+  title: string;
+  video: Pick<Video, "title" | "thumbnailUrl"> | null;
+  [key: string]: unknown;
 };
 
 type TimelineEvent = Pick<InteractionEvent, "eventType" | "triggerSec" | "title"> &
@@ -258,6 +262,17 @@ function renderTimelineSidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+function renderMobilePreview(events: TimelineEvent[], products: Product[], primaryLive: BoundLive | undefined) {
+  return (
+    <LiveMobilePreviewSimulator
+      events={events}
+      products={products.map(({ id, name }) => ({ id, name }))}
+      liveTitle={primaryLive?.title}
+      thumbnailUrl={primaryLive?.video?.thumbnailUrl}
+    />
   );
 }
 
@@ -708,7 +723,7 @@ export function InteractionScriptForm({
         </section>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
+      <section className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_340px] xl:grid-cols-[340px_minmax(0,1fr)_360px]">
         {renderTimelineSidebar({ boundLives, primaryLive, events, products, confirmUnbind })}
 
         <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
@@ -772,6 +787,7 @@ export function InteractionScriptForm({
             </div>
           </div>
         </div>
+        {renderMobilePreview(events, products, primaryLive)}
       </section>
     </form>
   );

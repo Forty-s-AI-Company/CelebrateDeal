@@ -9,7 +9,9 @@ const runtime = vi.hoisted(() => {
       findUniqueOrThrow: vi.fn(),
     },
     commissionRateTier: { createMany: vi.fn() },
+    commissionQuantityTier: { createMany: vi.fn() },
     commissionUplineLevel: { createMany: vi.fn() },
+    commissionProductOverride: { createMany: vi.fn() },
   };
   return {
     tx,
@@ -36,13 +38,17 @@ vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeA
 
 import { saveCommissionRuleAction } from "@/app/actions/commission-rule-actions";
 
-function validForm() {
+function validForm(productOverride?: { productId: string; rateBps: string }) {
   const data = new FormData();
   data.set("currency", "TWD");
   data.set("maxTotalRateBps", "2000");
   data.append("tierMinAmount", "0");
   data.append("tierRateBps", "800");
   data.append("uplineBonusRateBps", "300");
+  if (productOverride) {
+    data.append("overrideProductId", productOverride.productId);
+    data.append("overrideRateBps", productOverride.rateBps);
+  }
   return data;
 }
 
@@ -52,7 +58,7 @@ beforeEach(() => {
   runtime.tx.commissionRuleSet.findFirst.mockResolvedValue({ version: 4 });
   runtime.tx.commissionRuleSet.updateMany.mockResolvedValue({ count: 1 });
   runtime.tx.commissionRuleSet.create.mockResolvedValue({ id: "rule-5", version: 5 });
-  runtime.tx.commissionRuleSet.findUniqueOrThrow.mockResolvedValue({ id: "rule-5", version: 5, tiers: [], uplineLevels: [] });
+  runtime.tx.commissionRuleSet.findUniqueOrThrow.mockResolvedValue({ id: "rule-5", version: 5, tiers: [], quantityTiers: [], uplineLevels: [], productOverrides: [] });
   runtime.db.$transaction.mockImplementation(async (callback: (tx: typeof runtime.tx) => Promise<unknown>) => callback(runtime.tx));
 });
 
@@ -88,5 +94,27 @@ describe("saveCommissionRuleAction", () => {
     data.set("maxTotalRateBps", "500");
     await expect(saveCommissionRuleAction(data)).rejects.toThrow("redirect:/settings/commissions?error=invalid_rule");
     expect(runtime.db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("publishes product overrides inside the same authenticated vendor transaction", async () => {
+    await expect(saveCommissionRuleAction(validForm({ productId: "product-current", rateBps: "1200" })))
+      .rejects.toThrow("redirect:/settings/commissions?updated=rule_saved");
+    expect(runtime.tx.commissionProductOverride.createMany).toHaveBeenCalledWith({
+      data: [{ vendorId: "vendor-current", commissionRuleSetId: "rule-5", productId: "product-current", rateBps: 1200 }],
+    });
+  });
+
+  it("publishes cumulative quantity tiers in the version transaction", async () => {
+    const data = validForm();
+    data.append("tierMinQuantity", "1");
+    data.append("tierQuantityRateBps", "1500");
+    data.append("tierMinQuantity", "6");
+    data.append("tierQuantityRateBps", "2000");
+    data.set("maxTotalRateBps", "2500");
+    await expect(saveCommissionRuleAction(data)).rejects.toThrow("redirect:/settings/commissions?updated=rule_saved");
+    expect(runtime.tx.commissionQuantityTier.createMany).toHaveBeenCalledWith({ data: [
+      { vendorId: "vendor-current", commissionRuleSetId: "rule-5", minQuantity: 1, maxQuantity: 5, rateBps: 1500 },
+      { vendorId: "vendor-current", commissionRuleSetId: "rule-5", minQuantity: 6, maxQuantity: null, rateBps: 2000 },
+    ] });
   });
 });

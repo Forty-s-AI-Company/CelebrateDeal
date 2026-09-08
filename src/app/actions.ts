@@ -48,6 +48,7 @@ import {
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
 import { dispatchLiveStartedLineNotifications } from "@/lib/line-live-started";
+import { dispatchFormNoShowAutomationsForLive } from "@/lib/automation-workflow";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
@@ -1450,6 +1451,13 @@ export async function upsertLiveAction(formData: FormData) {
   });
   if (!committed) redirect(draftClaim.conflictPath);
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
+  if (existingLive?.status === "live" && requestedStatus === "ended") {
+    try {
+      await dispatchFormNoShowAutomationsForLive(db, { vendorId: vendor.id, liveId: committed.id });
+    } catch (error) {
+      captureOperationalError(error, { source: "automation", operation: "form_no_show", status: "failed" });
+    }
+  }
   try {
     await materializeLiveNotificationRules({
       vendorId: vendor.id,
@@ -1811,6 +1819,31 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       if (payout.status === "void" && payout.paidAt) throw new AffiliatePayoutMutationConflict();
       if (payout.status === status) return;
       if (payout.status !== "pending") throw new AffiliatePayoutMutationConflict();
+      if (status === "paid") {
+        const snapshotAmounts = [
+          payout.grossAmountCents,
+          payout.withholdingTaxCents,
+          payout.nhiSupplementaryTaxCents,
+          payout.bankFeeCents,
+          payout.netPayoutAmountCents,
+        ];
+        if (
+          !payout.requestedAt
+          || !payout.signedAt
+          || !payout.requestedBankAccountEncrypted
+          || !payout.requestedTaxIdentityEncrypted
+          || !payout.withholdingRuleVersion
+          || snapshotAmounts.some((amount) => amount === null || amount < 0)
+          || payout.grossAmountCents !== payout.finalAmountCents
+          || payout.netPayoutAmountCents !== payout.grossAmountCents!
+            - payout.withholdingTaxCents!
+            - payout.nhiSupplementaryTaxCents!
+            - payout.bankFeeCents!
+          || payout.netPayoutAmountCents! <= 0
+        ) {
+          throw new AffiliatePayoutMutationConflict();
+        }
+      }
 
       const commissions = await tx.affiliateCommission.findMany({
         where: {

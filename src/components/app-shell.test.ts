@@ -26,6 +26,7 @@ vi.mock("react-dom", async (importOriginal) => {
 
 import { navigationForRole } from "./app-shell";
 import { AppShell } from "./app-shell";
+import { FEATURE_PRESETS } from "@/lib/vendor-feature-toggles";
 
 function linksFor(role: string | null, isPlatformAdmin = false) {
   return navigationForRole(role, isPlatformAdmin).flatMap((group) => group.items.map((item) => item.href));
@@ -79,11 +80,24 @@ describe("AppShell role navigation", () => {
     const links = linksFor(role);
 
     expect(links).toContain("/forms");
+    expect(links).toContain("/consultations");
     expect(links).toContain("/onboarding");
     expect(links).toContain("/settings/brand");
     expect(links).toContain("/settings/commissions");
     expect(links).toContain("/settings/automations");
     expect(links).not.toContain("/admin/billing/dashboard");
+  });
+
+  it("filters disabled module navigation while always keeping feature settings reachable", () => {
+    const links = navigationForRole("owner", false, FEATURE_PRESETS.live_course).flatMap((group) => group.items.map((item) => item.href));
+    expect(links).toContain("/lives");
+    expect(links).toContain("/forms");
+    expect(links).toContain("/settings/features");
+    expect(links).not.toContain("/affiliates");
+    expect(links).not.toContain("/affiliates/commissions");
+    expect(links).not.toContain("/billing/payouts");
+    expect(links).not.toContain("/billing/course-payouts");
+    expect(links).not.toContain("/consultations");
   });
 
   it("hides every finance route from a non-finance member", () => {
@@ -121,6 +135,7 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('aria-label="主要導覽"');
     expect(html).toContain('aria-label="行動版主要導覽"');
     expect(html).toContain('href="/forms"');
+    expect(html).toContain('href="/consultations"');
     expect(html).toContain('href="/onboarding"');
     expect(html).toContain('href="/support-cases"');
     expect(html).toContain('href="/billing/invoices"');

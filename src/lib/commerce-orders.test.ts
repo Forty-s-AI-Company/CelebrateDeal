@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: vi.fn(() => "opaque-automation-customer") }));
+
 vi.mock("@/lib/commerce-order-pii", () => ({
   protectCommerceOrderPii: vi.fn(() => ({
     buyerEncrypted: "sealed-buyer",

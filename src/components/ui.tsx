@@ -185,6 +185,7 @@ export function SelectField({
   defaultValue,
   value,
   onChange,
+  required,
   children,
 }: {
   label: string;
@@ -192,6 +193,7 @@ export function SelectField({
   defaultValue?: string | null;
   value?: string;
   onChange?: React.ChangeEventHandler<HTMLSelectElement>;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -200,6 +202,7 @@ export function SelectField({
       <select
         className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
+        required={required}
         onChange={onChange}
         {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}
       >

@@ -23,6 +23,9 @@ import {
   protectCustomCheckoutAnswers,
   validateCustomCheckoutAnswers,
 } from "@/lib/commerce-custom-checkout";
+import { createInvoiceCheckoutIdentityHash, invoiceBuyerDisplay, protectInvoiceRequest } from "@/lib/taiwan-invoice-request";
+import { automationCustomerKeyHash } from "@/lib/automation-workflow";
+import type { CheckoutInvoiceSelection } from "@/lib/taiwan-invoice-validator";
 
 /** The deliberately small transaction surface used by the commerce order domain. */
 export type CommerceOrdersTransaction = Pick<
@@ -201,6 +204,8 @@ export type CreateCommerceOrderForCheckoutInput = {
   shipping: CommerceOrderShippingAddress | null;
   /** Validated again against the product row inside this transaction. Never add to events or payment metadata. */
   customCheckoutAnswers?: unknown;
+  /** Server-validated electronic invoice choice; encrypted before persistence. */
+  invoiceSelection?: CheckoutInvoiceSelection;
   now?: Date;
 };
 
@@ -294,21 +299,31 @@ export async function createCommerceOrderForCheckout(
     vendorId: input.vendorId,
     orderId,
   });
+  // Legacy/internal callers may omit invoice collection. The public checkout
+  // route always supplies this field; old records remain safely non-issuable.
+  const invoiceSelection = input.invoiceSelection;
+  const invoiceRequestEncryptedEnvelope = invoiceSelection
+    ? protectInvoiceRequest(invoiceSelection, input.vendorId, orderId)
+    : null;
   // Recompute from the transaction's product row so the persisted identity
   // cannot be rebound to different custom answers by an idempotency retry.
-  const checkoutIdentityHash = createCustomCheckoutIdentityHash({
+  const baseCheckoutIdentityHash = createCustomCheckoutIdentityHash({
     vendorId: input.vendorId,
     productId: product.id,
     basePiiHash: pii.checkoutIdentityHash,
     definitions: customCheckoutFields,
     answers: customCheckoutAnswers,
   });
+  const checkoutIdentityHash = invoiceSelection
+    ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
+    : baseCheckoutIdentityHash;
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
     checkoutIdentityHash,
+    automationCustomerKeyHash: automationCustomerKeyHash(input.vendorId, input.buyer.email),
     primaryPaymentTransactionId: input.paymentTransactionId,
     status: "pending_payment" as const,
     currency: input.currency,
@@ -322,6 +337,9 @@ export async function createCommerceOrderForCheckout(
     buyerMaskedPhone: pii.buyerPhoneMasked,
     shippingEncryptedEnvelope: pii.shippingEncrypted,
     shippingMaskedSummary: pii.shippingSummaryMasked,
+    invoiceType: invoiceSelection?.type ?? null,
+    invoiceBuyerDisplay: invoiceSelection ? invoiceBuyerDisplay(invoiceSelection, input.buyer.email) : null,
+    invoiceRequestEncryptedEnvelope,
     createdAt: now,
   };
   await tx.commerceOrder.create({ data: orderData });

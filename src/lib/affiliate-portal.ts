@@ -24,6 +24,7 @@ export async function getAffiliatePortalDashboard(
       name: true,
       code: true,
       bankAccountEncrypted: true,
+      taxIdentityEncrypted: true,
     },
   });
   if (!affiliate) return null;
@@ -68,6 +69,13 @@ export async function getAffiliatePortalDashboard(
         id: true,
         monthKey: true,
         finalAmountCents: true,
+        grossAmountCents: true,
+        withholdingTaxCents: true,
+        nhiSupplementaryTaxCents: true,
+        bankFeeCents: true,
+        netPayoutAmountCents: true,
+        taxCategory: true,
+        signedAt: true,
         status: true,
         requestedAt: true,
         paidAt: true,

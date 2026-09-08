@@ -4,6 +4,7 @@ import { FormBuilderClient, type FormBuilderValues, type FormPromoVideoOption } 
 import { Card } from "@/components/ui";
 import { defaultRegistrationFormBuilderFields } from "@/lib/registration-form-builder";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { parseFunnelPageBlocks } from "@/lib/funnel-blocks-schema";
 
 const NEW_FORM_VALUES: FormBuilderValues = {
   name: "",
@@ -66,11 +67,13 @@ export function FormBuilder({
   error,
   draftScope,
   promoVideos = [],
+  enableFunnelWizard = false,
 }: {
   form?: RegistrationForm;
   error?: string;
   draftScope: string;
   promoVideos?: FormPromoVideoOption[];
+  enableFunnelWizard?: boolean;
 }) {
   const defaultFields = defaultRegistrationFormBuilderFields();
   const parsedFields = parseRegistrationFormFields(form?.fields ?? defaultFields);
@@ -86,6 +89,8 @@ export function FormBuilder({
         promoVideos={promoVideos}
         initialUpdatedAt={form?.updatedAt.toISOString() ?? null}
         csrfField={<CsrfField />}
+        enableFunnelWizard={enableFunnelWizard}
+        initialFunnel={form ? { pageBlocks: parseFunnelPageBlocks(form.pageBlocks), templateId: form.templateId, archetype: form.archetype } : null}
       />
     </Card>
   );

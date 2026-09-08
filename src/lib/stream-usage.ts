@@ -40,6 +40,7 @@ type ExistingEntry = {
   policyVersion: number;
   attributionMode: string;
   viewerKeyHash?: string | null;
+  customerKeyHash?: string | null;
 };
 
 function monthKey(date: Date) {
@@ -56,6 +57,12 @@ function normalizeSourcePageSlug(value: string | null | undefined) {
 function normalizeViewerKeyHash(value: string | null | undefined) {
   if (value == null) return null;
   if (!/^[a-f0-9]{64}$/u.test(value)) throw new StreamUsageValidationError("invalid_event");
+  return value;
+}
+
+function normalizeCustomerKeyHash(value: string | null | undefined) {
+  if (value == null) return null;
+  if (!/^[A-Za-z0-9_-]{40,128}$/u.test(value)) throw new StreamUsageValidationError("invalid_event");
   return value;
 }
 
@@ -267,6 +274,7 @@ export async function recordStreamUsageLedgerEntry(input: {
   eventId: string;
   watchSeconds: number;
   viewerKeyHash?: string | null;
+  customerKeyHash?: string | null;
   capturedAt?: Date;
 }) {
   assertUsageInput(input.eventId, input.watchSeconds);
@@ -336,6 +344,7 @@ export async function recordStreamUsageLedgerEntry(input: {
     policyVersion: policy.version,
     attributionMode: policy.usageAttributionMode,
     viewerKeyHash: normalizeViewerKeyHash(input.viewerKeyHash),
+    ...(input.customerKeyHash ? { customerKeyHash: normalizeCustomerKeyHash(input.customerKeyHash) } : {}),
   } as const;
 
   try {

@@ -9,19 +9,30 @@ const mocks = vi.hoisted(() => ({
   liveChatMessageCount: vi.fn(),
   interactionEventCount: vi.fn(),
   paymentTransactionCount: vi.fn(),
+  paymentTransactionAggregate: vi.fn(),
   emailDeliveryGroupBy: vi.fn(),
+  interactionRunFindMany: vi.fn(),
+  interactionResponseGroupBy: vi.fn(),
+  interactionResponseFindMany: vi.fn(),
+  liveQuestionGroupBy: vi.fn(),
+  liveQuestionFindMany: vi.fn(),
+  queryRaw: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    $queryRaw: mocks.queryRaw,
     live: { findFirst: mocks.liveFindFirst },
     analyticsEvent: { findMany: mocks.analyticsFindMany },
     formSubmission: { count: mocks.formSubmissionCount },
     liveChatMessage: { count: mocks.liveChatMessageCount },
     interactionEvent: { count: mocks.interactionEventCount },
-    paymentTransaction: { count: mocks.paymentTransactionCount },
+    paymentTransaction: { count: mocks.paymentTransactionCount, aggregate: mocks.paymentTransactionAggregate },
     emailDelivery: { groupBy: mocks.emailDeliveryGroupBy },
+    liveInteractionRun: { findMany: mocks.interactionRunFindMany },
+    liveInteractionResponse: { groupBy: mocks.interactionResponseGroupBy, findMany: mocks.interactionResponseFindMany },
+    liveQuestion: { groupBy: mocks.liveQuestionGroupBy, findMany: mocks.liveQuestionFindMany },
   }),
 }));
 
@@ -30,6 +41,7 @@ import LiveAnalyticsPage from "./page";
 const live = {
   id: "live-current",
   title: "夏季直播",
+  endedAt: new Date("2026-07-30T13:00:00.000Z"),
   interactionScript: { id: "script-current", vendorId: "vendor-current", status: "published" },
   affiliateClicks: [{
     id: "affiliate-click-1",
@@ -61,6 +73,9 @@ beforeEach(() => {
   mocks.liveChatMessageCount.mockResolvedValue(3);
   mocks.interactionEventCount.mockResolvedValue(7);
   mocks.paymentTransactionCount.mockResolvedValue(2);
+  mocks.paymentTransactionAggregate
+    .mockResolvedValueOnce({ _count: { _all: 2 }, _sum: { grossAmountCents: 120_000 } })
+    .mockResolvedValueOnce({ _count: { _all: 1 }, _sum: { grossAmountCents: 30_000 } });
   mocks.emailDeliveryGroupBy.mockResolvedValue([
     { status: "sent", _count: { _all: 12 } },
     { status: "failed", _count: { _all: 1 } },
@@ -68,7 +83,15 @@ beforeEach(() => {
   ]);
   mocks.analyticsFindMany
     .mockResolvedValueOnce(verifiedAnalyticsSessions)
-    .mockResolvedValueOnce(recentEvents);
+    .mockResolvedValueOnce(recentEvents)
+    .mockResolvedValueOnce([{ visitorId: "live-viewer" }])
+    .mockResolvedValueOnce([{ visitorId: "replay-viewer" }]);
+  mocks.interactionRunFindMany.mockResolvedValue([]);
+  mocks.interactionResponseGroupBy.mockResolvedValue([]);
+  mocks.interactionResponseFindMany.mockResolvedValue([]);
+  mocks.liveQuestionGroupBy.mockResolvedValue([]);
+  mocks.liveQuestionFindMany.mockResolvedValue([]);
+  mocks.queryRaw.mockResolvedValue([]);
 });
 
 describe("/lives/[id]/analytics route", () => {
@@ -85,8 +108,8 @@ describe("/lives/[id]/analytics route", () => {
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     });
-    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id } });
-    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED" } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id, form: { vendorId: "vendor-current" } } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: "vendor-current" } } });
     expect(html).toMatch(/播放 session<\/p><p[^>]*>40<\/p>/);
     expect(html).toMatch(/商品點擊<\/p><p[^>]*>8<\/p>/);
     expect(html).toMatch(/CTA 點擊<\/p><p[^>]*>6<\/p>/);
@@ -150,14 +173,15 @@ describe("/lives/[id]/analytics route", () => {
     });
     expect(html).toContain("visitor-1");
     expect(html).toContain("visitor-30");
-    expect(html).toContain("summer-partner");
   });
 
   it("shows an empty state when there are no recent events", async () => {
     mocks.analyticsFindMany
       .mockReset()
       .mockResolvedValueOnce(verifiedAnalyticsSessions)
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ visitorId: "live-viewer" }])
+      .mockResolvedValueOnce([{ visitorId: "replay-viewer" }]);
 
     const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
 
@@ -166,11 +190,58 @@ describe("/lives/[id]/analytics route", () => {
   });
 
   it("shows an empty state when there are no affiliate sources", async () => {
-    mocks.liveFindFirst.mockResolvedValue({ ...live, affiliateClicks: [] });
+    const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
+
+    expect(html).toContain("目前沒有推廣夥伴歸因資料。");
+    expect(html).not.toContain("summer-partner");
+  });
+
+  it("renders tenant-scoped interaction aggregates, masked Q&A, and live/replay revenue", async () => {
+    mocks.interactionRunFindMany.mockResolvedValue([
+      { id: "poll-1", eventType: "poll", title: "投票", configuration: { question: "最喜歡哪款？", options: [{ id: "a", label: "A 款" }, { id: "b", label: "B 款" }] }, winnerResponseId: null, startsAt: new Date() },
+      { id: "draw-1", eventType: "lucky_draw", title: "週年抽獎", configuration: { prizeName: "限定禮盒" }, winnerResponseId: "winner-1", startsAt: new Date() },
+      { id: "voucher-1", eventType: "flash_voucher", title: "限時紅包", configuration: {}, winnerResponseId: null, startsAt: new Date() },
+    ]);
+    mocks.interactionResponseGroupBy
+      .mockResolvedValueOnce([
+        { runId: "poll-1", value: "a", _count: { _all: 3 } },
+        { runId: "poll-1", value: "b", _count: { _all: 1 } },
+        { runId: "draw-1", value: "週年快樂", _count: { _all: 8 } },
+        { runId: "voucher-1", value: "claim", _count: { _all: 5 } },
+      ])
+      .mockResolvedValueOnce([{ runId: "voucher-1", eventType: "flash_voucher", _count: { _all: 2 } }]);
+    mocks.interactionResponseFindMany.mockResolvedValue([{ id: "winner-1", displayName: "張小芬", winnerClaimedAt: null }]);
+    mocks.liveQuestionGroupBy.mockResolvedValue([
+      { status: "answered", _count: { _all: 2 } },
+      { status: "hidden", _count: { _all: 1 } },
+      { status: "spotlight", _count: { _all: 1 } },
+    ]);
+    mocks.liveQuestionFindMany.mockResolvedValue([{ id: "q-1", body: "課程有回放嗎？", displayName: "陳小明", status: "answered" }]);
+    mocks.queryRaw.mockResolvedValue([{ attributionKey: "affiliate-1", name: "夏季夥伴", clicks: 10, registrations: 6, confirmedOrders: 2, pendingOrders: 1, confirmedGrossCents: 50_000 }]);
 
     const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
 
-    expect(html).toContain("目前沒有聯盟來源資料。");
-    expect(html).not.toContain("summer-partner");
+    expect(mocks.interactionResponseGroupBy).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      by: ["runId", "value"],
+      where: expect.objectContaining({ vendorId: "vendor-current", liveId: live.id }),
+    }));
+    expect(mocks.liveQuestionGroupBy).toHaveBeenCalledWith({
+      by: ["status"],
+      where: { vendorId: "vendor-current", liveId: live.id },
+      _count: { _all: true },
+    });
+    expect(html).toContain("最喜歡哪款？");
+    expect(html).toContain("3 票 · 75%");
+    expect(html).toContain("限定禮盒");
+    expect(html).toContain("張*芬");
+    expect(html).not.toContain("張小芬");
+    expect(html).toContain("領取到轉換 CVR：40%");
+    expect(html).toContain("陳*明");
+    expect(html).not.toContain("陳小明");
+    expect(html).toContain("NT$1,200");
+    expect(html).toContain("NT$300");
+    expect(html).toContain("夏季夥伴");
+    expect(html).toContain("20%");
+    expect(html).toContain("2 Confirmed · 1 Pending");
   });
 });

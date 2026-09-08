@@ -132,7 +132,21 @@ export default async function AffiliateCommissionsPage({
         <div className="mt-6"><EmptyState title="尚無分潤月結" description="佣金進入鎖帳後，系統會依推廣者與月份建立可追蹤的 payout。" /></div>
       ) : (
           <Card className="mt-6">
-            <h2 className="text-lg font-semibold text-slate-950">分潤月結</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-950">分潤月結</h2>
+              <div className="flex flex-wrap gap-2">
+                <form action="/api/affiliates/payouts/export?type=bank" method="post">
+                  <CsrfField />
+                  <input type="hidden" name="type" value="bank" />
+                  <button type="submit" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">匯出銀行 CSV</button>
+                </form>
+                <form action="/api/affiliates/payouts/export?type=tax" method="post">
+                  <CsrfField />
+                  <input type="hidden" name="type" value="tax" />
+                  <button type="submit" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">匯出扣繳 CSV</button>
+                </form>
+              </div>
+            </div>
             <div className="mt-4 grid gap-3">
               {payouts.map((payout) => (
                 <div key={payout.id} className="grid gap-3 rounded-lg border border-border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
@@ -142,6 +156,9 @@ export default async function AffiliateCommissionsPage({
                     <p className="mt-1 text-xs text-slate-500">出款 reference：{payout.outcomeReference ?? "未記錄"}</p>
                     <p className="mt-1 text-xs text-slate-500">付款備註／作廢原因：{payout.outcomeReason ?? "未記錄"}</p>
                     <p className="mt-1 text-xs font-medium text-slate-600">Portal 提領申請：{payout.requestedAt ? formatDateTime(payout.requestedAt) : "尚未送出"}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-600">勞報單簽署：{payout.signedAt ? `已簽署 · ${formatDateTime(payout.signedAt)}` : "未簽署"}</p>
+                    <p className="mt-1 text-xs text-slate-500">給付總額 {formatCurrency(payout.grossAmountCents ?? payout.finalAmountCents)} · 扣繳稅額 {formatCurrency(payout.withholdingTaxCents ?? 0)} · 健保費 {formatCurrency(payout.nhiSupplementaryTaxCents ?? 0)} · 銀行費 {formatCurrency(payout.bankFeeCents ?? 0)}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-700">實付金額：{formatCurrency(payout.netPayoutAmountCents ?? payout.finalAmountCents)}</p>
                     <Link href={`/affiliates/commissions/${encodeURIComponent(payout.id)}`} className="mt-2 inline-flex text-sm font-semibold text-primary hover:underline">
                       查看 ledger 與 payout 明細
                     </Link>

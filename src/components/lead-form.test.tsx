@@ -84,4 +84,12 @@ describe("LeadForm", () => {
     expect(ordinary).not.toHaveProperty("shareCode");
     expect(shared).toHaveProperty("shareCode", `tls1.${"a".repeat(43)}`);
   });
+
+  it("includes only a bounded structured UTM snapshot when present", () => {
+    const result = buildFormSubmissionRequestBody({
+      formId: "form-1", payload: { name: "Lead" }, referralCode: null, shareCode: "",
+      utm: { source: "facebook", medium: "paid", campaign: "launch" },
+    });
+    expect(result).toMatchObject({ utm: { source: "facebook", medium: "paid", campaign: "launch" } });
+  });
 });

@@ -16,7 +16,7 @@ vi.mock("@/lib/line-notification", () => ({
   stableLineIdempotencyKey: mocks.stableLineIdempotencyKey,
 }));
 
-import { automationConditionMatches, dispatchAutomationEvent, dispatchPaymentPaidAutomationByOrder, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -38,6 +38,7 @@ describe("smart automation workflow engine", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("validates condition/action contracts and evaluates trigger-specific thresholds", () => {
+    expect(AUTOMATION_TRIGGERS).toEqual(expect.arrayContaining(["form_registered", "consultation_booked", "consultation_no_show", "form_no_show", "webinar_attended_duration_gte"]));
     expect(parseAutomationRule({ id: "rule-1", condition: { type: "order_amount_gte", amountCents: 10_000 }, actions: [] })).toBeNull();
     expect(parseAutomationRule({
       id: "rule-1",
@@ -51,6 +52,19 @@ describe("smart automation workflow engine", () => {
     })).toBeNull();
     expect(automationConditionMatches({ type: "order_amount_gte", amountCents: 10_000 }, event)).toBe(true);
     expect(automationConditionMatches({ type: "watch_seconds_gte", seconds: 60 }, event)).toBe(false);
+  });
+
+  it("materializes all four recipes and evaluates dry-runs without side effects", () => {
+    expect(AUTOMATION_RECIPES).toHaveLength(4);
+    expect(materializeAutomationRecipe("high_intent_chaser", "product-1")).toMatchObject({ trigger: "webinar_attended_duration_gte" });
+    expect(materializeAutomationRecipe("vip_auto_tiering", "product-1")).toMatchObject({ condition: { amountCents: 3_000_000 } });
+    expect(materializeAutomationRecipe("consultation_confirmer")).toMatchObject({ trigger: "consultation_booked" });
+    expect(materializeAutomationRecipe("no_show_reactivation")).toMatchObject({ trigger: "form_no_show" });
+    expect(dryRunAutomationRule({ condition: { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 }, actions: [{ type: "add_customer_tag", tag: "高意向" }] }, { ...event, trigger: "webinar_attended_duration_gte", watchSecondsTotal: 1_800, hasPurchased: false })).toMatchObject({ status: "would_dispatch", conditionMatched: true });
+    expect(maskAutomationTarget("customer@example.com")).toBe("c***@example.com");
+    expect(maskAutomationTarget("abcdefgh12345678")).toBe("abcd…5678");
+    expect(automationCustomerKeyHash("vendor-1", " Buyer@Example.com ")).toBe(automationCustomerKeyHash("vendor-1", "buyer@example.com"));
+    expect(automationCustomerKeyHash("vendor-2", "buyer@example.com")).not.toBe(automationCustomerKeyHash("vendor-1", "buyer@example.com"));
   });
 
   it("runs tag, voucher and LINE actions once and keeps bearer values out of logs", async () => {
@@ -80,6 +94,34 @@ describe("smart automation workflow engine", () => {
     const completion = update.mock.calls.at(-1)?.[0].data;
     expect(completion.status).toBe("completed");
     expect(JSON.stringify(completion)).not.toContain("token=");
+  });
+
+  it("queues an encrypted email action without writing recipient PII to execution logs", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      automationRule: { findMany: vi.fn().mockResolvedValue([{ id: "rule-email", condition: { type: "always" }, actions: [{ type: "send_email_notification", template: "webinar_replay" }] }]) },
+      automationExecutionLog: { create: vi.fn().mockResolvedValue({ id: "log-email" }), update },
+      emailDelivery: { create: vi.fn().mockResolvedValue({ id: "email-1" }) },
+      customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    const emailEvent = { ...event, trigger: "form_no_show" as const, recipientEmail: "buyer@example.test", webinarUrl: "https://app.example.test/replay", consultationUrl: "https://app.example.test/book" };
+    await expect(dispatchAutomationEvent(db as never, emailEvent)).resolves.toEqual([{ ruleId: "rule-email", status: "completed" }]);
+    const delivery = db.emailDelivery.create.mock.calls[0]?.[0].data;
+    expect(delivery.recipientMaskedEmail).toBe("b***@example.test");
+    expect(JSON.stringify(delivery)).not.toContain("buyer@example.test");
+    expect(JSON.stringify(update.mock.calls.at(-1)?.[0].data)).not.toContain("buyer@example.test");
+  });
+
+  it("dispatches no-show only for verified registrants without attendance evidence", async () => {
+    const db = {
+      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "launch" }) },
+      formSubmission: { findMany: vi.fn().mockResolvedValueOnce([{ id: "registration-1", email: "absent@example.test" }, { id: "registration-2", email: "attended@example.test" }]) },
+      automationExecutionLog: { findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "watch-log" }) },
+      automationRule: { findMany: vi.fn().mockResolvedValue([]) },
+      commerceOrder: {}, emailDelivery: {}, customerTagAssignment: {}, automationVoucherGrant: {}, product: {}, lineOfficialAccount: {}, lineUserIdentity: {}, lineDelivery: {},
+    };
+    await expect(dispatchFormNoShowAutomationsForLive(db as never, { vendorId: "vendor-1", liveId: "live-1" })).resolves.toEqual({ dispatched: 1 });
+    expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", trigger: "form_no_show" }) }));
   });
 
   it("uses the execution log unique key as a strict replay guard", async () => {

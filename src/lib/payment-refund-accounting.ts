@@ -142,10 +142,13 @@ async function applyRefundToAffiliateCommission(
         },
       });
       if (payout?.status === "pending" && payout.payoutItemId === null) {
+        if (payout.requestedAt || payout.signedAt) {
+          throw new Error("已簽署的聯盟出款快照不可因退款覆寫。");
+        }
         const finalAmountCents = lockedBalanceCents + payout.adjustmentAmountCents;
         if (finalAmountCents < 0) throw new Error("退款後聯盟出款金額不可小於零。");
         const updatedPayout = await db.affiliatePayout.updateMany({
-          where: { id: payout.id, status: "pending", payoutItemId: null },
+          where: { id: payout.id, vendorId: input.vendorId, status: "pending", payoutItemId: null, requestedAt: null, signedAt: null },
           data: { commissionAmountCents: lockedBalanceCents, finalAmountCents },
         });
         if (updatedPayout.count !== 1) throw new Error("聯盟出款狀態已被其他交易變更。");

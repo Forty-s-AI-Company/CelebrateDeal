@@ -22,6 +22,7 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import { upsertFormBuilderAction, type FormBuilderActionState } from "./form-actions";
+import { FUNNEL_TEMPLATES } from "@/lib/funnel-templates";
 
 const idleState: FormBuilderActionState = { status: "idle", message: "" };
 const fields = [
@@ -86,6 +87,28 @@ describe("upsertFormBuilderAction", () => {
     });
     expect(mocks.getDb).toHaveBeenCalledTimes(1);
     expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("persists a validated preset while keeping tenant ownership server-controlled", async () => {
+    const data = formData();
+    const template = FUNNEL_TEMPLATES[0]!;
+    data.set("pageBlocks", JSON.stringify(template.pageBlocks));
+    data.set("templateId", template.id);
+    data.set("archetype", template.archetype);
+    await expect(upsertFormBuilderAction(idleState, data)).rejects.toThrow("redirect:/forms");
+    expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      vendorId: "vendor-1", templateId: template.id, archetype: template.archetype, pageBlocks: template.pageBlocks,
+    }) });
+  });
+
+  it("rejects malformed or mismatched preset payloads before persistence", async () => {
+    const data = formData();
+    data.set("pageBlocks", JSON.stringify([{ type: "unknown" }]));
+    data.set("templateId", "high-ticket-masterclass");
+    data.set("archetype", "summit");
+    const result = await upsertFormBuilderAction(idleState, data);
+    expect(result).toMatchObject({ status: "error", fieldErrors: { pageBlocks: expect.any(String), archetype: expect.any(String) } });
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it("scopes edits to the authenticated vendor instead of trusting client ownership", async () => {

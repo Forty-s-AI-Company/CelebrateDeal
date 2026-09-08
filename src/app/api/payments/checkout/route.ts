@@ -63,6 +63,8 @@ import {
   resolveEligibleAutomationVoucherClaim,
   resolveEligibleVoucherClaim,
 } from "@/lib/live-interaction";
+import { parseCheckoutInvoiceSelection } from "@/lib/taiwan-invoice-validator";
+import { createInvoiceCheckoutIdentityHash } from "@/lib/taiwan-invoice-request";
 
 const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
   // Kept only for backward-compatible request parsing. Attribution remains
@@ -558,7 +560,13 @@ export async function POST(request: Request) {
     customCheckout.answers,
   );
   if (!identity.ok) return identity.response;
-  const { pii: checkoutPii, checkoutIdentityHash } = identity;
+  const { pii: checkoutPii, checkoutIdentityHash: baseCheckoutIdentityHash } = identity;
+  const invoiceSelection = parseCheckoutInvoiceSelection(parsed.data.invoice ?? { type: "personal", carrier: "member" });
+  if (!invoiceSelection) return NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 });
+  const hasExplicitInvoiceSelection = parsed.data.invoice !== undefined;
+  const checkoutIdentityHash = hasExplicitInvoiceSelection
+    ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
+    : baseCheckoutIdentityHash;
 
   const existing = await db.paymentTransaction.findUnique({
     where: {
@@ -650,6 +658,7 @@ export async function POST(request: Request) {
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
           customCheckoutAnswers: customCheckout.answers,
+          ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
         await consumeVoucherClaim(tx, voucherClaim, {
           vendorId: parsed.data.vendorId,

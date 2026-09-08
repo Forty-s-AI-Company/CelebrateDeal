@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { dispatchAutomationEvent } from "@/lib/automation-workflow";
+import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 import { getActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -37,13 +36,14 @@ async function verifiedRegistrationSubject(db: ReturnType<typeof getDb>, request
   if (!submissionId || !FORM_SUBMISSION_ID_PATTERN.test(submissionId)) return null;
   const submission = await db.formSubmission.findFirst({
     where: { id: submissionId, liveId, verificationStatus: "VERIFIED", form: { vendorId } },
-    select: { id: true },
+    select: { id: true, email: true },
   });
   if (!submission) return null;
   return {
     subjectType: "buyer_registration" as const,
     subjectId: submission.id,
-    subjectKeyHash: createHash("sha256").update(`automation-registration:v1:${vendorId}:${submission.id}`).digest("hex"),
+    subjectKeyHash: automationCustomerKeyHash(vendorId, submission.email),
+    recipientEmail: submission.email,
   };
 }
 
@@ -92,26 +92,46 @@ export async function POST(request: Request) {
     });
     if (!admitted) return admissionRequiredResponse();
 
-    const result = await recordStreamUsageLedgerEntry({ ...parsed.data, viewerKeyHash: admitted.tokenHash });
-    const total = await db.streamUsageLedgerEntry.aggregate({
-      where: { vendorId: parsed.data.vendorId, liveId: parsed.data.liveId, viewerKeyHash: admitted.tokenHash },
-      _sum: { watchSeconds: true },
-    });
+    const registration = await verifiedRegistrationSubject(db, request, parsed.data.vendorId, parsed.data.liveId);
+    const result = await recordStreamUsageLedgerEntry({ ...parsed.data, viewerKeyHash: admitted.tokenHash, ...(registration ? { customerKeyHash: registration.subjectKeyHash } : {}) });
+    const [total, liveDuration] = await Promise.all([
+      db.streamUsageLedgerEntry.aggregate({
+        where: { vendorId: parsed.data.vendorId, liveId: parsed.data.liveId, viewerKeyHash: admitted.tokenHash },
+        _sum: { watchSeconds: true },
+      }),
+      db.live.findFirst({
+        where: { id: parsed.data.liveId, vendorId: parsed.data.vendorId },
+        select: { video: { select: { durationSec: true } } },
+      }),
+    ]);
+    const watchSecondsTotal = total._sum.watchSeconds ?? 0;
+    const durationSeconds = liveDuration?.video?.durationSec ?? 0;
+    const watchPercent = durationSeconds > 0 ? Math.min(100, Math.round(watchSecondsTotal / durationSeconds * 100)) : null;
     try {
-      const registration = await verifiedRegistrationSubject(db, request, parsed.data.vendorId, parsed.data.liveId);
-      await dispatchAutomationEvent(db, {
+      const hasPurchased = registration ? await db.commerceOrder.count({ where: {
+        vendorId: parsed.data.vendorId,
+        automationCustomerKeyHash: registration.subjectKeyHash,
+        status: "paid",
+      } }) > 0 : undefined;
+      const automationEvent = {
         vendorId: parsed.data.vendorId,
         eventId: parsed.data.eventId,
-        trigger: "viewer_watch_progress",
         subjectType: registration?.subjectType ?? "viewer_session",
         subjectId: registration?.subjectId ?? admitted.id,
         subjectKeyHash: registration?.subjectKeyHash ?? admitted.tokenHash,
-        watchSecondsTotal: total._sum.watchSeconds ?? 0,
-      });
+        watchSecondsTotal,
+        hasPurchased,
+        recipientEmail: registration?.recipientEmail,
+      } as const;
+      await dispatchAutomationEvent(db, { ...automationEvent, trigger: "viewer_watch_progress" });
+      await dispatchAutomationEvent(db, { ...automationEvent, trigger: "webinar_attended_duration_gte" });
     } catch {
       // Usage is already committed; automation failures are isolated from quota accounting.
     }
-    return NextResponse.json({ ok: true, duplicate: result.duplicate });
+    return NextResponse.json(
+      { ok: true, duplicate: result.duplicate, watchSecondsTotal, watchPercent },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (error) {
     if (error instanceof StreamUsageValidationError) return errorResponse(error);
     return NextResponse.json({ error: "Unable to record usage" }, { status: 500 });

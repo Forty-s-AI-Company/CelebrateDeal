@@ -29,6 +29,9 @@ function formRecord(overrides: Record<string, unknown> = {}) {
     submitLabel: "送出報名",
     successMessage: "已收到",
     fields: validFields,
+    pageBlocks: null,
+    templateId: null,
+    archetype: null,
     heroImageUrl: "https://cdn.example.test/hero.jpg",
     backgroundImageUrl: "https://cdn.example.test/background.jpg",
     themeColor: "#123456",
@@ -39,7 +42,7 @@ function formRecord(overrides: Record<string, unknown> = {}) {
     seoDescription: "SEO 說明",
     maxVisibleSessions: 0,
     hideExpiredSessions: true,
-    vendor: { name: "測試商家" },
+    vendor: { id: "vendor-1", name: "測試商家" },
     promoVideo: {
       vendorId: "vendor-1",
       title: "預告",
@@ -70,7 +73,7 @@ describe("public registration form DAL", () => {
     const result = await loadPublicRegistrationForm("summer", new Date("2026-08-15T00:00:00Z"));
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { slug: "summer", isActive: true },
-      select: expect.objectContaining({ vendor: { select: { name: true } } }),
+      select: expect.objectContaining({ pageBlocks: true, templateId: true, archetype: true, vendor: { select: { id: true, name: true } } }),
     }));
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {
@@ -125,6 +128,18 @@ describe("public registration form DAL", () => {
     expect(result?.heroImageUrl).toBeNull();
     expect(result?.backgroundImageUrl).toBeNull();
     expect(result?.promoVideo).toBeNull();
+  });
+
+  it("preserves null for legacy pages and fails closed for invalid modern blocks", async () => {
+    await expect(loadPublicRegistrationForm("summer")).resolves.toMatchObject({ pageBlocks: null });
+    mocks.findFirst.mockResolvedValue(formRecord({ pageBlocks: [{ type: "unknown" }] }));
+    await expect(loadPublicRegistrationForm("summer")).resolves.toMatchObject({ pageBlocks: [] });
+  });
+
+  it("rejects a mismatched vendor relation before loading sessions", async () => {
+    mocks.findFirst.mockResolvedValue(formRecord({ vendor: { id: "vendor-other", name: "其他商家" } }));
+    await expect(loadPublicRegistrationForm("summer")).resolves.toBeNull();
+    expect(mocks.findMany).not.toHaveBeenCalled();
   });
 
   it("returns no form and does not query sessions when the slug is missing", async () => {

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import {
+  PaymentQueryProviderError,
   type CheckoutSessionInput,
   type CheckoutSessionResult,
   type PaymentProviderAdapter,
@@ -25,15 +26,22 @@ const ECPAY_URLS = {
   },
 } as const;
 
+const ECPAY_CUSTOM_FIELD2_MAX_LENGTH = 50;
+const ECPAY_CUSTOM_FIELD2_SEPARATOR = "|";
+
 export function getEcpayConfig() {
-  const isProduction = process.env.NODE_ENV === "production" && process.env.ECPAY_ENV === "production";
-  const merchantId = process.env.ECPAY_MERCHANT_ID?.trim() || DEFAULT_ECPAY_MERCHANT_ID;
-  const hashKey = process.env.ECPAY_HASH_KEY?.trim() || DEFAULT_ECPAY_HASH_KEY;
-  const hashIv = process.env.ECPAY_HASH_IV?.trim() || DEFAULT_ECPAY_HASH_IV;
+  // Production must never silently fall back to ECPay's public sandbox keys.
+  // Treat an explicit production target as production too, so a mistakenly
+  // configured local process cannot send a real checkout with test material.
+  const isProduction = process.env.NODE_ENV === "production" || process.env.ECPAY_ENV?.trim() === "production";
+  const merchantId = process.env.ECPAY_MERCHANT_ID?.trim() || (isProduction ? "" : DEFAULT_ECPAY_MERCHANT_ID);
+  const hashKey = process.env.ECPAY_HASH_KEY?.trim() || (isProduction ? "" : DEFAULT_ECPAY_HASH_KEY);
+  const hashIv = process.env.ECPAY_HASH_IV?.trim() || (isProduction ? "" : DEFAULT_ECPAY_HASH_IV);
   const env = isProduction ? "production" : "sandbox";
   const urls = ECPAY_URLS[env];
+  const configured = Boolean(merchantId && hashKey && hashIv);
 
-  return { merchantId, hashKey, hashIv, env, urls };
+  return { merchantId, hashKey, hashIv, env, urls, configured };
 }
 
 /**
@@ -93,6 +101,152 @@ function parseEcpayBody(rawBody: string): Record<string, string> {
   }
 }
 
+function safeMacEqual(incomingMac: string, expectedMac: string) {
+  const left = Buffer.from(incomingMac);
+  const right = Buffer.from(expectedMac);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/**
+ * ECPay permits at most 20 alphanumeric characters for MerchantTradeNo.
+ * The provider reference is deliberately derived from the immutable internal
+ * transaction ID rather than a truncation of the human-facing order number.
+ */
+function ecpayMerchantTradeNo(transactionId: string) {
+  return createHash("sha256").update(transactionId).digest("hex").slice(0, 20).toUpperCase();
+}
+
+type EcpayCustomField2Identity = {
+  transactionId: string;
+  orderNumber: string;
+};
+
+/**
+ * CustomField2 is CheckMacValue-protected and has a 50-character limit. The
+ * delimiter format keeps both server identities reversible (typical current
+ * values are 25 + 1 + 24 characters) without overloading MerchantTradeNo.
+ */
+function encodeEcpayCustomField2(transactionId: string, orderNumber: string) {
+  if (
+    !transactionId
+    || !orderNumber
+    || transactionId !== transactionId.trim()
+    || orderNumber !== orderNumber.trim()
+    || transactionId.includes(ECPAY_CUSTOM_FIELD2_SEPARATOR)
+    || orderNumber.includes(ECPAY_CUSTOM_FIELD2_SEPARATOR)
+  ) {
+    throw new Error("ECPay payment provider request is invalid.");
+  }
+  const value = `${transactionId}${ECPAY_CUSTOM_FIELD2_SEPARATOR}${orderNumber}`;
+  if (value.length > ECPAY_CUSTOM_FIELD2_MAX_LENGTH) {
+    throw new Error("ECPay payment provider request is invalid.");
+  }
+  return value;
+}
+
+function decodeEcpayCustomField2(value: string): EcpayCustomField2Identity | undefined {
+  if (!value || value.length > ECPAY_CUSTOM_FIELD2_MAX_LENGTH) return undefined;
+  const separatorIndex = value.indexOf(ECPAY_CUSTOM_FIELD2_SEPARATOR);
+  if (separatorIndex <= 0 || separatorIndex !== value.lastIndexOf(ECPAY_CUSTOM_FIELD2_SEPARATOR)) return undefined;
+  const transactionId = value.slice(0, separatorIndex);
+  const orderNumber = value.slice(separatorIndex + ECPAY_CUSTOM_FIELD2_SEPARATOR.length);
+  if (
+    !transactionId
+    || !orderNumber
+    || transactionId !== transactionId.trim()
+    || orderNumber !== orderNumber.trim()
+  ) return undefined;
+  return { transactionId, orderNumber };
+}
+
+function ecpayQueryAmountCents(value: string | undefined) {
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const wholeTwd = Number(value);
+  if (!Number.isSafeInteger(wholeTwd) || wholeTwd <= 0 || wholeTwd > Number.MAX_SAFE_INTEGER / 100) {
+    return undefined;
+  }
+  return wholeTwd * 100;
+}
+
+type EcpayQueryContext = {
+  merchantId: string;
+  hashKey: string;
+  hashIv: string;
+  merchantTradeNo: string;
+  orderNumber: string;
+  providerTradeNo: string;
+  grossAmountCents: number;
+};
+
+function ecpayQueryContext(input: QueryPaymentInput, config: ReturnType<typeof getEcpayConfig>): EcpayQueryContext {
+  const { transaction } = input;
+  const transactionId = typeof transaction.id === "string" ? transaction.id.trim() : "";
+  const orderNumber = typeof transaction.orderNumber === "string"
+    ? transaction.orderNumber.trim()
+    : transactionId;
+  const providerTradeNo = typeof transaction.providerTradeNo === "string"
+    ? transaction.providerTradeNo.trim()
+    : "";
+
+  // QueryTradeInfo cannot prove cumulative refund state. Never turn a local
+  // refund into a provider-confirmed result with this endpoint.
+  const invalidContract = !config.configured
+    || transaction.providerName !== "ecpay"
+    || !transactionId
+    || transaction.id !== transactionId
+    || !orderNumber
+    || (transaction.orderNumber !== null && transaction.orderNumber !== undefined && transaction.orderNumber !== orderNumber)
+    || !Number.isSafeInteger(transaction.grossAmountCents)
+    || transaction.grossAmountCents <= 0
+    || transaction.grossAmountCents % 100 !== 0
+    || transaction.refundedAmountCents > 0
+    || transaction.status === "refunded"
+    || transaction.status === "partially_refunded";
+  if (invalidContract) {
+    throw new PaymentQueryProviderError(config.configured ? "request_contract" : "authentication");
+  }
+
+  return {
+    merchantId: config.merchantId,
+    hashKey: config.hashKey,
+    hashIv: config.hashIv,
+    merchantTradeNo: ecpayMerchantTradeNo(transactionId),
+    orderNumber,
+    providerTradeNo,
+    grossAmountCents: transaction.grossAmountCents,
+  };
+}
+
+function normalizeEcpayQueryResponse(rawPayload: Record<string, string>, context: EcpayQueryContext): PaymentQueryResult {
+  const responseMac = rawPayload.CheckMacValue?.trim();
+  if (!responseMac || !safeMacEqual(responseMac, computeEcpayCheckMacValue(rawPayload, context.hashKey, context.hashIv))) {
+    throw new PaymentQueryProviderError("authentication");
+  }
+
+  const responseTradeNo = rawPayload.TradeNo?.trim();
+  const grossAmountCents = ecpayQueryAmountCents(rawPayload.TradeAmt);
+  const mismatchedIdentity = rawPayload.MerchantID !== context.merchantId
+    || rawPayload.MerchantTradeNo !== context.merchantTradeNo
+    || !responseTradeNo
+    || (context.providerTradeNo && responseTradeNo !== context.providerTradeNo)
+    || grossAmountCents === undefined
+    || grossAmountCents !== context.grossAmountCents;
+  if (mismatchedIdentity) throw new PaymentQueryProviderError("provider_response");
+
+  if (rawPayload.TradeStatus !== "1") {
+    throw new PaymentQueryProviderError(rawPayload.TradeStatus === "0" ? "pending" : "provider_response");
+  }
+
+  return {
+    providerTradeNo: responseTradeNo,
+    orderNumber: context.orderNumber,
+    grossAmountCents,
+    refundedAmountCents: 0,
+    remainingRefundableAmountCents: grossAmountCents,
+    status: "paid",
+  };
+}
+
 function cents(value: unknown): number {
   const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
   return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
@@ -113,16 +267,18 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
   id: "ecpay",
 
   checkoutReadiness() {
-    const { merchantId, hashKey, hashIv } = getEcpayConfig();
-    if (!merchantId || !hashKey || !hashIv) return "unavailable";
-    return "ready";
+    return getEcpayConfig().configured ? "ready" : "unavailable";
   },
 
   async createCheckoutSession(input: CheckoutSessionInput): Promise<CheckoutSessionResult> {
     const { transaction, product, billingPlan, vendor, appUrl, description } = input;
-    const { merchantId, hashKey, hashIv, urls } = getEcpayConfig();
+    const { merchantId, hashKey, hashIv, urls, configured } = getEcpayConfig();
+    if (!configured) throw new Error("ECPay payment provider is unavailable.");
 
-    const tradeNo = (transaction.orderNumber ?? transaction.id).replace(/[^A-Za-z0-9]/g, "").slice(0, 20);
+    const tradeNo = ecpayMerchantTradeNo(transaction.id);
+    // CustomField2 is included in CheckMacValue and carries the complete
+    // server-owned identity that cannot fit in MerchantTradeNo.
+    const orderIdentity = encodeEcpayCustomField2(transaction.id, transaction.orderNumber ?? transaction.id);
     const now = new Date();
     const tradeDate = formatEcpayDate(now);
     const grossTwd = Math.max(1, Math.round(transaction.grossAmountCents / 100));
@@ -143,7 +299,7 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
       NeedExtraPaidInfo: "Y",
       EncryptType: 1,
       CustomField1: vendor.slug,
-      CustomField2: transaction.id,
+      CustomField2: orderIdentity,
     };
 
     const checkMacValue = computeEcpayCheckMacValue(formPayload, hashKey, hashIv);
@@ -166,15 +322,14 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
   },
 
   async verifySignature(_request: Request, rawBody: string): Promise<boolean> {
-    const { hashKey, hashIv } = getEcpayConfig();
+    const { hashKey, hashIv, configured } = getEcpayConfig();
+    if (!configured) return false;
     const parsed = parseEcpayBody(rawBody);
     const incomingMac = parsed.CheckMacValue?.trim();
     if (!incomingMac) return false;
 
     const expectedMac = computeEcpayCheckMacValue(parsed, hashKey, hashIv);
-    const left = Buffer.from(incomingMac);
-    const right = Buffer.from(expectedMac);
-    return left.length === right.length && timingSafeEqual(left, right);
+    return safeMacEqual(incomingMac, expectedMac);
   },
 
   async normalizePayload(rawBody: string): Promise<ProviderNormalizeResult> {
@@ -184,8 +339,22 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
     const tradeAmt = Number.parseInt(rawPayload.TradeAmt ?? "0", 10);
     const grossAmountCents = Number.isFinite(tradeAmt) ? tradeAmt * 100 : cents(rawPayload.TradeAmt);
 
-    const eventId = rawPayload.TradeNo || rawPayload.MerchantTradeNo || String(Date.now());
-    const orderNumber = rawPayload.MerchantTradeNo || rawPayload.CustomField2 || eventId;
+    const eventReference = rawPayload.TradeNo || rawPayload.MerchantTradeNo || String(Date.now());
+    // The same provider trade can progress from a failed RtnCode to paid. Keep
+    // each status transition distinct while identical status callbacks remain
+    // idempotent under the same event ID.
+    const eventId = `${eventReference}:${rtnCode || "unknown"}`;
+    const customField2 = rawPayload.CustomField2;
+    const customIdentity = customField2 === undefined ? undefined : decodeEcpayCustomField2(customField2);
+    if (
+      customField2 !== undefined
+      && (!customIdentity || rawPayload.MerchantTradeNo !== ecpayMerchantTradeNo(customIdentity.transactionId))
+    ) {
+      throw new Error("Invalid ECPay callback identity.");
+    }
+    // MerchantTradeNo is an opaque 20-character provider reference. Recover
+    // the complete local order identity only from the validated CustomField2.
+    const orderNumber = customIdentity?.orderNumber || rawPayload.MerchantTradeNo || eventId;
     const providerTradeNo = rawPayload.TradeNo || undefined;
     const vendorSlug = rawPayload.CustomField1 || undefined;
 
@@ -221,17 +390,36 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
   },
 
   async queryPayment(input: QueryPaymentInput): Promise<PaymentQueryResult> {
-    const { transaction } = input;
-    const tradeNo = (transaction.orderNumber ?? transaction.id).replace(/[^A-Za-z0-9]/g, "").slice(0, 20);
-    const grossAmountCents = transaction.grossAmountCents;
-
-    return {
-      providerTradeNo: transaction.providerTradeNo ?? tradeNo,
-      orderNumber: transaction.orderNumber ?? transaction.id,
-      grossAmountCents,
-      refundedAmountCents: transaction.refundedAmountCents,
-      remainingRefundableAmountCents: Math.max(0, grossAmountCents - transaction.refundedAmountCents),
-      status: transaction.status === "refunded" ? "refunded" : transaction.status === "partially_refunded" ? "partially_refunded" : "paid",
+    const config = getEcpayConfig();
+    const context = ecpayQueryContext(input, config);
+    const requestPayload: Record<string, string> = {
+      MerchantID: context.merchantId,
+      MerchantTradeNo: context.merchantTradeNo,
+      TimeStamp: String(Math.floor(Date.now() / 1000)),
     };
+    requestPayload.CheckMacValue = computeEcpayCheckMacValue(requestPayload, context.hashKey, context.hashIv);
+
+    let response: Response;
+    try {
+      response = await fetch(config.urls.query, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(requestPayload),
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      // Abort/redirect/network details must not cross the provider boundary.
+      throw new PaymentQueryProviderError("network");
+    }
+    if (!response.ok) throw new PaymentQueryProviderError("provider_response");
+
+    let rawPayload: Record<string, string>;
+    try {
+      rawPayload = parseEcpayBody(await response.text());
+    } catch {
+      throw new PaymentQueryProviderError("provider_response");
+    }
+    return normalizeEcpayQueryResponse(rawPayload, context);
   },
 };

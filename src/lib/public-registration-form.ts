@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { isExistingLiveVideoReady } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+import { FunnelPageBlocksSchema, type FunnelPageBlocks } from "@/lib/funnel-blocks-schema";
 
 const PUBLIC_REGISTRATION_FORM_SELECT = {
   id: true,
@@ -15,6 +16,9 @@ const PUBLIC_REGISTRATION_FORM_SELECT = {
   submitLabel: true,
   successMessage: true,
   fields: true,
+  pageBlocks: true,
+  templateId: true,
+  archetype: true,
   heroImageUrl: true,
   backgroundImageUrl: true,
   themeColor: true,
@@ -26,7 +30,22 @@ const PUBLIC_REGISTRATION_FORM_SELECT = {
   maxVisibleSessions: true,
   hideExpiredSessions: true,
   vendor: {
-    select: { name: true },
+    select: {
+      id: true,
+      name: true,
+      consultationEvents: {
+        where: { isActive: true },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: {
+          id: true,
+          title: true,
+          durationMinutes: true,
+          timezone: true,
+          intakeFormFields: true,
+        },
+      },
+    },
   },
   promoVideo: {
     select: {
@@ -65,12 +84,22 @@ export type PublicRegistrationSession = {
 export type PublicRegistrationForm = {
   id: string;
   slug: string;
-  vendor: { name: string };
+  vendor: { id: string; name: string };
+  consultationEvent: {
+    id: string;
+    title: string;
+    durationMinutes: number;
+    timezone: string;
+    intakeFormFields: unknown;
+  } | null;
   headline: string;
   description: string | null;
   submitLabel: string;
   successMessage: string;
   fields: RegistrationFormFieldSpec[] | null;
+  pageBlocks: FunnelPageBlocks | null;
+  templateId: string | null;
+  archetype: string | null;
   heroImageUrl: string | null;
   backgroundImageUrl: string | null;
   themeColor: string | null;
@@ -160,6 +189,7 @@ function publicFormFromRecord(
   now: Date,
 ): PublicRegistrationForm {
   const parsedFields = parseRegistrationFormFields(form.fields);
+  const parsedBlocks = FunnelPageBlocksSchema.safeParse(form.pageBlocks);
   const promoVideo = form.promoVideo
     && form.promoVideo.vendorId === form.vendorId
     && isExistingLiveVideoReady(form.promoVideo)
@@ -169,12 +199,18 @@ function publicFormFromRecord(
   return {
     id: form.id,
     slug: form.slug,
-    vendor: form.vendor,
+    vendor: { id: form.vendor.id, name: form.vendor.name },
+    consultationEvent: form.vendor.consultationEvents[0] ?? null,
     headline: form.headline,
     description: form.description,
     submitLabel: form.submitLabel,
     successMessage: form.successMessage,
     fields: parsedFields.success ? parsedFields.data : null,
+    // Only a database NULL selects the legacy renderer. Invalid authored JSON
+    // fails closed as an empty modern page instead of silently bypassing validation.
+    pageBlocks: form.pageBlocks === null ? null : parsedBlocks.success ? parsedBlocks.data : [],
+    templateId: form.templateId,
+    archetype: form.archetype,
     heroImageUrl: parseSafeExternalHttpUrl(form.heroImageUrl),
     backgroundImageUrl: parseSafeExternalHttpUrl(form.backgroundImageUrl),
     themeColor: safeThemeColor(form.themeColor),
@@ -199,6 +235,7 @@ export async function loadPublicRegistrationForm(slug: string, now = new Date())
     select: PUBLIC_REGISTRATION_FORM_SELECT,
   });
   if (!form) return null;
+  if (form.vendor.id !== form.vendorId) return null;
 
   const sessions = await db.live.findMany({
     where: publicRegistrationSessionWhere(form.id, form.vendorId),

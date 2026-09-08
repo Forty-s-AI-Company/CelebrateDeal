@@ -114,6 +114,34 @@ afterEach(() => {
 });
 
 describe("PublicLivePage", () => {
+  it("projects an evergreen JIT cohort into the public playback contract", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-08T06:03:00.000Z"));
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      isEvergreen: true,
+      evergreenScheduleMode: "just_in_time",
+      evergreenIntervalMinutes: 15,
+      evergreenDailyTimes: [],
+      evergreenSessionStartAt: null,
+      vendor: { ...publicLive.vendor, timezone: "Asia/Taipei" },
+      video: { ...readyVideo, durationSec: 3600 },
+    });
+
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live).toMatchObject({
+      runtimeState: "waiting",
+      scheduledAt: "2026-09-08T06:15:00.000Z",
+      evergreen: {
+        sessionStartAt: "2026-09-08T06:15:00.000Z",
+        sessionEndAt: "2026-09-08T07:15:00.000Z",
+        initialOffsetSeconds: 0,
+      },
+    });
+    expect(mocks.resolveLiveRuntime).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("only resolves scheduled, live, or replay-enabled ended lives", async () => {
     await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 

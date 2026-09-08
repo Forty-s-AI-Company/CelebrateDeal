@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { normalizeInteractionEventDraft, type AdvancedInteractionMetadata } from "@/lib/interaction-event";
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 export const FLASH_VOUCHER_COOKIE = "celebratedeal_flash_voucher";
 export const AUTOMATION_VOUCHER_COOKIE = "celebratedeal_automation_voucher";
@@ -8,6 +9,50 @@ export const FLASH_VOUCHER_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export function hashInteractionBearer(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+const LUCKY_DRAW_CLAIM_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const LUCKY_DRAW_CLAIM_PATTERN = /^CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/u;
+
+/**
+ * Creates an opaque 8-character Crockford-base32 claim code with OS CSPRNG
+ * bytes. It intentionally has no dependency on a run ID or other public data.
+ */
+export function createLuckyDrawClaimCode() {
+  let body = "";
+  while (body.length < 8) {
+    const byte = randomBytes(1)[0];
+    // Rejection sampling avoids modulo bias (256 is not divisible by 32 only
+    // if this alphabet changes; keeping it explicit protects that invariant).
+    if (byte === undefined || byte >= 256 - (256 % LUCKY_DRAW_CLAIM_ALPHABET.length)) continue;
+    body += LUCKY_DRAW_CLAIM_ALPHABET[byte % LUCKY_DRAW_CLAIM_ALPHABET.length];
+  }
+  return `CD-WIN-${body.slice(0, 4)}-${body.slice(4)}`;
+}
+
+export function hashLuckyDrawClaimCode(value: string) {
+  // The visible code has intentionally limited entropy for manual entry. A
+  // server-side pepper prevents an exposed database hash from becoming an
+  // offline code-verification oracle.
+  return createHmac("sha256", deriveSensitiveDataKey("live-lucky-draw-claim-hash:v1"))
+    .update(value)
+    .digest("hex");
+}
+
+export function isLuckyDrawClaimCode(value: string) {
+  return LUCKY_DRAW_CLAIM_PATTERN.test(value);
+}
+
+/** Compares fixed-length hex hashes without leaking a prefix through timing. */
+export function luckyDrawClaimHashesMatch(expectedHash: string | null | undefined, suppliedCode: string) {
+  if (!expectedHash || !isLuckyDrawClaimCode(suppliedCode)) return false;
+  const expected = Buffer.from(expectedHash, "hex");
+  const supplied = Buffer.from(hashLuckyDrawClaimCode(suppliedCode), "hex");
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+}
+
+export function luckyDrawClaimEnvelopePurpose(vendorId: string, responseId: string) {
+  return `live-lucky-draw-claim:v1:${vendorId}:${responseId}`;
 }
 
 export function createInteractionBearer() {

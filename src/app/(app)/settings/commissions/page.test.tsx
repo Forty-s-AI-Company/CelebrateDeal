@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireVendorOwner: vi.fn(),
   ruleFindFirst: vi.fn(),
+  productFindMany: vi.fn(),
   saveCommissionRuleAction: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ commissionRuleSet: { findFirst: mocks.ruleFindFirst } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ commissionRuleSet: { findFirst: mocks.ruleFindFirst }, product: { findMany: mocks.productFindMany } }) }));
 vi.mock("@/app/actions/commission-rule-actions", () => ({ saveCommissionRuleAction: mocks.saveCommissionRuleAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="csrf-token" /> }));
 
@@ -17,6 +18,7 @@ import CommissionSettingsPage from "./page";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendorOwner.mockResolvedValue({ vendor: { id: "vendor-current" } });
+  mocks.productFindMany.mockResolvedValue([{ id: "product-1", name: "旗艦課程" }]);
   mocks.ruleFindFirst.mockResolvedValue({
     id: "rule-3",
     version: 3,
@@ -26,7 +28,12 @@ beforeEach(() => {
       { minMonthlySalesCents: 0, rateBps: 800 },
       { minMonthlySalesCents: 100_000, rateBps: 1000 },
     ],
+    quantityTiers: [
+      { minQuantity: 1, maxQuantity: 5, rateBps: 1500 },
+      { minQuantity: 6, maxQuantity: null, rateBps: 2000 },
+    ],
     uplineLevels: [{ level: 1, bonusRateBps: 300 }],
+    productOverrides: [{ productId: "product-1", rateBps: 1200 }],
   });
 });
 
@@ -38,10 +45,13 @@ describe("CommissionSettingsPage", () => {
     }));
     expect(html).toContain("階梯式與團隊分潤");
     expect(html).toContain("版本 3");
-    expect(html).toContain('name="tierMinAmount"');
-    expect(html).toContain('name="tierRateBps"');
+    expect(html).toContain('name="tierMinQuantity"');
+    expect(html).toContain('name="tierQuantityRateBps"');
     expect(html).toContain('name="uplineBonusRateBps"');
     expect(html).toContain('name="maxTotalRateBps"');
+    expect(html).toContain("即時利潤試算模擬器");
+    expect(html).toContain("旗艦課程");
+    expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-current", isActive: true } }));
   });
 
   it("renders the legacy fallback when no rule is active", async () => {

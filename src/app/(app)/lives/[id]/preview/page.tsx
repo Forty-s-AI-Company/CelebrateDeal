@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ButtonLink, Card, PageHeader } from "@/components/ui";
+import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
-  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: true } });
+  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: { include: { events: { orderBy: { triggerSec: "asc" } } } } } });
   if (!live) notFound();
 
   return (
@@ -16,7 +17,13 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
       <Card>
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
-            <div className="aspect-video rounded-lg bg-slate-100 bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
+            {live.isEvergreen && live.evergreenPreviewEnabled && live.video?.videoUrl ? (
+              <EvergreenPreviewPlayer
+                videoUrl={live.video.videoUrl}
+                playbackRate={live.evergreenPreviewRate}
+                events={(live.interactionScript?.events ?? []).map(({ id: eventId, triggerSec, title, eventType }) => ({ id: eventId, triggerSec, title, eventType }))}
+              />
+            ) : <div className="aspect-video rounded-lg bg-slate-100 bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />}
             <h2 className="mt-4 text-xl font-semibold text-slate-950">{live.title}</h2>
             <p className="mt-2 text-sm text-slate-500">{live.description}</p>
           </div>
@@ -33,6 +40,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
               <li>開播提醒 Email：{live.liveReminderTemplate?.name ?? "未綁定"}</li>
               <li>提醒時間：{live.liveReminderTemplate ? `提前 ${live.liveReminderOffsetMinutes} 分鐘` : "未啟用"}</li>
               <li>互動腳本：{live.interactionScript?.name ?? "未綁定"}</li>
+              <li>常青模式：{live.isEvergreen ? `${live.evergreenScheduleMode} · 公開 1×` : "未啟用"}</li>
               <li>商品：{live.products.map((item) => item.product.name).join("、") || "未綁定"}</li>
             </ul>
           </div>

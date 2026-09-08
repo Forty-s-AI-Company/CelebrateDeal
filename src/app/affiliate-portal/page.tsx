@@ -2,13 +2,16 @@ import { CopyReferralLink } from "@/components/copy-referral-link";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { affiliatePortalLogoutAction, requestAffiliatePayoutAction, saveAffiliateBankAccountAction } from "@/app/actions/affiliate-portal-actions";
+import { affiliatePortalLogoutAction, saveAffiliateBankAccountAction } from "@/app/actions/affiliate-portal-actions";
 import { requireAffiliatePortal } from "@/lib/affiliate-portal-auth";
 import { getAffiliatePortalDashboard } from "@/lib/affiliate-portal";
 import { maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { LineLoginButton } from "@/components/line-login-button";
+import { AffiliateRemunerationDialog } from "@/components/affiliate-remuneration-dialog";
+import { calculateTaiwanTaxWithholding } from "@/lib/taiwan-tax-withholding";
+import { decryptTaxIdentity, maskTaxIdentity } from "@/lib/tax-identity";
 
 const commissionLabels = {
   pending: { label: "待確認", tone: "orange" },
@@ -27,6 +30,11 @@ function maskedAccount(envelope: string | null, vendorId: string) {
   }
 }
 
+function maskedTaxIdentity(envelope: string | null, vendorId: string) {
+  if (!envelope) return null;
+  try { return maskTaxIdentity(decryptTaxIdentity(envelope, vendorId)); } catch { return null; }
+}
+
 export default async function AffiliatePortalPage({
   searchParams,
 }: {
@@ -41,6 +49,7 @@ export default async function AffiliatePortalPage({
   if (!dashboard) return null;
   const params = await searchParams;
   const bank = maskedAccount(dashboard.affiliate.bankAccountEncrypted, vendor.id);
+  const taxIdentity = maskedTaxIdentity(dashboard.affiliate.taxIdentityEncrypted, vendor.id);
   const wallet = dashboard.wallet;
 
   const feedback = params.bank === "saved"
@@ -49,6 +58,10 @@ export default async function AffiliatePortalPage({
       ? "提領申請已送出。"
       : params.error === "bank_required"
         ? "請先綁定銀行帳戶。"
+        : params.error === "tax_identity_required"
+          ? "請先完成身分證字號加密建檔。"
+          : params.error === "consent_required"
+            ? "請勾選勞務報酬與代扣同意聲明。"
         : params.error
           ? "資料無法送出，請檢查後再試。"
           : null;
@@ -110,33 +123,35 @@ export default async function AffiliatePortalPage({
           <Card className="overflow-hidden p-0">
             <div className="border-b border-border px-5 py-4"><h2 className="text-lg font-semibold text-slate-950">提領申請</h2></div>
             <div className="divide-y divide-border">
-              {dashboard.payouts.length === 0 ? <p className="p-5 text-sm text-slate-500">目前沒有可提領批次。</p> : dashboard.payouts.map((payout) => (
+              {dashboard.payouts.length === 0 ? <p className="p-5 text-sm text-slate-500">目前沒有可提領批次。</p> : dashboard.payouts.map((payout) => {
+                const tax = calculateTaiwanTaxWithholding({ grossAmountCents: payout.finalAmountCents });
+                return (
                 <article key={payout.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-semibold text-slate-950">{payout.monthKey} · {formatCurrency(payout.finalAmountCents)}</p>
                     <p className="mt-1 text-sm text-slate-500">{payout.status === "paid" ? `已付款 ${payout.paidAt ? formatDateTime(payout.paidAt) : ""}` : payout.requestedAt ? `已申請 ${formatDateTime(payout.requestedAt)}` : "尚未申請"}</p>
                   </div>
                   {payout.status === "pending" && !payout.requestedAt ? (
-                    <form action={requestAffiliatePayoutAction}>
-                      <CsrfField />
-                      <input type="hidden" name="payoutId" value={payout.id} />
-                      <FormSubmitButton pendingChildren="送出中…" pendingMessage="正在送出提領申請。" disabled={!bank} className="min-h-11 rounded-md bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-dark">一鍵申請提領</FormSubmitButton>
-                    </form>
+                    bank && taxIdentity
+                      ? <AffiliateRemunerationDialog payoutId={payout.id} monthKey={payout.monthKey} bankLabel={`${bank.bankCode}${bank.bankBranch ? ` ${bank.bankBranch}` : ""} / ${bank.accountNumber} / ${bank.accountName}`} taxIdentityLabel={taxIdentity} amounts={tax} />
+                      : <span className="text-sm font-medium text-orange-700">請先完成銀行與身分資料</span>
                   ) : <Badge tone={payout.status === "paid" ? "green" : payout.status === "void" ? "gray" : "blue"}>{payout.status === "paid" ? "Paid" : payout.status === "void" ? "Void" : "Requested"}</Badge>}
                 </article>
-              ))}
+              );})}
             </div>
           </Card>
         </div>
 
         <Card className="h-fit">
-          <h2 className="text-lg font-semibold text-slate-950">銀行帳戶</h2>
+          <h2 className="text-lg font-semibold text-slate-950">銀行與報稅身分</h2>
           {bank ? <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">已綁定：{bank.bankCode} / {bank.accountNumber} / {bank.accountName}</p> : <p className="mt-2 text-sm text-slate-600">尚未綁定。帳戶資料會加密保存。</p>}
           <form action={saveAffiliateBankAccountAction} className="mt-5 grid gap-4">
             <CsrfField />
             <label className="grid gap-1 text-sm font-medium text-slate-700">戶名<input name="accountName" required maxLength={100} autoComplete="name" className="h-11 rounded-md border border-border px-3" /></label>
             <label className="grid gap-1 text-sm font-medium text-slate-700">銀行代碼<input name="bankCode" required inputMode="numeric" pattern="[0-9]{3,7}" className="h-11 rounded-md border border-border px-3" /></label>
+            <label className="grid gap-1 text-sm font-medium text-slate-700">分行（選填）<input name="bankBranch" maxLength={40} className="h-11 rounded-md border border-border px-3" /></label>
             <label className="grid gap-1 text-sm font-medium text-slate-700">帳號<input name="accountNumber" required inputMode="numeric" pattern="[0-9]{6,20}" autoComplete="off" className="h-11 rounded-md border border-border px-3" /></label>
+            <label className="grid gap-1 text-sm font-medium text-slate-700">身分證字號<input name="taxIdentity" required autoCapitalize="characters" pattern="[A-Za-z][12][0-9]{8}" autoComplete="off" className="h-11 rounded-md border border-border px-3 uppercase" /></label>
             <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在加密並儲存銀行帳戶。" className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">{bank ? "更新銀行帳戶" : "綁定銀行帳戶"}</FormSubmitButton>
           </form>
         </Card>

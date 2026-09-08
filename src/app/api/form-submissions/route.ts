@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   attributionCookieFromRequest,
@@ -50,6 +51,13 @@ const SubmissionPayload = z.object({
   referralCode: z.string().min(1).max(80).nullable().optional(),
   shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
   redirectTo: z.string().max(2_048).optional(),
+  utm: z.object({
+    source: z.string().trim().max(120).optional(),
+    medium: z.string().trim().max(120).optional(),
+    campaign: z.string().trim().max(160).optional(),
+    content: z.string().trim().max(160).optional(),
+    term: z.string().trim().max(160).optional(),
+  }).strict().optional(),
 });
 
 function stableSubmissionId(formId: string, liveId: string | null, email: string) {
@@ -418,8 +426,10 @@ export async function POST(request: Request) {
         liveId: submittedLiveId,
         name,
         email,
+        customerKeyHash: automationCustomerKeyHash(form.vendorId, email),
         phone,
         source: submittedLiveId ? "live" : "form",
+        attribution: parsed.data.utm ? { utm: parsed.data.utm } : undefined,
         answers: normalizedAnswers as Prisma.InputJsonValue,
         verificationStatus: "UNVERIFIED",
         verificationVersion: 1,
@@ -479,6 +489,22 @@ export async function POST(request: Request) {
   });
   if (!verificationQueued) {
     return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+  }
+
+  // Registration succeeds independently from marketing delivery. The durable
+  // automation execution key makes a retried request converge without a resend.
+  try {
+    await dispatchAutomationEvent(getDb(), {
+      vendorId: form.vendorId,
+      eventId: `form-registered:${submission.id}`,
+      trigger: "form_registered",
+      subjectType: "buyer_registration",
+      subjectId: submission.id,
+      subjectKeyHash: automationCustomerKeyHash(form.vendorId, email),
+      recipientEmail: email,
+    });
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId: form.vendorId });
   }
 
   return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);

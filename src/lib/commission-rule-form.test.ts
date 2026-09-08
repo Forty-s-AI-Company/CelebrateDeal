@@ -29,6 +29,8 @@ describe("commission rule form contract", () => {
         { level: 1, bonusRateBps: 300 },
         { level: 2, bonusRateBps: 200 },
       ],
+      productOverrides: [],
+      quantityTiers: [],
     });
   });
 
@@ -36,5 +38,21 @@ describe("commission rule form contract", () => {
     expect(() => parseCommissionRuleForm(form({ thresholds: ["0", "100"], rates: ["800", ""] }))).toThrow("同時填寫");
     expect(() => parseCommissionRuleForm(form({ thresholds: ["0", String(Number.MAX_SAFE_INTEGER)], rates: ["800", "1000"] }))).toThrow("金額過大");
     expect(() => parseCommissionRuleForm(form({ cap: "1200" }))).toThrow("超過上限");
+  });
+
+  it("parses contiguous cumulative quantity tiers", () => {
+    const data = form();
+    data.append("tierMinQuantity", "1");
+    data.append("tierQuantityRateBps", "1500");
+    data.append("tierMinQuantity", "6");
+    data.append("tierQuantityRateBps", "2000");
+    data.append("tierMinQuantity", "21");
+    data.append("tierQuantityRateBps", "2500");
+    data.set("maxTotalRateBps", "3000");
+    expect(parseCommissionRuleForm(data).quantityTiers).toEqual([
+      { minQuantity: 1, maxQuantity: 5, rateBps: 1500 },
+      { minQuantity: 6, maxQuantity: 20, rateBps: 2000 },
+      { minQuantity: 21, maxQuantity: null, rateBps: 2500 },
+    ]);
   });
 });

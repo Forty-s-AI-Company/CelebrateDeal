@@ -7,6 +7,8 @@ import {
   type FormBuilderActionState,
 } from "@/app/actions/form-actions";
 import { FormFieldEditor, registrationFormFieldTypeLabel } from "@/components/form-field-editor";
+import { FunnelWizard } from "@/components/funnel-builder/funnel-wizard";
+import { FunnelCanvasEditor } from "@/components/funnel-builder/funnel-canvas-editor";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 import { FormPreview } from "@/components/form-preview";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -19,6 +21,8 @@ import {
   type RegistrationFormBuilderField,
   type RegistrationFormBuilderFieldType,
 } from "@/lib/registration-form-builder";
+import type { FunnelPageBlocks } from "@/lib/funnel-blocks-schema";
+import type { FunnelArchetype, FunnelTemplate } from "@/lib/funnel-templates";
 
 export type FormBuilderValues = {
   id?: string;
@@ -48,6 +52,7 @@ export type FormBuilderValues = {
 export type FormPromoVideoOption = { id: string; title: string };
 
 type RemovedField = { field: RegistrationFormBuilderField; index: number };
+type FunnelSelection = { pageBlocks: FunnelPageBlocks | null; templateId: string | null; archetype: FunnelArchetype | null };
 
 const inputClass = "h-11 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const textareaClass = "rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
@@ -119,6 +124,36 @@ function normalizeFormBuilderValues(values: FormBuilderValues | Parameters<Param
 
 function mediaValue(value: MediaUploadPersistedValue) {
   return { url: value.url || null, assetId: value.assetId || null };
+}
+
+function initialFunnelSelection(initial: { pageBlocks: unknown; templateId: string | null; archetype: string | null } | null): FunnelSelection {
+  return {
+    pageBlocks: Array.isArray(initial?.pageBlocks) ? initial.pageBlocks as FunnelPageBlocks : null,
+    templateId: initial?.templateId ?? null,
+    archetype: (initial?.archetype as FunnelArchetype | null) ?? null,
+  };
+}
+
+function initialFunnelEditorMode(initial: { pageBlocks: unknown } | null) {
+  return Array.isArray(initial?.pageBlocks) ? "canvas" as const : "traditional" as const;
+}
+
+function EditorModeSwitch({ mode, canvas, traditional }: { mode: "traditional" | "canvas"; canvas: ReactNode; traditional: ReactNode }) {
+  return mode === "canvas" ? canvas : traditional;
+}
+
+function FunnelBootstrapControls({ visible, selection, onApply, onBlank, onOpen }: { visible: boolean; selection: FunnelSelection; onApply: (template: FunnelTemplate) => void; onBlank: () => void; onOpen: () => void }) {
+  if (visible) return <FunnelWizard onApply={onApply} onBlank={onBlank} />;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <p className="text-sm font-medium text-blue-950">{selection.templateId ? `已套用範本：${selection.templateId}` : "目前使用空白畫布"}</p>
+      <button type="button" onClick={onOpen} className="min-h-10 rounded-lg border border-blue-300 bg-white px-4 text-sm font-semibold text-blue-800">重新選擇起點</button>
+    </div>
+  );
+}
+
+function FunnelHiddenFields({ selection }: { selection: FunnelSelection }) {
+  return <><input type="hidden" name="pageBlocks" value={selection.pageBlocks ? JSON.stringify(selection.pageBlocks) : ""} /><input type="hidden" name="templateId" value={selection.templateId ?? ""} /><input type="hidden" name="archetype" value={selection.archetype ?? ""} /></>;
 }
 
 function FormBuilderMediaSettings({
@@ -324,6 +359,8 @@ export function FormBuilderClient({
   initialUpdatedAt,
   csrfField,
   promoVideos,
+  enableFunnelWizard,
+  initialFunnel,
 }: {
   values: FormBuilderValues;
   initialFields: RegistrationFormBuilderField[];
@@ -333,6 +370,8 @@ export function FormBuilderClient({
   initialUpdatedAt: string | null;
   csrfField: ReactNode;
   promoVideos: FormPromoVideoOption[];
+  enableFunnelWizard: boolean;
+  initialFunnel: { pageBlocks: unknown; templateId: string | null; archetype: string | null } | null;
 }) {
   const initialActionState: FormBuilderActionState = legacyRouteError === "invalid_fields"
     ? { status: "error", message: "先前的欄位設定無法儲存；請確認下方欄位後再試一次。" }
@@ -347,6 +386,9 @@ export function FormBuilderClient({
   const [heroMediaBlocked, setHeroMediaBlocked] = useState(false);
   const [backgroundMediaBlocked, setBackgroundMediaBlocked] = useState(false);
   const [mediaHydrationKey, setMediaHydrationKey] = useState(0);
+  const [wizardVisible, setWizardVisible] = useState(enableFunnelWizard);
+  const [funnel, setFunnel] = useState<FunnelSelection>(() => initialFunnelSelection(initialFunnel));
+  const [editorMode, setEditorMode] = useState<"traditional" | "canvas">(() => initialFunnelEditorMode(initialFunnel));
   const mediaBlockingRef = useRef({ hero: false, background: false });
   const errors = actionState.fieldErrors ?? {};
   const controlsDisabled = pending || legacyNeedsReset;
@@ -370,6 +412,14 @@ export function FormBuilderClient({
 
   function updateValue<Key extends keyof FormBuilderValues>(key: Key, value: FormBuilderValues[Key]) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyFunnelTemplate(template: FunnelTemplate) {
+    setFunnel({ pageBlocks: template.pageBlocks, templateId: template.id, archetype: template.archetype });
+    setValues((current) => ({ ...current, headline: template.headline, name: current.name || template.name }));
+    setEditorMode("canvas");
+    setWizardVisible(false);
+    setAnnouncement(`已套用「${template.name}」，可繼續編輯後儲存。`);
   }
 
   const onHeroBlockingChange = useCallback((blocked: boolean) => {
@@ -431,7 +481,22 @@ export function FormBuilderClient({
       {values.id ? <input type="hidden" name="id" value={values.id} /> : null}
       {values.id && initialUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={initialUpdatedAt} /> : null}
       <input type="hidden" name="fields" value={JSON.stringify(fields)} />
+      <FunnelHiddenFields selection={funnel} />
 
+      <div hidden={!enableFunnelWizard || editorMode !== "traditional"}>
+        <FunnelBootstrapControls visible={wizardVisible} selection={funnel} onApply={applyFunnelTemplate} onBlank={() => { setFunnel({ pageBlocks: [], templateId: null, archetype: null }); setEditorMode("canvas"); setWizardVisible(false); setAnnouncement("已開啟空白畫布。"); }} onOpen={() => setWizardVisible(true)} />
+      </div>
+
+      <EditorModeSwitch mode={editorMode} canvas={(
+        <FunnelCanvasEditor
+          formName={values.name}
+          blocks={funnel.pageBlocks ?? []}
+          pending={pending}
+          onChange={(pageBlocks) => setFunnel((current) => ({ ...current, pageBlocks }))}
+          onUseTraditionalEditor={() => { setEditorMode("traditional"); setWizardVisible(false); setAnnouncement("已切換至傳統表單編輯器，畫布內容仍會保留。"); }}
+        />
+      )} traditional={(
+      <>
       <ol className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-4" aria-label="表單建立流程">
         {[
           ["1", "基本資料"], ["2", "報名欄位"], ["3", "送出回饋"], ["4", "預覽儲存"],
@@ -583,11 +648,13 @@ export function FormBuilderClient({
           hideExpiredSessions={values.hideExpiredSessions}
         />
       </div>
+      </>
+      )} />
 
       <p role="status" aria-live="polite" className="sr-only">{announcement}{pending ? "正在儲存表單，請勿重複送出。" : ""}</p>
       {mediaBlocked ? <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">請先完成圖片上傳，或移除尚未上傳的檔案。</p> : null}
       {errors.root ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-800">{errors.root}</p> : null}
-      <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+      <div hidden={editorMode !== "traditional"} className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
         <div className="text-xs text-slate-500">
           <p>儲存前可在右側預覽；伺服器會再次驗證所有欄位。</p>
           <p role="status" aria-live="polite" className="mt-1 font-medium text-slate-700">

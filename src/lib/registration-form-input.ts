@@ -3,6 +3,8 @@ import {
   parseRegistrationFormFields,
   type RegistrationFormFieldSpec,
 } from "@/lib/registration-form-fields";
+import { FunnelPageBlocksSchema, type FunnelPageBlocks } from "@/lib/funnel-blocks-schema";
+import { getFunnelTemplate, type FunnelArchetype } from "@/lib/funnel-templates";
 
 export type RegistrationFormInputField =
   | "root"
@@ -27,7 +29,10 @@ export type RegistrationFormInputField =
   | "seoDescription"
   | "maxVisibleSessions"
   | "hideExpiredSessions"
-  | "isActive";
+  | "isActive"
+  | "pageBlocks"
+  | "templateId"
+  | "archetype";
 
 export type RegistrationFormInputErrors = Partial<Record<RegistrationFormInputField, string>>;
 
@@ -55,6 +60,9 @@ export type RegistrationFormInput = {
   maxVisibleSessions: number;
   hideExpiredSessions: boolean;
   isActive: boolean;
+  pageBlocks: FunnelPageBlocks | null;
+  templateId: string | null;
+  archetype: FunnelArchetype | null;
 };
 
 type RegistrationFormInputResult =
@@ -126,6 +134,27 @@ function boundedInteger(
     errors[field] = `${label}需為 ${min} 到 ${max} 的整數。`;
   }
   return parsed;
+}
+
+function parseFunnelPresetInput(formData: FormData, errors: RegistrationFormInputErrors) {
+  const rawPageBlocks = stringValue(formData, "pageBlocks", errors, "pageBlocks");
+  const templateId = optionalBounded(stringValue(formData, "templateId", errors, "templateId"), "範本 ID", 100, errors, "templateId");
+  const archetype = optionalBounded(stringValue(formData, "archetype", errors, "archetype"), "銷講類型", 40, errors, "archetype");
+  let pageBlocks: FunnelPageBlocks | null = null;
+  if (!rawPageBlocks && !templateId && !archetype) return { pageBlocks, templateId, archetype: null };
+
+  if (!rawPageBlocks || rawPageBlocks.length > 256_000) errors.pageBlocks = "漏斗區塊資料不完整或過大。";
+  else {
+    try {
+      const parsedBlocks = FunnelPageBlocksSchema.safeParse(JSON.parse(rawPageBlocks));
+      if (!parsedBlocks.success) errors.pageBlocks = "漏斗區塊資料不符合安全格式。";
+      else pageBlocks = parsedBlocks.data;
+    } catch { errors.pageBlocks = "漏斗區塊資料無法解析。"; }
+  }
+  const template = templateId ? getFunnelTemplate(templateId) : null;
+  if (!template) errors.templateId = "找不到指定的漏斗範本。";
+  if (!template || archetype !== template.archetype) errors.archetype = "漏斗類型與範本不一致。";
+  return { pageBlocks, templateId, archetype: archetype as FunnelArchetype | null };
 }
 
 export function parseRegistrationFormInput(formData: FormData): RegistrationFormInputResult {
@@ -230,6 +259,7 @@ export function parseRegistrationFormInput(formData: FormData): RegistrationForm
 
   const hideExpiredSessions = checkboxValue(formData, "hideExpiredSessions", errors, "hideExpiredSessions");
   const isActive = checkboxValue(formData, "isActive", errors, "isActive");
+  const funnelPreset = parseFunnelPresetInput(formData, errors);
 
   if (Object.keys(errors).length > 0 || !parsedFields?.success) return { success: false, errors };
 
@@ -259,6 +289,7 @@ export function parseRegistrationFormInput(formData: FormData): RegistrationForm
       maxVisibleSessions: maxVisibleSessions ?? 0,
       hideExpiredSessions,
       isActive,
+      ...funnelPreset,
     },
   };
 }

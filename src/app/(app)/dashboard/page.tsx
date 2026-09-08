@@ -8,6 +8,7 @@ import DashboardDetails from "./dashboard-details";
 import DashboardDetailsLoading from "./dashboard-details-loading";
 import DashboardKpis from "./dashboard-kpis";
 import DashboardKpisLoading from "./dashboard-kpis-loading";
+import { hasVendorFeature, normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";
 
 function parseDashboardDetailsDiagnosticDelay(value: string | undefined) {
   if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return 0;
@@ -33,6 +34,9 @@ export default async function DashboardPage({ searchParams }: {
   }
 
   const memberRole = auth.member?.role ?? null;
+  const enabledModules = normalizeVendorFeatureModules(vendor.enabledFeatureModules);
+  const liveEnabled = hasVendorFeature(enabledModules, "live_webinar");
+  const advancedAnalyticsEnabled = hasVendorFeature(enabledModules, "analytics_advanced");
   const query = await searchParams;
   const diagnosticDelayMs = parseDashboardDetailsDiagnosticDelay(
     Array.isArray(query?.e2eDashboardDetailsDelayMs) ? query.e2eDashboardDetailsDelayMs[0] : query?.e2eDashboardDetailsDelayMs,
@@ -53,24 +57,25 @@ export default async function DashboardPage({ searchParams }: {
       <PageHeader
         title="Dashboard"
         description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
-        action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
+        action={isManager && liveEnabled ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
       />
 
-      <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
+      {advancedAnalyticsEnabled ? <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
         <Suspense fallback={<DashboardKpisLoading />}>
           <DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />
         </Suspense>
-      </section>
+      </section> : null}
 
       <section data-dashboard-region="details" aria-label="Dashboard 明細區域">
         <Suspense fallback={<DashboardDetailsLoading />}>
           <DashboardDetails
             vendorId={vendor.id}
-          memberRole={memberRole}
-          supportEmailConfigured={supportEmailConfigured}
-          trackingConfigured={trackingConfigured}
-          diagnosticDelayMs={diagnosticDelayMs}
-        />
+            memberRole={memberRole}
+            supportEmailConfigured={supportEmailConfigured}
+            trackingConfigured={trackingConfigured}
+            diagnosticDelayMs={diagnosticDelayMs}
+            enabledModules={enabledModules}
+          />
         </Suspense>
       </section>
     </>

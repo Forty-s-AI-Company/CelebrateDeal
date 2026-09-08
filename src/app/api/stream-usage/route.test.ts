@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getActiveLiveViewerSession: vi.fn(),
   dispatchAutomationEvent: vi.fn(),
+  automationCustomerKeyHash: vi.fn(() => "opaque-customer-key"),
   liveViewerTokenFromRequest: vi.fn(),
   recordStreamUsageLedgerEntry: vi.fn(),
   StreamUsageValidationError: class StreamUsageValidationError extends Error {
@@ -23,7 +24,7 @@ vi.mock("@/lib/live-quota-admission", () => ({
   getActiveLiveViewerSession: mocks.getActiveLiveViewerSession,
   liveViewerTokenFromRequest: mocks.liveViewerTokenFromRequest,
 }));
-vi.mock("@/lib/automation-workflow", () => ({ dispatchAutomationEvent: mocks.dispatchAutomationEvent }));
+vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: mocks.automationCustomerKeyHash, dispatchAutomationEvent: mocks.dispatchAutomationEvent }));
 vi.mock("@/lib/stream-usage", () => ({
   recordStreamUsageLedgerEntry: mocks.recordStreamUsageLedgerEntry,
   StreamUsageValidationError: mocks.StreamUsageValidationError,
@@ -58,7 +59,9 @@ beforeEach(() => {
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.getDb.mockReturnValue({
     streamUsageLedgerEntry: { aggregate: vi.fn().mockResolvedValue({ _sum: { watchSeconds: 120 } }) },
+    live: { findFirst: vi.fn().mockResolvedValue({ video: { durationSec: 600 } }) },
     formSubmission: { findFirst: vi.fn().mockResolvedValue(null) },
+    commerceOrder: { count: vi.fn().mockResolvedValue(0) },
   });
   mocks.liveViewerTokenFromRequest.mockReturnValue("A".repeat(43));
   mocks.getActiveLiveViewerSession.mockResolvedValue({ id: "session-1", tokenHash: "viewer-hash" });
@@ -71,7 +74,7 @@ describe("POST /api/stream-usage", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, duplicate: false });
+    await expect(response.json()).resolves.toEqual({ ok: true, duplicate: false, watchSecondsTotal: 120, watchPercent: 20 });
     expect(mocks.getActiveLiveViewerSession).toHaveBeenCalledWith(expect.any(Object), {
       vendorId: payload.vendorId,
       liveId: payload.liveId,
@@ -88,7 +91,9 @@ describe("POST /api/stream-usage", () => {
   it("uses a verified same-live registration as the automation recipient", async () => {
     const db = {
       streamUsageLedgerEntry: { aggregate: vi.fn().mockResolvedValue({ _sum: { watchSeconds: 300 } }) },
-      formSubmission: { findFirst: vi.fn().mockResolvedValue({ id: "submission-1" }) },
+      live: { findFirst: vi.fn().mockResolvedValue({ video: { durationSec: 600 } }) },
+      formSubmission: { findFirst: vi.fn().mockResolvedValue({ id: "submission-1", email: "buyer@example.test" }) },
+      commerceOrder: { count: vi.fn().mockResolvedValue(0) },
     };
     mocks.getDb.mockReturnValue(db);
     const response = await POST(request(payload, { cookie: "celebratedeal_form_submission=submission-1" }));
@@ -96,10 +101,15 @@ describe("POST /api/stream-usage", () => {
     expect(db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "submission-1", liveId: "live-1", verificationStatus: "VERIFIED" }),
     }));
+    expect(mocks.recordStreamUsageLedgerEntry).toHaveBeenCalledWith(expect.objectContaining({
+      customerKeyHash: "opaque-customer-key",
+      viewerKeyHash: "viewer-hash",
+    }));
     expect(mocks.dispatchAutomationEvent).toHaveBeenCalledWith(db, expect.objectContaining({
       subjectType: "buyer_registration",
       subjectId: "submission-1",
-      subjectKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      subjectKeyHash: "opaque-customer-key",
+      hasPurchased: false,
       watchSecondsTotal: 300,
     }));
   });

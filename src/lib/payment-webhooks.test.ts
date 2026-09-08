@@ -432,7 +432,7 @@ describe("payment webhook processing", () => {
     expect(allocations).toHaveLength(3);
     expect(allocations.map((item) => item.commissionAmountCents).sort((a, b) => b - a)).toEqual([2000, 600, 400]);
     expect(allocations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ recipientRole: "promoter", commissionRateBps: 1000, commissionRuleSetId: rule.id, commissionRuleVersion: 1, monthlySalesBeforeCents: 90_000, monthlySalesAfterCents: 110_000 }),
+      expect.objectContaining({ recipientRole: "promoter", commissionRateBps: 1000, commissionRuleSetId: rule.id, commissionRuleVersion: 1, policyVersion: 1, appliedRateBps: 1000, monthlySalesBeforeCents: 90_000, monthlySalesAfterCents: 110_000 }),
       expect.objectContaining({ recipientRole: "upline_leader", uplineLevel: 1, commissionRateBps: 300 }),
       expect.objectContaining({ recipientRole: "upline_leader", uplineLevel: 2, commissionRateBps: 200 }),
     ]));
@@ -449,6 +449,121 @@ describe("payment webhook processing", () => {
       where: { vendorId: vendor.id, affiliateCommissionId: { in: allocations.map((item) => item.id) }, entryType: "refund" },
     });
     expect(refundEntries.map((item) => item.amountCents).sort((a, b) => a - b)).toEqual([-1000, -300, -200]);
+  });
+
+  it("applies trusted product overrides and then advances the same-vendor cumulative quantity tier", async () => {
+    const suffix = `${Date.now()}-quantity-tier`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const [overrideProduct, regularProduct] = await Promise.all([
+      db.product.create({ data: { vendorId: vendor.id, name: `Override ${suffix}`, slug: `override-${suffix}`, priceCents: 10_000, inventory: 1 } }),
+      db.product.create({ data: { vendorId: vendor.id, name: `Regular ${suffix}`, slug: `regular-${suffix}`, priceCents: 10_000, inventory: 1 } }),
+    ]);
+    const rule = await db.commissionRuleSet.create({
+      data: { vendorId: vendor.id, name: "Quantity tiers", version: 1, currency: "TWD", maxTotalRateBps: 3_000 },
+    });
+    await db.commissionRateTier.create({
+      data: { vendorId: vendor.id, commissionRuleSetId: rule.id, minMonthlySalesCents: 0, rateBps: 1_500 },
+    });
+    await db.commissionQuantityTier.createMany({ data: [
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, minQuantity: 1, maxQuantity: 1, rateBps: 1_500 },
+      { vendorId: vendor.id, commissionRuleSetId: rule.id, minQuantity: 2, maxQuantity: null, rateBps: 2_000 },
+    ] });
+    await db.commissionProductOverride.create({
+      data: { vendorId: vendor.id, commissionRuleSetId: rule.id, productId: overrideProduct.id, rateBps: 3_000 },
+    });
+
+    const payTrustedProduct = async (productId: string, label: string) => {
+      const orderNumber = `ORDER-${label}-${suffix}`;
+      await db.paymentTransaction.create({
+        data: {
+          vendorId: vendor.id,
+          providerName: "demo",
+          orderNumber,
+          paymentMode: "platform",
+          grossAmountCents: 10_000,
+          netAmountCents: 10_000,
+          currency: "TWD",
+          status: "pending",
+          metadata: { productId, referralCode: affiliate.code },
+        },
+      });
+      await processPaymentWebhook(PaymentWebhookPayload.parse({
+        provider: "demo", eventId: `paid-${label}-${suffix}`, eventType: "paid", vendorId: vendor.id,
+        orderNumber, grossAmountCents: 10_000, currency: "TWD",
+      }));
+      return db.affiliateCommission.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber, recipientRole: "promoter" } });
+    };
+
+    const overridden = await payTrustedProduct(overrideProduct.id, "OVERRIDE");
+    expect(overridden).toMatchObject({
+      policyVersion: 1,
+      appliedRateBps: 3_000,
+      commissionAmountCents: 3_000,
+      orderQuantity: 1,
+      cumulativeSalesBeforeCount: 0,
+      cumulativeSalesAfterCount: 1,
+      matchedTier: expect.objectContaining({ source: "product_override", minQuantity: 1, maxQuantity: 1 }),
+    });
+
+    const second = await payTrustedProduct(regularProduct.id, "REGULAR");
+    expect(second).toMatchObject({
+      appliedRateBps: 2_000,
+      commissionAmountCents: 2_000,
+      cumulativeSalesBeforeCount: 1,
+      cumulativeSalesAfterCount: 2,
+      matchedTier: expect.objectContaining({ source: "tier", minQuantity: 2, maxQuantity: null }),
+    });
+    await expect(db.affiliateCommission.update({
+      where: { id: second.id },
+      data: { appliedRateBps: 1_500 },
+    })).rejects.toThrow();
+    await expect(db.commissionQuantityTier.update({
+      where: { id: (await db.commissionQuantityTier.findFirstOrThrow({ where: { commissionRuleSetId: rule.id, minQuantity: 2 } })).id },
+      data: { rateBps: 1_500 },
+    })).rejects.toThrow();
+  });
+
+  it("uses the policy effective at order time for a delayed paid webhook", async () => {
+    const suffix = `${Date.now()}-historical-policy`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const now = Date.now();
+    const oldRule = await db.commissionRuleSet.create({
+      data: {
+        vendorId: vendor.id,
+        name: "Historical v1",
+        version: 1,
+        currency: "TWD",
+        maxTotalRateBps: 2_000,
+        status: "ARCHIVED",
+        activatedAt: new Date(now - 48 * 60 * 60 * 1000),
+        archivedAt: new Date(now - 12 * 60 * 60 * 1000),
+      },
+    });
+    await db.commissionRateTier.create({
+      data: { vendorId: vendor.id, commissionRuleSetId: oldRule.id, minMonthlySalesCents: 0, rateBps: 1_000 },
+    });
+    const currentRule = await db.commissionRuleSet.create({
+      data: { vendorId: vendor.id, name: "Current v2", version: 2, currency: "TWD", maxTotalRateBps: 2_000, activatedAt: new Date(now - 12 * 60 * 60 * 1000) },
+    });
+    await db.commissionRateTier.create({
+      data: { vendorId: vendor.id, commissionRuleSetId: currentRule.id, minMonthlySalesCents: 0, rateBps: 2_000 },
+    });
+
+    const orderNumber = `ORDER-HISTORICAL-${suffix}`;
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo",
+      eventId: `paid-historical-${suffix}`,
+      eventType: "paid",
+      vendorId: vendor.id,
+      orderNumber,
+      grossAmountCents: 10_000,
+      currency: "TWD",
+      referralCode: affiliate.code,
+      occurredAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    }));
+
+    await expect(db.affiliateCommission.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } }))
+      .resolves.toMatchObject({ commissionRuleSetId: oldRule.id, policyVersion: 1, appliedRateBps: 1_000, commissionAmountCents: 1_000 });
   });
 
   it("reconciles an invoice payment through paid, partial-refund, and full-refund webhooks", async () => {

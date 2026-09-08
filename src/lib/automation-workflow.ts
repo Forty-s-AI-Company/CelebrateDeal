@@ -5,23 +5,43 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import {
   buildAutomationLineMessage,
   enqueueLineNotification,
   stableLineIdempotencyKey,
 } from "@/lib/line-notification";
 
-export const AUTOMATION_TRIGGERS = ["payment_paid", "viewer_watch_progress"] as const;
+export const AUTOMATION_TRIGGERS = [
+  "payment_paid",
+  "viewer_watch_progress",
+  "webinar_attended_duration_gte",
+  "form_registered",
+  "consultation_booked",
+  "consultation_no_show",
+  "form_no_show",
+] as const;
 export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
+
+export function automationCustomerKeyHash(vendorId: string, email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!vendorId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) throw new Error("Invalid automation customer identity.");
+  return createHmac("sha256", deriveSensitiveDataKey("automation-customer-key-v1"))
+    .update(`${vendorId}\n${normalized}`)
+    .digest("base64url");
+}
 
 const AutomationConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("always") }).strict(),
   z.object({ type: z.literal("order_amount_gte"), amountCents: z.number().int().min(1) }).strict(),
   z.object({ type: z.literal("watch_seconds_gte"), seconds: z.number().int().min(1).max(86_400) }).strict(),
+  z.object({ type: z.literal("watch_seconds_gte_and_not_purchased"), seconds: z.number().int().min(1).max(86_400) }).strict(),
 ]);
 
+const AUTOMATION_URL_PLACEHOLDERS = new Set(["{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}"]);
+
 function isSafeAutomationButtonUrl(value: string | null | undefined) {
-  if (!value || value === "{{voucher_url}}") return true;
+  if (!value || AUTOMATION_URL_PLACEHOLDERS.has(value)) return true;
   try {
     return new URL(value).protocol === "https:";
   } catch {
@@ -44,14 +64,96 @@ const AutomationActionSchema = z.discriminatedUnion("type", [
     expiresInDays: z.number().int().min(1).max(365),
   }).strict(),
   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
+  z.object({
+    type: z.literal("send_email_notification"),
+    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"]),
+  }).strict(),
 ]).refine((action) => action.type !== "issue_repurchase_voucher" || action.discountType !== "percentage" || action.discountValue <= 99, {
   message: "Percentage vouchers must remain below 100%.",
 }).refine((action) => action.type !== "line_push" || isSafeAutomationButtonUrl(action.buttonUrl), {
-  message: "LINE button URL must be HTTP(S) or use the voucher placeholder.",
+  message: "LINE button URL must be HTTPS or use an approved placeholder.",
 });
 
 export type AutomationCondition = z.infer<typeof AutomationConditionSchema>;
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
+
+export const AUTOMATION_RECIPES = [
+  {
+    id: "high_intent_chaser",
+    name: "高意向追單漏斗",
+    description: "觀看滿 30 分鐘且尚未購買，自動派發 9 折券並用 LINE 追單。",
+    trigger: "webinar_attended_duration_gte",
+    condition: { type: "watch_seconds_gte_and_not_purchased", seconds: 1_800 },
+    actions: [
+      { type: "issue_repurchase_voucher", productId: "{{product_id}}", discountType: "percentage", discountValue: 10, expiresInDays: 3 },
+      { type: "line_push", message: "您離突破只差最後一步！贈送您專屬 9 折加碼折扣 {{voucher_url}}", buttonLabel: "領取專屬折扣", buttonUrl: "{{voucher_url}}" },
+    ],
+  },
+  {
+    id: "consultation_confirmer",
+    name: "諮詢預約提醒與防爽約",
+    description: "預約成功後加上諮詢標籤，並寄送 Email 與 LINE 確認。",
+    trigger: "consultation_booked",
+    condition: { type: "always" },
+    actions: [
+      { type: "add_customer_tag", tag: "諮詢學員" },
+      { type: "send_email_notification", template: "consultation_confirmation" },
+      { type: "line_push", message: "您的 1 對 1 諮詢已預約成功，請加入行事曆。{{consultation_url}}", buttonLabel: "查看預約", buttonUrl: "{{consultation_url}}" },
+    ],
+  },
+  {
+    id: "vip_auto_tiering",
+    name: "高客單 VIP 自動尊榮升級",
+    description: "單筆付款滿 NT$30,000，自動升級 VIP 並派發回購券。",
+    trigger: "payment_paid",
+    condition: { type: "order_amount_gte", amountCents: 3_000_000 },
+    actions: [
+      { type: "add_customer_tag", tag: "VIP 客戶" },
+      { type: "issue_repurchase_voucher", productId: "{{product_id}}", discountType: "percentage", discountValue: 10, expiresInDays: 30 },
+    ],
+  },
+  {
+    id: "no_show_reactivation",
+    name: "開播缺席喚醒再行銷",
+    description: "報名卻未出席時，自動寄送回放與 1 對 1 諮詢邀請。",
+    trigger: "form_no_show",
+    condition: { type: "always" },
+    actions: [{ type: "send_email_notification", template: "webinar_replay" }],
+  },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  name: string;
+  description: string;
+  trigger: AutomationTrigger;
+  condition: unknown;
+  actions: readonly unknown[];
+}>;
+
+export type AutomationRecipeId = typeof AUTOMATION_RECIPES[number]["id"];
+
+export function materializeAutomationRecipe(recipeId: string, productId?: string) {
+  const recipe = AUTOMATION_RECIPES.find((candidate) => candidate.id === recipeId);
+  if (!recipe) return null;
+  const raw = JSON.parse(JSON.stringify(recipe)) as typeof recipe;
+  const actions = raw.actions.map((action) => {
+    if (typeof action === "object" && action && "productId" in action && action.productId === "{{product_id}}") {
+      return { ...action, productId };
+    }
+    return action;
+  });
+  const parsed = parseAutomationRule({ id: recipe.id, condition: raw.condition, actions });
+  return parsed ? { name: recipe.name, description: recipe.description, trigger: recipe.trigger, condition: parsed.condition, actions: parsed.actions } : null;
+}
+
+export function maskAutomationTarget(value: string | null | undefined) {
+  if (!value) return "—";
+  const normalized = value.trim();
+  if (normalized.includes("@")) {
+    const [local = "", domain = ""] = normalized.split("@");
+    return `${local.slice(0, 1)}***@${domain}`;
+  }
+  return normalized.length <= 8 ? `${normalized.slice(0, 2)}***` : `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
+}
 
 export type AutomationEvent = {
   vendorId: string;
@@ -63,11 +165,15 @@ export type AutomationEvent = {
   orderAmountCents?: number;
   currency?: string;
   watchSecondsTotal?: number;
+  hasPurchased?: boolean;
+  recipientEmail?: string;
+  consultationUrl?: string;
+  webinarUrl?: string;
 };
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery"
 >;
 
 type ParsedRule = {
@@ -90,14 +196,29 @@ export function automationConditionMatches(condition: AutomationCondition, event
   if (condition.type === "order_amount_gte") {
     return event.trigger === "payment_paid" && (event.orderAmountCents ?? -1) >= condition.amountCents;
   }
-  return event.trigger === "viewer_watch_progress" && (event.watchSecondsTotal ?? -1) >= condition.seconds;
+  const isWatchTrigger = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte";
+  if (condition.type === "watch_seconds_gte_and_not_purchased") {
+    return isWatchTrigger && event.hasPurchased === false && (event.watchSecondsTotal ?? -1) >= condition.seconds;
+  }
+  return isWatchTrigger && (event.watchSecondsTotal ?? -1) >= condition.seconds;
+}
+
+export function dryRunAutomationRule(input: { condition: unknown; actions: unknown }, event: AutomationEvent) {
+  const rule = parseAutomationRule({ id: "dry-run", condition: input.condition, actions: input.actions });
+  if (!rule) return { status: "invalid_rule" as const, conditionMatched: false, actionTypes: [] as string[] };
+  const conditionMatched = automationConditionMatches(rule.condition, event);
+  return {
+    status: conditionMatched ? "would_dispatch" as const : "would_skip" as const,
+    conditionMatched,
+    actionTypes: conditionMatched ? rule.actions.map((action) => action.type) : [],
+  };
 }
 
 function executionIdempotencyKey(rule: ParsedRule, event: AutomationEvent) {
   // Provider retries do not always reuse the same webhook event id. Bind both
   // supported triggers to their durable business subject so one paid order (or
   // one viewer crossing a threshold) cannot execute the same rule twice.
-  const eventIdentity = event.trigger === "viewer_watch_progress"
+  const eventIdentity = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte"
     ? `viewer:${event.subjectKeyHash}:version:${rule.version}`
     : `order:${event.subjectId}:version:${rule.version}`;
   return createHash("sha256").update(`automation:v1:${event.vendorId}:${rule.id}:${event.trigger}:${eventIdentity}`).digest("hex");
@@ -117,10 +238,20 @@ function isUniqueConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-function replaceArtifacts(value: string | null | undefined, artifacts: { voucherUrl?: string }) {
+function replaceArtifacts(value: string | null | undefined, artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string }) {
   if (!value) return value ?? null;
-  return value.replaceAll("{{voucher_url}}", artifacts.voucherUrl ?? "");
+  return value
+    .replaceAll("{{voucher_url}}", artifacts.voucherUrl ?? "")
+    .replaceAll("{{consultation_url}}", artifacts.consultationUrl ?? "")
+    .replaceAll("{{webinar_url}}", artifacts.webinarUrl ?? "");
 }
+
+const EMAIL_COPY = {
+  consultation_confirmation: { subject: "1 對 1 諮詢預約確認", body: "您的諮詢已預約成功。請將時間加入行事曆，並由下方連結進入：\n{{consultation_url}}" },
+  class_reminder: { subject: "課程即將開始", body: "課程即將開始，請由下方連結進入：\n{{webinar_url}}" },
+  repurchase_followup: { subject: "為您保留的專屬優惠", body: "謝謝您的參與，專屬優惠請由下方連結領取：\n{{voucher_url}}" },
+  webinar_replay: { subject: "錯過直播也別擔心：精華回放與諮詢邀請", body: "精華回放：{{webinar_url}}\n預約 1 對 1 諮詢：{{consultation_url}}" },
+} as const;
 
 async function executeAction(
   db: AutomationDb,
@@ -129,7 +260,7 @@ async function executeAction(
   executionLogId: string,
   action: AutomationAction,
   actionIndex: number,
-  artifacts: { voucherUrl?: string },
+  artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string },
 ) {
   if (action.type === "add_customer_tag") {
     const tag = action.tag.trim().toLocaleLowerCase("zh-TW");
@@ -178,6 +309,33 @@ async function executeAction(
     return { type: action.type, status: "issued", grantId: id } as const;
   }
 
+  if (action.type === "send_email_notification") {
+    if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
+    const id = deterministicActionId(executionLogId, actionIndex);
+    const copy = EMAIL_COPY[action.template];
+    const protectedPayload = protectEmailDeliveryPayload({
+      recipientEmail: event.recipientEmail,
+      subject: copy.subject,
+      body: replaceArtifacts(copy.body, artifacts) ?? copy.body,
+    }, { vendorId: event.vendorId, deliveryId: id });
+    try {
+      await db.emailDelivery.create({ data: {
+        id,
+        vendorId: event.vendorId,
+        sourceTemplateId: `automation_${action.template}_v1`,
+        trigger: "automation",
+        ...protectedPayload,
+        idempotencyKey: stableLineIdempotencyKey(["automation-email", executionLogId, actionIndex]),
+        status: "queued",
+        nextAttemptAt: new Date(),
+      } });
+      return { type: action.type, status: "queued", template: action.template } as const;
+    } catch (error) {
+      if (!isUniqueConflict(error)) throw error;
+      return { type: action.type, status: "duplicate", template: action.template } as const;
+    }
+  }
+
   if (event.subjectType === "viewer_session") return { type: action.type, status: "recipient_not_linked" } as const;
   const buttonUrl = replaceArtifacts(action.buttonUrl, artifacts);
   const result = await enqueueLineNotification(db, {
@@ -217,7 +375,7 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
       continue;
     }
     const matched = automationConditionMatches(rule.condition, event);
-    if (event.trigger === "viewer_watch_progress" && !matched) {
+    if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !matched) {
       results.push({ ruleId: rule.id, status: "skipped" });
       continue;
     }
@@ -276,7 +434,10 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
     }
 
     const actionResults: unknown[] = [];
-    const artifacts: { voucherUrl?: string } = {};
+    const artifacts: { voucherUrl?: string; consultationUrl?: string; webinarUrl?: string } = {
+      consultationUrl: event.consultationUrl,
+      webinarUrl: event.webinarUrl,
+    };
     try {
       const orderedActions = rule.actions
         .map((action, index) => ({ action, index }))
@@ -326,6 +487,52 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
   return results;
 }
 
+/**
+ * Runs once when a live transitions to ended. Attendance is proven by a
+ * completed watch automation log; registrations without that proof receive
+ * the tenant-scoped no-show event. Pagination prevents an unbounded query.
+ */
+export async function dispatchFormNoShowAutomationsForLive(
+  db: Pick<PrismaClient, "live" | "formSubmission" | "commerceOrder"> & AutomationDb,
+  input: { vendorId: string; liveId: string },
+) {
+  const live = await db.live.findFirst({ where: { id: input.liveId, vendorId: input.vendorId, status: "ended" }, select: { id: true, slug: true } });
+  if (!live) return { dispatched: 0 };
+  let cursor: string | undefined;
+  let dispatched = 0;
+  do {
+    const submissions = await db.formSubmission.findMany({
+      where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: input.vendorId } },
+      orderBy: { id: "asc" },
+      take: 200,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: { id: true, email: true },
+    });
+    for (const submission of submissions) {
+      const subjectKeyHash = automationCustomerKeyHash(input.vendorId, submission.email);
+      const attended = await db.automationExecutionLog.findFirst({
+        where: { vendorId: input.vendorId, trigger: { in: ["viewer_watch_progress", "webinar_attended_duration_gte"] }, subjectKeyHash, conditionMatched: true, status: "completed" },
+        select: { id: true },
+      });
+      if (!attended) {
+        await dispatchAutomationEvent(db, {
+          vendorId: input.vendorId,
+          eventId: `form-no-show:${live.id}:${submission.id}`,
+          trigger: "form_no_show",
+          subjectType: "buyer_registration",
+          subjectId: submission.id,
+          subjectKeyHash,
+          recipientEmail: submission.email,
+          webinarUrl: new URL(`/live/${encodeURIComponent(live.slug)}`, getCanonicalAppUrl()).toString(),
+        });
+        dispatched += 1;
+      }
+    }
+    cursor = submissions.length === 200 ? submissions.at(-1)?.id : undefined;
+  } while (cursor);
+  return { dispatched };
+}
+
 export async function dispatchPaymentPaidAutomation(input: {
   vendorId: string;
   webhookEventId: string;
@@ -334,7 +541,7 @@ export async function dispatchPaymentPaidAutomation(input: {
   const db = getDb();
   const order = await db.commerceOrder.findFirst({
     where: { vendorId: input.vendorId, primaryPaymentTransactionId: input.transactionId, status: "paid" },
-    select: { id: true, totalAmountCents: true, currency: true, checkoutIdentityHash: true },
+    select: { id: true, totalAmountCents: true, currency: true, checkoutIdentityHash: true, automationCustomerKeyHash: true },
   });
   if (!order) return [];
   const results = await dispatchAutomationEvent(db, {
@@ -343,7 +550,7 @@ export async function dispatchPaymentPaidAutomation(input: {
     trigger: "payment_paid",
     subjectType: "buyer_order",
     subjectId: order.id,
-    subjectKeyHash: order.checkoutIdentityHash,
+    subjectKeyHash: order.automationCustomerKeyHash ?? order.checkoutIdentityHash,
     orderAmountCents: order.totalAmountCents,
     currency: order.currency,
   });

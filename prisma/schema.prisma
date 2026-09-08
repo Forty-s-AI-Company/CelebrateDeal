@@ -46,21 +46,30 @@ enum StreamOperationsAlertSeverity {
   CRITICAL
 }
 
+enum LiveQuestionStatus {
+  pending
+  spotlight
+  answered
+  hidden
+}
+
 model Vendor {
-  id           String   @id @default(cuid())
-  name         String
-  slug         String   @unique
-  email        String   @unique
-  passwordHash String
-  logoUrl      String?
-  primaryColor String   @default("#2563eb")
-  ctaColor     String   @default("#f97316")
-  timezone     String   @default("Asia/Taipei")
-  supportEmail String?
-  senderName   String?
-  contactUrl   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  email                 String   @unique
+  passwordHash          String
+  logoUrl               String?
+  primaryColor          String   @default("#2563eb")
+  ctaColor              String   @default("#f97316")
+  timezone              String   @default("Asia/Taipei")
+  supportEmail          String?
+  senderName            String?
+  contactUrl            String?
+  // 僅控制商家後台可見功能；停用模組不會刪除任何既有業務資料。
+  enabledFeatureModules String[] @default(["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced"])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   members                          VendorMember[]
   tracking                         TrackingSetting?
@@ -83,7 +92,9 @@ model Vendor {
   affiliatePayouts                 AffiliatePayout[]
   commissionRuleSets               CommissionRuleSet[]
   commissionRateTiers              CommissionRateTier[]
+  commissionQuantityTiers          CommissionQuantityTier[]
   commissionUplineLevels           CommissionUplineLevel[]
+  commissionProductOverrides       CommissionProductOverride[]
   courseCommissionAllocations      CourseCommissionAllocation[]
   courseCommissionLedgerEntries    CourseCommissionLedgerEntry[]
   coursePayouts                    CoursePayout[]
@@ -91,6 +102,8 @@ model Vendor {
   usageLimit                       VendorUsageLimit?
   subscriptions                    VendorSubscription[]
   invoices                         Invoice[]
+  electronicInvoices               ElectronicInvoice[]
+  electronicInvoiceAllowances      ElectronicInvoiceAllowance[]
   settlements                      Settlement[]
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
@@ -140,10 +153,15 @@ model Vendor {
   buyerSupportOrderGrants          BuyerSupportOrderGrant[]
   liveInteractionRuns              LiveInteractionRun[]
   liveInteractionResponses         LiveInteractionResponse[]
-  automationRules                 AutomationRule[]
-  automationExecutionLogs         AutomationExecutionLog[]
-  customerTagAssignments          CustomerTagAssignment[]
-  automationVoucherGrants         AutomationVoucherGrant[]
+  liveQuestions                    LiveQuestion[]
+  automationRules                  AutomationRule[]
+  automationExecutionLogs          AutomationExecutionLog[]
+  customerTagAssignments           CustomerTagAssignment[]
+  automationVoucherGrants          AutomationVoucherGrant[]
+  consultationEvents               ConsultationEvent[]
+  consultationBookings             ConsultationBooking[]
+  customerCrmRecords               CustomerCrmRecord[]
+  consultantNotes                  ConsultantNote[]
 }
 
 model User {
@@ -360,6 +378,7 @@ model Product {
   partnerProductOverrides     PartnerProductSlotOverride[]
   inventoryReservations       InventoryReservation[]
   courseCommissionAllocations CourseCommissionAllocation[]
+  commissionProductOverrides  CommissionProductOverride[]
   commerceOrderItems          CommerceOrderItem[]
   deliveryConfig              ProductDeliveryConfig?
   automationVoucherGrants     AutomationVoucherGrant[]
@@ -380,6 +399,9 @@ model RegistrationForm {
   description            String?
   submitLabel            String   @default("送出報名")
   fields                 Json
+  pageBlocks             Json?
+  templateId             String?
+  archetype              String?
   successMessage         String   @default("已收到你的資料，開播前會再提醒你。")
   heroImageUrl           String?
   heroImageAssetId       String?
@@ -415,9 +437,11 @@ model FormSubmission {
   liveId                String?
   name                  String
   email                 String
+  customerKeyHash       String?
   phone                 String?
   answers               Json?
   source                String                           @default("form")
+  attribution           Json?
   verificationStatus    FormSubmissionVerificationStatus @default(UNVERIFIED)
   verificationVersion   Int                              @default(1)
   verificationExpiresAt DateTime?
@@ -425,16 +449,18 @@ model FormSubmission {
   affiliateClickId      String?
   createdAt             DateTime                         @default(now())
 
-  form            RegistrationForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  live            Live?                @relation(fields: [liveId], references: [id], onDelete: SetNull)
-  affiliateClick  AffiliateClick?      @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
-  teamAttribution TeamLeadAttribution?
-  chatMessages    LiveChatMessage[]
+  form                     RegistrationForm          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  live                     Live?                     @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  affiliateClick           AffiliateClick?           @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
+  teamAttribution          TeamLeadAttribution?
+  chatMessages             LiveChatMessage[]
+  liveInteractionResponses LiveInteractionResponse[]
 
   @@unique([liveId, id])
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
+  @@index([formId, customerKeyHash, createdAt])
 }
 
 enum FormSubmissionVerificationStatus {
@@ -468,6 +494,19 @@ model Live {
   streamMode                String    @default("vod")
   cloudflareLiveInputUid    String?
   quotaPolicy               Json?
+  /// Evergreen playback is configured per Live and continues to use videoId as
+  /// its tenant-owned source; no second media relation is introduced here.
+  isEvergreen               Boolean   @default(false)
+  evergreenScheduleMode     String    @default("just_in_time")
+  evergreenIntervalMinutes  Int       @default(15)
+  evergreenDailyTimes       String[]  @default([])
+  evergreenSessionStartAt   DateTime?
+  evergreenPitchAtSeconds   Int?
+  evergreenConsultationAtSeconds Int?
+  /// These are merchant-preview controls only. Public viewers always play at
+  /// normal speed and do not receive this configuration.
+  evergreenPreviewEnabled   Boolean   @default(false)
+  evergreenPreviewRate      Float     @default(1)
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 
@@ -495,6 +534,7 @@ model Live {
   notificationRules          LiveNotificationRule[]
   interactionRuns            LiveInteractionRun[]
   interactionResponses       LiveInteractionResponse[]
+  questions                  LiveQuestion[]
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
@@ -737,6 +777,29 @@ model LiveChatMessage {
   @@index([vendorId, formSubmissionId, createdAt])
 }
 
+/// Tenant-bound viewer questions. Participant identity is represented only by
+/// a server-derived hash; displayName is optional for anonymous questions.
+model LiveQuestion {
+  id              String             @id @default(cuid())
+  vendorId        String
+  liveId          String
+  participantHash String
+  displayName     String?
+  body            String
+  status          LiveQuestionStatus @default(pending)
+  spotlightedAt   DateTime?
+  answeredAt      DateTime?
+  hiddenAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live   Live   @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([vendorId, liveId, status, createdAt])
+  @@index([liveId, participantHash, createdAt])
+}
+
 model LiveNotificationRule {
   id                String   @id @default(cuid())
   vendorId          String
@@ -961,27 +1024,36 @@ model LiveInteractionRun {
 /// A single viewer's immutable choice/entry/claim for one run. Viewer tokens and
 /// voucher bearer tokens are stored only as hashes.
 model LiveInteractionResponse {
-  id                  String    @id @default(cuid())
-  vendorId            String
-  liveId              String
-  runId               String
-  participantHash     String
-  eventType           String
-  value               String
-  displayName         String?
-  claimTokenHash      String?   @unique
-  productId           String?
-  discountAmountCents Int?
-  expiresAt           DateTime?
-  usedOrderId         String?
-  createdAt           DateTime  @default(now())
+  id                               String    @id @default(cuid())
+  vendorId                         String
+  liveId                           String
+  runId                            String
+  participantHash                  String
+  /// Server-verified registration identity for purchased-only draw entries.
+  /// Never accept this from the browser request body.
+  formSubmissionId                 String?
+  eventType                        String
+  value                            String
+  displayName                      String?
+  claimTokenHash                   String?   @unique
+  /// Lucky-draw redemption material: only the hash is used for verification;
+  /// the encrypted envelope is only decrypted for the winning viewer.
+  winnerClaimCodeEncryptedEnvelope String?
+  winnerClaimedAt                  DateTime?
+  productId                        String?
+  discountAmountCents              Int?
+  expiresAt                        DateTime?
+  usedOrderId                      String?
+  createdAt                        DateTime  @default(now())
 
-  vendor Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  live   Live               @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
-  run    LiveInteractionRun @relation(fields: [vendorId, runId], references: [vendorId, id], onDelete: Cascade)
+  vendor         Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live           Live               @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  run            LiveInteractionRun @relation(fields: [vendorId, runId], references: [vendorId, id], onDelete: Cascade)
+  formSubmission FormSubmission?    @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
 
   @@unique([runId, participantHash])
   @@index([vendorId, liveId, eventType, createdAt])
+  @@index([vendorId, liveId, formSubmissionId])
   @@index([usedOrderId])
 }
 
@@ -1014,6 +1086,8 @@ model Affiliate {
   commissionRateBps    Int      @default(0)
   isActive             Boolean  @default(true)
   bankAccountEncrypted String?
+  /// Encrypted tax identity; plaintext identity values are never persisted.
+  taxIdentityEncrypted String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -1492,29 +1566,33 @@ model PaymentTransaction {
 /// Canonical, tenant-owned sales order. Buyer and shipping plaintext never
 /// belong in this model; only encrypted envelopes and safe display masks do.
 model CommerceOrder {
-  id                          String              @id @default(cuid())
-  vendorId                    String
-  orderNumber                 String
-  checkoutIdempotencyKey      String
-  checkoutIdentityHash        String
-  primaryPaymentTransactionId String?
-  status                      CommerceOrderStatus @default(pending_payment)
-  currency                    String              @default("TWD")
-  subtotalAmountCents         Int
-  totalAmountCents            Int
-  paidAmountCents             Int                 @default(0)
-  refundedAmountCents         Int                 @default(0)
-  buyerEncryptedEnvelope      String
-  buyerMaskedName             String
-  buyerMaskedEmail            String
-  buyerMaskedPhone            String?
-  shippingEncryptedEnvelope   String?
-  shippingMaskedSummary       String?
-  paidAt                      DateTime?
-  failedAt                    DateTime?
-  refundedAt                  DateTime?
-  createdAt                   DateTime            @default(now())
-  updatedAt                   DateTime            @updatedAt
+  id                              String              @id @default(cuid())
+  vendorId                        String
+  orderNumber                     String
+  checkoutIdempotencyKey          String
+  checkoutIdentityHash            String
+  automationCustomerKeyHash       String?
+  primaryPaymentTransactionId     String?
+  status                          CommerceOrderStatus @default(pending_payment)
+  currency                        String              @default("TWD")
+  subtotalAmountCents             Int
+  totalAmountCents                Int
+  paidAmountCents                 Int                 @default(0)
+  refundedAmountCents             Int                 @default(0)
+  buyerEncryptedEnvelope          String
+  buyerMaskedName                 String
+  buyerMaskedEmail                String
+  buyerMaskedPhone                String?
+  shippingEncryptedEnvelope       String?
+  shippingMaskedSummary           String?
+  invoiceType                     String?
+  invoiceBuyerDisplay             String?
+  invoiceRequestEncryptedEnvelope String?
+  paidAt                          DateTime?
+  failedAt                        DateTime?
+  refundedAt                      DateTime?
+  createdAt                       DateTime            @default(now())
+  updatedAt                       DateTime            @updatedAt
 
   vendor                    Vendor                              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   primaryPaymentTransaction PaymentTransaction?                 @relation("CommerceOrderPrimaryPayment", fields: [vendorId, primaryPaymentTransactionId], references: [vendorId, id], onDelete: Restrict)
@@ -1525,12 +1603,14 @@ model CommerceOrder {
   supportRefundHandoffs     SupportRefundHandoff[]
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
+  electronicInvoice         ElectronicInvoice?
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
   @@unique([vendorId, checkoutIdempotencyKey])
   @@unique([vendorId, primaryPaymentTransactionId])
   @@index([vendorId, status, createdAt])
+  @@index([vendorId, automationCustomerKeyHash, status])
   @@index([vendorId, paidAt])
 }
 
@@ -1607,12 +1687,13 @@ model CommerceOrderRefund {
   occurredAt            DateTime
   createdAt             DateTime                  @default(now())
 
-  vendor              Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order               CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
-  paymentTransaction  PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
-  refundRecord        RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
-  supportHandoff      SupportRefundHandoff?        @relation("SupportRefundCompletion")
-  supportHandoffLinks SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
+  vendor                     Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order                      CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+  paymentTransaction         PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  refundRecord               RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
+  supportHandoff             SupportRefundHandoff?        @relation("SupportRefundCompletion")
+  supportHandoffLinks        SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
+  electronicInvoiceAllowance ElectronicInvoiceAllowance?
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderId, id])
@@ -1620,6 +1701,72 @@ model CommerceOrderRefund {
   @@unique([vendorId, refundRecordId])
   @@index([vendorId, orderId, occurredAt])
   @@index([vendorId, paymentTransactionId])
+}
+
+enum ElectronicInvoiceStatus {
+  queued
+  issued
+  allowance
+  voided
+}
+
+/// Tenant-bound B2C electronic invoice snapshot. This is distinct from the
+/// platform Invoice model, which represents CelebrateDeal merchant billing.
+model ElectronicInvoice {
+  id                       String                  @id @default(cuid())
+  vendorId                 String
+  orderId                  String
+  invoiceNumber            String?                 @unique
+  randomCode               String?
+  invoiceType              String
+  buyerDisplay             String
+  requestEncryptedEnvelope String
+  currency                 String                  @default("TWD")
+  amountCents              Int
+  pretaxAmountCents        Int
+  taxAmountCents           Int
+  status                   ElectronicInvoiceStatus @default(queued)
+  attemptCount             Int                     @default(0)
+  nextAttemptAt            DateTime                @default(now())
+  lastAttemptAt            DateTime?
+  lastErrorCode            String?
+  processingStartedAt      DateTime?
+  issuedAt                 DateTime?
+  voidedAt                 DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+
+  vendor     Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order      CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
+  allowances ElectronicInvoiceAllowance[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, orderId])
+  @@index([vendorId, status, nextAttemptAt, processingStartedAt])
+  @@index([vendorId, issuedAt])
+}
+
+/// Immutable partial-refund allowance records for an issued B2C invoice.
+model ElectronicInvoiceAllowance {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  electronicInvoiceId String
+  commerceRefundId    String
+  allowanceNumber     String
+  amountCents         Int
+  pretaxAmountCents   Int
+  taxAmountCents      Int
+  issuedAt            DateTime
+  createdAt           DateTime @default(now())
+
+  vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  invoice        ElectronicInvoice   @relation(fields: [vendorId, electronicInvoiceId], references: [vendorId, id], onDelete: Restrict)
+  commerceRefund CommerceOrderRefund @relation(fields: [vendorId, commerceRefundId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, commerceRefundId])
+  @@unique([vendorId, allowanceNumber])
+  @@index([vendorId, electronicInvoiceId, issuedAt])
 }
 
 enum SupportCaseStatus {
@@ -2070,32 +2217,39 @@ model AuditLog {
 }
 
 model AffiliateCommission {
-  id                        String                    @id @default(cuid())
-  vendorId                  String
-  affiliateId               String?
-  monthKey                  String
-  sourceType                String                    @default("product")
-  sourceId                  String?
-  deduplicationKey          String
-  referralCode              String?
-  orderNumber               String?
-  orderAmountCents          Int                       @default(0)
-  commissionBaseAmountCents Int                       @default(0)
-  netReferenceAmountCents   Int                       @default(0)
-  commissionRateBps         Int                       @default(0)
-  commissionAmountCents     Int                       @default(0)
-  currency                  String                    @default("TWD")
-  recipientRole             String                    @default("promoter")
-  uplineLevel               Int?
-  commissionRuleSetId       String?
-  commissionRuleVersion     Int?
-  monthlySalesBeforeCents   Int?
-  monthlySalesAfterCents    Int?
-  status                    AffiliateCommissionStatus @default(pending)
-  attributedAt              DateTime                  @default(now())
-  settledAt                 DateTime?
-  createdAt                 DateTime                  @default(now())
-  updatedAt                 DateTime                  @updatedAt
+  id                         String                    @id @default(cuid())
+  vendorId                   String
+  affiliateId                String?
+  monthKey                   String
+  sourceType                 String                    @default("product")
+  sourceId                   String?
+  deduplicationKey           String
+  referralCode               String?
+  orderNumber                String?
+  orderAmountCents           Int                       @default(0)
+  commissionBaseAmountCents  Int                       @default(0)
+  netReferenceAmountCents    Int                       @default(0)
+  commissionRateBps          Int                       @default(0)
+  commissionAmountCents      Int                       @default(0)
+  currency                   String                    @default("TWD")
+  recipientRole              String                    @default("promoter")
+  uplineLevel                Int?
+  commissionRuleSetId        String?
+  commissionRuleVersion      Int?
+  policyVersion              Int?
+  matchedTier                Json?
+  appliedRateBps             Int?
+  calculationSnapshot        Json?
+  monthlySalesBeforeCents    Int?
+  monthlySalesAfterCents     Int?
+  orderQuantity              Int?
+  cumulativeSalesBeforeCount Int?
+  cumulativeSalesAfterCount  Int?
+  status                     AffiliateCommissionStatus @default(pending)
+  attributedAt               DateTime                  @default(now())
+  settledAt                  DateTime?
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
 
   vendor            Vendor                           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   affiliate         Affiliate?                       @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
@@ -2129,10 +2283,12 @@ model CommissionRuleSet {
   archivedAt      DateTime?
   createdAt       DateTime             @default(now())
 
-  vendor       Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  tiers        CommissionRateTier[]
-  uplineLevels CommissionUplineLevel[]
-  commissions  AffiliateCommission[]
+  vendor           Vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tiers            CommissionRateTier[]
+  quantityTiers    CommissionQuantityTier[]
+  uplineLevels     CommissionUplineLevel[]
+  productOverrides CommissionProductOverride[]
+  commissions      AffiliateCommission[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, version])
@@ -2153,6 +2309,24 @@ model CommissionRateTier {
   @@index([vendorId, commissionRuleSetId, minMonthlySalesCents])
 }
 
+/// Quantity-based commission tier for M2 policies. Older amount-based tiers
+/// remain available for historical rules, while newly published policies use
+/// this relation as their authoritative tier definition.
+model CommissionQuantityTier {
+  id                  String @id @default(cuid())
+  vendorId            String
+  commissionRuleSetId String
+  minQuantity         Int
+  maxQuantity         Int?
+  rateBps             Int
+
+  vendor  Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ruleSet CommissionRuleSet @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([commissionRuleSetId, minQuantity])
+  @@index([vendorId, commissionRuleSetId, minQuantity])
+}
+
 model CommissionUplineLevel {
   id                  String @id @default(cuid())
   vendorId            String
@@ -2165,6 +2339,23 @@ model CommissionUplineLevel {
 
   @@unique([commissionRuleSetId, level])
   @@index([vendorId, commissionRuleSetId, level])
+}
+
+/// Product-specific rate for one immutable rule version. The composite
+/// relations enforce that a vendor can only override its own products.
+model CommissionProductOverride {
+  id                  String @id @default(cuid())
+  vendorId            String
+  commissionRuleSetId String
+  productId           String
+  rateBps             Int
+
+  vendor  Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  ruleSet CommissionRuleSet @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Cascade)
+  product Product           @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([commissionRuleSetId, productId])
+  @@index([vendorId, commissionRuleSetId, productId])
 }
 
 /// Immutable accounting entries. Operational commission status remains separate
@@ -2276,6 +2467,14 @@ model AffiliatePayout {
   commissionAmountCents         Int       @default(0)
   adjustmentAmountCents         Int       @default(0)
   finalAmountCents              Int       @default(0)
+  /// Immutable compliance snapshot; nullable only for rows created before this contract.
+  grossAmountCents              Int?
+  withholdingTaxCents           Int?
+  nhiSupplementaryTaxCents      Int?
+  bankFeeCents                  Int?
+  netPayoutAmountCents          Int?
+  taxCategory                   String    @default("92_other")
+  withholdingRuleVersion        String?
   /// Human-entered sanitized transfer/provider reference required before paid.
   outcomeReference              String?
   /// Human-entered payment note or void reason preserved on the payout read model.
@@ -2288,8 +2487,10 @@ model AffiliatePayout {
   payoutItemId                  String?
   /// The promoter explicitly requested this payable through the Affiliate Portal.
   requestedAt                   DateTime?
+  signedAt                      DateTime?
   /// Encrypted destination snapshot captured at request time.
   requestedBankAccountEncrypted String?
+  requestedTaxIdentityEncrypted String?
   paidAt                        DateTime?
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
@@ -2651,7 +2852,8 @@ model PartnerFunnelPage {
 model StreamUsageLedgerEntry {
   id                       String   @id @default(cuid())
   vendorId                 String
-  viewerKeyHash             String?
+  viewerKeyHash            String?
+  customerKeyHash          String?
   liveId                   String
   sourcePageId             String?
   teamId                   String?
@@ -2681,6 +2883,7 @@ model StreamUsageLedgerEntry {
   @@index([promoterMembershipId, monthKey])
   @@index([liveId, capturedAt])
   @@index([liveId, viewerKeyHash, capturedAt])
+  @@index([vendorId, customerKeyHash, capturedAt])
 }
 
 /// Immutable provider-report comparison against the server-owned usage ledger.
@@ -2930,46 +3133,46 @@ model TeamConversionAttribution {
 }
 
 model AutomationRule {
-  id              String                    @id @default(cuid())
-  vendorId        String
-  name            String
-  description     String?
-  trigger         String
-  condition       Json
-  actions         Json
-  isActive        Boolean                   @default(true)
-  version         Int                       @default(1)
-  createdAt       DateTime                  @default(now())
-  updatedAt       DateTime                  @updatedAt
+  id          String   @id @default(cuid())
+  vendorId    String
+  name        String
+  description String?
+  trigger     String
+  condition   Json
+  actions     Json
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  vendor          Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  executionLogs   AutomationExecutionLog[]
+  vendor        Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  executionLogs AutomationExecutionLog[]
 
   @@unique([vendorId, id])
   @@index([vendorId, trigger, isActive])
 }
 
 model AutomationExecutionLog {
-  id                String             @id @default(cuid())
-  vendorId          String
-  ruleId            String
-  idempotencyKey    String
-  eventId           String
-  trigger           String
-  subjectType       String
-  subjectKeyHash    String?
-  status            String             @default("running")
-  conditionMatched  Boolean?
-  actionResults     Json?
-  errorCode         String?
-  startedAt         DateTime           @default(now())
-  completedAt       DateTime?
-  createdAt         DateTime           @default(now())
+  id               String    @id @default(cuid())
+  vendorId         String
+  ruleId           String
+  idempotencyKey   String
+  eventId          String
+  trigger          String
+  subjectType      String
+  subjectKeyHash   String?
+  status           String    @default("running")
+  conditionMatched Boolean?
+  actionResults    Json?
+  errorCode        String?
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
 
-  vendor            Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  rule              AutomationRule     @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
-  customerTagAssignments  CustomerTagAssignment[]
-  voucherGrants           AutomationVoucherGrant[]
+  vendor                 Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  rule                   AutomationRule           @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
+  customerTagAssignments CustomerTagAssignment[]
+  voucherGrants          AutomationVoucherGrant[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, idempotencyKey])
@@ -2979,15 +3182,15 @@ model AutomationExecutionLog {
 }
 
 model CustomerTagAssignment {
-  id                  String                  @id @default(cuid())
-  vendorId            String
-  customerKeyHash     String
-  tag                 String
+  id                   String   @id @default(cuid())
+  vendorId             String
+  customerKeyHash      String
+  tag                  String
   sourceExecutionLogId String?
-  createdAt           DateTime                @default(now())
+  createdAt            DateTime @default(now())
 
-  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+  vendor             Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sourceExecutionLog AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
 
   @@unique([vendorId, id])
   @@unique([vendorId, customerKeyHash, tag])
@@ -2996,26 +3199,123 @@ model CustomerTagAssignment {
 }
 
 model AutomationVoucherGrant {
-  id                  String                  @id @default(cuid())
-  vendorId            String
-  customerKeyHash     String
-  productId           String
-  claimTokenHash      String                  @unique
-  discountType        String
-  discountValue       Int
-  currency            String                  @default("TWD")
+  id                   String    @id @default(cuid())
+  vendorId             String
+  customerKeyHash      String
+  productId            String
+  claimTokenHash       String    @unique
+  discountType         String
+  discountValue        Int
+  currency             String    @default("TWD")
   sourceExecutionLogId String?
-  expiresAt           DateTime
-  redeemedAt          DateTime?
-  usedOrderId         String?
-  createdAt           DateTime                @default(now())
+  expiresAt            DateTime
+  redeemedAt           DateTime?
+  usedOrderId          String?
+  createdAt            DateTime  @default(now())
 
-  vendor              Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  product             Product                 @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
-  sourceExecutionLog  AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+  vendor             Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product            Product                 @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  sourceExecutionLog AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
 
   @@unique([vendorId, id])
   @@index([vendorId, customerKeyHash, expiresAt])
   @@index([vendorId, productId, expiresAt])
   @@index([usedOrderId])
+}
+
+enum CustomerConsultationStatus {
+  following_up
+  closed_won
+  closed_lost
+  no_show
+}
+
+/// Tenant-qualified CRM state. customerKeyHash is a one-way, vendor-bound
+/// identity and is never accepted from a public client without ownership checks.
+model CustomerCrmRecord {
+  id                 String                     @id @default(cuid())
+  vendorId           String
+  customerKeyHash    String
+  consultationStatus CustomerConsultationStatus @default(following_up)
+  updatedAt          DateTime                   @updatedAt
+  createdAt          DateTime                   @default(now())
+
+  vendor Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  notes  ConsultantNote[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, customerKeyHash])
+  @@index([vendorId, consultationStatus, updatedAt])
+}
+
+/// Append-only consultant notes preserve actor attribution and meeting history.
+model ConsultantNote {
+  id               String   @id @default(cuid())
+  vendorId         String
+  customerRecordId String
+  body             String
+  actorId          String
+  actorLabel       String
+  createdAt        DateTime @default(now())
+
+  vendor         Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  customerRecord CustomerCrmRecord @relation(fields: [vendorId, customerRecordId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, customerRecordId, createdAt])
+}
+
+enum ConsultationBookingStatus {
+  scheduled
+  completed
+  cancelled
+  no_show
+}
+
+model ConsultationEvent {
+  id               String   @id @default(cuid())
+  vendorId         String
+  title            String
+  description      String?
+  durationMinutes  Int      @default(30)
+  bufferMinutes    Int      @default(0)
+  dailyLimit       Int?
+  timezone         String   @default("Asia/Taipei")
+  weeklySchedule   Json
+  intakeFormFields Json
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  vendor   Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  bookings ConsultationBooking[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, isActive])
+  @@index([vendorId, createdAt])
+}
+
+model ConsultationBooking {
+  id              String                    @id @default(cuid())
+  vendorId        String
+  eventId         String
+  startTime       DateTime
+  endTime         DateTime
+  status          ConsultationBookingStatus @default(scheduled)
+  clientName      String
+  clientEmail     String
+  customerKeyHash String?
+  clientPhone     String
+  answers         Json?
+  meetingUrl      String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  vendor Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  event  ConsultationEvent @relation(fields: [vendorId, eventId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, eventId, startTime])
+  @@index([vendorId, eventId, status, startTime])
+  @@index([vendorId, customerKeyHash, startTime])
 }

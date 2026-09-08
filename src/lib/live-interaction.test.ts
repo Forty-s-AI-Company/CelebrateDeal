@@ -1,8 +1,17 @@
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/sensitive-data", () => ({
+  deriveSensitiveDataKey: vi.fn(() => Buffer.alloc(32, 11)),
+}));
+
 import {
   calculateVoucherDiscount,
+  createLuckyDrawClaimCode,
   filterEligibleLuckyDrawEntries,
+  hashLuckyDrawClaimCode,
+  isLuckyDrawClaimCode,
+  luckyDrawClaimHashesMatch,
   maskCustomerName,
   pickLuckyDrawWinner,
   pollPercentages,
@@ -29,6 +38,17 @@ describe("advanced live interaction algorithms", () => {
   it("selects only an existing draw entry and handles an empty draw", () => {
     expect(pickLuckyDrawWinner(["a", "b", "c"], () => 1)).toBe("b");
     expect(pickLuckyDrawWinner([], () => 0)).toBeNull();
+  });
+
+  it("creates CSPRNG-shaped claim codes that are verifiable only by their stored hash", () => {
+    const codes = new Set(Array.from({ length: 32 }, () => createLuckyDrawClaimCode()));
+    expect(codes).toHaveLength(32);
+    for (const code of codes) {
+      expect(code).toMatch(/^CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/u);
+      expect(isLuckyDrawClaimCode(code)).toBe(true);
+      expect(luckyDrawClaimHashesMatch(hashLuckyDrawClaimCode(code), code)).toBe(true);
+      expect(luckyDrawClaimHashesMatch(hashLuckyDrawClaimCode(code), "CD-WIN-0000-0000")).toBe(code === "CD-WIN-0000-0000");
+    }
   });
 
   it("projects dynamic poll percentages from canonical option identifiers", () => {

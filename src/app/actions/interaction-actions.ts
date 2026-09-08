@@ -22,7 +22,18 @@ import {
 import type { InteractionRoleActionState, InteractionRoleFormValues } from "@/lib/interaction-role-action-state";
 import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { isEligibleScheduledRole } from "@/lib/live-chat-contract";
-import { interactionEndsAt, pickLuckyDrawWinner } from "@/lib/live-interaction";
+import {
+  createLuckyDrawClaimCode,
+  hashLuckyDrawClaimCode,
+  interactionEndsAt,
+  isLuckyDrawClaimCode,
+  luckyDrawClaimHashesMatch,
+  luckyDrawClaimEnvelopePurpose,
+  pickLuckyDrawWinner,
+  pollPercentagesFromCounts,
+} from "@/lib/live-interaction";
+import { encryptSensitiveValue } from "@/lib/sensitive-data";
+import { canTransitionLiveQuestionStatus, LiveQuestionStatusSchema } from "@/lib/live-question";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -61,7 +72,14 @@ export async function startLiveInteractionAction(
         excludePreviousWinners: text(formData, "excludePreviousWinners") === "true" || text(formData, "excludePreviousWinners") === "on",
       }
     : eventType === "poll"
-      ? { kind: eventType, durationSec, question: text(formData, "question"), options: text(formData, "options").split(/\r?\n/u) }
+      ? {
+          kind: eventType,
+          durationSec,
+          question: text(formData, "question"),
+          options: text(formData, "options").split(/\r?\n/u),
+          selectionMode: text(formData, "selectionMode", "single"),
+          maxSelections: Number(text(formData, "maxSelections", "2")),
+        }
       : eventType === "flash_sale"
         ? {
             kind: eventType,
@@ -120,6 +138,91 @@ export async function startLiveInteractionAction(
   return { status: "success", message: "互動已即時送到觀眾端。", runId: run.id };
 }
 
+export async function endLiveInteractionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  if (!runId || runId.length > 128) return { status: "error", message: "互動場次無效。" };
+  const endedAt = new Date();
+  const result = await getDb().liveInteractionRun.updateMany({
+    where: { id: runId, vendorId: vendor.id, status: "active", eventType: "poll" },
+    data: { status: "closed", endsAt: endedAt },
+  });
+  if (result.count !== 1) return { status: "error", message: "投票不存在或已經結束。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_poll_ended",
+    targetType: "LiveInteractionRun",
+    targetId: runId,
+    after: auditSnapshot({ status: "closed", endsAt: endedAt }),
+  });
+  return { status: "success", message: "投票已提前結束，觀眾端會保留最終結果。", runId };
+}
+
+export async function getLivePollStudioSnapshotAction(liveId: string) {
+  const vendor = await requireVendorManager();
+  if (!liveId || liveId.length > 128) return [];
+  const runs = await getDb().liveInteractionRun.findMany({
+    where: { vendorId: vendor.id, liveId, eventType: "poll", status: "active", endsAt: { gt: new Date() } },
+    orderBy: { startsAt: "desc" }, take: 10,
+    select: { id: true, title: true, configuration: true, _count: { select: { responses: true } } },
+  });
+  return Promise.all(runs.map(async (run) => {
+    const normalized = normalizeInteractionEventDraft({ eventType: "poll", triggerSec: 0, title: run.title, metadata: run.configuration });
+    if (!normalized.success || normalized.data.metadata?.kind !== "poll") return null;
+    const groups = await getDb().liveInteractionResponse.groupBy({ by: ["value"], where: { vendorId: vendor.id, liveId, runId: run.id }, _count: { _all: true } });
+    const counts = new Map<string, number>();
+    for (const group of groups) {
+      let values = [group.value];
+      if (group.value.startsWith("[")) {
+        try { const parsed = JSON.parse(group.value) as unknown; if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) values = parsed; } catch { /* Keep legacy value. */ }
+      }
+      for (const value of values) counts.set(value, (counts.get(value) ?? 0) + group._count._all);
+    }
+    return { id: run.id, title: run.title, responseCount: run._count.responses, pollResults: pollPercentagesFromCounts(normalized.data.metadata.options, counts) };
+  })).then((items) => items.filter((item): item is NonNullable<typeof item> => item !== null));
+}
+
+export async function moderateLiveQuestionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const questionId = text(formData, "questionId");
+  const nextStatus = LiveQuestionStatusSchema.safeParse(text(formData, "status"));
+  if (!questionId || questionId.length > 128 || !nextStatus.success) return { status: "error", message: "問題或狀態無效。" };
+  const now = new Date();
+  const outcome = await getDb().$transaction(async (tx) => {
+    const question = await tx.liveQuestion.findFirst({ where: { id: questionId, vendorId: vendor.id }, select: { id: true, liveId: true, status: true } });
+    if (!question || !canTransitionLiveQuestionStatus(question.status, nextStatus.data)) return null;
+    if (nextStatus.data === "spotlight") {
+      await tx.liveQuestion.updateMany({
+        where: { vendorId: vendor.id, liveId: question.liveId, status: "spotlight", id: { not: question.id } },
+        data: { status: "answered", answeredAt: now },
+      });
+    }
+    return tx.liveQuestion.update({
+      where: { id: question.id },
+      data: {
+        status: nextStatus.data,
+        ...(nextStatus.data === "spotlight" ? { spotlightedAt: now } : {}),
+        ...(nextStatus.data === "answered" ? { answeredAt: now } : {}),
+        ...(nextStatus.data === "hidden" ? { hiddenAt: now } : {}),
+      },
+      select: { id: true, liveId: true },
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if (!outcome) return { status: "error", message: "問題不存在，或不允許這個狀態轉換。" };
+  await writeAuditLog({ vendorId: vendor.id, ...managerAuditIdentity(auth), action: "live_question_moderated", targetType: "LiveQuestion", targetId: outcome.id, after: auditSnapshot({ status: nextStatus.data }) });
+  revalidatePath(`/lives/${outcome.liveId}/edit`);
+  return { status: "success", message: nextStatus.data === "spotlight" ? "問題已精選上牆。" : "問題狀態已更新。" };
+}
+
 export async function drawLiveInteractionWinnerAction(
   _previous: LiveInteractionStudioState,
   formData: FormData,
@@ -127,55 +230,150 @@ export async function drawLiveInteractionWinnerAction(
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
   const runId = text(formData, "runId");
-  const run = await getDb().liveInteractionRun.findFirst({
-    where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: null },
-    include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true, participantHash: true } } },
-  });
-  if (!run) return { status: "error", message: "抽獎場次不存在或已經抽過獎。" };
-  const runConfig = typeof run.configuration === "object" && run.configuration !== null && !Array.isArray(run.configuration)
-    ? run.configuration as Record<string, unknown>
-    : {};
-  const excludePreviousWinners = Boolean(runConfig.excludePreviousWinners);
-  let eligibleResponses = run.responses;
-  if (excludePreviousWinners) {
-    const previousWinnerRuns = await getDb().liveInteractionRun.findMany({
-      where: { liveId: run.liveId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
-      select: { winnerResponseId: true },
+  const outcome = await getDb().$transaction(async (tx) => {
+    // All eligibility reads, the draw CAS and the code material write share a
+    // serializable boundary. A stale Studio can therefore never publish an
+    // unbound winner or a public/deterministic redemption code.
+    const run = await tx.liveInteractionRun.findFirst({
+      where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: null },
+      include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true, participantHash: true, formSubmissionId: true } } },
     });
-    const previousWinnerResponseIds = previousWinnerRuns.map((r) => r.winnerResponseId).filter((id): id is string => id !== null);
-    if (previousWinnerResponseIds.length > 0) {
-      const winnerResponses = await getDb().liveInteractionResponse.findMany({
-        where: { id: { in: previousWinnerResponseIds } },
-        select: { participantHash: true },
+    if (!run) return { status: "missing" as const };
+    const runConfig = typeof run.configuration === "object" && run.configuration !== null && !Array.isArray(run.configuration)
+      ? run.configuration as Record<string, unknown>
+      : {};
+    let eligibleResponses = run.responses;
+    if (runConfig.eligibility === "purchased") {
+      const submissionIds = [...new Set(run.responses.flatMap((response) => response.formSubmissionId ? [response.formSubmissionId] : []))];
+      const paidTransactions = submissionIds.length === 0 ? [] : await tx.paymentTransaction.findMany({
+        where: {
+          vendorId: vendor.id,
+          status: "paid",
+          OR: submissionIds.map((formSubmissionId) => ({
+            metadata: { path: ["formSubmissionId"], equals: formSubmissionId },
+          })),
+          primaryCommerceOrder: {
+            is: {
+              vendorId: vendor.id,
+              status: "paid",
+              items: { some: { product: { is: { liveProducts: { some: { vendorId: vendor.id, liveId: run.liveId } } } } } },
+            },
+          },
+        },
+        select: { metadata: true },
       });
-      const excludedHashes = new Set(winnerResponses.map((r) => r.participantHash));
-      eligibleResponses = run.responses.filter((r) => !excludedHashes.has(r.participantHash));
+      const paidSubmissionIds = new Set(paidTransactions.flatMap(({ metadata }) => {
+        if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+        const formSubmissionId = (metadata as Record<string, unknown>).formSubmissionId;
+        return typeof formSubmissionId === "string" ? [formSubmissionId] : [];
+      }));
+      // Re-check at draw time so a stale or tampered enrollment can never win.
+      eligibleResponses = eligibleResponses.filter((response) => (
+        response.formSubmissionId !== null && paidSubmissionIds.has(response.formSubmissionId)
+      ));
     }
-  }
+    if (Boolean(runConfig.excludePreviousWinners)) {
+      const previousWinnerRuns = await tx.liveInteractionRun.findMany({
+        where: { liveId: run.liveId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+        select: { winnerResponseId: true },
+      });
+      const previousWinnerResponseIds = previousWinnerRuns.map((item) => item.winnerResponseId).filter((id): id is string => id !== null);
+      if (previousWinnerResponseIds.length > 0) {
+        const winnerResponses = await tx.liveInteractionResponse.findMany({
+          where: { vendorId: vendor.id, id: { in: previousWinnerResponseIds } },
+          select: { participantHash: true },
+        });
+        const excludedHashes = new Set(winnerResponses.map((item) => item.participantHash));
+        eligibleResponses = eligibleResponses.filter((item) => !excludedHashes.has(item.participantHash));
+      }
+    }
 
-  const winner = pickLuckyDrawWinner(eligibleResponses);
-  if (!winner) {
+    const winner = pickLuckyDrawWinner(eligibleResponses);
+    if (!winner) return { status: "no_eligible" as const, responseCount: run.responses.length };
+
+    const claimCode = createLuckyDrawClaimCode();
+    const updated = await tx.liveInteractionRun.updateMany({
+      where: { id: run.id, vendorId: vendor.id, winnerResponseId: null },
+      data: { winnerResponseId: winner.id, status: "closed", endsAt: new Date() },
+    });
+    if (updated.count !== 1) return { status: "conflict" as const };
+    const claimStored = await tx.liveInteractionResponse.updateMany({
+      where: { id: winner.id, vendorId: vendor.id, runId: run.id, claimTokenHash: null, winnerClaimedAt: null },
+      data: {
+        claimTokenHash: hashLuckyDrawClaimCode(claimCode),
+        winnerClaimCodeEncryptedEnvelope: encryptSensitiveValue(
+          claimCode,
+          luckyDrawClaimEnvelopePurpose(vendor.id, winner.id),
+        ),
+      },
+    });
+    if (claimStored.count !== 1) throw new Error("LUCKY_DRAW_CLAIM_STORAGE_FAILED");
+    return { status: "drawn" as const, runId: run.id, winnerResponseId: winner.id };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  if (outcome.status === "missing") return { status: "error", message: "抽獎場次不存在或已經抽過獎。" };
+  if (outcome.status === "no_eligible") {
     return {
       status: "error",
-      message: run.responses.length === 0
+      message: outcome.responseCount === 0
         ? "目前還沒有符合資格的抽獎留言或登記。"
         : "所有參與者皆已在先前場次中過獎，無其他符合資格之參與者。",
     };
   }
-  const updated = await getDb().liveInteractionRun.updateMany({
-    where: { id: run.id, vendorId: vendor.id, winnerResponseId: null },
-    data: { winnerResponseId: winner.id, status: "closed", endsAt: new Date() },
-  });
-  if (updated.count !== 1) return { status: "error", message: "另一個 Studio 已完成抽獎，請重新整理。" };
+  if (outcome.status === "conflict") return { status: "error", message: "另一個 Studio 已完成抽獎，請重新整理。" };
   await writeAuditLog({
     vendorId: vendor.id,
     ...managerAuditIdentity(auth),
     action: "live_interaction_winner_drawn",
     targetType: "LiveInteractionRun",
-    targetId: run.id,
-    after: auditSnapshot({ winnerResponseId: winner.id }),
+    targetId: outcome.runId,
+    after: auditSnapshot({ winnerResponseId: outcome.winnerResponseId, claimCodeStored: true }),
   });
-  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶與動態特效。", runId: run.id };
+  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶與動態特效。", runId: outcome.runId };
+}
+
+/** Vendor-only redemption; the compare-and-set prevents a second claim. */
+export async function verifyLuckyDrawWinnerClaimAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  const claimCode = text(formData, "claimCode").toUpperCase();
+  if (!runId || runId.length > 128 || !isLuckyDrawClaimCode(claimCode)) {
+    return { status: "error", message: "核銷碼格式不正確。" };
+  }
+  const outcome = await getDb().$transaction(async (tx) => {
+    const run = await tx.liveInteractionRun.findFirst({
+      where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+      select: { id: true, winnerResponseId: true },
+    });
+    if (!run?.winnerResponseId) return "missing" as const;
+    const winner = await tx.liveInteractionResponse.findFirst({
+      where: { id: run.winnerResponseId, runId: run.id, vendorId: vendor.id },
+      select: { id: true, claimTokenHash: true, winnerClaimedAt: true },
+    });
+    if (!winner || !luckyDrawClaimHashesMatch(winner.claimTokenHash, claimCode)) return "invalid" as const;
+    if (winner.winnerClaimedAt) return "already_claimed" as const;
+    const claimed = await tx.liveInteractionResponse.updateMany({
+      where: { id: winner.id, runId: run.id, vendorId: vendor.id, claimTokenHash: hashLuckyDrawClaimCode(claimCode), winnerClaimedAt: null },
+      data: { winnerClaimedAt: new Date() },
+    });
+    return claimed.count === 1 ? "claimed" as const : "already_claimed" as const;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if (outcome === "missing") return { status: "error", message: "抽獎場次或得獎資料不存在。" };
+  if (outcome === "invalid") return { status: "error", message: "核銷碼不正確。" };
+  if (outcome === "already_claimed") return { status: "error", message: "此獎項已完成核銷。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_winner_claimed",
+    targetType: "LiveInteractionRun",
+    targetId: runId,
+    after: auditSnapshot({ claimVerified: true }),
+  });
+  return { status: "success", message: "核銷完成。", runId };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {

@@ -7,6 +7,7 @@ import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
+import { EVERGREEN_SCHEDULE_MODES, getEvergreenPlaybackState, type EvergreenScheduleMode } from "@/lib/evergreen-webinar";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -48,7 +49,29 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     console.warn("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
     notFound();
   }
-  const runtime = resolveLiveRuntime({
+  const evergreenMode = EVERGREEN_SCHEDULE_MODES.includes(live.evergreenScheduleMode as EvergreenScheduleMode)
+    ? live.evergreenScheduleMode as EvergreenScheduleMode
+    : "just_in_time";
+  const evergreenState = live.isEvergreen && (live.video?.durationSec ?? 0) > 0
+    ? getEvergreenPlaybackState({
+        mode: evergreenMode,
+        durationSeconds: live.video!.durationSec,
+        timezone: live.vendor.timezone,
+        intervalMinutes: [5, 15, 30].includes(live.evergreenIntervalMinutes)
+          ? live.evergreenIntervalMinutes as 5 | 15 | 30
+          : 15,
+        dailyTimes: live.evergreenDailyTimes,
+        ...(live.evergreenSessionStartAt ? { sessionStartAt: live.evergreenSessionStartAt } : {}),
+      }, serverNow)
+    : null;
+  const runtime = evergreenState
+    ? {
+        state: evergreenState.roomState === "waiting_countdown" ? "waiting" as const
+          : evergreenState.roomState === "playing" ? "playing" as const
+          : "unavailable" as const,
+        playbackStartSeconds: evergreenState.offsetSeconds,
+      }
+    : resolveLiveRuntime({
     streamMode: live.streamMode,
     scheduledAt: live.scheduledAt,
     status: live.status,
@@ -57,7 +80,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     replayAvailableUntil: live.replayAvailableUntil,
     replayEnabled: live.replayEnabled,
     video: live.video ? { durationSec: live.video.durationSec } : null,
-  }, serverNow);
+      }, serverNow);
   const readiness = getRuntimeLivePublishReadiness(live);
   if (!readiness.ready) {
     console.warn("PUBLIC_LIVE_NOT_FOUND_READINESS", readiness.blockers.map(({ code }) => code));
@@ -71,7 +94,17 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     && live.interactionScript.status === "published"
     ? live.interactionScript.events
     : [];
-  const scheduledMessages = publishedEvents
+  const firstVoucherIndex = publishedEvents.findIndex((event) => event.eventType === "flash_voucher");
+  const firstConsultationIndex = publishedEvents.findIndex((event) => event.eventType === "cta_switch");
+  const directedEvents = publishedEvents.map((event, index) => ({
+    ...event,
+    triggerSec: live.isEvergreen && index === firstVoucherIndex && live.evergreenPitchAtSeconds !== null
+      ? live.evergreenPitchAtSeconds
+      : live.isEvergreen && index === firstConsultationIndex && live.evergreenConsultationAtSeconds !== null
+        ? live.evergreenConsultationAtSeconds
+        : event.triggerSec,
+  }));
+  const scheduledMessages = directedEvents
     .filter((event) => event.eventType === "chat_message" || event.eventType === "reminder")
     .map((event): ScheduledRuntimeMessage | null => normalizeScheduledRuntimeMessage({
       vendorId: live.vendorId,
@@ -94,7 +127,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         : null,
     }))
     .filter((message): message is ScheduledRuntimeMessage => message !== null);
-  const interactionEvents = publishedEvents
+  const interactionEvents = directedEvents
       .filter((event) => event.eventType !== "chat_message" && event.eventType !== "reminder")
       .filter((event) => (
         event.eventType !== "product_spotlight"
@@ -141,13 +174,18 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         slug: live.slug,
         status: live.status,
         runtimeState: runtime.state,
-        scheduledAt: live.scheduledAt.toISOString(),
+        scheduledAt: evergreenState?.sessionStartAt.toISOString() ?? live.scheduledAt.toISOString(),
         serverNow: serverNow.toISOString(),
         description: live.description,
         accentCopy: live.accentCopy,
         heroImageUrl: live.heroImageUrl,
         vendorId: live.vendorId,
         admissionRequired: true,
+        ...(evergreenState ? { evergreen: {
+          sessionStartAt: evergreenState.sessionStartAt.toISOString(),
+          sessionEndAt: evergreenState.sessionEndAt.toISOString(),
+          initialOffsetSeconds: evergreenState.offsetSeconds,
+        } } : {}),
         chatEnabled: Boolean(sameVendorActiveForm && parsedFormFields?.success),
         brand: {
           name: live.vendor.name,

@@ -1,6 +1,6 @@
 "use server";
 
-import { type Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
@@ -132,6 +132,7 @@ export async function upsertFormBuilderAction(
       heroImageUrl: media.heroImageUrl,
       backgroundImageUrl: media.backgroundImageUrl,
       fields: input.fields as Prisma.InputJsonValue,
+      pageBlocks: input.pageBlocks === null ? Prisma.JsonNull : input.pageBlocks as Prisma.InputJsonValue,
     };
 
     if (id) {

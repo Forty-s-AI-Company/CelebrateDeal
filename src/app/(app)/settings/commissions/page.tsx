@@ -1,5 +1,6 @@
 import { saveCommissionRuleAction } from "@/app/actions/commission-rule-actions";
 import { CsrfField } from "@/components/csrf-field";
+import { CommissionSimulator } from "@/components/commission-simulator";
 import { Badge, Card, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { requireVendorOwner } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -14,14 +15,20 @@ export default async function CommissionSettingsPage({
 }) {
   const params = await searchParams;
   const auth = await requireVendorOwner();
-  const activeRule = await getDb().commissionRuleSet.findFirst({
+  const [activeRule, products] = await Promise.all([getDb().commissionRuleSet.findFirst({
     where: { vendorId: auth.vendor.id, currency: "TWD", status: "ACTIVE" },
     orderBy: [{ activatedAt: "desc" }, { version: "desc" }],
     include: {
       tiers: { orderBy: { minMonthlySalesCents: "asc" } },
+      quantityTiers: { orderBy: { minQuantity: "asc" } },
       uplineLevels: { orderBy: { level: "asc" } },
+      productOverrides: true,
     },
-  });
+  }), getDb().product.findMany({
+    where: { vendorId: auth.vendor.id, isActive: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  })]);
 
   return (
     <>
@@ -42,6 +49,13 @@ export default async function CommissionSettingsPage({
         </div>
       </Card>
 
+      <div className="mb-5">
+        <CommissionSimulator
+          policyVersion={activeRule?.version ?? 1}
+          tiers={activeRule?.quantityTiers.length ? activeRule.quantityTiers : undefined}
+        />
+      </div>
+
       <form action={saveCommissionRuleAction} className="grid gap-5">
         <CsrfField />
         <Card>
@@ -56,19 +70,39 @@ export default async function CommissionSettingsPage({
         </Card>
 
         <Card>
-          <h2 className="mb-1 text-lg font-semibold text-slate-950">當月業績階梯</h2>
-          <p className="mb-4 text-sm text-slate-600">第一階門檻固定從 0 元開始；成交訂單會先計入當月業績，再選擇適用費率。</p>
+          <h2 className="mb-1 text-lg font-semibold text-slate-950">商品專屬覆蓋率</h2>
+          <p className="mb-4 text-sm text-slate-600">指定商品成交時優先使用此費率；複合租戶外鍵會拒絕其他商家的商品。</p>
           <div className="grid gap-3">
-            {Array.from({ length: TIER_ROWS }, (_, index) => {
-              const tier = activeRule?.tiers[index];
+            {products.map((product) => {
+              const override = activeRule?.productOverrides.find((item) => item.productId === product.id);
               return (
-                <div key={index} className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-2">
-                  <Field label={`第 ${index + 1} 階門檻（元）`} name="tierMinAmount" type="number" min={0} step={1} required={index === 0} readOnly={index === 0} defaultValue={tier ? tier.minMonthlySalesCents / 100 : index === 0 ? 0 : ""} />
-                  <Field label={`第 ${index + 1} 階佣金（BPS）`} name="tierRateBps" type="number" min={0} max={10000} step={1} required={index === 0} defaultValue={tier?.rateBps ?? (index === 0 ? 800 : "")} />
+                <div key={product.id} className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <input type="hidden" name="overrideProductId" value={product.id} />
+                  <span className="self-center text-sm font-medium text-slate-800">{product.name}</span>
+                  <Field label="專屬分潤（BPS，留白表示不覆蓋）" name="overrideRateBps" type="number" min={0} max={10000} step={1} defaultValue={override?.rateBps ?? ""} />
                 </div>
               );
             })}
           </div>
+        </Card>
+
+        <Card>
+          <h2 className="mb-1 text-lg font-semibold text-slate-950">累積成交件數階梯</h2>
+          <p className="mb-4 text-sm text-slate-600">第一階從第 1 件開始；成交訂單會先加入該推廣者在本商家的累積件數，再選擇適用費率。</p>
+          <div className="grid gap-3">
+            {Array.from({ length: TIER_ROWS }, (_, index) => {
+              const tier = activeRule?.quantityTiers[index];
+              return (
+                <div key={index} className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-2">
+                  <Field label={`第 ${index + 1} 階起始件數`} name="tierMinQuantity" type="number" min={1} step={1} required={index === 0} readOnly={index === 0} defaultValue={tier?.minQuantity ?? (index === 0 ? 1 : "")} />
+                  <Field label={`第 ${index + 1} 階佣金（BPS）`} name="tierQuantityRateBps" type="number" min={0} max={10000} step={1} required={index === 0} defaultValue={tier?.rateBps ?? (index === 0 ? 1500 : "")} />
+                </div>
+              );
+            })}
+          </div>
+          {/* Legacy amount tier remains a valid compatibility row for older readers. */}
+          <input type="hidden" name="tierMinAmount" value="0" />
+          <input type="hidden" name="tierRateBps" value={activeRule?.quantityTiers[0]?.rateBps ?? 1500} />
         </Card>
 
         <Card>

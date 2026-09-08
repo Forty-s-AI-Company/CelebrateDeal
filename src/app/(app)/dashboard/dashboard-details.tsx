@@ -15,6 +15,7 @@ import { formatLiveCountdown } from "@/lib/live-countdown";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
 import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
 import { countSellableLiveReadinessCandidates, sellableLiveReadinessQuery } from "@/lib/sellable-live";
+import { hasVendorFeature, requiredFeatureForPath, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 
 function getDateDaysAgo(days: number) {
   return new Date(Date.now() - 1000 * 60 * 60 * 24 * days);
@@ -42,6 +43,7 @@ type DashboardDetailsProps = {
   supportEmailConfigured: boolean;
   trackingConfigured: boolean;
   diagnosticDelayMs?: number;
+  enabledModules: readonly VendorFeatureModule[];
 };
 
 type DashboardDetailsData = {
@@ -53,6 +55,8 @@ type DashboardDetailsData = {
   usageLimit: { creditsUsed: number; creditsLimit: number; billingPlan: { name: string } | null } | null;
   checklist: ReturnType<typeof dashboardChecklistForRole>;
   isManager: boolean;
+  liveEnabled: boolean;
+  affiliateEnabled: boolean;
 };
 
 type DashboardDetailsLoadResult = {
@@ -66,6 +70,7 @@ async function loadDashboardDetails({
   supportEmailConfigured,
   trackingConfigured,
   diagnosticDelayMs,
+  enabledModules,
 }: DashboardDetailsProps): Promise<DashboardDetailsLoadResult> {
   const db = getDb();
   const measurement = createDashboardMeasurement();
@@ -135,7 +140,10 @@ async function loadDashboardDetails({
       trackingConfigured,
       verifiedPaymentMethodCount,
       onboardingComplete: onboarding.complete,
-    }, memberRole);
+    }, memberRole).filter((item) => {
+      const feature = requiredFeatureForPath(item.href);
+      return !feature || hasVendorFeature(enabledModules, feature);
+    });
     return {
       measurement: measurement.snapshot(),
       data: {
@@ -147,6 +155,8 @@ async function loadDashboardDetails({
         usageLimit,
         checklist,
         isManager,
+        liveEnabled: hasVendorFeature(enabledModules, "live_webinar"),
+        affiliateEnabled: hasVendorFeature(enabledModules, "affiliate_program"),
       },
     };
   } catch {
@@ -164,12 +174,14 @@ function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
     usageLimit,
     checklist,
     isManager,
+    liveEnabled,
+    affiliateEnabled,
   } = data;
 
   return (
     <>
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-        <Card>
+        {liveEnabled ? <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-950">近期直播</h2>
             {isManager ? <ButtonLink href="/lives" tone="secondary">查看全部</ButtonLink> : null}
@@ -205,7 +217,7 @@ function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
               {isManager ? <Link href="/lives/new" className="mt-2 inline-flex font-semibold text-primary hover:underline">建立第一場直播</Link> : null}
             </div>
           )}
-        </Card>
+        </Card> : null}
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">Onboarding checklist</h2>
           <div className="grid gap-2">
@@ -220,7 +232,7 @@ function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
         </Card>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Card>
+        {liveEnabled ? <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">即將開播</h2>
           {upcomingLives.length > 0 ? (
             <div className="grid gap-3">
@@ -233,8 +245,8 @@ function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
               ))}
             </div>
           ) : <p className="text-sm text-slate-600">目前沒有排定中的直播。</p>}
-        </Card>
-        <Card>
+        </Card> : null}
+        {affiliateEnabled ? <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">聯盟來源摘要</h2>
           {affiliates.length > 0 ? (
             <div className="grid gap-3">
@@ -252,7 +264,7 @@ function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
               ))}
             </div>
           ) : <p className="text-sm text-slate-600">尚未建立聯盟來源。</p>}
-        </Card>
+        </Card> : null}
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">用量 / 配額</h2>
           {usageLimit ? (

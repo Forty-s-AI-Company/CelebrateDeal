@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
   security: vi.fn(),
   writeAuditLog: vi.fn(),
+  requirePortal: vi.fn(),
+  requestPayout: vi.fn(),
+  requestAuditMeta: vi.fn(),
+  getDb: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -24,17 +28,18 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/affiliate-portal-auth", () => ({
   authenticateAffiliatePortal: mocks.authenticate,
-  requireAffiliatePortal: vi.fn(),
+  requireAffiliatePortal: mocks.requirePortal,
 }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
-vi.mock("@/lib/audit", () => ({ requestAuditMeta: vi.fn(), writeAuditLog: mocks.writeAuditLog }));
+vi.mock("@/lib/audit", () => ({ requestAuditMeta: mocks.requestAuditMeta, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/bank-account", () => ({ encryptBankAccount: vi.fn() }));
+vi.mock("@/lib/tax-identity", () => ({ encryptTaxIdentity: vi.fn() }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
-vi.mock("@/lib/db", () => ({ getDb: vi.fn() }));
+vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock("@/lib/affiliate-portal-payout", () => ({ requestAffiliatePayout: vi.fn() }));
+vi.mock("@/lib/affiliate-portal-payout", () => ({ requestAffiliatePayout: mocks.requestPayout }));
 
-import { affiliatePortalLoginAction } from "@/app/actions/affiliate-portal-actions";
+import { affiliatePortalLoginAction, requestAffiliatePayoutAction } from "@/app/actions/affiliate-portal-actions";
 
 function loginForm() {
   const form = new FormData();
@@ -75,5 +80,43 @@ describe("affiliate portal login action", () => {
     expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-a", vendorId: "vendor-a" }));
     expect(mocks.cookieSet).toHaveBeenCalledWith("test-session", "opaque", { httpOnly: true });
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "affiliate_portal_login_success", vendorId: "vendor-a" }));
+  });
+});
+
+describe("affiliate payout remuneration signing action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.redirect.mockImplementation((path: string) => { throw new Error(`redirect:${path}`); });
+    mocks.requirePortal.mockResolvedValue({
+      auth: { user: { id: "user-a" } },
+      affiliate: { id: "affiliate-a", vendorId: "vendor-a", bankAccountEncrypted: "bank-envelope", taxIdentityEncrypted: "tax-envelope" },
+    });
+    mocks.requestAuditMeta.mockResolvedValue({ ipAddress: null, userAgent: "test" });
+    mocks.requestPayout.mockResolvedValue("requested");
+    mocks.getDb.mockReturnValue({});
+  });
+
+  function payoutForm(consent = "accepted") {
+    const form = new FormData();
+    form.set("payoutId", "payout-a");
+    form.set("remunerationConsent", consent);
+    return form;
+  }
+
+  it("requires explicit consent before writing a signed snapshot", async () => {
+    await expect(requestAffiliatePayoutAction(payoutForm(""))).rejects.toThrow("redirect:/affiliate-portal?error=consent_required");
+    expect(mocks.requestPayout).not.toHaveBeenCalled();
+  });
+
+  it("derives tenant, affiliate and encrypted PII snapshots from server-owned state", async () => {
+    await expect(requestAffiliatePayoutAction(payoutForm())).rejects.toThrow("redirect:/affiliate-portal?payout=requested");
+    expect(mocks.security).toHaveBeenCalled();
+    expect(mocks.requestPayout).toHaveBeenCalledWith({}, expect.objectContaining({
+      payoutId: "payout-a",
+      vendorId: "vendor-a",
+      affiliateId: "affiliate-a",
+      bankAccountEncrypted: "bank-envelope",
+      taxIdentityEncrypted: "tax-envelope",
+    }));
   });
 });

@@ -9,6 +9,7 @@ import {
   FLASH_VOUCHER_COOKIE,
   FLASH_VOUCHER_TTL_MS,
   hashInteractionBearer,
+  luckyDrawClaimEnvelopePurpose,
   pollPercentagesFromCounts,
 } from "@/lib/live-interaction";
 import {
@@ -18,6 +19,8 @@ import {
 } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { decryptSensitiveValue } from "@/lib/sensitive-data";
+import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
 
 const Identifier = z.string().trim().min(1).max(128);
 const OpenRequest = z.object({
@@ -31,10 +34,79 @@ const RespondRequest = z.object({
   vendorId: Identifier,
   liveId: Identifier,
   runId: Identifier,
-  value: z.string().trim().min(1).max(160),
+  value: z.union([
+    z.string().trim().min(1).max(160),
+    z.array(z.string().trim().min(1).max(80)).min(1).max(8),
+  ]),
   displayName: z.string().trim().min(1).max(80).optional(),
 }).strict();
-const RequestBody = z.discriminatedUnion("action", [OpenRequest, RespondRequest]);
+const AskQuestionRequest = z.object({
+  action: z.literal("ask_question"),
+  vendorId: Identifier,
+  liveId: Identifier,
+  body: z.string(),
+  displayName: z.string().optional(),
+}).strict();
+const RequestBody = z.discriminatedUnion("action", [OpenRequest, RespondRequest, AskQuestionRequest]);
+const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+const FORM_SUBMISSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
+
+function requestCookie(request: Request, name: string) {
+  for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
+    const separator = segment.indexOf("=");
+    if (separator > 0 && segment.slice(0, separator).trim() === name) return segment.slice(separator + 1).trim();
+  }
+  return null;
+}
+
+/**
+ * Resolves a buyer only from the httpOnly, verified registration identity and
+ * commerce records. Display names and viewer tokens are deliberately absent.
+ */
+async function verifiedPurchasedDrawRegistration(
+  tx: Prisma.TransactionClient,
+  request: Request,
+  input: { vendorId: string; liveId: string },
+) {
+  const formSubmissionId = requestCookie(request, FORM_SUBMISSION_COOKIE);
+  if (!formSubmissionId || !FORM_SUBMISSION_ID_PATTERN.test(formSubmissionId)) return null;
+
+  const registration = await tx.formSubmission.findFirst({
+    where: {
+      id: formSubmissionId,
+      liveId: input.liveId,
+      verificationStatus: "VERIFIED",
+      form: { vendorId: input.vendorId },
+    },
+    select: { id: true },
+  });
+  if (!registration) return null;
+
+  const purchase = await tx.paymentTransaction.findFirst({
+    where: {
+      vendorId: input.vendorId,
+      status: "paid",
+      metadata: { path: ["formSubmissionId"], equals: registration.id },
+      primaryCommerceOrder: {
+        is: {
+          vendorId: input.vendorId,
+          status: "paid",
+          items: {
+            some: {
+              product: {
+                is: {
+                  liveProducts: { some: { vendorId: input.vendorId, liveId: input.liveId } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  return purchase ? registration.id : null;
+}
 
 function scheduledInteractionWindow(
   sourceLive: Parameters<typeof resolveLiveRuntime>[0] | undefined,
@@ -82,10 +154,34 @@ async function projectRun(runId: string, participantHash: string) {
       ? getDb().liveInteractionResponse.groupBy({ by: ["value"], where: { runId }, _count: { _all: true } })
       : Promise.resolve([]),
     run.winnerResponseId
-      ? getDb().liveInteractionResponse.findUnique({ where: { id: run.winnerResponseId }, select: { id: true, displayName: true } })
+      ? getDb().liveInteractionResponse.findUnique({ where: { id: run.winnerResponseId }, select: { id: true, displayName: true, winnerClaimCodeEncryptedEnvelope: true } })
       : Promise.resolve(null),
   ]);
-  const countMap = new Map(pollCounts.map((row) => [row.value, row._count._all]));
+  const countMap = new Map<string, number>();
+  for (const row of pollCounts) {
+    let selections: string[] = [row.value];
+    if (row.value.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(row.value) as unknown;
+        if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) selections = parsed;
+      } catch { /* Legacy/single values stay valid. */ }
+    }
+    for (const selection of selections) countMap.set(selection, (countMap.get(selection) ?? 0) + row._count._all);
+  }
+  const winnerIsViewer = Boolean(run.winnerResponseId && ownResponse?.id === run.winnerResponseId);
+  let winnerClaimCode: string | null = null;
+  // The encrypted code is read only for the matching winner response. A failed
+  // decrypt stays fail-closed: the UI never receives an unverifiable fallback.
+  if (winnerIsViewer && winnerResponse?.winnerClaimCodeEncryptedEnvelope) {
+    try {
+      winnerClaimCode = decryptSensitiveValue(
+        winnerResponse.winnerClaimCodeEncryptedEnvelope,
+        luckyDrawClaimEnvelopePurpose(run.vendorId, winnerResponse.id),
+      );
+    } catch {
+      winnerClaimCode = null;
+    }
+  }
   return {
     id: run.id,
     eventType: run.eventType,
@@ -99,7 +195,8 @@ async function projectRun(runId: string, participantHash: string) {
     ownValue: ownResponse?.value ?? null,
     pollResults: metadata.kind === "poll" ? pollPercentagesFromCounts(metadata.options, countMap) : null,
     winner: winnerResponse ? winnerResponse.displayName ?? "幸運觀眾" : null,
-    winnerIsViewer: Boolean(run.winnerResponseId && ownResponse?.id === run.winnerResponseId),
+    winnerIsViewer,
+    winnerClaimCode,
     winnerRevealedAt: run.winnerResponseId ? run.updatedAt.toISOString() : null,
     prizeName: metadata.kind === "lucky_draw" ? (metadata.prizeName ?? null) : null,
   };
@@ -115,7 +212,7 @@ export async function GET(request: Request) {
   const viewer = await admittedViewer(request, vendorId, liveId);
   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
   const now = new Date();
-  const runs = await getDb().liveInteractionRun.findMany({
+  const [runs, spotlight] = await Promise.all([getDb().liveInteractionRun.findMany({
     where: {
       vendorId,
       liveId,
@@ -125,9 +222,13 @@ export async function GET(request: Request) {
     orderBy: { startsAt: "desc" },
     take: 3,
     select: { id: true },
-  });
+  }), getDb().liveQuestion.findFirst({
+    where: { vendorId, liveId, status: "spotlight" },
+    orderBy: { spotlightedAt: "desc" },
+    select: { id: true, body: true, displayName: true, spotlightedAt: true },
+  })]);
   const projected = await Promise.all(runs.map(({ id }) => projectRun(id, viewer.participantHash)));
-  return NextResponse.json({ runs: projected.filter(Boolean) }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({ runs: projected.filter(Boolean), spotlight }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -140,6 +241,26 @@ export async function POST(request: Request) {
   const data = parsed.data;
   const viewer = await admittedViewer(request, data.vendorId, data.liveId);
   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
+
+  if (data.action === "ask_question") {
+    const body = normalizeLiveQuestionBody(data.body);
+    const displayName = normalizeLiveQuestionDisplayName(data.displayName);
+    if (!body) return NextResponse.json({ error: "Invalid question" }, { status: 400 });
+    const live = await getDb().live.findFirst({ where: { id: data.liveId, vendorId: data.vendorId, status: "live" }, select: { id: true } });
+    if (!live) return NextResponse.json({ error: "Live unavailable" }, { status: 409 });
+    const question = await getDb().$transaction(async (tx) => {
+      const recentCount = await tx.liveQuestion.count({
+        where: { vendorId: data.vendorId, liveId: data.liveId, participantHash: viewer.participantHash, createdAt: { gt: new Date(Date.now() - 60_000) } },
+      });
+      if (recentCount >= 3) return null;
+      return tx.liveQuestion.create({
+        data: { vendorId: data.vendorId, liveId: data.liveId, participantHash: viewer.participantHash, displayName, body },
+        select: { id: true, status: true },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    if (!question) return NextResponse.json({ error: "Question rate limit exceeded" }, { status: 429 });
+    return NextResponse.json({ question }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   if (data.action === "open") {
     const event = await getDb().interactionEvent.findFirst({
@@ -210,8 +331,15 @@ export async function POST(request: Request) {
   });
   const metadata = run ? configuration(run.configuration) : null;
   if (!run || !metadata) return NextResponse.json({ error: "Interaction closed" }, { status: 409 });
-  if (metadata.kind === "poll" && !metadata.options.some(({ id }) => id === data.value)) {
-    return NextResponse.json({ error: "Invalid poll option" }, { status: 400 });
+  const submittedValue = Array.isArray(data.value) ? data.value : [data.value];
+  if (metadata.kind === "poll") {
+    const uniqueValues = [...new Set(submittedValue)];
+    const maxSelections = metadata.selectionMode === "multiple" ? (metadata.maxSelections ?? metadata.options.length) : 1;
+    if (uniqueValues.length !== submittedValue.length || uniqueValues.length > maxSelections || uniqueValues.some((value) => !metadata.options.some(({ id }) => id === value))) {
+      return NextResponse.json({ error: "Invalid poll option" }, { status: 400 });
+    }
+  } else if (Array.isArray(data.value)) {
+    return NextResponse.json({ error: "Invalid interaction value" }, { status: 400 });
   }
   if (metadata.kind === "lucky_draw") {
     const isSloganMode = !metadata.eligibility || metadata.eligibility === "slogan";
@@ -223,6 +351,12 @@ export async function POST(request: Request) {
   let bearer: string | null = null;
   try {
     await getDb().$transaction(async (tx) => {
+      const purchasedRegistrationId = metadata.kind === "lucky_draw" && metadata.eligibility === "purchased"
+        ? await verifiedPurchasedDrawRegistration(tx, request, { vendorId: run.vendorId, liveId: run.liveId })
+        : null;
+      if (metadata.kind === "lucky_draw" && metadata.eligibility === "purchased" && !purchasedRegistrationId) {
+        throw new Error("PURCHASED_ELIGIBILITY_REQUIRED");
+      }
       if (metadata.kind === "flash_voucher") {
         const claimed = await tx.liveInteractionResponse.count({ where: { runId: run.id } });
         if (claimed >= metadata.maxClaims) throw new Error("VOUCHER_SOLD_OUT");
@@ -235,8 +369,9 @@ export async function POST(request: Request) {
           runId: run.id,
           participantHash: viewer.participantHash,
           eventType: run.eventType,
-          value: data.value,
+          value: metadata.kind === "poll" && submittedValue.length > 1 ? JSON.stringify(submittedValue) : submittedValue[0]!,
           displayName: data.displayName,
+          ...(purchasedRegistrationId ? { formSubmissionId: purchasedRegistrationId } : {}),
           ...(bearer ? {
             claimTokenHash: hashInteractionBearer(bearer),
             productId: metadata.kind === "flash_voucher" ? metadata.productId : null,
@@ -251,6 +386,9 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message === "VOUCHER_SOLD_OUT") {
       return NextResponse.json({ error: "Voucher sold out" }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "PURCHASED_ELIGIBILITY_REQUIRED") {
+      return NextResponse.json({ error: "Purchased eligibility required" }, { status: 403 });
     }
     throw error;
   }

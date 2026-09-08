@@ -12,6 +12,11 @@ const outcomeReasonMigrationPath = join(
   "20260809060000_g7_28_affiliate_payout_outcome_reason",
   "migration.sql",
 );
+const taiwanTaxMigrationPath = join(
+  migrationsRoot,
+  "20260907200000_affiliate_payout_taiwan_withholding",
+  "migration.sql",
+);
 
 function affiliatePayoutModel(schema: string): string {
   const match = schema.match(/model AffiliatePayout \{[\s\S]*?\n\}/);
@@ -71,5 +76,29 @@ describe("G7-28 AffiliatePayout outcome reason contract", () => {
     expect(migration).toContain('btrim("outcomeReason") <>');
     expect(migration).toContain('char_length("outcomeReason") BETWEEN 1 AND 500');
     expect(migration).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE)\b/i);
+  });
+});
+
+describe("Taiwan affiliate remuneration snapshot contract", () => {
+  it("keeps every statutory amount and signature snapshot explicit", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    const model = affiliatePayoutModel(schema);
+    for (const field of ["grossAmountCents", "withholdingTaxCents", "nhiSupplementaryTaxCents", "bankFeeCents", "netPayoutAmountCents"]) {
+      expect(model).toMatch(new RegExp(`^\\s*${field}\\s+Int\\?\\s*$`, "m"));
+    }
+    expect(model).toMatch(/^\s*taxCategory\s+String\s+@default\("92_other"\)\s*$/m);
+    expect(model).toMatch(/^\s*signedAt\s+DateTime\?\s*$/m);
+    expect(model).toMatch(/^\s*requestedTaxIdentityEncrypted\s+String\?\s*$/m);
+    expect(schema).toMatch(/^\s*taxIdentityEncrypted\s+String\?\s*$/m);
+    expect(schema).not.toMatch(/^\s*(taxIdentity|nationalId|identityNumber)\s+String\??\s*$/m);
+  });
+
+  it("adds only backward-compatible nullable snapshots and nonnegative checks", () => {
+    const migration = readFileSync(taiwanTaxMigrationPath, "utf8");
+    expect(migration).toContain('ADD COLUMN "grossAmountCents" INTEGER');
+    expect(migration).toContain('ADD COLUMN "signedAt" TIMESTAMP(3)');
+    expect(migration).toContain('ADD COLUMN "taxIdentityEncrypted" TEXT');
+    expect(migration).toContain('"netPayoutAmountCents" IS NULL OR "netPayoutAmountCents" >= 0');
+    expect(migration).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE|DROP TABLE)\b/i);
   });
 });

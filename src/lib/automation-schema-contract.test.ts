@@ -28,9 +28,9 @@ describe("smart automation workflow persistence contract", () => {
     expect(schema).toContain("model AutomationExecutionLog {");
     expect(schema).toContain("model CustomerTagAssignment {");
     expect(schema).toContain("model AutomationVoucherGrant {");
-    expect(schema).toContain("viewerKeyHash             String?");
+    expect(schema).toMatch(/viewerKeyHash\s+String\?/u);
     expect(schema).toContain("@@index([liveId, viewerKeyHash, capturedAt])");
     expect(schema).toContain("@@unique([vendorId, idempotencyKey])");
-    expect(schema).toContain("claimTokenHash      String                  @unique");
+    expect(schema).toMatch(/claimTokenHash\s+String\s+@unique/u);
   });
 });

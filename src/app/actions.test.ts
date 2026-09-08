@@ -6569,6 +6569,16 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
     outcomeReference: null,
     outcomeReason: null,
     paidAt: null,
+    requestedAt: new Date("2026-08-06T08:00:00.000Z"),
+    signedAt: new Date("2026-08-06T08:00:00.000Z"),
+    requestedBankAccountEncrypted: "bank-envelope",
+    requestedTaxIdentityEncrypted: "tax-envelope",
+    grossAmountCents: 500,
+    withholdingTaxCents: 0,
+    nhiSupplementaryTaxCents: 0,
+    bankFeeCents: 0,
+    netPayoutAmountCents: 500,
+    withholdingRuleVersion: "tw-affiliate-2026-v1",
   };
   const commission = { id: "commission-fin-05", vendorId: "vendor-1", affiliateId: "affiliate-1", monthKey: "2026-08", status: "locked" };
   const transitionAt = new Date("2026-08-06T09:00:00.000Z");
