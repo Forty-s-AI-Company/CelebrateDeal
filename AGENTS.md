@@ -84,6 +84,7 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
 - Coverage gate 是品質訊號；不得降低門檻，但不再阻擋功能測試或 E2E 的合理執行。
 - 發現同一失敗沒有改善時，停止該路徑並改用不同診斷或產品工作；不得在同一死路無限重試。
 - 每個 checkpoint 保存 scope、實際結果、證據、回滾方式與下一步；完整 handoff 只在角色或風險真正變更時輸出。
+- **結尾強制自動 Checkpoint Commit（Mandatory End-of-Goal Checkpoint Commit）**：所有驗證命令全數通過後，代理必須在回報前自動執行 `git add .` 與建立語義化本地 Checkpoint Commit（例如 `git commit -m "feat(<scope>): <description>"`），確保工作目錄處於 clean 狀態，不留未提交的變更，並在總結中明確回報 Commit Hash。
 - 最終 Goal 只有在所有目標與必要 release evidence 完成後才可標記 `COMPLETE`。
 
 ## 文件優先順序
