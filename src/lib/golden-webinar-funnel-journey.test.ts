@@ -5,11 +5,27 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigationMocks = vi.hoisted(() => ({ pathname: "/affiliates/commissions" }));
+const portalMocks = vi.hoisted(() => ({
+  bookingFindFirst: vi.fn(),
+  requireSession: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ usePathname: () => navigationMocks.pathname }));
 vi.mock("@/app/actions", () => ({ logoutAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({ consultationBooking: { findFirst: portalMocks.bookingFindFirst } }),
+}));
+vi.mock("@/lib/student-portal-auth", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/student-portal-auth")>(),
+  requireStudentPortalSession: portalMocks.requireSession,
+}));
+vi.mock("@/lib/product-delivery", () => ({
+  parsePublicHttpsDeliveryUrl: (value: string) => ({ url: value, hostname: "learn.example.test", pathPrefix: "/course" }),
+  revealOrderItemDeliverySnapshot: () => ({ destinationUrl: "https://learn.example.test/course", instructions: "從第一章開始" }),
+}));
 
 import { csvCell } from "@/app/api/affiliates/payouts/export/route";
+import { GET as exportConsultationCalendar } from "@/app/portal/[vendorSlug]/calendar/[bookingId]/route";
 import { navigationForRole } from "@/components/app-shell";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
 import { automationCustomerKeyHash, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
@@ -24,6 +40,9 @@ import { computeEcpayCheckMacValue, ecpayPaymentProvider, getEcpayConfig } from 
 import { splitTaiwanVat } from "@/lib/taiwan-electronic-invoice";
 import { invoiceBuyerDisplay, protectInvoiceRequest, revealInvoiceRequest } from "@/lib/taiwan-invoice-request";
 import { isValidCitizenDigitalCertificate, isValidMobileBarcode } from "@/lib/taiwan-invoice-validator";
+import { getStudentPortalDashboard } from "@/lib/student-portal";
+import { createStudentPortalAccessToken, verifyStudentPortalAccessToken } from "@/lib/student-portal-auth";
+import { LineRichMenuSchema, MockLineRichMenuAdapter, createRichMenuTemplate, replaceRichMenuPlaceholders } from "@/lib/line-rich-menu";
 import { calculateTaiwanTaxWithholding } from "@/lib/taiwan-tax-withholding";
 import { decryptTaxIdentity, encryptTaxIdentity, maskTaxIdentity } from "@/lib/tax-identity";
 import { calculateTieredCommission } from "@/lib/tiered-commission-engine";
@@ -42,7 +61,7 @@ type JourneyState = {
 
 const keyring = createBankAccountKeyring({ activeKeyId: "golden", keys: { golden: randomBytes(32).toString("base64url") } });
 
-describe.sequential("CelebrateDeal ultimate ten-step webinar funnel golden journey", () => {
+describe.sequential("CelebrateDeal ultimate twelve-step webinar funnel golden journey", () => {
   const journey: JourneyState = { vendorId: "vendor-golden" };
 
   beforeEach(() => {
@@ -52,6 +71,7 @@ describe.sequential("CelebrateDeal ultimate ten-step webinar funnel golden journ
     vi.stubEnv("ECPAY_HASH_KEY", "");
     vi.stubEnv("ECPAY_HASH_IV", "");
     vi.stubEnv("CSRF_SECRET", "golden-journey-test-only-encryption-material-2026");
+    portalMocks.requireSession.mockResolvedValue({ session: { vendorId: journey.vendorId, customerKeyHash: journey.customerKeyHash } });
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -200,7 +220,7 @@ describe.sequential("CelebrateDeal ultimate ten-step webinar funnel golden journ
     const links = navigationForRole("owner", false, enabled).flatMap((group) => group.items.map((item) => item.href));
     expect(links).not.toContain("/affiliates");
     navigationMocks.pathname = "/affiliates/commissions";
-    const html = renderToStaticMarkup(createElement(FeatureAccessBoundary, { enabledModules: enabled, children: createElement("p", null, "private affiliate page") }));
+    const html = renderToStaticMarkup(FeatureAccessBoundary({ enabledModules: enabled, children: createElement("p", null, "private affiliate page") }));
     expect(html).toContain("該功能目前尚未在此特店啟用");
     expect(html).not.toContain("private affiliate page");
 
@@ -208,5 +228,71 @@ describe.sequential("CelebrateDeal ultimate ten-step webinar funnel golden journ
     for (const model of ["FormSubmission", "LiveInteractionResponse", "ConsultationBooking", "ElectronicInvoice", "AffiliateCommission", "AffiliatePayout", "CustomerCrmRecord"]) expect(schema).toContain(`model ${model} {`);
     expect(schema).toContain("@@unique([vendorId, id])");
     expect([journey.registration?.vendorId, journey.booking?.vendorId, journey.invoice?.vendorId]).toEqual([journey.vendorId, journey.vendorId, journey.vendorId]);
+  });
+
+  it("Step 11：以 HMAC Magic Link 進入學員中心，取得課程、ICS 與電子發票載具", async () => {
+    const now = new Date("2026-09-09T08:00:00Z");
+    const tokenStore = { create: vi.fn().mockResolvedValue({}) };
+    const token = await createStudentPortalAccessToken({ studentPortalAccessToken: tokenStore } as never, {
+      vendorId: journey.vendorId,
+      email: journey.registration!.email,
+      purpose: "magic_link",
+      now,
+    });
+    const claim = verifyStudentPortalAccessToken({ token, expectedPurpose: "magic_link", now });
+    expect(claim).toMatchObject({ vendorId: journey.vendorId, customerKeyHash: journey.customerKeyHash, purpose: "magic_link" });
+    expect(token.split(".")[2]).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(verifyStudentPortalAccessToken({ token: `${token.slice(0, -1)}x`, expectedPurpose: "magic_link", now })).toBeNull();
+    expect(JSON.stringify(tokenStore.create.mock.calls[0]?.[0])).not.toContain(journey.registration!.email);
+
+    const portalDb = {
+      commerceOrder: { findMany: vi.fn().mockResolvedValue([{
+        id: "order-golden", orderNumber: journey.payment!.orderNumber, status: "paid", currency: "TWD",
+        totalAmountCents: journey.payment!.amountCents, paidAmountCents: journey.payment!.amountCents, refundedAmountCents: 0,
+        buyerMaskedEmail: "s***@example.test", paidAt: now, createdAt: now,
+        items: [{ id: "item-golden", productId: "product-golden", productName: "高客單成交實戰班", productSlug: "golden-course", fulfillmentType: "course", imageUrl: null, quantity: 1, entitlement: { status: "granted", revokedAt: null, expiresAt: null } }],
+        deliverySnapshots: [{ id: "delivery-golden", vendorId: journey.vendorId, orderId: "order-golden", orderItemId: "item-golden", title: "課程入口", deliveryKind: "course_portal", destinationEncryptedEnvelope: "encrypted", instructionsEncryptedEnvelope: "encrypted", destinationMaskedSummary: "safe", instructionsMaskedSummary: "safe", allowlistSnapshot: { hostname: "learn.example.test", pathPrefix: "/course", allowQuery: false } }],
+        electronicInvoice: { invoiceNumber: "AB12345678", invoiceType: "mobile_carrier", buyerDisplay: "/ABC1234", status: "issued", issuedAt: now },
+        primaryPaymentTransaction: { providerName: "ecpay", paymentMode: "platform" },
+      }]) },
+      consultationBooking: { findMany: vi.fn().mockResolvedValue([{ ...journey.booking!, status: "scheduled", meetingUrl: "https://meet.example.test/golden", event: { title: "1 對 1 成交諮詢", description: "準備成交問題", timezone: "Asia/Taipei" } }]) },
+      automationVoucherGrant: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const dashboard = await getStudentPortalDashboard(portalDb as never, { vendorId: journey.vendorId, customerKeyHash: journey.customerKeyHash! }, now);
+    expect(dashboard.courses[0]).toMatchObject({ title: "高客單成交實戰班", accessStatus: "active", destinationUrl: "https://learn.example.test/course" });
+    expect(dashboard.consultations[0]?.icsUrl).toBe(`/portal/calendar/${journey.booking!.id}.ics`);
+    expect(dashboard.orders[0]?.invoice).toMatchObject({ invoiceNumber: "AB12345678", invoiceType: "mobile_carrier", buyerDisplay: "/A••••34" });
+
+    portalMocks.bookingFindFirst.mockResolvedValue({ id: journey.booking!.id, startTime: journey.booking!.startTime, endTime: journey.booking!.endTime, meetingUrl: "https://meet.example.test/golden", event: { title: "1 對 1 成交諮詢", description: "準備成交問題" } });
+    const calendar = await exportConsultationCalendar(new Request("https://app.example.test"), { params: Promise.resolve({ vendorSlug: "golden", bookingId: journey.booking!.id }) });
+    expect(calendar.headers.get("content-type")).toContain("text/calendar");
+    expect(calendar.headers.get("content-disposition")).toContain("consultation.ics");
+    expect(await calendar.text()).toContain("BEGIN:VEVENT");
+    expect(portalMocks.bookingFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: journey.booking!.id, vendorId: journey.vendorId, customerKeyHash: journey.customerKeyHash } }));
+  });
+
+  it("Step 12：建立六格 LINE Rich Menu、替換全漏斗連結並設為預設選單", async () => {
+    const placeholders = ["{{live_url}}", "{{voucher_url}}", "{{consultation_url}}", "{{portal_url}}"];
+    const template = createRichMenuTemplate("golden-6");
+    expect(template).toMatchObject({ selected: true, size: { width: 2500, height: 1686 }, name: "銷講全鏈路 6 格黃金版型", chatBarText: "開啟選單" });
+    expect(template.areas).toHaveLength(6);
+    expect(LineRichMenuSchema.safeParse(template).success).toBe(true);
+    expect(template.areas.flatMap((area) => placeholders.filter((placeholder) => area.action.uri === placeholder))).toEqual(expect.arrayContaining(placeholders));
+
+    const urls = {
+      live_url: "https://app.example.test/live/golden",
+      consultation_url: "https://app.example.test/consultations/golden",
+      portal_url: "https://app.example.test/portal/golden",
+      voucher_url: "https://app.example.test/vouchers/golden",
+    };
+    const resolved = replaceRichMenuPlaceholders(template, urls);
+    expect(resolved.areas.map((area) => area.action.uri)).toEqual(expect.arrayContaining(Object.values(urls)));
+    expect(JSON.stringify(resolved)).not.toMatch(/\{\{(?:live_url|consultation_url|portal_url|voucher_url)\}\}/u);
+
+    const adapter = new MockLineRichMenuAdapter();
+    const { richMenuId } = await adapter.create(resolved);
+    await adapter.setDefault(richMenuId);
+    expect(adapter.calls.at(-1)).toEqual({ method: "POST", path: `/user/all/richmenu/${richMenuId}` });
+    expect(adapter.list()).toEqual([{ richMenuId, name: "銷講全鏈路 6 格黃金版型" }]);
   });
 });
