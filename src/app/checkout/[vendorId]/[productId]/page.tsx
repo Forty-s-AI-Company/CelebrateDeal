@@ -123,6 +123,8 @@ export default async function CommerceCheckoutPage({
             fulfillmentType={fulfillmentType}
             customCheckoutFields={customCheckoutFields.data}
             recoveryOnly={!isAvailable}
+            priceCents={checkoutPriceCents}
+            currency={product.currency}
           />
         </section>
       </div>

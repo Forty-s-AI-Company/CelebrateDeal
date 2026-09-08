@@ -7,6 +7,15 @@ export type CommerceCheckoutFulfillmentType = (typeof COMMERCE_FULFILLMENT_TYPES
 
 const checkoutText = z.string().trim().min(1).max(128);
 
+export const CommerceOrderBumpSelectionSchema = z.object({
+  productId: checkoutText.optional(),
+  sku: checkoutText.optional(),
+}).refine((value) => Boolean(value.productId || value.sku), {
+  message: "An order bump productId or sku is required.",
+}).strict();
+
+export type CommerceOrderBumpSelection = z.infer<typeof CommerceOrderBumpSelectionSchema>;
+
 export const CommerceCheckoutRequestSchema = z.object({
   vendorId: checkoutText,
   productId: checkoutText,
@@ -16,6 +25,7 @@ export const CommerceCheckoutRequestSchema = z.object({
   invoice: z.unknown().optional(),
   shipping: z.unknown().nullable().optional(),
   customCheckoutAnswers: z.unknown().optional(),
+  orderBump: CommerceOrderBumpSelectionSchema.optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({
@@ -54,6 +64,9 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
     const destination = new URL(value, currentOrigin);
     const origin = new URL(currentOrigin).origin;
     if (destination.origin === origin) return true;
+    if (provider === "stripe") {
+      return destination.protocol === "https:" && destination.hostname === "checkout.stripe.com";
+    }
     return provider === "payuni" && allowedPaymentUrl(destination.toString()) !== null;
   } catch {
     return false;

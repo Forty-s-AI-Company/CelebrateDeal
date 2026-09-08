@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
@@ -208,6 +209,8 @@ function checkoutTransactionMetadata(input: {
   voucherClaimId?: string;
   discountAmountCents?: number;
   checkoutAmountCents?: number;
+  orderBumpProductId?: string;
+  orderBumpPriceCents?: number;
 }) {
   return {
     // The browser cannot choose a transaction purpose or source marker.
@@ -222,6 +225,8 @@ function checkoutTransactionMetadata(input: {
     ...(input.voucherClaimId ? { voucherClaimId: input.voucherClaimId } : {}),
     ...(input.discountAmountCents ? { discountAmountCents: input.discountAmountCents } : {}),
     ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
+    ...(input.orderBumpProductId ? { orderBumpProductId: input.orderBumpProductId } : {}),
+    ...(input.orderBumpPriceCents ? { orderBumpPriceCents: input.orderBumpPriceCents } : {}),
     ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
@@ -544,6 +549,29 @@ export async function POST(request: Request) {
   if (!product) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
+  const requestedOrderBump = parsed.data.orderBump;
+  const orderBumpProduct = requestedOrderBump
+    ? await db.product.findFirst({
+        where: {
+          vendorId: parsed.data.vendorId,
+          ...(requestedOrderBump.productId
+            ? { id: requestedOrderBump.productId }
+            : { slug: requestedOrderBump.sku }),
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          priceCents: { gt: 0 },
+        },
+        include: { deliveryConfig: { select: { status: true, fulfillmentType: true } } },
+      })
+    : null;
+  if (requestedOrderBump && (
+    !orderBumpProduct
+    || orderBumpProduct.id === product.id
+    || orderBumpProduct.currency !== product.currency
+    || unavailableCheckoutProductResponse(orderBumpProduct)
+  )) {
+    return NextResponse.json({ error: "Order bump not available" }, { status: 409 });
+  }
   const unavailableProductResponse = unavailableCheckoutProductResponse(product);
   if (unavailableProductResponse) return unavailableProductResponse;
 
@@ -564,9 +592,12 @@ export async function POST(request: Request) {
   const invoiceSelection = parseCheckoutInvoiceSelection(parsed.data.invoice ?? { type: "personal", carrier: "member" });
   if (!invoiceSelection) return NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 });
   const hasExplicitInvoiceSelection = parsed.data.invoice !== undefined;
-  const checkoutIdentityHash = hasExplicitInvoiceSelection
+  const invoiceBoundCheckoutIdentityHash = hasExplicitInvoiceSelection
     ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
     : baseCheckoutIdentityHash;
+  const checkoutIdentityHash = orderBumpProduct
+    ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
+    : invoiceBoundCheckoutIdentityHash;
 
   const existing = await db.paymentTransaction.findUnique({
     where: {
@@ -610,7 +641,8 @@ export async function POST(request: Request) {
     priceCents: product.priceCents,
     currency: product.currency,
   });
-  const { discountAmountCents, checkoutAmountCents } = checkoutPromotion(voucherClaim, product.priceCents);
+  const { discountAmountCents, checkoutAmountCents: primaryCheckoutAmountCents } = checkoutPromotion(voucherClaim, product.priceCents);
+  const checkoutAmountCents = primaryCheckoutAmountCents + (orderBumpProduct?.priceCents ?? 0);
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
     productName: product.name,
@@ -622,6 +654,8 @@ export async function POST(request: Request) {
     voucherClaimId: voucherClaim?.id,
     discountAmountCents,
     checkoutAmountCents,
+    orderBumpProductId: orderBumpProduct?.id,
+    orderBumpPriceCents: orderBumpProduct?.priceCents,
   });
 
   const order = orderNumber();
@@ -654,6 +688,7 @@ export async function POST(request: Request) {
           paymentTransactionId: createdTransaction.id,
           totalAmountCents: checkoutAmountCents,
           discountAmountCents,
+          orderBumpProductId: orderBumpProduct?.id,
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,

@@ -63,7 +63,7 @@ describe("commerce checkout contract", () => {
     expect(checkoutRequiresPhone("course")).toBe(false);
   });
 
-  it("permits only exact PayUni UPP or same-origin destinations", () => {
+  it("permits only exact provider or same-origin destinations", () => {
     expect(isAllowedCheckoutDestination(
       "https://sandbox-api.payuni.com.tw/api/upp",
       "http://127.0.0.1:31023",
@@ -75,6 +75,16 @@ describe("commerce checkout contract", () => {
       "payuni",
     )).toBe(true);
     expect(isAllowedCheckoutDestination("/checkout/continue", "http://127.0.0.1:31023", "demo")).toBe(true);
+    expect(isAllowedCheckoutDestination(
+      "https://checkout.stripe.com/c/pay/cs_test_001",
+      "https://app.example.test",
+      "stripe",
+    )).toBe(true);
+    expect(isAllowedCheckoutDestination(
+      "https://checkout.stripe.com.evil.example/pay",
+      "https://app.example.test",
+      "stripe",
+    )).toBe(false);
     expect(isAllowedCheckoutDestination("https://evil.example/pay", "https://app.example.test", "payuni")).toBe(false);
     expect(isAllowedCheckoutDestination(
       "https://sandbox-api.payuni.com.tw/api/upp?next=evil",

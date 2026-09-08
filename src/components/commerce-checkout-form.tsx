@@ -30,7 +30,21 @@ type CommerceCheckoutFormProps = {
   fulfillmentType: CommerceCheckoutFulfillmentType;
   customCheckoutFields?: CustomCheckoutFields;
   recoveryOnly?: boolean;
+  priceCents?: number;
+  currency?: string;
+  orderBump?: {
+    title: string;
+    description: string;
+    priceCents: number;
+    productId?: string;
+    sku?: string;
+    badge?: string;
+  };
 };
+
+function formatCheckoutPrice(priceCents: number, currency: string) {
+  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+}
 
 function submitProviderForm(action: string, payload: Record<string, string>) {
   const form = document.createElement("form");
@@ -91,10 +105,14 @@ export function CommerceCheckoutForm({
   fulfillmentType,
   customCheckoutFields = [],
   recoveryOnly = false,
+  priceCents,
+  currency = "TWD",
+  orderBump,
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
+  const [orderBumpSelected, setOrderBumpSelected] = useState(false);
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
   const requiresShipping = checkoutRequiresShipping(fulfillmentType);
@@ -230,6 +248,12 @@ export function CommerceCheckoutForm({
           shipping,
           invoice,
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
+          ...(orderBumpSelected && orderBump ? {
+            orderBump: {
+              ...(orderBump.productId ? { productId: orderBump.productId } : {}),
+              ...(orderBump.sku ? { sku: orderBump.sku } : {}),
+            },
+          } : {}),
         }),
         signal: controller.signal,
       });
@@ -358,6 +382,34 @@ export function CommerceCheckoutForm({
       ) : null}
 
       <CheckoutCustomFields fields={customCheckoutFields} disabled={isPending || phase === "success"} />
+
+      {orderBump ? (
+        <label className="relative flex cursor-pointer items-start gap-4 overflow-hidden rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-[0_0_28px_rgba(251,191,36,0.24)]">
+          <span className="absolute right-3 top-3 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
+            {orderBump.badge ?? "限時加購優惠"}
+          </span>
+          <input
+            type="checkbox"
+            name="orderBumpSelected"
+            checked={orderBumpSelected}
+            onChange={(event) => setOrderBumpSelected(event.currentTarget.checked)}
+            disabled={isPending || phase === "success"}
+            className="mt-1 h-5 w-5 shrink-0 accent-orange-600"
+          />
+          <span className="min-w-0 pr-20">
+            <span className="block text-base font-black text-slate-950">加購推薦：{orderBump.title}</span>
+            <span className="mt-1 block text-sm leading-6 text-slate-700">{orderBump.description}</span>
+            <span className="mt-2 block font-black text-orange-700">只要 {formatCheckoutPrice(orderBump.priceCents, currency)}</span>
+          </span>
+        </label>
+      ) : null}
+
+      {typeof priceCents === "number" ? (
+        <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
+          <span className="font-semibold">本次結帳總額</span>
+          <strong className="text-xl">{formatCheckoutPrice(priceCents + (orderBumpSelected ? orderBump?.priceCents ?? 0 : 0), currency)}</strong>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
         <p id="checkout-payment-notice" className="flex items-start gap-2 font-semibold">

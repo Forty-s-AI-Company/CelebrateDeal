@@ -197,6 +197,45 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("prices an order bump from the same-tenant server record and passes only its authorized id", async () => {
+    const primary = await db.product.findFirst();
+    db.product.findFirst
+      .mockResolvedValueOnce(primary)
+      .mockResolvedValueOnce({
+        ...primary,
+        id: "bump-1",
+        slug: "closing-scripts",
+        name: "成交腳本包",
+        priceCents: 300,
+        inventory: 10,
+      });
+
+    const response = await POST(checkoutRequest(undefined, {
+      orderBump: { productId: "bump-1" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ grossAmountCents: 1_500, netAmountCents: 1_500 }),
+    }));
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ totalAmountCents: 1_500, orderBumpProductId: "bump-1" }),
+    );
+  });
+
+  it("fails closed when the requested order bump is outside the tenant lookup", async () => {
+    const primary = await db.product.findFirst();
+    db.product.findFirst.mockResolvedValueOnce(primary).mockResolvedValueOnce(null);
+
+    const response = await POST(checkoutRequest(undefined, {
+      orderBump: { productId: "other-tenant-product" },
+    }));
+
+    expect(response.status).toBe(409);
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+  });
+
   it("derives a matching flash-voucher discount on the server and consumes it once", async () => {
     db.liveInteractionResponse.findUnique.mockResolvedValueOnce({
       id: "claim-1",

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   deriveRefundOrderStatus,
@@ -198,6 +198,8 @@ export type CreateCommerceOrderForCheckoutInput = {
   totalAmountCents: number;
   /** Optional server-authorized promotion. Never accept this value directly from a browser. */
   discountAmountCents?: number;
+  /** Optional server-authorized same-tenant add-on product. */
+  orderBumpProductId?: string;
   quantity?: number;
   currency: string;
   buyer: CommerceOrderBuyerContact;
@@ -265,7 +267,34 @@ export async function createCommerceOrderForCheckout(
   assertProductDomain(product);
   assertPositiveAmount(product.priceCents, "product price");
   if (product.currency !== input.currency) throw new CommerceOrderValidationError("currency does not match product.");
-  const calculatedTotal = product.priceCents * quantity;
+  const orderBumpProduct = input.orderBumpProductId
+    ? await tx.product.findFirst({
+        where: {
+          id: input.orderBumpProductId,
+          vendorId: input.vendorId,
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          priceCents: { gt: 0 },
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          priceCents: true,
+          currency: true,
+          imageUrl: true,
+          commerceDomain: true,
+          fulfillmentType: true,
+        },
+      })
+    : null;
+  if (input.orderBumpProductId && (!orderBumpProduct || orderBumpProduct.id === product.id)) {
+    throw new CommerceOrderValidationError("Order bump product is unavailable.");
+  }
+  if (orderBumpProduct && orderBumpProduct.currency !== product.currency) {
+    throw new CommerceOrderValidationError("Order bump currency does not match product.");
+  }
+  const calculatedTotal = product.priceCents * quantity + (orderBumpProduct?.priceCents ?? 0);
   const discountAmountCents = input.discountAmountCents ?? 0;
   if (
     !Number.isSafeInteger(calculatedTotal)
@@ -314,9 +343,12 @@ export async function createCommerceOrderForCheckout(
     definitions: customCheckoutFields,
     answers: customCheckoutAnswers,
   });
-  const checkoutIdentityHash = invoiceSelection
+  const invoiceBoundCheckoutIdentityHash = invoiceSelection
     ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
     : baseCheckoutIdentityHash;
+  const checkoutIdentityHash = orderBumpProduct
+    ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
+    : invoiceBoundCheckoutIdentityHash;
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
@@ -377,11 +409,46 @@ export async function createCommerceOrderForCheckout(
       createdAt: now,
     },
   });
+  const orderBumpItemId = orderBumpProduct ? randomUUID() : null;
+  if (orderBumpProduct && orderBumpItemId) {
+    await tx.commerceOrderItem.create({
+      data: {
+        id: orderBumpItemId,
+        vendorId: input.vendorId,
+        orderId,
+        productId: orderBumpProduct.id,
+        lineIndex: 1,
+        productName: orderBumpProduct.name,
+        productSlug: orderBumpProduct.slug,
+        commerceDomain: orderBumpProduct.commerceDomain,
+        fulfillmentType: orderBumpProduct.fulfillmentType,
+        unitPriceCents: orderBumpProduct.priceCents,
+        quantity: 1,
+        lineTotalCents: orderBumpProduct.priceCents,
+        imageUrl: orderBumpProduct.imageUrl,
+        customCheckoutAnswersEncryptedEnvelope: null,
+        nonSensitiveSnapshot: {
+          productId: orderBumpProduct.id,
+          productName: orderBumpProduct.name,
+          productSlug: orderBumpProduct.slug,
+          commerceDomain: orderBumpProduct.commerceDomain,
+          fulfillmentType: orderBumpProduct.fulfillmentType,
+          unitPriceCents: orderBumpProduct.priceCents,
+          quantity: 1,
+          lineTotalCents: orderBumpProduct.priceCents,
+          imageUrl: orderBumpProduct.imageUrl,
+          orderBump: true,
+        },
+        createdAt: now,
+      },
+    });
+  }
   if (orderDelivery && deliverySnapshotId) {
     const protectedSnapshot = protectOrderItemDeliverySnapshot(orderDelivery.revealed, {
       vendorId: input.vendorId,
       orderId,
       orderItemId,
+      ...(orderBumpItemId ? { orderBumpItemId, orderBumpProductId: orderBumpProduct?.id } : {}),
       snapshotId: deliverySnapshotId,
     });
     await tx.commerceOrderItemDeliverySnapshot.create({
@@ -434,7 +501,19 @@ export async function createCommerceOrderForCheckout(
     await tx.commerceEntitlement.create({ data: { id: entitlementId, vendorId: input.vendorId, orderItemId, status: "pending", revision: 1, ...access, grantedAt: null, expiresAt: null, revokedAt: null, createdAt: now } });
   }
 
-  return { id: orderId, itemId: orderItemId, deliverySnapshotId, status: "pending_payment" as const };
+  if (orderBumpProduct && orderBumpItemId) {
+    if (orderBumpProduct.fulfillmentType === "physical") {
+      await tx.shippingFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, createdAt: now } });
+    } else if (orderBumpProduct.fulfillmentType === "service") {
+      await tx.serviceFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, scheduledAt: null, completedAt: null, cancelledAt: null, serviceEncryptedEnvelope: null, serviceMaskedSummary: null, createdAt: now } });
+    } else {
+      const entitlementId = randomUUID();
+      const access = protectCommerceEntitlementAccess({ vendorId: input.vendorId, entitlementId, orderItemId: orderBumpItemId });
+      await tx.commerceEntitlement.create({ data: { id: entitlementId, vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, ...access, grantedAt: null, expiresAt: null, revokedAt: null, createdAt: now } });
+    }
+  }
+
+  return { id: orderId, itemId: orderItemId, orderBumpItemId, deliverySnapshotId, status: "pending_payment" as const };
 }
 
 type PaymentTransitionInput = {

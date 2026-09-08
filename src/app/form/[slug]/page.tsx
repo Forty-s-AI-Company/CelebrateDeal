@@ -6,6 +6,7 @@ import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lea
 import { FunnelPageRenderer } from "@/components/funnel-blocks/funnel-page-renderer";
 import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { RichTextContent } from "@/components/rich-text-content";
+import { ReferralShareCard } from "@/components/referral-share-card";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
 import { getCsrfToken } from "@/lib/csrf";
 
@@ -102,7 +103,20 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
               這張表單的欄位設定需要商家重新確認，目前暫停接收資料。
             </div>
           ) : query.submitted === "verification_required" ? (
-            submittedVerificationMessage(form.successMessage)
+            <>
+              {submittedVerificationMessage(form.successMessage)}
+              <ReferralShareCard
+                input={{
+                  participantName: "你的朋友",
+                  salutation: "嗨",
+                  topic: form.headline,
+                  startsAt: form.sessions[0]?.scheduledAt,
+                  referralUrl: `/form/${form.slug}?utm_source=referral_card&utm_medium=share&utm_campaign=live_registration`,
+                  brandName: form.vendor.name,
+                }}
+                themeColor={themeColor}
+              />
+            </>
           ) : (
             <LeadForm
               formId={form.id}

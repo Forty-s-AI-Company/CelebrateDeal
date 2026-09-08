@@ -69,4 +69,28 @@ describe("CommerceCheckoutForm", () => {
     expect(html).toContain('name="custom_size"');
     expect(html).toContain("刻字內容");
   });
+
+  it("renders an optional server-described order bump and the unselected total", () => {
+    const html = renderToStaticMarkup(
+      <CommerceCheckoutForm
+        vendorId="vendor-1"
+        productId="product-1"
+        productName="主商品"
+        fulfillmentType="digital"
+        priceCents={12_000}
+        currency="TWD"
+        orderBump={{
+          title: "成交腳本包",
+          description: "結帳限定加購",
+          priceCents: 1_900,
+          productId: "bump-1",
+        }}
+      />,
+    );
+
+    expect(html).toContain("加購推薦：成交腳本包");
+    expect(html).toContain('name="orderBumpSelected"');
+    expect(html).toContain("本次結帳總額");
+    expect(html).toContain("$120.00");
+  });
 });
