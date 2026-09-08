@@ -1,4 +1,5 @@
 import { LineOfficialAccountForm } from "@/components/line-official-account-form";
+import { LineRichMenuStudio } from "@/components/line-rich-menu-studio";
 import { PageHeader } from "@/components/ui";
 import { requireVendorOwner } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
@@ -18,11 +19,16 @@ const triggerLabels: Record<string, string> = {
 
 export default async function LineSettingsPage() {
   const auth = await requireVendorOwner();
-  const [csrfToken, account] = await Promise.all([
+  const [csrfToken, account, richMenu] = await Promise.all([
     getCsrfToken(),
     getDb().lineOfficialAccount.findUnique({
       where: { vendorId: auth.vendor.id },
       select: { id: true, status: true, connectedAt: true, lastValidatedAt: true },
+    }),
+    getDb().lineRichMenu.findFirst({
+      where: { vendorId: auth.vendor.id },
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+      select: { id: true, templateType: true, name: true, chatBarText: true, areas: true, status: true, isDefault: true, syncedAt: true },
     }),
   ]);
   const deliveries = account
@@ -50,6 +56,14 @@ export default async function LineSettingsPage() {
         connected={account?.status === "active"}
         webhookUrl={webhookUrl}
         lastValidatedAt={account?.lastValidatedAt?.toLocaleString("zh-TW") ?? null}
+      />
+      <LineRichMenuStudio
+        csrfToken={csrfToken}
+        existing={richMenu ? {
+          ...richMenu,
+          areas: richMenu.areas as never,
+          syncedAt: richMenu.syncedAt?.toISOString() ?? null,
+        } : null}
       />
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="mb-4">

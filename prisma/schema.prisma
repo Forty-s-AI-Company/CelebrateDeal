@@ -147,6 +147,7 @@ model Vendor {
   lineUserIdentities               LineUserIdentity[]
   lineLoginStates                  LineLoginState[]
   lineDeliveries                   LineDelivery[]
+  lineRichMenus                    LineRichMenu[]
   supportCases                     SupportCase[]
   supportCaseEvents                SupportCaseEvent[]
   supportRefundHandoffs            SupportRefundHandoff[]
@@ -670,6 +671,30 @@ model LineOfficialAccount {
 
   @@unique([vendorId, id])
   @@index([status, updatedAt])
+}
+
+/// Tenant-owned LINE rich-menu draft and provider synchronization state.
+/// Provider ids are never used as an ownership boundary; every mutation is
+/// qualified by vendorId and the internal id.
+model LineRichMenu {
+  id                 String    @id @default(cuid())
+  vendorId           String
+  name               String
+  providerRichMenuId String?
+  templateType       String
+  chatBarText        String
+  areas              Json
+  isDefault          Boolean   @default(false)
+  status             String    @default("draft")
+  syncedAt           DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, status, updatedAt])
+  @@index([vendorId, isDefault])
 }
 
 /// Tenant-scoped LINE identity for a buyer (FormSubmission) or promoter

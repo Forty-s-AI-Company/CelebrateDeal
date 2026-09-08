@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getCsrfToken: vi.fn(),
   accountFindUnique: vi.fn(),
   deliveryFindMany: vi.fn(),
+  richMenuFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
@@ -14,7 +15,11 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({
     lineOfficialAccount: { findUnique: mocks.accountFindUnique },
     lineDelivery: { findMany: mocks.deliveryFindMany },
+    lineRichMenu: { findFirst: mocks.richMenuFindFirst },
   }),
+}));
+vi.mock("@/components/line-rich-menu-studio", () => ({
+  LineRichMenuStudio: (props: { existing: { name: string } | null }) => <div data-testid="rich-menu-studio">{props.existing?.name ?? "new"}</div>,
 }));
 vi.mock("@/components/line-official-account-form", () => ({
   LineOfficialAccountForm: (props: { webhookUrl: string; lastValidatedAt: string | null }) => (
@@ -43,6 +48,7 @@ beforeEach(() => {
     sentAt: new Date("2026-09-06T01:00:01Z"),
     identity: { id: "identity-123456" },
   }]);
+  mocks.richMenuFindFirst.mockResolvedValue(null);
 });
 
 describe("LineSettingsPage", () => {
@@ -53,6 +59,8 @@ describe("LineSettingsPage", () => {
     expect(mocks.deliveryFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId: "vendor-1", lineOfficialAccountId: "line-account-1" },
     }));
+    expect(mocks.richMenuFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
+    expect(html).toContain("rich-menu-studio");
     expect(html).toContain("/api/webhooks/line/vendor-1");
     expect(html).toContain("推播紀錄");
     expect(html).toContain("iden…3456");
