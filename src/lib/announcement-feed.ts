@@ -22,9 +22,39 @@ export const ANNOUNCEMENT_SUPPRESSION_STORAGE_KEY =
   "celebratedeal.announcement-center.suppression.v1";
 
 /**
- * 進站公告的唯一靜態來源。98% 是本階段估算；本機一條龍已驗收，正式金流與 staging 仍不在本次範圍。
+ * 進站公告的唯一靜態來源。每次里程碑發布時都要在這裡新增一筆，避免畫面停留在舊版本。
  */
 export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
+  {
+    id: "goal-progress-2026-09-09-v14",
+    version: "2026-09-09-v14",
+    publishedAt: "2026-09-09",
+    title: "全生命週期商務與 LINE／學員入口更新",
+    summary: "本機最新版本已完成全生命週期 webinar funnel、LINE 通知與 Rich Menu、學生入口，以及 ECPay sandbox adapter；最新 12 步驟 golden journey 已納入驗收，正式 staging 與外部服務仍待獨立驗證。",
+    progressPercent: 100,
+    completed: [
+      "Webinar funnel 已串起 evergreen、automation、CRM、報名、互動與課後流程。",
+      "LINE 官方帳號登入、通知綁定與 6 格 Rich Menu studio 已完成。",
+      "學生入口支援 passwordless magic link、課程交付與發票檢視。",
+      "ECPay provider adapter 已加入 CheckMacValue 驗證與 webhook 流程。",
+      "Ultimate 12-step golden journey 已納入本機驗收與可追蹤測試。",
+    ],
+    incomplete: [
+      "正式 staging、LINE provider、寄信服務與外部媒體仍需沙盒驗證。",
+      "正式金流與 production deployment 仍需獨立授權與 release gate。",
+    ],
+    changes: [
+      "新增 LINE 通知 delivery binding 與 Rich Menu 編輯流程。",
+      "新增學生 passwordless 入口、交付內容與 invoice viewer。",
+      "補上 webinar funnel 的 evergreen、automation 與 CRM lifecycle。",
+      "新增 ECPay CheckMacValue 與付款 webhook adapter。",
+      "補上最新 12 步驟 golden journey 驗收案例。",
+    ],
+    nextSteps: [
+      "在 staging 以測試帳號驗證 LINE、Email、媒體與付款 sandbox 的端到端流程。",
+      "staging 通過後，再安排 production release review。",
+    ],
+  },
   {
     id: "goal-progress-2026-08-19-v13",
     version: "2026-08-19-v13",
