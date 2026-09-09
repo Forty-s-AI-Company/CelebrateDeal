@@ -5,6 +5,13 @@ import { useActionState, type ReactNode } from "react";
 import { searchCustomersAction, type CustomerSearchActionState } from "@/app/actions/customer-crm-actions";
 import { Badge, Card } from "@/components/ui";
 
+function formatActivityDate(dateInput: string | Date) {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 export function CustomerCrmWorkbench({ initialState, csrfField }: { initialState: CustomerSearchActionState; csrfField: ReactNode }) {
   const [state, action, pending] = useActionState(searchCustomersAction, initialState);
   return <Card>
@@ -16,6 +23,6 @@ export function CustomerCrmWorkbench({ initialState, csrfField }: { initialState
     </form>
     <p className="mb-4 text-xs text-slate-500">搜尋內容以安全表單送出，不會寫入網址或瀏覽器歷程。</p>
     {state.status === "error" ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-800">{state.message}</p> : null}
-    <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b text-slate-500"><tr>{["學員", "聯絡資訊", "最新動態", "觀看", "預約", "標籤", "累計消費"].map((h) => <th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{state.items.map((item) => <tr key={item.customerKeyHash} className="border-b last:border-0"><td className="p-3 font-semibold"><Link className="text-primary hover:underline" href={`/customers/${encodeURIComponent(item.customerKeyHash)}`}>{item.name}</Link></td><td className="p-3 text-slate-600">{item.maskedEmail}<br />{item.maskedPhone}</td><td className="p-3">{new Date(item.latestActivityAt).toLocaleString("zh-TW")}</td><td className="p-3">{Math.round(item.watchSeconds / 60)} 分</td><td className="p-3">{item.bookingStatus ?? "—"}</td><td className="p-3"><div className="flex flex-wrap gap-1">{item.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div></td><td className="p-3">NT${Math.round(item.lifetimeValueCents / 100).toLocaleString("zh-TW")}</td></tr>)}</tbody></table>{!state.items.length ? <p className="py-10 text-center text-slate-500">{state.message || "目前沒有符合條件的學員。"}</p> : null}</div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b text-slate-500"><tr>{["學員", "聯絡資訊", "最新動態", "觀看", "預約", "標籤", "累計消費"].map((h) => <th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{state.items.map((item) => <tr key={item.customerKeyHash} className="border-b last:border-0"><td className="p-3 font-semibold"><Link className="text-primary hover:underline" href={`/customers/${encodeURIComponent(item.customerKeyHash)}`}>{item.name}</Link></td><td className="p-3 text-slate-600">{item.maskedEmail}<br />{item.maskedPhone}</td><td className="p-3" suppressHydrationWarning>{formatActivityDate(item.latestActivityAt)}</td><td className="p-3">{Math.round(item.watchSeconds / 60)} 分</td><td className="p-3">{item.bookingStatus ?? "—"}</td><td className="p-3"><div className="flex flex-wrap gap-1">{item.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div></td><td className="p-3">NT${Math.round(item.lifetimeValueCents / 100).toLocaleString("zh-TW")}</td></tr>)}</tbody></table>{!state.items.length ? <p className="py-10 text-center text-slate-500">{state.message || "目前沒有符合條件的學員。"}</p> : null}</div>
   </Card>;
 }

@@ -1,0 +1,17 @@
+[
+  {
+    "category": "UI_BUG",
+    "url": "http://127.0.0.1:31023/login?from=home",
+    "message": "進站首頁跳轉 /login?from=home 時，全螢幕公告彈窗會自動開啟並遮蔽整個登入表單，使用者必須手動尋找右上角叉叉才能登入，對新使用者有強烈阻礙。"
+  },
+  {
+    "category": "UI_BUG",
+    "url": "http://127.0.0.1:31023/login?error=1",
+    "message": "輸入錯誤密碼時，未顯示適當的錯誤提示 (例如：帳號或密碼不正確)"
+  },
+  {
+    "category": "UI_BUG",
+    "url": "http://127.0.0.1:31023/login?error=rate_limited",
+    "message": "登入後未成功跳轉至 /dashboard，目前停留於: http://127.0.0.1:31023/login?error=rate_limited"
+  }
+]
