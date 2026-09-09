@@ -1,0 +1,242 @@
+{
+  "version": "5.4-pro",
+  "active_mode": "pro",
+  "active_mode_id": "ai-team-pro",
+  "active_mode_name": "進階模式",
+  "active_mode_display": "進階模式 (ai-team-pro)",
+  "router": {
+    "mode": "recommendation_only",
+    "external_execution": false,
+    "reasoning_selection": "adaptive_lowest_sufficient",
+    "allowed_tools": [
+      "router_status",
+      "route_task",
+      "goal_bootstrap",
+      "goal_get_state",
+      "goal_checkpoint",
+      "goal_resume",
+      "goal_finalize"
+    ]
+  },
+  "git_policy": {
+    "auto_push": {
+      "enabled": true,
+      "allowed_branch_pattern": "codex/*",
+      "force_push": false,
+      "direct_default_branch_push": false
+    },
+    "auto_merge": {
+      "enabled": true,
+      "mechanism": "protected_pr_only",
+      "require_branch_protection": true,
+      "require_green_ci": true,
+      "required_checks": [
+        "Lint",
+        "Typecheck",
+        "AI Team router and resilience tests",
+        "Unit tests and coverage thresholds"
+      ],
+      "allow_merge_conflicts": false
+    },
+    "production_deploy": {
+      "enabled": false,
+      "approval": "manual",
+      "workflow_dispatch_only": true,
+      "auto_trigger_from_merge": false
+    }
+  },
+  "reasoning_policy": {
+    "strategy": "adaptive_lowest_sufficient",
+    "default_difficulty": "auto",
+    "difficulty_levels": ["trivial", "routine", "complex", "critical"],
+    "models": {
+      "codex-6-Astra": {"minimum": "low", "maximum": "max", "default": "high"},
+      "gpt-5.6-terra": {"minimum": "low", "maximum": "xhigh", "default": "medium"},
+      "gpt-5.6-luna": {"minimum": "high", "maximum": "max", "default": "high"}
+    }
+  },
+  "agents": {
+    "planner": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "availability": "runtime_dependent"
+    },
+    "explorer": {
+      "model": "gemini-3.8-flash-high",
+      "reasoning_effort": "high",
+      "sandbox_mode": "gemini-wrapper-read-only",
+      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
+    },
+    "analyst": {
+      "model": "gemini-3.1-pro-high",
+      "reasoning_effort": "high",
+      "sandbox_mode": "gemini-wrapper-read-only",
+      "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
+    },
+    "worker": {
+      "profile": "astra_worker",
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "workspace-write",
+      "provider": "native_agent",
+      "availability": "runtime_dependent",
+      "fallback_only": false
+    },
+    "worker-deep": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "xhigh",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "workspace-write"
+    },
+    "reviewer": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "xhigh",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "availability": "runtime_dependent"
+    }
+  },
+  "gemini_profiles": {
+    "fast": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"},
+    "deep": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1"}
+  },
+  "plan_review": {
+    "enabled": true,
+    "required": false,
+    "skip_routine_tasks": true,
+    "trigger_difficulties": ["complex", "critical"],
+    "trigger_risk_domains": ["security", "payment", "refund", "payout", "migration", "release"],
+    "profile": "claude_plan_review",
+    "model": "claude-sonnet-4-6",
+    "reasoning_effort": "model-default",
+    "wrapper": ".ai-team/scripts/Invoke-AgyPlanReview.ps1",
+    "sandbox_mode": "agy-wrapper-read-only",
+    "availability": "runtime_dependent",
+    "execution": "advisory_only",
+    "quota_policy": "skip_if_unavailable",
+    "fallback_chain": [
+      {
+        "tier": 1,
+        "profile": "claude_plan_review",
+        "model": "claude-sonnet-4-6",
+        "role": "anti_overengineering_review",
+        "description": "Primary reviewer targeting over-engineering and critical architectural flaws"
+      },
+      {
+        "tier": 2,
+        "profile": "gemini_flash_review",
+        "model": "gemini-3.8-flash-high",
+        "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
+        "role": "fast_sanity_check",
+        "description": "Zero-quota-anxiety fast sanity check and safety boundary verification"
+      },
+      {
+        "tier": 3,
+        "profile": "terra_review",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium",
+        "role": "disciplined_code_review",
+        "description": "Objective GPT reviewer avoiding Astra self-review bias and rabbit holes"
+      },
+      {
+        "tier": 4,
+        "action": "skip_review",
+        "description": "Bypass external AI review and rely strictly on deterministic tests and typecheck"
+      }
+    ],
+    "max_attempts": 1
+  },
+  "codex_profiles": {
+    "astra": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    },
+    "astra_worker": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "workspace-write",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    },
+    "luna_readonly_escalation": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "high",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    }
+  },
+  "fallback_chains": {
+    "gemini_fast": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "codex_astra", "max_attempts": 0}
+      ]
+    },
+    "gemini_deep": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "codex_astra", "max_attempts": 0}
+      ]
+    }
+  }
+}

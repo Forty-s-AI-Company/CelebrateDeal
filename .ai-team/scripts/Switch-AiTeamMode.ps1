@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet('high', 'low', '高階', '低階', '高階模式', '低階模式', 'ai-team', 'ai-team-lite', 'list', '清單', 'status', 'current', 'info')]
+    [ValidateSet('high', 'low', 'pro', '高階', '低階', '進階', '高階模式', '低階模式', '進階模式', 'ai-team', 'ai-team-lite', 'ai-team-pro', 'list', '清單', 'status', 'current', 'info')]
     [string]$Mode = '',
     [switch]$Status,
     [switch]$List
@@ -16,23 +16,25 @@ $configDir = Join-Path $repoRoot '.ai-team/config'
 $targetPath = Join-Path $configDir 'router.json'
 $highTemplate = Join-Path $configDir 'router.high.json'
 $lowTemplate = Join-Path $configDir 'router.low.json'
+$proTemplate = Join-Path $configDir 'router.pro.json'
 
 function Get-AiTeamDetails {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     $cfg = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
     $modeKey = if ($cfg.active_mode) { [string]$cfg.active_mode } else { 'low' }
-    $isHigh = ($modeKey -in @('high', 'ai-team', '高階'))
+    $isPro = ($modeKey -in @('pro', 'ai-team-pro', '進階', '進階模式'))
+    $isHigh = (-not $isPro -and $modeKey -in @('high', 'ai-team', '高階', '高階模式'))
     return [pscustomobject]@{
-        Name = if ($isHigh) { "高階模式 (ai-team)" } else { "低階模式 (ai-team-lite)" }
-        Id = if ($isHigh) { "ai-team" } else { "ai-team-lite" }
-        Chinese = if ($isHigh) { "高階模式" } else { "低階模式" }
+        Name = if ($isPro) { "進階模式 (ai-team-pro)" } elseif ($isHigh) { "高階模式 (ai-team)" } else { "低階模式 (ai-team-lite)" }
+        Id = if ($isPro) { "ai-team-pro" } elseif ($isHigh) { "ai-team" } else { "ai-team-lite" }
+        Chinese = if ($isPro) { "進階模式" } elseif ($isHigh) { "高階模式" } else { "低階模式" }
         Planner = [string]$cfg.agents.planner.model
         Review = @($cfg.plan_review.fallback_chain | ForEach-Object {
             if ($_.profile) { "$($_.profile) ($($_.model))" } else { "skip_review" }
         }) -join " -> "
         Worker = "$($cfg.agents.worker.model) (預設: $($cfg.agents.worker.reasoning_effort))"
-        WorkerLock = if ($cfg.agents.worker.PSObject.Properties['reasoning_lock']) { [string]$cfg.agents.worker.reasoning_lock } else { "無鎖定 (動態 low~high)" }
+        WorkerLock = if ($cfg.agents.worker.PSObject.Properties['reasoning_lock']) { [string]$cfg.agents.worker.reasoning_lock } else { "無鎖定 (動態 $($cfg.agents.worker.reasoning_minimum)~$($cfg.agents.worker.reasoning_maximum))" }
         WorkerDeep = "$($cfg.agents.'worker-deep'.model) ($($cfg.agents.'worker-deep'.reasoning_effort))"
         Reviewer = "$($cfg.agents.reviewer.model) ($($cfg.agents.reviewer.reasoning_effort), read-only)"
         Explorer = "$($cfg.agents.explorer.model)"
@@ -46,11 +48,13 @@ function Show-AiTeamList {
     $currentId = if ($current) { $current.Id } else { "unknown" }
 
     Write-Host "`n==================================================================================" -ForegroundColor Cyan
-    Write-Host "                CelebrateDeal AI TEAM 完整清單 (Dual Team Roster)" -ForegroundColor Cyan
+    Write-Host "                CelebrateDeal AI TEAM 完整清單 (Triple Team Roster)" -ForegroundColor Cyan
     Write-Host "==================================================================================" -ForegroundColor Cyan
     Write-Host "目前生效中的團隊: " -NoNewline
     if ($currentId -eq 'ai-team-lite') {
         Write-Host "$($current.Name) ★" -ForegroundColor Green
+    } elseif ($currentId -eq 'ai-team-pro') {
+        Write-Host "$($current.Name) ★" -ForegroundColor Cyan
     } else {
         Write-Host "$($current.Name) ★" -ForegroundColor Magenta
     }
@@ -90,6 +94,24 @@ function Show-AiTeamList {
     Write-Host "  或  " -NoNewline
     Write-Host "use ai-team" -ForegroundColor Cyan
 
+    Write-Host "`n----------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+    # 3. 進階模式 ai-team-pro
+    Write-Host "【3】進階模式 ⇋ ai-team-pro" -ForegroundColor Cyan -NoNewline
+    if ($currentId -eq 'ai-team-pro') { Write-Host " [目前運行中 ACTIVE]" -ForegroundColor Yellow } else { Write-Host "" }
+    Write-Host "  * 英文名稱: ai-team-pro  |  中文名稱: 進階模式 / Astra 直通模式" -ForegroundColor Gray
+    Write-Host "  * 端到端主腦 (Planner) : codex-6-Astra (端到端直通，全局負責規劃與架構)"
+    Write-Host "  * 一般實作 (Worker)     : codex-6-Astra (同一 Astra 端到端直通，workspace-write)"
+    Write-Host "  * 動態推理 (Reasoning)  : 預設 high，依任務難度在 low ~ max 間自適應切換"
+    Write-Host "  * 困難診斷 (Deep)       : gpt-5.6-terra (high)"
+    Write-Host "  * 安全審核 (Reviewer)   : gpt-5.6-terra (high, read-only)"
+    Write-Host "  * 唯讀探索 (Explorer)   : gemini-3.8-flash-high (可升級 Luna read-only)"
+    Write-Host "  * 適用情境: 需要 Astra 端到端協作、動態推理與高階架構決策的複雜工作"
+    Write-Host "  * 切換語法: " -NoNewline
+    Write-Host "請使用 ai team pro 模式" -ForegroundColor Cyan -NoNewline
+    Write-Host "  或  " -NoNewline
+    Write-Host "use ai-team-pro / pro" -ForegroundColor Cyan
+
     Write-Host "==================================================================================`n" -ForegroundColor Cyan
 }
 
@@ -117,6 +139,12 @@ function Show-AiTeamStatus {
         Write-Host "  2. Claude Sonnet/Opus 負責奧坎剃刀防過度設計複審。"
         Write-Host "  3. GPT-5.6-Sol 降為二線後備（僅在 Claude 額度不足時接手），省 85%+ 額度。"
         Write-Host "  4. 全隊解鎖高階推理，日常寫入以 medium 推進，上限收斂至 high。"
+    } elseif ($curr.Id -eq 'ai-team-pro') {
+        Write-Host "【進階模式特點 (ai-team-pro)】" -ForegroundColor Cyan
+        Write-Host "  1. Planner 與 Worker 都由 codex-6-Astra 端到端直通，減少跨模型交接損耗。"
+        Write-Host "  2. Worker 預設使用 high 推理，但保留 low ~ max 的動態推理範圍。"
+        Write-Host "  3. Astra 負責全局規劃、核心實作與架構決策，Terra 維持獨立唯讀複核。"
+        Write-Host "  4. 適用於需要高階推理、跨檔實作與端到端一致性的複雜工作。"
     } else {
         Write-Host "【高階模式特點 (ai-team)】" -ForegroundColor Magenta
         Write-Host "  1. 由 GPT-5.6-Sol 負責全域深度架構規劃。"
@@ -137,8 +165,9 @@ if ($Status -or $Mode -in @('status', 'current', 'info', '')) {
     exit 0
 }
 
+$isProTarget = ($Mode -in @('pro', '進階', '進階模式', 'ai-team-pro'))
 $isHighTarget = ($Mode -in @('high', '高階', '高階模式', 'ai-team'))
-$sourceFile = if ($isHighTarget) { $highTemplate } else { $lowTemplate }
+$sourceFile = if ($isProTarget) { $proTemplate } elseif ($isHighTarget) { $highTemplate } else { $lowTemplate }
 
 if (-not (Test-Path -LiteralPath $sourceFile)) {
     throw "找不到範本檔: $sourceFile"
@@ -152,17 +181,21 @@ $workerAgentToml = Join-Path $repoRoot '.codex/agents/worker.toml'
 
 if (Test-Path -LiteralPath $localCodexConfig) {
     $rawConfig = Get-Content -LiteralPath $localCodexConfig -Raw
-    $targetEffort = if ($isHighTarget) { "high" } else { "medium" }
+    $targetModel = if ($isProTarget) { "codex-6-Astra" } else { "gpt-5.6-luna" }
+    $targetEffort = if ($isProTarget -or $isHighTarget) { "high" } else { "medium" }
     $updatedConfig = $rawConfig `
-        -replace '(?m)^#?model\s*=.*', 'model = "gpt-5.6-luna"' `
+        -replace '(?m)^#?model\s*=.*', "model = `"$targetModel`"" `
         -replace '(?m)^#?model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetEffort`""
     $updatedConfig | Set-Content -LiteralPath $localCodexConfig -Encoding utf8
 }
 
 if (Test-Path -LiteralPath $workerAgentToml) {
     $rawWorker = Get-Content -LiteralPath $workerAgentToml -Raw
-    $targetWorkerEffort = if ($isHighTarget) { "high" } else { "medium" }
-    $updatedWorker = $rawWorker -replace '(?m)^model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetWorkerEffort`""
+    $targetWorkerModel = if ($isProTarget) { "codex-6-Astra" } else { "gpt-5.6-luna" }
+    $targetWorkerEffort = if ($isProTarget -or $isHighTarget) { "high" } else { "medium" }
+    $updatedWorker = $rawWorker `
+        -replace '(?m)^model\s*=.*', "model = `"$targetWorkerModel`"" `
+        -replace '(?m)^model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetWorkerEffort`""
     $updatedWorker | Set-Content -LiteralPath $workerAgentToml -Encoding utf8
 }
 
