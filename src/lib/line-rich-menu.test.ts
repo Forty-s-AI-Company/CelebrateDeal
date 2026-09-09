@@ -50,7 +50,7 @@ describe("LINE Rich Menu schema and templates", () => {
 
 describe("LINE Rich Menu API", () => {
   it("calls the documented endpoints without using the real endpoint", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/richmenu")) return new Response(JSON.stringify({ richMenuId: "rm_1" }), { status: 200 });
       if (url.endsWith("/richmenu/list")) return new Response(JSON.stringify({ richmenus: [] }), { status: 200 });

@@ -290,14 +290,7 @@ function BlockPreview({ block }: { block: FunnelBlock }) {
   );
 }
 
-function Inspector({
-  block,
-  onChange,
-}: {
-  block: FunnelBlock;
-  onChange: (block: FunnelBlock) => void;
-}) {
-  if (block.type === "pricing_table")
+function PricingInspector({ block, onChange }: { block: Extract<FunnelBlock, { type: "pricing_table" }>; onChange: (block: FunnelBlock) => void }) {
     return (
       <div className="grid gap-5">
         <fieldset>
@@ -507,6 +500,17 @@ function Inspector({
         </button>
       </div>
     );
+}
+
+function Inspector({
+  block,
+  onChange,
+}: {
+  block: FunnelBlock;
+  onChange: (block: FunnelBlock) => void;
+}) {
+  if (block.type === "pricing_table") return <PricingInspector block={block} onChange={onChange} />;
+
   if (block.type === "carousel_slider")
     return (
       <div className="grid gap-4">

@@ -7,7 +7,7 @@
     "build": "node --import tsx scripts/preflight.ts --production && prisma generate && next build",
     "start": "next start --port 31023",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "typecheck:strict-index": "tsc --project tsconfig.strict-index.json --noEmit",
     "test": "vitest run",
     "test:contracts": "node --import tsx scripts/run-node-tap-contracts.ts",

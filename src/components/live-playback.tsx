@@ -1520,9 +1520,7 @@ function useExternalNavigationIntent({
   };
 }
 
-export function LivePlayback({ live }: { live: LivePageData }) {
-  const router = useRouter(); const pathname = usePathname();
-  const isCheckoutOverlay = isInternalCheckoutPath(pathname);
+function useEvergreenRuntime(live: LivePageData) {
   const [evergreenNowMs, setEvergreenNowMs] = useState(() => timestampMs(live.serverNow) ?? Date.now());
   useEffect(() => {
     if (!live.evergreen) return;
@@ -1536,6 +1534,23 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const runtimeState: LiveRuntimeState = evergreenStartMs !== null && evergreenEndMs !== null
     ? evergreenNowMs < evergreenStartMs ? "waiting" : evergreenNowMs < evergreenEndMs ? "playing" : "unavailable"
     : getClientRuntimeState(live);
+  return { evergreenNowMs, evergreenStartMs, runtimeState };
+}
+
+function resolvePlaybackStart(live: LivePageData, playableSource: ReturnType<typeof useLivePlaybackSource>, runtimeState: LiveRuntimeState, evergreenStartMs: number | null, evergreenNowMs: number) {
+  const evergreenPlaybackSeconds = evergreenStartMs === null
+    ? null
+    : Math.max(0, (evergreenNowMs - evergreenStartMs) / 1_000);
+  const playbackStartSeconds = playableSource && runtimeState !== "replay"
+    ? normalizePlaybackStartSeconds(live.evergreen ? evergreenPlaybackSeconds : playableSource.playbackStartSeconds)
+    : 0;
+  return playbackStartSeconds;
+}
+
+export function LivePlayback({ live }: { live: LivePageData }) {
+  const router = useRouter(); const pathname = usePathname();
+  const isCheckoutOverlay = isInternalCheckoutPath(pathname);
+  const { evergreenNowMs, evergreenStartMs, runtimeState } = useEvergreenRuntime(live);
   const isPlayableRuntime = isPlayableRuntimeState(runtimeState);
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
@@ -1583,12 +1598,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const previousPlaybackUrlRef = useRef<string | null>(null);
   const previousPlaybackSeekIdentityRef = useRef<string | null>(null);
   const endedRefreshIdentityRef = useRef<string | null>(null);
-  const evergreenPlaybackSeconds = evergreenStartMs === null
-    ? null
-    : Math.max(0, (evergreenNowMs - evergreenStartMs) / 1_000);
-  const playbackStartSeconds = playableSource && runtimeState !== "replay"
-    ? normalizePlaybackStartSeconds(live.evergreen ? evergreenPlaybackSeconds : playableSource.playbackStartSeconds)
-    : 0;
+  const playbackStartSeconds = resolvePlaybackStart(live, playableSource, runtimeState, evergreenStartMs, evergreenNowMs);
   const playbackSeekIdentity = playableSource
     ? `${live.id}:${runtimeState}:${playableSource.playbackUrl}:${playbackStartSeconds}`
     : null;

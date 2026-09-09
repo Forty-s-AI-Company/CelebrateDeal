@@ -36,7 +36,6 @@ vi.mock("react", async () => {
 vi.mock("@/app/actions/team-funnel-live-share-actions", () => ({
   createTeamLiveShareAction: vi.fn(),
   disableTeamLiveShareAction: vi.fn(),
-  initialTeamLiveShareActionState: { status: "idle", message: "" },
 }));
 
 import { TeamLiveShareManager, type TeamLiveSharePage } from "./team-live-share-manager";

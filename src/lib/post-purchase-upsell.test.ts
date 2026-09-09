@@ -49,6 +49,11 @@ describe("post-purchase upsell", () => {
     expect(token).not.toContain("@example");
     expect(verifyPostPurchaseCheckoutToken(token, new Date("2026-09-09T00:09:00.000Z"))).toMatchObject({ grantId: "grant-a", amountCents: 19_500 });
     expect(verifyPostPurchaseCheckoutToken(`${token}tampered`, now)).toBeNull();
+    // 保留合法 token 格式但竄改價格，驗證 HMAC 而不只是字串格式會拒絕。
+    const [version, payload, signature] = token.split(".");
+    const modifiedBinding = { ...JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")), amountCents: 1 };
+    const modifiedPayload = Buffer.from(JSON.stringify(modifiedBinding), "utf8").toString("base64url");
+    expect(verifyPostPurchaseCheckoutToken(`${version}.${modifiedPayload}.${signature}`, now)).toBeNull();
     expect(verifyPostPurchaseCheckoutToken(token, new Date("2026-09-09T00:11:00.000Z"))).toBeNull();
   });
 });

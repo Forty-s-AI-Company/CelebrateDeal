@@ -1,7 +1,7 @@
 "use client";
 
 import { ShoppingBag, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { LivePurchaseBroadcastItem } from "@/lib/live-interaction";
 
 export function LivePurchaseTicker({
@@ -15,57 +15,41 @@ export function LivePurchaseTicker({
 }) {
   const [broadcasts, setBroadcasts] = useState<LivePurchaseBroadcastItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(true);
   const [dismissed, setDismissed] = useState(false);
 
-  const fetchBroadcasts = useCallback(async () => {
+  useEffect(() => {
     if (!enabled || dismissed) return;
-    try {
-      const response = await fetch(
-        `/api/live-purchase-broadcasts?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) return;
-      const data = (await response.json()) as { broadcasts?: LivePurchaseBroadcastItem[] };
-      if (Array.isArray(data.broadcasts) && data.broadcasts.length > 0) {
-        setBroadcasts(data.broadcasts);
-      }
-    } catch {
-      // Best-effort ticker polling
+    const controller = new AbortController();
+    async function fetchBroadcasts() {
+      try {
+        const response = await fetch(
+          `/api/live-purchase-broadcasts?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) return;
+        const data = await response.json() as { broadcasts?: LivePurchaseBroadcastItem[] };
+        if (!controller.signal.aborted && Array.isArray(data.broadcasts)) setBroadcasts(data.broadcasts);
+      } catch { /* Best-effort polling; cancellation also ends stale requests. */ }
     }
+    void fetchBroadcasts();
+    const interval = window.setInterval(() => void fetchBroadcasts(), 6_000);
+    return () => { controller.abort(); window.clearInterval(interval); };
   }, [dismissed, enabled, liveId, vendorId]);
 
   useEffect(() => {
-    if (!enabled || dismissed) return;
-    void fetchBroadcasts();
-    const interval = window.setInterval(() => void fetchBroadcasts(), 6_000);
-    return () => window.clearInterval(interval);
-  }, [dismissed, enabled, fetchBroadcasts]);
-
-  useEffect(() => {
-    if (broadcasts.length === 0 || dismissed) {
-      setVisible(false);
-      return;
-    }
-
-    // Show current item for 4 seconds, hide for 2.5 seconds, then advance
-    setVisible(true);
-    const hideTimer = window.setTimeout(() => {
-      setVisible(false);
-    }, 4_000);
-
+    if (!enabled || dismissed || broadcasts.length === 0) return;
+    // Timer callbacks own animation state; polling does not restart the cycle.
+    const hideTimer = window.setTimeout(() => setVisible(false), 4_000);
     const advanceTimer = window.setTimeout(() => {
-      setCurrentIndex((prev) => (prev + 1) % broadcasts.length);
+      setCurrentIndex((previous) => previous + 1);
+      setVisible(true);
     }, 6_500);
-
-    return () => {
-      window.clearTimeout(hideTimer);
-      window.clearTimeout(advanceTimer);
-    };
-  }, [broadcasts, currentIndex, dismissed]);
+    return () => { window.clearTimeout(hideTimer); window.clearTimeout(advanceTimer); };
+  }, [enabled, dismissed, broadcasts.length, currentIndex]);
 
   if (!enabled || dismissed || broadcasts.length === 0) return null;
-  const current = broadcasts[currentIndex];
+  const current = broadcasts[currentIndex % broadcasts.length];
   if (!current) return null;
 
   return (

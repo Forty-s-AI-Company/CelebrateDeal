@@ -266,6 +266,35 @@ async function upsertVendorQuotaAlert(input: {
   }
 }
 
+/** 保留分享碼優先於頁面 slug 的來源驗證順序。 */
+async function resolveUsageAttribution(
+  input: { vendorId: string; liveId: string; liveShareCode?: string | null },
+  sourcePageSlug: string | null,
+  capturedAt: Date,
+) {
+  const attribution = input.liveShareCode
+    ? await resolveTeamFunnelAttribution({
+        vendorId: input.vendorId,
+        liveId: input.liveId,
+        sourcePageSlug: null,
+        liveShareCode: input.liveShareCode,
+        referral: null,
+        now: capturedAt,
+      })
+    : sourcePageSlug
+    ? await resolveTeamFunnelAttribution({
+        vendorId: input.vendorId,
+        liveId: input.liveId,
+        sourcePageSlug,
+        referral: null,
+        now: capturedAt,
+      })
+    : null;
+  if ((sourcePageSlug || input.liveShareCode) && !attribution) throw new StreamUsageValidationError("source_page_not_found");
+
+  return attribution;
+}
+
 export async function recordStreamUsageLedgerEntry(input: {
   vendorId: string;
   liveId: string;
@@ -296,25 +325,7 @@ export async function recordStreamUsageLedgerEntry(input: {
   });
   if (!live) throw new StreamUsageValidationError("live_not_found");
 
-  const attribution = input.liveShareCode
-    ? await resolveTeamFunnelAttribution({
-        vendorId: input.vendorId,
-        liveId: input.liveId,
-        sourcePageSlug: null,
-        liveShareCode: input.liveShareCode,
-        referral: null,
-        now: capturedAt,
-      })
-    : sourcePageSlug
-    ? await resolveTeamFunnelAttribution({
-        vendorId: input.vendorId,
-        liveId: input.liveId,
-        sourcePageSlug,
-        referral: null,
-        now: capturedAt,
-      })
-    : null;
-  if ((sourcePageSlug || input.liveShareCode) && !attribution) throw new StreamUsageValidationError("source_page_not_found");
+  const attribution = await resolveUsageAttribution(input, sourcePageSlug, capturedAt);
 
   const policy = parseLiveQuotaPolicy(live.quotaPolicy);
   const source = attribution ? (input.liveShareCode ? "TEAM_FUNNEL_LIVE_SHARE" : "TEAM_FUNNEL_PAGE") : "DIRECT_PLAYBACK";

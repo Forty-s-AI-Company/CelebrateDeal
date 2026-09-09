@@ -23,6 +23,154 @@ function formatTwd(cents: number) {
   return `NT$${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 }).format(cents / 100)}`;
 }
 
+async function loadAnalytics(db: ReturnType<typeof getDb>, live: { id: string; endedAt: Date | null }, vendorId: string, validScriptId: string | null, trackedEventTypes: string[]) {
+  return await Promise.all([
+    db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        trustLevel: "ADMITTED_LIVE_SESSION",
+        eventType: { in: trackedEventTypes },
+      },
+      select: { eventType: true, visitorId: true },
+      distinct: ["eventType", "visitorId"],
+    }),
+    db.formSubmission.count({ where: { liveId: live.id, form: { vendorId: vendorId } } }),
+    db.formSubmission.count({ where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: vendorId } } }),
+    db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        OR: [
+          { trustLevel: "ADMITTED_LIVE_SESSION" },
+          { trustLevel: "VERIFIED_FORM_SUBMISSION", eventType: "lead_submit" },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    }),
+    db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId: vendorId, liveId: live.id }) }),
+    validScriptId
+      ? db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendorId, scriptId: validScriptId }) })
+      : Promise.resolve(0),
+    // A checkout is counted only when the order's payment transaction has a
+    // sourceLiveId derived on the server from a verified registration cookie.
+    // Direct catalogue checkout must not be guessed into a live's results.
+    db.paymentTransaction.count({
+      where: {
+        vendorId: vendorId,
+        primaryCommerceOrder: { isNot: null },
+        metadata: { path: ["sourceLiveId"], equals: live.id },
+      },
+    }),
+    db.emailDelivery.groupBy({
+      by: ["status"],
+      where: { vendorId: vendorId, sourceLiveId: live.id },
+      _count: { _all: true },
+    }),
+    db.liveInteractionRun.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        eventType: { in: ["poll", "lucky_draw", "flash_sale", "flash_voucher"] },
+      },
+      select: {
+        id: true,
+        eventType: true,
+        title: true,
+        configuration: true,
+        winnerResponseId: true,
+        startsAt: true,
+      },
+      orderBy: { startsAt: "asc" },
+    }),
+    db.liveInteractionResponse.groupBy({
+      by: ["runId", "value"],
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        eventType: { in: ["poll", "lucky_draw", "flash_sale", "flash_voucher"] },
+      },
+      _count: { _all: true },
+    }),
+    db.liveInteractionResponse.groupBy({
+      by: ["runId", "eventType"],
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        eventType: { in: ["flash_sale", "flash_voucher"] },
+        usedOrderId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+    db.liveInteractionResponse.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        run: { eventType: "lucky_draw", winnerResponseId: { not: null } },
+        claimTokenHash: { not: null },
+      },
+      select: { id: true, displayName: true, winnerClaimedAt: true },
+    }),
+    db.liveQuestion.groupBy({
+      by: ["status"],
+      where: { vendorId: vendorId, liveId: live.id },
+      _count: { _all: true },
+    }),
+    db.liveQuestion.findMany({
+      where: { vendorId: vendorId, liveId: live.id, spotlightedAt: { not: null } },
+      select: { id: true, body: true, displayName: true, status: true },
+      orderBy: { spotlightedAt: "desc" },
+      take: 50,
+    }),
+    db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        trustLevel: "ADMITTED_LIVE_SESSION",
+        eventType: "page_view",
+        ...(live.endedAt ? { createdAt: { lt: live.endedAt } } : {}),
+      },
+      select: { visitorId: true },
+      distinct: ["visitorId"],
+    }),
+    live.endedAt ? db.analyticsEvent.findMany({
+      where: {
+        vendorId: vendorId,
+        liveId: live.id,
+        trustLevel: "ADMITTED_LIVE_SESSION",
+        eventType: "page_view",
+        createdAt: { gte: live.endedAt },
+      },
+      select: { visitorId: true },
+      distinct: ["visitorId"],
+    }) : Promise.resolve([]),
+    db.paymentTransaction.aggregate({
+      where: {
+        vendorId: vendorId,
+        status: "paid",
+        primaryCommerceOrder: { isNot: null },
+        metadata: { path: ["sourceLiveId"], equals: live.id },
+        ...(live.endedAt ? { occurredAt: { lt: live.endedAt } } : {}),
+      },
+      _count: { _all: true },
+      _sum: { grossAmountCents: true },
+    }),
+    live.endedAt ? db.paymentTransaction.aggregate({
+      where: {
+        vendorId: vendorId,
+        status: "paid",
+        primaryCommerceOrder: { isNot: null },
+        metadata: { path: ["sourceLiveId"], equals: live.id },
+        occurredAt: { gte: live.endedAt },
+      },
+      _count: { _all: true },
+      _sum: { grossAmountCents: true },
+    }) : Promise.resolve({ _count: { _all: 0 }, _sum: { grossAmountCents: null } }),
+    loadLiveAffiliateAttribution(db, { vendorId: vendorId, liveId: live.id }),
+  ]);
+}
+
 export default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
   const { id } = await params;
@@ -59,151 +207,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
     liveCommerce,
     replayCommerce,
     affiliateAttribution,
-  ] = await Promise.all([
-    db.analyticsEvent.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        trustLevel: "ADMITTED_LIVE_SESSION",
-        eventType: { in: trackedEventTypes },
-      },
-      select: { eventType: true, visitorId: true },
-      distinct: ["eventType", "visitorId"],
-    }),
-    db.formSubmission.count({ where: { liveId: live.id, form: { vendorId: vendor.id } } }),
-    db.formSubmission.count({ where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: vendor.id } } }),
-    db.analyticsEvent.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        OR: [
-          { trustLevel: "ADMITTED_LIVE_SESSION" },
-          { trustLevel: "VERIFIED_FORM_SUBMISSION", eventType: "lead_submit" },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-    }),
-    db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId: vendor.id, liveId: live.id }) }),
-    validScriptId
-      ? db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId: vendor.id, scriptId: validScriptId }) })
-      : Promise.resolve(0),
-    // A checkout is counted only when the order's payment transaction has a
-    // sourceLiveId derived on the server from a verified registration cookie.
-    // Direct catalogue checkout must not be guessed into a live's results.
-    db.paymentTransaction.count({
-      where: {
-        vendorId: vendor.id,
-        primaryCommerceOrder: { isNot: null },
-        metadata: { path: ["sourceLiveId"], equals: live.id },
-      },
-    }),
-    db.emailDelivery.groupBy({
-      by: ["status"],
-      where: { vendorId: vendor.id, sourceLiveId: live.id },
-      _count: { _all: true },
-    }),
-    db.liveInteractionRun.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        eventType: { in: ["poll", "lucky_draw", "flash_sale", "flash_voucher"] },
-      },
-      select: {
-        id: true,
-        eventType: true,
-        title: true,
-        configuration: true,
-        winnerResponseId: true,
-        startsAt: true,
-      },
-      orderBy: { startsAt: "asc" },
-    }),
-    db.liveInteractionResponse.groupBy({
-      by: ["runId", "value"],
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        eventType: { in: ["poll", "lucky_draw", "flash_sale", "flash_voucher"] },
-      },
-      _count: { _all: true },
-    }),
-    db.liveInteractionResponse.groupBy({
-      by: ["runId", "eventType"],
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        eventType: { in: ["flash_sale", "flash_voucher"] },
-        usedOrderId: { not: null },
-      },
-      _count: { _all: true },
-    }),
-    db.liveInteractionResponse.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        run: { eventType: "lucky_draw", winnerResponseId: { not: null } },
-        claimTokenHash: { not: null },
-      },
-      select: { id: true, displayName: true, winnerClaimedAt: true },
-    }),
-    db.liveQuestion.groupBy({
-      by: ["status"],
-      where: { vendorId: vendor.id, liveId: live.id },
-      _count: { _all: true },
-    }),
-    db.liveQuestion.findMany({
-      where: { vendorId: vendor.id, liveId: live.id, spotlightedAt: { not: null } },
-      select: { id: true, body: true, displayName: true, status: true },
-      orderBy: { spotlightedAt: "desc" },
-      take: 50,
-    }),
-    db.analyticsEvent.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        trustLevel: "ADMITTED_LIVE_SESSION",
-        eventType: "page_view",
-        ...(live.endedAt ? { createdAt: { lt: live.endedAt } } : {}),
-      },
-      select: { visitorId: true },
-      distinct: ["visitorId"],
-    }),
-    live.endedAt ? db.analyticsEvent.findMany({
-      where: {
-        vendorId: vendor.id,
-        liveId: live.id,
-        trustLevel: "ADMITTED_LIVE_SESSION",
-        eventType: "page_view",
-        createdAt: { gte: live.endedAt },
-      },
-      select: { visitorId: true },
-      distinct: ["visitorId"],
-    }) : Promise.resolve([]),
-    db.paymentTransaction.aggregate({
-      where: {
-        vendorId: vendor.id,
-        status: "paid",
-        primaryCommerceOrder: { isNot: null },
-        metadata: { path: ["sourceLiveId"], equals: live.id },
-        ...(live.endedAt ? { occurredAt: { lt: live.endedAt } } : {}),
-      },
-      _count: { _all: true },
-      _sum: { grossAmountCents: true },
-    }),
-    live.endedAt ? db.paymentTransaction.aggregate({
-      where: {
-        vendorId: vendor.id,
-        status: "paid",
-        primaryCommerceOrder: { isNot: null },
-        metadata: { path: ["sourceLiveId"], equals: live.id },
-        occurredAt: { gte: live.endedAt },
-      },
-      _count: { _all: true },
-      _sum: { grossAmountCents: true },
-    }) : Promise.resolve({ _count: { _all: 0 }, _sum: { grossAmountCents: null } }),
-    loadLiveAffiliateAttribution(db, { vendorId: vendor.id, liveId: live.id }),
-  ]);
+  ] = await loadAnalytics(db, live, vendor.id, validScriptId, trackedEventTypes);
   const eventCountByType = new Map<string, number>();
   for (const event of verifiedAnalyticsSessions) {
     eventCountByType.set(event.eventType, (eventCountByType.get(event.eventType) ?? 0) + 1);

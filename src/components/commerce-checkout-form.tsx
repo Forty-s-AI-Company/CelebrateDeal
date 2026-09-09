@@ -100,6 +100,52 @@ function CheckoutContactFields({ requiresPhone, disabled }: { requiresPhone: boo
   );
 }
 
+function CheckoutShippingFields({ disabled }: { disabled: boolean }) {
+  return (
+        <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={disabled}>
+          <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-800">
+              收件人
+              <input name="recipientName" autoComplete="shipping name" required maxLength={120} className={fieldClassName()} />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              收件電話
+              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} className={fieldClassName()} />
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
+            <label className="text-sm font-semibold text-slate-800">
+              國家
+              <select name="countryCode" autoComplete="shipping country" defaultValue="TW" required className={fieldClassName()}>
+                <option value="TW">台灣</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              縣市
+              <input name="administrativeArea" autoComplete="shipping address-level1" required maxLength={120} className={fieldClassName()} />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              鄉鎮市區
+              <input name="locality" autoComplete="shipping address-level2" required maxLength={120} className={fieldClassName()} />
+            </label>
+          </div>
+          <label className="text-sm font-semibold text-slate-800">
+            郵遞區號（選填）
+            <input name="postalCode" inputMode="numeric" autoComplete="shipping postal-code" maxLength={24} className={fieldClassName()} />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            地址
+            <input name="addressLine1" autoComplete="shipping address-line1" required maxLength={240} className={fieldClassName()} />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            樓層、公司或其他補充（選填）
+            <input name="addressLine2" autoComplete="shipping address-line2" maxLength={240} className={fieldClassName()} />
+          </label>
+        </fieldset>
+  );
+}
+
 export function CommerceCheckoutForm({
   vendorId,
   productId,
@@ -121,6 +167,7 @@ export function CommerceCheckoutForm({
   const requiresShipping = checkoutRequiresShipping(fulfillmentType);
   const requiresPhone = checkoutRequiresPhone(fulfillmentType);
   const isPending = phase === "submitting" || phase === "redirecting";
+  const fieldsDisabled = isPending || phase === "success";
   function checkoutIdempotencyKey() {
     try {
       return getOrCreateCheckoutIdempotencyKey(
@@ -336,55 +383,15 @@ export function CommerceCheckoutForm({
       aria-busy={isPending}
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
-      {postPurchaseToken ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">已安全沿用上一筆已驗證訂單的聯絡資料；不會把資料放進網址或頁面。</p> : <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />}
+      {postPurchaseToken ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">已安全沿用上一筆已驗證訂單的聯絡資料；不會把資料放進網址或頁面。</p> : <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} />}
 
-      <CheckoutInvoiceFields disabled={isPending || phase === "success"} />
+      <CheckoutInvoiceFields disabled={fieldsDisabled} />
 
       {requiresShipping && !postPurchaseToken ? (
-        <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={isPending || phase === "success"}>
-          <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-semibold text-slate-800">
-              收件人
-              <input name="recipientName" autoComplete="shipping name" required maxLength={120} className={fieldClassName()} />
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              收件電話
-              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} className={fieldClassName()} />
-            </label>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
-            <label className="text-sm font-semibold text-slate-800">
-              國家
-              <select name="countryCode" autoComplete="shipping country" defaultValue="TW" required className={fieldClassName()}>
-                <option value="TW">台灣</option>
-              </select>
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              縣市
-              <input name="administrativeArea" autoComplete="shipping address-level1" required maxLength={120} className={fieldClassName()} />
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              鄉鎮市區
-              <input name="locality" autoComplete="shipping address-level2" required maxLength={120} className={fieldClassName()} />
-            </label>
-          </div>
-          <label className="text-sm font-semibold text-slate-800">
-            郵遞區號（選填）
-            <input name="postalCode" inputMode="numeric" autoComplete="shipping postal-code" maxLength={24} className={fieldClassName()} />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            地址
-            <input name="addressLine1" autoComplete="shipping address-line1" required maxLength={240} className={fieldClassName()} />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            樓層、公司或其他補充（選填）
-            <input name="addressLine2" autoComplete="shipping address-line2" maxLength={240} className={fieldClassName()} />
-          </label>
-        </fieldset>
+        <CheckoutShippingFields disabled={fieldsDisabled} />
       ) : null}
 
-      <CheckoutCustomFields fields={customCheckoutFields} disabled={isPending || phase === "success"} />
+      <CheckoutCustomFields fields={customCheckoutFields} disabled={fieldsDisabled} />
 
       {orderBump ? (
         <label className="relative flex cursor-pointer items-start gap-4 overflow-hidden rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-[0_0_28px_rgba(251,191,36,0.24)]">
@@ -396,7 +403,7 @@ export function CommerceCheckoutForm({
             name="orderBumpSelected"
             checked={orderBumpSelected}
             onChange={(event) => setOrderBumpSelected(event.currentTarget.checked)}
-            disabled={isPending || phase === "success"}
+            disabled={fieldsDisabled}
             className="mt-1 h-5 w-5 shrink-0 accent-orange-600"
           />
           <span className="min-w-0 pr-20">
@@ -422,7 +429,7 @@ export function CommerceCheckoutForm({
       </div>
 
       <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-        <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={isPending || phase === "success"} />
+        <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={fieldsDisabled} />
         <span>
           我已閱讀目前的 <Link href="/policies/terms" className="font-semibold text-blue-700 underline">使用條款</Link>、
           <Link href="/policies/privacy" className="font-semibold text-blue-700 underline">隱私通知</Link> 與
@@ -432,8 +439,8 @@ export function CommerceCheckoutForm({
 
       <button
         type="submit"
-        disabled={isPending || phase === "success"}
-        aria-disabled={isPending || phase === "success"}
+        disabled={fieldsDisabled}
+        aria-disabled={fieldsDisabled}
         aria-busy={isPending}
         className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-base font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
       >

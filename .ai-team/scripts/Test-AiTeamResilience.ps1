@@ -50,7 +50,10 @@ Assert-AiTeam (-not $routerConfig.git_policy.auto_push.force_push -and -not $rou
 Assert-AiTeam (-not $routerConfig.git_policy.production_deploy.enabled -and $routerConfig.git_policy.production_deploy.approval -eq 'manual') 'Production deployment policy is not manual-only'
 Assert-AiTeam ($routerConfig.plan_review.model -eq 'claude-sonnet-4-6' -and -not $routerConfig.plan_review.required) 'optional Claude plan review policy is invalid'
 $workerLock = if ($routerConfig.agents.worker.PSObject.Properties['reasoning_lock']) { $routerConfig.agents.worker.reasoning_lock } else { $null }
-Assert-AiTeam ($routerConfig.agents.worker.model -eq 'gpt-5.6-luna' -and ($null -eq $workerLock -or $workerLock -in @('low', 'medium', 'high', 'max'))) 'general Worker reasoning configuration is invalid'
+# Pro 使用 Astra；其餘模式仍固定 Luna，未知模式必須失敗。
+Assert-AiTeam ($routerConfig.active_mode -in @('low', 'high', 'pro')) 'unknown team mode'
+$expectedWorkerModel = if ($routerConfig.active_mode -eq 'pro') { 'codex-6-Astra' } else { 'gpt-5.6-luna' }
+Assert-AiTeam ($routerConfig.agents.worker.model -eq $expectedWorkerModel -and ($null -eq $workerLock -or $workerLock -in @('low', 'medium', 'high', 'max'))) 'general Worker reasoning configuration is invalid'
 $agentNames = @($routerConfig.agents.PSObject.Properties.Name)
 $profileNames = @($routerConfig.codex_profiles.PSObject.Properties.Name)
 Assert-AiTeam (-not ($agentNames -contains 'worker-critical') -and -not ($profileNames -contains 'luna_critical_worker')) 'legacy critical write profile remains configured'

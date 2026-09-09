@@ -211,6 +211,83 @@ export type CreateCommerceOrderForCheckoutInput = {
   now?: Date;
 };
 
+/** 在同一筆交易內重新驗證加購商品的商家、狀態與幣別。 */
+async function checkoutOrderBumpProduct(
+  tx: CommerceOrdersTransaction,
+  input: CreateCommerceOrderForCheckoutInput,
+  product: { id: string; currency: string },
+) {
+  const orderBumpProduct = input.orderBumpProductId
+    ? await tx.product.findFirst({
+        where: {
+          id: input.orderBumpProductId,
+          vendorId: input.vendorId,
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          priceCents: { gt: 0 },
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          priceCents: true,
+          currency: true,
+          imageUrl: true,
+          commerceDomain: true,
+          fulfillmentType: true,
+        },
+      })
+    : null;
+  if (input.orderBumpProductId && (!orderBumpProduct || orderBumpProduct.id === product.id)) {
+    throw new CommerceOrderValidationError("Order bump product is unavailable.");
+  }
+  if (orderBumpProduct && orderBumpProduct.currency !== product.currency) {
+    throw new CommerceOrderValidationError("Order bump currency does not match product.");
+  }
+  return orderBumpProduct;
+}
+
+/** 價格驗證維持整數、折扣與伺服器授權總額的全部限制。 */
+function checkoutOrderTotals(
+  input: CreateCommerceOrderForCheckoutInput,
+  product: { priceCents: number },
+  quantity: number,
+  orderBumpProduct: { priceCents: number } | null,
+) {
+  const calculatedTotal = product.priceCents * quantity + (orderBumpProduct?.priceCents ?? 0);
+  const discountAmountCents = input.discountAmountCents ?? 0;
+  if (
+    !Number.isSafeInteger(calculatedTotal)
+    || !Number.isSafeInteger(discountAmountCents)
+    || discountAmountCents < 0
+    || discountAmountCents >= calculatedTotal
+    || calculatedTotal - discountAmountCents !== input.totalAmountCents
+  ) {
+    throw new CommerceOrderValidationError("totalAmountCents does not match the immutable product price.");
+  }
+
+  return { calculatedTotal, discountAmountCents };
+}
+
+/** 每個訂單項目各建立一個對應的待履約紀錄。 */
+async function createPendingCheckoutFulfillment(
+  tx: CommerceOrdersTransaction,
+  vendorId: string,
+  orderItemId: string,
+  fulfillmentType: string,
+  now: Date,
+) {
+  if (fulfillmentType === "physical") {
+    await tx.shippingFulfillment.create({ data: { id: randomUUID(), vendorId, orderItemId, status: "pending", revision: 1, createdAt: now } });
+  } else if (fulfillmentType === "service") {
+    await tx.serviceFulfillment.create({ data: { id: randomUUID(), vendorId, orderItemId, status: "pending", revision: 1, scheduledAt: null, completedAt: null, cancelledAt: null, serviceEncryptedEnvelope: null, serviceMaskedSummary: null, createdAt: now } });
+  } else {
+    const entitlementId = randomUUID();
+    const access = protectCommerceEntitlementAccess({ vendorId, entitlementId, orderItemId });
+    await tx.commerceEntitlement.create({ data: { id: entitlementId, vendorId, orderItemId, status: "pending", revision: 1, ...access, grantedAt: null, expiresAt: null, revokedAt: null, createdAt: now } });
+  }
+}
+
 /**
  * Persists the canonical order, immutable line snapshot, sanitized creation event,
  * and exactly one fulfillment placeholder using the caller's transaction.
@@ -267,44 +344,8 @@ export async function createCommerceOrderForCheckout(
   assertProductDomain(product);
   assertPositiveAmount(product.priceCents, "product price");
   if (product.currency !== input.currency) throw new CommerceOrderValidationError("currency does not match product.");
-  const orderBumpProduct = input.orderBumpProductId
-    ? await tx.product.findFirst({
-        where: {
-          id: input.orderBumpProductId,
-          vendorId: input.vendorId,
-          isActive: true,
-          fulfillmentTypeConfirmed: true,
-          priceCents: { gt: 0 },
-        },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          priceCents: true,
-          currency: true,
-          imageUrl: true,
-          commerceDomain: true,
-          fulfillmentType: true,
-        },
-      })
-    : null;
-  if (input.orderBumpProductId && (!orderBumpProduct || orderBumpProduct.id === product.id)) {
-    throw new CommerceOrderValidationError("Order bump product is unavailable.");
-  }
-  if (orderBumpProduct && orderBumpProduct.currency !== product.currency) {
-    throw new CommerceOrderValidationError("Order bump currency does not match product.");
-  }
-  const calculatedTotal = product.priceCents * quantity + (orderBumpProduct?.priceCents ?? 0);
-  const discountAmountCents = input.discountAmountCents ?? 0;
-  if (
-    !Number.isSafeInteger(calculatedTotal)
-    || !Number.isSafeInteger(discountAmountCents)
-    || discountAmountCents < 0
-    || discountAmountCents >= calculatedTotal
-    || calculatedTotal - discountAmountCents !== input.totalAmountCents
-  ) {
-    throw new CommerceOrderValidationError("totalAmountCents does not match the immutable product price.");
-  }
+  const orderBumpProduct = await checkoutOrderBumpProduct(tx, input, product);
+  const { calculatedTotal, discountAmountCents } = checkoutOrderTotals(input, product, quantity, orderBumpProduct);
 
   const now = input.now ?? new Date();
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
@@ -491,26 +532,9 @@ export async function createCommerceOrderForCheckout(
     },
   });
 
-  if (product.fulfillmentType === "physical") {
-    await tx.shippingFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId, status: "pending", revision: 1, createdAt: now } });
-  } else if (product.fulfillmentType === "service") {
-    await tx.serviceFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId, status: "pending", revision: 1, scheduledAt: null, completedAt: null, cancelledAt: null, serviceEncryptedEnvelope: null, serviceMaskedSummary: null, createdAt: now } });
-  } else {
-    const entitlementId = randomUUID();
-    const access = protectCommerceEntitlementAccess({ vendorId: input.vendorId, entitlementId, orderItemId });
-    await tx.commerceEntitlement.create({ data: { id: entitlementId, vendorId: input.vendorId, orderItemId, status: "pending", revision: 1, ...access, grantedAt: null, expiresAt: null, revokedAt: null, createdAt: now } });
-  }
-
+  await createPendingCheckoutFulfillment(tx, input.vendorId, orderItemId, product.fulfillmentType, now);
   if (orderBumpProduct && orderBumpItemId) {
-    if (orderBumpProduct.fulfillmentType === "physical") {
-      await tx.shippingFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, createdAt: now } });
-    } else if (orderBumpProduct.fulfillmentType === "service") {
-      await tx.serviceFulfillment.create({ data: { id: randomUUID(), vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, scheduledAt: null, completedAt: null, cancelledAt: null, serviceEncryptedEnvelope: null, serviceMaskedSummary: null, createdAt: now } });
-    } else {
-      const entitlementId = randomUUID();
-      const access = protectCommerceEntitlementAccess({ vendorId: input.vendorId, entitlementId, orderItemId: orderBumpItemId });
-      await tx.commerceEntitlement.create({ data: { id: entitlementId, vendorId: input.vendorId, orderItemId: orderBumpItemId, status: "pending", revision: 1, ...access, grantedAt: null, expiresAt: null, revokedAt: null, createdAt: now } });
-    }
+    await createPendingCheckoutFulfillment(tx, input.vendorId, orderBumpItemId, orderBumpProduct.fulfillmentType, now);
   }
 
   return { id: orderId, itemId: orderItemId, orderBumpItemId, deliverySnapshotId, status: "pending_payment" as const };

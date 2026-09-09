@@ -43,7 +43,7 @@ describe("customer CRM aggregation", () => {
   });
 
   it("builds a tenant-qualified union from hash-only CRM sources without a row cap", async () => {
-    const findMany = (result: unknown[]) => vi.fn(async (_args: unknown) => result);
+    const findMany = (result: unknown[]) => vi.fn<(args: unknown) => Promise<unknown[]>>().mockResolvedValue(result);
     const formFind = findMany([]);
     const bookingFind = findMany([]);
     database.current = {

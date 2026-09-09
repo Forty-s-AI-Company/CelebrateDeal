@@ -5,9 +5,8 @@ import { Check, Copy, Link2, RotateCcw, XCircle } from "lucide-react";
 import {
   createTeamLiveShareAction,
   disableTeamLiveShareAction,
-  initialTeamLiveShareActionState,
-  type TeamLiveShareActionState,
 } from "@/app/actions/team-funnel-live-share-actions";
+import { initialTeamLiveShareActionState, type TeamLiveShareActionState } from "@/lib/team-live-share-action-state";
 
 export type TeamLiveShareTarget = {
   membershipId: string;

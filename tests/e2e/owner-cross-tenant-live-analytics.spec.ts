@@ -58,7 +58,7 @@ test("owner cannot open another vendor live analytics route through direct URL n
     expect(ownResponse?.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${ownPath}$`));
     await expect(page.getByRole("heading", { name: `${ownLive.title} 分析` })).toBeVisible();
-    for (const heading of ["轉換漏斗", "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    for (const heading of ["轉換漏斗", "最近事件", "推廣團隊與分銷夥伴貢獻榜"]) await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.getByText(`${ownVisitor.slice(0, 12)}…`)).toBeVisible();
     await expect(page.getByText(ownVisitor, { exact: true })).toHaveCount(0);
     await expect(page.getByText(ownReferral, { exact: true })).toBeVisible();
@@ -79,7 +79,7 @@ test("owner cannot open another vendor live analytics route through direct URL n
       },
       finalStatus: 200,
     });
-    for (const heading of [`${foreignLive.title} 分析`, "最近事件", "聯盟來源"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0);
+    for (const heading of [`${foreignLive.title} 分析`, "最近事件", "推廣團隊與分銷夥伴貢獻榜"]) await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
     for (const value of foreignCanaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const documentContent = await page.content();
     for (const value of foreignCanaries) expect(documentContent).not.toContain(value);

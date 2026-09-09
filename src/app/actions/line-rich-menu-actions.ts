@@ -11,7 +11,6 @@ import {
   LineRichMenuSchema,
   createLineRichMenu,
   clearDefaultLineRichMenu,
-  createRichMenuTemplate,
   deleteLineRichMenu,
   generateRichMenuSvg,
   replaceRichMenuPlaceholders,

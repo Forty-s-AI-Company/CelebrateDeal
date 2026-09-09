@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { courseCompletion, nextLessonProgress, type CourseLesson, type CourseLessonProgress } from "@/lib/course-learning";
 import type { StudentPortalScope } from "@/lib/student-portal";
@@ -14,6 +15,7 @@ type CourseLearningStore = {
   courseLessonProgress: {
     findMany(args: unknown): Promise<CourseLessonProgress[]>;
     upsert(args: unknown): Promise<CourseLessonProgress>;
+    updateMany(args: unknown): Promise<{ count: number }>;
   };
 };
 
@@ -80,7 +82,9 @@ export async function getStudentCourse(db: CourseLearningStore, scope: StudentPo
   };
 }
 
-export async function saveStudentLessonProgress(db: CourseLearningStore, scope: StudentPortalScope, input: {
+export async function saveStudentLessonProgress(db: CourseLearningStore & {
+  $transaction<T>(work: (tx: Pick<CourseLearningStore, "courseLessonProgress">) => Promise<T>): Promise<T>;
+}, scope: StudentPortalScope, input: {
   courseId: string;
   lessonId: string;
   watchedSeconds: number;
@@ -100,12 +104,38 @@ export async function saveStudentLessonProgress(db: CourseLearningStore, scope: 
     select: { lessonId: true, watchedSeconds: true, completedAt: true },
   }))[0] ?? null;
   const next = nextLessonProgress({ lesson, previous: existing, reportedWatchedSeconds: input.watchedSeconds, markedComplete: input.markedComplete, now: input.now });
-  return db.courseLessonProgress.upsert({
-    where: { vendorId_lessonId_customerKeyHash: { vendorId: scope.vendorId, lessonId: input.lessonId, customerKeyHash: scope.customerKeyHash } },
-    create: { vendorId: scope.vendorId, productId: input.courseId, lessonId: input.lessonId, customerKeyHash: scope.customerKeyHash, ...next },
-    update: next,
-    select: { lessonId: true, watchedSeconds: true, completedAt: true },
+  const identity = { vendorId: scope.vendorId, productId: input.courseId, lessonId: input.lessonId, customerKeyHash: scope.customerKeyHash };
+  const persist = () => db.$transaction(async (tx) => {
+    await tx.courseLessonProgress.upsert({
+      where: { vendorId_lessonId_customerKeyHash: { vendorId: scope.vendorId, lessonId: input.lessonId, customerKeyHash: scope.customerKeyHash } },
+      create: { vendorId: scope.vendorId, productId: input.courseId, lessonId: input.lessonId, customerKeyHash: scope.customerKeyHash, ...next },
+      // Concurrent stale saves must never replace a newer checkpoint.
+      update: {},
+      select: { lessonId: true, watchedSeconds: true, completedAt: true },
+    });
+    await tx.courseLessonProgress.updateMany({
+      where: { ...identity, watchedSeconds: { lt: next.watchedSeconds } },
+      data: { watchedSeconds: next.watchedSeconds },
+    });
+    if (next.completedAt) {
+      await tx.courseLessonProgress.updateMany({
+        where: { ...identity, completedAt: null },
+        data: { completedAt: next.completedAt },
+      });
+    }
+    return (await tx.courseLessonProgress.findMany({
+      where: identity, take: 1,
+      select: { lessonId: true, watchedSeconds: true, completedAt: true },
+    }))[0] ?? null;
   });
+  try {
+    return await persist();
+  } catch (error) {
+    // A unique collision aborts PostgreSQL's transaction. Retry once in a fresh
+    // transaction after rollback; never continue using the aborted connection.
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+    return persist();
+  }
 }
 
 /** Resolves the certificate name only after the same purchase entitlement check. */

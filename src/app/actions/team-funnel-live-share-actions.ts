@@ -1,5 +1,8 @@
 "use server";
 
+import type { TeamLiveShareActionState } from "@/lib/team-live-share-action-state";
+export type { TeamLiveShareActionState } from "@/lib/team-live-share-action-state";
+
 import { revalidatePath } from "next/cache";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
@@ -11,19 +14,6 @@ import {
   TeamFunnelLiveShareConflictError,
   TeamFunnelLiveShareUnavailableError,
 } from "@/lib/team-funnel-live-sharing";
-
-export type TeamLiveShareActionState = {
-  status: "idle" | "success" | "error";
-  message: string;
-  shareUrl?: string;
-  pageId?: string;
-  promoterMembershipId?: string;
-};
-
-export const initialTeamLiveShareActionState: TeamLiveShareActionState = {
-  status: "idle",
-  message: "",
-};
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);

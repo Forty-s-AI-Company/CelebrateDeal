@@ -369,7 +369,8 @@ test("one stop webinar verifies registration, preserves live playback through de
   await page.screenshot({ path: screenshotPath(testInfo, "wp7-checkout-mobile.png"), fullPage: true });
 
   await page.getByLabel("姓名").fill("WP7 Buyer");
-  await page.getByLabel("Email").fill(`wp7-buyer-${runId}@example.test`);
+  // Invoice carrier options also mention Email; target the buyer field exactly.
+  await page.getByLabel("Email", { exact: true }).fill(`wp7-buyer-${runId}@example.test`);
   await page.getByLabel("電話", { exact: true }).fill("0912345678");
   await page.getByLabel("收件人").fill("WP7 Buyer");
   await page.getByLabel("收件電話").fill("0912345678");

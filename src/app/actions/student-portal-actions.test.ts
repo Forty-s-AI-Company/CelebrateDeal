@@ -14,7 +14,9 @@ vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mo
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: mocks.vendor }, commerceOrder: { count: mocks.orderCount }, consultationBooking: { count: mocks.bookingCount }, automationVoucherGrant: { count: mocks.voucherCount }, emailDelivery: { create: mocks.emailCreate } }) }));
 
-import { logoutStudentPortalAction, requestMagicLinkAction, STUDENT_PORTAL_INITIAL_STATE } from "@/app/actions/student-portal-actions";
+import * as studentPortalActions from "@/app/actions/student-portal-actions";
+import { STUDENT_PORTAL_INITIAL_STATE } from "@/lib/student-portal-action-state";
+const { logoutStudentPortalAction, requestMagicLinkAction } = studentPortalActions;
 
 function form(values: Record<string, string>) { const data = new FormData(); data.set("_csrf", "csrf"); for (const [key, value] of Object.entries(values)) data.set(key, value); return data; }
 
@@ -74,4 +76,12 @@ describe("student portal actions", () => {
     expect(mocks.clearCookie).toHaveBeenCalledOnce();
     expect(mocks.redirect).toHaveBeenCalledWith("/portal/teacher/login");
   });
+});
+
+// Next.js 會在收集頁面資料時檢查 runtime exports；常數不得混入 action 模組。
+it("exports only async student portal actions", () => {
+  expect(Object.keys(studentPortalActions).sort()).toEqual([
+    "enterStudentPortalFromCheckoutAction", "logoutStudentPortalAction", "requestMagicLinkAction",
+  ]);
+  for (const action of Object.values(studentPortalActions)) expect(action.constructor.name).toBe("AsyncFunction");
 });

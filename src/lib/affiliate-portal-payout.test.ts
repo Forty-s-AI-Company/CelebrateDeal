@@ -58,4 +58,20 @@ describe("affiliate payout request", () => {
     await expect(requestAffiliatePayout(db as never, input)).resolves.toBe("requested");
     expect(tx.affiliatePayout.updateMany).not.toHaveBeenCalled();
   });
+
+  it.each([0, 1_200, 1_500])("rejects a %i-cent payout without writing an unusable tax snapshot", async (finalAmountCents) => {
+    const { db, tx } = database({ id: "payout-a", status: "pending", finalAmountCents, requestedAt: null });
+    await expect(requestAffiliatePayout(db as never, input)).resolves.toBe("ineligible");
+    expect(tx.affiliatePayout.updateMany).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts the first positive net amount without changing the bank fee", async () => {
+    const { db, tx } = database({ id: "payout-a", status: "pending", finalAmountCents: 1_501, requestedAt: null });
+    await expect(requestAffiliatePayout(db as never, input)).resolves.toBe("requested");
+    expect(tx.affiliatePayout.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ grossAmountCents: 1_501, bankFeeCents: 1_500, netPayoutAmountCents: 1 }),
+    }));
+  });
+
 });

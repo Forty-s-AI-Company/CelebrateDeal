@@ -1,6 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import type { PostPurchaseOffer } from "@/lib/post-purchase-offer";
+
+// 保留服務端既有 import 契約；瀏覽器只能引用純展示模組。
+export { formatPostPurchaseAmount, type PostPurchaseOffer } from "@/lib/post-purchase-offer";
 
 const opaqueId = z.string().trim().min(1).max(191).regex(/^[A-Za-z0-9_-]+$/u);
 const currency = z.string().regex(/^[A-Z]{3}$/u);
@@ -26,17 +30,6 @@ export const PostPurchaseUpsellProductSchema = z.object({
 
 export type PostPurchaseUpsellProduct = z.infer<typeof PostPurchaseUpsellProductSchema>;
 
-export type PostPurchaseOffer = {
-  kind: "upsell" | "downsell";
-  sourceProductId: string;
-  productId: string;
-  productName: string;
-  currency: string;
-  /** The extra amount paid now, after the original paid amount and OTO discount. */
-  amountCents: number;
-  originalPriceCents: number;
-  discountCents: number;
-};
 
 function isAvailable(product: PostPurchaseUpsellProduct) {
   return product.isActive && product.fulfillmentTypeConfirmed && product.inventory > 0;
@@ -87,13 +80,6 @@ export function postPurchaseCheckoutHref(input: { vendorId: string; offer: Pick<
   return `/checkout/${encodeURIComponent(vendorId.data)}/${encodeURIComponent(productId.data)}?postPurchase=1`;
 }
 
-export function formatPostPurchaseAmount(amountCents: number, currencyCode: string) {
-  return new Intl.NumberFormat("zh-TW", {
-    style: "currency",
-    currency: currencyCode,
-    maximumFractionDigits: 0,
-  }).format(amountCents / 100);
-}
 
 const TOKEN_VERSION = "ppu1";
 const TOKEN_PURPOSE = "post-purchase-checkout";
@@ -139,7 +125,8 @@ export function verifyPostPurchaseCheckoutToken(token: string, now = new Date())
   if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
   try {
     const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
-    const { nonce: _nonce, ...binding } = decoded;
+    const { nonce, ...binding } = decoded;
+    void nonce; // Nonce 已包含在驗證過的簽章內，業務綁定僅使用其餘欄位。
     const parsed = PostPurchaseCheckoutTokenSchema.safeParse(binding);
     return parsed.success && parsed.data.expiresAt > Math.floor(now.getTime() / 1_000) ? parsed.data : null;
   } catch {

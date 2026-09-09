@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { requestAffiliatePayoutAction } from "@/app/actions/affiliate-portal-actions";
-import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { formatCurrency } from "@/lib/format";
 
 type Props = {
+  // 由 Server Component 提供欄位，避免將 CSRF 簽署與 Cookie API 帶入瀏覽器。
+  csrfField: ReactNode;
   payoutId: string;
   monthKey: string;
   bankLabel: string;
@@ -20,7 +21,7 @@ type Props = {
   };
 };
 
-export function AffiliateRemunerationDialog({ payoutId, monthKey, bankLabel, taxIdentityLabel, amounts }: Props) {
+export function AffiliateRemunerationDialog({ payoutId, monthKey, bankLabel, taxIdentityLabel, amounts, csrfField }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   return <>
     <button type="button" onClick={() => dialogRef.current?.showModal()} className="min-h-11 rounded-md bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-dark">申請提領</button>
@@ -39,7 +40,7 @@ export function AffiliateRemunerationDialog({ payoutId, monthKey, bankLabel, tax
         <p className="mt-4 text-sm text-slate-700">匯款帳戶：{bankLabel}</p>
         <p className="mt-1 text-sm text-slate-700">身分證字號：{taxIdentityLabel}</p>
         <form action={requestAffiliatePayoutAction} className="mt-5 grid gap-4">
-          <CsrfField />
+          {csrfField}
           <input type="hidden" name="payoutId" value={payoutId} />
           <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
             <input type="checkbox" required name="remunerationConsent" value="accepted" className="mt-1 h-5 w-5" />

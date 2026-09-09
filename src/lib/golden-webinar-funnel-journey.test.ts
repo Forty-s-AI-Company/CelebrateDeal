@@ -24,7 +24,7 @@ vi.mock("@/lib/product-delivery", () => ({
   revealOrderItemDeliverySnapshot: () => ({ destinationUrl: "https://learn.example.test/course", instructions: "從第一章開始" }),
 }));
 
-import { csvCell } from "@/app/api/affiliates/payouts/export/route";
+import { csvCell } from "@/lib/affiliate-payout-csv";
 import { GET as exportConsultationCalendar } from "@/app/portal/[vendorSlug]/calendar/[bookingId]/route";
 import { navigationForRole } from "@/components/app-shell";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";

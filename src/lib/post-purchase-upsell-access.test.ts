@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import { resolvePaidOrderPostPurchaseOffer } from "./post-purchase-upsell-access";
@@ -29,7 +29,7 @@ async function createPaidOrder(input: {
       vendorId: input.vendorId,
       orderNumber: `CD-AUDIT-${randomUUID()}`,
       checkoutIdempotencyKey: randomUUID(),
-      checkoutIdentityHash: `audit-${randomUUID()}`,
+      checkoutIdentityHash: createHash("sha256").update(randomUUID()).digest("base64url"),
       status: "paid",
       currency: "TWD",
       subtotalAmountCents: input.totalAmountCents,
@@ -50,9 +50,9 @@ async function createPaidOrder(input: {
       productSlug: `snapshot-${lineIndex + 1}`,
       commerceDomain: "merchant",
       fulfillmentType: "physical",
-      unitPriceCents: input.totalAmountCents,
+      unitPriceCents: input.totalAmountCents / input.items.length / quantity,
       quantity,
-      lineTotalCents: input.totalAmountCents,
+      lineTotalCents: input.totalAmountCents / input.items.length,
       nonSensitiveSnapshot: { synthetic: true },
     })),
   });

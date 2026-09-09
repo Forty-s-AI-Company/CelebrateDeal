@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { hasValidAffiliatePayoutSnapshot } from "./actions/affiliate-payout-validation";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -628,6 +629,11 @@ function hasInvalidLiveReferences(input: {
     || input.affiliateMissing
     || input.customMembershipMissing
     || input.quotaPageCount !== input.expectedQuotaPageCount;
+}
+
+/** 有提交關聯 ID 時，必須查得到對應的商家資料。 */
+function isMissingSubmittedLiveReference(id: string | null, reference: unknown) {
+  return id !== null && !reference;
 }
 
 function isMissingDefaultAffiliate(
@@ -1302,14 +1308,14 @@ export async function upsertLiveAction(formData: FormData) {
     (quota) => !membershipKeys.has(`${quota.teamId}:${quota.membershipId}`),
   );
   const hasInvalidReference = hasInvalidLiveReferences({
-    liveMissing: id !== null && !existingLive,
+    liveMissing: isMissingSubmittedLiveReference(id, existingLive),
     productCount: products.length,
     expectedProductCount: productIds.length,
-    videoMissing: videoId !== null && !video,
-    formMissing: formId !== null && !registrationForm,
-    templateMissing: messageTemplateId !== null && !messageTemplate,
+    videoMissing: isMissingSubmittedLiveReference(videoId, video),
+    formMissing: isMissingSubmittedLiveReference(formId, registrationForm),
+    templateMissing: isMissingSubmittedLiveReference(messageTemplateId, messageTemplate),
     reminderTemplateMissing: authoritativeReminder.missing,
-    scriptMissing: interactionScriptId !== null && !interactionScript,
+    scriptMissing: isMissingSubmittedLiveReference(interactionScriptId, interactionScript),
     // The submitted code is the only new reference that requires validation.
     // A legacy stored code is preserved above and never re-bound by this edit.
     affiliateMissing: isMissingDefaultAffiliate(submittedQuotaPolicy.defaultAffiliateCode, defaultAffiliate),
@@ -1775,29 +1781,7 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       if (payout.status === status) return;
       if (payout.status !== "pending") throw new AffiliatePayoutMutationConflict();
       if (status === "paid") {
-        const snapshotAmounts = [
-          payout.grossAmountCents,
-          payout.withholdingTaxCents,
-          payout.nhiSupplementaryTaxCents,
-          payout.bankFeeCents,
-          payout.netPayoutAmountCents,
-        ];
-        if (
-          !payout.requestedAt
-          || !payout.signedAt
-          || !payout.requestedBankAccountEncrypted
-          || !payout.requestedTaxIdentityEncrypted
-          || !payout.withholdingRuleVersion
-          || snapshotAmounts.some((amount) => amount === null || amount < 0)
-          || payout.grossAmountCents !== payout.finalAmountCents
-          || payout.netPayoutAmountCents !== payout.grossAmountCents!
-            - payout.withholdingTaxCents!
-            - payout.nhiSupplementaryTaxCents!
-            - payout.bankFeeCents!
-          || payout.netPayoutAmountCents! <= 0
-        ) {
-          throw new AffiliatePayoutMutationConflict();
-        }
+        if (!hasValidAffiliatePayoutSnapshot(payout)) throw new AffiliatePayoutMutationConflict();
       }
 
       const commissions = await tx.affiliateCommission.findMany({

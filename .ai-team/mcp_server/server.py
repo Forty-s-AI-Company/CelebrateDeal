@@ -378,7 +378,7 @@ def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto")
         planner_cfg = config.get("agents", {}).get("planner", {})
         if isinstance(planner_cfg, dict) and planner_cfg.get("model"):
             recommendation["model"] = planner_cfg["model"]
-            if planner_cfg["model"] == "gpt-5.6-sol":
+            if planner_cfg.get("provider") == "native_agent" or planner_cfg["model"] in {"gpt-5.6-sol", "codex-6-Astra"}:
                 recommendation["provider"] = "native_agent"
                 recommendation.pop("fallback_planner", None)
             else:
@@ -388,6 +388,9 @@ def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto")
     elif route == "implement":
         worker_cfg = config.get("agents", {}).get("worker", {})
         if isinstance(worker_cfg, dict):
+            # Keep the active model and its execution profile consistent.
+            if worker_cfg.get("profile"):
+                recommendation["profile"] = worker_cfg["profile"]
             if worker_cfg.get("model"):
                 recommendation["model"] = worker_cfg["model"]
             if "reasoning_lock" in worker_cfg:

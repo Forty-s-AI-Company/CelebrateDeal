@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { auditSnapshot } from "@/lib/audit";
-import { calculateTaiwanTaxWithholding } from "@/lib/taiwan-tax-withholding";
+import { calculateTaiwanTaxWithholding, DEFAULT_BANK_FEE_CENTS } from "@/lib/taiwan-tax-withholding";
 
 export type AffiliatePayoutRequestInput = {
   payoutId: string;
@@ -24,6 +24,8 @@ export async function requestAffiliatePayout(
     });
     if (!payout || payout.status !== "pending" || payout.finalAmountCents <= 0) return "ineligible" as const;
     if (payout.requestedAt) return "requested" as const;
+    // 不建立負數或零實領款；直接提交小額款項也必須回傳不可申請。
+    if (payout.finalAmountCents <= DEFAULT_BANK_FEE_CENTS) return "ineligible" as const;
     const snapshot = calculateTaiwanTaxWithholding({ grossAmountCents: payout.finalAmountCents });
 
     const claimed = await tx.affiliatePayout.updateMany({

@@ -1,5 +1,8 @@
 "use server";
 
+import type { StudentPortalActionState } from "@/lib/student-portal-action-state";
+export type { StudentPortalActionState } from "@/lib/student-portal-action-state";
+
 import { createHash, randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -20,14 +23,6 @@ import {
 
 const EmailInput = z.string().trim().toLowerCase().email().max(254);
 const SlugInput = z.string().trim().min(1).max(120).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
-
-export type StudentPortalActionState = {
-  status: "idle" | "sent" | "invalid" | "rate_limited";
-  message: string;
-  mockLink?: string;
-};
-
-export const STUDENT_PORTAL_INITIAL_STATE: StudentPortalActionState = { status: "idle", message: "" };
 
 function value(formData: FormData, key: string) {
   const entry = formData.get(key);

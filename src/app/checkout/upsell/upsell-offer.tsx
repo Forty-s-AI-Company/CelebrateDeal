@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { formatPostPurchaseAmount, type PostPurchaseOffer } from "@/lib/post-purchase-upsell";
+import { formatPostPurchaseAmount, type PostPurchaseOffer } from "@/lib/post-purchase-offer";
 
 export function UpsellOffer({ grantId, initialOffer }: { grantId: string; initialOffer: PostPurchaseOffer }) {
-  const [offer, setOffer] = useState(initialOffer);
+  const [offer] = useState(initialOffer);
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(false);
 

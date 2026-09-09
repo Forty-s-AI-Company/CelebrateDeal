@@ -598,6 +598,137 @@ async function checkoutCreationErrorResponse(input: {
   return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
 }
 
+/** 僅使用簽章 handoff、既有買家 grant 與同商家已付款訂單還原加購身份。 */
+async function resolvePostPurchaseCheckout(
+  db: ReturnType<typeof getDb>, request: Request, data: CheckoutRequestData, product: { id: string },
+) {
+  let postPurchase: {
+    orderId: string;
+    sourceProductId: string;
+    amountCents: number;
+    kind: "upsell" | "downsell";
+  } | null = null;
+  let postPurchasePii: CommerceOrderPii | null = null;
+  if (data.postPurchaseToken) {
+    const handoff = verifyPostPurchaseCheckoutToken(data.postPurchaseToken);
+    const grant = handoff ? await resolveBuyerSupportGrant(db, requestCookieSource(request), handoff.grantId) : null;
+    if (!handoff || !grant || grant.vendorId !== data.vendorId || grant.orderId !== handoff.orderId || grant.order.status !== "paid") {
+      return { ok: false as const, response: NextResponse.json({ error: "Post-purchase checkout expired or unavailable" }, { status: 409 }) };
+    }
+    const resolved = await resolvePaidOrderPostPurchaseOffer(db, {
+      vendorId: grant.vendorId, orderId: grant.orderId, kind: handoff.kind,
+    });
+    if (!resolved || resolved.source.id !== handoff.sourceProductId || resolved.offer.productId !== product.id || resolved.offer.amountCents !== handoff.amountCents) {
+      return { ok: false as const, response: NextResponse.json({ error: "Post-purchase offer changed or unavailable" }, { status: 409 }) };
+    }
+    const originalOrder = await db.commerceOrder.findFirst({
+      where: { id: grant.orderId, vendorId: grant.vendorId, status: "paid" },
+      select: { buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
+    });
+    if (!originalOrder) return { ok: false as const, response: NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 409 }) };
+    try {
+      postPurchasePii = revealCommerceOrderPii({
+        buyerEncrypted: originalOrder.buyerEncryptedEnvelope,
+        shippingEncrypted: originalOrder.shippingEncryptedEnvelope,
+      }, { vendorId: grant.vendorId, orderId: grant.orderId });
+    } catch {
+      return { ok: false as const, response: NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 503 }) };
+    }
+    postPurchase = {
+      orderId: grant.orderId,
+      sourceProductId: resolved.source.id,
+      amountCents: resolved.offer.amountCents,
+      kind: resolved.offer.kind,
+    };
+  }
+  return { ok: true as const, postPurchase, postPurchasePii };
+}
+
+/** 加購沿用主商品的商家與幣別限制，也保留 post-purchase 不可混用的規則。 */
+async function resolveCheckoutOrderBump(
+  db: ReturnType<typeof getDb>, data: CheckoutRequestData, product: { id: string; currency: string },
+) {
+  const requestedOrderBump = data.orderBump;
+  if (data.postPurchaseToken && requestedOrderBump) {
+    return { ok: false as const, response: NextResponse.json({ error: "Post-purchase checkout cannot include an order bump" }, { status: 409 }) };
+  }
+  const orderBumpProduct = requestedOrderBump
+    ? await db.product.findFirst({
+        where: {
+          vendorId: data.vendorId,
+          ...(requestedOrderBump.productId
+            ? { id: requestedOrderBump.productId }
+            : { slug: requestedOrderBump.sku }),
+          isActive: true,
+          fulfillmentTypeConfirmed: true,
+          priceCents: { gt: 0 },
+        },
+        include: { deliveryConfig: { select: { status: true, fulfillmentType: true } } },
+      })
+    : null;
+  if (requestedOrderBump && (
+    !orderBumpProduct
+    || orderBumpProduct.id === product.id
+    || orderBumpProduct.currency !== product.currency
+    || unavailableCheckoutProductResponse(orderBumpProduct)
+  )) {
+    return { ok: false as const, response: NextResponse.json({ error: "Order bump not available" }, { status: 409 }) };
+  }
+  return { ok: true as const, orderBumpProduct };
+}
+
+/** 發票選項與加購商品共同綁定冪等身份，保留舊客戶端的省略行為。 */
+function checkoutInvoiceIdentity(data: CheckoutRequestData, baseCheckoutIdentityHash: string, orderBumpProduct: { id: string } | null) {
+  const invoiceSelection = parseCheckoutInvoiceSelection(data.invoice ?? { type: "personal", carrier: "member" });
+  if (!invoiceSelection) return { ok: false as const, response: NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 }) };
+  const hasExplicitInvoiceSelection = data.invoice !== undefined;
+  const invoiceBoundCheckoutIdentityHash = hasExplicitInvoiceSelection
+    ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
+    : baseCheckoutIdentityHash;
+  const checkoutIdentityHash = orderBumpProduct
+    ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
+    : invoiceBoundCheckoutIdentityHash;
+
+  return { ok: true as const, invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash };
+}
+
+/** 金額與付款 metadata 只由已驗證商品、歸因與優惠推導。 */
+function checkoutPricingMetadata(input: {
+  data: CheckoutRequestData;
+  product: { priceCents: number; name: string };
+  postPurchase: { orderId: string; sourceProductId: string; amountCents: number } | null;
+  orderBumpProduct: { id: string; priceCents: number } | null;
+  voucherClaim: EligibleVoucherClaim;
+  coursePolicySnapshot: ReturnType<typeof coursePolicySnapshotFromProduct>;
+  affiliateAttribution: Awaited<ReturnType<typeof affiliateAttributionFromRequest>>;
+  referralCode?: string;
+  formSubmissionId?: string;
+  sourceLiveId?: string;
+}) {
+  const { data, product, postPurchase, orderBumpProduct, voucherClaim, coursePolicySnapshot, affiliateAttribution, referralCode, formSubmissionId, sourceLiveId } = input;
+  const standardPromotion = checkoutPromotion(voucherClaim, product.priceCents);
+  const discountAmountCents = postPurchase ? product.priceCents - postPurchase.amountCents : standardPromotion.discountAmountCents;
+  const primaryCheckoutAmountCents = postPurchase?.amountCents ?? standardPromotion.checkoutAmountCents;
+  const checkoutAmountCents = primaryCheckoutAmountCents + (orderBumpProduct?.priceCents ?? 0);
+  const transactionMetadata = checkoutTransactionMetadata({
+    productId: data.productId,
+    productName: product.name,
+    coursePolicySnapshot,
+    referralCode,
+    affiliateClickId: affiliateAttribution?.affiliateClickId,
+    formSubmissionId,
+    sourceLiveId,
+    voucherClaimId: voucherClaim?.id,
+    discountAmountCents,
+    checkoutAmountCents,
+    orderBumpProductId: orderBumpProduct?.id,
+    orderBumpPriceCents: orderBumpProduct?.priceCents,
+    ...(postPurchase ? { postPurchaseSourceOrderId: postPurchase.orderId, postPurchaseSourceProductId: postPurchase.sourceProductId } : {}),
+  });
+
+  return { discountAmountCents, checkoutAmountCents, transactionMetadata };
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -634,32 +765,9 @@ export async function POST(request: Request) {
   if (!product) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
-  const requestedOrderBump = parsed.data.orderBump;
-  if (parsed.data.postPurchaseToken && requestedOrderBump) {
-    return NextResponse.json({ error: "Post-purchase checkout cannot include an order bump" }, { status: 409 });
-  }
-  const orderBumpProduct = requestedOrderBump
-    ? await db.product.findFirst({
-        where: {
-          vendorId: parsed.data.vendorId,
-          ...(requestedOrderBump.productId
-            ? { id: requestedOrderBump.productId }
-            : { slug: requestedOrderBump.sku }),
-          isActive: true,
-          fulfillmentTypeConfirmed: true,
-          priceCents: { gt: 0 },
-        },
-        include: { deliveryConfig: { select: { status: true, fulfillmentType: true } } },
-      })
-    : null;
-  if (requestedOrderBump && (
-    !orderBumpProduct
-    || orderBumpProduct.id === product.id
-    || orderBumpProduct.currency !== product.currency
-    || unavailableCheckoutProductResponse(orderBumpProduct)
-  )) {
-    return NextResponse.json({ error: "Order bump not available" }, { status: 409 });
-  }
+  const orderBumpResult = await resolveCheckoutOrderBump(db, parsed.data, product);
+  if (!orderBumpResult.ok) return orderBumpResult.response;
+  const { orderBumpProduct } = orderBumpResult;
   const unavailableProductResponse = unavailableCheckoutProductResponse(product);
   if (unavailableProductResponse) return unavailableProductResponse;
 
@@ -667,45 +775,9 @@ export async function POST(request: Request) {
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
   if (!customCheckout.ok) return customCheckout.response;
 
-  let postPurchase: {
-    orderId: string;
-    sourceProductId: string;
-    amountCents: number;
-    kind: "upsell" | "downsell";
-  } | null = null;
-  let postPurchasePii: CommerceOrderPii | null = null;
-  if (parsed.data.postPurchaseToken) {
-    const handoff = verifyPostPurchaseCheckoutToken(parsed.data.postPurchaseToken);
-    const grant = handoff ? await resolveBuyerSupportGrant(db, requestCookieSource(request), handoff.grantId) : null;
-    if (!handoff || !grant || grant.vendorId !== parsed.data.vendorId || grant.orderId !== handoff.orderId || grant.order.status !== "paid") {
-      return NextResponse.json({ error: "Post-purchase checkout expired or unavailable" }, { status: 409 });
-    }
-    const resolved = await resolvePaidOrderPostPurchaseOffer(db, {
-      vendorId: grant.vendorId, orderId: grant.orderId, kind: handoff.kind,
-    });
-    if (!resolved || resolved.source.id !== handoff.sourceProductId || resolved.offer.productId !== product.id || resolved.offer.amountCents !== handoff.amountCents) {
-      return NextResponse.json({ error: "Post-purchase offer changed or unavailable" }, { status: 409 });
-    }
-    const originalOrder = await db.commerceOrder.findFirst({
-      where: { id: grant.orderId, vendorId: grant.vendorId, status: "paid" },
-      select: { buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true },
-    });
-    if (!originalOrder) return NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 409 });
-    try {
-      postPurchasePii = revealCommerceOrderPii({
-        buyerEncrypted: originalOrder.buyerEncryptedEnvelope,
-        shippingEncrypted: originalOrder.shippingEncryptedEnvelope,
-      }, { vendorId: grant.vendorId, orderId: grant.orderId });
-    } catch {
-      return NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 503 });
-    }
-    postPurchase = {
-      orderId: grant.orderId,
-      sourceProductId: resolved.source.id,
-      amountCents: resolved.offer.amountCents,
-      kind: resolved.offer.kind,
-    };
-  }
+  const postPurchaseResult = await resolvePostPurchaseCheckout(db, request, parsed.data, product);
+  if (!postPurchaseResult.ok) return postPurchaseResult.response;
+  const { postPurchase, postPurchasePii } = postPurchaseResult;
   const identity = validateCheckoutIdentity(
     postPurchasePii ?? parsed.data,
     parsed.data.vendorId,
@@ -716,15 +788,9 @@ export async function POST(request: Request) {
   );
   if (!identity.ok) return identity.response;
   const { pii: checkoutPii, checkoutIdentityHash: baseCheckoutIdentityHash } = identity;
-  const invoiceSelection = parseCheckoutInvoiceSelection(parsed.data.invoice ?? { type: "personal", carrier: "member" });
-  if (!invoiceSelection) return NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 });
-  const hasExplicitInvoiceSelection = parsed.data.invoice !== undefined;
-  const invoiceBoundCheckoutIdentityHash = hasExplicitInvoiceSelection
-    ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
-    : baseCheckoutIdentityHash;
-  const checkoutIdentityHash = orderBumpProduct
-    ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
-    : invoiceBoundCheckoutIdentityHash;
+  const invoiceIdentity = checkoutInvoiceIdentity(parsed.data, baseCheckoutIdentityHash, orderBumpProduct);
+  if (!invoiceIdentity.ok) return invoiceIdentity.response;
+  const { invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = invoiceIdentity;
 
   const existing = await db.paymentTransaction.findUnique({
     where: {
@@ -768,24 +834,9 @@ export async function POST(request: Request) {
     priceCents: product.priceCents,
     currency: product.currency,
   });
-  const standardPromotion = checkoutPromotion(voucherClaim, product.priceCents);
-  const discountAmountCents = postPurchase ? product.priceCents - postPurchase.amountCents : standardPromotion.discountAmountCents;
-  const primaryCheckoutAmountCents = postPurchase?.amountCents ?? standardPromotion.checkoutAmountCents;
-  const checkoutAmountCents = primaryCheckoutAmountCents + (orderBumpProduct?.priceCents ?? 0);
-  const transactionMetadata = checkoutTransactionMetadata({
-    productId: parsed.data.productId,
-    productName: product.name,
-    coursePolicySnapshot,
-    referralCode,
-    affiliateClickId: affiliateAttribution?.affiliateClickId,
-    formSubmissionId,
-    sourceLiveId,
-    voucherClaimId: voucherClaim?.id,
-    discountAmountCents,
-    checkoutAmountCents,
-    orderBumpProductId: orderBumpProduct?.id,
-    orderBumpPriceCents: orderBumpProduct?.priceCents,
-    ...(postPurchase ? { postPurchaseSourceOrderId: postPurchase.orderId, postPurchaseSourceProductId: postPurchase.sourceProductId } : {}),
+  const { discountAmountCents, checkoutAmountCents, transactionMetadata } = checkoutPricingMetadata({
+    data: parsed.data, product, postPurchase, orderBumpProduct, voucherClaim, coursePolicySnapshot,
+    affiliateAttribution, referralCode, formSubmissionId, sourceLiveId,
   });
 
   const order = orderNumber();

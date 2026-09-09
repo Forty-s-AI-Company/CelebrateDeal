@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { csvCell } from "@/lib/affiliate-payout-csv";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorFinance } from "@/lib/auth";
 import { decryptBankAccount } from "@/lib/bank-account";
@@ -9,13 +10,6 @@ import { decryptTaxIdentity } from "@/lib/tax-identity";
 
 type ExportType = "bank" | "tax";
 
-export function csvCell(value: string | number | null | undefined) {
-  const raw = String(value ?? "");
-  // Spreadsheet programs evaluate leading formula characters. Prefixing an
-  // apostrophe preserves the value while keeping CSV downloads inert.
-  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
-  return `"${safe.replaceAll('"', '""')}"`;
-}
 
 function csvResponse(filename: string, header: string[], rows: Array<Array<string | number | null | undefined>>) {
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");

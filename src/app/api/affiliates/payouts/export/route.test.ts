@@ -18,7 +18,9 @@ vi.mock("@/lib/tax-identity", () => ({ decryptTaxIdentity: mocks.decryptTaxIdent
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ affiliatePayout: { findMany: mocks.findMany } }) }));
 
-import { POST } from "./route";
+import * as payoutRoute from "./route";
+
+const { POST } = payoutRoute;
 
 const vendor = { id: "vendor-current" };
 const payout = {
@@ -153,4 +155,9 @@ describe("POST /api/affiliates/payouts/export", () => {
     await expect(response.json()).resolves.toEqual({ error: "Payout export data is unavailable" });
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
+});
+
+// Route entry 只開放受 CSRF 保護的 POST，純工具不可成為 Next.js route export。
+it("exports only the POST handler", () => {
+  expect(Object.keys(payoutRoute)).toEqual(["POST"]);
 });

@@ -9,6 +9,29 @@ import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { normalizeInteractionEventDraft } from "@/lib/interaction-event";
 import { EVERGREEN_SCHEDULE_MODES, getEvergreenPlaybackState, type EvergreenScheduleMode } from "@/lib/evergreen-webinar";
 
+function resolveEvergreenState(live: {
+  evergreenScheduleMode: string; isEvergreen: boolean; video: { durationSec: number } | null;
+  vendor: { timezone: string }; evergreenIntervalMinutes: number; evergreenDailyTimes: string[];
+  evergreenSessionStartAt: Date | null;
+}, serverNow: Date) {
+  const evergreenMode = EVERGREEN_SCHEDULE_MODES.includes(live.evergreenScheduleMode as EvergreenScheduleMode)
+    ? live.evergreenScheduleMode as EvergreenScheduleMode
+    : "just_in_time";
+  const evergreenState = live.isEvergreen && (live.video?.durationSec ?? 0) > 0
+    ? getEvergreenPlaybackState({
+        mode: evergreenMode,
+        durationSeconds: live.video!.durationSec,
+        timezone: live.vendor.timezone,
+        intervalMinutes: [5, 15, 30].includes(live.evergreenIntervalMinutes)
+          ? live.evergreenIntervalMinutes as 5 | 15 | 30
+          : 15,
+        dailyTimes: live.evergreenDailyTimes,
+        ...(live.evergreenSessionStartAt ? { sessionStartAt: live.evergreenSessionStartAt } : {}),
+      }, serverNow)
+    : null;
+  return evergreenState;
+}
+
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const serverNow = new Date();
@@ -49,21 +72,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     console.warn("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
     notFound();
   }
-  const evergreenMode = EVERGREEN_SCHEDULE_MODES.includes(live.evergreenScheduleMode as EvergreenScheduleMode)
-    ? live.evergreenScheduleMode as EvergreenScheduleMode
-    : "just_in_time";
-  const evergreenState = live.isEvergreen && (live.video?.durationSec ?? 0) > 0
-    ? getEvergreenPlaybackState({
-        mode: evergreenMode,
-        durationSeconds: live.video!.durationSec,
-        timezone: live.vendor.timezone,
-        intervalMinutes: [5, 15, 30].includes(live.evergreenIntervalMinutes)
-          ? live.evergreenIntervalMinutes as 5 | 15 | 30
-          : 15,
-        dailyTimes: live.evergreenDailyTimes,
-        ...(live.evergreenSessionStartAt ? { sessionStartAt: live.evergreenSessionStartAt } : {}),
-      }, serverNow)
-    : null;
+  const evergreenState = resolveEvergreenState(live, serverNow);
   const runtime = evergreenState
     ? {
         state: evergreenState.roomState === "waiting_countdown" ? "waiting" as const

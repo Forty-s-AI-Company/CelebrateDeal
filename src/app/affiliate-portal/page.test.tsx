@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requirePortal: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock("@/app/actions/affiliate-portal-actions", () => ({
 import AffiliatePortalPage from "@/app/affiliate-portal/page";
 
 describe("affiliate portal page", () => {
-  it("renders isolated metrics, wallet states, referral link and payout control", async () => {
+  beforeEach(() => {
     mocks.requirePortal.mockResolvedValue({
       auth: { user: { id: "user-a" } },
       affiliate: { id: "affiliate-a", name: "小美", code: "MAY", bankAccountEncrypted: "encrypted", taxIdentityEncrypted: "encrypted-tax" },
@@ -43,6 +43,9 @@ describe("affiliate portal page", () => {
       payouts: [{ id: "p1", monthKey: "2026-09", finalAmountCents: 2_000, status: "pending", requestedAt: null, paidAt: null, createdAt: new Date("2026-09-05") }],
     });
 
+  });
+
+  it("renders isolated metrics, wallet states, referral link and payout control", async () => {
     const html = renderToStaticMarkup(await AffiliatePortalPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("即時點擊數");
     expect(html).toContain(">88<");
@@ -55,5 +58,30 @@ describe("affiliate portal page", () => {
     expect(html).toContain("勞務報酬明細與簽署確認");
     expect(html).toContain("確認簽署並申請提領");
     expect(html).toContain("A1*****789");
+    const payoutDialog = html.match(/<dialog[\s\S]*?<\/dialog>/u)?.[0];
+    expect(payoutDialog).toContain('name="_csrf" value="test"');
+    expect(payoutDialog).toContain('name="payoutId" value="p1"');
+    expect(payoutDialog).not.toContain("A123456789");
+    expect(payoutDialog).not.toContain("1234567890");
   });
+
+  it.each([0, 1_200, 1_500])("keeps the dashboard available when a pending payout is %i cents", async (finalAmountCents) => {
+    const dashboard = await mocks.dashboard();
+    mocks.dashboard.mockResolvedValue({ ...dashboard, payouts: [{ ...dashboard.payouts[0], finalAmountCents }] });
+    const html = renderToStaticMarkup(await AffiliatePortalPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("嗨，小美");
+    expect(html).toContain("即時點擊數");
+    expect(html).toContain("暫時無法申請提領");
+    expect(html).not.toContain('name="payoutId"');
+  });
+
+  it("renders a historical small payout without recalculating a new deduction snapshot", async () => {
+    const dashboard = await mocks.dashboard();
+    mocks.dashboard.mockResolvedValue({ ...dashboard, payouts: [{ ...dashboard.payouts[0], finalAmountCents: 1_200, status: "paid", paidAt: new Date("2026-09-05") }] });
+    const html = renderToStaticMarkup(await AffiliatePortalPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("已付款");
+    expect(html).not.toContain("暫時無法申請提領");
+    expect(html).not.toContain('name="payoutId"');
+  });
+
 });

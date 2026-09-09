@@ -42,16 +42,20 @@ test.beforeAll(async () => {
       deduplicationKey: `portal:${suffix}`,
       referralCode: affiliate.code,
       orderNumber: `ORDER-${suffix}`,
-      orderAmountCents: 12_000,
-      commissionBaseAmountCents: 12_000,
-      netReferenceAmountCents: 12_000,
+      orderAmountCents: 120_000,
+      commissionBaseAmountCents: 120_000,
+      netReferenceAmountCents: 120_000,
       commissionRateBps: 1_000,
-      commissionAmountCents: 1_200,
+      commissionAmountCents: 12_000,
       status: "locked",
     },
   });
   const payout = await db.affiliatePayout.create({
-    data: { vendorId: vendor.id, affiliateId: affiliate.id, monthKey: "2026-09", commissionAmountCents: 1_200, finalAmountCents: 1_200, status: "pending" },
+    data: { vendorId: vendor.id, affiliateId: affiliate.id, monthKey: "2026-09", commissionAmountCents: 12_000, finalAmountCents: 12_000, status: "pending" },
+  });
+  // A valid small balance must not crash the dashboard or bypass the bank fee.
+  await db.affiliatePayout.create({
+    data: { vendorId: vendor.id, affiliateId: affiliate.id, monthKey: "2026-08", commissionAmountCents: 1_200, finalAmountCents: 1_200, status: "pending" },
   });
 
   const foreignVendor = await db.vendor.create({
@@ -62,7 +66,7 @@ test.beforeAll(async () => {
     data: { vendorId: foreignVendor.id, userId: foreignUser.id, name: "Foreign 推廣者", code: `FOREIGN${fixture.code}`.slice(0, 78), commissionRateBps: 500 },
   });
   const foreignPayout = await db.affiliatePayout.create({
-    data: { vendorId: foreignVendor.id, affiliateId: foreignAffiliate.id, monthKey: "2026-09", commissionAmountCents: 999, finalAmountCents: 999, status: "pending" },
+    data: { vendorId: foreignVendor.id, affiliateId: foreignAffiliate.id, monthKey: "2026-09", commissionAmountCents: 99_900, finalAmountCents: 99_900, status: "pending" },
   });
 
   Object.assign(fixture, {
@@ -97,9 +101,10 @@ test("promoter can use the isolated dashboard, bank binding, and payout request"
 
   await expect(page).toHaveURL(/\/affiliate-portal$/);
   await expect(page.getByRole("heading", { name: "嗨，Portal 推廣者" })).toBeVisible();
+  await expect(page.getByText("金額尚不足以支付手續費並產生實領款，暫時無法申請提領。", { exact: true })).toBeVisible();
   await expect(page.getByText("即時點擊數").locator("..").getByText("2", { exact: true })).toBeVisible();
   await expect(page.getByText("轉換訂單數").locator("..").getByText("1", { exact: true })).toBeVisible();
-  await expect(page.getByText("總帶貨金額").locator("..").getByText("$120", { exact: true })).toBeVisible();
+  await expect(page.getByText("總帶貨金額").locator("..").getByText("$1,200", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "一鍵複製" }).click();
   await expect(page.getByRole("button", { name: "已複製" })).toBeVisible();
@@ -108,21 +113,31 @@ test("promoter can use the isolated dashboard, bank binding, and payout request"
   await page.getByLabel("戶名").fill("測試推廣者");
   await page.getByLabel("銀行代碼").fill("812");
   await page.getByLabel("帳號").fill("123456789012");
+  await page.getByLabel("身分證字號", { exact: true }).fill("A123456789");
   await page.getByRole("button", { name: "綁定銀行帳戶" }).click();
   await expect(page.getByText("銀行帳戶已安全儲存。", { exact: true })).toBeVisible();
   await expect(page.getByText(/已綁定：812 \/ \*\*\*\*9012/)).toBeVisible();
 
-  const payoutForm = page.locator('form:has(input[name="payoutId"])');
+  await page.getByRole("button", { name: "申請提領", exact: true }).click();
+  const payoutForm = page.getByRole("dialog").locator('form:has(input[name="payoutId"])');
+  await payoutForm.getByRole("checkbox").check();
   await payoutForm.locator('input[name="payoutId"]').evaluate((input, foreignId) => {
     (input as HTMLInputElement).value = foreignId;
   }, fixture.foreignPayoutId);
-  await payoutForm.getByRole("button", { name: "一鍵申請提領" }).click();
+  await payoutForm.getByRole("button", { name: "確認簽署並申請提領", exact: true }).click();
   await expect(page.getByText("資料無法送出，請檢查後再試。", { exact: true })).toBeVisible();
   expect((await db.affiliatePayout.findUniqueOrThrow({ where: { id: fixture.foreignPayoutId } })).requestedAt).toBeNull();
 
-  await page.getByRole("button", { name: "一鍵申請提領" }).click();
+  await page.goto("/affiliate-portal");
+  await page.getByRole("button", { name: "申請提領", exact: true }).click();
+  await payoutForm.getByRole("checkbox").check();
+  await payoutForm.getByRole("button", { name: "確認簽署並申請提領", exact: true }).click();
   await expect(page.getByText("提領申請已送出。", { exact: true })).toBeVisible();
   const requested = await db.affiliatePayout.findUniqueOrThrow({ where: { id: fixture.payoutId } });
   expect(requested.requestedAt).not.toBeNull();
   expect(requested.requestedBankAccountEncrypted).toMatch(/^v2\./);
+  expect(requested.requestedTaxIdentityEncrypted).toMatch(/^v1\./);
+  expect(requested.signedAt).not.toBeNull();
+  expect(requested.bankFeeCents).toBe(1_500);
+  expect(requested.netPayoutAmountCents).toBe(10_500);
 });

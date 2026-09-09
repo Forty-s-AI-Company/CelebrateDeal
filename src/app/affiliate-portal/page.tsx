@@ -10,7 +10,7 @@ import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { LineLoginButton } from "@/components/line-login-button";
 import { AffiliateRemunerationDialog } from "@/components/affiliate-remuneration-dialog";
-import { calculateTaiwanTaxWithholding } from "@/lib/taiwan-tax-withholding";
+import { calculateTaiwanTaxWithholding, DEFAULT_BANK_FEE_CENTS } from "@/lib/taiwan-tax-withholding";
 import { decryptTaxIdentity, maskTaxIdentity } from "@/lib/tax-identity";
 
 const commissionLabels = {
@@ -124,7 +124,10 @@ export default async function AffiliatePortalPage({
             <div className="border-b border-border px-5 py-4"><h2 className="text-lg font-semibold text-slate-950">提領申請</h2></div>
             <div className="divide-y divide-border">
               {dashboard.payouts.length === 0 ? <p className="p-5 text-sm text-slate-500">目前沒有可提領批次。</p> : dashboard.payouts.map((payout) => {
-                const tax = calculateTaiwanTaxWithholding({ grossAmountCents: payout.finalAmountCents });
+                // 小額與歷史款項仍須可查看，只有實領額為正的待領款才建立簽署預覽。
+                const tax = payout.status === "pending" && !payout.requestedAt && payout.finalAmountCents > DEFAULT_BANK_FEE_CENTS
+                  ? calculateTaiwanTaxWithholding({ grossAmountCents: payout.finalAmountCents })
+                  : null;
                 return (
                 <article key={payout.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -132,8 +135,10 @@ export default async function AffiliatePortalPage({
                     <p className="mt-1 text-sm text-slate-500">{payout.status === "paid" ? `已付款 ${payout.paidAt ? formatDateTime(payout.paidAt) : ""}` : payout.requestedAt ? `已申請 ${formatDateTime(payout.requestedAt)}` : "尚未申請"}</p>
                   </div>
                   {payout.status === "pending" && !payout.requestedAt ? (
-                    bank && taxIdentity
-                      ? <AffiliateRemunerationDialog payoutId={payout.id} monthKey={payout.monthKey} bankLabel={`${bank.bankCode}${bank.bankBranch ? ` ${bank.bankBranch}` : ""} / ${bank.accountNumber} / ${bank.accountName}`} taxIdentityLabel={taxIdentity} amounts={tax} />
+                    !tax
+                      ? <span className="text-sm font-medium text-orange-700">金額尚不足以支付手續費並產生實領款，暫時無法申請提領。</span>
+                      : bank && taxIdentity
+                      ? <AffiliateRemunerationDialog csrfField={<CsrfField />} payoutId={payout.id} monthKey={payout.monthKey} bankLabel={`${bank.bankCode}${bank.bankBranch ? ` ${bank.bankBranch}` : ""} / ${bank.accountNumber} / ${bank.accountName}`} taxIdentityLabel={taxIdentity} amounts={tax} />
                       : <span className="text-sm font-medium text-orange-700">請先完成銀行與身分資料</span>
                   ) : <Badge tone={payout.status === "paid" ? "green" : payout.status === "void" ? "gray" : "blue"}>{payout.status === "paid" ? "Paid" : payout.status === "void" ? "Void" : "Requested"}</Badge>}
                 </article>

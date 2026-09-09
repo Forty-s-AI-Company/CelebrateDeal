@@ -346,7 +346,7 @@ test("active member is denied affiliate commissions before finance queries or MF
     await expect(affiliateSummary.getByText(affiliate.name, { exact: true })).toBeVisible();
     await expect(affiliateSummary.getByText(affiliate.code, { exact: true })).toBeVisible();
     await expect(affiliateSummary.getByText(String(clicks.length), { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "聯盟佣金", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "佣金結算", exact: true })).toHaveCount(0);
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
     await expect(page.locator('a[href="/affiliates/commissions"]')).toHaveCount(0);
     await expect(page.locator(`a[href="/affiliates/${affiliate.id}"]`)).toHaveCount(0);

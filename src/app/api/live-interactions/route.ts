@@ -231,6 +231,92 @@ export async function GET(request: Request) {
   return NextResponse.json({ runs: projected.filter(Boolean), spotlight }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
+/** 呼叫端完成觀眾准入後，才可依已發布腳本建立排定的互動。 */
+async function openScheduledInteraction(data: z.infer<typeof OpenRequest>, participantHash: string) {
+  const event = await getDb().interactionEvent.findFirst({
+    where: {
+      id: data.eventId,
+      script: {
+        vendorId: data.vendorId,
+        status: "published",
+        lives: { some: { id: data.liveId, vendorId: data.vendorId } },
+      },
+    },
+    include: {
+      script: {
+        select: {
+          lives: {
+            where: { id: data.liveId, vendorId: data.vendorId },
+            take: 1,
+            select: { streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, video: { select: { durationSec: true } } },
+          },
+        },
+      },
+    },
+  });
+  if (!event || !["lucky_draw", "poll", "flash_voucher", "flash_sale"].includes(event.eventType)) {
+    return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
+  }
+  const normalized = normalizeInteractionEventDraft({
+    eventType: event.eventType,
+    triggerSec: event.triggerSec,
+    title: event.title,
+    productId: event.productId,
+    metadata: event.metadata,
+  });
+  if (!normalized.success || !normalized.data.metadata) {
+    return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
+  }
+  const now = new Date();
+  const window = scheduledInteractionWindow(
+    event.script.lives[0],
+    event.triggerSec,
+    normalized.data.metadata.durationSec,
+    now,
+  );
+  if (!window) {
+    return NextResponse.json({ error: "Interaction is outside its scheduled window" }, { status: 409 });
+  }
+  const run = await getDb().liveInteractionRun.upsert({
+    where: { liveId_sourceEventId: { liveId: data.liveId, sourceEventId: event.id } },
+    create: {
+      vendorId: data.vendorId,
+      liveId: data.liveId,
+      source: "script",
+      sourceEventId: event.id,
+      eventType: event.eventType,
+      title: normalized.data.title,
+      configuration: normalized.data.metadata as unknown as Prisma.InputJsonValue,
+      startsAt: window.startsAt,
+      endsAt: window.endsAt,
+    },
+    update: {},
+    select: { id: true },
+  });
+  return NextResponse.json({ run: await projectRun(run.id, participantHash) }, { headers: { "Cache-Control": "private, no-store" } });
+}
+
+/** 投票選項與抽獎口號的驗證共用同一份正規化設定。 */
+function invalidInteractionValueResponse(metadata: AdvancedInteractionMetadata, value: z.infer<typeof RespondRequest>["value"], submittedValue: string[]) {
+  if (metadata.kind === "poll") {
+    const uniqueValues = [...new Set(submittedValue)];
+    const maxSelections = metadata.selectionMode === "multiple" ? (metadata.maxSelections ?? metadata.options.length) : 1;
+    if (uniqueValues.length !== submittedValue.length || uniqueValues.length > maxSelections || uniqueValues.some((value) => !metadata.options.some(({ id }) => id === value))) {
+      return NextResponse.json({ error: "Invalid poll option" }, { status: 400 });
+    }
+  } else if (Array.isArray(value)) {
+    return NextResponse.json({ error: "Invalid interaction value" }, { status: 400 });
+  }
+  if (metadata.kind === "lucky_draw") {
+    const isSloganMode = !metadata.eligibility || metadata.eligibility === "slogan";
+    if (isSloganMode && value !== metadata.slogan) {
+      return NextResponse.json({ error: "Draw slogan does not match" }, { status: 400 });
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -262,69 +348,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ question }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   }
 
-  if (data.action === "open") {
-    const event = await getDb().interactionEvent.findFirst({
-      where: {
-        id: data.eventId,
-        script: {
-          vendorId: data.vendorId,
-          status: "published",
-          lives: { some: { id: data.liveId, vendorId: data.vendorId } },
-        },
-      },
-      include: {
-        script: {
-          select: {
-            lives: {
-              where: { id: data.liveId, vendorId: data.vendorId },
-              take: 1,
-              select: { streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true, replayAvailableUntil: true, replayEnabled: true, video: { select: { durationSec: true } } },
-            },
-          },
-        },
-      },
-    });
-    if (!event || !["lucky_draw", "poll", "flash_voucher", "flash_sale"].includes(event.eventType)) {
-      return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
-    }
-    const normalized = normalizeInteractionEventDraft({
-      eventType: event.eventType,
-      triggerSec: event.triggerSec,
-      title: event.title,
-      productId: event.productId,
-      metadata: event.metadata,
-    });
-    if (!normalized.success || !normalized.data.metadata) {
-      return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
-    }
-    const now = new Date();
-    const window = scheduledInteractionWindow(
-      event.script.lives[0],
-      event.triggerSec,
-      normalized.data.metadata.durationSec,
-      now,
-    );
-    if (!window) {
-      return NextResponse.json({ error: "Interaction is outside its scheduled window" }, { status: 409 });
-    }
-    const run = await getDb().liveInteractionRun.upsert({
-      where: { liveId_sourceEventId: { liveId: data.liveId, sourceEventId: event.id } },
-      create: {
-        vendorId: data.vendorId,
-        liveId: data.liveId,
-        source: "script",
-        sourceEventId: event.id,
-        eventType: event.eventType,
-        title: normalized.data.title,
-        configuration: normalized.data.metadata as unknown as Prisma.InputJsonValue,
-        startsAt: window.startsAt,
-        endsAt: window.endsAt,
-      },
-      update: {},
-      select: { id: true },
-    });
-    return NextResponse.json({ run: await projectRun(run.id, viewer.participantHash) }, { headers: { "Cache-Control": "private, no-store" } });
-  }
+  if (data.action === "open") return openScheduledInteraction(data, viewer.participantHash);
 
   const run = await getDb().liveInteractionRun.findFirst({
     where: { id: data.runId, vendorId: data.vendorId, liveId: data.liveId, status: "active", endsAt: { gt: new Date() } },
@@ -332,21 +356,8 @@ export async function POST(request: Request) {
   const metadata = run ? configuration(run.configuration) : null;
   if (!run || !metadata) return NextResponse.json({ error: "Interaction closed" }, { status: 409 });
   const submittedValue = Array.isArray(data.value) ? data.value : [data.value];
-  if (metadata.kind === "poll") {
-    const uniqueValues = [...new Set(submittedValue)];
-    const maxSelections = metadata.selectionMode === "multiple" ? (metadata.maxSelections ?? metadata.options.length) : 1;
-    if (uniqueValues.length !== submittedValue.length || uniqueValues.length > maxSelections || uniqueValues.some((value) => !metadata.options.some(({ id }) => id === value))) {
-      return NextResponse.json({ error: "Invalid poll option" }, { status: 400 });
-    }
-  } else if (Array.isArray(data.value)) {
-    return NextResponse.json({ error: "Invalid interaction value" }, { status: 400 });
-  }
-  if (metadata.kind === "lucky_draw") {
-    const isSloganMode = !metadata.eligibility || metadata.eligibility === "slogan";
-    if (isSloganMode && data.value !== metadata.slogan) {
-      return NextResponse.json({ error: "Draw slogan does not match" }, { status: 400 });
-    }
-  }
+  const invalidValueResponse = invalidInteractionValueResponse(metadata, data.value, submittedValue);
+  if (invalidValueResponse) return invalidValueResponse;
 
   let bearer: string | null = null;
   try {

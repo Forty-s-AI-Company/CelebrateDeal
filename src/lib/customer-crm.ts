@@ -63,6 +63,33 @@ export type CustomerListItem = {
   latestActivityAt: Date; watchSeconds: number; bookingStatus: string | null; tags: string[]; lifetimeValueCents: number; consultationStatus: string;
 };
 
+type CustomerIdentity = { name: string; maskedEmail: string; maskedPhone: string; latest: Date; bookingStatus: string | null };
+
+/** 合併報名者時保留最近一次身份資料，搜尋比對仍使用原始欄位。 */
+function addRegistrationIdentities(
+  identities: Map<string, CustomerIdentity>, queryMatches: Set<string>, vendorId: string, normalizedQuery: string,
+  submissions: Array<{ name: string; email: string; phone: string | null; customerKeyHash: string | null; createdAt: Date }>,
+) {
+  for (const row of submissions) {
+    const hash = row.customerKeyHash ?? automationCustomerKeyHash(vendorId, row.email);
+    if (normalizedQuery && [row.name, row.email, row.phone ?? ""].some((item) => item.toLocaleLowerCase("zh-TW").includes(normalizedQuery))) queryMatches.add(hash);
+    const old = identities.get(hash);
+    if (!old || row.createdAt > old.latest) identities.set(hash, { name: row.name, maskedEmail: maskEmail(row.email), maskedPhone: maskPhone(row.phone), latest: row.createdAt, bookingStatus: old?.bookingStatus ?? null });
+  }
+}
+
+/** 統一 CRM 顯示身份的來源優先序；回傳資料只含遮罩後的聯絡方式。 */
+function customerDisplayIdentity(
+  registrationIdentity: { name: string; email: string; phone: string | null } | undefined,
+  bookingIdentity: { clientName: string; clientEmail: string; clientPhone: string | null } | undefined,
+  order: { buyerMaskedName: string; buyerMaskedEmail: string; buyerMaskedPhone: string | null } | undefined,
+) {
+  const name = registrationIdentity?.name ?? bookingIdentity?.clientName ?? order?.buyerMaskedName ?? "未命名學員";
+  const maskedEmail = registrationIdentity?.email ? maskEmail(registrationIdentity.email) : bookingIdentity?.clientEmail ? maskEmail(bookingIdentity.clientEmail) : order?.buyerMaskedEmail ?? "—";
+  const maskedPhone = registrationIdentity?.phone ? maskPhone(registrationIdentity.phone) : bookingIdentity?.clientPhone ? maskPhone(bookingIdentity.clientPhone) : order?.buyerMaskedPhone ?? "—";
+  return { name, maskedEmail, maskedPhone };
+}
+
 /** Builds a tenant-scoped identity union from every CRM source, including hash-only facts. */
 export async function listCustomers(vendorId: string, query = "", tag = ""): Promise<CustomerListItem[]> {
   if (!vendorId) throw new Error("vendorId is required");
@@ -77,7 +104,7 @@ export async function listCustomers(vendorId: string, query = "", tag = ""): Pro
     db.automationExecutionLog.findMany({ where: { vendorId, subjectKeyHash: { not: null } }, select: { subjectKeyHash: true, createdAt: true } }),
     db.customerCrmRecord.findMany({ where: { vendorId } }),
   ]);
-  const identities = new Map<string, { name: string; maskedEmail: string; maskedPhone: string; latest: Date; bookingStatus: string | null }>();
+  const identities = new Map<string, CustomerIdentity>();
   const queryMatches = new Set<string>();
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-TW");
   const epoch = new Date(0);
@@ -87,12 +114,7 @@ export async function listCustomers(vendorId: string, query = "", tag = ""): Pro
     else if (latest > current.latest) current.latest = latest;
     return identities.get(hash)!;
   };
-  for (const row of submissions) {
-    const hash = row.customerKeyHash ?? automationCustomerKeyHash(vendorId, row.email);
-    if (normalizedQuery && [row.name, row.email, row.phone ?? ""].some((item) => item.toLocaleLowerCase("zh-TW").includes(normalizedQuery))) queryMatches.add(hash);
-    const old = identities.get(hash);
-    if (!old || row.createdAt > old.latest) identities.set(hash, { name: row.name, maskedEmail: maskEmail(row.email), maskedPhone: maskPhone(row.phone), latest: row.createdAt, bookingStatus: old?.bookingStatus ?? null });
-  }
+  addRegistrationIdentities(identities, queryMatches, vendorId, normalizedQuery, submissions);
   for (const row of bookings) {
     const hash = row.customerKeyHash ?? automationCustomerKeyHash(vendorId, row.clientEmail);
     if (normalizedQuery && [row.clientName, row.clientEmail, row.clientPhone ?? ""].some((item) => item.toLocaleLowerCase("zh-TW").includes(normalizedQuery))) queryMatches.add(hash);
@@ -161,9 +183,7 @@ export async function getCustomerProfile(vendorId: string, customerKeyHash: stri
     db.customerCrmRecord.findUnique({ where: { vendorId_customerKeyHash: { vendorId, customerKeyHash } }, include: { notes: { orderBy: { createdAt: "desc" } } } }),
   ]);
   if (!registrationIdentity && !bookingIdentity && !watches.length && !orders.length && !tags.length && !vouchers.length && !automations.length && !record) return null;
-  const name = registrationIdentity?.name ?? bookingIdentity?.clientName ?? orders[0]?.buyerMaskedName ?? "未命名學員";
-  const maskedEmail = registrationIdentity?.email ? maskEmail(registrationIdentity.email) : bookingIdentity?.clientEmail ? maskEmail(bookingIdentity.clientEmail) : orders[0]?.buyerMaskedEmail ?? "—";
-  const maskedPhone = registrationIdentity?.phone ? maskPhone(registrationIdentity.phone) : bookingIdentity?.clientPhone ? maskPhone(bookingIdentity.clientPhone) : orders[0]?.buyerMaskedPhone ?? "—";
+  const { name, maskedEmail, maskedPhone } = customerDisplayIdentity(registrationIdentity, bookingIdentity, orders[0]);
   const watchByLive = new Map<string, { id: string; capturedAt: Date; liveTitle: string; seconds: number; viewerKeys: Set<string> }>();
   for (const row of watches) {
     const current = watchByLive.get(row.liveId);

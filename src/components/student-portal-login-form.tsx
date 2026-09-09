@@ -3,8 +3,8 @@
 import { useActionState } from "react";
 import {
   requestMagicLinkAction,
-  STUDENT_PORTAL_INITIAL_STATE,
 } from "@/app/actions/student-portal-actions";
+import { STUDENT_PORTAL_INITIAL_STATE } from "@/lib/student-portal-action-state";
 
 export function StudentPortalLoginForm({ vendorSlug, csrfToken, accentColor }: { vendorSlug: string; csrfToken: string; accentColor: string }) {
   const [state, action, pending] = useActionState(requestMagicLinkAction, STUDENT_PORTAL_INITIAL_STATE);

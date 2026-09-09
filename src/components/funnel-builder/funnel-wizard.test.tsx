@@ -10,7 +10,8 @@ vi.mock("react", async (importOriginal) => {
     return [hookState.values[index] as T, setValue] as const;
   } };
 });
-vi.mock("next/image", () => ({ default: (props: Record<string, unknown>) => <img {...props} /> }));
+// Keep image props visible to the component-tree assertions without loading a browser image.
+vi.mock("next/image", () => ({ default: "mock-next-image" }));
 
 import { FunnelWizard } from "./funnel-wizard";
 

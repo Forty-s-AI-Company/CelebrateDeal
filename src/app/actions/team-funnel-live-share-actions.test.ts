@@ -26,7 +26,8 @@ vi.mock("@/lib/team-funnel-access", () => ({ TeamFunnelAccessDeniedError: mocks.
 vi.mock("@/lib/audit", () => ({ auditSnapshot: mocks.auditSnapshot, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
-import { createTeamLiveShareAction, disableTeamLiveShareAction } from "./team-funnel-live-share-actions";
+import * as teamLiveShareActions from "./team-funnel-live-share-actions";
+const { createTeamLiveShareAction, disableTeamLiveShareAction } = teamLiveShareActions;
 
 function formData(values: Record<string, string>) {
   const form = new FormData();
@@ -147,4 +148,9 @@ describe("team Live share server actions", () => {
     const revalidationFailure = await disableTeamLiveShareAction({ status: "idle", message: "" }, formData({ _csrf: "csrf", teamId: " team-2 ", pageId: " page-2 ", promoterMembershipId: " membership-c " }));
     expect(revalidationFailure).toEqual({ status: "error", message: "操作未完成，請重新整理後再試一次。" });
   });
+});
+
+it("exports only async team live share actions", () => {
+  expect(Object.keys(teamLiveShareActions).sort()).toEqual(["createTeamLiveShareAction", "disableTeamLiveShareAction"]);
+  for (const action of Object.values(teamLiveShareActions)) expect(action.constructor.name).toBe("AsyncFunction");
 });

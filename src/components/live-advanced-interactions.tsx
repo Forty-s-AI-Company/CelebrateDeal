@@ -47,6 +47,52 @@ async function interactionRequest(body: Record<string, unknown>) {
   return await response.json() as { run?: PublicRun | null };
 }
 
+function WinnerReveal({ run }: { run: PublicRun }) {
+  const isWinner = run.winnerIsViewer;
+  const [isSpinning, setIsSpinning] = useState(() => Boolean(run.winner) && (!run.winnerRevealedAt || Date.now() - Date.parse(run.winnerRevealedAt) < 5_000));
+  const [candidateName, setCandidateName] = useState("抽獎進行中…");
+  useEffect(() => {
+    if (!isSpinning || !run.winner) return;
+    const candidates = ["幸運觀眾", "VIP 學員", "直播鐵粉", "台北 陳**", "高雄 林**", "台中 黃**", run.winner];
+    let step = 0;
+    const timer = window.setInterval(() => {
+      step++;
+      setCandidateName(candidates[step % candidates.length]!);
+      if (step > 12) setIsSpinning(false);
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [isSpinning, run.winner]);
+    return (<>
+{isSpinning ? (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50 p-4 text-center">
+          <Sparkles className="mx-auto animate-spin text-amber-600" size={24} />
+          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-amber-800">緊張開獎中…</p>
+          <p className="mt-1 text-2xl font-black text-slate-900">{candidateName}</p>
+        </div>
+      ) : run.winner ? (
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-gradient-to-b from-amber-100 to-yellow-50 p-4 text-center shadow-inner">
+          <Trophy className="mx-auto h-8 w-8 text-amber-700" />
+          <p className="mt-1 text-xs font-bold text-amber-800">
+            {run.prizeName ? `得獎獎項：${run.prizeName}` : "幸運大抽獎"}
+          </p>
+          <p className="mt-2 text-xl font-black text-slate-900">恭喜得獎者：{run.winner}！</p>
+          {isWinner ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-white/90 p-3 shadow-sm">
+              <div aria-label="得獎彩帶" className="text-2xl">🎉 🎊 ✨ 🎊 🎉</div>
+              <p className="mt-1 text-sm font-black text-emerald-700">你是中獎幸運兒！</p>
+              {run.winnerClaimCode ? (
+                <>
+                  <p className="mt-1 inline-block rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-600">領獎核銷碼：{run.winnerClaimCode}</p>
+                  <p className="mt-1 text-xs text-slate-500">請截圖此畫面或向小幫手出示核銷碼領獎。</p>
+                </>
+              ) : <p className="mt-1 text-xs text-slate-500">核銷碼暫時無法顯示，請聯絡主辦方協助。</p>}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </>);
+  }
+
 export function LiveAdvancedInteractions({
   vendorId,
   liveId,
@@ -66,8 +112,6 @@ export function LiveAdvancedInteractions({
   const [message, setMessage] = useState("");
   const [dismissedRunId, setDismissedRunId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [candidateName, setCandidateName] = useState("抽獎進行中…");
   const [selectedPollOptions, setSelectedPollOptions] = useState<string[]>([]);
   const [spotlight, setSpotlight] = useState<PublicSpotlight | null>(null);
   const [questionBody, setQuestionBody] = useState("");
@@ -115,33 +159,12 @@ export function LiveAdvancedInteractions({
     return () => window.clearInterval(timer);
   }, [run]);
 
-  useEffect(() => setSelectedPollOptions([]), [run?.id]);
-
-  useEffect(() => {
-    if (!run?.winner) {
-      setIsSpinning(false);
-      return;
-    }
-    const revealedAt = run.winnerRevealedAt ? Date.parse(run.winnerRevealedAt) : Date.now();
-    const isRecent = Date.now() - revealedAt < 5_000;
-    if (isRecent) {
-      setIsSpinning(true);
-      const candidates = ["幸運觀眾", "VIP 學員", "直播鐵粉", "台北 陳**", "高雄 林**", "台中 黃**", run.winner];
-      let step = 0;
-      const interval = window.setInterval(() => {
-        step++;
-        const nextCandidate = candidates[step % candidates.length];
-        if (nextCandidate) setCandidateName(nextCandidate);
-        if (step > 12) {
-          window.clearInterval(interval);
-          setIsSpinning(false);
-        }
-      }, 150);
-      return () => window.clearInterval(interval);
-    } else {
-      setIsSpinning(false);
-    }
-  }, [run?.id, run?.winner, run?.winnerRevealedAt]);
+  // Reset run-specific input before rendering a different poll.
+  const [selectionRunId, setSelectionRunId] = useState(run?.id);
+  if (selectionRunId !== run?.id) {
+    setSelectionRunId(run?.id);
+    setSelectedPollOptions([]);
+  }
 
   async function respond(value: string | string[]) {
     if (!run || isSubmitting) return;
@@ -183,51 +206,50 @@ export function LiveAdvancedInteractions({
   }
 
   const closed = !run || remainingSeconds <= 0 || run.status !== "active";
-  const isWinner = run?.winnerIsViewer ?? false;
 
-  return (
-    <>
-      {spotlight ? <aside className="fixed inset-x-4 top-20 z-[75] mx-auto max-w-2xl rounded-2xl border border-amber-300 bg-slate-950/95 p-4 text-white shadow-2xl" aria-live="polite" data-testid="live-question-spotlight"><p className="text-xs font-black uppercase tracking-widest text-amber-300">現場精選問答</p><blockquote className="mt-2 text-lg font-bold">「{spotlight.body}」</blockquote><p className="mt-2 text-sm text-slate-300">— {spotlight.displayName ?? "匿名觀眾"}</p></aside> : null}
-      <button type="button" onClick={() => setShowQuestions((value) => !value)} aria-expanded={showQuestions} className="fixed bottom-5 right-5 z-[76] inline-flex min-h-12 items-center gap-2 rounded-full bg-cyan-700 px-4 font-bold text-white shadow-xl"><MessageCircleQuestion size={19} />提問</button>
-      {showQuestions ? <aside className="fixed bottom-20 right-4 z-[76] grid w-[min(24rem,calc(100vw-2rem))] gap-3 rounded-2xl border border-cyan-200 bg-white p-4 text-slate-900 shadow-2xl" aria-label="直播提問專區"><h2 className="font-black">想問講師什麼？</h2><input value={questionName} onChange={(event) => setQuestionName(event.target.value)} maxLength={80} placeholder="暱稱（留空即匿名）" className="h-10 rounded-lg border border-slate-300 px-3" /><textarea value={questionBody} onChange={(event) => setQuestionBody(event.target.value)} maxLength={500} rows={4} placeholder="輸入問題，最多 500 字" className="rounded-lg border border-slate-300 px-3 py-2" /><button type="button" disabled={isSubmitting || !questionBody.trim()} onClick={() => void askQuestion()} className="min-h-11 rounded-lg bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">送出問題</button>{questionMessage ? <p role="status" className="text-sm font-semibold">{questionMessage}</p> : null}</aside> : null}
-      {run && dismissedRunId !== run.id ? <section className={`fixed inset-x-3 bottom-24 z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border p-5 text-slate-950 shadow-2xl ${run.eventType === "flash_voucher" || run.eventType === "flash_sale" ? "border-red-200 bg-gradient-to-br from-red-50 via-white to-amber-50" : "border-white/50 bg-white/95 backdrop-blur-xl"}`} aria-live="polite" data-testid="live-advanced-interaction">
-      <button type="button" onClick={() => setDismissedRunId(run.id)} aria-label="關閉互動視窗" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={17} /></button>
-      <div className="flex items-center gap-3 pr-10">
-        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${run.eventType === "lucky_draw" ? "bg-fuchsia-600" : run.eventType === "poll" ? "bg-violet-600" : run.eventType === "flash_sale" ? "bg-orange-600" : "bg-red-600"}`}>
-          {run.eventType === "lucky_draw" ? <PartyPopper /> : run.eventType === "poll" ? <BarChart3 /> : run.eventType === "flash_sale" ? <Flame /> : <Gift />}
-        </span>
-        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">剩餘 {remainingSeconds} 秒 · {run.responseCount} 人參加</p><h2 className="text-xl font-black">{run.title}</h2></div>
-      </div>
+  function renderOffer() {
+    if (!run) return null;
+    return (<>
+{run.metadata.kind === "flash_voucher" ? <div className="mt-4 grid gap-3 text-center"><p className="text-3xl font-black text-red-700">{run.metadata.discountType === "percentage" ? `${run.metadata.discountValue}% OFF` : `折抵 NT$${run.metadata.discountValue / 100}`}</p><p className="text-sm text-slate-600">限量 {run.metadata.maxClaims} 份，目前已有 {run.responseCount} 人領取。</p><button type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond("claim")} className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50">{run.responded ? "紅包已領取" : "一鍵領取折扣"}</button></div> : null}
 
-      {isSpinning ? (
-        <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50 p-4 text-center">
-          <Sparkles className="mx-auto animate-spin text-amber-600" size={24} />
-          <p className="mt-2 text-xs font-bold uppercase tracking-widest text-amber-800">緊張開獎中…</p>
-          <p className="mt-1 text-2xl font-black text-slate-900">{candidateName}</p>
-        </div>
-      ) : run.winner ? (
-        <div className="mt-4 rounded-2xl border border-amber-300 bg-gradient-to-b from-amber-100 to-yellow-50 p-4 text-center shadow-inner">
-          <Trophy className="mx-auto h-8 w-8 text-amber-700" />
-          <p className="mt-1 text-xs font-bold text-amber-800">
-            {run.prizeName ? `得獎獎項：${run.prizeName}` : "幸運大抽獎"}
-          </p>
-          <p className="mt-2 text-xl font-black text-slate-900">恭喜得獎者：{run.winner}！</p>
-          {isWinner ? (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-white/90 p-3 shadow-sm">
-              <div aria-label="得獎彩帶" className="text-2xl">🎉 🎊 ✨ 🎊 🎉</div>
-              <p className="mt-1 text-sm font-black text-emerald-700">你是中獎幸運兒！</p>
-              {run.winnerClaimCode ? (
-                <>
-                  <p className="mt-1 inline-block rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-600">領獎核銷碼：{run.winnerClaimCode}</p>
-                  <p className="mt-1 text-xs text-slate-500">請截圖此畫面或向小幫手出示核銷碼領獎。</p>
-                </>
-              ) : <p className="mt-1 text-xs text-slate-500">核銷碼暫時無法顯示，請聯絡主辦方協助。</p>}
+      {run.metadata.kind === "flash_sale" ? (
+        <div className="mt-4 grid gap-3 text-center">
+          <div className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 p-4 text-white shadow-lg shadow-red-200">
+            <div className="flex items-center justify-center gap-1 text-xs font-black uppercase tracking-widest text-amber-200">
+              <Zap size={15} /> 限時下殺搶購
             </div>
-          ) : null}
+            {run.metadata.announcementText ? (
+              <p className="mt-1 text-sm font-semibold text-white/90">{run.metadata.announcementText}</p>
+            ) : null}
+            <div className="mt-2 flex items-baseline justify-center gap-2">
+              {run.metadata.salePriceCents !== undefined ? (
+                <span className="text-3xl font-black text-white">NT${run.metadata.salePriceCents / 100}</span>
+              ) : null}
+              {run.metadata.originalPriceCents !== undefined ? (
+                <span className="text-sm line-through text-white/70">NT${run.metadata.originalPriceCents / 100}</span>
+              ) : null}
+            </div>
+            {run.metadata.stockLimit ? (
+              <p className="mt-1 text-xs font-bold text-amber-100">限量 {run.metadata.stockLimit} 席 · 搶完即止</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            disabled={closed || isSubmitting}
+            onClick={() => void respond("view_deal")}
+            className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition"
+          >
+            立即搶購特惠方案
+          </button>
         </div>
       ) : null}
+    </>);
+  }
 
-      {run.metadata.kind === "lucky_draw" && !run.winner && !isSpinning ? (
+  function renderDraw() {
+    if (!run) return null;
+    return (<>
+{run.metadata.kind === "lucky_draw" && !run.winner ? (
         <div className="mt-4 grid gap-3">
           {run.metadata.prizeName ? (
             <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-center">
@@ -262,8 +284,13 @@ export function LiveAdvancedInteractions({
           </button>
         </div>
       ) : null}
+    </>);
+  }
 
-      {run.metadata.kind === "poll" ? (
+  function renderPoll() {
+    if (!run) return null;
+    return (<>
+{run.metadata.kind === "poll" ? (
         <div className="mt-4 grid gap-2">
           <p className="mb-1 font-bold">{run.metadata.question}</p>
           {run.metadata.selectionMode === "multiple" && !run.responded ? <p className="text-xs text-slate-500">可選最多 {run.metadata.maxSelections ?? run.metadata.options.length} 項</p> : null}
@@ -282,40 +309,30 @@ export function LiveAdvancedInteractions({
           {run.metadata.selectionMode === "multiple" && !run.responded ? <button type="button" disabled={closed || isSubmitting || selectedPollOptions.length === 0} onClick={() => void respond(selectedPollOptions)} className="min-h-11 rounded-xl bg-violet-700 px-4 font-bold text-white disabled:opacity-50">送出 {selectedPollOptions.length} 個選項</button> : null}
         </div>
       ) : null}
+    </>);
+  }
 
-      {run.metadata.kind === "flash_voucher" ? <div className="mt-4 grid gap-3 text-center"><p className="text-3xl font-black text-red-700">{run.metadata.discountType === "percentage" ? `${run.metadata.discountValue}% OFF` : `折抵 NT$${run.metadata.discountValue / 100}`}</p><p className="text-sm text-slate-600">限量 {run.metadata.maxClaims} 份，目前已有 {run.responseCount} 人領取。</p><button type="button" disabled={run.responded || closed || isSubmitting} onClick={() => void respond("claim")} className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50">{run.responded ? "紅包已領取" : "一鍵領取折扣"}</button></div> : null}
+  return (
+    <>
+      {spotlight ? <aside className="fixed inset-x-4 top-20 z-[75] mx-auto max-w-2xl rounded-2xl border border-amber-300 bg-slate-950/95 p-4 text-white shadow-2xl" aria-live="polite" data-testid="live-question-spotlight"><p className="text-xs font-black uppercase tracking-widest text-amber-300">現場精選問答</p><blockquote className="mt-2 text-lg font-bold">「{spotlight.body}」</blockquote><p className="mt-2 text-sm text-slate-300">— {spotlight.displayName ?? "匿名觀眾"}</p></aside> : null}
+      <button type="button" onClick={() => setShowQuestions((value) => !value)} aria-expanded={showQuestions} className="fixed bottom-5 right-5 z-[76] inline-flex min-h-12 items-center gap-2 rounded-full bg-cyan-700 px-4 font-bold text-white shadow-xl"><MessageCircleQuestion size={19} />提問</button>
+      {showQuestions ? <aside className="fixed bottom-20 right-4 z-[76] grid w-[min(24rem,calc(100vw-2rem))] gap-3 rounded-2xl border border-cyan-200 bg-white p-4 text-slate-900 shadow-2xl" aria-label="直播提問專區"><h2 className="font-black">想問講師什麼？</h2><input value={questionName} onChange={(event) => setQuestionName(event.target.value)} maxLength={80} placeholder="暱稱（留空即匿名）" className="h-10 rounded-lg border border-slate-300 px-3" /><textarea value={questionBody} onChange={(event) => setQuestionBody(event.target.value)} maxLength={500} rows={4} placeholder="輸入問題，最多 500 字" className="rounded-lg border border-slate-300 px-3 py-2" /><button type="button" disabled={isSubmitting || !questionBody.trim()} onClick={() => void askQuestion()} className="min-h-11 rounded-lg bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">送出問題</button>{questionMessage ? <p role="status" className="text-sm font-semibold">{questionMessage}</p> : null}</aside> : null}
+      {run && dismissedRunId !== run.id ? <section className={`fixed inset-x-3 bottom-24 z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border p-5 text-slate-950 shadow-2xl ${run.eventType === "flash_voucher" || run.eventType === "flash_sale" ? "border-red-200 bg-gradient-to-br from-red-50 via-white to-amber-50" : "border-white/50 bg-white/95 backdrop-blur-xl"}`} aria-live="polite" data-testid="live-advanced-interaction">
+      <button type="button" onClick={() => setDismissedRunId(run.id)} aria-label="關閉互動視窗" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={17} /></button>
+      <div className="flex items-center gap-3 pr-10">
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${run.eventType === "lucky_draw" ? "bg-fuchsia-600" : run.eventType === "poll" ? "bg-violet-600" : run.eventType === "flash_sale" ? "bg-orange-600" : "bg-red-600"}`}>
+          {run.eventType === "lucky_draw" ? <PartyPopper /> : run.eventType === "poll" ? <BarChart3 /> : run.eventType === "flash_sale" ? <Flame /> : <Gift />}
+        </span>
+        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">剩餘 {remainingSeconds} 秒 · {run.responseCount} 人參加</p><h2 className="text-xl font-black">{run.title}</h2></div>
+      </div>
 
-      {run.metadata.kind === "flash_sale" ? (
-        <div className="mt-4 grid gap-3 text-center">
-          <div className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 p-4 text-white shadow-lg shadow-red-200">
-            <div className="flex items-center justify-center gap-1 text-xs font-black uppercase tracking-widest text-amber-200">
-              <Zap size={15} /> 限時下殺搶購
-            </div>
-            {run.metadata.announcementText ? (
-              <p className="mt-1 text-sm font-semibold text-white/90">{run.metadata.announcementText}</p>
-            ) : null}
-            <div className="mt-2 flex items-baseline justify-center gap-2">
-              {run.metadata.salePriceCents !== undefined ? (
-                <span className="text-3xl font-black text-white">NT${run.metadata.salePriceCents / 100}</span>
-              ) : null}
-              {run.metadata.originalPriceCents !== undefined ? (
-                <span className="text-sm line-through text-white/70">NT${run.metadata.originalPriceCents / 100}</span>
-              ) : null}
-            </div>
-            {run.metadata.stockLimit ? (
-              <p className="mt-1 text-xs font-bold text-amber-100">限量 {run.metadata.stockLimit} 席 · 搶完即止</p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            disabled={closed || isSubmitting}
-            onClick={() => void respond("view_deal")}
-            className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition"
-          >
-            立即搶購特惠方案
-          </button>
-        </div>
-      ) : null}
+      {<WinnerReveal key={`${run.id}:${run.winner}:${run.winnerRevealedAt}`} run={run} />}
+
+      {renderDraw()}
+
+      {renderPoll()}
+
+      {renderOffer()}
 
       {message ? <p role="status" className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold">{message}</p> : null}
     </section> : null}

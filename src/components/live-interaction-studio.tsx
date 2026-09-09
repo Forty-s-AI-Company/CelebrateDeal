@@ -41,7 +41,7 @@ export function LiveInteractionStudio({
     const refreshPolls = async () => { const snapshot = await getLivePollStudioSnapshotAction(liveId); if (active) setPollRuns(snapshot); };
     void refreshPolls();
     const timer = window.setInterval(() => void refreshPolls(), 2_000);
-    return () => { active = false; window.clearInterval(timer); };
+  return () => { active = false; window.clearInterval(timer); };
   }, [liveId]);
   const drawRunIds = [
     ...(eventType === "lucky_draw" && startState.status === "success" && startState.runId ? [{ id: startState.runId, title: "剛發起的抽獎", responseCount: 0 }] : []),
@@ -51,6 +51,41 @@ export function LiveInteractionStudio({
     ...(drawState.status === "success" && drawState.runId ? [{ id: drawState.runId, title: "剛完成的抽獎" }] : []),
     ...initialClaimRuns,
   ].filter((run, index, runs) => runs.findIndex(({ id }) => id === run.id) === index);
+
+  function renderPrizeControls() {
+    return (<>
+{drawRunIds.length > 0 || claimRunIds.length > 0 ? (
+        <div className="mt-5 grid gap-3 border-t border-violet-100 pt-4">
+          {drawRunIds.length > 0 ? <form action={drawAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+            <label className="grid min-w-64 gap-1 text-sm font-semibold text-slate-700">
+              待開獎場次
+              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+                {drawRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}（{run.responseCount} 人）</option>)}
+              </select>
+            </label>
+            <button type="submit" disabled={drawing} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-500 px-5 font-bold text-slate-950 disabled:opacity-50">
+              <Trophy size={18} />{drawing ? "抽獎中…" : "隨機抽出得獎者"}
+            </button>
+            {drawState.message ? <p role={drawState.status === "error" ? "alert" : "status"} className="text-sm font-semibold text-slate-700">{drawState.message}</p> : null}
+          </form> : null}
+          {claimRunIds.length > 0 ? <form action={claimAction} className="flex flex-wrap items-end gap-3 border-t border-violet-100 pt-3">
+            <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+            <label className="grid min-w-52 gap-1 text-sm font-semibold text-slate-700">得獎場次
+              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+                {claimRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">得獎核銷碼
+              <input name="claimCode" required pattern="CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}" maxLength={16} placeholder="CD-WIN-1234-5678" className="h-11 rounded-xl border border-slate-300 px-3 font-mono" />
+            </label>
+            <button type="submit" disabled={claiming} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white disabled:opacity-50">{claiming ? "核銷中…" : "驗證並核銷"}</button>
+            {claimState.message ? <p role={claimState.status === "error" ? "alert" : "status"} className="text-sm font-semibold text-slate-700">{claimState.message}</p> : null}
+          </form> : null}
+        </div>
+      ) : null}
+    </>);
+  }
 
   return (
     <section className="mb-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-red-50 p-5 shadow-sm" aria-labelledby="live-interaction-studio-title">
@@ -220,36 +255,7 @@ export function LiveInteractionStudio({
       ) : null}
       {pollRuns.map((poll) => <div key={`${poll.id}-results`} className="mt-3 rounded-xl border border-violet-200 bg-white p-3"><p className="font-bold text-slate-900">{poll.title} · {poll.responseCount} 票</p><div className="mt-2 grid gap-2">{poll.pollResults?.map((option) => <div key={option.id}><div className="flex justify-between text-sm font-semibold"><span>{option.label}</span><span>{option.votes} 票／{option.percentage}%</span></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-violet-600 transition-[width] duration-500" style={{ width: `${option.percentage}%` }} /></div></div>)}</div></div>)}
 
-      {drawRunIds.length > 0 || claimRunIds.length > 0 ? (
-        <div className="mt-5 grid gap-3 border-t border-violet-100 pt-4">
-          {drawRunIds.length > 0 ? <form action={drawAction} className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
-            <label className="grid min-w-64 gap-1 text-sm font-semibold text-slate-700">
-              待開獎場次
-              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
-                {drawRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}（{run.responseCount} 人）</option>)}
-              </select>
-            </label>
-            <button type="submit" disabled={drawing} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-500 px-5 font-bold text-slate-950 disabled:opacity-50">
-              <Trophy size={18} />{drawing ? "抽獎中…" : "隨機抽出得獎者"}
-            </button>
-            {drawState.message ? <p role={drawState.status === "error" ? "alert" : "status"} className="text-sm font-semibold text-slate-700">{drawState.message}</p> : null}
-          </form> : null}
-          {claimRunIds.length > 0 ? <form action={claimAction} className="flex flex-wrap items-end gap-3 border-t border-violet-100 pt-3">
-            <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
-            <label className="grid min-w-52 gap-1 text-sm font-semibold text-slate-700">得獎場次
-              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
-                {claimRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}</option>)}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">得獎核銷碼
-              <input name="claimCode" required pattern="CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}" maxLength={16} placeholder="CD-WIN-1234-5678" className="h-11 rounded-xl border border-slate-300 px-3 font-mono" />
-            </label>
-            <button type="submit" disabled={claiming} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white disabled:opacity-50">{claiming ? "核銷中…" : "驗證並核銷"}</button>
-            {claimState.message ? <p role={claimState.status === "error" ? "alert" : "status"} className="text-sm font-semibold text-slate-700">{claimState.message}</p> : null}
-          </form> : null}
-        </div>
-      ) : null}
+      {renderPrizeControls()}
 
       <section className="mt-6 border-t border-violet-100 pt-5" aria-labelledby="live-question-moderation-title">
         <h3 id="live-question-moderation-title" className="text-lg font-black text-slate-900">觀眾問答審核</h3>
@@ -271,7 +277,7 @@ export function LiveInteractionStudio({
                     </form> : null}
                   </article>
                 ))}
-                {initialQuestions.every((question) => question.status !== status) ? <p className="text-sm text-slate-400">目前沒有項目</p> : null}
+                {initialQuestions.every((question) => question.status !== status) ? <p className="text-sm text-slate-600">目前沒有項目</p> : null}
               </div>
             </div>
           ))}

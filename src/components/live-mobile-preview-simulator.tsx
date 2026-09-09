@@ -161,7 +161,7 @@ function Phone({
   return (
     <div data-testid="mobile-device-frame" className="mx-auto w-full max-w-[330px] rounded-[2.8rem] border-[7px] border-slate-950 bg-slate-950 p-1 shadow-[0_28px_80px_-20px_rgba(15,23,42,0.65)]">
       <div className="relative aspect-[9/19.5] overflow-hidden rounded-[2.25rem] bg-slate-100">
-        <div className="absolute left-1/2 top-2 z-30 h-6 w-24 -translate-x-1/2 rounded-full bg-black" aria-label="手機動態島" />
+        <div className="absolute left-1/2 top-2 z-30 h-6 w-24 -translate-x-1/2 rounded-full bg-black" role="img" aria-label="手機動態島" />
         <div className="relative h-[43%] overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-violet-950">
           {thumbnailUrl ? <Image src={thumbnailUrl} alt="直播預覽縮圖" fill unoptimized className="object-cover opacity-75" /> : <div className="grid h-full place-items-center text-white/80"><Radio className="motion-safe:animate-pulse" size={42} /></div>}
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
@@ -238,7 +238,7 @@ export function LiveMobilePreviewSimulator({
     </div>
   );
 
-  const preview = <><div className="mb-3 flex rounded-xl bg-slate-100 p-1" role="group" aria-label="預覽視角"><button type="button" aria-pressed={perspective === "viewer"} onClick={() => setPerspective("viewer")} className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold ${perspective === "viewer" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>一般觀眾視角</button><button type="button" aria-pressed={perspective === "winner"} onClick={() => setPerspective("winner")} className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold ${perspective === "winner" ? "bg-white text-fuchsia-700 shadow-sm" : "text-slate-500"}`}>得獎者視角</button></div><Phone title={liveTitle} thumbnailUrl={thumbnailUrl} event={activeEvent} product={activeProduct} perspective={perspective} remaining={remaining} currentSec={currentSec} animationKey={animationKey} />{controls}</>;
+  const preview = <><div className="mb-3 flex rounded-xl bg-slate-100 p-1" role="group" aria-label="預覽視角"><button type="button" aria-pressed={perspective === "viewer"} onClick={() => setPerspective("viewer")} className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold ${perspective === "viewer" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}>一般觀眾視角</button><button type="button" aria-pressed={perspective === "winner"} onClick={() => setPerspective("winner")} className={`flex-1 rounded-lg px-2 py-2 text-xs font-bold ${perspective === "winner" ? "bg-white text-fuchsia-700 shadow-sm" : "text-slate-600"}`}>得獎者視角</button></div><Phone title={liveTitle} thumbnailUrl={thumbnailUrl} event={activeEvent} product={activeProduct} perspective={perspective} remaining={remaining} currentSec={currentSec} animationKey={animationKey} />{controls}</>;
 
   return (
     <>

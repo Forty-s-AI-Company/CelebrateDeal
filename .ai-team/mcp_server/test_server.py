@@ -41,7 +41,9 @@ def load_server(root: Path):
 class LiteRouterTest(unittest.TestCase):
     def test_router_json_is_lite(self) -> None:
         config = json.loads(ROUTER.read_text(encoding="utf-8-sig"))
-        self.assertEqual(config["version"], "5.4-lite")
+        mode = config.get("active_mode", "low")
+        self.assertIn(mode, ("low", "high", "pro"))
+        self.assertEqual(config["version"], "5.4-pro" if mode == "pro" else "5.4-lite")
         self.assertEqual(config["router"]["external_execution"], False)
         self.assertEqual(config["router"]["reasoning_selection"], "adaptive_lowest_sufficient")
         self.assertEqual(config["gemini_profiles"]["fast"]["model"], "gemini-3.8-flash-high")
@@ -67,6 +69,13 @@ class LiteRouterTest(unittest.TestCase):
                 config["reasoning_policy"]["models"]["gpt-5.6-luna"],
                 {"minimum": "high", "maximum": "max", "default": "high"},
             )
+        elif mode == "pro":
+            self.assertEqual(config["agents"]["planner"]["model"], "codex-6-Astra")
+            self.assertEqual(config["agents"]["worker"]["model"], "codex-6-Astra")
+            self.assertNotIn("reasoning_lock", config["agents"]["worker"])
+            self.assertEqual(config["reasoning_policy"]["models"]["codex-6-Astra"], {"minimum": "low", "maximum": "max", "default": "high"})
+            self.assertEqual(config["reasoning_policy"]["models"]["gpt-5.6-terra"], {"minimum": "low", "maximum": "xhigh", "default": "medium"})
+            self.assertEqual(config["reasoning_policy"]["models"]["gpt-5.6-luna"], {"minimum": "high", "maximum": "max", "default": "high"})
         else:
             self.assertEqual(config["agents"]["planner"]["model"], "gemini-3.8-flash-high")
             self.assertEqual(config["agents"]["planner"]["sol_fallback"]["model"], "gpt-5.6-sol")
@@ -87,8 +96,8 @@ class LiteRouterTest(unittest.TestCase):
             )
         self.assertNotIn("worker-critical", config["agents"])
         self.assertNotIn("luna_critical_worker", config["codex_profiles"])
-        self.assertEqual(config["codex_profiles"]["luna_worker"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["codex_profiles"]["luna_worker"]["sandbox_mode"], "workspace-write")
+        self.assertEqual(config["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
+        self.assertEqual(config["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["sandbox_mode"], "workspace-write")
         self.assertEqual(config["agents"]["explorer"]["luna_escalation"]["model"], "gpt-5.6-luna")
         self.assertEqual(config["agents"]["analyst"]["luna_escalation"]["model"], "gpt-5.6-luna")
         self.assertEqual(config["plan_review"]["model"], "claude-sonnet-4-6")
@@ -100,15 +109,15 @@ class LiteRouterTest(unittest.TestCase):
         self.assertTrue(config["git_policy"]["auto_push"]["enabled"])
         self.assertTrue(config["git_policy"]["auto_merge"]["enabled"])
         self.assertFalse(config["git_policy"]["production_deploy"]["enabled"])
-        self.assertEqual(config["codex_profiles"]["luna"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["codex_profiles"]["luna"]["reasoning_effort"], "high")
-        self.assertEqual(config["codex_profiles"]["luna"]["reasoning_minimum"], "high")
-        self.assertEqual(config["codex_profiles"]["luna"]["reasoning_maximum"], "max")
-        self.assertTrue(config["codex_profiles"]["luna"]["fallback_only"])
-        self.assertEqual(config["codex_profiles"]["luna"]["availability"], "runtime_dependent")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["model"], "gpt-5.6-luna")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_effort"], "high")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_minimum"], "high")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_maximum"], "max")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["fallback_only"], mode != "pro")
+        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["availability"], "runtime_dependent")
         self.assertEqual(
             [item["profile"] for item in config["fallback_chains"]["gemini_fast"]["profiles"]],
-            ["gemini_fast", "gemini_deep", "codex_luna"],
+            ["gemini_fast", "gemini_deep", "codex_astra" if mode == "pro" else "codex_luna"],
         )
         self.assertEqual(config["fallback_chains"]["gemini_fast"]["max_total_attempts"], 2)
 
@@ -122,10 +131,11 @@ class LiteRouterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             module = load_server(Path(temporary))
             status = module.router_status()
+            mode = module.read_config().get("active_mode", "low")
             self.assertEqual(status["probe_mode"], "config_only")
             self.assertFalse(status["external_execution"])
             self.assertEqual(len(status["allowed_tools"]), 7)
-            self.assertEqual(status["codex_profiles"]["luna_worker"]["model"], "gpt-5.6-luna")
+            self.assertEqual(status["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
             self.assertEqual(status["reasoning_policy"]["strategy"], "adaptive_lowest_sufficient")
             self.assertTrue(status["git_policy"]["auto_merge"]["enabled"])
             self.assertEqual(status["plan_review"]["profile"], "claude_plan_review")
@@ -133,6 +143,7 @@ class LiteRouterTest(unittest.TestCase):
     def test_route_task_uses_fixed_routes_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             module = load_server(Path(temporary))
+            mode = module.read_config().get("active_mode", "low")
             cases = {
                 "planning": "planner",
                 # Lite router 的預設探索／分析仍由明確的 AGY wrapper 執行，必要時再升級唯讀 Luna。
@@ -152,15 +163,18 @@ class LiteRouterTest(unittest.TestCase):
             fallback = module.route_task("summarize safely", "summarize")
             self.assertEqual(
                 [item["profile"] for item in fallback["fallback_chain"]["profiles"]],
-                ["gemini_fast", "gemini_deep", "codex_luna"],
+                ["gemini_fast", "gemini_deep", "codex_astra" if mode == "pro" else "codex_luna"],
             )
             plan = module.route_task("plan a critical payment flow", "planning")
             self.assertEqual(plan["post_plan_review"]["profile"], "claude_plan_review")
             self.assertFalse(plan["post_plan_review"]["required"])
+            self.assertEqual(plan["provider"], "native_agent" if mode in ("high", "pro") else "gemini_wrapper")
+            if mode in ("high", "pro"):
+                self.assertNotIn("fallback_planner", plan)
             mode = module.read_config().get("active_mode", "low")
             worker = module.route_task("implement a bounded feature", "bug_fix")
-            self.assertEqual(worker["model"], "gpt-5.6-luna")
-            self.assertEqual(worker["profile"], "luna_worker")
+            self.assertEqual(worker["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
+            self.assertEqual(worker["profile"], "astra_worker" if mode == "pro" else "luna_worker")
             if mode == "high":
                 self.assertEqual(worker["reasoning_effort"], "high")
                 self.assertEqual(worker["reasoning_lock"], "high")
@@ -172,21 +186,21 @@ class LiteRouterTest(unittest.TestCase):
             self.assertEqual(complex_explore["target"], "Invoke-AgyFast.ps1")
             self.assertEqual(complex_explore["escalation"]["model"], "gpt-5.6-luna")
             self.assertEqual(complex_explore["escalation"]["sandbox_mode"], "read-only")
-            self.assertEqual(complex_explore["escalation"]["reasoning_effort"], "xhigh" if mode == "high" else "high")
+            self.assertEqual(complex_explore["escalation"]["reasoning_effort"], "xhigh" if mode in ("high", "pro") else "high")
 
             routine_explore = module.route_task("read-only lookup", "find_files")
             self.assertIsNone(routine_explore["escalation"])
 
             critical_analysis = module.route_task("critical security root cause", "root_cause", "critical")
             self.assertEqual(critical_analysis["escalation"]["model"], "gpt-5.6-luna")
-            self.assertEqual(critical_analysis["escalation"]["reasoning_effort"], "max" if mode == "high" else "high")
+            self.assertEqual(critical_analysis["escalation"]["reasoning_effort"], "max" if mode in ("high", "pro") else "high")
 
             routine_review = module.route_task("routine security review", "security_review")
             critical_review = module.route_task("critical security review", "security_review", "critical")
             self.assertEqual(routine_review["model"], "gpt-5.6-terra")
             self.assertEqual(routine_review["reasoning_effort"], "medium")
             self.assertEqual(critical_review["model"], "gpt-5.6-terra")
-            self.assertEqual(critical_review["reasoning_effort"], "xhigh" if mode == "high" else "high")
+            self.assertEqual(critical_review["reasoning_effort"], "xhigh" if mode in ("high", "pro") else "high")
 
     def test_native_reasoning_is_adaptive_and_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -221,7 +235,7 @@ class LiteRouterTest(unittest.TestCase):
                 self.assertEqual((trivial["difficulty"], trivial["reasoning_effort"]), ("trivial", "low"))
                 self.assertEqual((routine["difficulty"], routine["reasoning_effort"]), ("routine", "medium"))
                 self.assertEqual((complex_task["difficulty"], complex_task["reasoning_effort"]), ("complex", "high"))
-                self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "high"))
+                self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "xhigh" if mode == "pro" else "high"))
                 self.assertEqual((planner["difficulty"], planner["reasoning_effort"]), ("complex", "high"))
                 self.assertEqual(other_model["reasoning_effort"], "high")
 
@@ -232,11 +246,15 @@ class LiteRouterTest(unittest.TestCase):
                     "critical",
                     module.read_config(),
                 )
-                self.assertEqual((luna_difficulty, luna_effort), ("critical", "high"))
-                self.assertEqual(luna_bounds["minimum"], "low")
-                self.assertEqual(luna_bounds["maximum"], "high")
+                self.assertEqual((luna_difficulty, luna_effort), ("critical", "max" if mode == "pro" else "high"))
+                self.assertEqual(luna_bounds["minimum"], "high" if mode == "pro" else "low")
+                self.assertEqual(luna_bounds["maximum"], "max" if mode == "pro" else "high")
 
-    def test_both_templates_exist_and_are_valid(self) -> None:
+    def test_all_templates_exist_and_are_valid(self) -> None:
+        pro_cfg = json.loads((ROUTER.parent / "router.pro.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(pro_cfg["active_mode"], "pro")
+        self.assertEqual(pro_cfg["agents"]["planner"]["model"], "codex-6-Astra")
+        self.assertEqual(pro_cfg["agents"]["worker"]["model"], "codex-6-Astra")
         high_path = ROUTER.parent / "router.high.json"
         low_path = ROUTER.parent / "router.low.json"
         self.assertTrue(high_path.exists())
