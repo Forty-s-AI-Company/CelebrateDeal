@@ -53,7 +53,7 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
   2. **Tier 2 備選（Claude 額度不足時）**：`GPT-5.6-Sol (medium)`（當 Claude 額度竭盡時由 Sol 接手複審，平時由 Gemini Flash 規劃以節省 Sol 85%+ 額度）。
   3. **Tier 3 備選（若 Sol 額度不足）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
   4. **Tier 4 終極防線（額度全竭時）**：直接跳過 AI 複審，以本地型別檢查與 3,134 個單元測試為最終驗證防線。
-- **雙模式架構與一鍵切換（Dual Team Modes: 高階模式 ai-team vs. 低階模式 ai-team-lite）**：
+- **多隊伍架構與一鍵切換（Team Modes: 高階 ai-team / 低階 ai-team-lite / 進階 ai-team-pro / 風格 ai-team-style）**：
   - **低階模式（英文代稱 `ai-team-lite`，預設推薦省額度）**：
     - **主規劃（Planner）**：由 `gemini-3.8-flash-high` 負責草擬與架構，出圖／出文零額度焦慮。
     - **審查階梯**：Tier 1 Claude Sonnet 4.6 / Claude Opus -> Tier 2 Sol (medium，二線後備省 85%+ 額度) -> Tier 3 Gemini Flash -> Tier 4 Skip。
@@ -69,10 +69,18 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
     - **動態推理（Dynamic Reasoning）**：依階段自動切換。Planning 鎖定 `max`/`xhigh`，高風險核心實作切換 `high`，日常開發切換 `medium`，單點修復切換 `low`。
     - **異構深度複審（Cross-Review）**：由 `Claude Sonnet 4.6 Thinking` / `Opus` 擔任 Tier-1 對抗性審查，專抓 Astra 盲點。
     - **適用時機**：無額度限制，且需要處理極度複雜端到端架構、且希望各階段推理解算力最佳化不浪費時使用。
+  - **風格模式（英文代稱 `ai-team-style`，前端視覺與極限省額度專用）**：
+    - **主規劃（Planner）**：由 `gemini-3.8-flash-high` 負責視覺拆解、Bento Grid 佈局規劃，零額度焦慮。
+    - **樣式實作（Worker）**：由 `gpt-5.6-luna` 負責，鎖定 `low` 推理（極限節省 70%+ 思考 Token），專注組裝 JSX 與 Tailwind 樣式。
+    - **審查階梯**：日常 UI 開發直接走 Tier 3 Skip Review（靠本機 `typecheck` 與測試驗證，省 85%+ 額度）；重要里程碑可選用 Claude Sonnet 4.6 視覺審核。
+    - **核心理念**：開源模板填空法（優先參考 Tremor Raw / shadcn / 21st.dev），嚴禁昂貴模型無中生有胡亂發明。
+    - **適用時機**：專案 UI/UX 美化、Dashboard 銷講戰情室改版、視覺重構。
   - **中英文切換指令**：
+    - 切換風格：使用者說「**請使用 ai team style 模式**」或「**use ai-team-style**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-style`。
     - 切換進階：使用者說「**請使用 ai team pro 模式**」或「**use ai-team-pro**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-pro`。
     - 切換低階：使用者說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-lite`。
-    - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 輸出雙隊伍完整陣容。
+    - 切換高階：使用者說「**請使用 ai team 高階模式**」或「**use ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team`。
+    - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 輸出四隊完整陣容。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
 - AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
 

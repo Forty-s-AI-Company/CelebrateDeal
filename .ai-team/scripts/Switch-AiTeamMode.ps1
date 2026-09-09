@@ -1,7 +1,7 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet('high', 'low', 'pro', '高階', '低階', '進階', '高階模式', '低階模式', '進階模式', 'ai-team', 'ai-team-lite', 'ai-team-pro', 'list', '清單', 'status', 'current', 'info')]
+    [ValidateSet('high', 'low', 'pro', 'style', '高階', '低階', '進階', '風格', '視覺', '設計', '高階模式', '低階模式', '進階模式', '風格模式', '視覺模式', '設計模式', 'ai-team', 'ai-team-lite', 'ai-team-pro', 'ai-team-style', 'list', '清單', 'status', 'current', 'info')]
     [string]$Mode = '',
     [switch]$Status,
     [switch]$List
@@ -17,18 +17,20 @@ $targetPath = Join-Path $configDir 'router.json'
 $highTemplate = Join-Path $configDir 'router.high.json'
 $lowTemplate = Join-Path $configDir 'router.low.json'
 $proTemplate = Join-Path $configDir 'router.pro.json'
+$styleTemplate = Join-Path $configDir 'router.style.json'
 
 function Get-AiTeamDetails {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     $cfg = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
     $modeKey = if ($cfg.active_mode) { [string]$cfg.active_mode } else { 'low' }
-    $isPro = ($modeKey -in @('pro', 'ai-team-pro', '進階', '進階模式'))
-    $isHigh = (-not $isPro -and $modeKey -in @('high', 'ai-team', '高階', '高階模式'))
+    $isStyle = ($modeKey -in @('style', 'ai-team-style', '風格', '風格模式', '視覺', '視覺模式', '設計', '設計模式'))
+    $isPro = (-not $isStyle -and ($modeKey -in @('pro', 'ai-team-pro', '進階', '進階模式')))
+    $isHigh = (-not $isStyle -and -not $isPro -and ($modeKey -in @('high', 'ai-team', '高階', '高階模式')))
     return [pscustomobject]@{
-        Name = if ($isPro) { "進階模式 (ai-team-pro)" } elseif ($isHigh) { "高階模式 (ai-team)" } else { "低階模式 (ai-team-lite)" }
-        Id = if ($isPro) { "ai-team-pro" } elseif ($isHigh) { "ai-team" } else { "ai-team-lite" }
-        Chinese = if ($isPro) { "進階模式" } elseif ($isHigh) { "高階模式" } else { "低階模式" }
+        Name = if ($isStyle) { "風格模式 (ai-team-style)" } elseif ($isPro) { "進階模式 (ai-team-pro)" } elseif ($isHigh) { "高階模式 (ai-team)" } else { "低階模式 (ai-team-lite)" }
+        Id = if ($isStyle) { "ai-team-style" } elseif ($isPro) { "ai-team-pro" } elseif ($isHigh) { "ai-team" } else { "ai-team-lite" }
+        Chinese = if ($isStyle) { "風格模式" } elseif ($isPro) { "進階模式" } elseif ($isHigh) { "高階模式" } else { "低階模式" }
         Planner = [string]$cfg.agents.planner.model
         Review = @($cfg.plan_review.fallback_chain | ForEach-Object {
             if ($_.profile) { "$($_.profile) ($($_.model))" } else { "skip_review" }
@@ -48,11 +50,13 @@ function Show-AiTeamList {
     $currentId = if ($current) { $current.Id } else { "unknown" }
 
     Write-Host "`n==================================================================================" -ForegroundColor Cyan
-    Write-Host "                CelebrateDeal AI TEAM 完整清單 (Triple Team Roster)" -ForegroundColor Cyan
+    Write-Host "                CelebrateDeal AI TEAM 完整清單 (Quad Team Roster)" -ForegroundColor Cyan
     Write-Host "==================================================================================" -ForegroundColor Cyan
     Write-Host "目前生效中的團隊: " -NoNewline
     if ($currentId -eq 'ai-team-lite') {
         Write-Host "$($current.Name) ★" -ForegroundColor Green
+    } elseif ($currentId -eq 'ai-team-style') {
+        Write-Host "$($current.Name) ★" -ForegroundColor Yellow
     } elseif ($currentId -eq 'ai-team-pro') {
         Write-Host "$($current.Name) ★" -ForegroundColor Cyan
     } else {
@@ -112,6 +116,23 @@ function Show-AiTeamList {
     Write-Host "  或  " -NoNewline
     Write-Host "use ai-team-pro / pro" -ForegroundColor Cyan
 
+    Write-Host "`n----------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+    # 4. 風格模式 ai-team-style
+    Write-Host "【4】風格模式 ⇋ ai-team-style" -ForegroundColor Yellow -NoNewline
+    if ($currentId -eq 'ai-team-style') { Write-Host " [目前運行中 ACTIVE]" -ForegroundColor Yellow } else { Write-Host "" }
+    Write-Host "  * 英文名稱: ai-team-style  |  中文名稱: 風格模式 / 前端視覺專用模式" -ForegroundColor Gray
+    Write-Host "  * 主視覺規劃 (Planner) : gemini-3.8-flash-high (零額度焦慮、百萬 Context，拆解視覺結構與佈局)"
+    Write-Host "  * 樣式實作端 (Worker)  : gpt-5.6-luna (鎖定 low 推理，極限省 70%+ 思考 Token，專心拼裝 JSX/Tailwind)"
+    Write-Host "  * 審查階梯 (Review)    : 日常跳過 AI 複審 (Tier 3 Skip)；重要里程碑可選 Claude Sonnet 4.6 視覺把關"
+    Write-Host "  * 困難診斷 (Deep)      : gpt-5.6-terra (medium)"
+    Write-Host "  * 安全審核 (Reviewer)  : gpt-5.6-terra (low, read-only)"
+    Write-Host "  * 適用情境: UI/UX 美化、商業級 Dashboard / 銷講戰情室、Bento Grid 重構、極限省額度"
+    Write-Host "  * 切換語法: " -NoNewline
+    Write-Host "請使用 ai team style 模式" -ForegroundColor Cyan -NoNewline
+    Write-Host "  或  " -NoNewline
+    Write-Host "use ai-team-style / style" -ForegroundColor Cyan
+
     Write-Host "==================================================================================`n" -ForegroundColor Cyan
 }
 
@@ -133,7 +154,13 @@ function Show-AiTeamStatus {
     Write-Host "深度除錯: $($curr.WorkerDeep)"
     Write-Host "安全審核: $($curr.Reviewer)"
     Write-Host "-------------------------------------------------" -ForegroundColor Gray
-    if ($curr.Id -eq 'ai-team-lite') {
+    if ($curr.Id -eq 'ai-team-style') {
+        Write-Host "【風格模式特點 (ai-team-style)】" -ForegroundColor Yellow
+        Write-Host "  1. 專為商業級 UI/UX、Dashboard 銷講戰情室量身打造。"
+        Write-Host "  2. Planner 由 Gemini 3.8 Flash 負責視覺佈局，零額度焦慮。"
+        Write-Host "  3. Worker Luna 鎖定 low 推理，極致省下 70%+ 思考 Token。"
+        Write-Host "  4. 貫徹開源模板填空法（Tremor Raw / shadcn / 21st.dev），日常跳過 AI 複審。"
+    } elseif ($curr.Id -eq 'ai-team-lite') {
         Write-Host "【低階模式特點 (ai-team-lite)】" -ForegroundColor Green
         Write-Host "  1. 由 Gemini 3.8 Flash 負責初版規劃，出圖／架構零額度焦慮。"
         Write-Host "  2. Claude Sonnet/Opus 負責奧坎剃刀防過度設計複審。"
@@ -165,9 +192,10 @@ if ($Status -or $Mode -in @('status', 'current', 'info', '')) {
     exit 0
 }
 
-$isProTarget = ($Mode -in @('pro', '進階', '進階模式', 'ai-team-pro'))
-$isHighTarget = ($Mode -in @('high', '高階', '高階模式', 'ai-team'))
-$sourceFile = if ($isProTarget) { $proTemplate } elseif ($isHighTarget) { $highTemplate } else { $lowTemplate }
+$isStyleTarget = ($Mode -in @('style', 'ai-team-style', '風格', '風格模式', '視覺', '視覺模式', '設計', '設計模式'))
+$isProTarget = (-not $isStyleTarget -and ($Mode -in @('pro', '進階', '進階模式', 'ai-team-pro')))
+$isHighTarget = (-not $isStyleTarget -and -not $isProTarget -and ($Mode -in @('high', '高階', '高階模式', 'ai-team')))
+$sourceFile = if ($isStyleTarget) { $styleTemplate } elseif ($isProTarget) { $proTemplate } elseif ($isHighTarget) { $highTemplate } else { $lowTemplate }
 
 if (-not (Test-Path -LiteralPath $sourceFile)) {
     throw "找不到範本檔: $sourceFile"
@@ -182,7 +210,7 @@ $workerAgentToml = Join-Path $repoRoot '.codex/agents/worker.toml'
 if (Test-Path -LiteralPath $localCodexConfig) {
     $rawConfig = Get-Content -LiteralPath $localCodexConfig -Raw
     $targetModel = if ($isProTarget) { "codex-6-Astra" } else { "gpt-5.6-luna" }
-    $targetEffort = if ($isProTarget -or $isHighTarget) { "high" } else { "medium" }
+    $targetEffort = if ($isProTarget -or $isHighTarget) { "high" } elseif ($isStyleTarget) { "low" } else { "medium" }
     $updatedConfig = $rawConfig `
         -replace '(?m)^#?model\s*=.*', "model = `"$targetModel`"" `
         -replace '(?m)^#?model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetEffort`""
@@ -192,7 +220,7 @@ if (Test-Path -LiteralPath $localCodexConfig) {
 if (Test-Path -LiteralPath $workerAgentToml) {
     $rawWorker = Get-Content -LiteralPath $workerAgentToml -Raw
     $targetWorkerModel = if ($isProTarget) { "codex-6-Astra" } else { "gpt-5.6-luna" }
-    $targetWorkerEffort = if ($isProTarget -or $isHighTarget) { "high" } else { "medium" }
+    $targetWorkerEffort = if ($isProTarget -or $isHighTarget) { "high" } elseif ($isStyleTarget) { "low" } else { "medium" }
     $updatedWorker = $rawWorker `
         -replace '(?m)^model\s*=.*', "model = `"$targetWorkerModel`"" `
         -replace '(?m)^model_reasoning_effort\s*=.*', "model_reasoning_effort = `"$targetWorkerEffort`""
