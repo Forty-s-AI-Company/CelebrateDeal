@@ -382,11 +382,13 @@ export const ecpayPaymentProvider: PaymentProviderAdapter = {
       occurredAt: rawPayload.PaymentDate
         ? new Date(rawPayload.PaymentDate.replace(/\//g, "-")).toISOString()
         : new Date().toISOString(),
-      metadata: rawPayload,
     };
 
     const payload = PaymentWebhookPayload.parse(normalized);
-    return { payload, rawPayload };
+    // Persist only reconciliation fields. Free-form provider messages and
+    // merchant CustomFields may contain PII that key-name redaction cannot detect.
+    return { payload, rawPayload: { eventId, eventType, orderNumber, providerTradeNo,
+      grossAmountCents, occurredAt: payload.occurredAt } };
   },
 
   async queryPayment(input: QueryPaymentInput): Promise<PaymentQueryResult> {

@@ -59,6 +59,8 @@ export const PaymentWebhookPayload = z.object({
   currency: z.string().trim().length(3).optional(),
   occurredAt: z.string().datetime().optional(),
   refundAmountCents: z.number().int().nonnegative().default(0),
+  /** Stripe Charge snapshots report the total refunded, not a new refund delta. */
+  cumulativeRefundAmountCents: z.number().int().safe().nonnegative().optional(),
   gatewayFeeRefundCents: z.number().int().nonnegative().default(0),
   platformFeeRefundCents: z.number().int().nonnegative().default(0),
   refundReason: z.string().optional(),
@@ -1091,7 +1093,29 @@ function shouldClearTransientCheckoutKey(eventType: PaymentWebhookPayloadInput["
   return isPaymentLifecycleEvent(eventType) && !hasCanonicalOrder;
 }
 
-async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+function cumulativeRefundDelta(incoming: PaymentWebhookPayloadInput, current: PaymentTransaction | null) {
+  if (incoming.cumulativeRefundAmountCents === undefined) return incoming;
+  const cumulative = incoming.cumulativeRefundAmountCents;
+  if (incoming.provider !== "stripe" || !isRefundEvent(incoming.eventType)
+    || !current || incoming.grossAmountCents !== current.grossAmountCents
+    || incoming.currency !== current.currency || incoming.providerTradeNo !== current.providerTradeNo
+    || cumulative > current.grossAmountCents) throw new Error("Invalid cumulative refund binding.");
+  if (cumulative <= current.refundedAmountCents) return null;
+  return { ...incoming, refundAmountCents: cumulative - current.refundedAmountCents,
+    eventType: cumulative === current.grossAmountCents ? "refunded" as const : "partially_refunded" as const };
+}
+
+async function markWebhookProcessed(tx: Prisma.TransactionClient, event: WebhookEvent | undefined, vendorId: string) {
+  if (!event) return;
+  const processed = await tx.webhookEvent.updateMany({
+    where: { id: event.id, status: event.status, retryCount: event.retryCount },
+    data: { vendorId, status: "processed", processedAt: new Date(), errorMessage: null },
+  });
+  if (processed.count !== 1) throw new Error("付款 webhook 事件處理權已變更。");
+}
+
+async function processPaymentWebhookOnce(incomingPayload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+  const payload = incomingPayload;
   const db = getDb();
   const { vendor, existingTransaction } = await resolveWebhookScope(payload);
 
@@ -1113,6 +1137,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     platformSubscription,
     invoicePayment,
     commerceOrderRefund,
+    effectivePayload,
   // The ordered re-read and writes must remain in one serializable closure.
   // eslint-disable-next-line complexity -- splitting this scope weakens its transaction invariant.
   } = await db.$transaction(async (tx) => {
@@ -1121,11 +1146,25 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     const currentTransaction = await tx.paymentTransaction.findFirst({
       where: {
         vendorId: vendor.id,
-        providerName: payload.provider,
-        orderNumber: payload.orderNumber,
+        providerName: incomingPayload.provider,
+        orderNumber: incomingPayload.orderNumber,
       },
       include: { refunds: true, primaryCommerceOrder: { select: { id: true } } },
     });
+    const payload = cumulativeRefundDelta(incomingPayload, currentTransaction);
+    // Replays, out-of-order snapshots and our own refund API callbacks must
+    // not debit accounting twice. This check shares the serializable transaction.
+    if (!payload && currentTransaction) {
+      await markWebhookProcessed(tx, event, vendor.id);
+      return {
+        transaction: currentTransaction, commission: null, refundCommission: null,
+        platformReferralCommission: null, platformReferralRefund: null, platformReferralDispute: null,
+        platformSubscription: null, invoicePayment: null, disputeEntry: null,
+        courseAllocations: [], courseRefundAllocations: [], courseDisputeEntries: [], commerceOrderRefund: null,
+        effectivePayload: incomingPayload,
+      };
+    }
+    if (!payload) throw new Error("Invalid cumulative refund binding.");
     const invariant = validatePaymentWebhookInvariants({
       eventId: payload.eventId,
       eventType: payload.eventType,
@@ -1360,26 +1399,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       });
     }
 
-    if (event) {
-      const processedEvent = await tx.webhookEvent.updateMany({
-        where: {
-          id: event.id,
-          status: event.status,
-          retryCount: event.retryCount,
-        },
-        data: {
-          vendorId: vendor.id,
-          status: "processed",
-          processedAt: new Date(),
-          errorMessage: null,
-        },
-      });
-      if (processedEvent.count !== 1) {
-        throw new Error("付款 webhook 事件處理權已變更。");
-      }
-    }
+    await markWebhookProcessed(tx, event, vendor.id);
 
     return {
+      effectivePayload: payload,
       transaction: savedTransaction,
       commission,
       refundCommission,
@@ -1411,8 +1434,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     refund: commerceOrderRefund ? {
       id: commerceOrderRefund.refundId,
       orderId: commerceOrderRefund.orderId,
-      amountCents: payload.refundAmountCents,
-      cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + payload.refundAmountCents,
+      amountCents: effectivePayload.refundAmountCents,
+      cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + effectivePayload.refundAmountCents,
     } : null,
   });
 

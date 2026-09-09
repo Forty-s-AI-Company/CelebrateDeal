@@ -81,11 +81,9 @@ export default async function PaymentResultPage({ searchParams }: {
   const grants = await resolveBuyerSupportGrants(getDb(), await cookies());
   const sortedGrants = [...grants].sort((left, right) => right.order.createdAt.getTime() - left.order.createdAt.getTime());
   const upsellGrantIds = new Set((await Promise.all(sortedGrants.map(async (grant) => {
-    const productIds = grant.order.items.map((item) => item.productId).filter((id): id is string => Boolean(id));
     const offer = await resolvePaidOrderPostPurchaseOffer(getDb(), {
       vendorId: grant.vendorId,
-      status: grant.order.status,
-      productIds,
+      orderId: grant.orderId,
       kind: "upsell",
     });
     return offer ? grant.id : null;

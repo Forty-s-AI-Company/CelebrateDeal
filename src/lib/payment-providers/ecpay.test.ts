@@ -7,6 +7,17 @@ import {
 import { PaymentQueryProviderError } from "./types";
 
 describe("ECPay Payment Provider", () => {
+  it("never retains free-form callback PII or verification material", async () => {
+    const normalized = await ecpayPaymentProvider.normalizePayload(new URLSearchParams({
+      RtnCode: "1", RtnMsg: "Fixture Buyer learner@example.test", TradeAmt: "100",
+      TradeNo: "ECPAY123", MerchantTradeNo: "ORDER123", CustomField3: "0912345678",
+      CheckMacValue: "synthetic-mac", PaymentDate: "2026/09/09 12:00:00",
+    }).toString());
+    expect(normalized.payload.metadata).toBeUndefined();
+    expect(normalized.rawPayload).toEqual({ eventId: "ECPAY123:1", eventType: "paid",
+      orderNumber: "ORDER123", providerTradeNo: "ECPAY123", grossAmountCents: 10000,
+      occurredAt: expect.any(String) });
+  });
   beforeEach(() => {
     // Keep provider tests deterministic without depending on workstation config.
     vi.stubEnv("NODE_ENV", "test");

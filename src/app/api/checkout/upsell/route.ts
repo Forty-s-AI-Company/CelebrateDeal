@@ -26,9 +26,8 @@ export async function POST(request: Request) {
   const db = getDb();
   const grant = await resolveBuyerSupportGrant(db, await cookies(), parsed.data.grantId);
   if (!grant || grant.order.status !== "paid") return NextResponse.json({ error: "Post-purchase offer unavailable" }, { status: 404 });
-  const productIds = grant.order.items.map((item) => item.productId).filter((id): id is string => Boolean(id));
   const resolved = await resolvePaidOrderPostPurchaseOffer(db, {
-    vendorId: grant.vendorId, status: grant.order.status, productIds, kind: parsed.data.kind,
+    vendorId: grant.vendorId, orderId: grant.orderId, kind: parsed.data.kind,
   });
   if (!resolved) return NextResponse.json({ error: "Post-purchase offer unavailable" }, { status: 404 });
 

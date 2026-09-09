@@ -4,6 +4,8 @@ const db = {
   product: { findFirst: vi.fn() },
   affiliateClick: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
+  commerceOrder: { findFirst: vi.fn() },
+  commerceOrderEvent: { create: vi.fn() },
   paymentTransaction: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   liveInteractionResponse: { findUnique: vi.fn(), updateMany: vi.fn() },
   automationVoucherGrant: { findUnique: vi.fn(), updateMany: vi.fn() },
@@ -30,7 +32,8 @@ const createCheckoutSession = vi.fn();
 const checkoutReadiness = vi.fn();
 const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }));
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
-const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
+const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn(), resolveBuyerSupportGrant: vi.fn() }));
+const postPurchaseOfferMocks = vi.hoisted(() => ({ resolvePaidOrderPostPurchaseOffer: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
@@ -45,15 +48,18 @@ vi.mock("@/lib/inventory-reservations", () => inventoryMocks);
 vi.mock("@/lib/commerce-orders", () => commerceOrderMocks);
 vi.mock("@/lib/buyer-support-access", () => ({
   issueBuyerSupportGrant: buyerSupportMocks.issueBuyerSupportGrant,
+  resolveBuyerSupportGrant: buyerSupportMocks.resolveBuyerSupportGrant,
   buyerSupportCookieOptions: ({ expiresAt, secure }: { expiresAt: Date; secure: boolean }) => ({
     httpOnly: true, sameSite: "lax", secure, path: "/", expires: expiresAt,
   }),
 }));
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
+vi.mock("@/lib/post-purchase-upsell-access", () => postPurchaseOfferMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
-import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
+import { createCommerceOrderIdentityHash, protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { createCustomCheckoutIdentityHash } from "@/lib/commerce-custom-checkout";
+import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
@@ -69,6 +75,7 @@ const shipping = {
   locality: "中正區",
   addressLine1: "測試路 1 號",
 };
+const redeemedPostPurchaseOffers = new Set<string>();
 
 function identityHash(
   input = { buyer, shipping },
@@ -129,6 +136,16 @@ beforeEach(() => {
   db.affiliateClick.findFirst.mockResolvedValue(null);
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", liveId: "live-1" });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
+  db.commerceOrder.findFirst.mockResolvedValue(null);
+  redeemedPostPurchaseOffers.clear();
+  db.commerceOrderEvent.create.mockImplementation(({ data }: { data: { vendorId: string; orderId: string; dedupKey: string } }) => {
+    const redemptionKey = `${data.vendorId}:${data.orderId}:${data.dedupKey}`;
+    if (redeemedPostPurchaseOffers.has(redemptionKey)) {
+      throw Object.assign(new Error("synthetic unique conflict"), { code: "P2002" });
+    }
+    redeemedPostPurchaseOffers.add(redemptionKey);
+    return { id: `event-${redeemedPostPurchaseOffers.size}`, ...data };
+  });
   db.liveInteractionResponse.findUnique.mockResolvedValue(null);
   db.liveInteractionResponse.updateMany.mockResolvedValue({ count: 1 });
   db.automationVoucherGrant.findUnique.mockResolvedValue(null);
@@ -143,6 +160,8 @@ beforeEach(() => {
     value: "b".repeat(43),
     expiresAt: new Date("2027-01-01T00:00:00.000Z"),
   });
+  buyerSupportMocks.resolveBuyerSupportGrant.mockResolvedValue(null);
+  postPurchaseOfferMocks.resolvePaidOrderPostPurchaseOffer.mockResolvedValue(null);
   admissionMocks.checkoutSessionTokenFromRequest.mockReturnValue("s".repeat(43));
   admissionMocks.verifyCheckoutAdmission.mockReturnValue({
     vendorId: "vendor-1",
@@ -160,6 +179,8 @@ beforeEach(() => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
     if (createCommerceOrder) await createCommerceOrder({
       transaction: true,
+      commerceOrder: db.commerceOrder,
+      commerceOrderEvent: db.commerceOrderEvent,
       liveInteractionResponse: db.liveInteractionResponse,
       automationVoucherGrant: db.automationVoucherGrant,
     }, transaction);
@@ -573,6 +594,101 @@ describe("successful checkout response", () => {
     expect(JSON.stringify(metadata)).not.toContain(buyer.email);
     expect(JSON.stringify(metadata)).not.toContain(shipping.addressLine1);
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ expectedProductRevision: 4 }));
+  });
+
+  it("atomically redeems a post-purchase offer once even when a freshly signed token uses another idempotency key", async () => {
+    const sourceOrderId = "source-order-1";
+    const sourceProductId = "source-product-1";
+    const protectedSourcePii = protectCommerceOrderPii({ buyer, shipping }, {
+      vendorId: "vendor-1",
+      orderId: sourceOrderId,
+    });
+    buyerSupportMocks.resolveBuyerSupportGrant.mockResolvedValue({
+      id: "grant-1",
+      vendorId: "vendor-1",
+      orderId: sourceOrderId,
+      order: {
+        status: "paid",
+        items: [{ productId: sourceProductId }],
+      },
+    });
+    postPurchaseOfferMocks.resolvePaidOrderPostPurchaseOffer.mockResolvedValue({
+      source: { id: sourceProductId },
+      offer: {
+        kind: "upsell",
+        sourceProductId,
+        productId: "product-1",
+        amountCents: 900,
+      },
+    });
+    db.commerceOrder.findFirst.mockImplementation(({ select }: { select: Record<string, unknown> }) => {
+      if ("buyerEncryptedEnvelope" in select) {
+        return {
+          buyerEncryptedEnvelope: protectedSourcePii.buyerEncrypted,
+          shippingEncryptedEnvelope: protectedSourcePii.shippingEncrypted,
+        };
+      }
+      return { id: sourceOrderId, items: [{ productId: sourceProductId, quantity: 1 }] };
+    });
+
+    const issueToken = () => issuePostPurchaseCheckoutToken({
+      grantId: "grant-1",
+      orderId: sourceOrderId,
+      vendorId: "vendor-1",
+      sourceProductId,
+      productId: "product-1",
+      kind: "upsell",
+      amountCents: 900,
+    });
+    const firstToken = issueToken();
+    const secondToken = issueToken();
+    expect(secondToken).not.toBe(firstToken);
+
+    const firstResponse = await POST(checkoutRequest(undefined, { postPurchaseToken: firstToken }));
+    expect(firstResponse.status).toBe(200);
+    expect(postPurchaseOfferMocks.resolvePaidOrderPostPurchaseOffer).toHaveBeenCalledWith(expect.anything(), {
+      vendorId: "vendor-1",
+      orderId: sourceOrderId,
+      kind: "upsell",
+    });
+
+    const secondIdempotencyKey = "223e4567-e89b-12d3-a456-426614174000";
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({
+      vendorId: "vendor-1",
+      productId: "product-1",
+      productRevision: 4,
+      idempotencyKey: secondIdempotencyKey,
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+    const secondResponse = await POST(checkoutRequest(undefined, {
+      idempotencyKey: secondIdempotencyKey,
+      postPurchaseToken: secondToken,
+    }));
+
+    expect(secondResponse.status).toBe(409);
+    await expect(secondResponse.json()).resolves.toEqual({ error: "Post-purchase offer already redeemed" });
+    expect(db.commerceOrder.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: sourceOrderId,
+        vendorId: "vendor-1",
+        status: "paid",
+      },
+      select: { id: true, items: { take: 2, select: { productId: true, quantity: true } } },
+    });
+    expect(db.commerceOrderEvent.create).toHaveBeenCalledTimes(2);
+    expect(db.commerceOrderEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        vendorId: "vendor-1",
+        orderId: sourceOrderId,
+        dedupKey: "post_purchase_redeemed:upsell:product-1",
+        eventType: "post_purchase_redeemed",
+      }),
+    });
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledTimes(1);
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(db.commerceOrderEvent.create.mock.invocationCallOrder[0]).toBeLessThan(
+      commerceOrderMocks.createCommerceOrderForCheckout.mock.invocationCallOrder[0],
+    );
   });
 
   it("persists only the server-owned source marker for a synthetic Preview checkout", async () => {

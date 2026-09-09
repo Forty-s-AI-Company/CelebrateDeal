@@ -86,8 +86,73 @@ type CheckoutAdmissionResult =
   | { ok: false; response: NextResponse };
 
 class VoucherClaimConflictError extends Error {}
+class PostPurchaseOfferRedeemedError extends Error {}
+class PostPurchaseCheckoutUnavailableError extends Error {}
 
 type EligibleVoucherClaim = { id: string; source: "flash" | "automation"; discountAmountCents: number } | null;
+
+function isUniqueConstraintViolation(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
+
+async function claimPostPurchaseOffer(
+  tx: Prisma.TransactionClient,
+  input: {
+    vendorId: string;
+    sourceOrderId: string;
+    sourceProductId: string;
+    offerProductId: string;
+    kind: "upsell" | "downsell";
+    amountCents: number;
+    paymentTransactionId: string;
+  },
+) {
+  // Re-check the signed handoff's source inside the same serializable
+  // transaction as payment creation and stock reservation. The browser grant
+  // proved access before this point; this query proves the source order still
+  // qualifies when the irreversible reservation is committed.
+  const sourceOrder = await tx.commerceOrder.findFirst({
+    where: {
+      id: input.sourceOrderId,
+      vendorId: input.vendorId,
+      status: "paid",
+    },
+    select: { id: true, items: { take: 2, select: { productId: true, quantity: true } } },
+  });
+  if (
+    !sourceOrder
+    || sourceOrder.items.length !== 1
+    || sourceOrder.items[0]?.productId !== input.sourceProductId
+    || sourceOrder.items[0].quantity !== 1
+  ) throw new PostPurchaseCheckoutUnavailableError();
+
+  try {
+    // The unique (vendorId, orderId, dedupKey) index is the authoritative
+    // single-redemption barrier. It deliberately excludes the signed token's
+    // nonce and browser idempotency key, so copied or freshly signed handoffs
+    // cannot create another order for this offer.
+    await tx.commerceOrderEvent.create({
+      data: {
+        vendorId: input.vendorId,
+        orderId: input.sourceOrderId,
+        dedupKey: `post_purchase_redeemed:${input.kind}:${input.offerProductId}`,
+        eventType: "post_purchase_redeemed",
+        actorType: "system",
+        actorId: null,
+        sanitizedData: {
+          kind: input.kind,
+          sourceProductId: input.sourceProductId,
+          offerProductId: input.offerProductId,
+          amountCents: input.amountCents,
+          paymentTransactionId: input.paymentTransactionId,
+        } satisfies Prisma.InputJsonObject,
+      },
+    });
+  } catch (error) {
+    if (isUniqueConstraintViolation(error)) throw new PostPurchaseOfferRedeemedError();
+    throw error;
+  }
+}
 
 function checkoutPromotion(voucherClaim: EligibleVoucherClaim, priceCents: number) {
   const discountAmountCents = voucherClaim ? voucherClaim.discountAmountCents : 0;
@@ -528,6 +593,8 @@ async function checkoutCreationErrorResponse(input: {
   if (input.error instanceof InventoryUnavailableError) return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
   if (input.error instanceof ProductChangedError) return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
   if (input.error instanceof VoucherClaimConflictError) return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
+  if (input.error instanceof PostPurchaseOfferRedeemedError) return NextResponse.json({ error: "Post-purchase offer already redeemed" }, { status: 409 });
+  if (input.error instanceof PostPurchaseCheckoutUnavailableError) return NextResponse.json({ error: "Post-purchase checkout expired or unavailable" }, { status: 409 });
   return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
 }
 
@@ -600,7 +667,12 @@ export async function POST(request: Request) {
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
   if (!customCheckout.ok) return customCheckout.response;
 
-  let postPurchase: { orderId: string; sourceProductId: string; amountCents: number } | null = null;
+  let postPurchase: {
+    orderId: string;
+    sourceProductId: string;
+    amountCents: number;
+    kind: "upsell" | "downsell";
+  } | null = null;
   let postPurchasePii: CommerceOrderPii | null = null;
   if (parsed.data.postPurchaseToken) {
     const handoff = verifyPostPurchaseCheckoutToken(parsed.data.postPurchaseToken);
@@ -608,9 +680,8 @@ export async function POST(request: Request) {
     if (!handoff || !grant || grant.vendorId !== parsed.data.vendorId || grant.orderId !== handoff.orderId || grant.order.status !== "paid") {
       return NextResponse.json({ error: "Post-purchase checkout expired or unavailable" }, { status: 409 });
     }
-    const productIds = grant.order.items.map((item) => item.productId).filter((id): id is string => Boolean(id));
     const resolved = await resolvePaidOrderPostPurchaseOffer(db, {
-      vendorId: grant.vendorId, status: grant.order.status, productIds, kind: handoff.kind,
+      vendorId: grant.vendorId, orderId: grant.orderId, kind: handoff.kind,
     });
     if (!resolved || resolved.source.id !== handoff.sourceProductId || resolved.offer.productId !== product.id || resolved.offer.amountCents !== handoff.amountCents) {
       return NextResponse.json({ error: "Post-purchase offer changed or unavailable" }, { status: 409 });
@@ -628,7 +699,12 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({ error: "Post-purchase checkout unavailable" }, { status: 503 });
     }
-    postPurchase = { orderId: grant.orderId, sourceProductId: resolved.source.id, amountCents: resolved.offer.amountCents };
+    postPurchase = {
+      orderId: grant.orderId,
+      sourceProductId: resolved.source.id,
+      amountCents: resolved.offer.amountCents,
+      kind: resolved.offer.kind,
+    };
   }
   const identity = validateCheckoutIdentity(
     postPurchasePii ?? parsed.data,
@@ -734,6 +810,17 @@ export async function POST(request: Request) {
         metadata: transactionMetadata,
       },
       createCommerceOrder: async (tx, createdTransaction) => {
+        if (postPurchase) {
+          await claimPostPurchaseOffer(tx, {
+            vendorId: parsed.data.vendorId,
+            sourceOrderId: postPurchase.orderId,
+            sourceProductId: postPurchase.sourceProductId,
+            offerProductId: product.id,
+            kind: postPurchase.kind,
+            amountCents: postPurchase.amountCents,
+            paymentTransactionId: createdTransaction.id,
+          });
+        }
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,

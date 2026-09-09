@@ -12,7 +12,8 @@ export interface TaiwanElectronicInvoiceAdapter {
 /** Inclusive 5% VAT split. Amount is always preserved exactly in integer cents. */
 export function splitTaiwanVat(amountCents: number) {
   if (!Number.isSafeInteger(amountCents) || amountCents < 0) throw new Error("Invoice amount must be a non-negative safe integer.");
-  const pretaxAmountCents = Math.round(amountCents / 1.05);
+  // Inclusive VAT is exactly 20/21; avoid floating-point rounding at large amounts.
+  const pretaxAmountCents = Number((BigInt(amountCents) * BigInt(20) + BigInt(10)) / BigInt(21));
   return { pretaxAmountCents, taxAmountCents: amountCents - pretaxAmountCents };
 }
 

@@ -47,8 +47,8 @@ test("keeps the one-stop webinar schema and migration additive and executable", 
     "post_live_followup",
   ]) {
     requireText(
-      text === "post_live_followup" ? migration : schema,
-      text,
+      text === "post_live_followup" ? migration : schema.replace(/[\t ]+/g, " "),
+      text === "post_live_followup" ? text : text.replace(/[\t ]+/g, " "),
       `one-stop webinar contract ${text}`,
     );
   }

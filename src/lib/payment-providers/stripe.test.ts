@@ -51,6 +51,9 @@ describe("Stripe Payment Provider", () => {
     const request = new URLSearchParams(String(init.body));
     expect(request.get("line_items[0][price_data][currency]")).toBe("eur");
     expect(request.get("line_items[0][price_data][unit_amount]")).toBe("29800");
+    expect(request.get("payment_intent_data[metadata][orderNumber]")).toBe("CD-STRIPE-001");
+    expect(request.get("payment_intent_data[metadata][vendorId]")).toBe("vendor-1");
+    expect(init.headers).toHaveProperty("idempotency-key", "checkout:tx_stripe_001");
   });
 
   it.each(["TWD", "USD", "HKD", "EUR", "SGD"])("accepts the %s supported currency", async (currency) => {
@@ -78,6 +81,24 @@ describe("Stripe Payment Provider", () => {
     expect(first.rawPayload).not.toHaveProperty("metadata");
   });
 
+  it.each(["unpaid", "no_payment_required", undefined])("never fulfills an unsettled Checkout (%s)", async (payment_status) => {
+    const event = JSON.parse(paidEvent({ payment_status, payment_intent: "pi_123456" }));
+    event.type = "checkout.session.completed";
+    await expect(provider().normalizePayload(JSON.stringify(event))).rejects.toThrow("not settled");
+  });
+
+  it.each(["checkout.session.completed", "checkout.session.async_payment_succeeded"])("fulfills settled %s with the PaymentIntent identity", async (type) => {
+    const event = JSON.parse(paidEvent({ id: "cs_123", payment_status: "paid", payment_intent: "pi_123456" }));
+    event.type = type;
+    expect((await provider().normalizePayload(JSON.stringify(event))).payload).toMatchObject({ eventType: "paid", providerTradeNo: "pi_123456" });
+  });
+
+  it("preserves cumulative Charge refunds for transactional reconciliation", async () => {
+    const event = JSON.parse(paidEvent({ id: "ch_123", payment_intent: "pi_123456", amount_refunded: 12000 }));
+    event.type = "charge.refunded";
+    expect((await provider().normalizePayload(JSON.stringify(event))).payload).toMatchObject({ cumulativeRefundAmountCents: 12000, providerTradeNo: "pi_123456" });
+  });
+
   it("refunds only validated Stripe payment intents with an idempotency key", async () => {
     const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "re_123", status: "succeeded", amount: 10_000 }), { status: 200 }));
     await expect(provider(transport).refundPayment!({ transaction: transaction(), refundAmountCents: 10_000, requestId: "refund-request-001" })).resolves.toEqual({ providerEventId: "re_123" });
@@ -91,11 +112,17 @@ describe("Stripe Payment Provider", () => {
   });
 
   it("queries Stripe payment status with amount and currency binding", async () => {
-    const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "pi_123456", status: "succeeded", amount: 29_800, amount_refunded: 10_000, currency: "usd" }), { status: 200 }));
+    const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "pi_123456", status: "succeeded", amount: 29_800, currency: "usd", latest_charge: { payment_intent: "pi_123456", amount: 29_800, amount_refunded: 10_000, currency: "usd" } }), { status: 200 }));
     await expect(provider(transport).queryPayment!({ transaction: transaction() })).resolves.toEqual({
       providerTradeNo: "pi_123456", orderNumber: "CD-STRIPE-001", grossAmountCents: 29_800,
       refundedAmountCents: 10_000, remainingRefundableAmountCents: 19_800, status: "partially_refunded",
     });
+    expect(transport.mock.calls[0]![0]).toContain("expand[]=latest_charge");
+  });
+
+  it.each([null, "ch_unexpanded", { payment_intent: "pi_other", amount: 29800, amount_refunded: 0, currency: "usd" }])("refuses missing or mismatched Charge refund evidence", async (latest_charge) => {
+    const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "pi_123456", status: "succeeded", amount: 29800, currency: "usd", latest_charge })));
+    await expect(provider(transport).queryPayment!({ transaction: transaction() })).rejects.toMatchObject({ category: "provider_response" });
   });
 
   it("fails closed when a queried payment mismatches the local transaction", async () => {

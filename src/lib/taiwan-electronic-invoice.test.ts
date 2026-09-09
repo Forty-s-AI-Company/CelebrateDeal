@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { DeterministicTaiwanInvoiceTestAdapter, reconcileElectronicInvoiceAfterPayment, reconcileElectronicInvoiceRefund, scheduleAndIssueOrderInvoice, splitTaiwanVat } from "@/lib/taiwan-electronic-invoice";
 
 describe("Taiwan electronic invoice lifecycle", () => {
+  it("splits VAT exactly across residues and the safe-integer boundary", () => {
+    for (const amount of [0, 1, 10, 11, 20, 21, 10500, Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER]) {
+      const split = splitTaiwanVat(amount);
+      expect(split.pretaxAmountCents + split.taxAmountCents).toBe(amount);
+      // Nearest-integer error must be less than half the exact denominator.
+      const error = BigInt(split.pretaxAmountCents) * BigInt(21) - BigInt(amount) * BigInt(20);
+      expect(error >= BigInt(-10) && error <= BigInt(10)).toBe(true);
+    }
+  });
   it("splits tax-inclusive amounts without losing cents", () => {
     expect(splitTaiwanVat(10_500)).toEqual({ pretaxAmountCents: 10_000, taxAmountCents: 500 });
     expect(Object.values(splitTaiwanVat(1)).reduce((sum, value) => sum + value, 0)).toBe(1);

@@ -1,9 +1,9 @@
 {
-  "version": "5.4-lite",
-  "active_mode": "low",
-  "active_mode_id": "ai-team-lite",
-  "active_mode_name": "低階模式",
-  "active_mode_display": "低階模式 (ai-team-lite)",
+  "version": "5.4-pro",
+  "active_mode": "pro",
+  "active_mode_id": "ai-team-pro",
+  "active_mode_name": "進階模式",
+  "active_mode_display": "進階模式 (ai-team-pro)",
   "router": {
     "mode": "recommendation_only",
     "external_execution": false,
@@ -50,19 +50,88 @@
     "default_difficulty": "auto",
     "difficulty_levels": ["trivial", "routine", "complex", "critical"],
     "models": {
-      "gpt-5.6-sol": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gpt-5.6-terra": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gpt-5.6-luna": {"minimum": "low", "maximum": "high", "default": "medium"},
-      "gemini-3.8-flash-high": {"minimum": "low", "maximum": "high", "default": "high"}
+      "codex-6-Astra": {"minimum": "low", "maximum": "max", "default": "high"},
+      "gpt-5.6-terra": {"minimum": "low", "maximum": "xhigh", "default": "medium"},
+      "gpt-5.6-luna": {"minimum": "high", "maximum": "max", "default": "high"}
     }
   },
   "agents": {
-    "planner": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "sandbox_mode": "read-only", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1", "sol_fallback": {"enabled": true, "model": "gpt-5.6-sol", "reasoning_effort": "medium"}},
-    "explorer": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
-    "analyst": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "sandbox_mode": "gemini-wrapper-read-only", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1", "luna_escalation": {"enabled": true, "profile": "luna_readonly_escalation", "model": "gpt-5.6-luna", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "provider": "native_agent", "sandbox_mode": "read-only", "trigger_difficulties": ["complex", "critical"]}},
-    "worker": {"profile": "luna_worker", "model": "gpt-5.6-luna", "reasoning_effort": "medium", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "workspace-write", "provider": "native_agent", "availability": "runtime_dependent", "fallback_only": false},
-    "worker-deep": {"model": "gpt-5.6-terra", "reasoning_effort": "high", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "workspace-write"},
-    "reviewer": {"model": "gpt-5.6-terra", "reasoning_effort": "medium", "reasoning_minimum": "low", "reasoning_maximum": "high", "reasoning_selection": "adaptive_lowest_sufficient", "sandbox_mode": "read-only", "provider": "native_agent", "availability": "runtime_dependent"}
+    "planner": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "availability": "runtime_dependent"
+    },
+    "explorer": {
+      "model": "gemini-3.8-flash-high",
+      "reasoning_effort": "high",
+      "sandbox_mode": "gemini-wrapper-read-only",
+      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
+    },
+    "analyst": {
+      "model": "gemini-3.1-pro-high",
+      "reasoning_effort": "high",
+      "sandbox_mode": "gemini-wrapper-read-only",
+      "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
+    },
+    "worker": {
+      "profile": "astra_worker",
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "workspace-write",
+      "provider": "native_agent",
+      "availability": "runtime_dependent",
+      "fallback_only": false
+    },
+    "worker-deep": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "xhigh",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "workspace-write"
+    },
+    "reviewer": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "xhigh",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "availability": "runtime_dependent"
+    }
   },
   "gemini_profiles": {
     "fast": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"},
@@ -87,25 +156,24 @@
         "tier": 1,
         "profile": "claude_plan_review",
         "model": "claude-sonnet-4-6",
-        "alt_model": "claude-opus-4-6-thinking",
         "role": "anti_overengineering_review",
-        "description": "Primary plan reviewer (Claude Sonnet 4.6 / Claude Opus) targeting over-engineering and logic flaws"
+        "description": "Primary reviewer targeting over-engineering and critical architectural flaws"
       },
       {
         "tier": 2,
-        "profile": "sol_plan_review",
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "medium",
-        "role": "sol_fallback_review",
-        "description": "Fallback reviewer when Claude Sonnet / Opus quota is exhausted"
-      },
-      {
-        "tier": 3,
         "profile": "gemini_flash_review",
         "model": "gemini-3.8-flash-high",
         "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
         "role": "fast_sanity_check",
         "description": "Zero-quota-anxiety fast sanity check and safety boundary verification"
+      },
+      {
+        "tier": 3,
+        "profile": "terra_review",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium",
+        "role": "disciplined_code_review",
+        "description": "Objective GPT reviewer avoiding Astra self-review bias and rabbit holes"
       },
       {
         "tier": 4,
@@ -116,23 +184,23 @@
     "max_attempts": 1
   },
   "codex_profiles": {
-    "luna": {
-      "model": "gpt-5.6-luna",
+    "astra": {
+      "model": "codex-6-Astra",
       "reasoning_effort": "high",
-      "reasoning_minimum": "high",
+      "reasoning_minimum": "low",
       "reasoning_maximum": "max",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "read-only",
       "provider": "native_agent",
-      "fallback_only": true,
+      "fallback_only": false,
       "availability": "runtime_dependent",
       "invocation": "native_agent_handoff_only"
     },
-    "luna_worker": {
-      "model": "gpt-5.6-luna",
-      "reasoning_effort": "medium",
+    "astra_worker": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
       "reasoning_minimum": "low",
-      "reasoning_maximum": "high",
+      "reasoning_maximum": "max",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "workspace-write",
       "provider": "native_agent",
@@ -159,7 +227,7 @@
       "profiles": [
         {"profile": "gemini_fast", "max_attempts": 1},
         {"profile": "gemini_deep", "max_attempts": 1},
-        {"profile": "codex_luna", "max_attempts": 0}
+        {"profile": "codex_astra", "max_attempts": 0}
       ]
     },
     "gemini_deep": {
@@ -167,7 +235,7 @@
       "profiles": [
         {"profile": "gemini_deep", "max_attempts": 1},
         {"profile": "gemini_fast", "max_attempts": 1},
-        {"profile": "codex_luna", "max_attempts": 0}
+        {"profile": "codex_astra", "max_attempts": 0}
       ]
     }
   }

@@ -321,6 +321,37 @@ describe("payment webhook processing", () => {
     })).toBe(1);
   });
 
+  it("applies cumulative Stripe refunds once across replay, ordering and concurrent delivery", async () => {
+    const suffix = `${Date.now()}-stripe-cumulative`;
+    const { db, vendor } = await createFixture(suffix);
+    const base = { provider: "stripe", vendorId: vendor.id, orderNumber: `STRIPE-${suffix}`,
+      providerTradeNo: "pi_cumulative", currency: "USD", grossAmountCents: 100000 };
+    const paid = await processPaymentWebhook(PaymentWebhookPayload.parse({ ...base, eventId: `paid-${suffix}`, eventType: "paid" }));
+    const refund = (amount: number, eventId: string) => PaymentWebhookPayload.parse({ ...base, eventId,
+      eventType: amount === 100000 ? "refunded" : "partially_refunded",
+      refundAmountCents: amount, cumulativeRefundAmountCents: amount });
+    await processPaymentWebhook(refund(20000, `first-${suffix}`));
+    await processPaymentWebhook(refund(40000, `second-${suffix}`));
+    await processPaymentWebhook(refund(20000, `stale-${suffix}`));
+    await Promise.all([
+      processPaymentWebhook(refund(60000, `race-a-${suffix}`)),
+      processPaymentWebhook(refund(60000, `race-b-${suffix}`)),
+    ]);
+    await processPaymentWebhook(refund(100000, `full-${suffix}`));
+    const duplicate = refund(100000, `repeat-full-${suffix}`);
+    const event = await db.webhookEvent.create({ data: { vendorId: vendor.id, provider: "stripe",
+      eventId: duplicate.eventId, eventType: duplicate.eventType, status: "received", payload: webhookPayloadJson(duplicate) } });
+    createdWebhookEventIds.push(event.id);
+    await processPaymentWebhook(duplicate, event);
+    expect((await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).status).toBe("processed");
+    const current = await db.paymentTransaction.findUniqueOrThrow({ where: { id: paid.transaction.id }, include: { refunds: true } });
+    expect(current.refundedAmountCents).toBe(100000);
+    expect(current.status).toBe("refunded");
+    expect(current.refunds.reduce((sum, row) => sum + row.refundAmountCents, 0)).toBe(100000);
+    expect(current.refunds).toHaveLength(4);
+    await expect(processPaymentWebhook({ ...refund(100000, `wrong-${suffix}`), providerTradeNo: "pi_other" })).rejects.toThrow("binding");
+  });
+
   it("snapshots gross commission base separately from the provider-net reference", async () => {
     const suffix = `${Date.now()}-gross-net-reference`;
     const { db, vendor, affiliate } = await createFixture(suffix);

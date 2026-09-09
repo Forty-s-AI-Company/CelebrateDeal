@@ -64,8 +64,13 @@ CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AU
     - **審查階梯**：Tier 1 Claude Sonnet 4.6 -> Tier 2 Gemini Flash -> Tier 3 Terra -> Tier 4 Skip。
     - **推理鎖定**：Worker Luna 鎖定 `high` 推理，支援 `xhigh`／`max` 高難度深度診斷。
     - **適用時機**：ASTRA 額度充足、重大資安／金流架構改版。
+  - **進階動態推理模式（英文代稱 `ai-team-pro`，頂規動態適配）**：
+    - **主規劃與實作（Planner & Worker）**：由 `codex-6-Astra` 全局負責。
+    - **動態推理（Dynamic Reasoning）**：依階段自動切換。Planning 鎖定 `max`/`xhigh`，高風險核心實作切換 `high`，日常開發切換 `medium`，單點修復切換 `low`。
+    - **異構深度複審（Cross-Review）**：由 `Claude Sonnet 4.6 Thinking` / `Opus` 擔任 Tier-1 對抗性審查，專抓 Astra 盲點。
+    - **適用時機**：無額度限制，且需要處理極度複雜端到端架構、且希望各階段推理解算力最佳化不浪費時使用。
   - **中英文切換指令**：
-    - 切換高階：使用者說「**請使用 ai team 高階模式**」或「**use ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team`。
+    - 切換進階：使用者說「**請使用 ai team pro 模式**」或「**use ai-team-pro**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-pro`。
     - 切換低階：使用者說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-lite`。
     - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 輸出雙隊伍完整陣容。
 - `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。

@@ -2,20 +2,31 @@
 
 最後更新：2026-09-09（Asia/Taipei）
 
-基準 revision：`35d8f59341bc`
+基準 revision：`cbd47d6e`；先前 inventory 基準為 `35d8f59341bc`。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 115 |
-| Migration directories | 77 |
-| Isolated PostgreSQL version | 18.3 |
+| Prisma models | 121 |
+| Migration directories | 79 |
+| Isolated PostgreSQL version | 16（本輪 pro-audit；先前驗證為 18.3） |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 60/60 current chain；由 CI loopback disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
+| Applied migrations in isolated DB | 79/79 current chain；本輪 loopback disposable PostgreSQL 完整 forward-apply 成功 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
+
+2026-09-09 原生 pro-audit 補登近期新增模型與 migration；原有逐模型、逐 migration 完整性斷言保留。
+
+| 新增領域 | Models | 隔離與防重契約 |
+|---|---|---|
+| LINE 選單 | `LineRichMenu` | vendorId 綁定商家選單，外部資源操作沿用既有商家授權 |
+| 課程進度 | `CourseLesson`、`CourseLessonProgress` | 課程、lesson 與 vendorId 綁定；進度寫入前核對學員 entitlement |
+| 社群 | `CommunityPost`、`CommunityComment`、`CommunityReaction` | 付費學員驗證與 vendorId 篩選，reaction 唯一鍵防重 |
+
+新增 migrations：`20260909143000_line_rich_menu`、`20260909190000_flagship_growth_delivery`。
+本輪在專用 loopback PostgreSQL 16 容器套用全部 79 個 migrations，未操作既有或正式資料庫。完整結果見 pro-audit evidence。
 
 | 類別 | 數量 | Models |
 |---|---:|---|

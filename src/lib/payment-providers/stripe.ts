@@ -110,13 +110,18 @@ function callbackUrl(appUrl: string, outcome: "success" | "cancel") {
 }
 
 function paymentEventType(type: string, object: StripeObject) {
-  if (["checkout.session.completed", "payment_intent.succeeded", "charge.succeeded"].includes(type)) return "paid" as const;
+  if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(type)) {
+    // Completing Checkout does not settle delayed payment methods.
+    if (object.payment_status !== "paid") throw new Error("Stripe Checkout payment is not settled.");
+    return "paid" as const;
+  }
+  if (["payment_intent.succeeded", "charge.succeeded"].includes(type)) return "paid" as const;
   if (type === "charge.refunded") {
     const refunded = safeAmount(object.amount_refunded ?? object.amount, "refund amount");
     const gross = safeAmount(object.amount, "gross amount");
     return refunded === gross ? "refunded" as const : "partially_refunded" as const;
   }
-  if (["payment_intent.payment_failed", "charge.failed"].includes(type)) return "failed" as const;
+  if (["payment_intent.payment_failed", "charge.failed", "checkout.session.async_payment_failed"].includes(type)) return "failed" as const;
   throw new Error("Unsupported Stripe event type.");
 }
 
@@ -225,11 +230,15 @@ export function createStripePaymentProvider(options: StripeProviderOptions = {})
         "metadata[transactionId]": input.transaction.id,
         "metadata[orderNumber]": orderNumber,
         "metadata[vendorId]": input.vendor.id,
+        // Stripe does not copy Session metadata to its PaymentIntent.
+        "payment_intent_data[metadata][transactionId]": input.transaction.id,
+        "payment_intent_data[metadata][orderNumber]": orderNumber,
+        "payment_intent_data[metadata][vendorId]": input.vendor.id,
       });
       let response: Response;
       try {
         response = await transport(requestUrl("/checkout/sessions"), {
-          method: "POST", headers: stripeApiHeaders(secretKey), body, redirect: "error", signal: AbortSignal.timeout(30_000),
+          method: "POST", headers: stripeApiHeaders(secretKey, `checkout:${input.transaction.id}`), body, redirect: "error", signal: AbortSignal.timeout(30_000),
         });
       } catch {
         throw new Error("Stripe checkout session could not be created.");
@@ -258,7 +267,7 @@ export function createStripePaymentProvider(options: StripeProviderOptions = {})
       const grossAmountCents = safeAmount(object.amount_total ?? object.amount ?? object.amount_received, "gross amount");
       const refundAmountCents = safeAmount(object.amount_refunded ?? (type.startsWith("refund.") ? object.amount : 0), "refund amount");
       const currency = validCurrency(object.currency).toUpperCase();
-      const providerTradeNo = optionalText(object.payment_intent) ?? optionalText(object.id);
+      const providerTradeNo = stripePaymentIntentId(type.startsWith("payment_intent.") ? object.id : object.payment_intent);
       const created = event.created;
       const occurredAt = Number.isSafeInteger(created) && (created as number) >= 0
         ? new Date((created as number) * 1000).toISOString()
@@ -267,6 +276,7 @@ export function createStripePaymentProvider(options: StripeProviderOptions = {})
         provider: "stripe", eventId, eventType: paymentEventType(type, object), orderNumber, providerTradeNo,
         vendorId: optionalText(metadata.vendorId), paymentMode: "platform", grossAmountCents,
         netAmountCents: grossAmountCents, refundAmountCents, currency, occurredAt,
+        ...(type === "charge.refunded" ? { cumulativeRefundAmountCents: refundAmountCents } : {}),
       });
       // Persist only non-sensitive event identifiers and accounting fields.
       return { payload, rawPayload: { id: eventId, type, created: event.created, objectId: optionalText(object.id), currency, grossAmountCents, refundAmountCents } };
@@ -302,7 +312,7 @@ export function createStripePaymentProvider(options: StripeProviderOptions = {})
       const { paymentIntent, transaction } = queryContext(input);
       let response: Response;
       try {
-        response = await transport(requestUrl(`/payment_intents/${encodeURIComponent(paymentIntent)}`), {
+        response = await transport(requestUrl(`/payment_intents/${encodeURIComponent(paymentIntent)}?expand[]=latest_charge`), {
           method: "GET", headers: { authorization: `Bearer ${secretKey}` }, redirect: "error", signal: AbortSignal.timeout(30_000),
         });
       } catch {
@@ -313,7 +323,13 @@ export function createStripePaymentProvider(options: StripeProviderOptions = {})
         const result = parseJsonObject(await response.text());
         const providerTradeNo = stripePaymentIntentId(result.id);
         const grossAmountCents = safeAmount(result.amount, "payment amount");
-        const refundedAmountCents = safeAmount(result.amount_refunded ?? 0, "refunded amount");
+        const charge = result.latest_charge as StripeObject | null;
+        if (!charge || typeof charge !== "object" || Array.isArray(charge)
+          || charge.payment_intent !== paymentIntent || charge.amount !== grossAmountCents
+          || validCurrency(charge.currency) !== validCurrency(transaction.currency)) {
+          throw new Error("Invalid Stripe charge binding.");
+        }
+        const refundedAmountCents = safeAmount(charge.amount_refunded, "refunded amount");
         if (
           providerTradeNo !== paymentIntent || result.status !== "succeeded" || grossAmountCents !== transaction.grossAmountCents
           || validCurrency(result.currency) !== validCurrency(transaction.currency) || refundedAmountCents > grossAmountCents

@@ -6,6 +6,7 @@ vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks
 vi.mock("@/lib/student-portal", () => ({ getStudentPortalDashboard: mocks.dashboard }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="csrf" /> }));
+vi.mock("@/components/language-switcher", () => ({ LanguageSwitcher: () => <div aria-label="語言切換" /> }));
 vi.mock("@/app/actions/student-portal-actions", () => ({ logoutStudentPortalAction: vi.fn() }));
 
 import StudentPortalPage from "./page";
