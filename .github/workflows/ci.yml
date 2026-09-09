@@ -74,6 +74,9 @@ jobs:
       - name: Student portal unit and tenant-boundary tests
         run: npx vitest run src/lib/student-portal-auth.test.ts src/lib/student-portal.test.ts src/app/actions/student-portal-actions.test.ts
 
+      - name: Enterprise omnichannel and mobile suite tests
+        run: npx vitest run src/lib/sms-whatsapp-notification.test.ts src/lib/i18n.test.ts src/lib/pwa-push.test.ts src/lib/mobile-consultation-cockpit.test.ts src/components/conversion-boosters.test.tsx src/app/actions/mobile-consultation-actions.test.ts "src/app/(app)/consultations/mobile/page.test.tsx"
+
       - name: Strict production index access
         run: npm run typecheck:strict-index
 

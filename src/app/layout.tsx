@@ -7,6 +7,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CelebrateDeal Live Commerce",
   description: "Live-commerce automation MVP for branded video sales funnels.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CelebrateDeal",
+  },
 };
 
 export default function RootLayout({

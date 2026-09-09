@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react";
 import Image from "next/image";
 import { CsrfField } from "@/components/csrf-field";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { logoutStudentPortalAction } from "@/app/actions/student-portal-actions";
 import { getDb } from "@/lib/db";
 import { getStudentPortalDashboard } from "@/lib/student-portal";
@@ -36,10 +38,13 @@ export default async function StudentPortalPage({ params }: { params: Promise<{ 
             {vendor.logoUrl ? <Image src={vendor.logoUrl} alt="" width={44} height={44} className="size-11 rounded-xl object-cover" /> : <div aria-hidden="true" className="grid size-11 place-items-center rounded-xl bg-slate-900 font-bold text-white">{vendor.name.slice(0, 1)}</div>}
             <div className="min-w-0"><p className="truncate font-bold">{vendor.name}</p><p className="truncate text-sm text-slate-600">{dashboard.maskedEmail ?? "已安全驗證的學員"}</p></div>
           </div>
-          <form action={logoutStudentPortalAction}>
-            <CsrfField /><input type="hidden" name="vendorSlug" value={vendorSlug} />
-            <button className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">安全登出</button>
-          </form>
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <form action={logoutStudentPortalAction}>
+              <CsrfField /><input type="hidden" name="vendorSlug" value={vendorSlug} />
+              <button className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">安全登出</button>
+            </form>
+          </div>
         </div>
       </header>
 
@@ -74,6 +79,7 @@ export default async function StudentPortalPage({ params }: { params: Promise<{ 
           {dashboard.orders.length ? <div className="mt-5 overflow-x-auto rounded-2xl bg-white shadow-[0_6px_8px_rgba(15,23,42,0.05)]"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-slate-700"><tr><th className="px-5 py-4 font-bold">訂單</th><th className="px-5 py-4 font-bold">日期</th><th className="px-5 py-4 font-bold">金額</th><th className="px-5 py-4 font-bold">付款</th><th className="px-5 py-4 font-bold">電子發票</th></tr></thead><tbody className="divide-y divide-slate-200">{dashboard.orders.map((order) => <tr key={order.id}><td className="px-5 py-4"><p className="font-bold">{order.orderNumber}</p><p className="mt-1 text-xs text-slate-600">{orderLabels[order.status] ?? order.status} · {order.items.map((item) => item.name).join('、')}</p></td><td className="px-5 py-4 text-slate-700">{dateTime(order.paidAt ?? order.createdAt)}</td><td className="px-5 py-4 font-bold">{amount(order.totalAmountCents, order.currency)}</td><td className="px-5 py-4 text-slate-700">{order.paymentMethod ?? '—'}</td><td className="px-5 py-4">{order.invoice ? <><p className="font-bold">{order.invoice.invoiceNumber ?? '開立處理中'}</p><p className="mt-1 text-xs text-slate-600">{order.invoice.invoiceType} · {order.invoice.buyerDisplay}</p></> : <span className="text-slate-600">尚無發票資料</span>}</td></tr>)}</tbody></table></div> : <EmptyCopy title="目前沒有訂單紀錄" body="完成付款後，訂單與發票狀態會顯示在這裡。" />}
         </section>
       </div>
+      <PwaInstallPrompt />
     </main>
   );
 }

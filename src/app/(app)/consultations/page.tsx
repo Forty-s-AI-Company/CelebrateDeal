@@ -1,4 +1,5 @@
 import { cancelConsultationBookingAction, createConsultationEventAction, toggleConsultationEventAction, updateConsultationBookingStatusAction, updateConsultationEventAction, type ConsultationDatabase } from "@/app/actions/consultation-actions";
+import Link from "next/link";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
@@ -36,6 +37,7 @@ export default async function ConsultationsPage({ searchParams }: { searchParams
   return (
     <>
       <PageHeader title="諮詢預約工作台" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
+      <Link href="/consultations/mobile" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 text-sm font-bold text-white">開啟顧問手機極速工作台</Link>
       {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">諮詢預約設定已更新。</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">無法完成這項操作；請確認資料仍屬於目前商家，然後再試一次。</p> : null}
 
