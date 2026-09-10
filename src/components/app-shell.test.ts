@@ -134,6 +134,11 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('<main id="main-content" tabindex="-1"');
     expect(html).toContain('aria-label="主要導覽"');
     expect(html).toContain('aria-label="行動版主要導覽"');
+    expect(html).toContain('aria-label="工作區選單"');
+    expect(html).toContain("銷講中心");
+    expect(html).toContain("帳務與方案");
+    expect(html).toContain("報名管理");
+    expect(html).toContain("團隊模板");
     expect(html).toContain('href="/forms"');
     expect(html).toContain('href="/consultations"');
     expect(html).toContain('href="/onboarding"');

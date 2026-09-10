@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { logoutAction } from "@/app/actions";
 import { AppShellNavLink } from "@/components/app-shell-nav-link";
+import { AppShellNavGroup } from "@/components/app-shell-nav-group";
+import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PublicResourceLinks } from "@/components/public-policy";
@@ -10,34 +12,49 @@ import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature
 
 const navGroups = [
   {
-    label: "營運",
+    label: "營運總覽",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Gauge },
+    ],
+  },
+  {
+    label: "銷講中心",
+    items: [
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
-      { href: "/videos", label: "影片", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
+      { href: "/videos", label: "媒體素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
+      { href: "/forms", label: "報名管理", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
+    ],
+  },
+  {
+    label: "成交管理",
+    items: [
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
-      { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
-      { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
-      { href: "/forms", label: "報名表", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
+      { href: "/orders", label: "訂單管理", icon: PackageCheck, managerOnly: true },
       { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
+      { href: "/support-cases", label: "售後服務", icon: Headphones, managerOnly: true },
+    ],
+  },
+  {
+    label: "互動與行銷",
+    items: [
       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
       { href: "/messages/deliveries", label: "寄送紀錄", icon: ReceiptText, managerOnly: true },
-    ],
-  },
-  {
-    label: "自動化",
-    items: [
       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
-      { href: "/blacklists", label: "黑名單", icon: Ban, managerOnly: true },
-      { href: "/affiliates", label: "推廣夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
-      { href: "/team-templates", label: "團隊展業", icon: UsersRound, feature: "funnel_builder" },
-      { href: "/team-performance", label: "展業成效", icon: BarChart3, feature: "affiliate_program" },
+      { href: "/blacklists", label: "封鎖名單", icon: Ban, managerOnly: true },
     ],
   },
   {
-    label: "用量",
+    label: "夥伴成長",
+    items: [
+      { href: "/affiliates", label: "推廣夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
+      { href: "/team-templates", label: "團隊模板", icon: UsersRound, feature: "funnel_builder" },
+      { href: "/team-performance", label: "成效分析", icon: BarChart3, feature: "affiliate_program" },
+    ],
+  },
+  {
+    label: "帳務與方案",
     items: [
       { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true },
       { href: "/billing/payment-methods", label: "付款方式", icon: CreditCard, financeOnly: true },
@@ -48,15 +65,10 @@ const navGroups = [
       { href: "/billing/payouts", label: "稅務匯出", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
       { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
-      { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
-      { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
-      { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText, adminOnly: true },
-      { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
-      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
     ],
   },
   {
-    label: "設定",
+    label: "工作區設定",
     items: [
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
       { href: "/settings/brand", label: "品牌", icon: Palette, managerOnly: true },
@@ -67,7 +79,19 @@ const navGroups = [
       { href: "/settings/security", label: "安全", icon: Shield },
     ],
   },
+  {
+    label: "平台營運",
+    items: [
+      { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
+      { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
+      { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText, adminOnly: true },
+      { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
+      { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
+    ],
+  },
 ];
+
+const accountMenuGroupLabels = new Set(["帳務與方案", "工作區設定"]);
 
 export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
   if (isPlatformAdmin) {
@@ -122,6 +146,8 @@ export function AppShell({
   enabledModules?: readonly VendorFeatureModule[];
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
+  const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
+  const accountGroups = visibleGroups.filter((group) => accountMenuGroupLabels.has(group.label));
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
   const roleLabel = isPlatformAdmin
     ? "平台管理員"
@@ -156,31 +182,29 @@ export function AppShell({
           <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-300">Beta</span>
         </Link>
 
-        <div className="mb-4 rounded-xl border border-white/[0.08] bg-gradient-to-b from-white/[0.07] to-white/[0.03] p-3 shadow-inner shadow-white/[0.02]">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">目前工作區</p>
-          <div className="mt-2 flex items-center gap-2.5">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.08] text-xs font-bold text-slate-200 ring-1 ring-white/10">{vendorInitial}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-slate-100">{vendorName}</span>
-              <span className="mt-0.5 block text-[11px] text-slate-500">{roleLabel}</span>
-            </span>
-          </div>
-        </div>
+        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.25)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
+          {primaryGroups.map((group) => {
+            if (group.items.length === 1 && group.items[0]?.href === "/dashboard") {
+              const item = group.items[0];
+              return (
+                <AppShellNavLink key={item.href} href={item.href}>
+                  <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
+                  <span className="truncate">{item.label}</span>
+                </AppShellNavLink>
+              );
+            }
 
-        <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.25)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
-          {visibleGroups.map((group) => (
-            <div key={group.label}>
-              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">{group.label}</p>
-              <div className="grid gap-0.5">
+            return (
+              <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
                     <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
                   </AppShellNavLink>
                 ))}
-              </div>
-            </div>
-          ))}
+              </AppShellNavGroup>
+            );
+          })}
         </nav>
 
         <div className="mt-3 shrink-0 border-t border-white/[0.08] pt-3">
@@ -188,17 +212,38 @@ export function AppShell({
             <span className="inline-flex items-center gap-2"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-2 rounded-full bg-emerald-500" /></span>系統連線正常</span>
             <Activity className="size-3.5" aria-hidden="true" />
           </div>
-          <form action={logoutAction}>
-            <CsrfField />
-            <FormSubmitButton
-              pendingChildren="登出中…"
-              pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
-              className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
-            >
-              <LogOut className="size-4" strokeWidth={1.8} aria-hidden="true" />
-              登出
-            </FormSubmitButton>
-          </form>
+          <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial}>
+            {accountGroups.map((group) => (
+              <div key={group.label} className="mb-2 last:mb-0">
+                <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{group.label}</p>
+                <div className="grid gap-0.5">
+                  {group.items.map((item) => (
+                    <AppShellNavLink key={item.href} href={item.href}>
+                      <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
+                      <span className="truncate">{item.label}</span>
+                    </AppShellNavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="mt-2 border-t border-white/[0.08] pt-2">
+              <Link href="/support" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-slate-100">
+                <Headphones className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                說明與客服
+              </Link>
+              <form action={logoutAction}>
+                <CsrfField />
+                <FormSubmitButton
+                  pendingChildren="登出中…"
+                  pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
+                  className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <LogOut className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                  登出
+                </FormSubmitButton>
+              </form>
+            </div>
+          </AppShellAccountMenu>
         </div>
       </aside>
 
