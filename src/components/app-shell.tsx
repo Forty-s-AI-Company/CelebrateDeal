@@ -143,7 +143,6 @@ export function AppShell({
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
   const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
-  const accountGroups = visibleGroups.filter((group) => accountMenuGroupLabels.has(group.label));
   const canManageBilling = memberRole === "owner" || memberRole === "admin" || memberRole === "accountant";
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
   const roleLabel = isPlatformAdmin
@@ -192,7 +191,7 @@ export function AppShell({
             }
 
             return (
-              <AppShellNavGroup key={group.label} label={group.label}>
+              <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
                     <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
@@ -219,19 +218,10 @@ export function AppShell({
                 說明與客服
             </Link>
             <div className="border-t border-slate-100 pt-2">
-              {accountGroups.map((group) => (
-                <div key={group.label} className="mb-2">
-                  <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{group.label}</p>
-                  <div className="grid gap-0.5">
-                    {group.items.map((item) => (
-                      <AppShellNavLink key={item.href} href={item.href}>
-                        <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
-                        <span className="truncate">{item.label}</span>
-                      </AppShellNavLink>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <Link href="/settings" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
+                <Settings2 className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
+                設定
+              </Link>
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
