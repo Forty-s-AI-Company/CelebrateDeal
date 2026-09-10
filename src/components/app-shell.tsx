@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
+import { Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { logoutAction } from "@/app/actions";
+import { AppShellNavLink } from "@/components/app-shell-nav-link";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PublicResourceLinks } from "@/components/public-policy";
@@ -122,83 +123,113 @@ export function AppShell({
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
+  const roleLabel = isPlatformAdmin
+    ? "平台管理員"
+    : memberRole === "owner"
+      ? "品牌擁有者"
+      : memberRole === "admin"
+        ? "品牌管理員"
+        : memberRole === "accountant"
+          ? "財務協作者"
+          : memberRole === "support"
+            ? "客服協作者"
+            : "工作區成員";
+  const vendorInitial = vendorName.trim().charAt(0).toUpperCase() || "C";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50/80">
       <a
         href="#main-content"
         className="fixed left-4 top-4 z-50 -translate-y-24 rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform focus:translate-y-0"
       >
         跳至主要內容
       </a>
-      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-border bg-white p-4 lg:flex">
-        <Link href={homeHref} className="mb-8 flex min-h-11 shrink-0 items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-white">
-            <Tags size={20} aria-hidden="true" />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-800/80 bg-slate-950 px-3 pb-3 pt-4 text-white shadow-[8px_0_30px_rgba(15,23,42,0.08)] lg:flex">
+        <Link href={homeHref} className="mb-4 flex min-h-14 shrink-0 items-center gap-3 rounded-xl px-2 transition-colors hover:bg-white/[0.04]">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/40 ring-1 ring-white/15">
+            <Tags size={19} strokeWidth={2.2} aria-hidden="true" />
           </span>
-          <span>
-            <span className="block text-sm font-bold text-slate-950">CelebrateDeal</span>
-            <span className="block text-xs text-slate-500">{vendorName}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold tracking-tight text-white">CelebrateDeal</span>
+            <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-400">Live Commerce OS</span>
           </span>
+          <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-300">Beta</span>
         </Link>
 
-        <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1" aria-label="主要導覽">
+        <div className="mb-4 rounded-xl border border-white/[0.08] bg-gradient-to-b from-white/[0.07] to-white/[0.03] p-3 shadow-inner shadow-white/[0.02]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">目前工作區</p>
+          <div className="mt-2 flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.08] text-xs font-bold text-slate-200 ring-1 ring-white/10">{vendorInitial}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-slate-100">{vendorName}</span>
+              <span className="mt-0.5 block text-[11px] text-slate-500">{roleLabel}</span>
+            </span>
+          </div>
+        </div>
+
+        <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.25)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
           {visibleGroups.map((group) => (
             <div key={group.label}>
-              <p className="mb-2 px-2 text-xs font-semibold uppercase text-slate-600">{group.label}</p>
-              <div className="grid gap-1">
+              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">{group.label}</p>
+              <div className="grid gap-0.5">
                 {group.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-primary"
-                  >
-                    <item.icon size={17} aria-hidden="true" />
-                    {item.label}
-                  </Link>
+                  <AppShellNavLink key={item.href} href={item.href}>
+                    <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
+                    <span className="truncate">{item.label}</span>
+                  </AppShellNavLink>
                 ))}
               </div>
             </div>
           ))}
         </nav>
 
-        <form action={logoutAction} className="mt-4 shrink-0">
-          <CsrfField />
-          <FormSubmitButton
-            pendingChildren="登出中…"
-            pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <Lock size={16} aria-hidden="true" />
-            登出
-          </FormSubmitButton>
-        </form>
-      </aside>
-
-      <header className="sticky top-0 z-20 border-b border-border bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between">
-          <Link href={homeHref} className="inline-flex min-h-11 items-center font-bold text-slate-950">CelebrateDeal</Link>
+        <div className="mt-3 shrink-0 border-t border-white/[0.08] pt-3">
+          <div className="mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-2"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-2 rounded-full bg-emerald-500" /></span>系統連線正常</span>
+            <Activity className="size-3.5" aria-hidden="true" />
+          </div>
           <form action={logoutAction}>
             <CsrfField />
             <FormSubmitButton
               pendingChildren="登出中…"
               pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
-              className="min-h-11 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-600"
+              className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
             >
+              <LogOut className="size-4" strokeWidth={1.8} aria-hidden="true" />
               登出
             </FormSubmitButton>
           </form>
         </div>
-        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="行動版主要導覽">
+      </aside>
+
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950 px-4 py-3 text-white shadow-sm lg:hidden">
+        <div className="flex items-center justify-between">
+          <Link href={homeHref} className="inline-flex min-h-11 items-center gap-2.5 font-semibold text-white">
+            <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600"><Tags className="size-4" aria-hidden="true" /></span>
+            <span><span className="block text-sm">CelebrateDeal</span><span className="block max-w-40 truncate text-[10px] font-medium text-slate-400">{vendorName}</span></span>
+          </Link>
+          <form action={logoutAction}>
+            <CsrfField />
+            <FormSubmitButton
+              pendingChildren="登出中…"
+              pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
+              className="min-h-10 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-medium text-slate-300"
+            >
+              <Lock className="mr-1 inline size-3.5" aria-hidden="true" />
+              登出
+            </FormSubmitButton>
+          </form>
+        </div>
+        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
           {visibleGroups.flatMap((group) => group.items).map((item) => (
-            <Link key={item.href} href={item.href} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
+            <AppShellNavLink key={item.href} href={item.href} mobile>
               {item.label}
-            </Link>
+            </AppShellNavLink>
           ))}
         </nav>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-64 lg:px-8">
+      <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
         <FeatureAccessBoundary enabledModules={enabledModules}>{children}</FeatureAccessBoundary>
         <footer className="mx-auto mt-12 max-w-5xl border-t border-border pt-5">
           <p className="mb-3 text-xs font-semibold text-slate-600">公開資訊與客服</p>
