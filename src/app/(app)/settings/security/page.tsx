@@ -1,20 +1,15 @@
 import { cookies } from "next/headers";
 import {
-  createVendorMemberAction,
-  deactivateVendorMemberAction,
   logoutAction,
   regenerateRecoveryCodesAction,
   revokeAllSessionsAction,
   revokeOtherSessionsAction,
-  resendVendorMemberInvitationAction,
-  sendPasswordResetSmokeAction,
   updatePasswordAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
-import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
-import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
+import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
@@ -71,7 +66,6 @@ export default async function SecuritySettingsPage({
   const params = await searchParams;
   const auth = await requireAuth();
   const db = getDb();
-  const vendorId = auth.vendor?.id;
   const isOwner = auth.member?.role === "owner";
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -80,15 +74,8 @@ export default async function SecuritySettingsPage({
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
   // The local and E2E PostgreSQL instances intentionally use a one-connection
-  // pool. Keep these independent reads serial so a Server Action cannot wait
-  // behind a sibling query while this page is still rendering.
-  const members = isOwner && vendorId
-    ? await db.vendorMember.findMany({
-        where: { vendorId },
-        include: { user: true },
-        orderBy: [{ status: "asc" }, { createdAt: "asc" }],
-      })
-    : [];
+  // pool. Keep this read independent so a Server Action cannot wait behind a
+  // sibling query while this page is still rendering.
   const sessions = await db.userSession.findMany({
     where: {
       userId: auth.user.id,
@@ -100,11 +87,11 @@ export default async function SecuritySettingsPage({
 
   return (
     <>
-      <PageHeader title="安全設定" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
+      <PageHeader title="安全設定" description="管理登入密碼、裝置 session 與多因子驗證。團隊與成員權限請在團隊管理中處理。" action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
           <h2 className="mb-4 text-lg font-semibold text-slate-950">更新密碼</h2>
           <form action={updatePasswordAction} className="grid gap-4">
             <CsrfField />
@@ -115,7 +102,7 @@ export default async function SecuritySettingsPage({
             <SubmitButton>更新密碼並全部登出</SubmitButton>
           </form>
         </Card>
-        <Card>
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
           <h2 className="mb-2 text-lg font-semibold text-slate-950">登出此裝置</h2>
           <p className="mb-4 text-sm text-slate-500">目前使用資料庫 session 搭配 httpOnly cookie；登出會撤銷目前 session 並清除瀏覽器 cookie。</p>
           <form action={logoutAction}>
@@ -126,7 +113,7 @@ export default async function SecuritySettingsPage({
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card>
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">多因子驗證</h2>
@@ -165,7 +152,7 @@ export default async function SecuritySettingsPage({
           )}
         </Card>
 
-        <Card>
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
           <h2 className="mb-3 text-lg font-semibold text-slate-950">Recovery Codes</h2>
           {recoveryCodes?.length ? (
             <>
@@ -206,8 +193,8 @@ export default async function SecuritySettingsPage({
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1.2fr]">
-        <Card>
+      <div className="mt-5">
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">目前 session</h2>
@@ -238,102 +225,6 @@ export default async function SecuritySettingsPage({
             </form>
           </div>
         </Card>
-
-        {isOwner ? <Card>
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
-              <p className="mt-1 text-sm text-slate-500">Owner 可用 Email 邀請或重新啟用成員；平台管理員帳號不會出現在商家端管理名單。</p>
-            </div>
-            <Badge tone="green">owner</Badge>
-          </div>
-
-          {isOwner ? (
-            <form action={createVendorMemberAction} className="mb-5 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-2">
-              <CsrfField />
-              <Field label="姓名" name="name" placeholder="Ex: 王小明" required />
-              <Field label="Email" name="email" type="email" placeholder="member@example.com" required />
-              <SelectField label="角色" name="role" defaultValue="accountant">
-                <option value="owner">Owner</option>
-                <option value="admin">Admin</option>
-                <option value="accountant">Accountant</option>
-                <option value="support">Support</option>
-              </SelectField>
-              <div className="md:col-span-2">
-                <p className="mb-3 text-sm text-blue-800">系統會寄送一次性的設定密碼連結，不會顯示或傳送初始密碼。</p>
-                <SubmitButton>寄送邀請 / 重新啟用成員</SubmitButton>
-              </div>
-            </form>
-          ) : null}
-
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">成員</th>
-                  <th className="px-4 py-3">角色</th>
-                  <th className="px-4 py-3">狀態</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {members.map((member) => (
-                  <tr key={member.id}>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">{member.user.name}</p>
-                      <p className="text-xs text-slate-500">{member.user.email}</p>
-                    </td>
-                    <td className="px-4 py-3 capitalize text-slate-600">{member.role}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone={member.status === "active" ? "green" : "gray"}>{member.status}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {member.status === "active" && member.userId !== auth.user.id ? (
-                        <div className="flex justify-end gap-2">
-                          <form action={resendVendorMemberInvitationAction}>
-                            <CsrfField />
-                            <input type="hidden" name="id" value={member.id} />
-                            <FormSubmitButton
-                              pendingChildren="重寄中…"
-                              pendingMessage={`正在重新寄送 ${member.user.name} 的設定密碼邀請，請勿重複送出。`}
-                              className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-                            >
-                              重寄設定密碼邀請
-                            </FormSubmitButton>
-                          </form>
-                          <VendorMemberDeactivationConfirmation
-                            action={deactivateVendorMemberAction}
-                            currentUserId={auth.user.id}
-                            isOwner={isOwner}
-                            member={member}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <h3 className="text-sm font-semibold text-blue-900">密碼重設 smoke test</h3>
-            <p className="mt-1 text-sm text-blue-800">
-              忘記密碼時可從登入頁進入 `/password-reset/request`；此 smoke test 僅允許寄到環境設定的測試收件人。
-            </p>
-            <form action={sendPasswordResetSmokeAction} className="mt-3">
-              <CsrfField />
-              <FormSubmitButton
-                pendingChildren="寄送中…"
-                pendingMessage="正在寄送 password reset 測試信，請勿重複送出。"
-                className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
-              >
-                寄送目前帳號的 reset 測試信
-              </FormSubmitButton>
-            </form>
-          </div>
-        </Card> : null}
       </div>
     </>
   );

@@ -9,6 +9,20 @@ import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/m
 const inputClassName = "h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const SAFE_PRIMARY_COLOR = "#2563eb";
 const SAFE_CTA_COLOR = "#f97316";
+const TIMEZONE_OPTIONS = [
+  "Asia/Taipei",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Asia/Singapore",
+  "Asia/Hong_Kong",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Europe/London",
+  "Europe/Paris",
+  "America/Los_Angeles",
+  "America/New_York",
+  "UTC",
+] as const;
 
 function safeBrandColor(value: string, fallback: string) {
   return /^#[0-9a-f]{6}$/iu.test(value) ? value : fallback;
@@ -221,10 +235,16 @@ export function BrandSettingsForm({
   const values = { ...state.values, ...editedValues };
 
   function updateValue(key: keyof BrandSettingsFormValues) {
-    return (event: ChangeEvent<HTMLInputElement>) => {
+    return (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setEditedValues((current) => ({ ...current, [key]: event.target.value }));
     };
   }
+
+  const primaryColor = safeBrandColor(values.primaryColor, SAFE_PRIMARY_COLOR);
+  const ctaColor = safeBrandColor(values.ctaColor, SAFE_CTA_COLOR);
+  const timezoneOptions = TIMEZONE_OPTIONS.includes(values.timezone as typeof TIMEZONE_OPTIONS[number])
+    ? TIMEZONE_OPTIONS
+    : [values.timezone, ...TIMEZONE_OPTIONS];
 
   return (
     <form action={formAction} aria-busy={pending} className="grid gap-4">
@@ -246,16 +266,30 @@ export function BrandSettingsForm({
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           主要色
-          <input name="primaryColor" type="color" value={values.primaryColor} onChange={updateValue("primaryColor")} className="h-11 w-full rounded-md border border-border bg-white p-1" />
+          <span className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+            <input name="primaryColor" type="color" value={primaryColor} onChange={updateValue("primaryColor")} className="h-11 w-full cursor-pointer rounded-md border border-border bg-white p-1" />
+            <output className="flex h-11 items-center justify-between rounded-md px-3 font-mono text-xs font-semibold shadow-inner" style={{ backgroundColor: primaryColor, color: accessibleForeground(primaryColor) }}>
+              <span>{primaryColor.toUpperCase()}</span>
+              <span className="font-sans font-medium opacity-80">文字 {accessibleForeground(primaryColor).toUpperCase()}</span>
+            </output>
+          </span>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           CTA 色
-          <input name="ctaColor" type="color" value={values.ctaColor} onChange={updateValue("ctaColor")} className="h-11 w-full rounded-md border border-border bg-white p-1" />
+          <span className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+            <input name="ctaColor" type="color" value={ctaColor} onChange={updateValue("ctaColor")} className="h-11 w-full cursor-pointer rounded-md border border-border bg-white p-1" />
+            <output className="flex h-11 items-center justify-between rounded-md px-3 font-mono text-xs font-semibold shadow-inner" style={{ backgroundColor: ctaColor, color: accessibleForeground(ctaColor) }}>
+              <span>{ctaColor.toUpperCase()}</span>
+              <span className="font-sans font-medium opacity-80">文字 {accessibleForeground(ctaColor).toUpperCase()}</span>
+            </output>
+          </span>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           時區
-          <input name="timezone" required value={values.timezone} onChange={updateValue("timezone")} className={inputClassName} />
-          <span className="text-xs font-normal text-slate-500">請使用 IANA 時區，例如 Asia/Taipei。</span>
+          <select name="timezone" required value={values.timezone} onChange={updateValue("timezone")} className={inputClassName}>
+            {timezoneOptions.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
+          </select>
+          <span className="text-xs font-normal text-slate-500">依工作區所在地選擇；系統會以 IANA 時區儲存。</span>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           客服 Email
@@ -301,11 +335,12 @@ export function BrandSettingsForm({
 
       <BrandPublicPreview values={values} />
 
-      <div className="flex justify-end">
+      <div className="flex justify-end border-t border-slate-100 pt-4">
         <FormSubmitButton
           disabled={logoUploadBlocked}
           pendingChildren="儲存中…"
           pendingMessage="正在儲存品牌設定，請勿重複送出。"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
         >
           儲存品牌設定
         </FormSubmitButton>

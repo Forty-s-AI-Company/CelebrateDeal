@@ -161,7 +161,8 @@ describe("BrandSettingsForm", () => {
     expect(html).toContain('name="_csrf" value="csrf-test-token"');
     expect(html).toMatch(/name="name"[^>]*value="原始品牌"/u);
     expect(html).toMatch(/name="slug"[^>]*value="original-brand"/u);
-    expect(html).toMatch(/name="timezone"[^>]*value="Asia\/Taipei"/u);
+    expect(html).toMatch(/<select[^>]*name="timezone"/u);
+    expect(html).toMatch(/<option value="Asia\/Taipei" selected="">Asia\/Taipei<\/option>/u);
     expect(html).toMatch(/name="supportEmail"[^>]*value="support@example.test"/u);
     expect(html).toMatch(/name="senderName"[^>]*value="寄件品牌小組"/u);
     expect(html).toMatch(/name="contactUrl"[^>]*value="https:\/\/original\.example\.test\/contact\?from=brand#help"/u);
@@ -209,7 +210,7 @@ describe("BrandSettingsForm", () => {
     expect(html).toContain("時區格式無效");
     expect(html).toMatch(/name="name"[^>]*value="未儲存品牌"/u);
     expect(html).toMatch(/name="slug"[^>]*value="unsaved-brand"/u);
-    expect(html).toMatch(/name="timezone"[^>]*value="Mars\/Olympus_Mons"/u);
+    expect(html).toMatch(/<option value="Mars\/Olympus_Mons" selected="">Mars\/Olympus_Mons<\/option>/u);
     expect(html).toMatch(/name="supportEmail"[^>]*value="unsaved@example.test"/u);
     expect(html).toMatch(/name="senderName"[^>]*value="尚未儲存寄件人"/u);
     expect(html).toMatch(/name="contactUrl"[^>]*value="https:\/\/unsaved\.example\.test\/contact"/u);
@@ -297,7 +298,7 @@ describe("BrandSettingsForm", () => {
       ["senderName", "即時寄件人"],
       ["contactUrl", "https://live.example.test/contact"],
     ] as const) {
-      const input = findElements(tree, (element) => element.type === "input" && element.props.name === name)[0];
+      const input = findElements(tree, (element) => (element.type === "input" || element.type === "select") && element.props.name === name)[0];
       const onChange = input?.props.onChange as ((event: { target: { value: string } }) => void) | undefined;
       expect(onChange, name).toBeTypeOf("function");
       onChange?.({ target: { value } });

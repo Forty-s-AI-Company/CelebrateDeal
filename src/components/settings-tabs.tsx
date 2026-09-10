@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Bot, Handshake, Palette, Settings2, Shield } from "lucide-react";
+import { BarChart3, Bot, Handshake, Palette, Settings2, Shield, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,7 +10,8 @@ const settingsTabs = [
   { href: "/settings/features", label: "功能模組", icon: Settings2 },
   { href: "/settings/commissions", label: "分潤規則", icon: Handshake },
   { href: "/settings/automations", label: "自動化", icon: Bot },
-  { href: "/settings/security", label: "安全", icon: Shield },
+  { href: "/settings/team", label: "團隊管理", icon: UsersRound },
+  { href: "/settings/security", label: "安全性", icon: Shield },
 ] as const;
 
 export function SettingsTabs({ allowedHrefs }: { allowedHrefs: readonly string[] }) {

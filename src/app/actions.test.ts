@@ -3378,7 +3378,7 @@ describe("createVendorMemberAction", () => {
     mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
 
     await expect(createVendorMemberAction(vendorMemberFormData({ name: newUser.name, email: newUser.email, role: "support" }))).rejects.toThrow(
-      "redirect:/settings/security?updated=member",
+      "redirect:/settings/team?updated=member",
     );
 
     expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -3388,7 +3388,7 @@ describe("createVendorMemberAction", () => {
 
   it("rejects roles outside the member-role allowlist", async () => {
     await expect(createVendorMemberAction(vendorMemberFormData({ role: "platform_admin" }))).rejects.toThrow(
-      "redirect:/settings/security?error=member_invalid",
+      "redirect:/settings/team?error=member_invalid",
     );
 
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
@@ -3409,7 +3409,7 @@ describe("createVendorMemberAction", () => {
     const formData = vendorMemberFormData();
     const suppliedInitialPassword = "initial-password-must-not-be-sent";
     formData.set("password", suppliedInitialPassword);
-    await expect(createVendorMemberAction(formData)).rejects.toThrow("redirect:/settings/security?updated=member");
+    await expect(createVendorMemberAction(formData)).rejects.toThrow("redirect:/settings/team?updated=member");
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
     expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
@@ -3458,7 +3458,7 @@ describe("createVendorMemberAction", () => {
     mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 429 }));
 
     await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_rate_limited",
+      "redirect:/settings/team?error=member_invitation_rate_limited",
     );
 
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
@@ -3473,7 +3473,7 @@ describe("createVendorMemberAction", () => {
     mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 503 }));
 
     await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_unavailable",
+      "redirect:/settings/team?error=member_invitation_unavailable",
     );
 
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
@@ -3503,7 +3503,7 @@ describe("createVendorMemberAction", () => {
     mocks.userUpdate.mockResolvedValue(existingUser);
     mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
 
-    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow("redirect:/settings/security?updated=member");
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow("redirect:/settings/team?updated=member");
 
     expect(mocks.userCreate).not.toHaveBeenCalled();
     expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -3552,7 +3552,7 @@ describe("createVendorMemberAction", () => {
     mocks.userUpdate.mockResolvedValueOnce(existingUser);
 
     await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow(
-      "redirect:/settings/security?error=last_owner",
+      "redirect:/settings/team?error=last_owner",
     );
 
     expect(mocks.vendorMemberCount).toHaveBeenCalledWith({
@@ -3577,7 +3577,7 @@ describe("createVendorMemberAction", () => {
     });
 
     await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=inactive_user",
+      "redirect:/settings/team?error=inactive_user",
     );
 
     expect(mocks.vendorMemberFindUnique).not.toHaveBeenCalled();
@@ -3601,14 +3601,14 @@ describe("createVendorMemberAction", () => {
     mocks.sendPasswordResetLink.mockRejectedValueOnce(new Error("email delivery failed"));
 
     await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation",
+      "redirect:/settings/team?error=member_invitation",
     );
 
     expect(mocks.writeAuditLog).toHaveBeenLastCalledWith(expect.objectContaining({
       action: "vendor_member_invitation_email_failed",
       after: { email: newUser.email, role: "accountant", status: "active" },
     }));
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/team");
     const auditEntries = JSON.stringify(mocks.writeAuditLog.mock.calls);
     expect(auditEntries).not.toContain("one-time-reset-token");
     expect(auditEntries).not.toContain("passwordHash");
@@ -3644,7 +3644,7 @@ describe("resendVendorMemberInvitationAction", () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce(member);
 
     await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_resend_invalid",
+      "redirect:/settings/team?error=member_invitation_resend_invalid",
     );
 
     expect(mocks.vendorMemberFindFirst).toHaveBeenCalledWith({
@@ -3661,7 +3661,7 @@ describe("resendVendorMemberInvitationAction", () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce(activeMember);
 
     await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(
-      "redirect:/settings/security?updated=member_invitation_resent",
+      "redirect:/settings/team?updated=member_invitation_resent",
     );
 
     expect(mocks.checkRateLimit).toHaveBeenCalledWith(
@@ -3681,8 +3681,8 @@ describe("resendVendorMemberInvitationAction", () => {
       targetId: activeMember.id,
       after: { email: activeMember.user.email, role: activeMember.role, status: activeMember.status },
     }));
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
-    expect(mocks.redirect).toHaveBeenCalledWith("/settings/security?updated=member_invitation_resent");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/team");
+    expect(mocks.redirect).toHaveBeenCalledWith("/settings/team?updated=member_invitation_resent");
     expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],
     );
@@ -3695,7 +3695,7 @@ describe("resendVendorMemberInvitationAction", () => {
     mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
 
     await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_rate_limited",
+      "redirect:/settings/team?error=member_invitation_rate_limited",
     );
 
     expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
@@ -3709,7 +3709,7 @@ describe("resendVendorMemberInvitationAction", () => {
     mocks.sendPasswordResetLink.mockRejectedValueOnce(new Error("email delivery failed"));
 
     await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_resend_failed",
+      "redirect:/settings/team?error=member_invitation_resend_failed",
     );
 
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
@@ -3743,7 +3743,7 @@ describe("deactivateVendorMemberAction", () => {
     const formData = deactivateVendorMemberFormData();
 
     await expect(deactivateVendorMemberAction(formData)).rejects.toThrow(
-      "redirect:/settings/security?updated=member_deactivated",
+      "redirect:/settings/team?updated=member_deactivated",
     );
 
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
@@ -3775,8 +3775,8 @@ describe("deactivateVendorMemberAction", () => {
       before: activeMember,
       after: deactivatedMember,
     });
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
-    expect(mocks.redirect).toHaveBeenCalledWith("/settings/security?updated=member_deactivated");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/team");
+    expect(mocks.redirect).toHaveBeenCalledWith("/settings/team?updated=member_deactivated");
     expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],
     );
@@ -3789,7 +3789,7 @@ describe("deactivateVendorMemberAction", () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce(null);
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_not_found",
+      "redirect:/settings/team?error=member_not_found",
     );
 
     expect(mocks.transaction).not.toHaveBeenCalled();
@@ -3802,7 +3802,7 @@ describe("deactivateVendorMemberAction", () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce(activeMember);
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData(activeMember.id, ""))).rejects.toThrow(
-      "redirect:/settings/security?error=member_confirmation",
+      "redirect:/settings/team?error=member_confirmation",
     );
 
     expect(mocks.transaction).not.toHaveBeenCalled();
@@ -3821,7 +3821,7 @@ describe("deactivateVendorMemberAction", () => {
     });
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData("member-owner"))).rejects.toThrow(
-      "redirect:/settings/security?error=self_deactivate",
+      "redirect:/settings/team?error=self_deactivate",
     );
 
     expect(mocks.transaction).not.toHaveBeenCalled();
@@ -3842,7 +3842,7 @@ describe("deactivateVendorMemberAction", () => {
     }));
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=last_owner",
+      "redirect:/settings/team?error=last_owner",
     );
 
     expect(mocks.vendorMemberCount).toHaveBeenCalledWith({
@@ -3866,7 +3866,7 @@ describe("deactivateVendorMemberAction", () => {
     mocks.transaction.mockRejectedValueOnce(Object.assign(new Error("serialization conflict"), { code: "P2034" }));
 
     await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=last_owner",
+      "redirect:/settings/team?error=last_owner",
     );
 
     expect(mocks.vendorMemberUpdate).not.toHaveBeenCalled();
@@ -3875,8 +3875,8 @@ describe("deactivateVendorMemberAction", () => {
   });
 });
 
-describe("/settings/security member invitation controls", () => {
-  it("renders resend controls only for an owner's active, non-self members", async () => {
+describe("/settings/security isolation", () => {
+  it("keeps member invitation controls out of the security screen", async () => {
     const activeMember = {
       id: "member-2",
       vendorId: "vendor-1",
@@ -3906,8 +3906,10 @@ describe("/settings/security member invitation controls", () => {
     const recoveryButton = actionButtons.find((button) => button.props.pendingChildren === "重新產生中…");
     const paragraphs = elementsOfType(page, "p");
 
-    expect(resendActions).toHaveLength(1);
-    expect(pendingLabels).toEqual(expect.arrayContaining(["重新產生中…", "重寄中…", "寄送中…"]));
+    expect(resendActions).toHaveLength(0);
+    expect(pendingLabels).toEqual(expect.arrayContaining(["重新產生中…"]));
+    expect(pendingLabels).not.toContain("重寄中…");
+    expect(pendingLabels).not.toContain("寄送中…");
     expect(recoveryButton?.props.confirmMessage).toBe("重新產生後，舊 recovery codes 會立即失效。確定繼續？");
     expect(elementsOfType(page, "button")).toHaveLength(0);
     expect(paragraphs.some((paragraph) => paragraph.props.role === "status" && paragraph.props["aria-live"] === "polite")).toBe(true);

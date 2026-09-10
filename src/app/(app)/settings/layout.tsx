@@ -9,7 +9,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     navigationForRole(auth.member?.role ?? null, false, normalizeVendorFeatureModules(vendor.enabledFeatureModules))
       .flatMap((group) => group.items.map((item) => item.href)),
   );
-  const tabs = ["/settings/brand", "/settings/tracking", "/settings/features", "/settings/commissions", "/settings/automations", "/settings/security"].filter((href) => allowedHrefs.has(href));
+  const tabs = ["/settings/brand", "/settings/tracking", "/settings/features", "/settings/commissions", "/settings/automations", "/settings/team", "/settings/security"].filter((href) => allowedHrefs.has(href));
 
   return (
     <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">

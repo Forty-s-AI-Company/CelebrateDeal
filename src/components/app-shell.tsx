@@ -65,12 +65,13 @@ const navGroups = [
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
       { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
-      { href: "/settings/brand", label: "品牌", icon: Palette, managerOnly: true },
+      { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
       { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
       { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
       { href: "/settings/commissions", label: "分潤規則", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
       { href: "/settings/automations", label: "自動化", icon: Bot, managerOnly: true },
-      { href: "/settings/security", label: "安全", icon: Shield },
+      { href: "/settings/team", label: "團隊管理", icon: UsersRound, managerOnly: true },
+      { href: "/settings/security", label: "安全性", icon: Shield },
     ],
   },
   {
@@ -143,7 +144,15 @@ export function AppShell({
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
   const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
-  const canManageBilling = memberRole === "owner" || memberRole === "admin" || memberRole === "accountant";
+  const accountItems = visibleGroups
+    .filter((group) => accountMenuGroupLabels.has(group.label))
+    .flatMap((group) => group.items);
+  const accountItemByHref = new Map(accountItems.map((item) => [item.href, item]));
+  const accountMenuSections = [
+    { label: "工作區", hrefs: ["/onboarding", "/settings/brand"] },
+    { label: "系統設定", hrefs: ["/settings/tracking", "/settings/features", "/settings/commissions", "/settings/automations", "/settings/team", "/settings/security"] },
+    { label: "帳務與方案", hrefs: ["/billing/usage", "/billing/payment-methods", "/billing/plans", "/billing/invoices", "/billing/electronic-invoices", "/billing/settlements", "/billing/payouts", "/affiliates/commissions", "/billing/course-payouts"] },
+  ];
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
   const roleLabel = isPlatformAdmin
     ? "平台管理員"
@@ -209,19 +218,26 @@ export function AppShell({
             <Activity className="size-3.5" aria-hidden="true" />
           </div>
           <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
-            {canManageBilling ? <Link href="/billing/plans" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-              <CreditCard className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
-              方案與帳務
-            </Link> : null}
-            <Link href="/support" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-                <Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
-                說明與客服
-            </Link>
+            {accountMenuSections.map((section) => {
+              const items = section.hrefs.flatMap((href) => {
+                const item = accountItemByHref.get(href);
+                return item ? [item] : [];
+              });
+              if (items.length === 0) return null;
+              return (
+                <div key={section.label} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
+                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{section.label}</p>
+                  {items.map((item) => {
+                    const Icon = item.icon;
+                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
+                  })}
+                </div>
+              );
+            })}
             <div className="border-t border-slate-100 pt-2">
-              <Link href="/settings" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
-                <Settings2 className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
-                設定
-              </Link>
+              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">支援</p>
+              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
+              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>

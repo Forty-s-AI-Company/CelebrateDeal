@@ -65,9 +65,9 @@ describe("TeamSettingsPage", () => {
 
     expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
     expect(mocks.salesTeamFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
-    expect(mocks.vendorMemberFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", status: "active" } }));
+    expect(mocks.vendorMemberFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
     expect(mocks.affiliateFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", isActive: true } }));
-    expect(html).toContain("團隊與上下線");
+    expect(html).toContain("團隊管理");
     expect(html).toContain("北區夥伴");
     expect(html).toContain("加入既有商家成員");
     expect(html).toContain("無直接上線");

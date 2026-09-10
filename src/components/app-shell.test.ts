@@ -149,8 +149,8 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('href="/affiliates/commissions"');
     expect(html).toContain('href="/billing/course-payouts"');
     expect(html).toContain('href="/support"');
-    expect(html).toContain('href="/settings"');
-    expect(html).not.toContain('href="/policies"');
+    expect(html).toContain('href="/settings/team"');
+    expect(html).toContain('href="/policies"');
     expect(html).not.toContain('href="/admin/billing/dashboard"');
     expect((html.match(/name="csrfToken"/g) ?? [])).toHaveLength(2);
     expect((html.match(/>登出<\/button>/g) ?? [])).toHaveLength(2);
