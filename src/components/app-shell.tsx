@@ -54,7 +54,7 @@ const navGroups = [
     ],
   },
   {
-    label: "帳務與方案",
+    label: "設定",
     items: [
       { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true },
       { href: "/billing/payment-methods", label: "付款方式", icon: CreditCard, financeOnly: true },
@@ -65,11 +65,6 @@ const navGroups = [
       { href: "/billing/payouts", label: "稅務匯出", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
       { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
-    ],
-  },
-  {
-    label: "工作區設定",
-    items: [
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
       { href: "/settings/brand", label: "品牌", icon: Palette, managerOnly: true },
       { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
@@ -90,8 +85,6 @@ const navGroups = [
     ],
   },
 ];
-
-const accountMenuGroupLabels = new Set(["帳務與方案", "工作區設定"]);
 
 export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
   if (isPlatformAdmin) {
@@ -138,16 +131,17 @@ export function AppShell({
   memberRole,
   isPlatformAdmin = false,
   enabledModules,
+  planLabel = "Free",
 }: {
   children: React.ReactNode;
   vendorName: string;
   memberRole: string | null;
   isPlatformAdmin?: boolean;
   enabledModules?: readonly VendorFeatureModule[];
+  planLabel?: string;
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
-  const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
-  const accountGroups = visibleGroups.filter((group) => accountMenuGroupLabels.has(group.label));
+  const canManageBilling = memberRole === "owner" || memberRole === "admin" || memberRole === "accountant";
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
   const roleLabel = isPlatformAdmin
     ? "平台管理員"
@@ -163,32 +157,32 @@ export function AppShell({
   const vendorInitial = vendorName.trim().charAt(0).toUpperCase() || "C";
 
   return (
-    <div className="min-h-screen bg-slate-50/80">
+    <div className="min-h-screen bg-slate-50">
       <a
         href="#main-content"
         className="fixed left-4 top-4 z-50 -translate-y-24 rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform focus:translate-y-0"
       >
         跳至主要內容
       </a>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-800/80 bg-slate-950 px-3 pb-3 pt-4 text-white shadow-[8px_0_30px_rgba(15,23,42,0.08)] lg:flex">
-        <Link href={homeHref} className="mb-4 flex min-h-14 shrink-0 items-center gap-3 rounded-xl px-2 transition-colors hover:bg-white/[0.04]">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/40 ring-1 ring-white/15">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white px-3 pb-3 pt-4 text-slate-900 lg:flex">
+        <Link href={homeHref} className="mb-5 flex min-h-14 shrink-0 items-center gap-3 rounded-xl px-2 transition-colors hover:bg-slate-50">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-200">
             <Tags size={19} strokeWidth={2.2} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold tracking-tight text-white">CelebrateDeal</span>
+            <span className="block text-sm font-semibold tracking-tight text-slate-900">CelebrateDeal</span>
             <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-400">Live Commerce OS</span>
           </span>
-          <span className="rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-300">Beta</span>
+          <span className="rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">Beta</span>
         </Link>
 
-        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.25)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
-          {primaryGroups.map((group) => {
+        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
+          {visibleGroups.map((group) => {
             if (group.items.length === 1 && group.items[0]?.href === "/dashboard") {
               const item = group.items[0];
               return (
                 <AppShellNavLink key={item.href} href={item.href}>
-                  <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
+                  <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                   <span className="truncate">{item.label}</span>
                 </AppShellNavLink>
               );
@@ -198,7 +192,7 @@ export function AppShell({
               <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
-                    <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
+                    <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
                   </AppShellNavLink>
                 ))}
@@ -207,38 +201,33 @@ export function AppShell({
           })}
         </nav>
 
-        <div className="mt-3 shrink-0 border-t border-white/[0.08] pt-3">
+        <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
           <div className="mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-2"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-2 rounded-full bg-emerald-500" /></span>系統連線正常</span>
             <Activity className="size-3.5" aria-hidden="true" />
           </div>
-          <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial}>
-            {accountGroups.map((group) => (
-              <div key={group.label} className="mb-2 last:mb-0">
-                <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{group.label}</p>
-                <div className="grid gap-0.5">
-                  {group.items.map((item) => (
-                    <AppShellNavLink key={item.href} href={item.href}>
-                      <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300 group-aria-[current=page]:text-blue-400" strokeWidth={1.8} aria-hidden="true" />
-                      <span className="truncate">{item.label}</span>
-                    </AppShellNavLink>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <div className="mt-2 border-t border-white/[0.08] pt-2">
-              <Link href="/support" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-slate-100">
-                <Headphones className="size-4" strokeWidth={1.8} aria-hidden="true" />
+          <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
+            {canManageBilling ? <Link href="/billing/plans" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
+              <CreditCard className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
+              方案與帳務
+            </Link> : null}
+            <Link href="/support" className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
+                <Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
                 說明與客服
-              </Link>
+            </Link>
+            <div className="my-2 border-t border-slate-100 pt-2">
+              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">公開資訊</p>
+              <PublicResourceLinks />
+            </div>
+            <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
                 <CsrfField />
                 <FormSubmitButton
                   pendingChildren="登出中…"
                   pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
-                  className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-700"
                 >
-                  <LogOut className="size-4" strokeWidth={1.8} aria-hidden="true" />
+                  <LogOut className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
                   登出
                 </FormSubmitButton>
               </form>
@@ -247,9 +236,9 @@ export function AppShell({
         </div>
       </aside>
 
-      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950 px-4 py-3 text-white shadow-sm lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm lg:hidden">
         <div className="flex items-center justify-between">
-          <Link href={homeHref} className="inline-flex min-h-11 items-center gap-2.5 font-semibold text-white">
+          <Link href={homeHref} className="inline-flex min-h-11 items-center gap-2.5 font-semibold text-slate-900">
             <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600"><Tags className="size-4" aria-hidden="true" /></span>
             <span><span className="block text-sm">CelebrateDeal</span><span className="block max-w-40 truncate text-[10px] font-medium text-slate-400">{vendorName}</span></span>
           </Link>
@@ -258,7 +247,7 @@ export function AppShell({
             <FormSubmitButton
               pendingChildren="登出中…"
               pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
-              className="min-h-10 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-medium text-slate-300"
+              className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600"
             >
               <Lock className="mr-1 inline size-3.5" aria-hidden="true" />
               登出
@@ -276,10 +265,6 @@ export function AppShell({
 
       <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
         <FeatureAccessBoundary enabledModules={enabledModules}>{children}</FeatureAccessBoundary>
-        <footer className="mx-auto mt-12 max-w-5xl border-t border-border pt-5">
-          <p className="mb-3 text-xs font-semibold text-slate-600">公開資訊與客服</p>
-          <PublicResourceLinks />
-        </footer>
       </main>
     </div>
   );

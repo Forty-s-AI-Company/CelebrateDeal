@@ -136,7 +136,9 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('aria-label="行動版主要導覽"');
     expect(html).toContain('aria-label="工作區選單"');
     expect(html).toContain("銷講中心");
-    expect(html).toContain("帳務與方案");
+    expect(html).toContain("設定");
+    expect(html).toContain("Free");
+    expect((html.match(/aria-expanded="true"/g) ?? []).length).toBeGreaterThanOrEqual(5);
     expect(html).toContain("報名管理");
     expect(html).toContain("團隊模板");
     expect(html).toContain('href="/forms"');
@@ -148,7 +150,7 @@ describe("AppShell role navigation", () => {
     expect(html).toContain('href="/billing/course-payouts"');
     expect(html).toContain('href="/policies"');
     expect(html).toContain('href="/support"');
-    expect(html).toContain('class="mb-3 text-xs font-semibold text-slate-600"');
+    expect(html).toContain("公開資訊");
     expect(html).not.toContain('href="/admin/billing/dashboard"');
     expect((html.match(/name="csrfToken"/g) ?? [])).toHaveLength(2);
     expect((html.match(/>登出<\/button>/g) ?? [])).toHaveLength(2);
