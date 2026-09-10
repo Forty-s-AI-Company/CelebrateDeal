@@ -6,7 +6,6 @@ import { AppShellNavGroup } from "@/components/app-shell-nav-group";
 import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { PublicResourceLinks } from "@/components/public-policy";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
 import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 
@@ -86,6 +85,8 @@ const navGroups = [
   },
 ];
 
+const accountMenuGroupLabels = new Set(["設定"]);
+
 export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
   if (isPlatformAdmin) {
     return navGroups
@@ -141,6 +142,8 @@ export function AppShell({
   planLabel?: string;
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
+  const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
+  const accountGroups = visibleGroups.filter((group) => accountMenuGroupLabels.has(group.label));
   const canManageBilling = memberRole === "owner" || memberRole === "admin" || memberRole === "accountant";
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
   const roleLabel = isPlatformAdmin
@@ -177,7 +180,7 @@ export function AppShell({
         </Link>
 
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
-          {visibleGroups.map((group) => {
+          {primaryGroups.map((group) => {
             if (group.items.length === 1 && group.items[0]?.href === "/dashboard") {
               const item = group.items[0];
               return (
@@ -189,7 +192,7 @@ export function AppShell({
             }
 
             return (
-              <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
+              <AppShellNavGroup key={group.label} label={group.label}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
                     <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
@@ -215,9 +218,20 @@ export function AppShell({
                 <Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
                 說明與客服
             </Link>
-            <div className="my-2 border-t border-slate-100 pt-2">
-              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">公開資訊</p>
-              <PublicResourceLinks />
+            <div className="border-t border-slate-100 pt-2">
+              {accountGroups.map((group) => (
+                <div key={group.label} className="mb-2">
+                  <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{group.label}</p>
+                  <div className="grid gap-0.5">
+                    {group.items.map((item) => (
+                      <AppShellNavLink key={item.href} href={item.href}>
+                        <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
+                        <span className="truncate">{item.label}</span>
+                      </AppShellNavLink>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
