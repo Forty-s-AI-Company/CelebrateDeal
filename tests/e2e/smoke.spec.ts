@@ -463,6 +463,7 @@ async function enrollMfa(page: Page, user: MfaTestUser) {
   await loginMfaAdmin(page, user, /\/mfa\/setup$/);
   await page.getByRole("button", { name: "開始建立 TOTP" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_started/);
+  await expect(page.getByRole("img", { name: "CelebrateDeal TOTP 設定 QR Code" })).toBeVisible();
 
   const totpSeed = (await page.locator("p.font-mono").textContent())?.trim();
   if (!totpSeed) throw new Error("MFA setup did not provide a TOTP secret.");

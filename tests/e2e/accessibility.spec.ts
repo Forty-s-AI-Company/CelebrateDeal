@@ -83,6 +83,7 @@ async function enableOwnerMfa(page: Page) {
   await page.getByRole("button", { name: "開始設定 TOTP", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/security\?updated=mfa_started$/);
   await waitForStableRoute(page, "/settings/security?updated=mfa_started");
+  await expect(page.getByRole("img", { name: "CelebrateDeal TOTP 設定 QR Code" })).toBeVisible();
 
   const totpSeed = (await page.locator("p.font-mono").first().textContent())?.trim();
   if (!totpSeed) throw new Error("Owner MFA setup did not provide a TOTP secret.");

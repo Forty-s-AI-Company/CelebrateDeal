@@ -1,4 +1,6 @@
 import { cookies } from "next/headers";
+import Image from "next/image";
+import QRCode from "qrcode";
 import {
   logoutAction,
   regenerateRecoveryCodesAction,
@@ -72,6 +74,14 @@ export default async function SecuritySettingsPage({
   const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
+  const mfaQrCode = mfaUri
+    ? await QRCode.toDataURL(mfaUri, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 224,
+      color: { dark: "#0f172a", light: "#ffffff" },
+    })
+    : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
   // The local and E2E PostgreSQL instances intentionally use a one-connection
   // pool. Keep this read independent so a Server Action cannot wait behind a
@@ -133,12 +143,25 @@ export default async function SecuritySettingsPage({
             </div>
           ) : pendingMfa ? (
             <div className="grid gap-4">
-              <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-900">手動輸入密鑰</p>
-                <p className="mt-2 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
-                <p className="mt-3 text-xs text-slate-500">若你的驗證器 App 支援手動輸入，Issuer 請填 `CelebrateDeal`。</p>
-                {mfaUri ? <p className="mt-3 break-all text-xs text-slate-500">{mfaUri}</p> : null}
+              <div className="grid justify-items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-5 text-center">
+                <p className="text-sm font-semibold text-slate-900">使用驗證器 App 掃描 QR Code</p>
+                {mfaQrCode ? (
+                  <Image
+                    src={mfaQrCode}
+                    alt="CelebrateDeal TOTP 設定 QR Code"
+                    width={224}
+                    height={224}
+                    unoptimized
+                    className="rounded-xl bg-white p-2 shadow-sm"
+                  />
+                ) : null}
+                <p className="text-xs text-slate-600">掃描後，請輸入 App 顯示的 6 位數驗證碼完成啟用。</p>
               </div>
+              <details className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">無法掃描 QR Code？顯示手動密鑰</summary>
+                <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
+                <p className="mt-2 text-xs text-slate-500">Issuer 請填 `CelebrateDeal`。</p>
+              </details>
               <MfaEnrollmentForm csrfField={<CsrfField />} />
             </div>
           ) : (
