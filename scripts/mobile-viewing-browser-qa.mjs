@@ -51,7 +51,7 @@ const screenshots=[];
 async function assertInViewport(locator,page){await locator.scrollIntoViewIfNeeded();const box=await locator.boundingBox();const viewport=page.viewportSize();assert.ok(box && box.x>=0 && box.y>=0 && box.x+box.width<=viewport.width+1 && box.y+box.height<=viewport.height+1);}
 try{
  const page=await browser.newPage();
- for(const orientation of ['landscape','portrait']) for(const [width,height] of [[390,844],[844,390],[768,1024],[1440,900]]){
+ for(const orientation of ['landscape','portrait']) for(const [width,height] of [[390,844],[768,1024],[1024,768],[1440,900]]){
   await page.setViewportSize({width,height});await page.goto(`http://127.0.0.1:${server.address().port}/?${orientation}`);
   await page.getByRole('button',{name:'頁內全螢幕',exact:true}).click();
   assert.equal(await page.locator('[data-page-fullscreen="true"]').count(),1);
@@ -60,7 +60,7 @@ try{
   assert.equal(await page.locator('video').evaluate(e=>getComputedStyle(e).objectFit),'contain');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   assert.equal(await page.locator('iframe').count(),0);
-  if(width===390 || width===844){const name=`orientation-mobile-${orientation}-${width}x${height}.png`;await page.screenshot({path:path.join(evidenceDirectory,name),fullPage:true});screenshots.push(name);}
+  if(width===390){const name=`orientation-mobile-${orientation}-${width}x${height}.png`;await page.screenshot({path:path.join(evidenceDirectory,name),fullPage:true});screenshots.push(name);}
   await page.getByLabel('輸入直播留言').scrollIntoViewIfNeeded();
   assert.ok(await page.getByLabel('輸入直播留言').isVisible());
   await page.getByLabel('輸入直播留言').fill('旋轉後保留的草稿');

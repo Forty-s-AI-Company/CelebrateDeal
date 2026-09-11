@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -78,6 +78,12 @@ export default async function FormsPage({
   return (
     <>
       <PageHeader title="報名表管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
+      <ListSummary items={[
+        { label: hasFilters ? "目前結果" : "表單總數", value: forms.length, hint: hasFilters ? "符合篩選條件" : "目前工作區" },
+        { label: "啟用中", value: forms.filter((form) => form.isActive).length, hint: "可公開收集名單" },
+        { label: "已驗證名單", value: [...verifiedByFormId.values()].reduce((sum, count) => sum + count, 0), hint: "目前結果合計" },
+        { label: "待驗證", value: forms.reduce((sum, form) => sum + form._count.submissions - (verifiedByFormId.get(form.id) ?? 0), 0), hint: "需要後續確認" },
+      ]} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">

@@ -1,5 +1,5 @@
 import { BarChart3, Eye, Plus } from "lucide-react";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
@@ -15,8 +15,14 @@ export default async function LivesPage() {
   return (
     <>
       <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+      <ListSummary items={[
+        { label: "直播間總數", value: lives.length, hint: "目前工作區" },
+        { label: "已發布", value: lives.filter((live) => live.status === "published").length, hint: "可供觀眾進入" },
+        { label: "待補影片", value: lives.filter((live) => !live.video).length, hint: "發布前建議完成" },
+        { label: "已綁商品", value: lives.reduce((sum, live) => sum + live.products.length, 0), hint: "跨所有直播間" },
+      ]} />
       {lives.length === 0 ? (
-        <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} />
+        <EmptyState title="還沒有直播間" description="用引導流程把影片、商品、報名表與互動腳本組成第一場直播。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} secondaryAction={<ButtonLink href="/videos" tone="secondary">先準備影片</ButtonLink>} />
       ) : (
         <Card>
           <div className="grid gap-3">

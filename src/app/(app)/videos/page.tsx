@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { archiveVideoAction, restoreVideoAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { VideoLifecycleActions } from "@/components/video-lifecycle-actions";
 import { VideoThumbnail } from "@/components/video-thumbnail";
 import { requireVendorManager } from "@/lib/auth";
@@ -83,6 +83,12 @@ export default async function VideosPage({
   return (
     <>
       <PageHeader title="影片庫" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
+      <ListSummary items={[
+        { label: hasFilters ? "目前結果" : "影片總數", value: videos.length, hint: hasFilters ? "符合篩選條件" : "最多顯示 100 筆" },
+        { label: "可播放", value: videos.filter((video) => video.status === "ready").length, hint: "可綁定直播" },
+        { label: "處理中", value: videos.filter((video) => video.status === "processing").length, hint: "系統正在轉檔" },
+        { label: "已使用", value: videos.filter((video) => video._count.lives + video._count.registrationFormPromoVideos > 0).length, hint: "直播或報名頁" },
+      ]} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">

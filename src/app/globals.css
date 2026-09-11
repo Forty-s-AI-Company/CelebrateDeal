@@ -40,6 +40,15 @@ body {
   font-family: var(--font-sans);
 }
 
+html { overflow-x: clip; }
+
+/* Shared SaaS rhythm: stable metrics, quiet surfaces and useful interaction states. */
+:where(dd, [data-metric], .tabular-nums) { font-variant-numeric: tabular-nums; }
+:where(button, a, input, select, textarea):disabled { cursor: not-allowed; }
+@media (hover: hover) {
+  tbody tr { transition: background-color 160ms ease; }
+}
+
 button,
 a,
 input,

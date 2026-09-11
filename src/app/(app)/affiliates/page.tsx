@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WalletCards } from "lucide-react";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { calculateAffiliateConversionRate } from "@/lib/affiliate-performance";
@@ -37,8 +37,14 @@ export default async function AffiliatesPage() {
           </div>
         }
       />
+      <ListSummary items={[
+        { label: "夥伴總數", value: affiliates.length, hint: "目前工作區" },
+        { label: "啟用中", value: affiliates.filter((affiliate) => affiliate.isActive).length, hint: "可使用推廣碼" },
+        { label: "累積點擊", value: affiliates.reduce((sum, affiliate) => sum + affiliate._count.clicks, 0), hint: "所有夥伴合計" },
+        { label: "完成轉換", value: [...conversionsByAffiliateId.values()].reduce((sum, count) => sum + count, 0), hint: "已歸因成交" },
+      ]} />
       {affiliates.length === 0 ? (
-        <EmptyState title="還沒有聯盟夥伴" description="建立第一位聯盟夥伴，即可開始追蹤推廣來源與訂單佣金。" />
+        <EmptyState title="還沒有聯盟夥伴" description="建立第一位聯盟夥伴，即可產生專屬推廣碼並追蹤成交分潤。" action={<ButtonLink href="/affiliates/new">新增聯盟夥伴</ButtonLink>} secondaryAction={<ButtonLink href="/affiliates/commissions" tone="secondary">了解分潤報表</ButtonLink>} />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
