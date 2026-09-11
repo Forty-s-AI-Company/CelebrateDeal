@@ -1,0 +1,11 @@
+{
+  "command": "agy models",
+  "exitCode": 0,
+  "error": null,
+  "loginRequired": false,
+  "permissionDenied": false,
+  "modelsVerified": true,
+  "claudeListed": true,
+  "geminiListed": true,
+  "rawOutputStored": false
+}

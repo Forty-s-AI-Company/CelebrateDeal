@@ -33,7 +33,7 @@ createRoot(document.getElementById('root')).render(location.pathname==='/instruc
         }
       }
     });
-  } }], define: { 'process.env.NODE_ENV': '"production"' } });
+  } }], define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}' } });
 const config = { version: 1, kind: 'interaction_card', answerType: 'text', visibility: 'instructor_only', options: [], schedule: { enabled: true, startSeconds: 1, durationSeconds: 1 } };
 const scheduled = { id: 'scheduled', title: '影片一秒題', status: 'draft', configuration: config, ownValue: null, startsAt: null, endsAt: null, answers: [], options: [], responseCount: 0 };
 let manual = null; let mode = 'personal'; let sharedPosition = 1.2; let unavailable = false; let responseCount = 0; let media = Buffer.alloc(0);
@@ -89,7 +89,8 @@ try {
   });
   media = Buffer.from(bytes); await maker.close();
   page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
-  page.on('pageerror', () => receipt.pageErrors++);
+  // Preserve the actual client exception so a stale harness can be diagnosed.
+  page.on('pageerror', error => { receipt.pageErrors++; (receipt.pageErrorMessages ??= []).push(error.message); });
   await page.goto(base);
   receipt.phase = 'metadata';
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 1);

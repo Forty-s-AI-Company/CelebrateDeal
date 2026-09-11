@@ -15,7 +15,7 @@ import { buildIsolatedEnvironment } from "./private-chat-disposable-qa.mjs";
 const root = process.cwd();
 const temp = path.join(root, "tmp/presenter-media");
 const out = path.join(root, "docs/live-feature-handoffs");
-const receipt = { status: "FAIL", boundary: "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB", checks: [], pageErrors: [], phase: "setup" };
+const receipt = { status: "FAIL", browserChannel: process.env.LIVE_QA_BROWSER_CHANNEL ?? "msedge", boundary: "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB", checks: [], pageErrors: [], phase: "setup" };
 const require = createRequire(import.meta.url);
 function resolveWorkspace(b, external = false) {
   b.onResolve({ filter: /.*/ }, args => {
@@ -32,7 +32,7 @@ function resolveWorkspace(b, external = false) {
 const css = await postcss([tailwind()]).process(await fs.readFile("src/app/globals.css", "utf8"), { from: path.join(root, "src/app/globals.css") });
 const bundle = await build({ stdin: { contents: `import React from 'react';import{createRoot}from'react-dom/client';import{PresenterStudio}from'./src/components/presenter-studio';import{LivePlayback}from'./src/components/live-playback';
 const live={id:'live-a',vendorId:'tenant-a',title:'講師與 PPT',slug:'presenter',status:'live',runtimeState:'playing',admissionRequired:true,description:null,accentCopy:null,heroImageUrl:null,brand:{name:'CelebrateDeal',logoUrl:null,primaryColor:'#2563eb',ctaColor:'#fff'},form:null,interactionEvents:[],products:[]};
-createRoot(document.getElementById('root')).render(location.pathname==='/instructor'?<PresenterStudio liveId='live-a'/>:<LivePlayback live={live}/>);`, resolveDir: root, loader: "tsx" }, absWorkingDir: root, tsconfigRaw: { compilerOptions: { jsx: "react-jsx" } }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "qa-boundaries", setup(b) {
+createRoot(document.getElementById('root')).render(location.pathname==='/instructor'?<PresenterStudio liveId='live-a'/>:<LivePlayback live={live}/>);`, resolveDir: root, loader: "tsx" }, absWorkingDir: root, tsconfigRaw: { compilerOptions: { jsx: "react-jsx" } }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', "process.env": '{}' }, plugins: [{ name: "qa-boundaries", setup(b) {
   b.onResolve({ filter: /^(next\/(navigation|image)|@\/components\/(lead-form|live-chat-panel|live-advanced-interactions|live-purchase-ticker))$/ }, args => ({ path: args.path, namespace: "fixture" }));
   b.onLoad({ filter: /.*/, namespace: "fixture" }, args => ({ contents: args.path === "next/navigation" ? "const router={refresh(){},back(){},push(){}};export const useRouter=()=>router;export const usePathname=()=>'/live/presenter';" : args.path === "next/image" ? "export default function Image(){return null}" : "export const LeadForm=()=>null;export const LiveChatPanel=()=>null;export const LiveAdvancedInteractions=()=>null;export const LivePurchaseTicker=()=>null;" }));
   resolveWorkspace(b);
@@ -94,7 +94,7 @@ try {
     if (media.exitCode !== null || mediaFailure) throw new Error("MEDIA_PROCESS_FAILED");
     try { await fetch("http://127.0.0.1:18889/"); break; } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
   }
-  browser = await chromium.launch({ headless: true, channel: "msedge", args: ["--autoplay-policy=no-user-gesture-required"] });
+  browser = await chromium.launch({ headless: true, channel: receipt.browserChannel, args: ["--autoplay-policy=no-user-gesture-required"] });
   instructor = await browser.newPage({ viewport: { width: 1280, height: 960 } });
   viewer = await browser.newPage({ viewport: { width: 1280, height: 960 } });
   for (const page of [instructor, viewer]) page.on("pageerror", error => receipt.pageErrors.push(error.message));

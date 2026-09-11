@@ -1,0 +1,79 @@
+{
+  "status": "PASS",
+  "browserChannel": "chromium",
+  "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+  "checks": [
+    "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+    "PPT left/camera right reaches viewer pixels",
+    "top-left: decoded remote pixels match",
+    "bottom-left: decoded remote pixels match",
+    "top-right: decoded remote pixels match",
+    "bottom-right: decoded remote pixels match",
+    "15/35 percent decoded viewer boundaries, UI save and persisted contract",
+    "4:3 PPT aspect ratio retained within 16:9 stream",
+    "real local segmentation removes synthetic empty background in actual WHEP decoded PPT pixels",
+    "120-second real worker/remote broadcast soak retains one worker and continues producing frames",
+    "disable restores ordinary camera in remote stream without replacing output track",
+    "worker load failure returns unchecked toggle and ordinary camera",
+    "mobile video keeps 16:9 and interactive card stays outside video",
+    "stopped PPT share clears remote frame; re-sharing restores it during broadcast",
+    "source ended handled; stop releases all captured tracks",
+    "all created background workers terminated after source end/stop",
+    "publisher stopped -> viewer detects loss and offers reconnect",
+    "saved layout restored after reload"
+  ],
+  "pageErrors": [],
+  "phase": "source-ended",
+  "conditions": {
+    "browser": "149.0.7827.55",
+    "os": "win32 10.0.19045",
+    "cpu": "Intel(R) Core(TM) i7-7700 CPU @ 3.60GHz",
+    "logicalCpus": 8,
+    "ramGiB": 24,
+    "input": "synthetic 640x360 camera, 1024x768 PPT",
+    "output": "1920x1080 canvas/WHIP/WHEP",
+    "model": "MediaPipe CPU worker"
+  },
+  "soak": {
+    "durationSeconds": 120,
+    "samples": [
+      {
+        "frames": 209,
+        "liveWorkers": 1
+      },
+      {
+        "frames": 412,
+        "liveWorkers": 1
+      },
+      {
+        "frames": 622,
+        "liveWorkers": 1
+      },
+      {
+        "frames": 824,
+        "liveWorkers": 1
+      },
+      {
+        "frames": 1028,
+        "liveWorkers": 1
+      },
+      {
+        "frames": 1233,
+        "liveWorkers": 1
+      }
+    ],
+    "scope": "synthetic empty camera; not real hardware or 30-minute memory validation"
+  },
+  "segmentation": {
+    "created": 3,
+    "terminated": 3,
+    "frames": 1258,
+    "errors": [],
+    "timingMs": {
+      "samples": 900,
+      "median": 44.2,
+      "p95": 95,
+      "max": 414.1
+    }
+  }
+}

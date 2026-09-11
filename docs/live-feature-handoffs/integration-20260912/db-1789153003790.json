@@ -1,0 +1,534 @@
+{
+  "startedAt": "2026-09-11T18:54:21.454Z",
+  "status": "PASS",
+  "boundary": "real API/domain/PostgreSQL; mocked manager auth and limiter",
+  "phases": {
+    "generate": 0,
+    "validate": 0,
+    "migrate": 0,
+    "status": 0,
+    "migrationState": 0,
+    "tests": 0,
+    "browser": 0
+  },
+  "ownership": {
+    "absentBeforeCreate": true,
+    "markerVerified": true
+  },
+  "migrations": [
+    {
+      "name": "20260709090000_postgresql_baseline",
+      "sha256": "4f17cce8e03f7802af4490de69aec45f3b83d066f32969af6d1e83a36eca29af"
+    },
+    {
+      "name": "20260709110000_auth_sessions",
+      "sha256": "d34c09f41894ca2f00292811cf4639414b7a5a61aa36c11ec6ce72c6fa808217"
+    },
+    {
+      "name": "20260709113000_vendor_member_status",
+      "sha256": "4e1a69b54f8f62dd5658a42310f903465c62310ccbde2da347c649f942989604"
+    },
+    {
+      "name": "20260709170000_password_reset_tokens",
+      "sha256": "c830dba87f6dfe76905fc63ef998bfe7116e46709f595a2263891214309877df"
+    },
+    {
+      "name": "20260709193000_user_mfa",
+      "sha256": "bff0e2bd20a5e7f99adfa09de02379ee4839f3952a5f454106407e99a7a2f1f8"
+    },
+    {
+      "name": "202607170001_team_funnel_domain",
+      "sha256": "b9c13f6a42da5031699d98a68240da191068a7671471a81f5876a34e43f41bb1"
+    },
+    {
+      "name": "20260721133000_inventory_reservations",
+      "sha256": "e8105c529474a422c6478c36c9bfe85d601925db3f841d90086b1baf8ca665ec"
+    },
+    {
+      "name": "20260724150000_harden_supabase_data_api",
+      "sha256": "0704707fb33212e8982cb8f11ce24d630904facda65efbdd78f482a351500b3b"
+    },
+    {
+      "name": "20260725112500_harden_tenant_ledger_foreign_keys",
+      "sha256": "6d493faa761fab27314275fc35c64422ee50a4d94109f82b4e5d902adf47c853"
+    },
+    {
+      "name": "20260725230000_encrypt_payout_bank_accounts",
+      "sha256": "632179b160230790c7bcd6f3617a6a4af309565fe2c805f24e5d2ebab2a90f10"
+    },
+    {
+      "name": "20260725231500_harden_affiliate_commissions",
+      "sha256": "b0fbab1283f6a3df64cb18095c74d1eb8194f6138eb8e6a7a48ea97d0969f5ce"
+    },
+    {
+      "name": "20260728183500_harden_affiliate_commission_identity_and_status",
+      "sha256": "e51b6c425330c7bcb473e61b983fe1a348e1528b4b6f9d2306b903b17f1e5651"
+    },
+    {
+      "name": "20260728210000_add_affiliate_commission_accounting_ledger",
+      "sha256": "ab77c334d80eba03eec7952dbc5564d9c359dfb940a7502dd958312b026e6a65"
+    },
+    {
+      "name": "20260806090000_affiliate_payout_contract",
+      "sha256": "8df5ed38b140d740c5dbf285202a8414a3572461484cff6dcdfc2e684dcc644a"
+    },
+    {
+      "name": "20260807080000_course_fg_allocation",
+      "sha256": "4d244bd45da00d583b50755454c50eaa8ddbb590c6018ce9715ca50d01b6b032"
+    },
+    {
+      "name": "20260807100000_course_payout_read_model",
+      "sha256": "c96d93385d779f1fe78b28d73e7fcc8c452d5579d772833f2beba8c10d96bdef"
+    },
+    {
+      "name": "20260807110000_platform_referral_attribution",
+      "sha256": "5e90845c8530e98f13b936b764318c8f924b248eba022fb47db1f9945f400dbf"
+    },
+    {
+      "name": "20260807130000_stream_usage_attribution_ledger",
+      "sha256": "0c10df360a621975fe6c3c745c643eb6fa1761d1964c56151eb24e41af4d78f9"
+    },
+    {
+      "name": "20260807150000_platform_referral_commission_ledger",
+      "sha256": "8aa7530ef6f7175b29f4ae8f48c5b1a38749132047faeb0cdf3771f73b144643"
+    },
+    {
+      "name": "20260807170000_platform_referral_payout_read_model",
+      "sha256": "4a284f9b257d38d326752f494de0ec8b391c7a0e26d05b6ce4409e63f40d17eb"
+    },
+    {
+      "name": "20260807190000_checkout_idempotency",
+      "sha256": "f8a38d0b1fd9fec599c72546ff71dd1528705dba32efd8332f6243829534a689"
+    },
+    {
+      "name": "20260807210000_affiliate_gross_net_reference",
+      "sha256": "11adb7c66958bb97e0a54eb952224c9357939d9b5685f122a402152f69bdf22e"
+    },
+    {
+      "name": "20260807220000_course_gross_net_reference",
+      "sha256": "24e0aa626c365f4ae7f1fc34c19eb69dad556a0b988d958367cf78425cadff33"
+    },
+    {
+      "name": "20260807221000_platform_referral_initial_only",
+      "sha256": "b2d176861491f82ba0115fd91117809f0d092453e38cee825bd31cd9a11391f3"
+    },
+    {
+      "name": "20260807222000_affiliate_payout_gross_net_reference",
+      "sha256": "81a72ba94a95ac1fde39b4fe2a22173efd916e314872de149e938a03fca41bdb"
+    },
+    {
+      "name": "20260807230000_live_viewer_quota_admission",
+      "sha256": "f20bcdd3a584b5dcb3dcb2bececa827be1ce75e70483bf0c375ae16a45f51343"
+    },
+    {
+      "name": "20260808010000_live_product_tenant_binding",
+      "sha256": "808533103176968672d737a4d17efbcd3f9a13d742d7be0c6fd3e2280db88696"
+    },
+    {
+      "name": "20260808020000_live_resource_tenant_binding",
+      "sha256": "1fa145fa0044352eeed616645f08f97e05760572f762439cb11fc4f7940c5277"
+    },
+    {
+      "name": "20260808030000_stream_usage_attribution_allocation",
+      "sha256": "cf3614f3bc2683b0b9ba89d39be6c6f8bfba8756e1044ef89c328394e321a3b3"
+    },
+    {
+      "name": "20260808040000_partner_live_share",
+      "sha256": "bb2871d71d0c8f63b4028cbc458c87917b36cc7cb2d5216095dd7b8025555d64"
+    },
+    {
+      "name": "20260808050000_platform_referral_dispute_ledger",
+      "sha256": "7ad2fdf87ef5d1c2f1b389f937db7a79c07e87b0cc02cc1684443a49365d663e"
+    },
+    {
+      "name": "20260808060000_payment_method_reference",
+      "sha256": "5677b81f680b394b69a3b075d092dfe5ea911c00d1ab9af45716c749f608d985"
+    },
+    {
+      "name": "20260808070000_merchant_payout_outcome_reference",
+      "sha256": "c6e7c0086c13d74899b7b493dd31fdb4ecf06b1395befda5b44e192a3bc72c19"
+    },
+    {
+      "name": "20260808073000_affiliate_payout_outcome_reference",
+      "sha256": "88a012f1f1a23b092e70a76cdc4845c1f7be24bd940e057a4d3cc237df23b1b5"
+    },
+    {
+      "name": "20260808080000_g7_03_media_assets",
+      "sha256": "11f01d139c18d69e1f5e7ceec7b4645beaf6660791caa1820e567db9e3dcbe4c"
+    },
+    {
+      "name": "20260808094500_g7_03_live_studio_drafts",
+      "sha256": "1f67f3d3efc4b7def1aace97954fb5428210b923467623e57f8158a5fcf527fc"
+    },
+    {
+      "name": "20260808110000_g7_04_commerce_orders",
+      "sha256": "e5dda497cee70bf0bca99fa78eccda5fde5ffb8324892dde919841b10e8eab3e"
+    },
+    {
+      "name": "20260808203000_g7_07_email_delivery",
+      "sha256": "526cee1c75c60de258c65ea8707f26fa0a9245f16c37d9145ca44842b5ff0840"
+    },
+    {
+      "name": "20260808220500_g7_09_support_cases",
+      "sha256": "c96c9eb6e20edb6ad79ea6387deda2aa5761440f549be157e768ddf70667f657"
+    },
+    {
+      "name": "20260808233000_g7_09c_buyer_support_access",
+      "sha256": "e7da9fd1fe5e3a5080456ccc1b58b996ee163af0ba89eb9d75d70034cb0c77da"
+    },
+    {
+      "name": "20260808235500_g7_10_product_catalog_safety",
+      "sha256": "f63a7350cb507f16ce148f15bebd309288334f2ad96e2b06320b859f7d6f249f"
+    },
+    {
+      "name": "20260809000000_g7_12_stream_usage_reconciliation",
+      "sha256": "bab8561ac3f62009e08596a757b87d700ff7bb43a86edb3dee5429a425e97b6c"
+    },
+    {
+      "name": "20260809010000_g7_13_analytics_authenticity",
+      "sha256": "671065fe09a866d440560a4e4dff39937a83d3f340e9dd43c338ef5ae4e48935"
+    },
+    {
+      "name": "20260809020000_g7_13b_form_submission_verification",
+      "sha256": "0d6ce5f12a21ff5588c5fc4c939cc768ef4f49b53088106462f585e4005e70c4"
+    },
+    {
+      "name": "20260809030000_g7_21_live_reminder_email",
+      "sha256": "9af5626356988fdb745749698cb4287165968a78bef10f753ad6ec71d64ac21d"
+    },
+    {
+      "name": "20260809040000_g7_23_live_reminder_reconciliation",
+      "sha256": "c14a46ac66502f226f2bd12a337210696088dacf156e6a1e79b5c7d4757120ef"
+    },
+    {
+      "name": "20260809050000_g7_26_split_refund_handoff",
+      "sha256": "6bd8a58fab97e2148d4ee7a2d201a2d90d8dac304fd9cc0755cbcc7b1f5bf6bd"
+    },
+    {
+      "name": "20260809060000_g7_28_affiliate_payout_outcome_reason",
+      "sha256": "560602078220b86debe3a3b2392375eb1adb9d651426629b86771f7dae66fc8a"
+    },
+    {
+      "name": "20260809070000_g7_35_shipping_refund_states",
+      "sha256": "697a3e62608fb813481b2f62209b9c6131dc6f31f806018570284eca458a2b49"
+    },
+    {
+      "name": "20260809071000_g7_35_shipping_refund_lifecycle",
+      "sha256": "5d971c861df27657d99ae9102b232ab4c1aaf10cb8833740de1c7fe8e7f483ec"
+    },
+    {
+      "name": "20260809072000_g7_48_product_delivery_snapshot",
+      "sha256": "4e4eb804ade4b104050a400fb1e01aafb6c4af17c42313b09eff2e5b1a3cb3f4"
+    },
+    {
+      "name": "20260810051000_g7_54_form_submission_search_indexes",
+      "sha256": "bbeab14cb0b81f0210a449b3e7d366537cdc83329825d5ae62355632c96f5714"
+    },
+    {
+      "name": "20260810060000_g7_55_email_delivery_operations",
+      "sha256": "51af411f676e785fc82a68fa4824a8d53ebb0f130a93383f47b213d327e7dfb4"
+    },
+    {
+      "name": "20260815090000_g8_01_one_stop_webinar_domain",
+      "sha256": "6ccee7158957cf60b0f630393750424bdea5c0e7a2a12c620b2133efd076b59e"
+    },
+    {
+      "name": "20260815100000_g8_02_interaction_role_semantics",
+      "sha256": "5ba053a8973dc54e2140466cc3cd106a32481153cdf1c30e55f32792303e524b"
+    },
+    {
+      "name": "20260817120000_wp2_brand_sender_settings",
+      "sha256": "942c8871c68975dda98edf1f4a516f2a4839468f6e25826dfea530920f9acad4"
+    },
+    {
+      "name": "20260818090000_custom_checkout_fields",
+      "sha256": "9b68ae25f5f135d2b97d9118c646fd3f24030c74a029d03c980539eb5d370726"
+    },
+    {
+      "name": "20260819090000_wp1_video_archive_state",
+      "sha256": "0a7f8b04430e60a358a2bda9c83202892af7e5786d40700b67d60f47d12941e4"
+    },
+    {
+      "name": "20260905090000_affiliate_portal",
+      "sha256": "95b362b08d8ff52b1135a3789feb84478e5c3ee202c1d97acfb738f523355131"
+    },
+    {
+      "name": "20260905113000_line_official_account",
+      "sha256": "7df2728160a13a078b0935151953091d65e1501d7c005c4b814077cbf1976365"
+    },
+    {
+      "name": "20260905160000_tiered_multilevel_commission",
+      "sha256": "c50960911a3a8a529419266140e681b3419d855a665b454b4f33e7092bd6541f"
+    },
+    {
+      "name": "20260906003000_advanced_live_interactions",
+      "sha256": "550be4bf5cdaa5261ad95b1d42897af60cea9597a726a403cbd705644e3e2954"
+    },
+    {
+      "name": "20260906013000_smart_automation_workflows",
+      "sha256": "6ea6d1a6129a39bb6d70980b7d17f1170a7c1bf345569d6efe38ecb1879fbbd4"
+    },
+    {
+      "name": "20260907090000_live_lucky_draw_purchase_claim",
+      "sha256": "a8300a6f3f8152ed97f9b074c23ff73708eb474520bf62f3e3f98e08d99da8d7"
+    },
+    {
+      "name": "20260907180000_live_qa_spotlight",
+      "sha256": "e9135600c31278b31074936f30226e5311d8575fd2750850deeb0f3a99c1b0df"
+    },
+    {
+      "name": "20260907200000_affiliate_payout_taiwan_withholding",
+      "sha256": "b4335a2975d457013d83c6faf2e1be9c10562f6a92adb8a6a1bc6c96f38903f8"
+    },
+    {
+      "name": "20260907213000_versioned_tiered_commission_snapshots",
+      "sha256": "a46eaaa287c9f87c8b831b1d33f4903f0fbfa2345fcd56589aa4397ff08993cc"
+    },
+    {
+      "name": "20260907220000_quantity_commission_tiers",
+      "sha256": "27c1dd31e23a11e38599def0e69f6b75a32be2a740486e80f66c1e752e3e06fe"
+    },
+    {
+      "name": "20260907221500_quantity_commission_snapshot_contract",
+      "sha256": "9428ec325c64d46ce990ed4734f65ae4f8870df13c8a90eb99c78a9f9a84bacb"
+    },
+    {
+      "name": "20260907230000_registration_form_funnel_blocks",
+      "sha256": "453c2c77939eb1e09925279cc17129ee99888f3799fd3676e17432043e145c3a"
+    },
+    {
+      "name": "20260908031500_taiwan_b2c_electronic_invoice",
+      "sha256": "3b31bf146fd2d00ee6cf543345153d3f065d6dac9f619832a810dee939a5126e"
+    },
+    {
+      "name": "20260908090000_vendor_feature_toggles",
+      "sha256": "43286f2e77f239c23b3c41f3e8c945e0f2ef9ca4b837d47bae15e703f3ddfad6"
+    },
+    {
+      "name": "20260908100000_consultation_booking",
+      "sha256": "2f9a8b2587ed501952eed7261244bd3b149fee4e0237032c36d30401337eaf16"
+    },
+    {
+      "name": "20260908113000_automation_customer_funnel_identity",
+      "sha256": "960fb0156c4ac3c3d4071f19c67ddfd303a0e119b7677a94fcd19ac9582846f3"
+    },
+    {
+      "name": "20260908143000_customer_crm_cockpit",
+      "sha256": "a3a5dd1b38b6345b33b4d157713d7a14348ebdb684ac76d129e7469f7b3710cf"
+    },
+    {
+      "name": "20260908230000_evergreen_webinar_vendor_settings",
+      "sha256": "91b087fab5336d5ef787ec93350e95c90339b41688060f83f866f69129b422d8"
+    },
+    {
+      "name": "20260909100000_student_portal_access_tokens",
+      "sha256": "10f1e276daf4d9aa4e1b056279ef25335b231fc764b8664a85790cda64303c3a"
+    },
+    {
+      "name": "20260909143000_line_rich_menu",
+      "sha256": "d09cc865119451876b6d4c468128bbf90ee9b8e8a4a3e1c4b94cf668ac38246f"
+    },
+    {
+      "name": "20260909190000_flagship_growth_delivery",
+      "sha256": "8e5dcad20023f755211393fdc0ae9056c30955a6b8e698340a52d6c526d57c97"
+    },
+    {
+      "name": "20260911010000_private_live_chat",
+      "sha256": "4fd09b4ba8383dcd8f9b200948d6003493ee9962ba73c6ce201be6b2cfd03b2b"
+    },
+    {
+      "name": "20260911020000_presenter_layout",
+      "sha256": "39b4b46a3892eae63d54c405263ef42dd26891e5046e4a0e9551eabd5ca82758"
+    },
+    {
+      "name": "20260911070000_live_danmaku",
+      "sha256": "0a4156986b34737a4810e9b7158c39ccb4a730167b60469ca45426cc6bd3179d"
+    }
+  ],
+  "tests": [
+    {
+      "file": "src/lib/interaction-card-timeline.db.test.ts",
+      "assertions": [
+        {
+          "title": "persists, edits and disables existing cards with duration validation",
+          "status": "passed"
+        },
+        {
+          "title": "validates shared time on server and deduplicates simultaneous retries across reconnect",
+          "status": "passed"
+        },
+        {
+          "title": "uses personal replay media time without globally activating another viewer's card",
+          "status": "passed"
+        },
+        {
+          "title": "gives manual questions priority and lets the instructor permanently end a scheduled question",
+          "status": "passed"
+        },
+        {
+          "title": "rejects live scheduling and ignores previously saved schedules after a mode switch",
+          "status": "passed"
+        },
+        {
+          "title": "enforces instructor and admission scope for two viewers and cross-tenant requests",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/interaction-card.db.test.ts",
+      "assertions": [
+        {
+          "title": "converges concurrent retries and rejects changed or closed answers",
+          "status": "passed"
+        },
+        {
+          "title": "switches exactly one active question and rejects stale submissions",
+          "status": "passed"
+        },
+        {
+          "title": "isolates two viewers, persists refreshes and blocks the legacy endpoint",
+          "status": "passed"
+        },
+        {
+          "title": "enforces manager role and tenant/activity identity on real API handlers",
+          "status": "passed"
+        },
+        {
+          "title": "counts all choices while keeping public-display replies out of viewer DTOs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/live-cross-feature.db.test.ts",
+      "assertions": [
+        {
+          "title": "keeps real private writes and private cards isolated while public answers and labelled roles share the feed",
+          "status": "passed"
+        },
+        {
+          "title": "serializes close against concurrent same-answer retries and rejects all post-close new answers",
+          "status": "passed"
+        },
+        {
+          "title": "lets concurrent danmaku readers share the activity lock without passing an uncommitted answer",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/live-danmaku.db.test.ts",
+      "assertions": [
+        {
+          "title": "public feed isolates two viewers, private cards, chat and identity fields",
+          "status": "passed"
+        },
+        {
+          "title": "requires admission and owner/admin scope, denies viewer writes and injected fields",
+          "status": "passed"
+        },
+        {
+          "title": "clears off/reopen history, synchronizes entrances and handles repeated commands",
+          "status": "passed"
+        },
+        {
+          "title": "bounds bursts, converges retries and limits one participant across cards in live and vod",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/live-private-chat.db.test.ts",
+      "assertions": [
+        {
+          "title": "isolates A/B conversations, instructor replies and reconnects without rewriting legacy rows",
+          "status": "passed"
+        },
+        {
+          "title": "rejects cross-vendor, cross-live and mismatched-form instructor access without writes",
+          "status": "passed"
+        },
+        {
+          "title": "converges retries, rejects changed bodies and separates instructor/viewer idempotency",
+          "status": "passed"
+        },
+        {
+          "title": "enforces private identity constraints directly in PostgreSQL",
+          "status": "passed"
+        },
+        {
+          "title": "integrates real API routes and database with mocked authentication boundaries",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/presenter-layout.db.test.ts",
+      "assertions": [
+        {
+          "title": "restores portrait orientation and saves its presenter settings through the real API",
+          "status": "passed"
+        },
+        {
+          "title": "rejects a stale layout save if activity orientation changed after reading",
+          "status": "passed"
+        },
+        {
+          "title": "persists and restores layout JSON with tenant scoped reads",
+          "status": "passed"
+        },
+        {
+          "title": "rejects a media session whose tenant disagrees with its live composite foreign key",
+          "status": "passed"
+        },
+        {
+          "title": "permits exactly one concurrent session per tenant live principal direction",
+          "status": "passed"
+        },
+        {
+          "title": "does not claim an expired scan result after its lease has been renewed",
+          "status": "passed"
+        },
+        {
+          "title": "prevents heartbeat renewal after claim and retains failed closes for retry",
+          "status": "passed"
+        },
+        {
+          "title": "rolls back a new source when live status changes after API read, preserving the old video",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/lib/scripted-roles.db.test.ts",
+      "assertions": [
+        {
+          "title": "manual send converges retries, rate limits and reaches two admitted viewers without statistics pollution",
+          "status": "passed"
+        },
+        {
+          "title": "authorizes owner and admin, rejects viewer/accountant and foreign live/script/event",
+          "status": "passed"
+        },
+        {
+          "title": "stops immediately, respects global switch and invalidates a disabled role",
+          "status": "passed"
+        },
+        {
+          "title": "synchronized schedule ignores client position and personal replay follows seek without catch-up",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "cleanup": "PASS",
+  "counts": {
+    "files": 7,
+    "total": 35,
+    "passed": 35,
+    "skipped": 0,
+    "failed": 0
+  },
+  "finishedAt": "2026-09-11T18:56:43.790Z"
+}

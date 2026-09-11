@@ -1,0 +1,11 @@
+{
+  "boundary": "isolated local generate/typecheck/lint/unit; no external services",
+  "generation": "fresh independent Prisma client and no-dotenv Next source mirror",
+  "phases": {
+    "generate": 0,
+    "typegen": 0,
+    "typecheck": 2,
+    "lint": 0,
+    "unit": 0
+  }
+}

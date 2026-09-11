@@ -1,0 +1,32 @@
+{
+  "exitCode": 1,
+  "tests": 19,
+  "passed": 15,
+  "failed": 4,
+  "failures": [
+    {
+      "title": "interaction card polling lifecycle aborts a permanently pending GET at four seconds and recovers on the next poll",
+      "failures": [
+        "AssertionError: expected last \"vi.fn()\" call to have been called with [ true ]"
+      ]
+    },
+    {
+      "title": "interaction card polling lifecycle revokes the snapshot and request before refreshing on visibilitychange",
+      "failures": [
+        "AssertionError: expected 4 to be 3 // Object.is equality"
+      ]
+    },
+    {
+      "title": "interaction card polling lifecycle revokes the snapshot and request before refreshing on online",
+      "failures": [
+        "AssertionError: expected 4 to be 3 // Object.is equality"
+      ]
+    },
+    {
+      "title": "interaction card polling lifecycle cleans every timer, event listener and active request before pending fetch settles",
+      "failures": [
+        "AssertionError: expected 1 to be +0 // Object.is equality"
+      ]
+    }
+  ]
+}

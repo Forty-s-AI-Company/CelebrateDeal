@@ -1,0 +1,19 @@
+{
+  "startedAt": "2026-09-11T18:56:17.190Z",
+  "status": "PASS",
+  "boundary": "real React + HTTP adapter + app API/domain + owned PostgreSQL; synthetic manager auth/IP/limiter and precreated admission; no Next router/login/media E2E",
+  "checks": [
+    "two real browser contexts: private chat and instructor replies persist in DB and remain isolated",
+    "private card isolation and real legacy API bypass rejection",
+    "stalled card GET cancelled; subsequent poll recovers persisted own answer",
+    "public answer travels through real DB feed; private data excluded; instructor and persistent viewer switches",
+    "390x844, 844x390, 1440x900 real composed UI and page fullscreen without overflow"
+  ],
+  "pageErrors": [],
+  "browser": {
+    "engine": "Chromium",
+    "version": "152.0.4191.66",
+    "executable": "msedge channel"
+  },
+  "finishedAt": "2026-09-11T18:56:40.207Z"
+}

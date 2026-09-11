@@ -10,13 +10,64 @@ function setup(fetcher = vi.fn()) {
     addTransceiver() {} async createOffer() { return this.localDescription; }
     async setLocalDescription() {} async setRemoteDescription() {}
     close = close;
+    ontrack: ((event: { track: MediaStreamTrack }) => void) | null = null;
+    constructor() { peers.push(this); }
   }
+  const peers: Peer[] = [];
   vi.stubGlobal("RTCPeerConnection", Peer);
-  vi.stubGlobal("MediaStream", class { getTracks() { return []; } });
+  vi.stubGlobal("MediaStream", class {
+    tracks: MediaStreamTrack[] = [];
+    getTracks() { return this.tracks; }
+    addTrack(track: MediaStreamTrack) { this.tracks.push(track); }
+  });
   vi.stubGlobal("fetch", fetcher);
-  return { fetcher, close };
+  return { fetcher, close, peers };
 }
 describe("media negotiation lifecycle", () => {
+  it("aborts an in-flight heartbeat on close without aborting session cleanup", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ answer: "v=0", sessionId: "session" })))
+      .mockImplementationOnce((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new Error("heartbeat aborted")), { once: true });
+      })).mockResolvedValue(new Response("{}"));
+    setup(fetcher);
+    const failure = vi.fn();
+    const connection = connectLiveMedia({ liveId: "a", direction: "read" }, { onFailure: failure });
+    const outcome = connection.connected.catch(error => error);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    connection.close();
+    expect(fetcher.mock.calls[1]?.[1].signal.aborted).toBe(true);
+    await outcome;
+    expect(fetcher.mock.calls[2]?.[1].signal.aborted).toBe(false);
+    expect(JSON.parse(fetcher.mock.calls[2]?.[1].body).action).toBe("stop");
+    expect(failure).not.toHaveBeenCalled();
+  });
+  it("immediately cancels ICE polling when closed", async () => {
+    vi.useFakeTimers();
+    const { peers, fetcher } = setup();
+    const connection = connectLiveMedia({ liveId: "a", direction: "read" }, { onFailure: vi.fn() });
+    peers[0]!.iceGatheringState = "gathering";
+    const outcome = connection.connected.catch(error => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    connection.close();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(await outcome).toBeInstanceOf(Error);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("detaches remote track callbacks and video when closing", async () => {
+    const { peers } = setup(vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ answer: "v=0", sessionId: "session" }))).mockImplementation(async () => new Response("{}")));
+    const video = { srcObject: null, play: vi.fn().mockResolvedValue(undefined) } as unknown as HTMLVideoElement;
+    const track = { stop: vi.fn(), onended: null, onmute: null } as unknown as MediaStreamTrack;
+    const connection = connectLiveMedia({ liveId: "a", direction: "read" }, { video, onFailure: vi.fn() });
+    await connection.connected;
+    peers[0]!.ontrack!({ track });
+    expect(video.srcObject).not.toBeNull();
+    connection.close(); connection.close();
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(track.onended).toBeNull();
+    expect(track.onmute).toBeNull();
+    expect(video.srcObject).toBeNull();
+  });
   it("does not install a timer after stopping during the first heartbeat", async () => {
     let resolveHeartbeat!: (response: Response) => void;
     const pending = new Promise<Response>(resolve => { resolveHeartbeat = resolve; });

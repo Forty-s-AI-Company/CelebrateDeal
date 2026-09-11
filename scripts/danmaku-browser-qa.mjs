@@ -26,7 +26,7 @@ createRoot(document.getElementById('root')).render(location.pathname.startsWith(
     try { return { path: resolver.resolve(target) }; } catch {
       if (target.startsWith('.') || path.isAbsolute(target)) for (const extension of ['.ts', '.tsx']) { try { return { path: resolver.resolve(path.resolve(args.resolveDir || root, target) + extension) }; } catch {} }
     }
-  }); } }], define: { 'process.env.NODE_ENV': '"production"' } });
+  }); } }], define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}' } });
 const globals = await fs.readFile(path.join(root, 'src/app/globals.css'), 'utf8');
 const css = await postcss([tailwind()]).process(globals.replace('@import "tailwindcss";', '@import "tailwindcss" source(none); @source "./src/components/live-danmaku.tsx"; @source "./src/components/live-interaction-card.tsx"; @source "./src/components/live-viewing-shell.tsx"; @source "./src/components/live-playback.tsx";'), { from: path.join(root, 'danmaku-qa.css') });
 let state = { enabled: false, epoch: 'off', since: new Date().toISOString() };
@@ -53,18 +53,18 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
-const receipt = { boundary: 'real React components; synthetic API; Edge mobile viewport, not physical devices', status: 'FAIL', checks: [], pageErrors: 0 };
+const receipt = { boundary: 'real React components; synthetic API; browser mobile viewport, not physical devices', browserChannel: process.env.LIVE_QA_BROWSER_CHANNEL ?? 'msedge', status: 'FAIL', checks: [], pageErrors: 0 };
 try { receipt.previousAttempts = [JSON.parse(await fs.readFile(path.join(out, 'danmaku-browser-evidence.json'), 'utf8'))]; } catch { /* First run. */ }
 let browser;
 try {
-  browser = await chromium.launch({ headless: true, channel: 'msedge' });
+  browser = await chromium.launch({ headless: true, channel: receipt.browserChannel });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const viewer = await context.newPage(); const manager = await context.newPage(); const studio = await context.newPage();
   for (const page of [viewer, manager, studio]) page.on('pageerror', () => receipt.pageErrors++);
   await viewer.goto(base); await manager.goto(`${base}/instructor`); await studio.goto(`${base}/instructor-studio`);
   await manager.getByRole('button', { name: '開啟全場彈幕' }).click();
   await studio.getByRole('button', { name: '關閉全場彈幕' }).waitFor();
-  await viewer.getByText('公開卡片回答會在這裡出現').waitFor();
+  await viewer.getByText('公開卡片回答與暖場角色會在這裡出現').waitFor();
   publish('手機公開鼓勵'); await viewer.getByText('觀眾：手機公開鼓勵').waitFor();
   const strip = await viewer.getByRole('complementary', { name: '公開互動彈幕' }).boundingBox();
   const video = await viewer.getByLabel('播放器').boundingBox();
@@ -91,11 +91,11 @@ try {
   await studio.getByRole('button', { name: '關閉全場彈幕' }).click();
   await viewer.getByText('全場彈幕尚未開啟或正在同步').waitFor(); assert.equal(await viewer.locator('.danmaku-message').count(), 0);
   await studio.getByRole('button', { name: '開啟全場彈幕' }).click();
-  await viewer.getByText('公開卡片回答會在這裡出現').waitFor(); await viewer.waitForTimeout(4000);
+  await viewer.getByText('公開卡片回答與暖場角色會在這裡出現').waitFor(); await viewer.waitForTimeout(4000);
   assert.equal(await viewer.locator('.danmaku-message').count(), 0);
   receipt.checks.push('burst-density-one-off-clears-backlog-reopen-no-old-messages');
   offline = true; await viewer.getByText('全場彈幕尚未開啟或正在同步').waitFor(); publish('offline-old'); offline = false;
-  await viewer.getByText('公開卡片回答會在這裡出現').waitFor(); await viewer.waitForTimeout(4000);
+  await viewer.getByText('公開卡片回答與暖場角色會在這裡出現').waitFor(); await viewer.waitForTimeout(4000);
   assert.equal(await viewer.locator('.danmaku-message').count(), 0);
   await viewer.emulateMedia({ reducedMotion: 'reduce' }); await viewer.setViewportSize({ width: 844, height: 390 });
   publish('減少動態效果'); await viewer.getByText('觀眾：減少動態效果').waitFor();
@@ -103,7 +103,7 @@ try {
   assert.equal(await viewer.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await viewer.screenshot({ path: path.join(out, 'danmaku-landscape.png') });
   receipt.checks.push('reconnect-drops-history-landscape-reduced-motion-no-overflow');
-  await viewer.goto(`${base}?orientation=landscape`); await viewer.getByText('公開卡片回答會在這裡出現').waitFor();
+  await viewer.goto(`${base}?orientation=landscape`); await viewer.getByText('公開卡片回答與暖場角色會在這裡出現').waitFor();
   publish('長'.repeat(160)); await viewer.locator('.danmaku-message').waitFor();
   assert.equal(await viewer.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   const target = await viewer.getByRole('button', { name: '隱藏彈幕' }).boundingBox(); assert.ok(target.height >= 44);

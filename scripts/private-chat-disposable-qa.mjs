@@ -114,6 +114,9 @@ export function buildIsolatedEnvironment(tempRoot, options = {}) {
     TMP: path.join(tempRoot, "tmp"),
     HOME: path.join(tempRoot, "home"),
     USERPROFILE: path.join(tempRoot, "profile"),
+    // Edge also needs isolated AppData locations; never inherit a user's browser profile.
+    APPDATA: path.join(tempRoot, "app-data"),
+    LOCALAPPDATA: path.join(tempRoot, "local-app-data"),
     DOCKER_CONFIG: path.join(tempRoot, "docker-config"),
     NODE_ENV: "test",
     CI: "true",

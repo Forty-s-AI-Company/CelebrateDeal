@@ -1,0 +1,10 @@
+{
+  "startedAt": "2026-09-11T18:33:02.914Z",
+  "schemaSha256": "3d41bed1a0124b2ca31cc78d732a8d7a04a053402d09d393e8aace17f8f8b70d",
+  "phases": {
+    "generate": 0,
+    "typegen": 0,
+    "typecheck": 0
+  },
+  "boundary": "fresh source mirror, separate Prisma client, no env files"
+}

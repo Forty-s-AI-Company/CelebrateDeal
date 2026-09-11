@@ -1,0 +1,928 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-11T18:39:20.959Z",
+  "status": "PASS",
+  "boundary": "isolated child environment; loopback HTTP and MediaMTX; synthetic API/auth/DB/media inputs; real Edge and local CPU segmentation worker; no physical devices or Production service",
+  "mediaArtifact": {
+    "existingReceipt": "docs/live-feature-handoffs/presenter-mediamtx-artifact.json",
+    "archiveSha256": "8a58a9b8c25ee99a96c23dc0a17f39ace3072c01d2e148329073c64ddf83493d",
+    "binarySha256": "e3d383984111e80a545c346b2ae21421a8e23bf8573800057da309ec59ec78df",
+    "archiveMatchesExistingReceipt": true,
+    "binaryMatchesVerifiedArchive": true
+  },
+  "attempts": [
+    {
+      "command": "node scripts/private-chat-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:39:20.964Z",
+      "scriptSha256": "a1d36619e19d79c27c2dc9568fdb12e00a7da315d49dd30319580d7b91f78633",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:39:26.967Z",
+      "durationMs": 6003,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/private-chat-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real-components-synthetic-api",
+      "pageErrorCount": 0,
+      "failure": "browserType.launch: Target page, context or browser has been closed",
+      "diagnostic": "EDGE_WINDOWS_PATHSERVICE_STARTUP_FAILURE"
+    },
+    {
+      "command": "node scripts/interaction-card-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:39:26.977Z",
+      "scriptSha256": "c577ffe5cb8a00d1c65f69fb67541ef98b37ddbce1912b92c4af8aec1517583b",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:39:39.723Z",
+      "durationMs": 12746,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/interaction-card-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 3,
+      "checks": [
+        "create-draft-manual-start-private-notice-keyboard-answer-refresh-instructor-record",
+        "switch-clears-input-quick-answer-public-notice-landscape-no-overflow-escape-collapse",
+        "manual-end-removes-card-no-page-errors"
+      ],
+      "boundary": "real React components, Edge viewport, synthetic API; no physical device",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidenceSha256": "5769c0c10a49f095716c817f45b7a3fbf23ebdd6284bd476f75bd3e812605a63"
+    },
+    {
+      "command": "node scripts/interaction-timeline-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:39:39.728Z",
+      "scriptSha256": "d7230e1b3823c2e66d3c37d702ba848b037499a144f83330e48a0af17692025c",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:40:48.319Z",
+      "durationMs": 68591,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/interaction-timeline-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real LivePlayback, HTMLVideoElement decoded WebM and card components; synthetic API and unrelated panels; Edge desktop",
+      "pageErrorCount": 1,
+      "failure": "page.waitForFunction: Timeout 30000ms exceeded."
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:40:48.325Z",
+      "scriptSha256": "a1771e3a9b01b191a99f9883d7262e565c3402c66a6c3b78146d2eca723f84ff",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:41:33.092Z",
+      "durationMs": 44767,
+      "freshEvidence": false,
+      "failure": "NO_FRESH_RECEIPT"
+    },
+    {
+      "command": "node scripts/danmaku-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:41:33.104Z",
+      "scriptSha256": "40c96dffd174bbdd61e4d5d9310ecfd3da0b18fd2ce3cf42dad8de445adc097c",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:41:39.539Z",
+      "durationMs": 6435,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/danmaku-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real React components; synthetic API; Edge mobile viewport, not physical devices",
+      "pageErrorCount": 0,
+      "failure": "browserType.launch: Target page, context or browser has been closed",
+      "diagnostic": "EDGE_WINDOWS_PATHSERVICE_STARTUP_FAILURE"
+    },
+    {
+      "command": "node scripts/scripted-roles-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:41:39.547Z",
+      "scriptSha256": "a1441e7e3087b74cbfa0265d699f8624eafd158d4897b978f7deafb2db4b9c2c",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:42:27.654Z",
+      "durationMs": 48107,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/scripted-roles-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 6,
+      "checks": [
+        "preview stays local and does not send",
+        "source label, mobile no overflow, repeated event id not displayed again",
+        "stop command clears a currently visible new manual message",
+        "stop and global switch clear display; personal hidden preference survives reopen and reload",
+        "disconnected event not replayed on reconnect",
+        "actual HTML video play sends currentTime; pause omits position; seek clears display and resumed position follows media"
+      ],
+      "boundary": "real React/Edge and decoded canvas MediaRecorder WebM; synthetic HTTP API/auth; viewport not physical phone; no production service",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidenceSha256": "7eaccc75fd1a62b178fe3bc7094f4b1ad751af2f6b0fbb0f46871f72ace0bb69"
+    },
+    {
+      "command": "node scripts/interaction-timeline-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:42:39.862Z",
+      "scriptSha256": "ec0afaa8e4184726439f6cff4f46fe55e6ba20095c9650939aa62f72bd6d5c5b",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:43:49.062Z",
+      "durationMs": 69200,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/interaction-timeline-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real LivePlayback, HTMLVideoElement decoded WebM and card components; synthetic API and unrelated panels; Edge desktop",
+      "pageErrorCount": 1,
+      "failure": "page.waitForFunction: Timeout 30000ms exceeded."
+    },
+    {
+      "command": "node scripts/private-chat-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:44:26.991Z",
+      "scriptSha256": "a1d36619e19d79c27c2dc9568fdb12e00a7da315d49dd30319580d7b91f78633",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:44:49.908Z",
+      "durationMs": 22917,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/private-chat-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 4,
+      "checks": [
+        "mobile-send-poll-dedup-reload",
+        "instructor-select-reply-and-switch-reset",
+        "offline-draft-retry",
+        "390px-no-horizontal-overflow-16px-input-no-page-errors"
+      ],
+      "boundary": "real-components-synthetic-api",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidenceSha256": "b6ab3adcb4605d0e6d549b31176389e0b68c69afe7f8cc43bc90d85dd019057e"
+    },
+    {
+      "command": "node scripts/interaction-timeline-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:44:49.914Z",
+      "scriptSha256": "cd7f18e12fbc72274f816d37c9b6f59dda760c6580c653548cba8283f00c8340",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:45:14.937Z",
+      "durationMs": 25023,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/interaction-timeline-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 6,
+      "checks": [
+        "real media seek triggers; paused position does not advance with wall time",
+        "fast forward expires; rewind/replay preserve the single recorded answer",
+        "offline lease hides stale cards; reconnect samples current media",
+        "synchronized selection follows server position despite paused media at zero; late expiration",
+        "manual precedence and resume valid schedule; visibility restore refreshes",
+        "instructor preview, save, reload, validation and disable use existing cards"
+      ],
+      "boundary": "real LivePlayback, HTMLVideoElement decoded WebM and card components; synthetic API and unrelated panels; Edge desktop",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidenceSha256": "9a6c952882a9307b8d9b205c4175fa33432938153048d129c76d17cef48578aa"
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:45:14.943Z",
+      "scriptSha256": "b57c8ec2e2b78802f2e89e5157637cc1eee1f1876dea5da7edbefe83186b6bec",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:46:07.832Z",
+      "durationMs": 52889,
+      "freshEvidence": false,
+      "failure": "NO_FRESH_RECEIPT"
+    },
+    {
+      "command": "node scripts/danmaku-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:46:07.853Z",
+      "scriptSha256": "e952b2fc1ac842d052db52333ce75a0e22fa67dd8635951720c6690a2dde016b",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:46:23.891Z",
+      "durationMs": 16038,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/danmaku-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real React components; synthetic API; Edge mobile viewport, not physical devices",
+      "pageErrorCount": 0,
+      "failure": "browserType.launch: Target page, context or browser has been closed",
+      "diagnostic": "EDGE_WINDOWS_PATHSERVICE_STARTUP_FAILURE"
+    },
+    {
+      "command": "node scripts/presenter-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:46:23.901Z",
+      "scriptSha256": "d6ebecc00cbd196d527eefa34874183470d80a9f38b4d4c265c5cd9f5c7eda4e",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:47:49.606Z",
+      "durationMs": 85705,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/presenter-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 13,
+      "checks": [
+        "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+        "PPT left/camera right reaches viewer pixels",
+        "top-left: decoded remote pixels match",
+        "bottom-left: decoded remote pixels match",
+        "top-right: decoded remote pixels match",
+        "bottom-right: decoded remote pixels match",
+        "15/35 percent decoded viewer boundaries, UI save and persisted contract",
+        "4:3 PPT aspect ratio retained within 16:9 stream",
+        "mobile video keeps 16:9 and interactive card stays outside video",
+        "stopped PPT share clears remote frame; re-sharing restores it during broadcast",
+        "source ended handled; stop releases all captured tracks",
+        "publisher stopped -> viewer detects loss and offers reconnect",
+        "saved layout restored after reload"
+      ],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": null,
+      "mediaPortsReleased": true,
+      "evidenceSha256": "89cc67fd26443c17040f7c1403101017aa5bc7c823181f82931aa7fe2fb8d552"
+    },
+    {
+      "command": "node scripts/orientation-broadcast-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:47:49.619Z",
+      "scriptSha256": "6604ab4bbbc9fa4326ba2ca6ace492680dbbdfdadf4ecb1c50eb53731d85a941",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:48:26.444Z",
+      "durationMs": 36825,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/orientation-broadcast-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 5,
+      "checks": [
+        "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+        {
+          "name": "viewer native portrait",
+          "width": 1080,
+          "height": 1920
+        },
+        {
+          "name": "monitor native portrait",
+          "width": 1080,
+          "height": 1920
+        },
+        {
+          "name": "decoded portrait regions retain 4:3 slide",
+          "decoded": {
+            "slide": [
+              28,
+              55,
+              226,
+              255
+            ],
+            "camera": [
+              222,
+              12,
+              40,
+              255
+            ],
+            "margin": [
+              26,
+              23,
+              26,
+              255
+            ],
+            "slideBottom": [
+              28,
+              55,
+              226,
+              255
+            ]
+          }
+        },
+        "portrait UI persistence and source cleanup"
+      ],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": null,
+      "mediaPortsReleased": true,
+      "evidenceSha256": "282c3dc0cc94f97168ce54b9eb265b3e18d2ab81456e611623b8294b048896f6"
+    },
+    {
+      "command": "node scripts/orientation-landscape-broadcast-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:48:26.459Z",
+      "scriptSha256": "2114905272ff2ac01920fb48edf9688a8a6cd4ba3f03abdfef9adb27cb949503",
+      "status": "PASS",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:49:08.563Z",
+      "durationMs": 42104,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/orientation-landscape-broadcast-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 13,
+      "checks": [
+        "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+        "PPT left/camera right reaches viewer pixels",
+        "top-left: decoded remote pixels match",
+        "bottom-left: decoded remote pixels match",
+        "top-right: decoded remote pixels match",
+        "bottom-right: decoded remote pixels match",
+        "15/35 percent decoded viewer boundaries, UI save and persisted contract",
+        "4:3 PPT aspect ratio retained within 16:9 stream",
+        "mobile video keeps 16:9 and interactive card stays outside video",
+        "stopped PPT share clears remote frame; re-sharing restores it during broadcast",
+        "source ended handled; stop releases all captured tracks",
+        "publisher stopped -> viewer detects loss and offers reconnect",
+        "saved layout restored after reload"
+      ],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": null,
+      "mediaPortsReleased": true,
+      "evidenceSha256": "89cc67fd26443c17040f7c1403101017aa5bc7c823181f82931aa7fe2fb8d552"
+    },
+    {
+      "command": "node scripts/background-removal-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:49:08.573Z",
+      "scriptSha256": "79a4e7cc18760c5ff7a2eb75e7a5496a685a40f01963e84fd8130b5a2fc8a2e4",
+      "status": "FAIL",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:49:39.863Z",
+      "durationMs": 31290,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/background-removal-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 0,
+      "checks": [],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": "browserType.launch: Target page, context or browser has been closed",
+      "mediaPortsReleased": true,
+      "diagnostic": "EDGE_WINDOWS_PATHSERVICE_STARTUP_FAILURE"
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:51:17.723Z",
+      "scriptSha256": "c77f807436679760762aa159628e8569564c6baa81adf3f89d085dc6dec0dcd1",
+      "status": "FAIL",
+      "browserChannel": "chromium",
+      "exitCode": 1,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:51:40.091Z",
+      "durationMs": 22368,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/orientation-mobile-browser-evidence.json",
+      "evidenceStatus": "FAIL",
+      "checkCount": 8,
+      "checks": [
+        {
+          "orientation": "landscape",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        }
+      ],
+      "boundary": "real React playback/chat/card UI; synthetic API and MediaRecorder WebM; no physical phone",
+      "pageErrorCount": null,
+      "failure": "page.evaluate: Error: Synthetic WebM decode failed: code=4; bytes=110; state=3\n    at video.onerror (eval at evaluate (:303:30), <anonymous>:17:99)"
+    },
+    {
+      "command": "node scripts/danmaku-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:51:40.104Z",
+      "scriptSha256": "e4a348640a9ef815bd3c0dff2e63d113067cfb3b98000f56a811dbdb2a8b7877",
+      "status": "PASS",
+      "browserChannel": "chromium",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:52:27.717Z",
+      "durationMs": 47613,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/danmaku-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 5,
+      "checks": [
+        "mobile-public-message-no-overlap-with-video-controls-or-card",
+        "two-instructor-entrances-sync-and-personal-preference-persists-through-reopen-and-reload",
+        "burst-density-one-off-clears-backlog-reopen-no-old-messages",
+        "reconnect-drops-history-landscape-reduced-motion-no-overflow",
+        "horizontal-source-160-character-message-page-fullscreen-44px-controls"
+      ],
+      "boundary": "real React components; synthetic API; browser mobile viewport, not physical devices",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidenceSha256": "08b9594fc53cf937f5c9996c1d8a5416356512fd8eb78e7ebf88b477b89a4d3a"
+    },
+    {
+      "command": "node scripts/background-removal-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:52:27.725Z",
+      "scriptSha256": "79a4e7cc18760c5ff7a2eb75e7a5496a685a40f01963e84fd8130b5a2fc8a2e4",
+      "status": "PASS",
+      "browserChannel": "chromium",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:55:12.753Z",
+      "durationMs": 165028,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/background-removal-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 18,
+      "checks": [
+        "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+        "PPT left/camera right reaches viewer pixels",
+        "top-left: decoded remote pixels match",
+        "bottom-left: decoded remote pixels match",
+        "top-right: decoded remote pixels match",
+        "bottom-right: decoded remote pixels match",
+        "15/35 percent decoded viewer boundaries, UI save and persisted contract",
+        "4:3 PPT aspect ratio retained within 16:9 stream",
+        "real local segmentation removes synthetic empty background in actual WHEP decoded PPT pixels",
+        "120-second real worker/remote broadcast soak retains one worker and continues producing frames",
+        "disable restores ordinary camera in remote stream without replacing output track",
+        "worker load failure returns unchecked toggle and ordinary camera",
+        "mobile video keeps 16:9 and interactive card stays outside video",
+        "stopped PPT share clears remote frame; re-sharing restores it during broadcast",
+        "source ended handled; stop releases all captured tracks",
+        "all created background workers terminated after source end/stop",
+        "publisher stopped -> viewer detects loss and offers reconnect",
+        "saved layout restored after reload"
+      ],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": null,
+      "soak": {
+        "durationSeconds": 120,
+        "samples": [
+          {
+            "frames": 209,
+            "liveWorkers": 1
+          },
+          {
+            "frames": 412,
+            "liveWorkers": 1
+          },
+          {
+            "frames": 622,
+            "liveWorkers": 1
+          },
+          {
+            "frames": 824,
+            "liveWorkers": 1
+          },
+          {
+            "frames": 1028,
+            "liveWorkers": 1
+          },
+          {
+            "frames": 1233,
+            "liveWorkers": 1
+          }
+        ],
+        "scope": "synthetic empty camera; not real hardware or 30-minute memory validation"
+      },
+      "segmentation": {
+        "created": 3,
+        "terminated": 3,
+        "frames": 1258,
+        "errors": [],
+        "timingMs": {
+          "samples": 900,
+          "median": 44.2,
+          "p95": 95,
+          "max": 414.1
+        }
+      },
+      "mediaPortsReleased": true,
+      "evidenceSha256": "257b2a88672a623b4b42c1129f471ab3264bec265fd5092d62492feccfcd7139"
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:55:18.266Z",
+      "scriptSha256": "4c3279aeac1cf765a5426f0f5b4b9620a60e6158c4a8922e9b69d4157d5dd655",
+      "status": "FAIL",
+      "browserChannel": "chromium",
+      "exitCode": 4294967295,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:57:23.955Z",
+      "durationMs": 125689,
+      "freshEvidence": false,
+      "failure": "CONTROLLED_FIXTURE_DEADLOCK: MediaRecorder start waits for first canvas frame",
+      "controlledTermination": {
+        "ownedNodePid": 72104,
+        "reason": "Independent Chromium probe proved start event is absent before first requested frame and present afterward",
+        "probe": {
+          "startedBeforeFirstFrame": false,
+          "startedAfterFirstFrame": true
+        },
+        "assertionsWeakened": false
+      }
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:57:44.193Z",
+      "scriptSha256": "c8f3b05219732055ea503dfed1146f6f359fe372de6bdc3cb95f9b2ab8b7e093",
+      "status": "PASS",
+      "browserChannel": "chromium",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T18:58:15.268Z",
+      "durationMs": 31075,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/orientation-mobile-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 10,
+      "checks": [
+        {
+          "orientation": "landscape",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "mediaWidth": 640,
+          "mediaHeight": 360,
+          "status": "PASS",
+          "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+        },
+        {
+          "orientation": "landscape",
+          "mediaWidth": 360,
+          "mediaHeight": 640,
+          "status": "PASS",
+          "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+        }
+      ],
+      "boundary": "real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard",
+      "pageErrorCount": null,
+      "failure": null,
+      "evidenceSha256": "8ff65a43e44c5459376c46902292186c6cb28b420f73e4258088ca492076a7d0"
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "environmentBuilder": "scripts/private-chat-disposable-qa.mjs#buildIsolatedEnvironment",
+      "startedAt": "2026-09-11T18:59:28.825Z",
+      "scriptSha256": "4f935d2718b453fdf2ec4128b0431e77dab900d2dceeaeb58bd3a2fbecd798d5",
+      "status": "PASS",
+      "browserChannel": "chromium",
+      "exitCode": 0,
+      "signal": null,
+      "finishedAt": "2026-09-11T19:00:14.441Z",
+      "durationMs": 45616,
+      "freshEvidence": true,
+      "evidence": "docs/live-feature-handoffs/orientation-mobile-browser-evidence.json",
+      "evidenceStatus": "PASS",
+      "checkCount": 10,
+      "checks": [
+        {
+          "orientation": "landscape",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "landscape",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 390,
+          "height": 844,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 844,
+          "height": 390,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 768,
+          "height": 1024,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "width": 1440,
+          "height": 900,
+          "status": "PASS"
+        },
+        {
+          "orientation": "portrait",
+          "mediaWidth": 640,
+          "mediaHeight": 360,
+          "status": "PASS",
+          "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+        },
+        {
+          "orientation": "landscape",
+          "mediaWidth": 360,
+          "mediaHeight": 640,
+          "status": "PASS",
+          "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+        }
+      ],
+      "boundary": "real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard",
+      "pageErrorCount": null,
+      "failure": null,
+      "evidenceSha256": "8ff65a43e44c5459376c46902292186c6cb28b420f73e4258088ca492076a7d0"
+    }
+  ],
+  "updatedAt": "2026-09-11T19:00:14.448Z",
+  "finishedAt": "2026-09-11T19:00:47.074Z",
+  "timezone": "Asia/Taipei",
+  "summary": {
+    "runnerCount": 10,
+    "passedRunners": 10,
+    "checkCount": 83,
+    "attemptCount": 21,
+    "priorFailedAttempts": 10,
+    "latestMediaPortsReleased": true
+  },
+  "results": [
+    {
+      "command": "node scripts/private-chat-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 4,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:44:26.991Z",
+      "finishedAt": "2026-09-11T18:44:49.908Z",
+      "evidence": "docs/live-feature-handoffs/private-chat-browser-evidence.json",
+      "evidenceSha256": "b6ab3adcb4605d0e6d549b31176389e0b68c69afe7f8cc43bc90d85dd019057e",
+      "boundary": "real-components-synthetic-api"
+    },
+    {
+      "command": "node scripts/interaction-card-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 3,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:39:26.977Z",
+      "finishedAt": "2026-09-11T18:39:39.723Z",
+      "evidence": "docs/live-feature-handoffs/interaction-card-browser-evidence.json",
+      "evidenceSha256": "5769c0c10a49f095716c817f45b7a3fbf23ebdd6284bd476f75bd3e812605a63",
+      "boundary": "real React components, Edge viewport, synthetic API; no physical device"
+    },
+    {
+      "command": "node scripts/interaction-timeline-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 6,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:44:49.914Z",
+      "finishedAt": "2026-09-11T18:45:14.937Z",
+      "evidence": "docs/live-feature-handoffs/interaction-timeline-browser-evidence.json",
+      "evidenceSha256": "9a6c952882a9307b8d9b205c4175fa33432938153048d129c76d17cef48578aa",
+      "boundary": "real LivePlayback, HTMLVideoElement decoded WebM and card components; synthetic API and unrelated panels; Edge desktop"
+    },
+    {
+      "command": "node scripts/mobile-viewing-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 10,
+      "browserChannel": "chromium",
+      "startedAt": "2026-09-11T18:59:28.825Z",
+      "finishedAt": "2026-09-11T19:00:14.441Z",
+      "evidence": "docs/live-feature-handoffs/orientation-mobile-browser-evidence.json",
+      "evidenceSha256": "8ff65a43e44c5459376c46902292186c6cb28b420f73e4258088ca492076a7d0",
+      "boundary": "real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard"
+    },
+    {
+      "command": "node scripts/danmaku-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 5,
+      "browserChannel": "chromium",
+      "startedAt": "2026-09-11T18:51:40.104Z",
+      "finishedAt": "2026-09-11T18:52:27.717Z",
+      "evidence": "docs/live-feature-handoffs/danmaku-browser-evidence.json",
+      "evidenceSha256": "08b9594fc53cf937f5c9996c1d8a5416356512fd8eb78e7ebf88b477b89a4d3a",
+      "boundary": "real React components; synthetic API; browser mobile viewport, not physical devices"
+    },
+    {
+      "command": "node scripts/scripted-roles-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 6,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:41:39.547Z",
+      "finishedAt": "2026-09-11T18:42:27.654Z",
+      "evidence": "docs/live-feature-handoffs/scripted-roles-browser-evidence.json",
+      "evidenceSha256": "7eaccc75fd1a62b178fe3bc7094f4b1ad751af2f6b0fbb0f46871f72ace0bb69",
+      "boundary": "real React/Edge and decoded canvas MediaRecorder WebM; synthetic HTTP API/auth; viewport not physical phone; no production service"
+    },
+    {
+      "command": "node scripts/presenter-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 13,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:46:23.901Z",
+      "finishedAt": "2026-09-11T18:47:49.606Z",
+      "evidence": "docs/live-feature-handoffs/presenter-browser-evidence.json",
+      "evidenceSha256": "89cc67fd26443c17040f7c1403101017aa5bc7c823181f82931aa7fe2fb8d552",
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB"
+    },
+    {
+      "command": "node scripts/orientation-broadcast-qa.mjs",
+      "status": "PASS",
+      "checkCount": 5,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:47:49.619Z",
+      "finishedAt": "2026-09-11T18:48:26.444Z",
+      "evidence": "docs/live-feature-handoffs/orientation-broadcast-evidence.json",
+      "evidenceSha256": "282c3dc0cc94f97168ce54b9eb265b3e18d2ab81456e611623b8294b048896f6",
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB"
+    },
+    {
+      "command": "node scripts/orientation-landscape-broadcast-qa.mjs",
+      "status": "PASS",
+      "checkCount": 13,
+      "browserChannel": "msedge",
+      "startedAt": "2026-09-11T18:48:26.459Z",
+      "finishedAt": "2026-09-11T18:49:08.563Z",
+      "evidence": "docs/live-feature-handoffs/orientation-landscape-broadcast-evidence.json",
+      "evidenceSha256": "89cc67fd26443c17040f7c1403101017aa5bc7c823181f82931aa7fe2fb8d552",
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB"
+    },
+    {
+      "command": "node scripts/background-removal-browser-qa.mjs",
+      "status": "PASS",
+      "checkCount": 18,
+      "browserChannel": "chromium",
+      "startedAt": "2026-09-11T18:52:27.725Z",
+      "finishedAt": "2026-09-11T18:55:12.753Z",
+      "evidence": "docs/live-feature-handoffs/background-removal-browser-evidence.json",
+      "evidenceSha256": "257b2a88672a623b4b42c1129f471ab3264bec265fd5092d62492feccfcd7139",
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB"
+    }
+  ],
+  "safety": {
+    "sourceEnvContentsRead": false,
+    "applicationSecretsInherited": false,
+    "productionAccess": false,
+    "externalProviderCalls": false,
+    "physicalDeviceValidation": false,
+    "databaseAuthBoundary": "synthetic for these browser runners",
+    "browserProfile": "new disposable profile and synthetic AppData directories",
+    "mediaTermination": "spawned MediaMTX child only; loopback 18889/18189 checked free after every media runner",
+    "legacyEvidence": "previousAttempts from older runs removed from refreshed canonical receipts; every current-run attempt retained here"
+  },
+  "toolingFixes": [
+    "Browser esbuild fixture defines empty process.env for current Next client dependencies",
+    "Danmaku placeholder matches current combined public-card/scripted-role copy",
+    "Mobile frame recording explicitly requests first and subsequent canvas frames and records failure receipts",
+    "Explicit installed Chromium fallback for Edge Windows startup failure; original assertions retained"
+  ],
+  "validation": {
+    "qaRunnerSyntaxChecks": {
+      "count": 6,
+      "status": "PASS"
+    },
+    "visuallyInspected": [
+      "private-chat-mobile.png",
+      "presenter-viewer-mobile.png",
+      "background-removal-viewer-mobile.png",
+      "orientation-mismatch-portrait.png",
+      "orientation-mismatch-landscape.png"
+    ]
+  },
+  "screenshotChecks": "Mismatch screenshots display complete yellow frame border and both TOP/LEFT and BOTTOM/RIGHT labels; canvas MediaRecorder inputs are synthetic",
+  "reproduction": {
+    "launcher": "tmp/integration-browser-reruns.mjs",
+    "environment": "buildIsolatedEnvironment with newly created disposable TEMP/HOME/USERPROFILE/APPDATA/LOCALAPPDATA directories",
+    "edgeCommand": "node tmp/integration-browser-reruns.mjs 0 1 2 5 6 7 8",
+    "chromiumCommand": "node tmp/integration-browser-reruns.mjs --chromium 3 4 9",
+    "chromiumExecutable": "C:/Users/eden/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe",
+    "mediaOrder": "serial; 18889 and 18189 must be free; never terminate unrelated processes"
+  }
+}

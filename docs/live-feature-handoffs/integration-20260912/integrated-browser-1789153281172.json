@@ -1,0 +1,21 @@
+{
+  "startedAt": "2026-09-11T19:00:59.231Z",
+  "status": "PASS",
+  "boundary": "real LivePlayback + local MP4 + HTTP adapter + app chat/cards/danmaku API/domain + owned PostgreSQL; synthetic manager auth/IP/limiter and precreated admission; mocked Next navigation/image, ancillary form/advanced interactions/purchase ticker and analytics/usage/attribution; no full Next login/external media E2E",
+  "videoSha256": "ac2320eb3a304ecb0635f7cb1bc43f49ecb1a78f5d424484e9f34748a89c4f3e",
+  "checks": [
+    "real LivePlayback decodes and advances local synthetic MP4 in both viewer contexts",
+    "two real browser contexts: private chat and instructor replies persist in DB and remain isolated",
+    "private card isolation and real legacy API bypass rejection",
+    "stalled card GET cancelled; subsequent poll recovers persisted own answer",
+    "public answer travels through real DB feed; private data excluded; instructor and persistent viewer switches",
+    "390x844, 844x390, 1440x900 real composed UI and page fullscreen without overflow"
+  ],
+  "pageErrors": [],
+  "browser": {
+    "engine": "Chromium",
+    "version": "149.0.7827.55",
+    "executable": "C:/Users/eden/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe"
+  },
+  "finishedAt": "2026-09-11T19:01:21.172Z"
+}

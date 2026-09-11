@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "runId": "live-feature-browser-checks-eyPbda",
+  "startedAt": "2026-09-11T19:13:08.503Z",
+  "status": "PASS",
+  "selectedCases": [
+    6
+  ],
+  "browserChannel": "chromium",
+  "browserPath": "C:/Users/eden/AppData/Local/ms-playwright",
+  "boundary": "isolated environment; loopback HTTP/media; synthetic API/auth/DB/media inputs; real browser/local worker; no Production or physical device validation",
+  "attempts": [
+    {
+      "caseIndex": 6,
+      "command": "node scripts/presenter-browser-qa.mjs",
+      "startedAt": "2026-09-11T19:13:08.506Z",
+      "status": "PASS",
+      "exitCode": 0,
+      "freshEvidence": true,
+      "scriptSha256": "fead01c64674faba8b7f67d169bc2bae8423babd771e0bd26db66ce6760e21c3",
+      "mediaArtifact": {
+        "status": "PASS",
+        "verifiedAt": "2026-09-11T19:13:10.382Z",
+        "trustAnchor": "docs/live-feature-handoffs/presenter-mediamtx-artifact.json",
+        "archiveSha256": "8a58a9b8c25ee99a96c23dc0a17f39ace3072c01d2e148329073c64ddf83493d",
+        "binarySha256": "e3d383984111e80a545c346b2ae21421a8e23bf8573800057da309ec59ec78df",
+        "archiveMemberSha256": "e3d383984111e80a545c346b2ae21421a8e23bf8573800057da309ec59ec78df",
+        "boundary": "actual local hashes matched an existing upstream digest receipt; no new upstream lookup"
+      },
+      "signal": null,
+      "spawnFailed": false,
+      "mediaPortsReleased": true,
+      "evidence": "docs/live-feature-handoffs/presenter-browser-evidence.json",
+      "evidenceSha256": "10ac0df94a7ff7380f0dd941b019bbb1fe5a03c75017f7995f94f2ec85576387",
+      "evidenceStatus": "PASS",
+      "checkCount": 13,
+      "checks": [
+        "actual WHIP publish -> MediaMTX -> WHEP viewer and instructor return monitor",
+        "PPT left/camera right reaches viewer pixels",
+        "top-left: decoded remote pixels match",
+        "bottom-left: decoded remote pixels match",
+        "top-right: decoded remote pixels match",
+        "bottom-right: decoded remote pixels match",
+        "15/35 percent decoded viewer boundaries, UI save and persisted contract",
+        "4:3 PPT aspect ratio retained within 16:9 stream",
+        "mobile video keeps 16:9 and interactive card stays outside video",
+        "stopped PPT share clears remote frame; re-sharing restores it during broadcast",
+        "source ended handled; stop releases all captured tracks",
+        "publisher stopped -> viewer detects loss and offers reconnect",
+        "saved layout restored after reload"
+      ],
+      "boundary": "real MediaMTX + WHIP/WHEP + app routes + UI; synthetic media inputs/auth/DB",
+      "pageErrorCount": 0,
+      "failure": null,
+      "evidencePassed": true,
+      "finishedAt": "2026-09-11T19:13:35.572Z",
+      "durationMs": 27066
+    }
+  ],
+  "finishedAt": "2026-09-11T19:13:35.573Z",
+  "checkCount": 13
+}

@@ -24,7 +24,7 @@ function resolveWorkspace(b, external = false) {
 const css = await postcss([tailwind()]).process(await fs.readFile("src/app/globals.css", "utf8"), { from: path.join(root, "src/app/globals.css") });
 const bundle = await build({ stdin: { contents: `import React from 'react';import{createRoot}from'react-dom/client';import{LivePlayback}from'./src/components/live-playback';
 const live={id:'live-a',vendorId:'tenant-a',title:'講師與 PPT',slug:'presenter',status:'live',runtimeState:'playing',admissionRequired:false,chatEnabled:true,videoUrl:location.origin+'/video.mp4',orientation:location.search.includes('portrait')?'portrait':'landscape',description:null,accentCopy:null,heroImageUrl:null,brand:{name:'CelebrateDeal',logoUrl:null,primaryColor:'#2563eb',ctaColor:'#fff'},form:null,interactionEvents:[],products:[]};
-createRoot(document.getElementById('root')).render(<LivePlayback live={live}/>);`, resolveDir: root, loader: "tsx" }, absWorkingDir: root, tsconfigRaw: { compilerOptions: { jsx: "react-jsx" } }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "qa-boundaries", setup(b) {
+createRoot(document.getElementById('root')).render(<LivePlayback live={live}/>);`, resolveDir: root, loader: "tsx" }, absWorkingDir: root, tsconfigRaw: { compilerOptions: { jsx: "react-jsx" } }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', "process.env": '{}' }, plugins: [{ name: "qa-boundaries", setup(b) {
   b.onResolve({ filter: /^(next\/(navigation|image)|@\/components\/(lead-form|live-advanced-interactions|live-purchase-ticker))$/ }, args => ({ path: args.path, namespace: "fixture" }));
   b.onLoad({ filter: /.*/, namespace: "fixture" }, args => ({ contents: args.path === "next/navigation" ? "const router={refresh(){},back(){},push(){}};export const useRouter=()=>router;export const usePathname=()=>'/live/presenter';" : args.path === "next/image" ? "export default function Image(){return null}" : "export const LeadForm=()=>null;export const LiveChatPanel=()=>null;export const LiveAdvancedInteractions=()=>null;export const LivePurchaseTicker=()=>null;" }));
   resolveWorkspace(b);
@@ -41,7 +41,9 @@ const server=http.createServer((req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 await fs.mkdir(path.join(root,"tmp/mobile-viewing"),{recursive:true});
 const profile=await fs.mkdtemp(path.join(root,"tmp/mobile-viewing/profile-"));
-const browser=await chromium.launchPersistentContext(profile,{channel:"msedge",env:buildIsolatedEnvironment(path.join(root,'tmp/mobile-viewing'))});
+// Allow an explicitly selected installed testing browser when Edge startup is unavailable.
+const browserChannel=process.env.LIVE_QA_BROWSER_CHANNEL ?? "msedge";
+const browser=await chromium.launchPersistentContext(profile,{channel:browserChannel,env:buildIsolatedEnvironment(path.join(root,'tmp/mobile-viewing'))});
 const checks=[];
 const evidenceDirectory=path.join(root,"docs/live-feature-handoffs");
 await fs.mkdir(evidenceDirectory,{recursive:true});
@@ -86,19 +88,29 @@ try{
   await page.goto(`http://127.0.0.1:${server.address().port}/?${orientation}`);
   const intrinsic=await page.evaluate(async({mediaWidth,mediaHeight})=>{
    const canvas=document.createElement('canvas');canvas.width=mediaWidth;canvas.height=mediaHeight;
-   const ctx=canvas.getContext('2d');const stream=canvas.captureStream(15);
+   // Request every synthetic frame explicitly so headless throttling cannot emit header-only WebM.
+   const ctx=canvas.getContext('2d');const stream=canvas.captureStream(0);
    const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});const chunks=[];
    recorder.ondataavailable=e=>chunks.push(e.data);const stopped=new Promise(resolve=>recorder.onstop=resolve);
-   recorder.start();
-   for(let frame=0;frame<8;frame++){
+   const drawFrame=()=>{
     ctx.fillStyle='#0369a1';ctx.fillRect(0,0,mediaWidth,mediaHeight);
     ctx.strokeStyle='#facc15';ctx.lineWidth=16;ctx.strokeRect(8,8,mediaWidth-16,mediaHeight-16);
     ctx.fillStyle='#fff';ctx.font='bold 28px sans-serif';ctx.fillText('TOP / LEFT',24,48);ctx.fillText('BOTTOM / RIGHT',24,mediaHeight-28);
+    stream.getVideoTracks()[0].requestFrame();
+   };
+   const recording=new Promise(resolve=>recorder.onstart=resolve);recorder.start();
+   drawFrame();await recording;
+   for(let frame=0;frame<8;frame++){
+    drawFrame();
     await new Promise(resolve=>setTimeout(resolve,70));
    }
    recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
-   const video=document.querySelector('video');const url=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));
-   const ready=new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=reject;});video.src=url;video.muted=true;video.loop=true;await ready;await video.play();
+   const video=document.querySelector('video');const blob=new Blob(chunks,{type:'video/webm'});const url=URL.createObjectURL(blob);
+   // End the intentionally missing layout-only source before decoding the new fixture.
+   video.pause();video.removeAttribute('src');video.load();
+   const ready=new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=()=>reject(new Error(`Synthetic WebM decode failed: code=${video.error?.code}; bytes=${blob.size}; state=${video.networkState}`));});video.src=url;video.muted=true;video.loop=true;video.load();await ready;await video.play();
+   // Capture only after the marked frame reaches presentation, not merely metadata.
+   await new Promise(resolve=>video.requestVideoFrameCallback(resolve));
    return {width:video.videoWidth,height:video.videoHeight,fit:getComputedStyle(video).objectFit};
   },{mediaWidth,mediaHeight});
   assert.equal(intrinsic.width,mediaWidth);assert.equal(intrinsic.height,mediaHeight);assert.equal(intrinsic.fit,'contain');
@@ -109,7 +121,11 @@ try{
   const name=`orientation-mismatch-${orientation}.png`;await page.screenshot({path:path.join(evidenceDirectory,name),fullPage:true});screenshots.push(name);
   checks.push({orientation,mediaWidth,mediaHeight,status:'PASS',boundary:'canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement'});
  }
- const receipt={status:'PASS',boundary:'real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard',assertions:['no horizontal page overflow or iframe','measured 16:9 / 9:16 frame','card send visible after reduced viewport and mock API accepted','chat send visible after reduced viewport and mock API accepted','draft retained until successful send','Escape restores focus'],checks,screenshots};
+ const receipt={status:'PASS',browserChannel,boundary:'real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard',assertions:['no horizontal page overflow or iframe','measured 16:9 / 9:16 frame','card send visible after reduced viewport and mock API accepted','chat send visible after reduced viewport and mock API accepted','draft retained until successful send','Escape restores focus'],checks,screenshots};
  await fs.writeFile(path.join(evidenceDirectory,'orientation-mobile-browser-evidence.json'),JSON.stringify(receipt,null,2)+'\n');
  console.log(JSON.stringify(receipt));
+}catch(error){
+ const receipt={status:'FAIL',browserChannel,boundary:'real React playback/chat/card UI; synthetic API and MediaRecorder WebM; no physical phone',checks,screenshots,failure:error.message};
+ await fs.writeFile(path.join(evidenceDirectory,'orientation-mobile-browser-evidence.json'),JSON.stringify(receipt,null,2)+'\n');
+ console.log(JSON.stringify(receipt));process.exitCode=1;
 }finally{await browser.close();await new Promise(r=>server.close(r));}

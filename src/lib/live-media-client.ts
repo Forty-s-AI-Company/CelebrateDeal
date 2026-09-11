@@ -5,13 +5,17 @@ const headers = { "Content-Type": "application/json", "x-celebratedeal-client": 
 /** Native WHIP/WHEP negotiation with full ICE gathering; no provider credentials in the browser. */
 export function connectLiveMedia(scope: MediaScope, options: { stream?: MediaStream; video?: HTMLVideoElement; onFailure: () => void }): MediaConnection {
   const peer = new RTCPeerConnection({ iceServers: [] });
+  const lifetime = new AbortController();
   let closed = false;
   let sessionId: string | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let heartbeatPending = false;
   const remote = new MediaStream();
   const request = async (action: string, extra = {}) => {
-    const response = await fetch("/api/live-media", { method: "POST", headers, body: JSON.stringify({ ...scope, action, ...extra }), keepalive: action === "stop", signal: AbortSignal.timeout(action === "stop" ? 5_000 : 20_000) });
+    const timeout = AbortSignal.timeout(action === "stop" ? 5_000 : 20_000);
+    // Offer 必須讀完晚到的 session 才能補送 stop；只有心跳隨播放器關閉取消。
+    const signal = action === "heartbeat" ? AbortSignal.any([timeout, lifetime.signal]) : timeout;
+    const response = await fetch("/api/live-media", { method: "POST", headers, body: JSON.stringify({ ...scope, action, ...extra }), keepalive: action === "stop", signal });
     if (!response.ok) throw new Error("影音服務無法連線，請稍後重試。");
     return response.json() as Promise<{ answer?: string; sessionId?: string }>;
   };
@@ -19,11 +23,12 @@ export function connectLiveMedia(scope: MediaScope, options: { stream?: MediaStr
   function close() {
     if (closed) return;
     closed = true;
+    lifetime.abort();
     clearInterval(heartbeat);
     peer.ontrack = null;
     peer.onconnectionstatechange = null;
     peer.close();
-    remote.getTracks().forEach(track => track.stop());
+    remote.getTracks().forEach(track => { track.onended = null; track.onmute = null; track.stop(); });
     if (options.video?.srcObject === remote) options.video.srcObject = null;
     stopRemote();
   }
@@ -40,14 +45,14 @@ export function connectLiveMedia(scope: MediaScope, options: { stream?: MediaStr
   const connected = (async () => {
     try {
       await peer.setLocalDescription(await peer.createOffer());
-      await waitFor(() => peer.iceGatheringState === "complete", () => closed, 10_000);
+      await waitFor(() => peer.iceGatheringState === "complete", () => closed, 10_000, lifetime.signal);
       if (closed) throw new Error("連線已停止。");
       const result = await request("offer", { sdp: peer.localDescription?.sdp });
       sessionId = result.sessionId;
       if (closed) { stopRemote(); throw new Error("連線已停止。"); }
       if (!sessionId || !result.answer) throw new Error("媒體回應不正確。");
       await peer.setRemoteDescription({ type: "answer", sdp: result.answer });
-      await waitFor(() => peer.connectionState === "connected", () => closed || peer.connectionState === "failed", 15_000);
+      await waitFor(() => peer.connectionState === "connected", () => closed || peer.connectionState === "failed", 15_000, lifetime.signal);
       if (closed) throw new Error("連線已停止。");
       await request("heartbeat", { sessionId });
       if (closed) throw new Error("連線已停止。");
@@ -62,15 +67,24 @@ export function connectLiveMedia(scope: MediaScope, options: { stream?: MediaStr
   return { connected, close };
 }
 
-function waitFor(ready: () => boolean, stopped: () => boolean, timeout: number) {
+function waitFor(ready: () => boolean, stopped: () => boolean, timeout: number, signal: AbortSignal) {
   const start = Date.now();
   return new Promise<void>((resolve, reject) => {
-    const check = () => {
-      if (stopped()) return reject(new Error("連線已停止。"));
-      if (ready()) return resolve();
-      if (Date.now() - start >= timeout) return reject(new Error("影音連線逾時。"));
-      setTimeout(check, 50);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve();
     };
+    const abort = () => finish(new Error("連線已停止。"));
+    const check = () => {
+      if (signal.aborted || stopped()) return abort();
+      if (ready()) return finish();
+      if (Date.now() - start >= timeout) return finish(new Error("影音連線逾時。"));
+      timer = setTimeout(check, 50);
+    };
+    signal.addEventListener("abort", abort, { once: true });
     check();
   });
 }

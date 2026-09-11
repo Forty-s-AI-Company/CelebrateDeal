@@ -1,0 +1,85 @@
+{
+  "status": "PASS",
+  "browserChannel": "chromium",
+  "boundary": "real React playback/chat/card UI; synthetic API; 8 layout cases without media and 2 actual decoded synthetic WebM mismatch cases; no real mobile keyboard",
+  "assertions": [
+    "no horizontal page overflow or iframe",
+    "measured 16:9 / 9:16 frame",
+    "card send visible after reduced viewport and mock API accepted",
+    "chat send visible after reduced viewport and mock API accepted",
+    "draft retained until successful send",
+    "Escape restores focus"
+  ],
+  "checks": [
+    {
+      "orientation": "landscape",
+      "width": 390,
+      "height": 844,
+      "status": "PASS"
+    },
+    {
+      "orientation": "landscape",
+      "width": 844,
+      "height": 390,
+      "status": "PASS"
+    },
+    {
+      "orientation": "landscape",
+      "width": 768,
+      "height": 1024,
+      "status": "PASS"
+    },
+    {
+      "orientation": "landscape",
+      "width": 1440,
+      "height": 900,
+      "status": "PASS"
+    },
+    {
+      "orientation": "portrait",
+      "width": 390,
+      "height": 844,
+      "status": "PASS"
+    },
+    {
+      "orientation": "portrait",
+      "width": 844,
+      "height": 390,
+      "status": "PASS"
+    },
+    {
+      "orientation": "portrait",
+      "width": 768,
+      "height": 1024,
+      "status": "PASS"
+    },
+    {
+      "orientation": "portrait",
+      "width": 1440,
+      "height": 900,
+      "status": "PASS"
+    },
+    {
+      "orientation": "portrait",
+      "mediaWidth": 640,
+      "mediaHeight": 360,
+      "status": "PASS",
+      "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+    },
+    {
+      "orientation": "landscape",
+      "mediaWidth": 360,
+      "mediaHeight": 640,
+      "status": "PASS",
+      "boundary": "canvas/MediaRecorder synthetic WebM decoded by actual HTMLVideoElement"
+    }
+  ],
+  "screenshots": [
+    "orientation-mobile-landscape-390x844.png",
+    "orientation-mobile-landscape-844x390.png",
+    "orientation-mobile-portrait-390x844.png",
+    "orientation-mobile-portrait-844x390.png",
+    "orientation-mismatch-portrait.png",
+    "orientation-mismatch-landscape.png"
+  ]
+}

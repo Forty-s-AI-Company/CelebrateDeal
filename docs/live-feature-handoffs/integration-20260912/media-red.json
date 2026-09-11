@@ -1,0 +1,26 @@
+{
+  "exitCode": 1,
+  "tests": 22,
+  "passed": 19,
+  "failed": 3,
+  "failures": [
+    {
+      "title": "media negotiation lifecycle aborts an in-flight heartbeat on close without aborting session cleanup",
+      "failures": [
+        "AssertionError: expected false to be true // Object.is equality"
+      ]
+    },
+    {
+      "title": "media negotiation lifecycle immediately cancels ICE polling when closed",
+      "failures": [
+        "AssertionError: expected 1 to be +0 // Object.is equality"
+      ]
+    },
+    {
+      "title": "media negotiation lifecycle detaches remote track callbacks and video when closing",
+      "failures": [
+        "AssertionError: expected [Function fail] to be null"
+      ]
+    }
+  ]
+}

@@ -7,8 +7,11 @@ import { readWarmup, StoredDanmakuSchema } from "./scripted-roles";
 
 type Scope = { vendorId: string; liveId: string };
 /** Same row lock as answerCard: snapshots cannot advance past an uncommitted answer. */
-async function lockedState(tx: Prisma.TransactionClient, scope: Scope) {
-  const rows = await tx.$queryRaw<Array<{ danmakuState: unknown }>>`SELECT "danmakuState" FROM "Live" WHERE "id"=${scope.liveId} AND "vendorId"=${scope.vendorId} FOR UPDATE`;
+async function lockedState(tx: Prisma.TransactionClient, scope: Scope, reading = false) {
+  // Readers may run concurrently, but still wait for answer/settings writers before taking a watermark.
+  const rows = reading
+    ? await tx.$queryRaw<Array<{ danmakuState: unknown }>>`SELECT "danmakuState" FROM "Live" WHERE "id"=${scope.liveId} AND "vendorId"=${scope.vendorId} FOR SHARE`
+    : await tx.$queryRaw<Array<{ danmakuState: unknown }>>`SELECT "danmakuState" FROM "Live" WHERE "id"=${scope.liveId} AND "vendorId"=${scope.vendorId} FOR UPDATE`;
   if (!rows[0]) throw new CardError(404);
   return StoredDanmakuSchema.safeParse(rows[0].danmakuState).data ?? DEFAULT_DANMAKU;
 }
@@ -24,7 +27,7 @@ export async function setDanmaku(db: PrismaClient, scope: Scope, enabled: boolea
 }
 export async function readDanmaku(db: PrismaClient, scope: Scope, cursor?: string, epoch?: string, positionSeconds?: number): Promise<DanmakuSnapshot> {
   return db.$transaction(async tx => {
-    const stored = await lockedState(tx, scope);
+    const stored = await lockedState(tx, scope, true);
     const [clock] = await tx.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS "now"`;
     const now = clock!.now;
     const warmup = await readWarmup(tx, scope, stored, now, positionSeconds);

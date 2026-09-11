@@ -1,0 +1,162 @@
+{
+  "baselineCommit": "fa98ca8226a5d2ea17ddca0112a2f834dd73880b",
+  "baselineWorktree": "clean",
+  "mode": {
+    "currentModelWasNotSwitchedByScript": true,
+    "statusCommand": ".ai-team/scripts/Switch-AiTeamMode.ps1 -Status",
+    "command": ".ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-pro",
+    "verifiedMode": "ai-team-pro",
+    "exitCode": 0,
+    "statusExitCode": 0
+  },
+  "receiptValidation": {
+    "oldFailureCause": "Old migrationNames omitted presenter_layout and live_danmaku; canonical validator was unchanged",
+    "input": "docs/live-feature-handoffs/private-chat-db-evidence.json",
+    "command": "node scripts/private-chat-disposable-qa.mjs --verify-receipt",
+    "exitCode": 0
+  },
+  "review": {
+    "boundary": "Independent static review; test execution belongs to local runners",
+    "toolFailures": [
+      "First review relative path did not resolve; not counted as completed review",
+      "One --print argument order error exit 2; corrected explicit --print=prompt returned exit 0"
+    ],
+    "snapshotSha256": "d4184364ecb173f9f1f7e0f59f2451dc03bcc2d73f9520dc6d536a5a5028a456",
+    "model": "claude-sonnet-4-6",
+    "triage": [
+      "authorized instructor list and scoped idempotent replies are not cross-tenant leaks",
+      "answer counts serialized by existing FOR UPDATE",
+      "reader FOR UPDATE blocking confirmed by real DB red test and changed to FOR SHARE",
+      "post-fix RR and duplicate invalidate suggestions rejected after transaction lock and revision sequence review"
+    ],
+    "finalExitCode": 0,
+    "finalReport": "review-final.md",
+    "mode": "plan --sandbox"
+  },
+  "ci": {
+    "method": "version-controlled workflow/scripts/config read only",
+    "newTestsIncludedByFullVitest": true,
+    "productionControlPlaneVerified": false,
+    "pushLintAndUnitConfigured": true,
+    "remoteRunVerified": false,
+    "pushMergeDeploymentPerformed": false,
+    "sources": [
+      ".github/workflows/ci.yml",
+      "scripts/run-combined-coverage.mjs",
+      "scripts/build/controlled-production-build.mjs",
+      "vercel.json",
+      ".github/workflows/secure-staging-validation.yml"
+    ]
+  },
+  "deviceBoundary": "Windows Edge/Chromium with synthetic media and mobile viewport; no physical iOS/Android/Safari validation",
+  "nextDocsRead": [
+    "node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md",
+    "node_modules/next/dist/docs/01-app/02-guides/environment-variables.md",
+    "node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md"
+  ],
+  "presenterFinal": {
+    "command": "node scripts/presenter-checks.mjs",
+    "exitCode": 0,
+    "files": 12,
+    "passed": 161,
+    "failed": 0,
+    "skipped": 0,
+    "receipt": "presenter-checks-final.json"
+  },
+  "browserEntryFinal": {
+    "command": "node scripts/live-feature-browser-checks.mjs --chromium --browser-path C:/Users/eden/AppData/Local/ms-playwright 6",
+    "exitCode": 0,
+    "checks": 13,
+    "receipt": "browser-entry-final.json",
+    "includesFreshMediaArtifactHashAndPorts": true
+  },
+  "finalQuality": {
+    "command": "node scripts/live-integration-checks.mjs",
+    "exitCode": 0,
+    "status": "PASS",
+    "phases": {
+      "generate": 0,
+      "typegen": 0,
+      "typecheck": 0,
+      "lint": 0,
+      "interactions": 0,
+      "live": 0
+    },
+    "receipt": "checks-1789154189638.json",
+    "interactions": {
+      "files": 27,
+      "total": 285,
+      "passed": 285,
+      "skipped": 0,
+      "failed": 0,
+      "sources": [
+        "src/lib/interaction-event.test.ts",
+        "src/lib/live-interaction.test.ts",
+        "src/lib/live-interaction-schema-contract.test.ts",
+        "src/lib/live-question.test.ts",
+        "src/lib/live-question-schema-contract.test.ts",
+        "src/lib/commerce-orders.test.ts",
+        "src/lib/tiered-commission-engine.test.ts",
+        "src/lib/funnel-blocks-schema.test.ts",
+        "src/lib/consultation-slot-engine.test.ts",
+        "src/lib/customer-voucher.test.ts",
+        "src/components/consultation-booking-calendar.test.tsx",
+        "src/components/funnel-builder/funnel-wizard.test.tsx",
+        "src/components/funnel-builder/funnel-canvas-editor.test.tsx",
+        "src/components/live-question-ui-contract.test.ts",
+        "src/components/live-mobile-preview-simulator.test.tsx",
+        "src/components/commission-simulator.test.tsx",
+        "src/components/interaction-script-form.test.tsx",
+        "src/components/live-playback.test.tsx",
+        "src/app/actions/form-actions.test.ts",
+        "src/app/actions/interaction-actions.test.ts",
+        "src/app/actions/consultation-actions.test.ts",
+        "src/app/actions/customer-crm-actions.test.ts",
+        "src/app/api/live-interactions/route.test.ts",
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/(app)/customers/page.test.tsx",
+        "src/app/(viewer)/live/[slug]/page.test.tsx",
+        "src/app/checkout/[vendorId]/[productId]/page.test.tsx"
+      ]
+    },
+    "live": {
+      "files": 30,
+      "total": 348,
+      "passed": 348,
+      "skipped": 0,
+      "failed": 0,
+      "sources": [
+        "src/lib/interaction-card-polling.test.ts",
+        "src/lib/live-chat.test.ts",
+        "src/lib/live-chat-contract.test.ts",
+        "src/lib/live-chat-analytics.test.ts",
+        "src/lib/interaction-card.test.ts",
+        "src/lib/interaction-card-timeline.test.ts",
+        "src/lib/presenter-layout.test.ts",
+        "src/lib/presenter-headers.test.ts",
+        "src/lib/presenter-media.test.ts",
+        "src/lib/presenter-background.test.ts",
+        "src/lib/live-media-client.test.ts",
+        "src/lib/live-media-provider.test.ts",
+        "src/lib/live-playback-source.test.ts",
+        "src/lib/live-video-readiness.test.ts",
+        "src/lib/live-danmaku.test.ts",
+        "src/lib/scripted-roles.test.ts",
+        "src/lib/live-studio-draft.test.ts",
+        "src/lib/live-studio-draft-client.test.ts",
+        "src/components/live-chat-panel.test.tsx",
+        "src/components/live-stepper-form.test.tsx",
+        "src/components/live-playback.test.tsx",
+        "src/components/interaction-script-form.test.tsx",
+        "src/app/api/live-chat/messages/route.test.ts",
+        "src/app/api/live-chat/instructor/route.test.ts",
+        "src/app/api/live-media/route.test.ts",
+        "src/app/api/live-presenter/route.test.ts",
+        "src/app/api/cron/live-media/route.test.ts",
+        "src/app/api/live-admission/route.test.ts",
+        "src/app/api/live-interactions/route.test.ts",
+        "src/app/(viewer)/live/[slug]/page.test.tsx"
+      ]
+    }
+  }
+}

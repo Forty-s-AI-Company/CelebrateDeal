@@ -120,6 +120,34 @@ describe("presenter media lifecycle", () => {
     await expect(controller.startCamera()).rejects.toThrow("關閉");
     expect(() => controller.output()).toThrow("關閉");
   });
+  it("keeps the current camera and microphone when replacement permission is denied", async () => {
+    const current = new Stream([new Track("video"), new Track("audio")]);
+    camera.mockResolvedValueOnce(current).mockRejectedValueOnce(new Error("NotAllowedError"));
+    const controller = createPresenterMedia(canvas, vi.fn());
+    await controller.startCamera(); controller.output();
+    await expect(controller.startCamera()).rejects.toThrow("NotAllowedError");
+    expect(output.getAudioTracks()).toEqual(current.getAudioTracks());
+    expect(videos[0]?.srcObject).toBe(current);
+    for (const track of current.tracks) expect(track.stop).not.toHaveBeenCalled();
+    controller.stop();
+    for (const track of current.tracks) expect(track.stop).toHaveBeenCalledOnce();
+  });
+  it("detaches listeners on replacement so an old source cannot dispose the new source", async () => {
+    const old = new Stream([new Track("video"), new Track("audio")]);
+    const next = new Stream([new Track("video"), new Track("audio")]);
+    camera.mockResolvedValueOnce(old).mockResolvedValueOnce(next);
+    const status = vi.fn(); const controller = createPresenterMedia(canvas, status);
+    await controller.startCamera(); controller.output(); await controller.startCamera();
+    status.mockClear();
+    for (const track of old.tracks) {
+      for (const event of ["ended", "mute", "unmute"]) track.dispatchEvent(new Event(event));
+    }
+    expect(status).not.toHaveBeenCalled();
+    expect(videos[1]?.srcObject).toBe(next);
+    expect(output.getAudioTracks()).toEqual(next.getAudioTracks());
+    for (const track of next.tracks) expect(track.stop).not.toHaveBeenCalled();
+    controller.stop();
+  });
   it("composites transparent output into the broadcast canvas and clears it on camera mute, replacement and stop", async () => {
     const workers: Array<{ send: (data: unknown) => void; terminate: ReturnType<typeof vi.fn> }> = [];
     vi.stubGlobal("Worker", class {
