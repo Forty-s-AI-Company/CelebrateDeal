@@ -42,4 +42,15 @@ describe("MFA start route", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/settings/security?updated=mfa_exists");
   });
+
+  it("keeps the return path while adding the result state", async () => {
+    mocks.startMfaEnrollment.mockResolvedValue({ destination: "/mfa/setup?next=%2Forders", updated: "mfa_started" });
+
+    const response = await POST(new Request("https://app.example.test/api/settings/security/mfa/start", {
+      method: "POST",
+      body: new FormData(),
+    }));
+
+    expect(response.headers.get("location")).toBe("https://app.example.test/mfa/setup?next=%2Forders&updated=mfa_started");
+  });
 });

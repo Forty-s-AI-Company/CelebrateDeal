@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
  * Completes MFA enrollment through a native POST so the final
  * navigation does not depend on Next 16's same-route Server Action reducer.
  */
-export function MfaEnrollmentForm({ csrfField }: { csrfField: ReactNode }) {
+export function MfaEnrollmentForm({ csrfField, nextPath }: { csrfField: ReactNode; nextPath?: string }) {
   const [pending, setPending] = useState(false);
 
   return (
@@ -17,6 +17,7 @@ export function MfaEnrollmentForm({ csrfField }: { csrfField: ReactNode }) {
       className="grid gap-3"
     >
       {csrfField}
+      {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         6 位數驗證碼
         <input
@@ -25,7 +26,7 @@ export function MfaEnrollmentForm({ csrfField }: { csrfField: ReactNode }) {
           autoComplete="one-time-code"
           pattern="[0-9]{6}"
           required
-          className="h-10 rounded-md border border-border px-3 tracking-[0.2em]"
+          className="h-11 rounded-md border border-border px-3 tracking-[0.2em]"
           placeholder="123456"
         />
       </label>

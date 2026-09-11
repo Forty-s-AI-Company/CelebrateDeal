@@ -42,4 +42,15 @@ describe("MFA confirmation route", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/settings/security?error=mfa_code");
   });
+
+  it("keeps the return path when confirmation fails", async () => {
+    mocks.completeMfaEnrollment.mockResolvedValue({ ok: false, destination: "/mfa/setup?next=%2Forders", error: "mfa_code" });
+
+    const response = await POST(new Request("https://app.example.test/api/settings/security/mfa/confirm", {
+      method: "POST",
+      body: new FormData(),
+    }));
+
+    expect(response.headers.get("location")).toBe("https://app.example.test/mfa/setup?next=%2Forders&error=mfa_code");
+  });
 });

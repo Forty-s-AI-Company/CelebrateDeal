@@ -10,8 +10,7 @@ export async function POST(request: Request) {
   const result = await startMfaEnrollment(await request.formData());
   const browserOrigin = request.headers.get("origin");
   const redirectBase = browserOrigin ? new URL(browserOrigin).origin : new URL(request.url).origin;
-  return NextResponse.redirect(
-    new URL(`${result.destination}?updated=${result.updated}`, redirectBase),
-    303,
-  );
+  const destination = new URL(result.destination, redirectBase);
+  destination.searchParams.set("updated", result.updated);
+  return NextResponse.redirect(destination, 303);
 }

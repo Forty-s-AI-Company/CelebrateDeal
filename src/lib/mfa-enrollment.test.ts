@@ -107,6 +107,31 @@ describe("completeMfaEnrollment", () => {
     expect(cookieStore.delete).toHaveBeenCalledWith("mfa_recovery_codes");
   });
 
+  it("preserves a safe return path throughout enrollment", async () => {
+    const formData = new FormData();
+    formData.set("next", "/orders");
+
+    await expect(startMfaEnrollment(formData)).resolves.toEqual({
+      destination: "/mfa/setup?next=%2Forders",
+      updated: "mfa_started",
+    });
+    await expect(completeMfaEnrollment(formData)).resolves.toEqual({
+      ok: true,
+      destination: "/mfa/setup?next=%2Forders",
+    });
+    await expect(dismissMfaRecoveryCodes(formData)).resolves.toEqual({ destination: "/orders" });
+  });
+
+  it("rejects external and backslash return paths", async () => {
+    const formData = new FormData();
+    formData.set("next", "//attacker.example\\orders");
+
+    await expect(startMfaEnrollment(formData)).resolves.toEqual({
+      destination: "/settings/security",
+      updated: "mfa_started",
+    });
+  });
+
   it("does not replace an existing factor and returns a bounded state", async () => {
     mocks.requireAuth.mockResolvedValue({
       user: { id: "owner-1", mfaFactor: { id: "factor-1" } },

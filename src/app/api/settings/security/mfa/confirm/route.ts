@@ -7,15 +7,13 @@ import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
  */
 export async function POST(request: Request) {
   const result = await completeMfaEnrollment(await request.formData());
-  const query = result.ok ? "updated=mfa_enabled" : "error=mfa_code";
   // Next's internal request URL may use the configured canonical host while
   // the browser is using a loopback alias. The origin was already validated by
   // completeMfaEnrollment, so preserve that browser origin for the redirect
   // and keep the session cookie on the same host.
   const browserOrigin = request.headers.get("origin");
   const redirectBase = browserOrigin ? new URL(browserOrigin).origin : new URL(request.url).origin;
-  return NextResponse.redirect(
-    new URL(`${result.destination}?${query}`, redirectBase),
-    303,
-  );
+  const destination = new URL(result.destination, redirectBase);
+  destination.searchParams.set(result.ok ? "updated" : "error", result.ok ? "mfa_enabled" : "mfa_code");
+  return NextResponse.redirect(destination, 303);
 }

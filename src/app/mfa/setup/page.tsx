@@ -33,12 +33,22 @@ const updatedMessages: Record<string, string> = {
   password_reset_smoke: "已寄出 password reset 測試信到目前帳號 Email。",
 };
 
+function safeSetupNext(value: string | undefined) {
+  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : undefined;
+}
+
+function isOrdersReturn(value: string | undefined) {
+  return value === "/orders" || Boolean(value?.startsWith("/orders/"));
+}
+
 export default async function MfaSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
 }) {
   const params = await searchParams;
+  const nextPath = safeSetupNext(params.next);
+  const returningToOrders = isOrdersReturn(nextPath);
   const auth = await requireAuth();
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -71,6 +81,12 @@ export default async function MfaSetupPage({
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">保護你的管理工作區</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">在進入敏感管理操作前，先完成 TOTP 雙重驗證。整個流程只需要驗證器 App 與幾分鐘。</p>
         </div>
+        {returningToOrders ? (
+          <Card className="mb-6 border-blue-200 bg-blue-50/70 p-4 shadow-none">
+            <p className="font-semibold text-slate-950">為什麼現在需要設定？</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">訂單包含買家與履約資訊，因此管理者需先完成雙重驗證。依序掃描 QR Code、輸入 6 位數驗證碼，再保存備援碼；通常約 2–3 分鐘，完成後會返回「訂單與履約」。</p>
+          </Card>
+        ) : null}
         {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "設定失敗。"}</p> : null}
 
@@ -92,7 +108,7 @@ export default async function MfaSetupPage({
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
                 <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
                 <br />
-                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href="/mfa/verify" className="font-semibold underline">二次驗證頁</Link>。
+                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href={nextPath ? `/mfa/verify?next=${encodeURIComponent(nextPath)}` : "/mfa/verify"} className="font-semibold underline">二次驗證頁</Link>。
               </div>
             ) : pendingMfa ? (
               <div className="grid gap-4">
@@ -116,6 +132,7 @@ export default async function MfaSetupPage({
                 </details>
                 <form action="/api/settings/security/mfa/start" method="post" className="justify-self-start">
                   <CsrfField />
+                  {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
                   <FormSubmitButton
                   className="inline-flex min-h-10 items-center text-sm font-semibold text-blue-600 underline underline-offset-4"
                     pendingChildren="重新建立中…"
@@ -124,11 +141,12 @@ export default async function MfaSetupPage({
                     重新建立 TOTP 設定
                   </FormSubmitButton>
                 </form>
-                <MfaEnrollmentForm csrfField={<CsrfField />} />
+                <MfaEnrollmentForm csrfField={<CsrfField />} nextPath={nextPath} />
               </div>
             ) : (
               <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
                 <CsrfField />
+                {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
                 <FormSubmitButton
                   className="h-11 rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
                   pendingChildren="建立中…"
@@ -151,6 +169,7 @@ export default async function MfaSetupPage({
                 </div>
                 <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                   <CsrfField />
+                  {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
                   <FormSubmitButton
                     className="h-10 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
                     pendingChildren="確認中…"

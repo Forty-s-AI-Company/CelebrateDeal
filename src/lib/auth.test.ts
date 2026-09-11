@@ -219,7 +219,7 @@ describe("requireVendorManagerMfa", () => {
       sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null }),
     );
 
-    await expect(requireVendorManagerMfa()).rejects.toThrow("redirect:/mfa/setup");
+    await expect(requireVendorManagerMfa()).rejects.toThrow("redirect:/mfa/setup?next=%2Forders");
   });
 
   it("requires current-session MFA and rejects an external next path", async () => {

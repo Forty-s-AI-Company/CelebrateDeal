@@ -259,7 +259,8 @@ export async function requireVendorManagerMfa(nextPath = "/orders") {
   const { auth, vendor } = await requireVendorManagerContext();
 
   if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
+    const safeNext = safeMfaNextPath(nextPath, "/orders");
+    redirect(`/mfa/setup?next=${encodeURIComponent(safeNext)}`);
   }
 
   if (!auth.isMfaVerified) {

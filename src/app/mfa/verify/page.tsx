@@ -10,7 +10,7 @@ const errorMessages: Record<string, string> = {
 };
 
 function safeInternalPath(value: string | undefined) {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/admin/billing/dashboard";
+  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/admin/billing/dashboard";
 }
 
 export default async function MfaVerifyPage({
@@ -20,6 +20,8 @@ export default async function MfaVerifyPage({
 }) {
   const params = await searchParams;
   await requireAuth();
+  const nextPath = safeInternalPath(params.next);
+  const returningToOrders = nextPath === "/orders" || nextPath.startsWith("/orders/");
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4">
@@ -27,12 +29,13 @@ export default async function MfaVerifyPage({
         <div className="mb-6">
           <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">管理員二次驗證</h1>
-          <p className="mt-2 text-sm text-slate-600">輸入 TOTP 驗證碼，或使用尚未用過的 recovery code。</p>
+          <p className="mt-2 text-sm text-slate-600">{returningToOrders ? "訂單包含買家與履約資訊，因此需要再次確認身分。" : "輸入 TOTP 驗證碼，或使用尚未用過的 recovery code。"}</p>
+          <p className="mt-2 text-xs text-slate-500">完成後會返回「{returningToOrders ? "訂單與履約" : "原管理頁面"}」，通常不到 1 分鐘。</p>
         </div>
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "驗證失敗。"}</p> : null}
         <form action={verifyMfaAction} className="grid gap-4">
           <CsrfField />
-          <input type="hidden" name="next" value={safeInternalPath(params.next)} />
+          <input type="hidden" name="next" value={nextPath} />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             驗證碼
             <input name="code" autoComplete="one-time-code" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456 或 ABCDE-12345" />

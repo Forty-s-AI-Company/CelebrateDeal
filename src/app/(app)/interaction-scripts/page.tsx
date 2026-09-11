@@ -32,14 +32,14 @@ export default async function InteractionScriptsPage({
     take: pageSize,
     include: { events: { orderBy: { triggerSec: "asc" } }, lives: { include: { video: true } } },
   });
-  const scriptStatusLabels: Record<string, string> = { draft: "草稿", active: "啟用中", archived: "已封存" };
+  const scriptStatusLabels: Record<string, string> = { draft: "草稿", published: "已發布", archived: "已封存" };
 
   return (
     <>
       <PageHeader title="留言組" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增留言組</ButtonLink>} />
       <ListSummary items={[
         { label: "留言組總數", value: <span className="tabular-nums">{totalItems}</span>, hint: "所有腳本" },
-        { label: "啟用中", value: <span className="tabular-nums">{scripts.filter((script) => script.status === "active").length}</span>, hint: "可套用到直播" },
+        { label: "已發布", value: <span className="tabular-nums">{scripts.filter((script) => script.status === "published").length}</span>, hint: "可套用到直播" },
         { label: "已綁定直播", value: <span className="tabular-nums">{scripts.filter((script) => script.lives.length > 0).length}</span>, hint: "目前頁面結果" },
       ]} />
       {params.error === "invalid_event" ? (
@@ -91,7 +91,7 @@ export default async function InteractionScriptsPage({
                       <p className="mt-1 text-sm text-slate-500">{script.description ?? "未填寫說明"}</p>
                     </div>
                     <div className="flex gap-2">
-                      <Badge tone={script.status === "active" ? "green" : script.status === "archived" ? "gray" : "blue"}>{scriptStatusLabels[script.status] ?? "未分類"}</Badge>
+                      <Badge tone={script.status === "published" ? "green" : script.status === "archived" ? "gray" : "blue"}>{scriptStatusLabels[script.status] ?? "未分類"}</Badge>
                       <Badge tone="blue"><span className="tabular-nums">{script.events.length}</span> 句</Badge>
                       <Badge tone="gray"><span className="tabular-nums">{script.lives.length}</span> 場直播</Badge>
                     </div>

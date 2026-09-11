@@ -33,8 +33,8 @@ beforeEach(() => {
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.count.mockResolvedValue(21);
   mocks.findMany.mockResolvedValue([
-    { id: "script-1", name: "開場節奏", description: "暖場與 CTA", status: "PUBLISHED", events: [{ id: "event-1", triggerSec: 12, title: "歡迎" }], lives: [{ title: "八月直播", video: { thumbnailUrl: "https://cdn.example.test/thumb.jpg", title: "精華片段" } }] },
-    { id: "script-2", name: "草稿節奏", description: null, status: "DRAFT", events: [], lives: [{ title: null, video: null }] },
+    { id: "script-1", name: "開場節奏", description: "暖場與 CTA", status: "published", events: [{ id: "event-1", triggerSec: 12, title: "歡迎" }], lives: [{ title: "八月直播", video: { thumbnailUrl: "https://cdn.example.test/thumb.jpg", title: "精華片段" } }] },
+    { id: "script-2", name: "草稿節奏", description: null, status: "draft", events: [], lives: [{ title: null, video: null }] },
   ]);
 });
 
@@ -50,6 +50,9 @@ describe("/interaction-scripts route", () => {
     });
     expect(html).toContain("留言組");
     expect(html).toContain("開場節奏");
+    expect(html).toContain('已發布<span class="tabular-nums">1</span>');
+    expect(html).toContain("已發布");
+    expect(html).not.toContain("未分類");
     expect(html).toContain("12s · 歡迎");
     expect(html).toContain("/interaction-scripts/script-1/edit");
     expect(html).toContain("https://cdn.example.test/thumb.jpg");
