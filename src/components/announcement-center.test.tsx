@@ -9,6 +9,7 @@ describe("AnnouncementCenter", () => {
 
     expect(html).toContain("最新消息");
     expect(html).toContain('data-testid="announcement-center-launcher"');
+    expect(html).toContain("max-sm:static");
     expect(html).not.toContain('role="dialog"');
     expect(html).not.toContain("localStorage");
   });

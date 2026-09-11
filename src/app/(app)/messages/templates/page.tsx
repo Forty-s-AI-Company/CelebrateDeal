@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { MESSAGE_TEMPLATE_TRIGGERS } from "@/lib/message-template";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -107,6 +107,11 @@ export default async function MessageTemplatesPage({
           模板已儲存。使用這份模板的直播提醒正在分批更新，舊的未寄送版本會保留為已被取代。
         </p>
       ) : null}
+      <ListSummary items={[
+        { label: hasFilters ? "目前結果" : "模板總數", value: templates.length, hint: hasFilters ? "符合目前篩選" : "最多顯示 100 筆" },
+        { label: "啟用中", value: templates.filter((template) => template.isActive).length, hint: "可被事件觸發" },
+        { label: "已停用", value: templates.filter((template) => !template.isActive).length, hint: "不會建立新寄送" },
+      ]} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px_auto_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
@@ -145,6 +150,10 @@ export default async function MessageTemplatesPage({
           <button type="submit" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark">搜尋</button>
           {hasFilters ? <Link href="/messages/templates" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">清除篩選</Link> : null}
         </form>
+      </Card>
+      <Card className="mb-5 grid gap-3 sm:grid-cols-2">
+        <div><p className="text-sm font-semibold text-slate-900">最近活動</p><p className="mt-1 text-sm text-slate-700">目前清單依建立時間排序，最新模板會優先顯示。</p></div>
+        <div><p className="text-sm font-semibold text-slate-900">建議下一步</p><p className="mt-1 text-sm text-slate-700">確認啟用模板的觸發條件與內容，再到寄送紀錄查看實際投遞狀態。</p></div>
       </Card>
       {templates.length === 0 ? (
         <EmptyState

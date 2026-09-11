@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ interactionRole: { findMany: mocks.
 vi.mock("@/app/actions", () => ({ importSystemRolesAction: mocks.importAction }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrfToken" value="synthetic" /> }));
 vi.mock("@/components/interaction-roles-workbench", () => ({ InteractionRolesWorkbench: ({ roles, csrfToken, error }: { roles: unknown; csrfToken: string; error?: string | null }) => <div data-testid="roles-workbench">{JSON.stringify({ roles, csrfToken, error })}</div> }));
-vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{action}</header> }));
+vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{action}</header>, ListSummary: ({ items }: { items: Array<{ label: string; value: ReactNode }> }) => <div>{items.map((item) => <span key={item.label}>{item.label}{item.value}</span>)}</div> }));
 
 import InteractionRolesPage from "./page";
 

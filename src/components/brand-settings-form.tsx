@@ -255,15 +255,14 @@ export function BrandSettingsForm({
         </p>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          品牌名稱
-          <input name="name" required value={values.name} onChange={updateValue("name")} className={inputClassName} />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          品牌 Slug
-          <input name="slug" required value={values.slug} onChange={updateValue("slug")} className={inputClassName} />
-        </label>
+      <fieldset className="grid gap-4 rounded-xl border border-slate-200 p-4">
+        <legend className="px-1 text-base font-semibold text-slate-950">品牌外觀</legend>
+        <p className="-mt-2 text-xs text-slate-500">設定訪客在公開直播頁看到的名稱、色彩與 Logo。</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            品牌名稱
+            <input name="name" required value={values.name} onChange={updateValue("name")} className={inputClassName} />
+          </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           主要色
           <span className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
@@ -284,13 +283,13 @@ export function BrandSettingsForm({
             </output>
           </span>
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          時區
-          <select name="timezone" required value={values.timezone} onChange={updateValue("timezone")} className={inputClassName}>
-            {timezoneOptions.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
-          </select>
-          <span className="text-xs font-normal text-slate-500">依工作區所在地選擇；系統會以 IANA 時區儲存。</span>
-        </label>
+        </div>
+      </fieldset>
+
+      <fieldset className="grid gap-4 rounded-xl border border-slate-200 p-4">
+        <legend className="px-1 text-base font-semibold text-slate-950">公開聯絡資訊</legend>
+        <p className="-mt-2 text-xs text-slate-500">這些資訊會提供給參與者與郵件收件人辨識品牌。</p>
+        <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           客服 Email
           <input name="supportEmail" type="email" value={values.supportEmail} onChange={updateValue("supportEmail")} className={inputClassName} />
@@ -305,27 +304,49 @@ export function BrandSettingsForm({
           <input name="contactUrl" type="url" maxLength={2048} placeholder="https://example.com/contact" value={values.contactUrl} onChange={updateValue("contactUrl")} className={inputClassName} />
           <span className="text-xs font-normal text-slate-500">僅接受 HTTPS 絕對網址；不接受帳密、本機或內部 IP。</span>
         </label>
-      </div>
+        </div>
+      </fieldset>
 
-      <MediaUploadField
-        kind="image"
-        label="品牌 Logo"
-        description="直接上傳品牌 Logo；完成後儲存表單即可套用。"
-        defaultUrl={values.logoUrl}
-        defaultAssetId={values.logoAssetId ?? ""}
-        urlInputName="logoUrl"
-        assetIdInputName="logoAssetId"
-        statusInputName="logoUploadPhase"
-        allowExternalUrlFallback
-        onValueChange={(media: MediaUploadPersistedValue) => {
-          setEditedValues((current) => ({
-            ...current,
-            logoUrl: media.url,
-            logoAssetId: media.assetId || undefined,
-          }));
-        }}
-        onBlockingChange={setLogoUploadBlocked}
-      />
+      <details className="rounded-xl border border-slate-200 p-4">
+        <summary className="cursor-pointer text-base font-semibold text-slate-950">進階設定</summary>
+        <p className="mt-1 text-xs text-slate-500">供網址路由與系統時間處理使用，一般品牌編輯不需調整。</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            公開網址 Slug
+            <input name="slug" required value={values.slug} onChange={updateValue("slug")} className={inputClassName} />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            工作區時區
+            <select name="timezone" required value={values.timezone} onChange={updateValue("timezone")} className={inputClassName}>
+              {timezoneOptions.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
+            </select>
+            <span className="text-xs font-normal text-slate-500">系統會以 IANA 時區儲存。</span>
+          </label>
+        </div>
+      </details>
+
+      <fieldset className="grid gap-4 rounded-xl border border-slate-200 p-4">
+        <legend className="px-1 text-base font-semibold text-slate-950">品牌 Logo</legend>
+        <MediaUploadField
+          kind="image"
+          label="上傳 Logo"
+          description="完成上傳後儲存表單即可套用。"
+          defaultUrl={values.logoUrl}
+          defaultAssetId={values.logoAssetId ?? ""}
+          urlInputName="logoUrl"
+          assetIdInputName="logoAssetId"
+          statusInputName="logoUploadPhase"
+          allowExternalUrlFallback
+          onValueChange={(media: MediaUploadPersistedValue) => {
+            setEditedValues((current) => ({
+              ...current,
+              logoUrl: media.url,
+              logoAssetId: media.assetId || undefined,
+            }));
+          }}
+          onBlockingChange={setLogoUploadBlocked}
+        />
+      </fieldset>
 
       {logoUploadBlocked ? (
         <p role="alert" aria-live="assertive" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

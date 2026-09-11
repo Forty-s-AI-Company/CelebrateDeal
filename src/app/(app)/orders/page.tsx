@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { COMMERCE_ORDER_STATUSES, type CommerceOrderStatus } from "@/lib/commerce-order-domain";
 import { requireVendorManagerMfa } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -32,6 +32,7 @@ export default async function OrdersPage({ searchParams }: {
   const search = rawSearch?.trim().slice(0, 128) ?? "";
   const rawProductId = Array.isArray(query?.productId) ? query.productId[0] : query?.productId;
   const productId = rawProductId && /^[A-Za-z0-9_-]{1,160}$/u.test(rawProductId) ? rawProductId : "";
+  const hasFilters = Boolean(status || search || productId);
   const orders = await getDb().commerceOrder.findMany({
     where: {
       vendorId: vendor.id,
@@ -43,10 +44,19 @@ export default async function OrdersPage({ searchParams }: {
     orderBy: { createdAt: "desc" },
     take: 100,
   });
+  const paidCount = orders.filter((order) => order.status === "paid").length;
+  const actionNeededCount = orders.filter((order) => ["pending_payment", "payment_failed", "partially_refunded"].includes(order.status)).length;
+  const filteredTotal = orders.reduce((sum, order) => sum + order.totalAmountCents, 0);
 
   return (
     <>
       <PageHeader title="訂單與履約" description="從付款確認一路追蹤出貨、數位授權、服務排程與退款狀態。" />
+      <ListSummary items={[
+        { label: hasFilters ? "符合條件" : "近期訂單", value: orders.length, hint: "目前列表最多顯示 100 筆" },
+        { label: "已付款", value: paidCount, hint: "依目前篩選結果統計" },
+        { label: "需要留意", value: actionNeededCount, hint: "待付款、付款失敗或部分退款" },
+        { label: "列表金額", value: formatCurrency(filteredTotal), hint: "依目前篩選結果加總" },
+      ]} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
           {productId ? <input type="hidden" name="productId" value={productId} /> : null}
@@ -62,13 +72,13 @@ export default async function OrdersPage({ searchParams }: {
           <button className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white">篩選</button>
         </form>
       </Card>
-      {orders.length === 0 ? <EmptyState title="沒有符合條件的訂單" description="買家完成結帳後，canonical 訂單會顯示在這裡。" /> : (
+      {orders.length === 0 ? <EmptyState title={hasFilters ? "沒有符合條件的訂單" : "還沒有訂單"} description={hasFilters ? "調整搜尋或狀態條件後再試；目前沒有符合條件的真實訂單。" : "買家完成結帳後，訂單會出現在這裡；你可以先確認商品與直播頁是否已準備完成。"} action={hasFilters ? <ButtonLink href="/orders" tone="secondary">清除篩選</ButtonLink> : <ButtonLink href="/products">前往商品管理</ButtonLink>} secondaryAction={!hasFilters ? <ButtonLink href="/lives" tone="secondary">查看直播間</ButtonLink> : undefined} /> : (
         <div className="grid gap-3">
           {orders.map((order) => (
             <Link key={order.id} href={`/orders/${encodeURIComponent(order.id)}`} className="rounded-lg border border-border bg-white p-4 shadow-sm transition hover:bg-slate-50">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><h2 className="font-semibold text-slate-950">{order.orderNumber}</h2><p className="mt-1 text-sm text-slate-500">{order.buyerMaskedName} · {order.buyerMaskedEmail}</p></div>
-                <div className="text-right"><Badge tone={tone(order.status)}>{statusLabels[order.status]}</Badge><p className="mt-2 font-semibold">{formatCurrency(order.totalAmountCents, order.currency)}</p></div>
+                <div className="text-right"><Badge tone={tone(order.status)}>{statusLabels[order.status]}</Badge><p className="mt-2 font-semibold tabular-nums">{formatCurrency(order.totalAmountCents, order.currency)}</p></div>
               </div>
               <p className="mt-3 text-sm text-slate-600">{order.items.map((item) => `${item.productName} × ${item.quantity}`).join("、")}</p>
               <p className="mt-2 text-xs text-slate-500">{order.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</p>

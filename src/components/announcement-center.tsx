@@ -233,7 +233,7 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
     <>
       <button
         aria-label="開啟最新消息"
-        className="fixed bottom-4 right-4 z-[90] inline-flex min-h-11 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-700 focus-visible:outline-4 focus-visible:outline-blue-500 motion-reduce:transition-none"
+        className="fixed bottom-4 right-4 z-[90] inline-flex min-h-11 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-700 focus-visible:outline-4 focus-visible:outline-blue-500 motion-reduce:transition-none max-sm:static max-sm:mb-3 max-sm:ml-auto max-sm:mr-3 max-sm:flex max-sm:w-fit"
         data-testid="announcement-center-launcher"
         onClick={openCenter}
         ref={launcherRef}

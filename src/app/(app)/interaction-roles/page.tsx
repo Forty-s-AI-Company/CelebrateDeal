@@ -2,7 +2,7 @@ import { importSystemRolesAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { InteractionRolesWorkbench } from "@/components/interaction-roles-workbench";
-import { PageHeader } from "@/components/ui";
+import { ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -37,6 +37,11 @@ export default async function InteractionRolesPage({
           </form>
         }
       />
+      <ListSummary items={[
+        { label: "角色總數", value: <span className="tabular-nums">{roles.length}</span>, hint: "目前商店角色" },
+        { label: "可用角色", value: <span className="tabular-nums">{roles.filter((role) => role.isActive).length}</span>, hint: "可套用到腳本" },
+        { label: "已停用", value: <span className="tabular-nums">{roles.filter((role) => !role.isActive).length}</span>, hint: "保留設定" },
+      ]} />
       <InteractionRolesWorkbench
         key="new-role"
         roles={roles}

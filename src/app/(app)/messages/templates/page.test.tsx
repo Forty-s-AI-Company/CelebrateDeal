@@ -17,6 +17,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/components/ui", () => ({
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  ListSummary: ({ items }: { items: Array<{ label: string; value: ReactNode }> }) => <div data-testid="list-summary">{items.map((item) => <span key={item.label}>{item.label}:{item.value}</span>)}</div>,
   ButtonLink: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   EmptyState: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <div data-testid="empty-state"><h2>{title}</h2><p>{description}</p>{action}</div>,

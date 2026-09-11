@@ -1,7 +1,7 @@
 import { upsertBlacklistAction } from "@/app/actions";
 import { BlacklistSearchList } from "@/components/blacklist-search-list";
 import { CsrfField } from "@/components/csrf-field";
-import { Card, Field, PageHeader, SubmitButton, TextArea } from "@/components/ui";
+import { Card, Field, ListSummary, PageHeader, SubmitButton, TextArea } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -33,6 +33,11 @@ export default async function BlacklistsPage({
   return (
     <>
       <PageHeader title="黑名單管理" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
+      <ListSummary items={[
+        { label: "名單總數", value: <span className="tabular-nums">{entries.length}</span>, hint: "目前商店紀錄" },
+        { label: "封鎖中", value: <span className="tabular-nums">{entries.filter((entry) => entry.isActive).length}</span>, hint: "仍會阻擋互動" },
+        { label: "已解除", value: <span className="tabular-nums">{entries.filter((entry) => !entry.isActive).length}</span>, hint: "保留歷史紀錄" },
+      ]} />
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">新增封鎖項目</h2>

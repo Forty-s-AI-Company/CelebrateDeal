@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { SupportCasePriority, SupportCaseStatus } from "@prisma/client";
 
-import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
 import { requireVendorSupportMfa } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
@@ -60,6 +60,12 @@ export default async function SupportCasesPage({ searchParams }: {
   return (
     <>
       <PageHeader title="客服案件" description="集中處理訂單問題、指派 owner、保存加密紀錄，並把退款需求安全交接到平台財務。" />
+      <ListSummary items={[
+        { label: "目前案件", value: <span className="tabular-nums">{cases.length}</span>, hint: "符合目前篩選" },
+        { label: "待受理", value: <span className="tabular-nums">{cases.filter((item) => item.status === "open").length}</span>, hint: "需要安排 owner" },
+        { label: "處理中", value: <span className="tabular-nums">{cases.filter((item) => item.status === "in_progress").length}</span>, hint: "團隊正在跟進" },
+        { label: "高優先", value: <span className="tabular-nums">{cases.filter((item) => item.priority === "p0" || item.priority === "p1").length}</span>, hint: "P0 / P1" },
+      ]} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 lg:grid-cols-[1fr_200px_200px_auto] lg:items-end">
           <label className="grid gap-1 text-sm font-medium text-slate-700">案件／訂單編號
@@ -74,7 +80,7 @@ export default async function SupportCasesPage({ searchParams }: {
           <label className="grid gap-1 text-sm font-medium text-slate-700">優先等級
             <select name="priority" defaultValue={priority ?? ""} className="min-h-11 rounded-md border border-slate-300 bg-white px-3">
               <option value="">全部等級</option>
-              {SUPPORT_CASE_PRIORITIES.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+              {SUPPORT_CASE_PRIORITIES.map((value) => <option key={value} value={value}>{value === "p0" ? "P0｜緊急" : value === "p1" ? "P1｜高" : value === "p2" ? "P2｜一般" : "P3｜低"}</option>)}
             </select>
           </label>
           <button className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white">篩選</button>

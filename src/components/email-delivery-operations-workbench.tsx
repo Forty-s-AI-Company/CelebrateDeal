@@ -7,7 +7,7 @@ import {
   type EmailDeliveryOperationsActionState,
 } from "@/app/actions/email-delivery-operations-actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Card, ListSummary } from "@/components/ui";
 import { EMAIL_DELIVERY_QUERY_MAX_LENGTH } from "@/lib/email-delivery-operations-contract";
 
 type EmailDeliveryListItem = NonNullable<EmailDeliveryOperationsActionState["result"]>["items"][number];
@@ -148,12 +148,12 @@ export function EmailDeliveryOperationsWorkbench({
       {csrfField}
       <input type="hidden" name="currentPage" value={result.page} />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><p className="text-sm text-slate-500">全部寄送</p><p className="mt-2 text-2xl font-bold text-slate-950">{Object.entries(result.counts).filter(([key]) => key !== "activeSuppressions").reduce((sum, [, count]) => sum + count, 0)}</p></Card>
-        <Card><p className="text-sm text-slate-500">需要注意</p><p className="mt-2 text-2xl font-bold text-orange-700">{attentionCount}</p></Card>
-        <Card><p className="text-sm text-slate-500">已寄送</p><p className="mt-2 text-2xl font-bold text-green-700">{result.counts.sent ?? 0}</p></Card>
-        <Card><p className="text-sm text-slate-500">有效退訂</p><p className="mt-2 text-2xl font-bold text-slate-700">{result.counts.activeSuppressions ?? 0}</p></Card>
-      </div>
+      <ListSummary items={[
+        { label: "全部寄送", value: Object.entries(result.counts).filter(([key]) => key !== "activeSuppressions").reduce((sum, [, count]) => sum + count, 0), hint: "目前資料範圍" },
+        { label: "需要注意", value: attentionCount, hint: "失敗或耗盡" },
+        { label: "已寄送", value: result.counts.sent ?? 0, hint: "完成投遞" },
+        { label: "有效退訂", value: result.counts.activeSuppressions ?? 0, hint: "不會寄送通知" },
+      ]} />
 
       <Card>
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><SlidersHorizontal size={17} aria-hidden="true" />查找寄送紀錄</div>
@@ -204,6 +204,10 @@ export function EmailDeliveryOperationsWorkbench({
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">完整 Email 只會在伺服器端轉成商家專屬雜湊後精確比對，不會寫入網址、寄送紀錄或畫面結果。</p>
+      </Card>
+      <Card className="grid gap-3 sm:grid-cols-2">
+        <div><p className="text-sm font-semibold text-slate-900">最近活動</p><p className="mt-1 text-sm text-slate-700">結果依建立時間排序；收件地址維持遮罩。</p></div>
+        <div><p className="text-sm font-semibold text-slate-900">建議下一步</p><p className="mt-1 text-sm text-slate-700">優先處理需要注意的紀錄；重新排程前仍會再次檢查退訂與來源狀態。</p></div>
       </Card>
 
       {state.status !== "idle" && state.message ? (

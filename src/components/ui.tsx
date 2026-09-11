@@ -18,7 +18,7 @@ export function PageHeader({
         <h1 className="text-2xl font-bold tracking-tight text-slate-950 [overflow-wrap:anywhere] sm:text-[1.75rem]">{title}</h1>
         {description ? <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600 [overflow-wrap:anywhere]">{description}</p> : null}
       </div>
-      {action}
+      {action ? <div className="w-full sm:w-auto [&>*]:w-full sm:[&>*]:w-auto">{action}</div> : null}
     </header>
   );
 }
@@ -238,7 +238,7 @@ export function EmptyState({ title, description, action, secondaryAction, icon }
       </div>
       <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
       <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">{description}</p>
-      {action || secondaryAction ? <div className="mt-5 flex flex-wrap items-center justify-center gap-2">{action}{secondaryAction}</div> : null}
+      {action || secondaryAction ? <div className="mt-5 flex w-full max-w-md flex-col items-stretch justify-center gap-2 sm:w-auto sm:max-w-none sm:flex-row sm:items-center [&>*]:w-full sm:[&>*]:w-auto">{action}{secondaryAction}</div> : null}
     </Card>
   );
 }
