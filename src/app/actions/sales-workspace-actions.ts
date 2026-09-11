@@ -104,7 +104,7 @@ export async function controlOnboardingGuideAction(control: "hide" | "remind" | 
   revalidatePath("/", "layout");
 }
 
-export async function setOnboardingTaskStatusAction(scopeKey: string, taskKey: string, status: "in_progress" | "skipped" | "needs_attention" | "archived") {
+export async function setOnboardingTaskStatusAction(scopeKey: string, taskKey: string, status: "not_started" | "in_progress" | "skipped" | "needs_attention" | "archived") {
   await assertServerActionOrigin();
   const { vendor } = await requireVendorManagerContext();
   const project = scopeKey === "workspace" ? null : await getDb().salesProject.findFirst({ where: { id: scopeKey, vendorId: vendor.id }, select: { id: true } });
@@ -114,4 +114,5 @@ export async function setOnboardingTaskStatusAction(scopeKey: string, taskKey: s
   if (!definition) throw new Error("task_not_found");
   await getDb().onboardingTaskState.upsert({ where: { vendorId_scopeKey_taskKey: { vendorId: vendor.id, scopeKey, taskKey } }, create: { vendorId: vendor.id, projectId: project?.id ?? null, scopeKey, taskKey, status, skipImpact: status === "skipped" ? definition.skipImpact : null, archivedAt: status === "archived" ? new Date() : null }, update: { status, skipImpact: status === "skipped" ? definition.skipImpact : null, archivedAt: status === "archived" ? new Date() : null } });
   revalidatePath("/", "layout");
+  revalidatePath("/onboarding");
 }

@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ requireVendorManagerMfa: vi.fn(), findMany: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireVendorManagerMfa: mocks.requireVendorManagerMfa }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: vi.fn().mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true }), salesScopeDescription: () => "目前資料範圍：商家" }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ commerceOrder: { findMany: mocks.findMany } }) }));
 
 import OrdersPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManagerMfa.mockResolvedValue({ vendor: { id: "vendor-1" } });
+  mocks.requireVendorManagerMfa.mockResolvedValue({ user: { id: "user-1" }, vendor: { id: "vendor-1", name: "商家" } });
   mocks.findMany.mockResolvedValue([]);
 });
 

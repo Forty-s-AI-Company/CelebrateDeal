@@ -2,7 +2,8 @@ import { CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
 
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { OnboardingTaskCenter } from "@/components/onboarding-task-center";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
@@ -15,11 +16,90 @@ import {
   countSellableLiveReadinessCandidates,
   sellableLiveReadinessQuery,
 } from "@/lib/sellable-live";
+import { evaluateProjectOnboarding, evaluateWorkspaceOnboarding } from "@/lib/sales-workspace";
+
+function taskHref(taskKey: string) {
+  if (taskKey.includes("payment")) return "/billing/payment-methods";
+  if (taskKey.includes("logo") || taskKey.includes("profile") || taskKey.includes("support")) return "/settings/brand";
+  if (taskKey.includes("team")) return "/settings/team";
+  if (taskKey.includes("product") || taskKey.includes("price")) return "/products/new";
+  if (taskKey.includes("funnel")) return "/forms/new";
+  if (taskKey.includes("live")) return "/lives/new";
+  if (taskKey.includes("consultation") || taskKey.includes("availability")) return "/consultations";
+  return "/onboarding";
+}
 
 export default async function OnboardingPage() {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
   const db = getDb();
   const now = new Date();
+  const [preference, projects] = await Promise.all([
+    db.userOnboardingPreference.findUnique({
+      where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } },
+    }),
+    db.salesProject.findMany({
+      where: { vendorId: vendor.id, status: { not: "archived" } },
+      select: { id: true, name: true, primaryFlow: true, publishedAt: true },
+    }),
+  ]);
+  const selectedProject = projects.find((project) => project.id === preference?.selectedProjectId) ?? null;
+  const scopeKey = selectedProject?.id ?? "workspace";
+  const taskStates = await db.onboardingTaskState.findMany({
+    where: { vendorId: vendor.id, scopeKey },
+    select: { taskKey: true, status: true, skipImpact: true, archivedAt: true },
+  });
+  const taskProgress = selectedProject
+    ? await (async () => {
+      const [productLinks, pricedProducts, forms, lives, consultations, paymentMethods] = await Promise.all([
+        db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
+        db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, product: { priceCents: { gt: 0 } } } }),
+        db.registrationForm.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true, templateId: { not: null } } }),
+        db.live.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
+        db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true }, select: { weeklySchedule: true } }),
+        db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+      ]);
+      const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const ranges = (entry as { ranges?: unknown }).ranges;
+        return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+      }));
+      return evaluateProjectOnboarding(selectedProject.primaryFlow, {
+        exists: true,
+        hasLinkedProduct: productLinks > 0,
+        hasPricedProduct: pricedProducts > 0,
+        hasFunnelTemplate: forms > 0,
+        hasLiveSession: lives > 0,
+        hasConsultationService: consultations.length > 0,
+        hasAvailability,
+        hasPaymentMethod: paymentMethods > 0,
+        hasPreviewableFlow: productLinks > 0 && (forms > 0 || lives > 0 || consultations.length > 0),
+        isPublished: Boolean(selectedProject.publishedAt),
+      }, taskStates);
+    })()
+    : await (async () => {
+      const [payments, members] = await Promise.all([
+        db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+        db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
+      ]);
+      return evaluateWorkspaceOnboarding({
+        hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()),
+        hasLogo: Boolean(vendor.logoUrl),
+        hasPaymentMethod: payments > 0,
+        hasSupportContact: Boolean(vendor.supportEmail?.trim()),
+        hasInvitedTeamMember: members > 1,
+        // A test order needs a canonical local/sandbox marker; do not infer it from real orders.
+        hasTestOrder: false,
+      }, taskStates);
+    })();
+  const taskCenterTasks = taskProgress.tasks.map((task) => ({
+    key: task.key,
+    title: task.title,
+    status: task.status,
+    estimateMinutes: task.estimatedMinutes,
+    href: taskHref(task.key),
+    required: task.required,
+    impact: task.impact,
+  }));
   const [
     verifiedVendorPaymentMethodCount,
     sellableProductCount,
@@ -85,7 +165,14 @@ export default async function OnboardingPage() {
         ) : undefined}
       />
 
-      <Card>
+      <OnboardingTaskCenter
+        scopeKey={scopeKey}
+        scopeLabel={selectedProject ? `銷售專案：${selectedProject.name}` : "商家 Workspace"}
+        tasks={taskCenterTasks}
+        guideStopped={Boolean(preference?.guideDismissedAt)}
+      />
+
+      <Card className="mt-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-medium text-slate-500">可販售準備進度</p>

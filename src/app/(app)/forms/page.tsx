@@ -1,8 +1,10 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { SalesScopeNotice } from "@/components/sales-scope-notice";
 
 type FormsSearchParams = {
   q?: string | string[];
@@ -29,7 +31,8 @@ export default async function FormsPage({
 }: {
   searchParams: Promise<FormsSearchParams>;
 }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const database = getDb();
   const query = await searchParams;
   const search = normalizeQuery(query.q);
@@ -37,6 +40,7 @@ export default async function FormsPage({
   const forms = await database.registrationForm.findMany({
     where: {
       vendorId: vendor.id,
+      ...(scope.projectId ? { projectId: scope.projectId } : {}),
       ...(search
         ? {
             OR: [
@@ -77,7 +81,8 @@ export default async function FormsPage({
 
   return (
     <>
-      <PageHeader title="報名表管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
+      <PageHeader title="報名表管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={!scope.isAggregate ? <ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink> : undefined} />
+      <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
       <ListSummary items={[
         { label: hasFilters ? "目前結果" : "表單總數", value: forms.length, hint: hasFilters ? "符合篩選條件" : "目前工作區" },
         { label: "啟用中", value: forms.filter((form) => form.isActive).length, hint: "可公開收集名單" },

@@ -176,7 +176,9 @@ function summarize(tasks: EvaluatedOnboardingTask[]): OnboardingProgress {
   const completedCount = tasks.filter((task) => task.status === "completed").length;
   const skippedCount = tasks.filter((task) => task.status === "skipped").length;
   const nextTask = tasks.find((task) => !["completed", "skipped", "archived"].includes(task.status)) ?? null;
-  return { tasks, completedCount, skippedCount, totalCount: tasks.length, nextTask, isComplete: tasks.every((task) => ["completed", "skipped", "archived"].includes(task.status)) };
+  // Skipping or archiving dismisses a prompt; it never proves that the
+  // underlying merchant setup is complete.
+  return { tasks, completedCount, skippedCount, totalCount: tasks.length, nextTask, isComplete: tasks.every((task) => task.status === "completed") };
 }
 
 /** Evaluates Workspace task progress exclusively from source-of-truth signals. */

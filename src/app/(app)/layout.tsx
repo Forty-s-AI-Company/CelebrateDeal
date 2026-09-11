@@ -26,17 +26,22 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, product: { priceCents: { gt: 0 } } } }),
       db.registrationForm.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true, templateId: { not: null } } }),
       db.live.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
-      db.consultationEvent.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true } }),
-      db.paymentMethodReference.count({ where: { vendorId: vendor.id, status: "verified" } }),
+      db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true }, select: { weeklySchedule: true } }),
+      db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
     ]);
-    taskProgress = evaluateProjectOnboarding(selectedProject.primaryFlow, { exists: true, hasLinkedProduct: productLinks > 0, hasPricedProduct: pricedProducts > 0, hasFunnelTemplate: forms > 0, hasLiveSession: lives > 0, hasConsultationService: consultations > 0, hasAvailability: false, hasPaymentMethod: paymentMethods > 0, hasPreviewableFlow: productLinks > 0 && (forms > 0 || lives > 0 || consultations > 0), isPublished: Boolean(selectedProject.publishedAt) }, states);
+    const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+      const ranges = (entry as { ranges?: unknown }).ranges;
+      return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+    }));
+    taskProgress = evaluateProjectOnboarding(selectedProject.primaryFlow, { exists: true, hasLinkedProduct: productLinks > 0, hasPricedProduct: pricedProducts > 0, hasFunnelTemplate: forms > 0, hasLiveSession: lives > 0, hasConsultationService: consultations.length > 0, hasAvailability, hasPaymentMethod: paymentMethods > 0, hasPreviewableFlow: productLinks > 0 && (forms > 0 || lives > 0 || consultations.length > 0), isPublished: Boolean(selectedProject.publishedAt) }, states);
   } else {
     const [payments, members, testOrders] = await Promise.all([
-      db.paymentMethodReference.count({ where: { vendorId: vendor.id, status: "verified" } }),
+      db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
       db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
       Promise.resolve(0),
     ]);
-    taskProgress = evaluateWorkspaceOnboarding({ hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()), hasLogo: Boolean(vendor.logoUrl), hasPaymentMethod: payments > 0, hasSupportContact: Boolean(vendor.supportEmail), hasInvitedTeamMember: members > 1, hasTestOrder: testOrders > 0 }, states);
+    taskProgress = evaluateWorkspaceOnboarding({ hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()), hasLogo: Boolean(vendor.logoUrl), hasPaymentMethod: payments > 0, hasSupportContact: Boolean(vendor.supportEmail?.trim()), hasInvitedTeamMember: members > 1, hasTestOrder: testOrders > 0 }, states);
   }
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
   const onboardingTasks = guideHidden ? [] : taskProgress.tasks.map((task) => ({ key: task.key, title: task.title, status: task.status, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: task.key.includes("payment") ? "/billing/payment-methods" : task.key.includes("logo") || task.key.includes("profile") || task.key.includes("support") ? "/settings/brand" : task.key.includes("team") ? "/settings/team" : task.key.includes("product") || task.key.includes("price") ? "/products/new" : task.key.includes("funnel") ? "/forms/new" : task.key.includes("live") ? "/lives/new" : task.key.includes("consultation") || task.key.includes("availability") ? "/consultations" : "/onboarding" }));

@@ -40,6 +40,23 @@ describe("onboarding task evaluator", () => {
       status: "skipped", impact: "已略過付款設定，目前無法接受線上付款。",
     });
     expect(progress.tasks.find((task) => task.key === "workspace_test_order")?.status).toBe("not_started");
+    expect(progress.isComplete).toBe(false);
+  });
+
+  it("does not report skipped tasks as completed setup", () => {
+    const progress = evaluateWorkspaceOnboarding(
+      { ...workspaceSignals, hasBasicProfile: false, hasSupportContact: false },
+      [
+        { taskKey: "workspace_profile", status: "skipped" },
+        { taskKey: "workspace_logo", status: "skipped" },
+        { taskKey: "workspace_payment", status: "skipped" },
+        { taskKey: "workspace_support", status: "skipped" },
+        { taskKey: "workspace_team", status: "skipped" },
+        { taskKey: "workspace_test_order", status: "skipped" },
+      ],
+    );
+    expect(progress.completedCount).toBe(0);
+    expect(progress.isComplete).toBe(false);
   });
 
   it("selects one progressive project flow instead of showing flagship tasks at once", () => {

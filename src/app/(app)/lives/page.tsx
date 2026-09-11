@@ -1,20 +1,24 @@
 import { BarChart3, Eye, Plus } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, ListSummary, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { SalesScopeNotice } from "@/components/sales-scope-notice";
 
 export default async function LivesPage() {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const lives = await getDb().live.findMany({
-    where: { vendorId: vendor.id },
+    where: { vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     orderBy: { scheduledAt: "desc" },
     include: { video: true, form: true, products: true },
   });
 
   return (
     <>
-      <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+      <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={!scope.isAggregate ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined} />
+      <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
       <ListSummary items={[
         { label: "直播間總數", value: lives.length, hint: "目前工作區" },
         { label: "已發布", value: lives.filter((live) => live.status === "published").length, hint: "可供觀眾進入" },

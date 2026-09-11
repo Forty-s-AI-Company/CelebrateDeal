@@ -2,17 +2,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), findMany: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireVendorManagerContext: vi.fn(), findMany: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("lucide-react", () => ({ Plus: () => <span>plus</span> }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: vi.fn().mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true }), salesScopeDescription: () => "目前資料範圍：商家" }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.findMany } }) }));
 
 import ProductsPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1", name: "商家" } });
   mocks.findMany.mockResolvedValue([]);
 });
 

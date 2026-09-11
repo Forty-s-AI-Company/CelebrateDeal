@@ -4,6 +4,8 @@ import { COMMERCE_ORDER_STATUSES, type CommerceOrderStatus } from "@/lib/commerc
 import { requireVendorManagerMfa } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { SalesScopeNotice } from "@/components/sales-scope-notice";
 
 const statusLabels: Record<CommerceOrderStatus, string> = {
   draft: "草稿", pending_payment: "待付款", paid: "已付款", payment_failed: "付款失敗",
@@ -25,7 +27,8 @@ function tone(status: CommerceOrderStatus): "green" | "orange" | "red" | "gray" 
 export default async function OrdersPage({ searchParams }: {
   searchParams?: Promise<{ status?: string | string[]; q?: string | string[]; productId?: string | string[] }>;
 }) {
-  const { vendor } = await requireVendorManagerMfa("/orders");
+  const { user, vendor } = await requireVendorManagerMfa("/orders");
+  const scope = await getSalesProjectScope(user.id, vendor.id);
   const query = await searchParams;
   const status = selectedStatus(query?.status);
   const rawSearch = Array.isArray(query?.q) ? query?.q[0] : query?.q;
@@ -36,6 +39,7 @@ export default async function OrdersPage({ searchParams }: {
   const orders = await getDb().commerceOrder.findMany({
     where: {
       vendorId: vendor.id,
+      ...(scope.projectId ? { projectId: scope.projectId } : {}),
       ...(status ? { status } : {}),
       ...(search ? { orderNumber: { contains: search, mode: "insensitive" } } : {}),
       ...(productId ? { items: { some: { productId } } } : {}),
@@ -51,6 +55,7 @@ export default async function OrdersPage({ searchParams }: {
   return (
     <>
       <PageHeader title="訂單與履約" description="從付款確認一路追蹤出貨、數位授權、服務排程與退款狀態。" />
+      <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
       <ListSummary items={[
         { label: hasFilters ? "符合條件" : "近期訂單", value: orders.length, hint: "目前列表最多顯示 100 筆" },
         { label: "已付款", value: paidCount, hint: "依目前篩選結果統計" },

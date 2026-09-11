@@ -96,10 +96,15 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npx prisma generate && npx next build --webpack && npx next start --hostname 127.0.0.1 --port ${port}`,
+    // Keep the disposable browser database aligned with every committed
+    // migration before fixtures are created. `migrate deploy` is idempotent,
+    // so a reused local test container cannot silently drift behind Prisma.
+    command: `npx prisma migrate deploy && npx prisma generate && npx next build --webpack && npx next start --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 240_000,
+    // The production webpack build can exceed four minutes on constrained
+    // Windows runners; keep the browser gate deterministic instead of racing it.
+    timeout: 600_000,
     env: {
       ...process.env,
       // Playwright itself may run under NODE_ENV=test. The child process is a
