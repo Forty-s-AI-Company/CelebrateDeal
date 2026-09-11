@@ -78,3 +78,12 @@
 - Git 可自動 push `codex/*` 分支並透過受保護 PR merge；必須等待 CI、禁止 force push／直接 default branch push／衝突合併。
 - Production deployment 不因 push／merge 自動觸發，仍需獨立 workflow 與人工 approval。
 - `route_task` 可由主代理或已核准的本地 orchestrator 執行，但不得繞過上述安全邊界。
+
+
+### AGY 呼叫路徑確認（2026-09-11）
+
+- 不得僅因原生 MCP／子代理選單沒有 Claude，就判定 AGY Claude 不可用。先確認 `Get-Command agy`、`agy --help`、`agy models`；必要時以 `Invoke-AgyPlanReview.ps1` 執行無工具、無檔案讀取 smoke。
+- CLI 的全域 `--effort low|medium|high` 不代表每個模型 adapter 都接受。維持已實測的 `claude-sonnet-4-6` + `model-default`（不傳 `--effort`）；未取得新清單與成功 smoke 前，不改成猜測的 Thinking ID 或 high。
+- 本次 `agy models` 回報需登入，並伴隨 CLI log／crash 目錄存取拒絕；未取得當前模型清單，不能將歷史識別碼標為今日已驗證，也不能認定使用者在其他終端未登入。
+- 登入／sandbox 阻擋與模型不存在是不同結果；不得把 LOGIN_REQUIRED 或 TOOL_BLOCKED 寫成 Claude 模型失效或額度耗盡。
+- 同次無工具 smoke 使用既有 Sonnet／model-default，結果 `IDLE_TIMEOUT`，未完成模型回覆或審查；sanitized evidence：`docs/live-feature-handoffs/agy-claude-diagnostic-20260911.json`。

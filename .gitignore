@@ -11,6 +11,8 @@
 !.yarn/versions
 
 # testing
+/tmp/presenter-media/
+/tmp/presenter-checks/
 /coverage
 /test-results
 /playwright-report
@@ -121,3 +123,24 @@ next-env.d.ts
 /docs/codex-goal/GOAL_START_PROMPT.md
 /docs/codex-goal/README.md
 /docs/codex-goal/REPOSITORY_HYGIENE.md
+
+# Orientation/mobile QA generated bundles and disposable browser profiles
+/tmp/mobile-viewing/
+/tmp/orientation-checks/
+/tmp/orientation-media/
+
+# Background removal QA bundles and isolated runtime artifacts
+/tmp/background-removal-checks/
+/tmp/background-removal-browser/
+
+# Disposable validation sandboxes, generated clients, browser profiles, and caches.
+# Tracked review images under tmp/pdfs remain available to Git despite this rule.
+/tmp/
+
+# Local QA evidence can include rendered user-facing content and test records.
+# Keep the handoff Markdown, but never publish generated screenshots or receipts.
+/docs/live-feature-handoffs/*.json
+/docs/live-feature-handoffs/*.png
+
+# MediaMTX local runtime configuration may contain private hosts or credentials.
+/ops/media/mediamtx.local.yml

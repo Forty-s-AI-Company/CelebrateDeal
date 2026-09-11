@@ -45,6 +45,7 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     liveReminderOffsetMinutes: stringValue(data, "liveReminderOffsetMinutes") || "60",
     notificationRules: notificationRulesValue(data),
     streamMode: stringValue(data, "streamMode"),
+    ...(data.has("orientation") ? { orientation: stringValue(data, "orientation") } : {}),
     videoId: stringValue(data, "videoId"),
     heroImageUrl: stringValue(data, "heroImageUrl"),
     heroImageAssetId: stringValue(data, "heroImageAssetId"),

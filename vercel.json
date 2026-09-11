@@ -3,6 +3,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/live-media",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/line-notifications",
       "schedule": "* * * * *"
     }

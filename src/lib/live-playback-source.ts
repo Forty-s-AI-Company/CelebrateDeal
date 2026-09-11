@@ -59,6 +59,11 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   if (runtime.state === "unavailable" || runtime.state === "waiting") return null;
   if (live?.video?.vendorId !== input.vendorId) return null;
   if (!isExistingLiveVideoReady(live?.video)) return null;
+  if (live?.video?.sourceType === "browser_live") {
+    // Browser broadcasts use admitted WHEP signaling, never the placeholder URL or VOD replay.
+    if (live.streamMode !== "live" || runtime.state !== "playing") return null;
+    return { playbackUrl: `/api/live-media?liveId=${encodeURIComponent(input.liveId)}&vendorId=${encodeURIComponent(input.vendorId)}`, playbackStartSeconds: 0, protocol: "whep" as const };
+  }
   const playbackUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
   if (!playbackUrl) return null;
   return runtime.playbackStartSeconds === null

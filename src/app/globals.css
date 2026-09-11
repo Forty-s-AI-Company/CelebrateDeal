@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Dedicated flow space keeps danmaku off slides, card overlays and video controls. */
+.danmaku-strip { display:flex; align-items:center; gap:0.75rem; min-width:0; padding:0.5rem; background:#172033; color:#fff; }
+.danmaku-strip > button { flex-shrink:0; }
+.danmaku-lane { position:relative; min-width:0; flex:1; height:3rem; overflow:hidden; display:flex; align-items:center; }
+.danmaku-message { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; max-width:100%; overflow-wrap:anywhere; font-size:14px; line-height:1.4; max-height:2.8em; overflow:hidden; animation:danmaku-drift 3.5s linear both; }
+@keyframes danmaku-drift { from { transform:translateX(35%); opacity:0; } 15% { opacity:1; } 85% { opacity:1; } to { transform:translateX(-15%); opacity:0; } }
+@media (prefers-reduced-motion:reduce) { .danmaku-message { animation:none; } }
+
 :root {
   --background: #f5f7fb;
   --foreground: #172033;
@@ -72,6 +80,54 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* Browser broadcasts reserve the whole video for slides. Sales cards stay in the interaction area. */
+.live-viewing-shell { min-width: 0; }
+.live-viewing-toolbar { display: flex; align-items: center; gap: .75rem; padding: .5rem max(.75rem, env(safe-area-inset-right)) .5rem max(.75rem, env(safe-area-inset-left)); }
+.live-viewing-player { aspect-ratio: 16 / 9; width: min(100%, calc(65dvh * 16 / 9)); margin-inline: auto; }
+.live-viewing-shell[data-orientation="portrait"] .live-viewing-player { aspect-ratio: 9 / 16; width: min(100%, calc(65dvh * 9 / 16), 27rem); height: auto; margin-inline: auto; }
+.live-chat-container { display: flex; height: 26rem; max-height: none; }
+.live-chat-container [role="log"] { min-height: 3rem; }
+.live-chat-container form { flex-shrink: 0; }
+.live-viewing-shell[data-page-fullscreen="true"] { position: fixed; inset: var(--view-top, 0px) 0 auto; z-index: 100; height: var(--view-height, 100dvh); min-height: 0; max-width: none; overflow: auto; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom); }
+.live-viewing-shell[data-page-fullscreen="true"] .live-viewing-toolbar { position: sticky; top: 0; z-index: 80; background: #020617; padding-top: max(.5rem, env(safe-area-inset-top)); }
+.live-viewing-shell[data-page-fullscreen="true"] .live-viewing-player { width: min(100%, calc(var(--view-height, 100dvh) * .5 * 16 / 9)); }
+.live-viewing-shell[data-page-fullscreen="true"][data-orientation="portrait"] .live-viewing-player { width: min(100%, calc(var(--view-height, 100dvh) * .5 * 9 / 16)); height: auto; }
+.live-viewing-shell[data-page-fullscreen="true"] .live-chat-container { height: max(18rem, calc(var(--view-height, 100dvh) * .6)); }
+@media (min-width: 900px), (orientation: landscape) and (min-width: 600px) {
+  .live-viewing-shell { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 1fr); align-items: start; }
+  .live-viewing-toolbar { grid-column: 1 / -1; }
+  .live-viewing-shell .browser-live-interactions { min-width: 0; }
+  .live-viewing-shell[data-page-fullscreen="true"] .live-viewing-player { position: sticky; top: 5rem; width: min(100%, calc((var(--view-height, 100dvh) - 6rem) * 16 / 9)); }
+  .live-viewing-shell[data-page-fullscreen="true"][data-orientation="portrait"] .live-viewing-player { width: min(100%, calc(max(6rem, var(--view-height, 100dvh) - 6rem) * 9 / 16)); height: auto; }
+}
+.browser-live-interactions .fixed.z-40 {
+  position: absolute;
+}
+.browser-live-interactions > header {
+  position: relative;
+  inset: auto;
+  order: 0;
+}
+.browser-live-interactions > [aria-label="畫面內互動卡片"] {
+  position: relative;
+  inset: auto;
+  order: 1;
+  width: calc(100% - 2rem);
+  margin: 0 1rem 1rem;
+}
+.browser-live-interactions > [data-live-experience] {
+  order: 2;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 1rem;
+}
+.browser-live-interactions > nav,
+.browser-live-interactions > #live-playback-panel {
+  position: relative;
+  inset: auto;
+  order: 3;
 }
 
 @media (prefers-reduced-motion: reduce) {

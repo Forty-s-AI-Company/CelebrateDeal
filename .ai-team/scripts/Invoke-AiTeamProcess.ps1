@@ -80,7 +80,7 @@ function Get-AiTeamFailureClassification {
     )
 
     $combined = "$Stdout`n$Stderr"
-    if ($combined -match '(?i)(login required|not authenticated|not logged in|sign[ -]?in required|authentication required)') {
+    if ($combined -match '(?i)(login required|not authenticated|not logged in|sign[ -]?in required|please sign[ -]?in|sign[ -]?in to (?:view|continue|use)|authentication required)') {
         return 'AUTH_REQUIRED'
     }
     if ($combined -match '(?i)(rate limit|too many requests|\b429\b)') {

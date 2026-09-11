@@ -35,6 +35,9 @@ export default async function LivesPage() {
                 <div className="flex flex-wrap gap-2">
                   <ButtonLink href={`/lives/${live.id}/edit`} tone="secondary">編輯</ButtonLink>
                   <ButtonLink href={`/lives/${live.id}/preview`} tone="secondary"><Eye size={16} />預覽</ButtonLink>
+                  <ButtonLink href={`/lives/${live.id}/chat`} tone="secondary">私密聊天室</ButtonLink>
+                  {/* Capture permissions are document-scoped: avoid a client-only navigation from camera=(). */}
+                  <a href={`/lives/${live.id}/presenter`} className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">講師與 PPT</a>
                   <ButtonLink href={`/lives/${live.id}/analytics`} tone="secondary"><BarChart3 size={16} />分析</ButtonLink>
                 </div>
               </div>

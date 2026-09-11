@@ -1,9 +1,9 @@
 {
-  "version": "5.4-style",
-  "active_mode": "style",
-  "active_mode_id": "ai-team-style",
-  "active_mode_name": "風格模式",
-  "active_mode_display": "風格模式 (ai-team-style)",
+  "version": "5.4-pro",
+  "active_mode": "pro",
+  "active_mode_id": "ai-team-pro",
+  "active_mode_name": "進階模式",
+  "active_mode_display": "進階模式 (ai-team-pro)",
   "router": {
     "mode": "recommendation_only",
     "external_execution": false,
@@ -47,61 +47,86 @@
   },
   "reasoning_policy": {
     "strategy": "adaptive_lowest_sufficient",
-    "default_difficulty": "routine",
+    "default_difficulty": "auto",
     "difficulty_levels": ["trivial", "routine", "complex", "critical"],
     "models": {
-      "gpt-5.6-luna": {"minimum": "low", "maximum": "medium", "default": "low"},
-      "gpt-5.6-terra": {"minimum": "low", "maximum": "medium", "default": "medium"},
-      "gemini-3.8-flash-high": {"minimum": "low", "maximum": "high", "default": "high"}
+      "codex-6-Astra": {"minimum": "low", "maximum": "max", "default": "high"},
+      "gpt-5.6-terra": {"minimum": "low", "maximum": "xhigh", "default": "medium"},
+      "gpt-5.6-luna": {"minimum": "high", "maximum": "max", "default": "high"}
     }
   },
   "agents": {
     "planner": {
-      "model": "gemini-3.8-flash-high",
+      "model": "codex-6-Astra",
       "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "read-only",
-      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
-      "role": "visual_and_layout_planner",
-      "description": "Zero-quota layout and visual structure planner, extracting component patterns and bento grid architectures"
+      "provider": "native_agent",
+      "availability": "runtime_dependent"
     },
     "explorer": {
       "model": "gemini-3.8-flash-high",
       "reasoning_effort": "high",
       "sandbox_mode": "gemini-wrapper-read-only",
-      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"
+      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
     },
     "analyst": {
-      "model": "gemini-3.8-flash-high",
+      "model": "gemini-3.1-pro-high",
       "reasoning_effort": "high",
       "sandbox_mode": "gemini-wrapper-read-only",
-      "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"
+      "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1",
+      "luna_escalation": {
+        "enabled": true,
+        "profile": "luna_readonly_escalation",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "reasoning_minimum": "high",
+        "reasoning_maximum": "max",
+        "reasoning_selection": "adaptive_lowest_sufficient",
+        "provider": "native_agent",
+        "sandbox_mode": "read-only",
+        "trigger_difficulties": ["complex", "critical"]
+      }
     },
     "worker": {
-      "profile": "luna_worker_style",
-      "model": "gpt-5.6-luna",
-      "reasoning_effort": "low",
+      "profile": "astra_worker",
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
       "reasoning_minimum": "low",
-      "reasoning_maximum": "medium",
+      "reasoning_maximum": "max",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "workspace-write",
       "provider": "native_agent",
       "availability": "runtime_dependent",
-      "fallback_only": false,
-      "description": "Low-reasoning UI/UX implementer specializing in Tailwind, JSX assembly, and commercial component filling"
+      "fallback_only": false
     },
     "worker-deep": {
       "model": "gpt-5.6-terra",
-      "reasoning_effort": "medium",
+      "reasoning_effort": "high",
       "reasoning_minimum": "low",
-      "reasoning_maximum": "medium",
+      "reasoning_maximum": "xhigh",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "workspace-write"
     },
     "reviewer": {
       "model": "gpt-5.6-terra",
-      "reasoning_effort": "low",
+      "reasoning_effort": "high",
       "reasoning_minimum": "low",
-      "reasoning_maximum": "medium",
+      "reasoning_maximum": "xhigh",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "read-only",
       "provider": "native_agent",
@@ -110,14 +135,14 @@
   },
   "gemini_profiles": {
     "fast": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"},
-    "deep": {"model": "gemini-3.8-flash-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1"}
+    "deep": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1"}
   },
   "plan_review": {
     "enabled": true,
     "required": false,
     "skip_routine_tasks": true,
-    "trigger_difficulties": ["critical"],
-    "trigger_risk_domains": ["security", "payment"],
+    "trigger_difficulties": ["complex", "critical"],
+    "trigger_risk_domains": ["security", "payment", "refund", "payout", "migration", "release"],
     "profile": "claude_plan_review",
     "model": "claude-sonnet-4-6",
     "reasoning_effort": "model-default",
@@ -131,8 +156,8 @@
         "tier": 1,
         "profile": "claude_plan_review",
         "model": "claude-sonnet-4-6",
-        "role": "aesthetic_visual_audit",
-        "description": "Advisory visual aesthetic reviewer only triggered for critical milestone acceptance"
+        "role": "anti_overengineering_review",
+        "description": "Primary reviewer targeting over-engineering and critical architectural flaws"
       },
       {
         "tier": 2,
@@ -140,28 +165,78 @@
         "model": "gemini-3.8-flash-high",
         "wrapper": ".ai-team/scripts/Invoke-AgyFast.ps1",
         "role": "fast_sanity_check",
-        "description": "Zero-quota fast layout and accessibility sanity check"
+        "description": "Zero-quota-anxiety fast sanity check and safety boundary verification"
       },
       {
         "tier": 3,
+        "profile": "terra_review",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium",
+        "role": "disciplined_code_review",
+        "description": "Objective GPT reviewer avoiding Astra self-review bias and rabbit holes"
+      },
+      {
+        "tier": 4,
         "action": "skip_review",
-        "description": "Routine UI and styling bypasses AI review completely, relying on local deterministic typecheck and tests"
+        "description": "Bypass external AI review and rely strictly on deterministic tests and typecheck"
       }
     ],
     "max_attempts": 1
   },
   "codex_profiles": {
-    "luna_worker_style": {
-      "model": "gpt-5.6-luna",
-      "reasoning_effort": "low",
+    "astra": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
       "reasoning_minimum": "low",
-      "reasoning_maximum": "medium",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    },
+    "astra_worker": {
+      "model": "codex-6-Astra",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "low",
+      "reasoning_maximum": "max",
       "reasoning_selection": "adaptive_lowest_sufficient",
       "sandbox_mode": "workspace-write",
       "provider": "native_agent",
       "fallback_only": false,
       "availability": "runtime_dependent",
       "invocation": "native_agent_handoff_only"
+    },
+    "luna_readonly_escalation": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "high",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    }
+  },
+  "fallback_chains": {
+    "gemini_fast": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "codex_astra", "max_attempts": 0}
+      ]
+    },
+    "gemini_deep": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "codex_astra", "max_attempts": 0}
+      ]
     }
   }
 }

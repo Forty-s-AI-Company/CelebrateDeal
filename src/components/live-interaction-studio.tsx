@@ -8,6 +8,8 @@ import {
 } from "@/app/actions";
 import { endLiveInteractionAction, getLivePollStudioSnapshotAction, moderateLiveQuestionAction, verifyLuckyDrawWinnerClaimAction } from "@/app/actions/interaction-actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { InstructorInteractionCards } from "@/components/instructor-interaction-cards";
+import { InstructorDanmakuSwitch } from "@/components/live-danmaku";
 
 const initialState = { status: "idle" as const, message: "" };
 
@@ -257,6 +259,8 @@ export function LiveInteractionStudio({
 
       {renderPrizeControls()}
 
+      <InstructorDanmakuSwitch key={liveId} liveId={liveId} />
+      <InstructorInteractionCards liveId={liveId} />
       <section className="mt-6 border-t border-violet-100 pt-5" aria-labelledby="live-question-moderation-title">
         <h3 id="live-question-moderation-title" className="text-lg font-black text-slate-900">觀眾問答審核</h3>
         <p className="mt-1 text-sm text-slate-600">待審核、已置頂、已回答與隱藏問題都集中在這裡。</p>

@@ -217,6 +217,7 @@ export async function GET(request: Request) {
       vendorId,
       liveId,
       source: "manual",
+      eventType: { not: "interaction_card" },
       OR: [{ status: "active", endsAt: { gt: now } }, { winnerResponseId: { not: null }, updatedAt: { gt: new Date(now.getTime() - 30_000) } }],
     },
     orderBy: { startsAt: "desc" },
@@ -354,7 +355,7 @@ export async function POST(request: Request) {
     where: { id: data.runId, vendorId: data.vendorId, liveId: data.liveId, status: "active", endsAt: { gt: new Date() } },
   });
   const metadata = run ? configuration(run.configuration) : null;
-  if (!run || !metadata) return NextResponse.json({ error: "Interaction closed" }, { status: 409 });
+  if (!run || !metadata || run.eventType === "interaction_card") return NextResponse.json({ error: "Interaction closed" }, { status: 409 });
   const submittedValue = Array.isArray(data.value) ? data.value : [data.value];
   const invalidValueResponse = invalidInteractionValueResponse(metadata, data.value, submittedValue);
   if (invalidValueResponse) return invalidValueResponse;

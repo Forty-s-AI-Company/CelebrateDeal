@@ -7,9 +7,11 @@ export function EvergreenPreviewPlayer({
   videoUrl,
   playbackRate,
   events,
+  orientation = "landscape",
 }: {
   videoUrl: string;
   playbackRate: number;
+  orientation?: "landscape" | "portrait";
   events: Array<{ id: string; triggerSec: number; title: string; eventType: string }>;
 }) {
   const [currentSeconds, setCurrentSeconds] = useState(0);
@@ -23,7 +25,8 @@ export function EvergreenPreviewPlayer({
         src={safeUrl}
         controls
         playsInline
-        className="aspect-video w-full rounded-lg bg-black"
+        style={{ aspectRatio: orientation === "portrait" ? "9 / 16" : "16 / 9", maxHeight: "70dvh" }}
+        className="w-full rounded-lg bg-black object-contain"
         onLoadedMetadata={(event) => { event.currentTarget.playbackRate = playbackRate; }}
         onTimeUpdate={(event) => setCurrentSeconds(Math.floor(event.currentTarget.currentTime))}
       />

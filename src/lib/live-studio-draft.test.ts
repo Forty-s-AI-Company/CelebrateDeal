@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { emptyLiveStudioDraft, LiveStudioDraftPayloadSchema, SaveLiveStudioDraftRequestSchema } from "./live-studio-draft";
 
 describe("LiveStudioDraftPayloadSchema", () => {
+  it("preserves either orientation in saved drafts and rejects unsupported ratios", () => {
+    for (const orientation of ["landscape", "portrait"]) {
+      const draft = LiveStudioDraftPayloadSchema.parse({ ...emptyLiveStudioDraft(), orientation });
+      expect(LiveStudioDraftPayloadSchema.parse(JSON.parse(JSON.stringify(draft))).orientation).toBe(orientation);
+    }
+    expect(LiveStudioDraftPayloadSchema.safeParse({ orientation: "square" }).success).toBe(false);
+    expect(LiveStudioDraftPayloadSchema.parse({}).orientation).toBeUndefined();
+  });
   it("builds a canonical bounded eight-step draft", () => {
     expect(emptyLiveStudioDraft()).toMatchObject({
       studioPreset: "CUSTOM",

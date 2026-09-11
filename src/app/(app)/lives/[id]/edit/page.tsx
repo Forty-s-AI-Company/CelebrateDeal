@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { liveOrientation } from "@/lib/presenter-layout";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
@@ -248,6 +249,7 @@ export default async function EditLivePage({
       isActive: rule.isActive,
     })),
     streamMode: live.streamMode === "live" ? "live" : "vod",
+    orientation: liveOrientation(live.presenterLayout),
     videoId: preparedResources.videoId,
     heroImageUrl: live.heroImageUrl ?? "",
     heroImageAssetId: live.heroImageAssetId ?? "",

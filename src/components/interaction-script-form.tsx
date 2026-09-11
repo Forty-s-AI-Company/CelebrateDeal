@@ -20,6 +20,7 @@ import {
   reorderInteractionEvents,
 } from "@/lib/interaction-timeline";
 import { normalizePresentationRole } from "@/lib/interaction-role";
+import { CARD_STICKERS } from "@/lib/interaction-card-contract";
 
 type ScriptWithEvents = InteractionScript & {
   events: InteractionEvent[];
@@ -71,6 +72,15 @@ const timelineTemplates: TimelineTemplate[] = [
       { eventType: "product_spotlight", triggerSec: 30, title: "第一波商品" },
       { eventType: "chat_message", triggerSec: 150, title: "第一波 CTA", message: "第一波優惠連結已更新，可以直接從商品卡進去。" },
       { eventType: "chat_message", triggerSec: 300, title: "庫存提醒", message: "目前主打組合是本場最划算的一組，售完後不一定會補。" },
+    ],
+  },
+  {
+    name: "暖場互動",
+    description: "預先編輯的歡迎、貼圖與提問提示；不含購買或見證訊息。",
+    events: [
+      { eventType: "chat_message", triggerSec: 5, title: "暖場歡迎", message: "歡迎加入，先找個舒服的位置，我們準備開始囉！" },
+      { eventType: "chat_message", triggerSec: 15, title: "暖場貼圖", message: "👏 🎉" },
+      { eventType: "reminder", triggerSec: 30, title: "提問提示", message: "有問題可以透過聊天室向講師提問。" },
     ],
   },
 ];
@@ -400,7 +410,11 @@ function renderInteractionEventRow({
                   className="min-h-11 w-full resize-y rounded-md border border-border px-3 py-2 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
                   placeholder="輸入會公開顯示的排程訊息"
                 />
+                <span className="text-xs font-normal text-slate-500">用於暖場彈幕時限 160 字，標示為「暖場角色／預設互動」。</span>
               </label>
+                <span className="flex flex-wrap gap-1" aria-label="內建暖場貼圖">
+                  {CARD_STICKERS.map(sticker => <button key={sticker} type="button" className="min-h-11 min-w-11 rounded border text-lg" aria-label={`加入暖場貼圖 ${sticker}`} onClick={() => updateEvent(index, { message: `${event.message ?? ""}${sticker}`.slice(0, 1000) })}>{sticker}</button>)}
+                </span>
             </div>
             <input type="hidden" name="productId" value="" />
             <input type="hidden" name="ctaLabel" value="" />

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { admitLiveViewer, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
+import { admitLiveViewer, hashLiveViewerToken, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
+import { mediaOrigin } from "@/lib/live-media-provider";
+import { cleanupMediaSessions } from "@/lib/live-media-cleanup";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -60,5 +62,11 @@ export async function DELETE(request: Request) {
     ...payload,
     token: liveViewerTokenFromRequest(request),
   });
+  const token = liveViewerTokenFromRequest(request);
+  const origin = mediaOrigin();
+  if (token && origin) {
+    await getDb().liveMediaSession.updateMany({ where: { ...payload, principal: `viewer:${hashLiveViewerToken(token)}`, direction: "read" }, data: { closing: true } });
+    await cleanupMediaSessions(getDb(), origin, payload);
+  }
   return NextResponse.json({ ok: true });
 }

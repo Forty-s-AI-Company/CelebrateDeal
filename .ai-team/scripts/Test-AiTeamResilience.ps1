@@ -135,6 +135,13 @@ $authFailure = Invoke-AiTeamProcess `
     -HardTimeoutSeconds 10
 Assert-AiTeam ($authFailure.status -eq 'AUTH_REQUIRED') 'explicit authentication failure was not classified'
 
+# AGY models can report a sign-in requirement without the older "login required" wording.
+foreach ($authText in @('Error: Please sign in to view available models.', 'You are not logged into Antigravity.')) {
+    $classification = Get-AiTeamFailureClassification -Stdout $authText -Stderr '' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true
+    Assert-AiTeam ($classification -eq 'AUTH_REQUIRED') 'AGY model-list authentication failure was misclassified'
+}
+
+
 $temporaryConfig = Join-Path ([IO.Path]::GetTempPath()) ("ai-team-resilience-{0}.json" -f ([guid]::NewGuid().ToString('N')))
 try {
     $config = [ordered]@{

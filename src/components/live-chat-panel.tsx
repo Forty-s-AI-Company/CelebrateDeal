@@ -36,6 +36,7 @@ export type LiveChatPanelProps = {
 };
 
 type ChatListPayload = {
+  nextCursor?: string | null;
   messages: ViewerRuntimeMessage[];
   viewer: ViewerState;
 };
@@ -45,7 +46,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseViewerRuntimeMessage(value: unknown): ViewerRuntimeMessage | null {
-  if (!isObject(value) || value.source !== "viewer") return null;
+  if (!isObject(value) || (value.source !== "viewer" && value.source !== "instructor")) return null;
   if (typeof value.id !== "string" || !value.id || value.id.length > 128) return null;
   if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return null;
   if (typeof value.body !== "string" || !value.body.trim() || Array.from(value.body).length > CHAT_BODY_MAX_LENGTH) return null;
@@ -53,7 +54,7 @@ export function parseViewerRuntimeMessage(value: unknown): ViewerRuntimeMessage 
 
   return {
     id: value.id,
-    source: "viewer",
+    source: value.source,
     createdAt: value.createdAt,
     body: value.body,
     actor: { name: value.actor.name },
@@ -69,7 +70,7 @@ export function parseChatListPayload(value: unknown): ChatListPayload | null {
   const reason = value.viewer.reason;
   if (displayName !== null && typeof displayName !== "string") return null;
   if (reason !== null && reason !== "verification_required" && reason !== "blocked") return null;
-  return { messages, viewer: { canPost: value.viewer.canPost, displayName, reason } };
+  return { messages, ...(typeof value.nextCursor === "string" || value.nextCursor === null ? { nextCursor: value.nextCursor } : {}), viewer: { canPost: value.viewer.canPost, displayName, reason } };
 }
 
 export function mergeViewerMessages(
@@ -121,6 +122,8 @@ function LiveChatSession({
 }: LiveChatPanelProps) {
   const [viewerMessages, setViewerMessages] = useState<ViewerRuntimeMessage[]>([]);
   const [viewer, setViewer] = useState<ViewerState>({ canPost: false, displayName: null, reason: "verification_required" });
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingIntent | null>(null);
   const [paused, setPaused] = useState(false);
@@ -128,6 +131,7 @@ function LiveChatSession({
   const [postMessage, setPostMessage] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const generationRef = useRef(0);
+  const sendingRef = useRef(false);
   const postControllerRef = useRef<AbortController | null>(null);
   const admissionRefreshRequestedRef = useRef(false);
 
@@ -155,7 +159,7 @@ function LiveChatSession({
       if (disposed || inFlight) return;
       inFlight = true;
       controller = new AbortController();
-      const query = new URLSearchParams({ vendorId, liveId });
+      const query = new URLSearchParams({ vendorId, liveId, ...(historyCursor ? { cursor: historyCursor } : {}) });
       try {
         const response = await fetch(`${CHAT_ENDPOINT}?${query.toString()}`, {
           headers: CLIENT_HEADERS,
@@ -163,6 +167,7 @@ function LiveChatSession({
         });
         if (disposed || generationRef.current !== generation) return;
         if (response.status === 403) {
+          setViewerMessages([]);
           setPaused(true);
           setPollMessage("直播連線或留言資格已失效，請重新進入直播或完成信件驗證。");
           if (!admissionRefreshRequestedRef.current) {
@@ -180,8 +185,9 @@ function LiveChatSession({
           setPollMessage("留言暫時無法更新，系統會自動重試。");
           return;
         }
+        setNextCursor(payload.nextCursor ?? null);
         setViewer(payload.viewer);
-        setViewerMessages((current) => mergeViewerMessages(current, payload.messages));
+        setViewerMessages(payload.messages);
         setPollMessage(null);
       } catch (error) {
         if (!disposed && !(error instanceof DOMException && error.name === "AbortError")) {
@@ -200,7 +206,7 @@ function LiveChatSession({
       window.clearInterval(timer);
       controller?.abort();
     };
-  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, paused, vendorId]);
+  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, paused, vendorId, historyCursor]);
 
   useEffect(() => {
     const log = logRef.current;
@@ -210,7 +216,8 @@ function LiveChatSession({
   }, [pending, viewerMessages.length, visibleScheduledMessages.length]);
 
   const sendIntent = useCallback(async (intent: PendingIntent) => {
-    if (!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost) return;
+    if (!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost || sendingRef.current) return;
+    sendingRef.current = true;
     const controller = new AbortController();
     postControllerRef.current?.abort();
     postControllerRef.current = controller;
@@ -245,6 +252,7 @@ function LiveChatSession({
         setPostMessage("留言送出狀態不確定，請重試。");
         return;
       }
+      setHistoryCursor(null);
       setViewerMessages((current) => mergeViewerMessages(current, [message]));
       setPending((current) => current?.clientMessageId === intent.clientMessageId ? null : current);
       setDraft((current) => current.normalize("NFKC").trim() === intent.body ? "" : current);
@@ -253,7 +261,7 @@ function LiveChatSession({
       setPending({ ...intent, status: "retryable" });
       setPostMessage("留言暫時送不出去，請重試。");
     } finally {
-      if (postControllerRef.current === controller) postControllerRef.current = null;
+      if (postControllerRef.current === controller) { postControllerRef.current = null; sendingRef.current = false; }
     }
   }, [admissionStatus, enabled, liveId, onAdmissionInvalid, paused, vendorId, viewer.canPost]);
 
@@ -277,6 +285,11 @@ function LiveChatSession({
 
   return (
     <section aria-label="直播聊天室" className="flex min-h-0 flex-1 flex-col">
+      <p className="px-4 pt-3 text-xs text-white/65">私密對話：只有你與講師能看見留言及回覆。</p>
+      <div className="flex gap-3 px-4">
+        {nextCursor ? <button type="button" className="min-h-11 text-xs text-white underline" onClick={() => { setViewerMessages([]); setHistoryCursor(nextCursor); }}>較早訊息</button> : null}
+        {historyCursor ? <button type="button" className="min-h-11 text-xs text-white underline" onClick={() => { setViewerMessages([]); setHistoryCursor(null); }}>返回最新訊息</button> : null}
+      </div>
       <div
         ref={logRef}
         role="log"
@@ -294,6 +307,7 @@ function LiveChatSession({
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-xs font-bold text-white/85">
                 {message.actor.name}
+                <span className="ml-2 rounded-full border px-2 py-0.5 text-[10px]">暖場角色／預設互動</span>
                 <span className="ml-2 text-white/55">{message.actor.label}</span>
                 {message.actor.presentationRole === "official" ? <span className="ml-2 rounded-full border border-amber-200/40 px-2 py-0.5 text-[10px]">官方</span> : null}
               </span>
@@ -304,7 +318,7 @@ function LiveChatSession({
 
         {viewerMessages.map((message) => (
           <article key={`viewer:${message.id}`} className="rounded-2xl bg-white/5 p-3">
-            <span className="text-xs font-bold text-white/70">{message.actor.name}</span>
+            <span className="text-xs font-bold text-white/70">{message.source === "instructor" ? "講師" : message.actor.name}</span>
             <p className="mt-1 break-words text-sm leading-6 text-white/85">{message.body}</p>
           </article>
         ))}
@@ -341,8 +355,8 @@ function LiveChatSession({
               disabled={!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost || pending !== null}
               maxLength={CHAT_BODY_MAX_LENGTH}
               rows={2}
-              placeholder="輸入留言…"
-              className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/35 focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-55"
+              placeholder="私下傳訊息給講師…"
+              className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-base text-white outline-none placeholder:text-white/35 focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-55"
             />
             {pending?.status === "retryable" ? (
               <div className="flex min-h-11 gap-2">

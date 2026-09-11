@@ -83,6 +83,9 @@ describe("live chat route", () => {
     for (const query of [
       "vendorId=v1&vendorId=v2&liveId=l1",
       "vendorId=v1&liveId=l1&unexpected=value",
+      "vendorId=v1&liveId=l1&submissionId=viewer-b",
+      "vendorId=v1&liveId=l1&id=guessed-private-id",
+      "vendorId=v1&liveId=l1&source=private_instructor",
     ]) {
       const response = await GET(request(`/api/live-chat/messages?${query}`));
       expect(response.status).toBe(400);

@@ -513,6 +513,10 @@ model Live {
   replayEnabled                  Boolean   @default(true)
   streamMode                     String    @default("vod")
   cloudflareLiveInputUid         String?
+  /// Layout affects the single composited browser broadcast, never an existing VOD.
+  presenterLayout                Json?
+  /// Activity-wide public card danmaku switch and generation; never stores private messages.
+  danmakuState                   Json?
   quotaPolicy                    Json?
   /// Evergreen playback is configured per Live and continues to use videoId as
   /// its tenant-owned source; no second media relation is introduced here.
@@ -555,10 +559,29 @@ model Live {
   interactionRuns            LiveInteractionRun[]
   interactionResponses       LiveInteractionResponse[]
   questions                  LiveQuestion[]
+  mediaSessions              LiveMediaSession[]
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
+}
+
+/// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.
+model LiveMediaSession {
+  id           String   @id @default(cuid())
+  vendorId     String
+  liveId       String
+  principal    String
+  direction    String
+  resourcePath String
+  closing      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  live         Live     @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, liveId, principal, direction])
+  @@index([vendorId, liveId, principal])
+  @@index([expiresAt])
 }
 
 /// Tenant-owned image upload metadata. Object keys are generated server-side
@@ -819,6 +842,7 @@ model LiveChatMessage {
   @@index([vendorId, liveId, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, formSubmissionId, createdAt])
+  @@index([vendorId, liveId, formSubmissionId, createdAt, id], map: "LiveChatMessage_private_conversation_idx")
 }
 
 /// Tenant-bound viewer questions. Participant identity is represented only by

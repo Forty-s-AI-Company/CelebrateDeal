@@ -1,4 +1,5 @@
 "use server";
+import { DEFAULT_PRESENTER_LAYOUT, PresenterLayoutSchema, liveOrientation } from "@/lib/presenter-layout";
 
 import { randomBytes } from "node:crypto";
 import { hasValidAffiliatePayoutSnapshot } from "./actions/affiliate-payout-validation";
@@ -773,7 +774,7 @@ async function commitLiveDraft(input: {
       if (bindingClaim.count !== 1) throw new LiveLegacyBindingConflict();
       const currentLive = await tx.live.findFirst({
         where: { id: input.liveId!, vendorId: input.vendorId },
-        select: { status: true, startedAt: true, endedAt: true },
+        select: { status: true, startedAt: true, endedAt: true, presenterLayout: true },
       });
       if (!currentLive) return null;
       const lifecycleData: LiveMutationData & { startedAt?: Date | null; endedAt?: Date | null } = { ...input.data };
@@ -788,7 +789,11 @@ async function commitLiveDraft(input: {
         lifecycleData.startedAt = null;
         lifecycleData.endedAt = null;
       }
-      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: lifecycleData });
+      const orientation = input.expectedDraftPayload.orientation ?? liveOrientation(currentLive.presenterLayout);
+      if (currentLive.status === "live" && orientation !== liveOrientation(currentLive.presenterLayout)) throw new LiveLegacyBindingConflict();
+      // 在活動列鎖內合併最新排版，避免活動編輯覆蓋講師剛保存的版型。
+      const presenterLayout = { ...(PresenterLayoutSchema.safeParse(currentLive.presenterLayout).data ?? DEFAULT_PRESENTER_LAYOUT), orientation };
+      await tx.live.update({ where: { id: input.liveId!, vendorId: input.vendorId }, data: { ...lifecycleData, presenterLayout } });
       if (currentLive.status === "scheduled" && input.data.status === "live") {
         await supersedeLiveNotificationDeliveriesForLifecycle(tx, {
           vendorId: input.vendorId,
@@ -854,6 +859,7 @@ async function commitLiveDraft(input: {
     const live = await tx.live.create({
       data: {
         ...input.data,
+        presenterLayout: { ...DEFAULT_PRESENTER_LAYOUT, orientation: input.expectedDraftPayload.orientation ?? "landscape" },
         vendorId: input.vendorId,
         products: {
           create: input.productIds.map((productId, index) => ({

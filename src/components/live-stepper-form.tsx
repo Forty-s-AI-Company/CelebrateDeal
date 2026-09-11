@@ -797,6 +797,14 @@ function renderLiveStudioStepPanels({
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            觀看方向
+            <select name="orientation" defaultValue={initialValues.orientation ?? "landscape"} className="h-11 rounded-md border border-border px-3">
+              <option value="landscape">橫式 16:9</option>
+              <option value="portrait">直式 9:16</option>
+            </select>
+            <span className="text-xs font-normal text-slate-500">請於開播前設定。直式瀏覽器直播採簡報在上、人像在下；已合成影片保留原始比例，留白不代表重新排版。</span>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             串流模式
             <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
               <option value="vod">Cloudflare Stream VOD</option>

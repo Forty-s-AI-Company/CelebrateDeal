@@ -45,6 +45,17 @@ beforeEach(() => {
 });
 
 describe("resolveLivePlaybackSource", () => {
+  it("routes an admitted browser broadcast through same-origin WHEP and never replays its placeholder", async () => {
+    const browser = liveRecord({ video: { ...liveRecord().video, sourceType: "browser_live", videoUrl: "https://media.invalid/browser-live" } });
+    db.live.findFirst.mockResolvedValue(browser);
+    const input = { vendorId: "vendor-1", liveId: "live-1", token, now };
+    await expect(resolveLivePlaybackSource(db as never, input)).resolves.toEqual({ playbackUrl: "/api/live-media?liveId=live-1&vendorId=vendor-1", playbackStartSeconds: 0, protocol: "whep" });
+    db.live.findFirst.mockResolvedValue({ ...browser, status: "ended", endedAt: new Date(now.getTime() - 1000) });
+    await expect(resolveLivePlaybackSource(db as never, input)).resolves.toBeNull();
+    db.live.findFirst.mockResolvedValue(browser);
+    db.liveViewerSession.findUnique.mockResolvedValue({ vendorId: "other", liveId: "live-1", expiresAt: new Date(now.getTime() + 10_000) });
+    await expect(resolveLivePlaybackSource(db as never, input)).resolves.toBeNull();
+  });
   it("returns a source only for the matching unexpired session", async () => {
     await expect(resolveLivePlaybackSource(db as never, {
       vendorId: "vendor-1",

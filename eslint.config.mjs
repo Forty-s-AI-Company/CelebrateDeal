@@ -95,6 +95,10 @@ const eslintConfig = defineConfig([
     "coverage/**",
     // Local staging deployment snapshots are generated copies, not source.
     "tmp/**",
+    // Pinned third-party MediaPipe distributions; our worker remains linted.
+    "public/presenter-segmentation/vision_bundle.js",
+    "public/presenter-segmentation/vision_wasm_internal.js",
+    "public/presenter-segmentation/vision_wasm_nosimd_internal.js",
     // Playwright recreates this directory at run start; ignoring it also avoids
     // an ESLint filesystem race when browser tests and lint overlap in CI.
     "test-results/**",

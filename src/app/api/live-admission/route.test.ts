@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+const mediaMocks = vi.hoisted(() => ({ origin: vi.fn(() => null as string | null), cleanup: vi.fn() }));
+vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: mediaMocks.origin }));
+vi.mock("@/lib/live-media-cleanup", () => ({ cleanupMediaSessions: mediaMocks.cleanup }));
 
 const tx = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
@@ -7,6 +10,7 @@ const tx = {
   liveViewerSession: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
 };
 const db = {
+  liveMediaSession: { updateMany: vi.fn() },
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   liveViewerSession: { deleteMany: vi.fn() },
@@ -191,6 +195,17 @@ describe("POST /api/live-admission", () => {
 });
 
 describe("DELETE /api/live-admission", () => {
+  it("marks only the departing viewer media as closing before sweeping", async () => {
+    mediaMocks.origin.mockReturnValue("http://127.0.0.1:18889");
+    try {
+      const token = "B".repeat(43);
+      const response = await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${token}`));
+      expect(response.status).toBe(200);
+      expect(db.liveMediaSession.updateMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", liveId: "live-1", principal: expect.stringMatching(/^viewer:/), direction: "read" }, data: { closing: true } });
+      expect(JSON.stringify(db.liveMediaSession.updateMany.mock.calls)).not.toContain(token);
+      expect(mediaMocks.cleanup).toHaveBeenCalledWith(db, "http://127.0.0.1:18889", { vendorId: "vendor-1", liveId: "live-1" });
+    } finally { mediaMocks.origin.mockReturnValue(null); }
+  });
   it("releases the server-side session by hashed cookie token", async () => {
     const token = "B".repeat(43);
     const response = await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${token}`));

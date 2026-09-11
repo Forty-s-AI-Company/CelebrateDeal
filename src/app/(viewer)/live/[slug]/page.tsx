@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { liveOrientation } from "@/lib/presenter-layout";
 import { PersistentLivePlaybackRegistration } from "@/components/persistent-live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -179,6 +180,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     <PersistentLivePlaybackRegistration
       live={{
         id: live.id,
+        orientation: liveOrientation(live.presenterLayout),
         title: live.title,
         slug: live.slug,
         status: live.status,

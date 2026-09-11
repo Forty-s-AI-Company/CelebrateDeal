@@ -174,7 +174,7 @@ export async function getCustomerProfile(vendorId: string, customerKeyHash: stri
   const submissionIds = personRows.map((row) => row.id);
   const [watches, chats, interactions, orders, tags, vouchers, automations, record] = await Promise.all([
     db.streamUsageLedgerEntry.findMany({ where: { vendorId, customerKeyHash }, include: { live: { select: { title: true, video: { select: { durationSec: true } } } } } }),
-    db.liveChatMessage.findMany({ where: { vendorId, formSubmissionId: { in: submissionIds }, isSimulated: false, status: "visible" }, include: { live: { select: { title: true } } }, orderBy: { createdAt: "desc" } }),
+    db.liveChatMessage.findMany({ where: { vendorId, source: "viewer", formSubmissionId: { in: submissionIds }, isSimulated: false, status: "visible" }, include: { live: { select: { title: true } } }, orderBy: { createdAt: "desc" } }),
     db.liveInteractionResponse.findMany({ where: { vendorId, formSubmissionId: { in: submissionIds }, eventType: "lucky_draw" }, include: { live: { select: { title: true } }, run: { select: { title: true, winnerResponseId: true } } } }),
     db.commerceOrder.findMany({ where: { vendorId, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } }, include: { items: true, electronicInvoice: true, primaryPaymentTransaction: true } }),
     db.customerTagAssignment.findMany({ where: { vendorId, customerKeyHash } }),

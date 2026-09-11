@@ -5,8 +5,12 @@ import Image from "next/image";
 import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
+import { LiveViewingShell } from "@/components/live-viewing-shell";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
+import { LiveInteractionCard } from "@/components/live-interaction-card";
+import { LiveDanmaku } from "@/components/live-danmaku";
+import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { LivePurchaseTicker } from "@/components/live-purchase-ticker";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
@@ -71,6 +75,7 @@ function useLiveQueryParam(name: string) {
 }
 
 export type LivePageData = {
+  orientation?: "landscape" | "portrait";
   id: string;
   title: string;
   slug: string;
@@ -149,6 +154,7 @@ type LiveAdmissionStatus = "checking" | "admitted" | "blocked";
 export type LivePlaybackSource = {
   playbackUrl: string;
   playbackStartSeconds: number;
+  protocol?: "whep";
 };
 
 export function normalizePlaybackStartSeconds(value: unknown) {
@@ -196,6 +202,11 @@ function createDirectPlaybackSource(videoUrl: string | null | undefined): LivePl
 function projectPlaybackSource(payload: unknown, runtimeState: LiveRuntimeState): LivePlaybackSource | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
   const rawPlaybackUrl = (payload as { playbackUrl?: unknown }).playbackUrl;
+  if ((payload as { protocol?: unknown }).protocol === "whep") {
+    // Only our admitted signaling route is valid; never fetch a caller-supplied WebRTC origin.
+    if (typeof rawPlaybackUrl !== "string" || !rawPlaybackUrl.startsWith("/api/live-media?")) return null;
+    return { playbackUrl: rawPlaybackUrl, playbackStartSeconds: 0, protocol: "whep" };
+  }
   const playbackUrl = typeof rawPlaybackUrl === "string" ? parseSafeExternalHttpUrl(rawPlaybackUrl) : null;
   if (!playbackUrl) return null;
   return {
@@ -1061,7 +1072,7 @@ function playbackPageClass(isCheckoutOverlay: boolean) {
 }
 
 function playbackVideoClass(isCheckoutOverlay: boolean) {
-  return `${isCheckoutOverlay ? "pointer-events-none " : ""}h-full w-full object-cover`;
+  return `${isCheckoutOverlay ? "pointer-events-none " : ""}h-full w-full object-contain`;
 }
 
 function playbackSectionClass(isCheckoutOverlay: boolean) {
@@ -1334,7 +1345,7 @@ function LivePlaybackExperience({
 
   return (
     <>
-      <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
+      <div data-live-experience className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
@@ -1352,7 +1363,7 @@ function LivePlaybackExperience({
           trackCta={trackCta}
           trackProduct={trackProduct}
         />
-        <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+        <div className="live-chat-container min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
           <LiveChatPanel
             enabled={live.chatEnabled === true}
             admissionStatus={admissionStatus}
@@ -1373,6 +1384,7 @@ function LivePlaybackExperience({
         events={live.interactionEvents}
         enabled={admissionStatus === "admitted"}
       />
+
 
       <LivePurchaseTicker
         vendorId={live.vendorId}
@@ -1547,6 +1559,26 @@ function resolvePlaybackStart(live: LivePageData, playableSource: ReturnType<typ
   return playbackStartSeconds;
 }
 
+function cardsEnabled(playable: boolean, source: LivePlaybackSource | null, admission: LiveAdmissionStatus, exhausted: boolean, checkout: boolean) {
+  return playable && Boolean(source) && admission === "admitted" && !exhausted && !checkout;
+}
+
+function mediaPresentation(source: LivePlaybackSource | null, checkout: boolean, expanded: boolean, url: string | null) {
+  const browser = source?.protocol === "whep";
+  return {
+    browser,
+    section: !checkout ? "relative mx-auto min-h-screen max-w-6xl bg-slate-950 text-white" : playbackSectionClass(checkout),
+    player: !checkout ? "live-viewing-player relative w-full overflow-hidden bg-black" : persistentPlayerShellClass(checkout, expanded),
+    video: browser ? "h-full w-full object-contain" : playbackVideoClass(checkout),
+    src: browser ? undefined : url ?? undefined,
+    interactions: !checkout ? "browser-live-interactions relative flex flex-col" : "contents",
+  };
+}
+
+function MediaDecoration({ browser, videoRef, liveId, vendorId }: { browser: boolean; videoRef: RefObject<HTMLVideoElement | null>; liveId: string; vendorId: string }) {
+  return browser ? <LiveMediaReceiver videoRef={videoRef} liveId={liveId} vendorId={vendorId} /> : null;
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1586,6 +1618,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, admissionStatus);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
   const playableUrl = playableSource?.playbackUrl ?? null;
+  const presentation = mediaPresentation(playableSource, isCheckoutOverlay, isMiniPlayerExpanded, playableUrl);
   const playbackSourceState = playbackSourceStatus({
     streamQuotaExhausted,
     isPlayableRuntime,
@@ -1737,18 +1770,18 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     >
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
-      <section className={playbackSectionClass(isCheckoutOverlay)}>
+      <LiveViewingShell checkout={isCheckoutOverlay} orientation={live.orientation} className={presentation.section}>
         <div
           data-testid="persistent-live-player"
           data-live-player-mode={isCheckoutOverlay ? "checkout" : "page"}
           data-playback-source-state={playbackSourceState}
-          className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}
+          className={presentation.player}
         >
           {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
             <video
               ref={videoRef}
-              className={playbackVideoClass(isCheckoutOverlay)}
-              src={playableUrl ?? undefined}
+              className={presentation.video}
+              src={presentation.src}
               controls={!live.evergreen && visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
               controlsList={live.evergreen ? "nodownload noplaybackrate noremoteplayback" : undefined}
               disablePictureInPicture={Boolean(live.evergreen)}
@@ -1791,7 +1824,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           ) : (
             <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
           )}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
+          <MediaDecoration browser={presentation.browser} videoRef={videoRef} liveId={live.id} vendorId={live.vendorId} />
           {isCheckoutOverlay && isPlayableRuntime ? (
             <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}
               isExpanded={isMiniPlayerExpanded} onBack={() => router.back()} onMutedChange={setIsPlaybackMuted}
@@ -1799,7 +1832,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           ) : null}
         </div>
 
+        <div className={presentation.interactions}>
         <HideDuringCheckout active={isCheckoutOverlay}>
+          <LiveInteractionCard vendorId={live.vendorId} liveId={live.id} videoRef={videoRef} enabled={cardsEnabled(isPlayableRuntime, playableSource, admissionStatus, streamQuotaExhausted, isCheckoutOverlay)} />
+          <LiveDanmaku key={`${live.vendorId}:${live.id}`} vendorId={live.vendorId} liveId={live.id} videoRef={videoRef} enabled={cardsEnabled(isPlayableRuntime, playableSource, admissionStatus, streamQuotaExhausted, isCheckoutOverlay)} />
           <LiveBrandHeader live={live} runtimeState={runtimeState} />
           {isPlayableRuntime && streamQuotaExhausted ? <StreamQuotaAlert /> : null}
 
@@ -1838,7 +1874,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           />
           <LiveAdmissionOverlay status={visibleAdmissionStatus} />
         </HideDuringCheckout>
-      </section>
+        </div>
+      </LiveViewingShell>
     </main>
   );
 }

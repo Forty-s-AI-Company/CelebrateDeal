@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { liveOrientation } from "@/lib/presenter-layout";
 import { notFound } from "next/navigation";
 import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
@@ -20,10 +21,12 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
             {live.isEvergreen && live.evergreenPreviewEnabled && live.video?.videoUrl ? (
               <EvergreenPreviewPlayer
                 videoUrl={live.video.videoUrl}
+                orientation={liveOrientation(live.presenterLayout)}
                 playbackRate={live.evergreenPreviewRate}
                 events={(live.interactionScript?.events ?? []).map(({ id: eventId, triggerSec, title, eventType }) => ({ id: eventId, triggerSec, title, eventType }))}
               />
-            ) : <div className="aspect-video rounded-lg bg-slate-100 bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />}
+            ) : <div className="rounded-lg bg-slate-100 bg-contain bg-no-repeat bg-center" style={{ aspectRatio: liveOrientation(live.presenterLayout) === "portrait" ? "9 / 16" : "16 / 9", maxHeight: "70dvh", backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />}
+            <p className="mt-2 text-sm text-slate-500">已合成影片保留原始比例，比例不符時留白。開啟公開頁可確認與觀眾相同的播放與互動畫面。</p>
             <h2 className="mt-4 text-xl font-semibold text-slate-950">{live.title}</h2>
             <p className="mt-2 text-sm text-slate-500">{live.description}</p>
           </div>
@@ -34,6 +37,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
             <ul className="mt-2 space-y-2 text-sm text-slate-600">
               <li>影片：{live.video?.title ?? "未綁定"}</li>
               <li>串流模式：{live.streamMode}</li>
+              <li>觀看方向：{liveOrientation(live.presenterLayout) === "portrait" ? "直式 9:16" : "橫式 16:9"}</li>
               <li>Cloudflare Live Input：{live.cloudflareLiveInputUid ?? live.video?.cloudflareLiveInputUid ?? "未設定"}</li>
               <li>表單：{live.form?.name ?? "未綁定"}</li>
               <li>報名成功 Email：{live.messageTemplate?.name ?? "未綁定"}</li>

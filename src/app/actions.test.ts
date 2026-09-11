@@ -1882,6 +1882,30 @@ describe("upsertLiveAction", () => {
     });
   });
 
+  it("persists portrait orientation when creating an activity", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData();
+    formData.set("orientation", "portrait");
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+    expect(mocks.liveCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ presenterLayout: expect.objectContaining({ orientation: "portrait", mode: "side-by-side" }) }) }));
+  });
+
+  it("merges activity direction with the current presenter layout on edit", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({ id: "live-1", status: "draft", liveReminderTemplateId: null, liveReminderOffsetMinutes: 60, presenterLayout: { version: 1, mode: "picture-in-picture", corner: "top-left", cameraPercent: 35 } });
+    const formData = liveFormData(); formData.set("id", "live-1"); formData.set("orientation", "portrait");
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/edit");
+    expect(mocks.liveUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ presenterLayout: { version: 1, mode: "picture-in-picture", corner: "top-left", cameraPercent: 35, orientation: "portrait" } }) }));
+  });
+
+  it("rejects direction changes while live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockResolvedValue({ id: "live-1", status: "live", liveReminderTemplateId: null, liveReminderOffsetMinutes: 60 });
+    const formData = liveFormData(); formData.set("id", "live-1"); formData.set("status", "live"); formData.set("orientation", "portrait");
+    await expect(upsertLiveAction(formData)).rejects.toThrow("draft_conflict");
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
+
   it("stores a new live with enabled affiliate attribution and a verified default code", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
@@ -2848,6 +2872,7 @@ describe("upsertLiveAction", () => {
         id: "video-1",
         OR: [
           { sourceType: "url", status: "ready" },
+          { sourceType: "browser_live", status: "ready" },
           { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
           {
             sourceType: "cloudflare_live",

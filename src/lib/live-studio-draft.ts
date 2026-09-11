@@ -30,6 +30,7 @@ const liveStudioDraftFields = {
   liveReminderOffsetMinutes: z.enum(["15", "30", "60", "180", "1440"]).default("60"),
   notificationRules: LiveNotificationRuleDraftListSchema,
   streamMode: z.enum(["vod", "live"]).default("vod"),
+  orientation: z.enum(["landscape", "portrait"]).optional(),
   videoId: optionalReference,
   heroImageUrl: DraftImageReference.default(""),
   heroImageAssetId: optionalReference,

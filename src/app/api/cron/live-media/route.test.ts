@@ -1,0 +1,11 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const m = vi.hoisted(() => ({ authorized: vi.fn(), cleanup: vi.fn(), origin: vi.fn() }));
+vi.mock("@/lib/api-security", () => ({ requireCronSecret: m.authorized, unauthorizedJson: () => Response.json({}, { status: 401 }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
+vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: m.origin }));
+vi.mock("@/lib/live-media-cleanup", () => ({ cleanupMediaSessions: m.cleanup }));
+import { GET } from "./route";
+beforeEach(() => { vi.resetAllMocks(); m.authorized.mockReturnValue(true); m.origin.mockReturnValue("http://127.0.0.1:18889"); m.cleanup.mockResolvedValue({ scanned: 2, stopped: 2 }); });
+it("never sweeps without cron authorization", async () => { m.authorized.mockReturnValue(false); expect((await GET(new Request("https://app.test/api/cron/live-media"))).status).toBe(401); expect(m.cleanup).not.toHaveBeenCalled(); });
+it("uses the private configured provider and returns only counts", async () => { const response = await GET(new Request("https://app.test/api/cron/live-media")); expect(await response.json()).toEqual({ scanned: 2, stopped: 2 }); expect(m.cleanup).toHaveBeenCalledWith({}, "http://127.0.0.1:18889"); });
+it("fails closed without a media origin", async () => { m.origin.mockReturnValue(null); expect((await GET(new Request("https://app.test/api/cron/live-media"))).status).toBe(503); expect(m.cleanup).not.toHaveBeenCalled(); });

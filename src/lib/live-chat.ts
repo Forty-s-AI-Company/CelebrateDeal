@@ -226,7 +226,7 @@ function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMess
     || message.id.length > 128
     || typeof message.authorName !== "string"
     || typeof message.body !== "string"
-    || message.source !== "viewer"
+    || !["viewer", "private_viewer", "private_instructor"].includes(message.source)
     || message.status !== "visible"
     || message.isSimulated !== false
     || message.roleId !== null
@@ -240,7 +240,7 @@ function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMess
 
   return {
     id: message.id,
-    source: "viewer",
+    source: message.source === "private_instructor" ? "instructor" : "viewer",
     createdAt: createdAt.toISOString(),
     body,
     actor: { name: normalizeDisplayName(message.authorName) },
@@ -249,7 +249,7 @@ function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMess
 
 function sameIdempotentMessage(
   existing: StoredViewerMessage,
-  input: { id: string; vendorId: string; liveId: string; submissionId: string; body: string; source: "viewer" },
+  input: { id: string; vendorId: string; liveId: string; submissionId: string; body: string; source: "private_viewer" },
 ) {
   return existing.id === input.id
     && existing.vendorId === input.vendorId
@@ -407,11 +407,20 @@ export async function listViewerChatMessages(
   const cursor = input.cursor ? decodeLiveChatCursor(input.cursor) : null;
   if (input.cursor && !cursor) throw new LiveChatError("invalid_cursor");
 
+  if (!context) return {
+    messages: [], nextCursor: null,
+    viewer: { canPost: false, displayName: null, reason: "verification_required" },
+  };
+
   const rows = await database.liveChatMessage.findMany({
     where: {
       vendorId: input.vendorId,
       liveId: input.liveId,
-      source: "viewer",
+      formSubmissionId: context.submission.id,
+      // Legacy public rows remain unchanged; only their author can read them here.
+      source: { in: ["viewer", "private_viewer", "private_instructor"] },
+      roleId: null,
+      isSimulated: false,
       status: "visible",
       ...(cursor ? {
         OR: [
@@ -465,7 +474,7 @@ export async function createViewerChatMessage(
     liveId: string;
     submissionId: string;
     body: string;
-    source: "viewer";
+    source: "private_viewer";
   };
 
   let attemptedIdempotency: IdempotencyInput | null = null;
@@ -505,7 +514,7 @@ export async function createViewerChatMessage(
       liveId: input.liveId,
       submissionId: context.submission.id,
       body,
-      source: "viewer",
+      source: "private_viewer",
     };
     attemptedIdempotency = idempotency;
 
@@ -531,7 +540,7 @@ export async function createViewerChatMessage(
         roleId: null,
         authorName: normalizeDisplayName(context.submission.name),
         body,
-        source: "viewer",
+        source: "private_viewer",
         status: "visible",
         isSimulated: false,
       },
@@ -557,5 +566,114 @@ export async function createViewerChatMessage(
     }
   }
 
+  throw new LiveChatError("transaction_conflict");
+}
+
+/** 管理端仍使用同一份訊息資料；vendorId 必須來自已驗證的管理員工作階段。 */
+export const InstructorChatQuerySchema = z.object({
+  liveId: z.string().trim().min(1).max(128),
+  submissionId: z.string().trim().min(1).max(128).optional(),
+  cursor: z.string().trim().min(1).max(LIVE_CHAT_CURSOR_MAX_LENGTH).optional(),
+  conversationCursor: z.string().trim().min(1).max(128).optional(),
+}).strict();
+export const InstructorChatPostSchema = InstructorChatQuerySchema.pick({ liveId: true }).extend({
+  submissionId: z.string().trim().min(1).max(128),
+  clientMessageId: UUID_PATTERN,
+  body: z.string().trim().min(1).max(1_000),
+}).strict();
+
+type InstructorDatabase = LiveChatDatabase & Pick<PrismaClient, "live">;
+
+async function assertInstructorTarget(database: Pick<PrismaClient, "live" | "formSubmission">, input: {
+  vendorId: string; liveId: string; submissionId?: string;
+}) {
+  const live = await database.live.findFirst({
+    where: { id: input.liveId, vendorId: input.vendorId }, select: { id: true, formId: true },
+  });
+  if (!live || !live.formId) throw new LiveChatError("access_denied");
+  if (input.submissionId) {
+    const target = await database.formSubmission.findFirst({
+      where: { id: input.submissionId, liveId: live.id, formId: live.formId,
+        verificationStatus: "VERIFIED", form: { vendorId: input.vendorId } },
+      select: { id: true },
+    });
+    if (!target) throw new LiveChatError("access_denied");
+  }
+  return { id: live.id, formId: live.formId };
+}
+
+export async function listInstructorChatMessages(database: InstructorDatabase, input:
+  z.infer<typeof InstructorChatQuerySchema> & { vendorId: string }) {
+  const live = await assertInstructorTarget(database, input);
+  if (!input.submissionId) {
+    const rows = await database.formSubmission.findMany({
+      where: { liveId: live.id, formId: live.formId, verificationStatus: "VERIFIED",
+        form: { vendorId: input.vendorId },
+        ...(input.conversationCursor ? { id: { gt: input.conversationCursor } } : {}),
+      },
+      select: { id: true, name: true }, orderBy: { id: "asc" }, take: 101,
+    });
+    return { messages: [] as ViewerRuntimeMessage[], nextCursor: null,
+      conversations: rows.slice(0, 100).map(row => ({ id: row.id, name: normalizeDisplayName(row.name) })),
+      nextConversationCursor: rows.length > 100 ? rows[99]!.id : null };
+  }
+  const cursor = input.cursor ? decodeLiveChatCursor(input.cursor) : null;
+  if (input.cursor && !cursor) throw new LiveChatError("invalid_cursor");
+  const rows = await database.liveChatMessage.findMany({
+    where: { vendorId: input.vendorId, liveId: live.id, formSubmissionId: input.submissionId,
+      source: { in: ["viewer", "private_viewer", "private_instructor"] },
+      status: "visible", roleId: null, isSimulated: false,
+      ...(cursor ? { OR: [ { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } } ] } : {}),
+    },
+    select: messageSelect(), orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: LIVE_CHAT_PAGE_SIZE + 1,
+  });
+  const page = rows.slice(0, LIVE_CHAT_PAGE_SIZE);
+  const oldest = page.at(-1);
+  return { conversations: [], nextConversationCursor: null,
+    messages: page.map(toViewerRuntimeMessage).filter((row): row is ViewerRuntimeMessage => row !== null).reverse(),
+    nextCursor: rows.length > LIVE_CHAT_PAGE_SIZE && oldest ? encodeLiveChatCursor(oldest) : null };
+}
+
+export async function createInstructorChatMessage(database: InstructorDatabase, input:
+  z.infer<typeof InstructorChatPostSchema> & { vendorId: string }): Promise<ViewerChatCreateResult> {
+  const body = normalizeViewerBody(input.body);
+  if (!body) throw new LiveChatError("access_denied");
+  // Separate idempotency namespace: a viewer can never collide with an instructor reply.
+  const id = createHash("sha256").update(JSON.stringify([
+    "private_instructor", input.vendorId, input.liveId, input.submissionId, input.clientMessageId,
+  ])).digest("hex");
+  const reconcile = (existing: StoredViewerMessage) => {
+    if (existing.vendorId !== input.vendorId || existing.liveId !== input.liveId
+      || existing.formSubmissionId !== input.submissionId || existing.source !== "private_instructor"
+      || existing.body !== body) throw new LiveChatError("idempotency_conflict");
+    const message = toViewerRuntimeMessage(existing);
+    if (!message) throw new LiveChatError("idempotency_conflict");
+    return { message, created: false };
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await database.$transaction(async tx => {
+        await assertInstructorTarget(tx, input);
+        const existing = await findExistingMessage(tx, id);
+        if (existing) return reconcile(existing);
+        const created = await tx.liveChatMessage.create({ data: {
+          id, vendorId: input.vendorId, liveId: input.liveId, formSubmissionId: input.submissionId,
+          authorName: "講師", body, source: "private_instructor", status: "visible", roleId: null, isSimulated: false,
+        }, select: messageSelect() });
+        const message = toViewerRuntimeMessage(created);
+        if (!message) throw new LiveChatError("access_denied");
+        return { message, created: true };
+      }, { isolationLevel: "Serializable" });
+    } catch (error) {
+      if (isPrismaCode(error, "P2002")) {
+        await assertInstructorTarget(database, input);
+        const existing = await findExistingMessage(database, id);
+        if (existing) return reconcile(existing);
+        throw new LiveChatError("transaction_conflict");
+      }
+      if (!isPrismaCode(error, "P2034")) throw error;
+    }
+  }
   throw new LiveChatError("transaction_conflict");
 }

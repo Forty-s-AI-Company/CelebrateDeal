@@ -35,7 +35,7 @@ export type ScheduledRuntimeMessage = {
 
 export type ViewerRuntimeMessage = {
   id: string;
-  source: "viewer";
+  source: "viewer" | "instructor";
   createdAt: string;
   body: string;
   actor: {

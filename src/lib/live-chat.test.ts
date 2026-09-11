@@ -102,7 +102,7 @@ describe("live chat domain", () => {
       actor: { name: "王小明" },
     });
     expect(messages[0]).toMatchObject({
-      source: "viewer",
+      source: "private_viewer",
       roleId: null,
       formSubmissionId: "submission-1",
       authorName: "王小明",
@@ -126,6 +126,8 @@ describe("live chat domain", () => {
 
     expect(result.viewer).toEqual({ canPost: false, displayName: null, reason: "verification_required" });
     expect(db.formSubmission.findFirst).not.toHaveBeenCalled();
+    expect(result.messages).toEqual([]);
+    expect(db.liveChatMessage.findMany).not.toHaveBeenCalled();
   });
 
   it("keeps visible messages readable for a verified but blacklisted viewer", async () => {
@@ -244,7 +246,7 @@ describe("live chat domain", () => {
       roleId: null,
       authorName: "王小明",
       body: "歡迎大家",
-      source: "viewer",
+      source: "private_viewer",
       status: "visible",
       isSimulated: false,
       createdAt: now,
@@ -320,6 +322,10 @@ describe("live chat domain", () => {
     }).sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id)).slice(0, 51));
 
     const result = await listViewerChatMessages(db as never, { vendorId: "vendor-1", liveId: "live-1", chatSessionToken: token, admissionToken, now });
+    expect(db.liveChatMessage.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      vendorId: "vendor-1", liveId: "live-1", formSubmissionId: "submission-1",
+      source: { in: ["viewer", "private_viewer", "private_instructor"] }, roleId: null, isSimulated: false,
+    }) }));
     expect(result.messages).toHaveLength(50);
     expect(result.messages[0]?.body).toBe("訊息 1");
     expect(result.messages.at(-1)?.body).toBe("訊息 52");

@@ -96,7 +96,7 @@ describe.skipIf(!enabled || !databaseIsDisposable)("RT-01 D2 disposable database
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id,
-      source: "viewer",
+      source: "private_viewer",
       roleId: null,
       formSubmissionId: submission.id,
       isSimulated: false,

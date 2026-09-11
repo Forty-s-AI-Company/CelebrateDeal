@@ -15,6 +15,7 @@ export function liveReadyVideoWhere(vendorId: string, id?: string): Prisma.Video
     ...(id ? { id } : {}),
     OR: [
       { sourceType: "url", status: "ready" },
+      { sourceType: "browser_live", status: "ready" },
       { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
       {
         sourceType: "cloudflare_live",
@@ -28,6 +29,7 @@ export function liveReadyVideoWhere(vendorId: string, id?: string): Prisma.Video
 
 export function isLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
   if (!video) return false;
+  if (video.sourceType === "browser_live") return video.status === "ready";
   if (video.sourceType === "url") return video.status === "ready";
   if (video.sourceType === "cloudflare_stream") {
     return video.status === "ready" && video.cloudflareReadyToStream;
@@ -46,6 +48,7 @@ export function isLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
  */
 export function isExistingLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
   if (!video) return false;
+  if (video.sourceType === "browser_live") return video.status === "ready";
   if (video.sourceType === "url") return video.status === "ready" || video.status === "archived";
   if (video.sourceType === "cloudflare_stream") {
     return (video.status === "ready" || video.status === "archived") && video.cloudflareReadyToStream;
