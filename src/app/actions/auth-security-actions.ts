@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -43,6 +44,11 @@ function text(formData: FormData, key: string, fallback = "") {
 
 function normalizedEmail(value: string) {
   return value.trim().toLowerCase();
+}
+
+function vendorSlug(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return normalized || `workspace-${randomUUID().slice(0, 8)}`;
 }
 
 function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
@@ -141,6 +147,42 @@ export async function loginAction(formData: FormData) {
     redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
   }
   redirect("/dashboard");
+}
+
+export async function registerAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const name = text(formData, "name");
+  const workspaceName = text(formData, "workspaceName");
+  const email = normalizedEmail(text(formData, "email"));
+  const password = text(formData, "password");
+  if (name.length < 2 || workspaceName.length < 2 || !email.includes("@") || password.length < 12) redirect("/register?error=invalid");
+  const headerStore = await headers();
+  const rateLimited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwardedRequestHeaders(headerStore) }), "registration-source", 4, LOGIN_RATE_LIMIT_WINDOW_MS);
+  if (rateLimited) redirect(`/register?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+  const passwordHash = await hashPasswordAsync(password);
+  const baseSlug = vendorSlug(workspaceName);
+  const slug = `${baseSlug}-${randomUUID().slice(0, 6)}`;
+  let userId = "";
+  let createdVendorId = "";
+  try {
+    const created = await getDb().$transaction(async (tx) => {
+      const user = await tx.user.create({ data: { name, email, passwordHash } });
+      const vendor = await tx.vendor.create({ data: { name: workspaceName, slug, email, passwordHash } });
+      await tx.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id, role: "owner", status: "active" } });
+      await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0 } });
+      return { userId: user.id, vendorId: vendor.id };
+    });
+    userId = created.userId;
+    createdVendorId = created.vendorId;
+  } catch {
+    redirect("/register?error=exists");
+  }
+  const { token, expiresAt } = await createUserSession({ userId, vendorId: createdVendorId, ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: headerStore.get("user-agent") });
+  const cookieStore = await cookies();
+  cookieStore.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
+  cookieStore.delete(LEGACY_VENDOR_COOKIE);
+  await writeAuditLog({ vendorId: createdVendorId, actorId: userId, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: userId });
+  redirect("/welcome");
 }
 
 export async function logoutAction(formData: FormData) {

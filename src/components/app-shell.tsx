@@ -8,12 +8,15 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
 import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
+import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
+import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
 
 const navGroups = [
   {
     label: "營運總覽",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Gauge },
+      { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
     ],
   },
   {
@@ -134,6 +137,12 @@ export function AppShell({
   isPlatformAdmin = false,
   enabledModules,
   planLabel = "Free",
+  projects = [],
+  selectedProjectId = null,
+  onboardingTasks = [],
+  taskPanelCollapsed = false,
+  selectProject,
+  persistTaskPanelCollapsed,
 }: {
   children: React.ReactNode;
   vendorName: string;
@@ -141,6 +150,12 @@ export function AppShell({
   isPlatformAdmin?: boolean;
   enabledModules?: readonly VendorFeatureModule[];
   planLabel?: string;
+  projects?: ProjectSwitcherItem[];
+  selectedProjectId?: string | null;
+  onboardingTasks?: SidebarOnboardingTask[];
+  taskPanelCollapsed?: boolean;
+  selectProject?: (projectId: string | null) => Promise<void>;
+  persistTaskPanelCollapsed?: (collapsed: boolean) => Promise<void>;
 }) {
   const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
   const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
@@ -186,6 +201,9 @@ export function AppShell({
           </span>
           <span className="rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">Beta</span>
         </Link>
+
+        {!isPlatformAdmin && selectProject ? <WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /> : null}
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
 
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
           {primaryGroups.map((group) => {
@@ -274,6 +292,8 @@ export function AppShell({
             </FormSubmitButton>
           </form>
         </div>
+        {!isPlatformAdmin && selectProject ? <div className="mt-3"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div> : null}
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
         <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
           {visibleGroups.flatMap((group) => group.items).map((item) => (
             <AppShellNavLink key={item.href} href={item.href} mobile>

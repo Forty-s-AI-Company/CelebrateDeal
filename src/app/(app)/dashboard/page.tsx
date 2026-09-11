@@ -9,6 +9,7 @@ import DashboardDetailsLoading from "./dashboard-details-loading";
 import DashboardKpis from "./dashboard-kpis";
 import DashboardKpisLoading from "./dashboard-kpis-loading";
 import { hasVendorFeature, normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";
+import { getDb } from "@/lib/db";
 
 function parseDashboardDetailsDiagnosticDelay(value: string | undefined) {
   if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return 0;
@@ -19,6 +20,33 @@ function parseDashboardDetailsDiagnosticDelay(value: string | undefined) {
 function parseDashboardDiagnosticFailureScope(value: string | undefined) {
   if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return null;
   return value === "analytics" ? value : null;
+}
+
+async function loadDashboardPersonalization(userId: string | undefined, vendorId: string) {
+  // Optional chaining preserves compatibility with narrow DB mocks used by
+  // existing route-shell tests while production Prisma always has this model.
+  if (!userId) return null;
+  return getDb().userOnboardingPreference?.findUnique?.({
+    where: { userId_vendorId: { userId, vendorId } },
+    include: { selectedProject: { select: { name: true, status: true } } },
+  }) ?? null;
+}
+
+function dashboardPrimaryAction(mode: string) {
+  if (mode === "consulting") return { href: "/consultations", label: "建立諮詢服務" };
+  if (mode === "live_course") return { href: "/lives/new", label: "建立直播活動" };
+  return { href: "/projects/new", label: "建立銷售流程" };
+}
+
+function dashboardPresentation(preference: Awaited<ReturnType<typeof loadDashboardPersonalization>>, vendorName: string) {
+  const mode = preference?.selectedMode ?? "live_course";
+  return {
+    mode,
+    title: preference ? (preference.selectedProject?.status === "published" ? "營運 Dashboard" : "上線工作台") : "Dashboard",
+    scopeLabel: preference?.selectedProject ? `${vendorName} / ${preference.selectedProject.name}` : `${vendorName} / 全部專案總覽`,
+    scopeHint: preference?.selectedProject ? "指標與任務會跟隨目前專案。" : "顯示商家跨專案彙總；此範圍不可當成普通專案編輯。",
+    primaryAction: dashboardPrimaryAction(mode),
+  };
 }
 
 export default async function DashboardPage({ searchParams }: {
@@ -50,14 +78,15 @@ export default async function DashboardPage({ searchParams }: {
     vendor.tracking?.googleTagManagerId
     || vendor.tracking?.facebookPixelId
     || vendor.tracking?.tiktokPixelId,
-);
+  );
+  const presentation = dashboardPresentation(await loadDashboardPersonalization(auth.user?.id, vendor.id), vendor.name);
 
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
-        action={isManager && liveEnabled ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
+        title={presentation.title}
+        description={`目前資料範圍：${presentation.scopeLabel}。${presentation.scopeHint}`}
+        action={isManager && (liveEnabled || presentation.mode === "consulting") ? <ButtonLink href={presentation.primaryAction.href} tone="cta"><Plus size={16} />{presentation.primaryAction.label}</ButtonLink> : undefined}
       />
 
       {advancedAnalyticsEnabled ? <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">

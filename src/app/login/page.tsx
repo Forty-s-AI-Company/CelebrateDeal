@@ -52,6 +52,7 @@ export default async function LoginPage({
             登入
           </FormSubmitButton>
         </form>
+        <p className="mt-4 text-center text-sm text-slate-600">第一次使用？ <Link href="/register" className="font-semibold text-primary hover:underline">建立商家 Workspace</Link></p>
         <div className="mt-4 flex items-center justify-between text-sm">
           <Link href="/password-reset/request" className="font-semibold text-primary hover:underline">忘記密碼</Link>
           <Link href="/dashboard" className="font-medium text-slate-600 hover:text-slate-800">返回首頁</Link>

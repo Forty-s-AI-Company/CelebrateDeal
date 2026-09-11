@@ -53,6 +53,37 @@ enum LiveQuestionStatus {
   hidden
 }
 
+/// A sales workspace mode changes information hierarchy and starter guidance.
+/// It deliberately never grants product capabilities; subscription enforcement
+/// remains at the Vendor level.
+enum SalesWorkspaceMode {
+  live_course
+  consulting
+  flagship
+}
+
+enum SalesProjectFlow {
+  live
+  consultation
+}
+
+enum SalesProjectStatus {
+  draft
+  published
+  archived
+}
+
+/// Manual task state complements, but never replaces, data-derived progress.
+/// `skipped` and `archived` are intentionally distinct from `completed`.
+enum OnboardingTaskStatus {
+  not_started
+  in_progress
+  completed
+  skipped
+  needs_attention
+  archived
+}
+
 model Vendor {
   id                    String   @id @default(cuid())
   name                  String
@@ -169,6 +200,11 @@ model Vendor {
   communityPosts                   CommunityPost[]
   communityComments                CommunityComment[]
   communityReactions               CommunityReaction[]
+  salesProjects                    SalesProject[]
+  onboardingPreferences            UserOnboardingPreference[]
+  onboardingTaskStates             OnboardingTaskState[]
+  salesProjectProducts             SalesProjectProduct[]
+  salesProjectCustomers            SalesProjectCustomer[]
 }
 
 model User {
@@ -195,6 +231,7 @@ model User {
   platformReferralCommissions  PlatformReferralCommission[]
   platformReferralPayouts      PlatformReferralPayout[]
   affiliatePortals             Affiliate[]
+  onboardingPreferences        UserOnboardingPreference[]
 }
 
 model UserSession {
@@ -400,6 +437,7 @@ model Product {
   downsellForProducts         Product[]                       @relation("ProductDownsell")
   courseLessons               CourseLesson[]
   courseLessonProgress        CourseLessonProgress[]
+  salesProjectLinks           SalesProjectProduct[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
@@ -438,6 +476,9 @@ model RegistrationForm {
   maxVisibleSessions     Int      @default(0)
   hideExpiredSessions    Boolean  @default(true)
   isActive               Boolean  @default(true)
+  /// Nullable during the staged project-boundary rollout. Existing funnels
+  /// remain available in the vendor-wide scope until explicitly assigned.
+  projectId              String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -447,8 +488,10 @@ model RegistrationForm {
   promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
   submissions          FormSubmission[]
   lives                Live[]
+  project              SalesProject?   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
+  @@index([vendorId, projectId])
 }
 
 model FormSubmission {
@@ -531,6 +574,8 @@ model Live {
   /// normal speed and do not receive this configuration.
   evergreenPreviewEnabled        Boolean   @default(false)
   evergreenPreviewRate           Float     @default(1)
+  /// Nullable to keep all existing live sessions backwards compatible.
+  projectId                      String?
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 
@@ -560,10 +605,12 @@ model Live {
   interactionResponses       LiveInteractionResponse[]
   questions                  LiveQuestion[]
   mediaSessions              LiveMediaSession[]
+  project                    SalesProject?                   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
+  @@index([vendorId, projectId, status])
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.
@@ -990,14 +1037,19 @@ model AnalyticsEvent {
   visitorId  String
   trustLevel AnalyticsTrustLevel @default(LEGACY_UNVERIFIED)
   payload    Json?
+  /// Analytics retains its original event identity while gaining an optional
+  /// project read boundary.
+  projectId  String?
   createdAt  DateTime            @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([eventType, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, trustLevel, eventType, createdAt])
+  @@index([vendorId, projectId, createdAt])
 }
 
 enum AnalyticsTrustLevel {
@@ -1641,6 +1693,9 @@ model CommerceOrder {
   checkoutIdentityHash            String
   automationCustomerKeyHash       String?
   primaryPaymentTransactionId     String?
+  /// Orders are only project-scoped when the checkout flow has an explicit
+  /// project context. Historic orders stay vendor-visible.
+  projectId                       String?
   status                          CommerceOrderStatus @default(pending_payment)
   currency                        String              @default("TWD")
   subtotalAmountCents             Int
@@ -1672,6 +1727,7 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  project                   SalesProject?                   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
@@ -1680,6 +1736,7 @@ model CommerceOrder {
   @@index([vendorId, status, createdAt])
   @@index([vendorId, automationCustomerKeyHash, status])
   @@index([vendorId, paidAt])
+  @@index([vendorId, projectId, status, createdAt])
 }
 
 /// Immutable commercial terms captured at purchase time. Product fields remain
@@ -3310,10 +3367,128 @@ model CustomerCrmRecord {
 
   vendor Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   notes  ConsultantNote[]
+  salesProjects SalesProjectCustomer[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, customerKeyHash])
   @@index([vendorId, consultationStatus, updatedAt])
+}
+
+/// A project is a sales initiative inside one merchant Workspace. It groups
+/// existing tenant-owned resources; it is not a separate customer or billing
+/// tenant.
+model SalesProject {
+  id                String             @id @default(cuid())
+  vendorId          String
+  name              String
+  slug              String
+  mode              SalesWorkspaceMode
+  primaryFlow       SalesProjectFlow
+  status            SalesProjectStatus @default(draft)
+  onboardingEnabled Boolean            @default(true)
+  publishedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  vendor        Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products      SalesProjectProduct[]
+  customers     SalesProjectCustomer[]
+  forms         RegistrationForm[]
+  lives         Live[]
+  consultations ConsultationEvent[]
+  orders        CommerceOrder[]
+  analytics     AnalyticsEvent[]
+  taskStates    OnboardingTaskState[]
+  preferences   UserOnboardingPreference[]  @relation("SelectedSalesProject")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, slug])
+  @@index([vendorId, status, updatedAt])
+}
+
+/// Existing catalog products can be offered in many sales projects without
+/// cloning the catalog row or changing the product's merchant ownership.
+model SalesProjectProduct {
+  id        String   @id @default(cuid())
+  vendorId  String
+  projectId String
+  productId String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  product Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, productId])
+  @@index([vendorId, projectId, sortOrder])
+  @@index([vendorId, productId])
+}
+
+/// Customer membership in a project references the existing vendor-scoped
+/// hashed identity. No email, phone, or second customer profile is stored.
+model SalesProjectCustomer {
+  id              String   @id @default(cuid())
+  vendorId        String
+  projectId       String
+  customerKeyHash String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  customer CustomerCrmRecord @relation(fields: [vendorId, customerKeyHash], references: [vendorId, customerKeyHash], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, customerKeyHash])
+  @@index([vendorId, customerKeyHash])
+}
+
+/// Per-user presentation and questionnaire preferences. This keeps a shared
+/// merchant's task data separate from each teammate's sidebar state.
+model UserOnboardingPreference {
+  id                   String             @id @default(cuid())
+  userId               String
+  vendorId             String
+  questionnaireAnswers Json?
+  questionnaireStep    Int                @default(0)
+  questionnaireDoneAt  DateTime?
+  recommendedMode      SalesWorkspaceMode?
+  selectedMode         SalesWorkspaceMode?
+  selectedProjectId    String?
+  taskPanelCollapsed   Boolean            @default(false)
+  taskPanelHiddenUntil DateTime?
+  guideDismissedAt     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  selectedProject SalesProject? @relation("SelectedSalesProject", fields: [vendorId, selectedProjectId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([userId, vendorId])
+  @@index([vendorId, selectedProjectId])
+}
+
+/// Persisted exceptions and user choices for onboarding. Completion remains
+/// data-derived in the domain evaluator; these rows never manufacture it.
+model OnboardingTaskState {
+  id            String               @id @default(cuid())
+  vendorId      String
+  projectId     String?
+  /// "workspace" for merchant-level tasks, otherwise the stable project ID.
+  scopeKey      String
+  taskKey       String
+  status        OnboardingTaskStatus @default(not_started)
+  skipImpact    String?
+  archivedAt    DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  vendor  Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, scopeKey, taskKey])
+  @@index([vendorId, projectId, status])
 }
 
 /// Append-only consultant notes preserve actor attribution and meeting history.
@@ -3470,15 +3645,20 @@ model ConsultationEvent {
   weeklySchedule   Json
   intakeFormFields Json
   isActive         Boolean  @default(true)
+  /// Existing consultation services continue to be vendor-wide until they
+  /// are intentionally assigned to a sales project.
+  projectId        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   vendor   Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   bookings ConsultationBooking[]
+  project  SalesProject?         @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@index([vendorId, isActive])
   @@index([vendorId, createdAt])
+  @@index([vendorId, projectId, isActive])
 }
 
 model ConsultationBooking {
