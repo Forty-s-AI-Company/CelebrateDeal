@@ -23,7 +23,9 @@ export default async function EditFormPage({
       where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     }),
     db.video.findMany({
-      where: { vendorId: vendor.id, status: "ready", ...(scope.projectId ? { projectId: scope.projectId } : {}) },
+      // Video is a reusable Workspace asset in the current schema; the form
+      // remains project-scoped above, while promo media stays vendor-scoped.
+      where: { vendorId: vendor.id, status: "ready" },
       select: { id: true, title: true },
       orderBy: { createdAt: "desc" },
     }),

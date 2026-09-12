@@ -285,8 +285,10 @@ export function ListSummary({ items }: { items: Array<{ label: string; value: Re
     <dl className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => <div key={item.label} className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <dt className="text-xs font-medium text-slate-500">{item.label}</dt>
-        <dd className="mt-1 text-2xl font-bold tracking-tight text-slate-950 tabular-nums">{item.value}</dd>
-        {item.hint ? <p className="mt-1 text-xs text-slate-500">{item.hint}</p> : null}
+        <dd className="mt-1">
+          <div className="text-2xl font-bold tracking-tight text-slate-950 tabular-nums">{item.value}</div>
+          {item.hint ? <p className="mt-1 text-xs text-slate-500">{item.hint}</p> : null}
+        </dd>
       </div>)}
     </dl>
   );

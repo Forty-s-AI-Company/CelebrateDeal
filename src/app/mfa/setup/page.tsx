@@ -71,7 +71,7 @@ export default async function MfaSetupPage({
         <header className="mb-7 flex items-center justify-between gap-4">
           <Link href="/dashboard" className="inline-flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/70">
             <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-200"><ShieldCheck className="size-5" aria-hidden="true" /></span>
-            <span><span className="block text-sm font-bold tracking-tight text-slate-950">CelebrateDeal</span><span className="block text-[11px] font-medium text-slate-500">Security Center</span></span>
+            <span><span className="block text-sm font-bold tracking-tight text-slate-950">CelebrateDeal</span><span className="block text-[11px] font-medium text-slate-600">Security Center</span></span>
           </Link>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm"><LockKeyhole className="size-3.5 text-blue-600" aria-hidden="true" />安全設定</span>
         </header>

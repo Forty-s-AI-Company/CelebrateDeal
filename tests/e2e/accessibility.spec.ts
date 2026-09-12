@@ -444,7 +444,10 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
 });
 
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
-  test.setTimeout(120_000);
+  // This scenario performs MFA enrollment, a second authenticated login, and
+  // five complete axe route scans; keep one assertion path but budget for the
+  // full production-build navigation sequence on constrained Windows runners.
+  test.setTimeout(240_000);
   await gotoStableRoute(page, "/login");
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);

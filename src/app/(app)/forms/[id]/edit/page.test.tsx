@@ -52,6 +52,6 @@ describe("/forms/[id]/edit route", () => {
     mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "專案一", isAggregate: false, isLegacyWorkspace: false });
     await EditFormPage({ params: Promise.resolve({ id: "form-1" }), searchParams: Promise.resolve({}) });
     expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: "form-1", vendorId: "vendor-1", projectId: "project-1" } });
-    expect(mocks.videoFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", status: "ready", projectId: "project-1" } }));
+    expect(mocks.videoFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", status: "ready" } }));
   });
 });
