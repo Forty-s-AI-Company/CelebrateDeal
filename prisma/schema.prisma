@@ -73,6 +73,13 @@ enum SalesProjectStatus {
   archived
 }
 
+/// A landing page is editable while in draft and can expose exactly one
+/// immutable published version at a time.
+enum LandingPageStatus {
+  draft
+  published
+}
+
 /// Manual task state complements, but never replaces, data-derived progress.
 /// `skipped` and `archived` are intentionally distinct from `completed`.
 enum OnboardingTaskStatus {
@@ -111,6 +118,8 @@ model Vendor {
   commerceDeliverySnapshots        CommerceOrderItemDeliverySnapshot[]
   forms                            RegistrationForm[]
   lives                            Live[]
+  landingPages                     LandingPage[]
+  landingPageVersions              LandingPageVersion[]
   templates                        MessageTemplate[]
   analytics                        AnalyticsEvent[]
   interactionScripts               InteractionScript[]
@@ -488,10 +497,71 @@ model RegistrationForm {
   promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
   submissions          FormSubmission[]
   lives                Live[]
+  landingPages         LandingPage[]        @relation("LandingPageDraftForm")
+  landingPageVersions  LandingPageVersion[] @relation("LandingPageVersionForm")
   project              SalesProject?   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@index([vendorId, projectId])
+}
+
+/// Tenant- and project-bound page editor state. Public reads always use the
+/// immutable version referenced by `publishedVersionId`, never `draftContent`.
+/// The version freezes authored content and bindings; referenced form/live
+/// availability is still checked at request time and can fail closed later.
+model LandingPage {
+  id                 String            @id @default(cuid())
+  vendorId           String
+  projectId          String
+  name               String
+  slug               String            @unique
+  draftContent       Json
+  draftFormId        String?
+  draftLiveId        String?
+  status             LandingPageStatus @default(draft)
+  publishedVersionId String?
+  revision           Int               @default(1)
+  publishedAt        DateTime?
+  unpublishedAt      DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  vendor           Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project          SalesProject        @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  draftForm        RegistrationForm?   @relation("LandingPageDraftForm", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)
+  draftLive        Live?               @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
+  versions         LandingPageVersion[] @relation("LandingPageVersions")
+  publishedVersion LandingPageVersion? @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, id, publishedVersionId])
+  @@unique([vendorId, projectId, slug])
+  @@index([vendorId, projectId, updatedAt])
+  @@index([vendorId, status, publishedAt])
+}
+
+/// Append-only snapshots. A rollback creates a new page draft from one of
+/// these records; it never mutates the historical version itself.
+model LandingPageVersion {
+  id        String   @id @default(cuid())
+  vendorId  String
+  pageId    String
+  version   Int
+  content   Json
+  formId    String?
+  liveId    String?
+  createdAt DateTime @default(now())
+
+  vendor       Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page         LandingPage       @relation("LandingPageVersions", fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  form         RegistrationForm? @relation("LandingPageVersionForm", fields: [vendorId, formId], references: [vendorId, id], onDelete: Restrict)
+  live         Live?             @relation("LandingPageVersionLive", fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
+  publishedFor LandingPage?      @relation("LandingPagePublishedVersion")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, pageId, id])
+  @@unique([vendorId, pageId, version])
+  @@index([vendorId, pageId, createdAt])
 }
 
 model FormSubmission {
@@ -605,6 +675,8 @@ model Live {
   interactionResponses       LiveInteractionResponse[]
   questions                  LiveQuestion[]
   mediaSessions              LiveMediaSession[]
+  landingPages               LandingPage[]                   @relation("LandingPageDraftLive")
+  landingPageVersions        LandingPageVersion[]            @relation("LandingPageVersionLive")
   project                    SalesProject?                   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
@@ -3399,6 +3471,7 @@ model SalesProject {
   customers     SalesProjectCustomer[]
   forms         RegistrationForm[]
   lives         Live[]
+  landingPages  LandingPage[]
   consultations ConsultationEvent[]
   orders        CommerceOrder[]
   analytics     AnalyticsEvent[]

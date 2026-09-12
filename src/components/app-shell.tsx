@@ -24,6 +24,7 @@ const navGroups = [
     items: [
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
       { href: "/videos", label: "媒體素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
+      { href: "/landing-pages", label: "一頁式網站", icon: Palette, managerOnly: true, feature: "funnel_builder" },
       { href: "/forms", label: "報名管理", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
     ],
   },
