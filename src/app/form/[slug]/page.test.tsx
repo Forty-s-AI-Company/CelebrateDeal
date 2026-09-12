@@ -54,6 +54,14 @@ beforeEach(() => {
 });
 
 describe("public registration form", () => {
+  it("honors a selected session without mutating the shared form result", async () => {
+    const form = { ...publicForm, sessions: [...publicForm.sessions, { ...publicForm.sessions[0]!, id: "live-2" }] };
+    mocks.getPublicRegistrationForm.mockResolvedValue(form);
+    const html = renderToStaticMarkup(await PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({ liveId: "live-2" }) }));
+    expect(html).toContain('data-sessions="live-2"');
+    expect(form.sessions).toHaveLength(2);
+    await expect(PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({ liveId: "foreign-live" }) })).rejects.toThrow("NOT_FOUND");
+  });
   it("renders stored presentation settings, safe media, promo and public sessions", async () => {
     const html = renderToStaticMarkup(await PublicFormPage({
       params: Promise.resolve({ slug: "summer" }),

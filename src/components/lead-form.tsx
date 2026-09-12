@@ -64,6 +64,7 @@ export function buildFormSubmissionRequestBody(input: {
   payload: Record<string, FormDataEntryValue>;
   referralCode: string | null;
   shareCode: string;
+  landingPageId?: string;
   utm?: { source?: string; medium?: string; campaign?: string; content?: string; term?: string };
 }) {
   return {
@@ -72,6 +73,7 @@ export function buildFormSubmissionRequestBody(input: {
     payload: input.payload,
     referralCode: input.referralCode,
     ...(input.shareCode ? { shareCode: input.shareCode } : {}),
+    ...(input.landingPageId ? { landingPageId: input.landingPageId } : {}),
     ...(input.utm && Object.values(input.utm).some(Boolean) ? { utm: input.utm } : {}),
   };
 }
@@ -138,7 +140,7 @@ export function LeadForm({
           "Content-Type": "application/json",
           "X-CelebrateDeal-Client": "web",
         },
-        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, utm })),
+        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, utm, landingPageId: query.get("lp")?.slice(0, 128) || undefined })),
       });
 
       if (response.ok) {

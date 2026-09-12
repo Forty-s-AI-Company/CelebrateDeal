@@ -53,6 +53,44 @@ enum LiveQuestionStatus {
   hidden
 }
 
+/// A sales workspace mode changes information hierarchy and starter guidance.
+/// It deliberately never grants product capabilities; subscription enforcement
+/// remains at the Vendor level.
+enum SalesWorkspaceMode {
+  live_course
+  consulting
+  flagship
+}
+
+enum SalesProjectFlow {
+  live
+  consultation
+}
+
+enum SalesProjectStatus {
+  draft
+  published
+  archived
+}
+
+/// A landing page is editable while in draft and can expose exactly one
+/// immutable published version at a time.
+enum LandingPageStatus {
+  draft
+  published
+}
+
+/// Manual task state complements, but never replaces, data-derived progress.
+/// `skipped` and `archived` are intentionally distinct from `completed`.
+enum OnboardingTaskStatus {
+  not_started
+  in_progress
+  completed
+  skipped
+  needs_attention
+  archived
+}
+
 model Vendor {
   id                    String   @id @default(cuid())
   name                  String
@@ -80,6 +118,8 @@ model Vendor {
   commerceDeliverySnapshots        CommerceOrderItemDeliverySnapshot[]
   forms                            RegistrationForm[]
   lives                            Live[]
+  landingPages                     LandingPage[]
+  landingPageVersions              LandingPageVersion[]
   templates                        MessageTemplate[]
   analytics                        AnalyticsEvent[]
   interactionScripts               InteractionScript[]
@@ -447,8 +487,70 @@ model RegistrationForm {
   promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
   submissions          FormSubmission[]
   lives                Live[]
+  landingPages         LandingPage[]        @relation("LandingPageDraftForm")
+  landingPageVersions  LandingPageVersion[] @relation("LandingPageVersionForm")
+  project              SalesProject?   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
+}
+
+/// Tenant- and project-bound page editor state. Public reads always use the
+/// immutable version referenced by `publishedVersionId`, never `draftContent`.
+/// The version freezes authored content and bindings; referenced form/live
+/// availability is still checked at request time and can fail closed later.
+model LandingPage {
+  id                 String            @id @default(cuid())
+  vendorId           String
+  projectId          String
+  name               String
+  slug               String            @unique
+  draftContent       Json
+  draftFormId        String?
+  draftLiveId        String?
+  status             LandingPageStatus @default(draft)
+  publishedVersionId String?
+  revision           Int               @default(1)
+  publishedAt        DateTime?
+  unpublishedAt      DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  vendor           Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project          SalesProject        @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  draftForm        RegistrationForm?   @relation("LandingPageDraftForm", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)
+  draftLive        Live?               @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
+  versions         LandingPageVersion[] @relation("LandingPageVersions")
+  publishedVersion LandingPageVersion? @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, id, publishedVersionId])
+  @@unique([vendorId, projectId, slug])
+  @@index([vendorId, projectId, updatedAt])
+  @@index([vendorId, status, publishedAt])
+}
+
+/// Append-only snapshots. A rollback creates a new page draft from one of
+/// these records; it never mutates the historical version itself.
+model LandingPageVersion {
+  id        String   @id @default(cuid())
+  vendorId  String
+  pageId    String
+  version   Int
+  content   Json
+  formId    String?
+  liveId    String?
+  createdAt DateTime @default(now())
+
+  vendor       Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page         LandingPage       @relation("LandingPageVersions", fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  form         RegistrationForm? @relation("LandingPageVersionForm", fields: [vendorId, formId], references: [vendorId, id], onDelete: Restrict)
+  live         Live?             @relation("LandingPageVersionLive", fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
+  publishedFor LandingPage?      @relation("LandingPagePublishedVersion")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, pageId, id])
+  @@unique([vendorId, pageId, version])
+  @@index([vendorId, pageId, createdAt])
 }
 
 model FormSubmission {
@@ -560,6 +662,9 @@ model Live {
   interactionResponses       LiveInteractionResponse[]
   questions                  LiveQuestion[]
   mediaSessions              LiveMediaSession[]
+  landingPages               LandingPage[]                   @relation("LandingPageDraftLive")
+  landingPageVersions        LandingPageVersion[]            @relation("LandingPageVersionLive")
+  project                    SalesProject?                   @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
@@ -3314,6 +3419,124 @@ model CustomerCrmRecord {
   @@unique([vendorId, id])
   @@unique([vendorId, customerKeyHash])
   @@index([vendorId, consultationStatus, updatedAt])
+}
+
+/// A project is a sales initiative inside one merchant Workspace. It groups
+/// existing tenant-owned resources; it is not a separate customer or billing
+/// tenant.
+model SalesProject {
+  id                String             @id @default(cuid())
+  vendorId          String
+  name              String
+  slug              String
+  mode              SalesWorkspaceMode
+  primaryFlow       SalesProjectFlow
+  status            SalesProjectStatus @default(draft)
+  onboardingEnabled Boolean            @default(true)
+  publishedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  vendor        Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products      SalesProjectProduct[]
+  customers     SalesProjectCustomer[]
+  forms         RegistrationForm[]
+  lives         Live[]
+  landingPages  LandingPage[]
+  consultations ConsultationEvent[]
+  orders        CommerceOrder[]
+  analytics     AnalyticsEvent[]
+  taskStates    OnboardingTaskState[]
+  preferences   UserOnboardingPreference[]  @relation("SelectedSalesProject")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, slug])
+  @@index([vendorId, status, updatedAt])
+}
+
+/// Existing catalog products can be offered in many sales projects without
+/// cloning the catalog row or changing the product's merchant ownership.
+model SalesProjectProduct {
+  id        String   @id @default(cuid())
+  vendorId  String
+  projectId String
+  productId String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  product Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, productId])
+  @@index([vendorId, projectId, sortOrder])
+  @@index([vendorId, productId])
+}
+
+/// Customer membership in a project references the existing vendor-scoped
+/// hashed identity. No email, phone, or second customer profile is stored.
+model SalesProjectCustomer {
+  id              String   @id @default(cuid())
+  vendorId        String
+  projectId       String
+  customerKeyHash String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  customer CustomerCrmRecord @relation(fields: [vendorId, customerKeyHash], references: [vendorId, customerKeyHash], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, customerKeyHash])
+  @@index([vendorId, customerKeyHash])
+}
+
+/// Per-user presentation and questionnaire preferences. This keeps a shared
+/// merchant's task data separate from each teammate's sidebar state.
+model UserOnboardingPreference {
+  id                   String             @id @default(cuid())
+  userId               String
+  vendorId             String
+  questionnaireAnswers Json?
+  questionnaireStep    Int                @default(0)
+  questionnaireDoneAt  DateTime?
+  recommendedMode      SalesWorkspaceMode?
+  selectedMode         SalesWorkspaceMode?
+  selectedProjectId    String?
+  taskPanelCollapsed   Boolean            @default(false)
+  taskPanelHiddenUntil DateTime?
+  guideDismissedAt     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  selectedProject SalesProject? @relation("SelectedSalesProject", fields: [vendorId, selectedProjectId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([userId, vendorId])
+  @@index([vendorId, selectedProjectId])
+}
+
+/// Persisted exceptions and user choices for onboarding. Completion remains
+/// data-derived in the domain evaluator; these rows never manufacture it.
+model OnboardingTaskState {
+  id            String               @id @default(cuid())
+  vendorId      String
+  projectId     String?
+  /// "workspace" for merchant-level tasks, otherwise the stable project ID.
+  scopeKey      String
+  taskKey       String
+  status        OnboardingTaskStatus @default(not_started)
+  skipImpact    String?
+  archivedAt    DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  vendor  Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, scopeKey, taskKey])
+  @@index([vendorId, projectId, status])
 }
 
 /// Append-only consultant notes preserve actor attribution and meeting history.

@@ -37,7 +37,7 @@ export function hasVendorFeature(modules: readonly VendorFeatureModule[], featur
 }
 
 const ROUTE_FEATURES: ReadonlyArray<{ prefixes: readonly string[]; feature: VendorFeatureModule }> = [
-  { prefixes: ["/forms", "/team-templates"], feature: "funnel_builder" },
+  { prefixes: ["/forms", "/landing-pages", "/team-templates"], feature: "funnel_builder" },
   { prefixes: ["/lives", "/videos", "/interaction-scripts", "/interaction-roles"], feature: "live_webinar" },
   { prefixes: ["/affiliates", "/team-performance", "/settings/commissions"], feature: "affiliate_program" },
   { prefixes: ["/billing/payouts", "/billing/course-payouts"], feature: "tax_remuneration" },
