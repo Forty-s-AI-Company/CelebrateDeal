@@ -9,4 +9,14 @@ describe("mobile consultation page contract", () => {
     expect(source).toContain("min-h-12");
     expect(source).toContain("listTodayConsultations");
   });
+
+  it("loads the selected scope and makes aggregate overview visibly read-only", async () => {
+    const source = await readFile(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("requireVendorManagerContext()");
+    expect(source).toContain("getSalesProjectScope(auth.user.id, vendor.id)");
+    expect(source).toContain("scope.projectId");
+    expect(source).toContain("全部專案總覽為唯讀模式");
+    expect(source).toContain("!scope.isAggregate ? <form action={saveMobileConsultationAction}");
+  });
 });

@@ -282,6 +282,12 @@ async function enqueueSubmissionVerificationSafely({
   }
 }
 
+function availablePublicForm<T extends { isActive: boolean; projectId?: string | null; project?: { status: string; publishedAt: Date | null } | null }>(form: T | null): T | null {
+  if (!form || !form.isActive) return null;
+  if (form.projectId && (form.project?.status !== "published" || !form.project.publishedAt)) return null;
+  return form;
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
@@ -312,13 +318,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: contactError }, { status: 400 });
   }
 
-  const form = await getDb().registrationForm.findUnique({
+  const form = availablePublicForm(await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
     include: {
       vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      project: { select: { status: true, publishedAt: true } },
     },
-  });
-  if (!form || !form.isActive) {
+  }));
+  if (!form) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
   }
 

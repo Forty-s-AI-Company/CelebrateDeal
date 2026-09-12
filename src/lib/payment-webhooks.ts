@@ -32,6 +32,7 @@ import {
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
+import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
@@ -1088,6 +1089,39 @@ async function reconcileCommercePaymentLifecycle(
   });
 }
 
+/**
+ * A payment callback can advance only its server-created canonical order.
+ * Re-read that order inside the webhook transaction so provider data never
+ * selects a project or customer identity.
+ */
+async function ensurePaidOrderProjectCustomerMembership(
+  tx: Prisma.TransactionClient,
+  input: { vendorId: string; paymentTransactionId: string },
+) {
+  const order = await tx.commerceOrder.findFirst({
+    where: {
+      vendorId: input.vendorId,
+      primaryPaymentTransactionId: input.paymentTransactionId,
+      status: { in: ["paid", "partially_refunded"] },
+      isTestOrder: false,
+      projectId: { not: null },
+      automationCustomerKeyHash: { not: null },
+    },
+    select: { projectId: true, automationCustomerKeyHash: true },
+  });
+  if (!order) return false;
+  return ensureSalesProjectCustomerMembership(tx, {
+    vendorId: input.vendorId,
+    projectId: order.projectId,
+    customerKeyHash: order.automationCustomerKeyHash,
+  });
+}
+
+async function finalizePaidCommerceOrder(tx: Prisma.TransactionClient, input: { vendorId: string; paymentTransactionId: string; occurredAt: Date }) {
+  await ensureCommerceOrderPaidDelivery(tx, input);
+  await ensurePaidOrderProjectCustomerMembership(tx, input);
+}
+
 /** Only generic billing sessions release their reusable transient checkout key. */
 function shouldClearTransientCheckoutKey(eventType: PaymentWebhookPayloadInput["eventType"], hasCanonicalOrder: boolean) {
   return isPaymentLifecycleEvent(eventType) && !hasCanonicalOrder;
@@ -1276,7 +1310,7 @@ async function processPaymentWebhookOnce(incomingPayload: PaymentWebhookPayloadI
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
       });
       if (payload.eventType === "paid") {
-        await ensureCommerceOrderPaidDelivery(tx, {
+        await finalizePaidCommerceOrder(tx, {
           vendorId: vendor.id,
           paymentTransactionId: savedTransaction.id,
           occurredAt,

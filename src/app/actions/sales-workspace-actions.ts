@@ -89,6 +89,9 @@ export async function createSalesProjectAction(formData: FormData) {
     if (parsed.onboardingEnabled) await tx.onboardingTaskState.createMany({ data: projectOnboardingTasks(parsed.primaryFlow).map((task) => ({ vendorId: vendor.id, projectId: created.id, scopeKey: created.id, taskKey: task.key, status: "not_started" })) });
     return created;
   });
+  // The current App Router layout may survive the redirect; invalidate it so
+  // the Sidebar immediately reflects the newly selected project.
+  revalidatePath("/", "layout");
   redirect(parsed.onboardingEnabled ? "/onboarding" : `/projects/${project.id}`);
 }
 

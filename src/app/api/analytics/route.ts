@@ -93,7 +93,7 @@ export async function POST(request: Request) {
         { status: "ended", replayEnabled: true },
       ],
     },
-    select: { id: true },
+    select: { id: true, projectId: true },
   });
   if (!live) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
@@ -119,6 +119,7 @@ export async function POST(request: Request) {
   await db.analyticsEvent.create({
     data: {
       vendorId: parsed.data.vendorId,
+      projectId: live.projectId,
       liveId: parsed.data.liveId,
       visitorId: verifiedSessionId,
       eventType: parsed.data.eventType,

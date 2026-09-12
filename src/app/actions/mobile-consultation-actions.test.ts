@@ -6,7 +6,8 @@ describe("mobile consultation action contract", () => {
     const source = await readFile(new URL("./mobile-consultation-actions.ts", import.meta.url), "utf8");
     expect(source).toContain("assertServerActionSecurity(formData)");
     expect(source).toContain("requireVendorManagerContext()");
-    expect(source).toContain("where: { id: bookingId, vendorId: vendor.id }");
+    expect(source).toContain("requireEditableSalesProjectScope(auth.user.id, vendor.id)");
+    expect(source).toContain("event: { projectId: scope.projectId }");
     expect(source).toContain("booking.customerKeyHash");
     expect(source).not.toContain('text(formData, "customerKeyHash")');
   });

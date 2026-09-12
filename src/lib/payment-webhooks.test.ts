@@ -980,6 +980,15 @@ describe("payment webhook processing", () => {
     });
     const checkoutIdempotencyKey = `commerce-retry-${suffix}`;
     const orderNumber = `ORDER-COMMERCE-RETRY-${suffix}`;
+    const project = await db.salesProject.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Commerce retry project ${suffix}`,
+        slug: `commerce-retry-project-${suffix}`,
+        mode: "live_course",
+        primaryFlow: "live",
+      },
+    });
     const transaction = await createReservedPaymentTransaction({
       vendorId: vendor.id,
       productId: product.id,
@@ -1009,20 +1018,30 @@ describe("payment webhook processing", () => {
       }).then(() => undefined),
     });
 
-    await processPaymentWebhook(PaymentWebhookPayload.parse({
+    const order = await db.commerceOrder.findUniqueOrThrow({
+      where: { vendorId_checkoutIdempotencyKey: { vendorId: vendor.id, checkoutIdempotencyKey } },
+    });
+    await db.commerceOrder.update({ where: { id: order.id }, data: { projectId: project.id } });
+
+    const paid = PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-commerce-retry-${suffix}`,
       eventType: "paid",
       vendorId: vendor.id,
       orderNumber,
       grossAmountCents: product.priceCents,
-    }));
+    });
+    await processPaymentWebhook(paid);
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...paid, eventId: `${paid.eventId}-replay` }));
 
     await expect(db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } }))
       .resolves.toMatchObject({ status: "paid", checkoutIdempotencyKey });
     await expect(db.commerceOrder.findUniqueOrThrow({
       where: { vendorId_checkoutIdempotencyKey: { vendorId: vendor.id, checkoutIdempotencyKey } },
-    })).resolves.toMatchObject({ status: "paid", primaryPaymentTransactionId: transaction.id });
+    })).resolves.toMatchObject({ status: "paid", primaryPaymentTransactionId: transaction.id, projectId: project.id });
+    expect(await db.salesProjectCustomer.count({
+      where: { vendorId: vendor.id, projectId: project.id, customerKeyHash: order.automationCustomerKeyHash! },
+    })).toBe(1);
   });
 
   it("processes a webhook identified by vendorId", async () => {

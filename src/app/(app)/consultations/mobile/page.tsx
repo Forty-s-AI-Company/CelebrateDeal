@@ -1,12 +1,22 @@
+import Link from "next/link";
 import { saveMobileConsultationAction } from "@/app/actions/mobile-consultation-actions";
 import { CsrfField } from "@/components/csrf-field";
-import { requireVendorManager } from "@/lib/auth";
+import { SalesScopeNotice } from "@/components/sales-scope-notice";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { listTodayConsultations, safeTelHref, type MobileConsultationDatabase } from "@/lib/mobile-consultation-cockpit";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 export default async function MobileConsultationsPage() {
-  const vendor = await requireVendorManager();
-  const bookings = await listTodayConsultations(getDb() as unknown as MobileConsultationDatabase, vendor.id);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+  const bookings = await listTodayConsultations(
+    getDb() as unknown as MobileConsultationDatabase,
+    vendor.id,
+    new Date(),
+    "Asia/Taipei",
+    scope.projectId,
+  );
 
   return (
     <main className="mx-auto max-w-lg pb-24">
@@ -15,6 +25,19 @@ export default async function MobileConsultationsPage() {
         <h1 className="text-2xl font-black text-slate-950">今日諮詢</h1>
         <p className="mt-1 text-sm text-slate-600">依時間排序，共 {bookings.length} 場</p>
       </header>
+
+      <div className="px-4 pt-4">
+        <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
+        {scope.isAggregate ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-bold">全部專案總覽為唯讀模式</p>
+            <p className="mt-1">請先切換到單一專案，才能儲存備註、加入標籤或標記成交。</p>
+            <Link href="/projects" className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-slate-950 px-4 font-bold text-white">
+              前往專案列表
+            </Link>
+          </div>
+        ) : null}
+      </div>
 
       <section className="grid gap-4 p-4" aria-label="今日諮詢排程">
         {bookings.map((booking) => {
@@ -37,7 +60,7 @@ export default async function MobileConsultationsPage() {
                 {booking.meetingUrl ? <a href={booking.meetingUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-3 font-bold text-white">開啟視訊</a> : <span className="flex min-h-12 items-center justify-center rounded-xl bg-slate-100 px-3 text-sm text-slate-500">未設定視訊</span>}
               </div>
 
-              <form action={saveMobileConsultationAction} className="mt-4 grid gap-3 border-t border-slate-200 pt-4">
+              {!scope.isAggregate ? <form action={saveMobileConsultationAction} className="mt-4 grid gap-3 border-t border-slate-200 pt-4">
                 <CsrfField />
                 <input type="hidden" name="bookingId" value={booking.id} />
                 <label className="grid gap-1 text-sm font-bold text-slate-800">快速備註
@@ -49,7 +72,7 @@ export default async function MobileConsultationsPage() {
                   <button type="submit" className="min-h-12 rounded-xl border border-slate-300 px-2 text-sm font-bold text-slate-800">儲存備註</button>
                   <button type="submit" name="closedWon" value="true" className="min-h-12 rounded-xl bg-emerald-700 px-2 text-sm font-black text-white">標記成交</button>
                 </div>
-              </form>
+              </form> : null}
             </article>
           );
         })}

@@ -21,7 +21,7 @@ export function AppShellNavLink({
       href={href}
       aria-current={isActive ? "page" : undefined}
       className={clsx(
-        "group relative flex min-h-10 items-center gap-3 text-sm font-medium transition-colors duration-150",
+        "group relative flex min-h-11 items-center gap-3 text-sm font-medium transition-colors duration-150",
         mobile
           ? "shrink-0 rounded-full border px-4 py-2"
           : "rounded-lg px-3 py-2",

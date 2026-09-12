@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
+import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 
 export type FormSubmissionVerificationResult =
   | { status: "invalid" }
@@ -80,12 +81,14 @@ export async function verifyFormSubmission(
         liveId: true,
         name: true,
         email: true,
+        customerKeyHash: true,
         verificationStatus: true,
         verificationVersion: true,
         verificationExpiresAt: true,
         form: {
           select: {
             vendorId: true,
+            projectId: true,
             vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
           },
         },
@@ -182,6 +185,7 @@ export async function verifyFormSubmission(
       await tx.analyticsEvent.create({
         data: {
           vendorId: submission.form.vendorId,
+          projectId: submission.form.projectId,
           liveId: submission.liveId,
           visitorId: createHash("sha256").update(submission.id).digest("hex"),
           eventType: "lead_submit",
@@ -206,6 +210,14 @@ export async function verifyFormSubmission(
         data: { convertedAt: now },
       });
     }
+
+    // The registration form is the server-owned project source. An
+    // unverified submission deliberately never reaches this point.
+    await ensureSalesProjectCustomerMembership(tx, {
+      vendorId: submission.form.vendorId,
+      projectId: submission.form.projectId,
+      customerKeyHash: submission.customerKeyHash,
+    });
 
     return {
       status: "verified" as const,

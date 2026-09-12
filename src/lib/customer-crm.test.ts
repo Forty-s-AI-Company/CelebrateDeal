@@ -84,7 +84,7 @@ describe("customer CRM aggregation", () => {
     await expect(listCustomers("vendor-a", "", "", "project-a"))
       .resolves.toEqual([expect.objectContaining({ customerKeyHash: "member-hash" })]);
     expect(formFind).toHaveBeenCalledWith(expect.objectContaining({
-      where: { form: { vendorId: "vendor-a" }, customerKeyHash: { in: ["member-hash"] } },
+      where: { form: { vendorId: "vendor-a", projectId: "project-a" }, customerKeyHash: { in: ["member-hash"] } },
     }));
   });
 });

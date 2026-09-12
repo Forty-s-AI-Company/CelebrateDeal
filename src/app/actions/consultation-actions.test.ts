@@ -176,6 +176,8 @@ function concurrentReservationDatabase(): ConsultationDatabase {
         return created;
       }),
     },
+    customerCrmRecord: { upsert: vi.fn() },
+    salesProjectCustomer: { upsert: vi.fn() },
   };
   return {
     consultationEvent: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
@@ -205,5 +207,36 @@ describe("consultation reservation concurrency", () => {
     ]);
     expect([first.status, second.status].filter((status) => status === "booked")).toHaveLength(1);
     expect([first.status, second.status].filter((status) => status === "unavailable")).toHaveLength(1);
+  });
+
+  it("materializes one membership from the server-resolved event project", async () => {
+    const customerCrmUpsert = vi.fn().mockResolvedValue({ id: "customer-1" });
+    const membershipUpsert = vi.fn().mockResolvedValue({ id: "membership-1" });
+    const transaction = {
+      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      consultationEvent: { findFirst: vi.fn().mockResolvedValue({ ...event, projectId: "project-trusted", project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00Z") } }) },
+      consultationBooking: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn().mockResolvedValue(0),
+        create: vi.fn().mockResolvedValue({ id: "booking-1", startTime: new Date("2026-09-07T01:00:00.000Z"), endTime: new Date("2026-09-07T01:30:00.000Z") }),
+      },
+      customerCrmRecord: { upsert: customerCrmUpsert },
+      salesProjectCustomer: { upsert: membershipUpsert },
+    };
+    const database: ConsultationDatabase = {
+      consultationEvent: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+      consultationBooking: { findMany: vi.fn(), updateMany: vi.fn() },
+      $transaction: async (callback) => callback(transaction),
+    };
+
+    await expect(reserveConsultationBooking(database, {
+      eventId: "event-1", startTime: "2026-09-07T01:00:00.000Z", clientName: "林小安", clientEmail: "a@example.test", clientPhone: "0912345678", answers: {},
+    }, () => "server-derived-customer")).resolves.toMatchObject({ status: "booked" });
+
+    expect(membershipUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: { vendorId: "vendor-1", projectId: "project-trusted", customerKeyHash: "server-derived-customer" },
+    }));
+    expect(customerCrmUpsert).toHaveBeenCalledOnce();
   });
 });

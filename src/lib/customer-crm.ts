@@ -104,6 +104,17 @@ async function customerScopeFilters(vendorId: string, projectId: string | null) 
   return { empty: hashes.length === 0, direct: { in: hashes }, optional: { customerKeyHash: { in: hashes } } };
 }
 
+function customerProjectActivityScope(projectId: string | null) {
+  if (!projectId) return { form: {}, booking: {}, order: {}, watch: {}, live: {} };
+  return {
+    form: { projectId },
+    booking: { event: { projectId } },
+    order: { projectId },
+    watch: { live: { projectId } },
+    live: { live: { projectId } },
+  };
+}
+
 /** Builds a tenant-scoped identity union from every CRM source, including hash-only facts. */
 export async function listCustomers(vendorId: string, query = "", tag = "", projectId: string | null = null): Promise<CustomerListItem[]> {
   requireVendorId(vendorId);
@@ -112,11 +123,12 @@ export async function listCustomers(vendorId: string, query = "", tag = "", proj
   // second CRM record, so project views restrict the union by membership hash.
   const scope = await customerScopeFilters(vendorId, projectId);
   if (scope.empty) return [];
+  const activity = customerProjectActivityScope(projectId);
   const [submissions, bookings, orders, watches, tags, vouchers, automations, records] = await Promise.all([
-    db.formSubmission.findMany({ where: { form: { vendorId }, ...scope.optional }, select: { name: true, email: true, phone: true, customerKeyHash: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
-    db.consultationBooking.findMany({ where: { vendorId, ...scope.optional }, select: { clientName: true, clientEmail: true, clientPhone: true, customerKeyHash: true, status: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
-    db.commerceOrder.findMany({ where: { vendorId, automationCustomerKeyHash: scope.direct, status: { in: ["paid", "partially_refunded", "refunded"] } }, select: { automationCustomerKeyHash: true, buyerMaskedName: true, buyerMaskedEmail: true, buyerMaskedPhone: true, paidAmountCents: true, refundedAmountCents: true, paidAt: true, createdAt: true } }),
-    db.streamUsageLedgerEntry.groupBy({ by: ["customerKeyHash"], where: { vendorId, customerKeyHash: scope.direct }, _sum: { watchSeconds: true }, _max: { capturedAt: true } }),
+    db.formSubmission.findMany({ where: { form: { vendorId, ...activity.form }, ...scope.optional }, select: { name: true, email: true, phone: true, customerKeyHash: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
+    db.consultationBooking.findMany({ where: { vendorId, ...activity.booking, ...scope.optional }, select: { clientName: true, clientEmail: true, clientPhone: true, customerKeyHash: true, status: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
+    db.commerceOrder.findMany({ where: { vendorId, ...activity.order, automationCustomerKeyHash: scope.direct, status: { in: ["paid", "partially_refunded", "refunded"] } }, select: { automationCustomerKeyHash: true, buyerMaskedName: true, buyerMaskedEmail: true, buyerMaskedPhone: true, paidAmountCents: true, refundedAmountCents: true, paidAt: true, createdAt: true } }),
+    db.streamUsageLedgerEntry.groupBy({ by: ["customerKeyHash"], where: { vendorId, ...activity.watch, customerKeyHash: scope.direct }, _sum: { watchSeconds: true }, _max: { capturedAt: true } }),
     db.customerTagAssignment.findMany({ where: { vendorId, ...scope.optional } }),
     db.automationVoucherGrant.findMany({ where: { vendorId, ...scope.optional }, select: { customerKeyHash: true, createdAt: true } }),
     db.automationExecutionLog.findMany({ where: { vendorId, subjectKeyHash: scope.direct }, select: { subjectKeyHash: true, createdAt: true } }),
@@ -174,6 +186,7 @@ export async function listCustomers(vendorId: string, query = "", tag = "", proj
 
 export async function getCustomerProfile(vendorId: string, customerKeyHash: string, projectId: string | null = null) {
   const db = getDb();
+  const activity = customerProjectActivityScope(projectId);
   if (projectId) {
     const membership = await db.salesProjectCustomer.findUnique({
       where: { vendorId_projectId_customerKeyHash: { vendorId, projectId, customerKeyHash } },
@@ -181,15 +194,15 @@ export async function getCustomerProfile(vendorId: string, customerKeyHash: stri
     });
     if (!membership) return null;
   }
-  let personRows = await db.formSubmission.findMany({ where: { form: { vendorId }, customerKeyHash }, include: { form: true }, orderBy: { createdAt: "desc" } });
-  let bookingRows = await db.consultationBooking.findMany({ where: { vendorId, customerKeyHash }, include: { event: true }, orderBy: { createdAt: "desc" } });
+  let personRows = await db.formSubmission.findMany({ where: { form: { vendorId, ...activity.form }, customerKeyHash }, include: { form: true }, orderBy: { createdAt: "desc" } });
+  let bookingRows = await db.consultationBooking.findMany({ where: { vendorId, ...activity.booking, customerKeyHash }, include: { event: true }, orderBy: { createdAt: "desc" } });
   // Transitional compatibility for pre-migration rows. New writes and a
   // controlled backfill use indexed hashes; this bounded fallback prevents old
   // CRM links from becoming 404 before that operational backfill is applied.
   if (!personRows.length && !bookingRows.length) {
     const [legacySubmissions, legacyBookings] = await Promise.all([
-      db.formSubmission.findMany({ where: { form: { vendorId }, customerKeyHash: null }, include: { form: true }, orderBy: { createdAt: "desc" } }),
-      db.consultationBooking.findMany({ where: { vendorId, customerKeyHash: null }, include: { event: true }, orderBy: { createdAt: "desc" } }),
+      db.formSubmission.findMany({ where: { form: { vendorId, ...activity.form }, customerKeyHash: null }, include: { form: true }, orderBy: { createdAt: "desc" } }),
+      db.consultationBooking.findMany({ where: { vendorId, ...activity.booking, customerKeyHash: null }, include: { event: true }, orderBy: { createdAt: "desc" } }),
     ]);
     personRows = legacySubmissions.filter((row) => automationCustomerKeyHash(vendorId, row.email) === customerKeyHash);
     bookingRows = legacyBookings.filter((row) => automationCustomerKeyHash(vendorId, row.clientEmail) === customerKeyHash);
@@ -198,10 +211,13 @@ export async function getCustomerProfile(vendorId: string, customerKeyHash: stri
   const bookingIdentity = bookingRows[0];
   const submissionIds = personRows.map((row) => row.id);
   const [watches, chats, interactions, orders, tags, vouchers, automations, record] = await Promise.all([
-    db.streamUsageLedgerEntry.findMany({ where: { vendorId, customerKeyHash }, include: { live: { select: { title: true, video: { select: { durationSec: true } } } } } }),
-    db.liveChatMessage.findMany({ where: { vendorId, source: "viewer", formSubmissionId: { in: submissionIds }, isSimulated: false, status: "visible" }, include: { live: { select: { title: true } } }, orderBy: { createdAt: "desc" } }),
-    db.liveInteractionResponse.findMany({ where: { vendorId, formSubmissionId: { in: submissionIds }, eventType: "lucky_draw" }, include: { live: { select: { title: true } }, run: { select: { title: true, winnerResponseId: true } } } }),
-    db.commerceOrder.findMany({ where: { vendorId, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } }, include: { items: true, electronicInvoice: true, primaryPaymentTransaction: true } }),
+    db.streamUsageLedgerEntry.findMany({
+      where: { vendorId, ...activity.watch, customerKeyHash },
+      include: { live: { select: { title: true, video: { select: { durationSec: true } } } } },
+    }),
+    db.liveChatMessage.findMany({ where: { vendorId, ...activity.live, source: "viewer", formSubmissionId: { in: submissionIds }, isSimulated: false, status: "visible" }, include: { live: { select: { title: true } } }, orderBy: { createdAt: "desc" } }),
+    db.liveInteractionResponse.findMany({ where: { vendorId, ...activity.live, formSubmissionId: { in: submissionIds }, eventType: "lucky_draw" }, include: { live: { select: { title: true } }, run: { select: { title: true, winnerResponseId: true } } } }),
+    db.commerceOrder.findMany({ where: { vendorId, ...activity.order, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } }, include: { items: true, electronicInvoice: true, primaryPaymentTransaction: true } }),
     db.customerTagAssignment.findMany({ where: { vendorId, customerKeyHash } }),
     db.automationVoucherGrant.findMany({ where: { vendorId, customerKeyHash } }),
     db.automationExecutionLog.findMany({ where: { vendorId, subjectKeyHash: customerKeyHash } }),

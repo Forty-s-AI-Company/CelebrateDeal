@@ -191,6 +191,8 @@ async function appendEvent(
 export type CreateCommerceOrderForCheckoutInput = {
   vendorId: string;
   productId: string;
+  /** Server-derived sales project context; never accepted from checkout JSON. */
+  projectId?: string | null;
   orderNumber: string;
   checkoutIdempotencyKey: string;
   paymentTransactionId: string;
@@ -216,6 +218,10 @@ export type CreateCommerceOrderForCheckoutInput = {
   isTestOrder?: boolean;
   now?: Date;
 };
+
+function assertOptionalOpaqueId(value: string | null | undefined, field: string) {
+  if (value) assertOpaqueId(value, field);
+}
 
 /** 在同一筆交易內重新驗證加購商品的商家、狀態與幣別。 */
 async function checkoutOrderBumpProduct(
@@ -304,6 +310,7 @@ export async function createCommerceOrderForCheckout(
 ) {
   assertOpaqueId(input.vendorId, "vendorId");
   assertOpaqueId(input.productId, "productId");
+  assertOptionalOpaqueId(input.projectId, "projectId");
   assertOpaqueId(input.orderNumber, "orderNumber");
   assertOpaqueId(input.checkoutIdempotencyKey, "checkoutIdempotencyKey");
   assertOpaqueId(input.paymentTransactionId, "paymentTransactionId");
@@ -399,6 +406,7 @@ export async function createCommerceOrderForCheckout(
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
+    projectId: input.projectId ?? null,
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
     checkoutIdentityHash,

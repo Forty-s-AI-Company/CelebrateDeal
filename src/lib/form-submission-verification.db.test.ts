@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
+import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
 
@@ -25,9 +26,19 @@ async function createFixture(suffix: string) {
     },
   });
   createdVendorIds.push(vendor.id);
+  const project = await db.salesProject.create({
+    data: {
+      vendorId: vendor.id,
+      name: "Verification project",
+      slug: `g7-13b-project-${suffix}`,
+      mode: "live_course",
+      primaryFlow: "live",
+    },
+  });
   const form = await db.registrationForm.create({
     data: {
       vendorId: vendor.id,
+      projectId: project.id,
       name: "Verification fixture",
       slug: `g7-13b-registration-${suffix}`,
       headline: "Verify registration",
@@ -64,13 +75,13 @@ async function createFixture(suffix: string) {
       landingPath: `/live/${live.slug}`,
     },
   });
-  return { db, vendor, form, live, click };
+  return { db, vendor, project, form, live, click };
 }
 
 describe("form submission verification disposable database invariants", () => {
   it("atomically verifies once and creates one trusted lead plus one affiliate conversion", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const { db, vendor, form, live, click } = await createFixture(suffix);
+    const { db, vendor, project, form, live, click } = await createFixture(suffix);
     const now = new Date();
     const expiresAt = new Date(Math.floor((now.getTime() + 60 * 60 * 1_000) / 1_000) * 1_000 + 731);
     const submission = await db.formSubmission.create({
@@ -79,6 +90,7 @@ describe("form submission verification disposable database invariants", () => {
         liveId: live.id,
         name: "Verified lead",
         email: `verified-${suffix}@example.test`,
+        customerKeyHash: automationCustomerKeyHash(vendor.id, `verified-${suffix}@example.test`),
         source: "live",
         verificationExpiresAt: expiresAt,
         affiliateClickId: click.id,
@@ -118,6 +130,7 @@ describe("form submission verification disposable database invariants", () => {
       where: { vendorId: vendor.id, liveId: live.id, eventType: "lead_submit" },
     });
     expect(trustedLead).toMatchObject({
+      projectId: project.id,
       trustLevel: "VERIFIED_FORM_SUBMISSION",
       visitorId: expect.stringMatching(/^[a-f0-9]{64}$/u),
     });
@@ -125,12 +138,23 @@ describe("form submission verification disposable database invariants", () => {
     await expect(db.affiliateClick.findUniqueOrThrow({ where: { id: click.id } })).resolves.toMatchObject({
       convertedAt: expect.any(Date),
     });
+    await expect(db.salesProjectCustomer.findUniqueOrThrow({
+      where: {
+        vendorId_projectId_customerKeyHash: {
+          vendorId: vendor.id,
+          projectId: project.id,
+          customerKeyHash: submission.customerKeyHash!,
+        },
+      },
+    })).resolves.toMatchObject({ vendorId: vendor.id, projectId: project.id });
+    expect(await db.customerCrmRecord.count({ where: { vendorId: vendor.id, customerKeyHash: submission.customerKeyHash! } })).toBe(1);
 
     await expect(verifyFormSubmission(db, token, new Date(now.getTime() + 1_000))).resolves.toEqual({
       status: "already_verified",
       chatSession: { submissionId: submission.id },
     });
     expect(await db.analyticsEvent.count({ where: { vendorId: vendor.id, eventType: "lead_submit" } })).toBe(1);
+    expect(await db.salesProjectCustomer.count({ where: { vendorId: vendor.id, projectId: project.id, customerKeyHash: submission.customerKeyHash! } })).toBe(1);
   });
 
   it("only issues a chat session for an already-verified submission when token version and expiry are still current", async () => {

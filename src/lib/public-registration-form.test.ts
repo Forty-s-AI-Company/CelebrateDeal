@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   findMany: vi.fn(),
+  consultationFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     registrationForm: { findFirst: mocks.findFirst },
     live: { findMany: mocks.findMany },
+    consultationEvent: { findMany: mocks.consultationFindMany },
   }),
 }));
 
@@ -61,9 +63,21 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.findFirst.mockResolvedValue(formRecord());
   mocks.findMany.mockResolvedValue([]);
+  mocks.consultationFindMany.mockResolvedValue([]);
 });
 
 describe("public registration form DAL", () => {
+  it("loads consultation choices only from the published form's own project", async () => {
+    mocks.findFirst.mockResolvedValue(formRecord({ projectId: "project-1" }));
+    mocks.consultationFindMany.mockResolvedValue([]);
+
+    await loadPublicRegistrationForm("summer");
+
+    expect(mocks.consultationFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vendorId: "vendor-1", projectId: "project-1", isActive: true },
+    }));
+  });
+
   it("loads only active forms, scopes sessions to the same tenant/form, and strips internal fields", async () => {
     mocks.findMany.mockResolvedValue([
       { id: "past", title: "過期", description: null, scheduledAt: new Date("2026-08-10T01:00:00Z"), status: "scheduled", endedAt: null },
@@ -72,7 +86,7 @@ describe("public registration form DAL", () => {
 
     const result = await loadPublicRegistrationForm("summer", new Date("2026-08-15T00:00:00Z"));
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { slug: "summer", isActive: true },
+      where: { slug: "summer", isActive: true, OR: [{ projectId: null }, { project: { is: { status: "published", publishedAt: { not: null } } } }] },
       select: expect.objectContaining({
         pageBlocks: true,
         templateId: true,

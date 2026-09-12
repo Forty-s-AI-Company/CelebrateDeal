@@ -115,6 +115,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("team lead attribution", () => {
+  it("rejects submissions for a project form until that project is published", async () => {
+    db.registrationForm.findUnique.mockResolvedValue({
+      id: "form-1", vendorId: "vendor-1", isActive: true, projectId: "project-1",
+      project: { status: "draft", publishedAt: null },
+      vendor: { name: "測試商家", senderName: null, supportEmail: null, contactUrl: null },
+      fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }],
+    });
+
+    const response = await POST(jsonRequest({ formId: "form-1", payload: { name: "Lead", email: "lead@example.test" } }));
+
+    expect(response.status).toBe(404);
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
+
   function jsonRequest(payload: Record<string, unknown>, url = "https://app.example.test/api/form-submissions") {
     return new Request(url, {
       method: "POST",
@@ -310,6 +324,7 @@ describe("team lead attribution", () => {
       where: { id: "form-1" },
       include: {
         vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+        project: { select: { status: true, publishedAt: true } },
       },
     });
     expect(JSON.stringify(create)).not.toContain("lead@example.test");

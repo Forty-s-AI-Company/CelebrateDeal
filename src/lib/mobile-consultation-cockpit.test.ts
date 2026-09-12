@@ -19,4 +19,17 @@ describe("mobile consultant cockpit", () => {
     expect(safeTelHref("javascript:alert(1)")).toBeNull();
     expect(safeTelHref("0912345678")).toBeNull();
   });
+
+  it("limits a selected project through the booking event while preserving legacy vendor scope", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const database = { consultationBooking: { findMany } };
+
+    await listTodayConsultations(database, "vendor-1", new Date("2026-09-09T04:00:00Z"), "Asia/Taipei", "project-1");
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", event: { projectId: "project-1" } }),
+    }));
+
+    await listTodayConsultations(database, "vendor-1", new Date("2026-09-09T04:00:00Z"));
+    expect(findMany.mock.calls[1]?.[0].where).not.toHaveProperty("event");
+  });
 });

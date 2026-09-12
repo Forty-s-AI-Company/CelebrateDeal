@@ -323,12 +323,37 @@ test("authenticated shell exposes a working skip link and passes axe", async ({ 
   await expectNoBlockingAxeViolations(page);
 });
 
+test("owner can create a guided project and switch between project and aggregate scopes", async ({ page }) => {
+  await loginOwner(page);
+  await gotoStableRoute(page, "/projects/new");
+  const projectName = `A11y Sales Project ${runId.slice(0, 8)}`;
+  await page.getByLabel("專案名稱").fill(projectName);
+  await page.getByLabel("網址代稱").fill(`a11y-project-${runId}`);
+  await page.getByRole("button", { name: "建立專案" }).click();
+  await expect(page).toHaveURL(/\/onboarding$/u);
+  await expect(page.getByRole("heading", { name: `銷售專案：${projectName}` })).toBeVisible();
+
+  const switcher = page.locator("[data-workspace-switcher]");
+  await switcher.getByRole("button", { name: projectName }).click();
+  await switcher.getByRole("menuitemradio", { name: /全部專案總覽/u }).click();
+  await expect(switcher.getByRole("button", { name: "全部專案總覽" })).toBeVisible();
+  await gotoStableRoute(page, "/products");
+  await expect(page.getByText(/全部專案總覽（彙總唯讀）/u)).toBeVisible();
+  await expect(page.getByRole("link", { name: "新增商品" })).toHaveCount(0);
+
+  await switcher.getByRole("button", { name: "全部專案總覽" }).click();
+  await switcher.getByRole("menuitemradio", { name: projectName }).click();
+  await expect(switcher.getByRole("button", { name: projectName })).toBeVisible();
+});
+
 test("static authenticated owner routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
   await loginOwner(page);
   await enableOwnerMfa(page);
   const routes = [
     "/dashboard",
+    "/onboarding",
+    "/projects",
     "/lives",
     "/lives/new",
     "/videos",

@@ -10,6 +10,7 @@ import { getDb } from "@/lib/db";
 import { generateConsultationSlots, type ConsultationSlot } from "@/lib/consultation-slot-engine";
 import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
+import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 
 const MANAGEMENT_PATH = "/consultations";
 const EVENT_ID = z.string().trim().min(1).max(191);
@@ -35,6 +36,8 @@ type ConsultationEvent = {
   weeklySchedule: unknown;
   intakeFormFields: unknown;
   isActive: boolean;
+  projectId?: string | null;
+  project?: { status: string; publishedAt: Date | null } | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -65,6 +68,8 @@ type ConsultationTransaction = {
     count: (args: unknown) => Promise<number>;
     create: (args: unknown) => Promise<ConsultationBooking>;
   };
+  customerCrmRecord: Pick<Prisma.TransactionClient["customerCrmRecord"], "upsert">;
+  salesProjectCustomer: Pick<Prisma.TransactionClient["salesProjectCustomer"], "upsert">;
 };
 
 /** The intentionally small Prisma surface also keeps unit tests independent of a generated client. */
@@ -426,9 +431,10 @@ export async function reserveConsultationBooking(
     return await database.$transaction(async (transaction) => {
       const event = await transaction.consultationEvent.findFirst({
         where: { id: input.eventId, isActive: true },
-        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, intakeFormFields: true, isActive: true },
+        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, intakeFormFields: true, isActive: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
       });
       if (!event) return { status: "unavailable" };
+      if (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt)) return { status: "unavailable" };
 
       // This lock is event-wide rather than start-time-only. It therefore also
       // protects buffer-overlap and daily-limit checks from a concurrent POST.
@@ -470,6 +476,7 @@ export async function reserveConsultationBooking(
       });
       if (conflict) return { status: "unavailable" };
 
+      const customerKeyHash = customerHash(event.vendorId, input.clientEmail);
       const booking = await transaction.consultationBooking.create({
         data: {
           vendorId: event.vendorId,
@@ -479,11 +486,16 @@ export async function reserveConsultationBooking(
           status: "scheduled",
           clientName: input.clientName,
           clientEmail: input.clientEmail.toLowerCase(),
-          customerKeyHash: customerHash(event.vendorId, input.clientEmail),
+          customerKeyHash,
           clientPhone: input.clientPhone,
           answers: answers as Prisma.InputJsonObject,
         },
         select: { id: true, startTime: true, endTime: true },
+      });
+      await ensureSalesProjectCustomerMembership(transaction, {
+        vendorId: event.vendorId,
+        projectId: event.projectId ?? null,
+        customerKeyHash,
       });
       return { status: "booked", booking: { id: booking.id, startTime: booking.startTime.toISOString(), endTime: booking.endTime.toISOString() } };
     }, { isolationLevel: "Serializable" });

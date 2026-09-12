@@ -137,10 +137,11 @@ describe("commerce orders database service", () => {
     await createCommerceOrderForCheckout(tx as never, {
       ...checkoutInput,
       isTestOrder: true,
+      projectId: "project-1",
     });
 
     expect(tx.commerceOrder.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ isTestOrder: true }),
+      data: expect.objectContaining({ isTestOrder: true, projectId: "project-1" }),
     }));
   });
 

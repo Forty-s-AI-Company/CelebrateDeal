@@ -741,6 +741,14 @@ function checkoutPricingMetadata(input: {
   return { discountAmountCents, checkoutAmountCents, transactionMetadata };
 }
 
+function verifiedRegistrationAttribution(formSubmission: Awaited<ReturnType<typeof verifiedLiveRegistrationFromRequest>>) {
+  return {
+    formSubmissionId: formSubmission?.id ?? undefined,
+    sourceLiveId: formSubmission?.liveId ?? undefined,
+    salesProjectId: formSubmission?.live?.projectId ?? undefined,
+  };
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -834,8 +842,7 @@ export async function POST(request: Request) {
 
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
-  const formSubmissionId = formSubmission?.id;
-  const sourceLiveId = formSubmission?.liveId ?? undefined;
+  const { formSubmissionId, sourceLiveId, salesProjectId } = verifiedRegistrationAttribution(formSubmission);
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
@@ -888,6 +895,7 @@ export async function POST(request: Request) {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
+          projectId: salesProjectId,
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
@@ -1045,6 +1053,6 @@ async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: s
       form: { vendorId },
       live: { is: { vendorId } },
     },
-    select: { id: true, liveId: true },
+    select: { id: true, liveId: true, live: { select: { projectId: true } } },
   });
 }

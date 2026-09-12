@@ -54,7 +54,7 @@ beforeEach(() => {
   mocks.liveViewerTokenFromRequest.mockReturnValue("viewer-token");
   mocks.hasActiveLiveViewerSession.mockResolvedValue(true);
   mocks.hashLiveViewerToken.mockReturnValue("verified-session-1");
-  mocks.liveFindFirst.mockResolvedValue({ id: "live-1" });
+  mocks.liveFindFirst.mockResolvedValue({ id: "live-1", projectId: "project-1" });
   mocks.liveProductFindFirst.mockResolvedValue({ id: "live-product-1" });
   mocks.analyticsCreate.mockResolvedValue({ id: "event-1" });
   mocks.captureProductEvent.mockResolvedValue({ skipped: false });
@@ -129,7 +129,7 @@ describe("analytics route", () => {
           { status: "ended", replayEnabled: true },
         ],
       },
-      select: { id: true },
+      select: { id: true, projectId: true },
     });
     expect(mocks.analyticsCreate).not.toHaveBeenCalled();
     expect(mocks.captureProductEvent).not.toHaveBeenCalled();
@@ -148,6 +148,7 @@ describe("analytics route", () => {
     expect(mocks.analyticsCreate).toHaveBeenCalledWith({
       data: {
         ...validEvent,
+        projectId: "project-1",
         visitorId: "verified-session-1",
         trustLevel: "ADMITTED_LIVE_SESSION",
       },

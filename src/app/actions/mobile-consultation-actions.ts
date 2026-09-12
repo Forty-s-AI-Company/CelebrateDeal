@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 const BookingId = z.string().min(1).max(191);
 const QuickTag = z.enum(["預算足夠", "需再跟進"]);
@@ -18,6 +19,7 @@ function text(formData: FormData, key: string) {
 export async function saveMobileConsultationAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   const bookingId = BookingId.parse(text(formData, "bookingId"));
   const note = z.string().max(4_000).parse(text(formData, "note"));
   const tagInput = text(formData, "tag");
@@ -27,7 +29,11 @@ export async function saveMobileConsultationAction(formData: FormData) {
 
   const database = getDb();
   const booking = await database.consultationBooking.findFirst({
-    where: { id: bookingId, vendorId: vendor.id },
+    where: {
+      id: bookingId,
+      vendorId: vendor.id,
+      ...(scope.projectId ? { event: { projectId: scope.projectId } } : {}),
+    },
     select: { customerKeyHash: true },
   });
   if (!booking?.customerKeyHash) throw new Error("此預約尚未建立可用的客戶識別");

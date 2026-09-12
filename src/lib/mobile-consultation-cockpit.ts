@@ -45,10 +45,16 @@ export async function listTodayConsultations(
   vendorId: string,
   now = new Date(),
   timeZone = "Asia/Taipei",
+  projectId: string | null = null,
 ) {
   const range = consultantDayRange(now, timeZone);
   const rows = await database.consultationBooking.findMany({
-    where: { vendorId, startTime: { gte: range.from, lt: range.to }, status: { in: ["scheduled", "completed"] } },
+    where: {
+      vendorId,
+      ...(projectId ? { event: { projectId } } : {}),
+      startTime: { gte: range.from, lt: range.to },
+      status: { in: ["scheduled", "completed"] },
+    },
     orderBy: [{ startTime: "asc" }, { createdAt: "asc" }],
     take: 100,
     select: {

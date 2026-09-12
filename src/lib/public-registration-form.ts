@@ -10,6 +10,7 @@ import { FunnelPageBlocksSchema, type FunnelPageBlocks } from "@/lib/funnel-bloc
 const PUBLIC_REGISTRATION_FORM_SELECT = {
   id: true,
   vendorId: true,
+  projectId: true,
   slug: true,
   headline: true,
   description: true,
@@ -231,13 +232,20 @@ function publicFormFromRecord(
 export async function loadPublicRegistrationForm(slug: string, now = new Date()) {
   const db = getDb();
   const form = await db.registrationForm.findFirst({
-    where: { slug, isActive: true },
+    where: {
+      slug,
+      isActive: true,
+      OR: [
+        { projectId: null },
+        { project: { is: { status: "published", publishedAt: { not: null } } } },
+      ],
+    },
     select: PUBLIC_REGISTRATION_FORM_SELECT,
   });
   if (!form) return null;
   if (form.vendor.id !== form.vendorId) return null;
 
-  const sessions = await db.live.findMany({
+  const [sessions, scopedConsultations] = await Promise.all([db.live.findMany({
     where: publicRegistrationSessionWhere(form.id, form.vendorId),
     select: {
       id: true,
@@ -247,9 +255,14 @@ export async function loadPublicRegistrationForm(slug: string, now = new Date())
       status: true,
       endedAt: true,
     },
-  });
+  }), form.projectId ? db.consultationEvent.findMany({
+    where: { vendorId: form.vendorId, projectId: form.projectId, isActive: true },
+    orderBy: { createdAt: "asc" },
+    take: 1,
+    select: { id: true, title: true, durationMinutes: true, timezone: true, intakeFormFields: true },
+  }) : Promise.resolve(form.vendor.consultationEvents)]);
 
-  return publicFormFromRecord(form, sessions, now);
+  return publicFormFromRecord({ ...form, vendor: { ...form.vendor, consultationEvents: scopedConsultations } }, sessions, now);
 }
 
 export const getPublicRegistrationForm = cache((slug: string) => loadPublicRegistrationForm(slug));

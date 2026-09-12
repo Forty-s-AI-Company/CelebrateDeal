@@ -40,16 +40,16 @@ export function OnboardingTaskPanel({ title, tasks, initiallyCollapsed, persistC
     </button>
     {!effectiveCollapsed ? <div id="onboarding-task-content" className="border-t border-blue-100 px-3 pb-3 pt-3">
       <div className="h-2 overflow-hidden rounded-full bg-white" role="progressbar" aria-label={`${title}完成進度`} aria-valuenow={percentage} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${completed}/${tasks.length} 已完成`}><div className="h-full rounded-full bg-blue-600 transition-[width] motion-reduce:transition-none" style={{ width: `${percentage}%` }} /></div>
-      {allComplete ? <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={17} aria-hidden="true" />所有任務已完成</p> : next ? <div className="mt-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">下一個最重要的任務</p><p className="mt-1 text-sm font-semibold text-slate-900">{next.title}</p>{next.impact ? <p className="mt-1 text-xs leading-5 text-amber-700">{next.impact}</p> : null}<p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Clock3 size={13} aria-hidden="true" />約 {next.estimateMinutes} 分鐘</p><Link href={next.href} className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">繼續設定</Link></div> : null}
-      <Link href="/onboarding" className="mt-2 inline-flex min-h-9 w-full items-center justify-center text-xs font-semibold text-blue-700 hover:underline">查看全部任務</Link>
+      {allComplete ? <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={17} aria-hidden="true" />所有任務已完成</p> : next ? <div className="mt-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">下一個最重要的任務</p><p className="mt-1 text-sm font-semibold text-slate-900">{next.title}</p>{next.impact ? <p className="mt-1 text-xs leading-5 text-amber-700">{next.impact}</p> : null}<p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Clock3 size={13} aria-hidden="true" />約 {next.estimateMinutes} 分鐘</p><Link href={next.href} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">繼續設定</Link></div> : null}
+      <Link href="/onboarding" className="mt-2 inline-flex min-h-11 w-full items-center justify-center text-xs font-semibold text-blue-700 hover:underline">查看全部任務</Link>
       <details className="group mt-1 border-t border-blue-100 pt-1">
         <summary className="flex min-h-9 cursor-pointer list-none items-center justify-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200">
           <MoreHorizontal size={14} aria-hidden="true" />導引選項
         </summary>
         <div className="grid gap-1 pb-1" aria-busy={controlPending}>
-          <button type="button" disabled={controlPending} onClick={() => controlGuide("hide")} className="min-h-9 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">暫時隱藏 1 天</button>
-          <button type="button" disabled={controlPending} onClick={() => controlGuide("remind")} className="min-h-9 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">一週後提醒</button>
-          <button type="button" disabled={controlPending} onClick={() => controlGuide("stop")} className="min-h-9 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">停止顯示導引</button>
+          <button type="button" disabled={controlPending} onClick={() => controlGuide("hide")} className="min-h-11 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">暫時隱藏 1 天</button>
+          <button type="button" disabled={controlPending} onClick={() => controlGuide("remind")} className="min-h-11 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">一週後提醒</button>
+          <button type="button" disabled={controlPending} onClick={() => controlGuide("stop")} className="min-h-11 rounded-md px-2 text-left text-xs text-slate-700 hover:bg-white disabled:opacity-50">停止顯示導引</button>
         </div>
       </details>
     </div> : null}
