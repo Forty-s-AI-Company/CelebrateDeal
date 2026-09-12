@@ -2,9 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }), requireVendorManager: vi.fn(), loadResult: vi.fn() }));
+const mocks = vi.hoisted(() => ({ notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }), requireVendorManagerContext: vi.fn(), getSalesProjectScope: vi.fn(), findFirst: vi.fn(), loadResult: vi.fn() }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findFirst: mocks.findFirst } }) }));
 vi.mock("@/lib/form-submission-search", () => ({ loadFormSubmissionSearchResult: mocks.loadResult }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input name="csrf" value="safe" readOnly /> }));
 vi.mock("@/components/form-submissions-workbench", () => ({ FormSubmissionsWorkbench: ({ initialState, csrfField }: { initialState: { result: { totalItems: number } }; csrfField: ReactNode }) => <section data-count={initialState.result.totalItems}>{csrfField}名單工作區</section> }));
@@ -12,7 +14,7 @@ vi.mock("@/components/ui", () => ({ PageHeader: ({ title, description }: { title
 
 import FormSubmissionsPage from "./page";
 
-beforeEach(() => { vi.clearAllMocks(); mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" }); mocks.loadResult.mockResolvedValue({ form: { id: "form-1", name: "活動報名" }, criteria: { formId: "form-1", query: "", verification: "ALL", source: "ALL", page: 1 }, items: [], totalItems: 12, page: 1, totalPages: 1, pageSize: 25 }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } }); mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true }); mocks.findFirst.mockResolvedValue({ id: "form-1" }); mocks.loadResult.mockResolvedValue({ form: { id: "form-1", name: "活動報名" }, criteria: { formId: "form-1", query: "", verification: "ALL", source: "ALL", page: 1 }, items: [], totalItems: 12, page: 1, totalPages: 1, pageSize: 25 }); });
 
 describe("/forms/[id]/submissions route", () => {
   it("loads the first bounded page and hands it to the private search workbench", async () => {
@@ -25,5 +27,21 @@ describe("/forms/[id]/submissions route", () => {
     mocks.loadResult.mockResolvedValue(null);
     await expect(FormSubmissionsPage({ params: Promise.resolve({ id: "missing" }) })).rejects.toThrow("NOT_FOUND");
     expect(mocks.notFound).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("preflights selected-project ownership before loading submissions", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "專案一", isAggregate: false, isLegacyWorkspace: false });
+    await FormSubmissionsPage({ params: Promise.resolve({ id: "form-1" }) });
+    expect(mocks.findFirst).toHaveBeenCalledWith({
+      where: { id: "form-1", vendorId: "vendor-1", projectId: "project-1" },
+      select: { id: true },
+    });
+  });
+
+  it("rejects a form outside the selected project before the submission search", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "專案一", isAggregate: false, isLegacyWorkspace: false });
+    mocks.findFirst.mockResolvedValue(null);
+    await expect(FormSubmissionsPage({ params: Promise.resolve({ id: "form-other" }) })).rejects.toThrow("NOT_FOUND");
+    expect(mocks.loadResult).not.toHaveBeenCalled();
   });
 });

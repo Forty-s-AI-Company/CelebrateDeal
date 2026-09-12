@@ -1,17 +1,27 @@
 import { notFound } from "next/navigation";
 import { ProductForm } from "@/components/product-form";
 import { ButtonLink, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 export default async function EditProductPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string | string[] }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+  if (scope.isAggregate) notFound();
   const { id } = await params;
   const query = await searchParams;
   const error = Array.isArray(query?.error) ? query.error[0] : query?.error;
   const db = getDb();
   const [product, memberships] = await Promise.all([
-    db.product.findFirst({ where: { id, vendorId: vendor.id }, include: { deliveryConfig: true } }),
+    db.product.findFirst({
+      where: {
+        id,
+        vendorId: vendor.id,
+        ...(scope.projectId ? { salesProjectLinks: { some: { projectId: scope.projectId } } } : {}),
+      },
+      include: { deliveryConfig: true },
+    }),
     db.teamMembership.findMany({
       where: { vendorId: vendor.id, status: "ACTIVE", leftAt: null },
       select: { id: true, team: { select: { name: true } }, vendorMember: { select: { user: { select: { name: true } } } } },

@@ -4,7 +4,7 @@ import { LiveStepperForm } from "@/components/live-stepper-form";
 import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
@@ -17,6 +17,7 @@ import {
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 type LiveEditorFormCandidate = { id: string; name: string; fields: unknown };
 type LiveEditorTemplateCandidate = {
@@ -39,6 +40,14 @@ type EvergreenLiveCandidate = {
   evergreenPreviewEnabled?: boolean;
   evergreenPreviewRate?: number;
 };
+
+function selectedProjectResources(projectId: string | null) {
+  if (!projectId) return { liveAndForm: {}, products: {} };
+  return {
+    liveAndForm: { projectId },
+    products: { salesProjectLinks: { some: { projectId } } },
+  };
+}
 
 function prepareEvergreenSettings(
   live: EvergreenLiveCandidate,
@@ -138,13 +147,15 @@ export default async function EditLivePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+  const resourceScope = selectedProjectResources(scope.projectId);
   const { id } = await params;
   const { error, notice } = await searchParams;
   const db = getDb();
   const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
     db.live.findFirst({
-      where: { id, vendorId: vendor.id },
+      where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: { products: true, notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] } },
     }),
     db.video.findMany({
@@ -153,12 +164,17 @@ export default async function EditLivePage({
       orderBy: { createdAt: "desc" },
     }),
     db.product.findMany({
-      where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
+      where: {
+        vendorId: vendor.id,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+        ...resourceScope.products,
+      },
       select: { id: true, name: true, inventory: true, checkoutUrl: true },
       orderBy: { createdAt: "desc" },
     }),
     db.registrationForm.findMany({
-      where: { vendorId: vendor.id, isActive: true },
+      where: { vendorId: vendor.id, isActive: true, ...resourceScope.liveAndForm },
       select: { id: true, name: true, fields: true },
       orderBy: { createdAt: "desc" },
     }),

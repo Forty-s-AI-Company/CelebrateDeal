@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
@@ -12,6 +12,7 @@ import {
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 const liveStudioStepLabels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
 
@@ -55,7 +56,8 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
 }
 
 export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; draft?: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { error, draft } = await searchParams;
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
@@ -66,12 +68,17 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
     orderBy: { createdAt: "desc" },
   });
   const products = await db.product.findMany({
-    where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
+    where: {
+      vendorId: vendor.id,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+      ...(scope.projectId ? { salesProjectLinks: { some: { projectId: scope.projectId } } } : {}),
+    },
     select: { id: true, name: true, inventory: true },
     orderBy: { createdAt: "desc" },
   });
   const formCandidates = await db.registrationForm.findMany({
-    where: { vendorId: vendor.id, isActive: true },
+    where: { vendorId: vendor.id, isActive: true, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     select: { id: true, name: true, fields: true },
     orderBy: { createdAt: "desc" },
   });

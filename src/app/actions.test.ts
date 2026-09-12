@@ -145,6 +145,7 @@ const mocks = vi.hoisted(() => ({
   writeAuditLog: vi.fn(),
   requestAuditMeta: vi.fn(),
   auditLogCreate: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   applyPlatformRefundProjection: vi.fn(async () => ({ subscription: null, invoice: null })),
 }));
 
@@ -206,6 +207,10 @@ vi.mock("@/lib/line-live-started", () => ({
   dispatchLiveStartedLineNotifications: mocks.dispatchLiveStartedLineNotifications,
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
+vi.mock("@/lib/sales-project-scope", () => ({
+  getSalesProjectScope: mocks.getSalesProjectScope,
+  requireEditableSalesProjectScope: mocks.getSalesProjectScope,
+}));
 vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
   sendPasswordResetLink: mocks.sendPasswordResetLink,
@@ -682,6 +687,7 @@ beforeEach(() => {
     },
     vendor: { id: "vendor-1" },
   });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.headers.mockResolvedValue({
     get: (name: string) => ({
       "user-agent": "CelebrateDeal test",
@@ -1755,6 +1761,10 @@ describe("saveBrandSettingsAction timezone validation", () => {
 describe("upsertLiveAction", () => {
   function allowCurrentVendorLiveReferences() {
     mocks.requireVendor.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+    mocks.requireVendorManagerContext.mockImplementation(async () => ({
+      auth: { user: { id: "manager-user-1" }, member: { role: "admin" } },
+      vendor: await mocks.requireVendor(),
+    }));
     mocks.productFindMany.mockResolvedValue([{ id: "product-1" }]);
     mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 600 });
     mocks.registrationFormFindFirst.mockResolvedValue({
@@ -1880,6 +1890,46 @@ describe("upsertLiveAction", () => {
       },
       data: { consumedAt: expect.any(Date) },
     });
+  });
+
+  it("creates a selected-project live and accepts only that project's products and forms", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/live-1/preview");
+
+    expect(mocks.productFindMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        id: { in: ["product-1"] },
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+        salesProjectLinks: { some: { projectId: "project-1" } },
+      },
+      select: { id: true },
+    });
+    expect(mocks.registrationFormFindFirst).toHaveBeenCalledWith({
+      where: { id: "form-1", vendorId: "vendor-1", isActive: true, projectId: "project-1" },
+      select: { id: true, fields: true },
+    });
+    expect(mocks.liveCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }),
+    }));
+  });
+
+  it("rejects live updates outside the selected project before claiming the draft", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+    mocks.liveFindFirst.mockResolvedValue(null);
+    const formData = liveFormData();
+    formData.set("id", "live-outside-project");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-outside-project/edit?error=invalid_reference");
+
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "live-outside-project", vendorId: "vendor-1", projectId: "project-1" }),
+    }));
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
   });
 
   it("persists portrait orientation when creating an activity", async () => {

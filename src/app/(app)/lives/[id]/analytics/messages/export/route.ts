@@ -2,13 +2,15 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { buildLiveChatExportRows, liveChatRowsToCsv, realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { id } = await params;
   const db = getDb();
   const live = await db.live.findFirst({
-    where: { id, vendorId: vendor.id },
+    where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     select: {
       id: true,
       scheduledAt: true,

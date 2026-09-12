@@ -5,9 +5,11 @@ const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   findMany: vi.fn(),
   notFound: vi.fn(),
+  getSalesProjectScope: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerMfa: mocks.requireVendorManagerMfa }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ commerceOrder: { findFirst: mocks.findFirst }, commerceOrderItem: { findMany: mocks.findMany } }) }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/components/commerce-order-detail", () => ({ CommerceOrderDetail: () => <div /> }));
@@ -17,12 +19,14 @@ import OrderDetailPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManagerMfa.mockResolvedValue({ vendor: { id: "vendor-current" } });
+  mocks.requireVendorManagerMfa.mockResolvedValue({ user: { id: "user-current" }, vendor: { id: "vendor-current" } });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.findFirst.mockResolvedValue(null);
   mocks.findMany.mockResolvedValue([]);
   mocks.notFound.mockImplementation(() => {
     throw new Error("NEXT_NOT_FOUND");
   });
+
 });
 
 describe("/orders/[id] tenant boundary", () => {
@@ -37,5 +41,13 @@ describe("/orders/[id] tenant boundary", () => {
       where: { id: "order-foreign", vendorId: "vendor-current" },
     }));
     expect(mocks.notFound).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("adds the selected project to the direct detail lookup", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-current", projectName: "目前專案", isAggregate: false, isLegacyWorkspace: false });
+    await expect(OrderDetailPage({ params: Promise.resolve({ id: "order-foreign-project" }), searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "order-foreign-project", vendorId: "vendor-current", projectId: "project-current" },
+    }));
   });
 });

@@ -2,11 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireVendorManager: vi.fn(), findFirst: vi.fn(), notFound: vi.fn(() => { throw new Error("not-found"); }) }));
+const mocks = vi.hoisted(() => ({ requireVendorManagerContext: vi.fn(), getSalesProjectScope: vi.fn(), findFirst: vi.fn(), notFound: vi.fn(() => { throw new Error("not-found"); }) }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("next/image", () => ({ default: ({ src, alt }: { src: string; alt: string }) => <span data-src={src} aria-label={alt} /> }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a> }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findFirst: mocks.findFirst } }) }));
 
 import ProductPreviewPage from "./page";
@@ -32,7 +33,8 @@ const product = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.findFirst.mockResolvedValue(product);
 });
 
@@ -74,5 +76,17 @@ describe("product merchant preview", () => {
   it("does not return another vendor's product", async () => {
     mocks.findFirst.mockResolvedValue(null);
     await expect(ProductPreviewPage({ params: Promise.resolve({ id: "other-product" }) })).rejects.toThrow("not-found");
+  });
+
+  it("requires a selected-project product relation but keeps aggregate preview vendor-wide", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "專案一", isAggregate: false, isLegacyWorkspace: false });
+    await ProductPreviewPage({ params: Promise.resolve({ id: "product-1" }) });
+    expect(mocks.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { id: "product-1", vendorId: "vendor-1", salesProjectLinks: { some: { projectId: "project-1" } } },
+    }));
+
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: true, isLegacyWorkspace: false });
+    await ProductPreviewPage({ params: Promise.resolve({ id: "product-1" }) });
+    expect(mocks.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "product-1", vendorId: "vendor-1" } }));
   });
 });

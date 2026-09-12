@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   getCsrfToken: vi.fn(),
   videoFindMany: vi.fn(),
   productFindMany: vi.fn(),
@@ -18,8 +19,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
-  requireVendorManager: mocks.requireVendorManager,
+  requireVendorManagerContext: mocks.requireVendorManagerContext,
 }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/csrf", () => ({
   getCsrfToken: mocks.getCsrfToken,
 }));
@@ -64,7 +66,8 @@ function trackQuery<T>(tracker: { active: number; max: number }, result: T) {
 describe("NewLivePage data minimization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+    mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1", timezone: "Asia/Taipei" } });
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
     mocks.getCsrfToken.mockResolvedValue("csrf-token");
     mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
     mocks.liveStudioDraftFindMany.mockResolvedValue([]);
@@ -132,6 +135,19 @@ describe("NewLivePage data minimization", () => {
       },
       orderBy: [{ teamId: "asc" }, { createdAt: "asc" }],
     });
+  });
+
+  it("limits product and form candidates to the selected sales project", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+
+    renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
+
+    expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ salesProjectLinks: { some: { projectId: "project-1" } } }),
+    }));
+    expect(mocks.registrationFormFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ projectId: "project-1" }),
+    }));
   });
 
   it("passes only tenant-scoped member and page labels to the visual Stream editor", async () => {
@@ -267,7 +283,7 @@ describe("NewLivePage data minimization", () => {
   });
 
   it("renders resumable draft timestamps in the current merchant timezone", async () => {
-    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1", timezone: "America/New_York" } });
     mocks.liveStudioDraftFindMany.mockResolvedValue([{
       id: "draft-timezone",
       payload: { title: "時區草稿", activeStep: 0 },

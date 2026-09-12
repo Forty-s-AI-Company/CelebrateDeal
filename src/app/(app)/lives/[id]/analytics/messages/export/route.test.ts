@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   liveFindFirst: vi.fn(),
   viewerFindMany: vi.fn(),
   scheduledFindMany: vi.fn(),
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -28,6 +30,7 @@ const context = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendorManagerContext.mockResolvedValue(context);
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.liveFindFirst.mockResolvedValue({
     id: "live-current",
     scheduledAt: new Date("2026-08-17T10:00:00.000Z"),
@@ -49,6 +52,20 @@ beforeEach(() => {
 });
 
 describe("live chat analytics CSV export", () => {
+  it("returns a private 404 when a direct export URL belongs to another project", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+    mocks.liveFindFirst.mockResolvedValue(null);
+
+    const response = await GET(new Request("https://app.example.test"), { params: Promise.resolve({ id: "live-other-project" }) });
+
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith({
+      where: { id: "live-other-project", vendorId: "vendor-current", projectId: "project-1" },
+      select: { id: true, scheduledAt: true, interactionScript: { select: { id: true, vendorId: true, status: true } } },
+    });
+    expect(response.status).toBe(404);
+    expect(mocks.viewerFindMany).not.toHaveBeenCalled();
+  });
+
   it("authenticates, scopes both sources to one tenant/live, and exports explicit source semantics", async () => {
     const response = await GET(new Request("https://app.example.test"), { params: Promise.resolve({ id: "live-current" }) });
     const bytes = new Uint8Array(await response.arrayBuffer());

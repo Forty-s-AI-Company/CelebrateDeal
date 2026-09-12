@@ -3,13 +3,15 @@ import { liveOrientation } from "@/lib/presenter-layout";
 import { notFound } from "next/navigation";
 import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { id } = await params;
-  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: { include: { events: { orderBy: { triggerSec: "asc" } } } } } });
+  const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) }, include: { products: { include: { product: true } }, form: true, video: true, messageTemplate: true, liveReminderTemplate: true, interactionScript: { include: { events: { orderBy: { triggerSec: "asc" } } } } } });
   if (!live) notFound();
 
   return (

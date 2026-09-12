@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendor: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   liveFindFirst: vi.fn(),
   analyticsFindMany: vi.fn(),
   formSubmissionCount: vi.fn(),
@@ -19,7 +20,8 @@ const mocks = vi.hoisted(() => ({
   queryRaw: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     $queryRaw: mocks.queryRaw,
@@ -67,7 +69,8 @@ const verifiedAnalyticsSessions = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendor.mockResolvedValue({ id: "vendor-current" });
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-current" } }, vendor: { id: "vendor-current" } });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.formSubmissionCount.mockResolvedValueOnce(6).mockResolvedValueOnce(4);
   mocks.liveChatMessageCount.mockResolvedValue(3);
@@ -95,6 +98,17 @@ beforeEach(() => {
 });
 
 describe("/lives/[id]/analytics route", () => {
+  it("does not resolve a direct analytics URL outside the selected project", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+
+    await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) });
+
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith({
+      where: { id: live.id, vendorId: "vendor-current", projectId: "project-1" },
+      include: { interactionScript: { select: { id: true, vendorId: true, status: true } } },
+    });
+  });
+
   it("uses full live-scoped event totals for KPIs and the conversion funnel when more than 30 events exist", async () => {
     const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
 

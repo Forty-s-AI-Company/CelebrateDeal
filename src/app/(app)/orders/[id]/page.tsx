@@ -11,15 +11,17 @@ import {
 } from "@/lib/commerce-custom-checkout";
 import { commerceOrderDetailInclude } from "@/lib/commerce-order-read-model";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 export default async function OrderDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams?: Promise<{ error?: string | string[]; updated?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { vendor } = await requireVendorManagerMfa(`/orders/${encodeURIComponent(id)}`);
+  const { user, vendor } = await requireVendorManagerMfa(`/orders/${encodeURIComponent(id)}`);
+  const scope = await getSalesProjectScope(user.id, vendor.id);
   const order = await getDb().commerceOrder.findFirst({
-    where: { id, vendorId: vendor.id },
+    where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     include: commerceOrderDetailInclude,
   });
   if (!order) notFound();

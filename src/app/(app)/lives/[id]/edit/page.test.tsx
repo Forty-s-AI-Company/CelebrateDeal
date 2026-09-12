@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   getCsrfToken: vi.fn(),
   liveFindFirst: vi.fn(),
   videoFindMany: vi.fn(),
@@ -19,7 +20,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -87,7 +89,8 @@ const live = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1", timezone: "Asia/Taipei" } });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.getCsrfToken.mockResolvedValue("csrf-token");
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.videoFindMany.mockResolvedValue([]);
@@ -102,6 +105,22 @@ beforeEach(() => {
 });
 
 describe("EditLivePage unified Live Studio", () => {
+  it("does not resolve a direct live URL or candidates outside the selected project", async () => {
+    mocks.getSalesProjectScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季課程", isAggregate: false, isLegacyWorkspace: false });
+
+    await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) });
+
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "live-1", vendorId: "vendor-1", projectId: "project-1" },
+    }));
+    expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ salesProjectLinks: { some: { projectId: "project-1" } } }),
+    }));
+    expect(mocks.formFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ projectId: "project-1" }),
+    }));
+  });
+
   it("offers only published scripts and maps the existing live into the canonical eight-step draft", async () => {
     const html = renderToStaticMarkup(await EditLivePage({
       params: Promise.resolve({ id: "live-1" }),
@@ -154,7 +173,7 @@ describe("EditLivePage unified Live Studio", () => {
   });
 
   it("formats the same UTC instant using another merchant timezone", async () => {
-    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1", timezone: "America/New_York" } });
 
     const tree = await EditLivePage({
       params: Promise.resolve({ id: "live-1" }),

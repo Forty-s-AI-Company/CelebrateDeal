@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 import { formatDateTime } from "@/lib/format";
 import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
 import {
@@ -172,11 +173,12 @@ async function loadAnalytics(db: ReturnType<typeof getDb>, live: { id: string; e
 }
 
 export default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { id } = await params;
   const db = getDb();
   const live = await db.live.findFirst({
-    where: { id, vendorId: vendor.id },
+    where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     include: {
       interactionScript: { select: { id: true, vendorId: true, status: true } },
     },

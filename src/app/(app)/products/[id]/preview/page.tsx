@@ -1,9 +1,10 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 const fulfillmentLabels = {
   physical: "實體出貨",
@@ -13,10 +14,15 @@ const fulfillmentLabels = {
 } as const;
 
 export default async function ProductPreviewPage({ params }: { params: Promise<{ id: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { id } = await params;
   const product = await getDb().product.findFirst({
-    where: { id, vendorId: vendor.id },
+    where: {
+      id,
+      vendorId: vendor.id,
+      ...(scope.projectId ? { salesProjectLinks: { some: { projectId: scope.projectId } } } : {}),
+    },
     include: { deliveryConfig: { select: { status: true, fulfillmentType: true, title: true } } },
   });
   if (!product) notFound();

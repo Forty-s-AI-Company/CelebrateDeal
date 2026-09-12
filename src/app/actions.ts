@@ -11,6 +11,7 @@ import {
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
+  requireVendorManagerContext,
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
@@ -67,6 +68,7 @@ import {
 } from "@/lib/live-publish-readiness";
 import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 import { assertIanaTimeZone, parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
@@ -692,6 +694,17 @@ type LiveMutationData = {
 
 class LiveLegacyBindingConflict extends Error {}
 
+async function editableLiveScope(userId: string, vendorId: string, liveId: string | null) {
+  try {
+    return await requireEditableSalesProjectScope(userId, vendorId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "sales_project_required") {
+      redirect(liveId ? `/lives/${encodeURIComponent(liveId)}/edit?error=sales_project_required` : "/lives/new?error=sales_project_required");
+    }
+    throw error;
+  }
+}
+
 function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
   const draftId = optionalText(formData, "liveDraftId");
   const revisionText = text(formData, "liveDraftRevision");
@@ -733,6 +746,7 @@ function requestedLiveStatus(
 async function commitLiveDraft(input: {
   db: PrismaClient;
   vendorId: string;
+  projectId: string | null;
   liveId: string | null;
   draftId: string;
   revision: number;
@@ -766,6 +780,7 @@ async function commitLiveDraft(input: {
         where: {
           id: input.liveId!,
           vendorId: input.vendorId,
+          ...(input.projectId ? { projectId: input.projectId } : {}),
           liveReminderTemplateId: expectedBinding.templateId,
           liveReminderOffsetMinutes: expectedBinding.offsetMinutes,
         },
@@ -773,7 +788,7 @@ async function commitLiveDraft(input: {
       });
       if (bindingClaim.count !== 1) throw new LiveLegacyBindingConflict();
       const currentLive = await tx.live.findFirst({
-        where: { id: input.liveId!, vendorId: input.vendorId },
+        where: { id: input.liveId!, vendorId: input.vendorId, ...(input.projectId ? { projectId: input.projectId } : {}) },
         select: { status: true, startedAt: true, endedAt: true, presenterLayout: true },
       });
       if (!currentLive) return null;
@@ -861,6 +876,7 @@ async function commitLiveDraft(input: {
         ...input.data,
         presenterLayout: { ...DEFAULT_PRESENTER_LAYOUT, orientation: input.expectedDraftPayload.orientation ?? "landscape" },
         vendorId: input.vendorId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
         products: {
           create: input.productIds.map((productId, index) => ({
             vendorId: input.vendorId,
@@ -968,6 +984,7 @@ function parseSubmittedLiveQuotaPolicy(
 async function resolveSubmittedLiveReferences(input: {
   db: PrismaClient;
   vendorId: string;
+  scope: SalesProjectScope;
   liveId: string | null;
   productIds: string[];
   videoId: string | null;
@@ -984,7 +1001,7 @@ async function resolveSubmittedLiveReferences(input: {
   const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
     input.liveId
       ? input.db.live.findFirst({
-          where: { id: input.liveId, vendorId: input.vendorId },
+          where: { id: input.liveId, vendorId: input.vendorId, ...(input.scope.projectId ? { projectId: input.scope.projectId } : {}) },
           select: {
             id: true,
             slug: true,
@@ -998,11 +1015,11 @@ async function resolveSubmittedLiveReferences(input: {
         })
       : Promise.resolve(null),
     input.productIds.length > 0
-      ? input.db.product.findMany({ where: { vendorId: input.vendorId, id: { in: input.productIds }, isActive: true, fulfillmentTypeConfirmed: true }, select: { id: true } })
+      ? input.db.product.findMany({ where: { vendorId: input.vendorId, id: { in: input.productIds }, isActive: true, fulfillmentTypeConfirmed: true, ...(input.scope.projectId ? { salesProjectLinks: { some: { projectId: input.scope.projectId } } } : {}) }, select: { id: true } })
       : Promise.resolve([]),
     input.videoId ? input.db.video.findFirst({ where: liveReadyVideoWhere(input.vendorId, input.videoId), select: { id: true, durationSec: true } }) : Promise.resolve(null),
     input.formId ? input.db.registrationForm.findFirst({
-      where: { id: input.formId, vendorId: input.vendorId, isActive: true },
+      where: { id: input.formId, vendorId: input.vendorId, isActive: true, ...(input.scope.projectId ? { projectId: input.scope.projectId } : {}) },
       select: { id: true, fields: true },
     }) : Promise.resolve(null),
     input.messageTemplateId ? input.db.messageTemplate.findFirst({
@@ -1223,8 +1240,9 @@ async function resolveAuthoritativeLegacyReminder(input: {
 
 export async function upsertLiveAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
   const id = optionalText(formData, "id");
+  const scope = await editableLiveScope(auth.user.id, vendor.id, id);
   const draftClaim = parseLiveDraftClaim(formData, id);
   const parsedSubmission = parseSubmittedLiveDraft(formData, id, draftClaim.draftId, vendor.timezone);
   const submittedDraft = parsedSubmission.payload;
@@ -1253,6 +1271,7 @@ export async function upsertLiveAction(formData: FormData) {
   const references = await resolveSubmittedLiveReferences({
     db,
     vendorId: vendor.id,
+    scope,
     liveId: id,
     productIds,
     videoId,
@@ -1403,6 +1422,7 @@ export async function upsertLiveAction(formData: FormData) {
   const committed = await commitLiveDraft({
     db,
     vendorId: vendor.id,
+    projectId: scope.projectId,
     liveId: id,
     draftId: draftClaim.draftId,
     revision: draftClaim.revision,
