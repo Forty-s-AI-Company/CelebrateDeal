@@ -77,9 +77,10 @@ export default async function OnboardingPage() {
       }, taskStates);
     })()
     : await (async () => {
-      const [payments, members] = await Promise.all([
+      const [payments, members, testOrders] = await Promise.all([
         db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
         db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
+        db.commerceOrder.count({ where: { vendorId: vendor.id, isTestOrder: true, status: "paid" } }),
       ]);
       return evaluateWorkspaceOnboarding({
         hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()),
@@ -87,8 +88,7 @@ export default async function OnboardingPage() {
         hasPaymentMethod: payments > 0,
         hasSupportContact: Boolean(vendor.supportEmail?.trim()),
         hasInvitedTeamMember: members > 1,
-        // A test order needs a canonical local/sandbox marker; do not infer it from real orders.
-        hasTestOrder: false,
+        hasTestOrder: testOrders > 0,
       }, taskStates);
     })();
   const taskCenterTasks = taskProgress.tasks.map((task) => ({

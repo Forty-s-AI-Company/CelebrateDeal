@@ -44,6 +44,22 @@ describe("dashboard read model", () => {
     expect(groupBy).toHaveBeenCalledOnce();
   });
 
+  it("adds the selected project boundary to registration and analytics reads", async () => {
+    const registrationGroupBy = vi.fn().mockResolvedValue([]);
+    const db = { formSubmission: { groupBy: registrationGroupBy } } as unknown as Parameters<typeof readDashboardRegistrationCounts>[0];
+    await readDashboardRegistrationCounts(db, "vendor-1", new Date("2026-08-01T00:00:00.000Z"), "project-1");
+    expect(registrationGroupBy).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ form: { vendorId: "vendor-1", projectId: "project-1" } }),
+    }));
+
+    const analyticsGroupBy = vi.fn().mockResolvedValue([]);
+    const analyticsDb = { analyticsEvent: { groupBy: analyticsGroupBy } } as unknown as Parameters<typeof readDashboardAnalyticsCounts>[0];
+    await readDashboardAnalyticsCounts(analyticsDb, "vendor-1", new Date("2026-08-01T00:00:00.000Z"), "project-1");
+    expect(analyticsGroupBy).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }),
+    }));
+  });
+
   it("uses grouped email status counts when Prisma supports groupBy", async () => {
     const groupBy = vi.fn().mockResolvedValue([
       { status: "sent", _count: { _all: 7 } },

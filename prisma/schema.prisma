@@ -1696,6 +1696,9 @@ model CommerceOrder {
   /// Orders are only project-scoped when the checkout flow has an explicit
   /// project context. Historic orders stay vendor-visible.
   projectId                       String?
+  /// Set only by server-owned checkout context for a non-charging test order.
+  /// Browsers never supply or control this signal.
+  isTestOrder                     Boolean             @default(false)
   status                          CommerceOrderStatus @default(pending_payment)
   currency                        String              @default("TWD")
   subtotalAmountCents             Int
@@ -1737,6 +1740,7 @@ model CommerceOrder {
   @@index([vendorId, automationCustomerKeyHash, status])
   @@index([vendorId, paidAt])
   @@index([vendorId, projectId, status, createdAt])
+  @@index([vendorId, isTestOrder, status, createdAt])
 }
 
 /// Immutable commercial terms captured at purchase time. Product fields remain

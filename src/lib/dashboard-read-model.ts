@@ -130,11 +130,12 @@ export async function readDashboardRegistrationCounts(
   db: DashboardDb,
   vendorId: string,
   createdAt: Date,
+  projectId: string | null = null,
 ): Promise<DashboardRegistrationCounts> {
   if (typeof (db.formSubmission as { groupBy?: unknown }).groupBy === "function") {
     const rows = await db.formSubmission.groupBy({
       by: ["verificationStatus"],
-      where: { form: { vendorId }, createdAt: { gte: createdAt } },
+      where: { form: { vendorId, ...(projectId ? { projectId } : {}) }, createdAt: { gte: createdAt } },
       _count: { _all: true },
     });
     return {
@@ -143,8 +144,8 @@ export async function readDashboardRegistrationCounts(
     };
   }
 
-  const total = await db.formSubmission.count({ where: { form: { vendorId }, createdAt: { gte: createdAt } } });
-  const verified = await db.formSubmission.count({ where: { form: { vendorId }, verificationStatus: "VERIFIED", createdAt: { gte: createdAt } } });
+  const total = await db.formSubmission.count({ where: { form: { vendorId, ...(projectId ? { projectId } : {}) }, createdAt: { gte: createdAt } } });
+  const verified = await db.formSubmission.count({ where: { form: { vendorId, ...(projectId ? { projectId } : {}) }, verificationStatus: "VERIFIED", createdAt: { gte: createdAt } } });
   return { total, verified };
 }
 
@@ -152,18 +153,25 @@ export async function readDashboardEmailCounts(
   db: DashboardDb,
   vendorId: string,
   createdAt: Date,
+  sourceScope: { liveIds: string[]; submissionIds: string[] } | null = null,
 ): Promise<DashboardEmailCounts> {
+  const sourceFilters = sourceScope ? [
+      ...(sourceScope.liveIds.length ? [{ sourceLiveId: { in: sourceScope.liveIds } }] : []),
+      ...(sourceScope.submissionIds.length ? [{ sourceFormSubmissionId: { in: sourceScope.submissionIds } }] : []),
+    ] : null;
+  if (sourceFilters?.length === 0) return { sent: 0, failed: 0 };
+  const sourceWhere = sourceFilters ? { OR: sourceFilters } : {};
   if (typeof (db.emailDelivery as { groupBy?: unknown }).groupBy === "function") {
     const rows = await db.emailDelivery.groupBy({
       by: ["status"],
-      where: { vendorId, createdAt: { gte: createdAt } },
+      where: { vendorId, createdAt: { gte: createdAt }, ...sourceWhere },
       _count: { _all: true },
     });
     return { sent: countRows(rows, "sent"), failed: countRows(rows, "failed") };
   }
 
-  const sent = await db.emailDelivery.count({ where: { vendorId, status: "sent", createdAt: { gte: createdAt } } });
-  const failed = await db.emailDelivery.count({ where: { vendorId, status: "failed", createdAt: { gte: createdAt } } });
+  const sent = await db.emailDelivery.count({ where: { vendorId, status: "sent", createdAt: { gte: createdAt }, ...sourceWhere } });
+  const failed = await db.emailDelivery.count({ where: { vendorId, status: "failed", createdAt: { gte: createdAt }, ...sourceWhere } });
   return { sent, failed };
 }
 
@@ -218,6 +226,7 @@ export async function readDashboardAnalyticsCounts(
   db: DashboardDb,
   vendorId: string,
   createdAt: Date,
+  projectId: string | null = null,
 ): Promise<DashboardAnalyticsCounts> {
   if (typeof (db as { $queryRaw?: unknown }).$queryRaw === "function") {
     const rows = await db.$queryRaw<Array<{ eventType: string; uniqueVisitors: number | bigint }>>(Prisma.sql`
@@ -228,6 +237,7 @@ export async function readDashboardAnalyticsCounts(
         AND "trustLevel"::text = 'ADMITTED_LIVE_SESSION'
         AND "eventType" IN ('page_view', 'product_click', 'cta_click')
         AND "createdAt" >= ${createdAt}
+        ${projectId ? Prisma.sql`AND "projectId" = ${projectId}` : Prisma.empty}
       GROUP BY "eventType"
     `);
     return analyticsCountsFromRows(rows);
@@ -244,6 +254,7 @@ export async function readDashboardAnalyticsCounts(
     by: ["eventType", "visitorId"],
     where: {
       vendorId,
+      ...(projectId ? { projectId } : {}),
       trustLevel: "ADMITTED_LIVE_SESSION",
       eventType: { in: ["page_view", "product_click", "cta_click"] },
       createdAt: { gte: createdAt },
@@ -263,11 +274,12 @@ export async function readDashboardKpiCounts(
   vendorId: string,
   createdAt: Date,
   measurement = createDashboardQueryMeasurement(),
+  projectId: string | null = null,
 ): Promise<{ counts: DashboardKpiCounts; measurement: DashboardQueryMeasurement }> {
-  const registrations = await measuredQuery(measurement, () => readDashboardRegistrationCounts(db, vendorId, createdAt));
-  const analytics = await measuredQuery(measurement, () => readDashboardAnalyticsCounts(db, vendorId, createdAt));
+  const registrations = await measuredQuery(measurement, () => readDashboardRegistrationCounts(db, vendorId, createdAt, projectId));
+  const analytics = await measuredQuery(measurement, () => readDashboardAnalyticsCounts(db, vendorId, createdAt, projectId));
   const orders = await measuredQuery(measurement, () => db.commerceOrder.count({
-    where: { vendorId, createdAt: { gte: createdAt } },
+    where: { vendorId, createdAt: { gte: createdAt }, ...(projectId ? { projectId } : {}) },
   }));
   const email = await measuredQuery(measurement, () => readDashboardEmailCounts(db, vendorId, createdAt));
   const realViewerMessages = await measuredQuery(measurement, () => db.liveChatMessage.count({

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ProjectScopeError,
   assertProjectBelongsToVendor,
+  canPublishSalesProject,
   evaluateProjectOnboarding,
   evaluateWorkspaceOnboarding,
   parseSalesWorkspaceQuestionnaire,
@@ -83,5 +84,20 @@ describe("tenant project scope", () => {
   it("rejects a cross-workspace project before an action can persist it", () => {
     expect(() => assertProjectBelongsToVendor({ id: "project-2", vendorId: "vendor-2" }, "vendor-1")).toThrow(ProjectScopeError);
     expect(assertProjectBelongsToVendor({ id: "project-1", vendorId: "vendor-1" }, "vendor-1").id).toBe("project-1");
+  });
+});
+
+describe("sales project publish gate", () => {
+  const ready = {
+    exists: true, hasLinkedProduct: true, hasPricedProduct: true, hasFunnelTemplate: true,
+    hasLiveSession: true, hasConsultationService: false, hasAvailability: false,
+    hasPaymentMethod: true, hasPreviewableFlow: true, isPublished: false,
+  };
+
+  it("requires a real flow and payment before publishing", () => {
+    expect(canPublishSalesProject("live", ready)).toBe(true);
+    expect(canPublishSalesProject("live", { ...ready, hasPaymentMethod: false })).toBe(false);
+    expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true, hasAvailability: true })).toBe(true);
+    expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true })).toBe(false);
   });
 });

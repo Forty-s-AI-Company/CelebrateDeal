@@ -65,4 +65,26 @@ describe("customer CRM aggregation", () => {
     expect(bookingFind.mock.calls[0]?.[0]).toMatchObject({ where: { vendorId: "vendor-a" } });
     expect(formFind.mock.calls[0]?.[0]).not.toHaveProperty("take");
   });
+
+  it("filters a project view through canonical SalesProjectCustomer memberships", async () => {
+    const findMany = (result: unknown[]) => vi.fn<(args: unknown) => Promise<unknown[]>>().mockResolvedValue(result);
+    const formFind = findMany([{ name: "專案學員", email: "member@example.test", phone: null, customerKeyHash: "member-hash", createdAt: new Date("2026-01-01Z") }]);
+    database.current = {
+      salesProjectCustomer: { findMany: vi.fn().mockResolvedValue([{ customerKeyHash: "member-hash" }]) },
+      formSubmission: { findMany: formFind },
+      consultationBooking: { findMany: findMany([]) },
+      commerceOrder: { findMany: findMany([]) },
+      streamUsageLedgerEntry: { groupBy: vi.fn().mockResolvedValue([]) },
+      customerTagAssignment: { findMany: findMany([]) },
+      automationVoucherGrant: { findMany: findMany([]) },
+      automationExecutionLog: { findMany: findMany([]) },
+      customerCrmRecord: { findMany: findMany([]) },
+    };
+
+    await expect(listCustomers("vendor-a", "", "", "project-a"))
+      .resolves.toEqual([expect.objectContaining({ customerKeyHash: "member-hash" })]);
+    expect(formFind).toHaveBeenCalledWith(expect.objectContaining({
+      where: { form: { vendorId: "vendor-a" }, customerKeyHash: { in: ["member-hash"] } },
+    }));
+  });
 });

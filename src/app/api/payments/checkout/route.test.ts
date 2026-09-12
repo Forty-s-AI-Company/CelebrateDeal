@@ -596,6 +596,48 @@ describe("successful checkout response", () => {
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ expectedProductRevision: 4 }));
   });
 
+  it("marks only a server-selected local demo checkout as a test order", async () => {
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ isTestOrder: true }),
+    );
+  });
+
+  it("does not mark a normal payment provider checkout as a test order", async () => {
+    checkoutReadiness.mockReturnValue("ready");
+    paymentProviderMocks.getPaymentProvider.mockReturnValue({
+      id: "payuni",
+      checkoutReadiness,
+      createCheckoutSession,
+    });
+    createCheckoutSession.mockResolvedValue({
+      provider: "payuni",
+      mode: "redirect",
+      checkoutUrl: "https://checkout.example.test/payuni",
+      nextAction: "continue_with_provider",
+      externalRequired: true,
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ isTestOrder: false }),
+    );
+  });
+
+  it("rejects a browser-owned test-order marker before creating a transaction", async () => {
+    const response = await POST(checkoutRequest(undefined, { isTestOrder: true }));
+
+    expect(response.status).toBe(400);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).not.toHaveBeenCalled();
+  });
+
   it("atomically redeems a post-purchase offer once even when a freshly signed token uses another idempotency key", async () => {
     const sourceOrderId = "source-order-1";
     const sourceProductId = "source-product-1";
@@ -719,6 +761,10 @@ describe("successful checkout response", () => {
     expect(db.paymentTransaction.update.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
       billingPurpose: "buyer_order", wp4SourceCommit: source,
     });
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ isTestOrder: true }),
+    );
   });
 
   it("rejects caller-owned source and purpose before any transaction write", async () => {

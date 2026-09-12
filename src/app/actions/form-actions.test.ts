@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertSecurity: vi.fn(),
-  requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  editableScope: vi.fn(),
   create: vi.fn(),
   updateMany: vi.fn(),
   imageAssetFindFirst: vi.fn(),
@@ -17,7 +18,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertSecurity }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
@@ -61,7 +63,8 @@ beforeEach(() => {
   mocks.db.video.findFirst = mocks.videoFindFirst;
   mocks.getDb.mockReturnValue(mocks.db);
   mocks.assertSecurity.mockResolvedValue(undefined);
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
+  mocks.editableScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.create.mockResolvedValue({ id: "form-new" });
   mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.imageAssetFindFirst.mockResolvedValue(null);
@@ -69,6 +72,36 @@ beforeEach(() => {
 });
 
 describe("upsertFormBuilderAction", () => {
+  it("binds a new form to the server-selected project instead of a client project id", async () => {
+    mocks.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    const data = formData();
+    data.set("projectId", "attacker-project");
+
+    await expect(upsertFormBuilderAction(idleState, data)).rejects.toThrow("redirect:/forms");
+
+    expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({ projectId: "project-1", vendorId: "vendor-1" }) });
+  });
+
+  it("does not allow the aggregate overview to write forms", async () => {
+    mocks.editableScope.mockRejectedValueOnce(new Error("sales_project_required"));
+
+    await expect(upsertFormBuilderAction(idleState, formData())).resolves.toMatchObject({
+      status: "error",
+      fieldErrors: { root: expect.stringContaining("選擇") },
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("requires the edited form to belong to the server-selected project", async () => {
+    mocks.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+
+    await expect(upsertFormBuilderAction(idleState, formData("form-1"))).rejects.toThrow("redirect:/forms");
+
+    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ projectId: "project-1" }),
+    }));
+  });
+
   it("creates a validated form under the authenticated vendor and redirects", async () => {
     await expect(upsertFormBuilderAction(idleState, formData())).rejects.toThrow("redirect:/forms");
 
@@ -267,7 +300,7 @@ describe("upsertFormBuilderAction", () => {
     const result = await upsertFormBuilderAction(idleState, formData());
 
     expect(result).toEqual(expect.objectContaining({ status: "error", message: expect.stringContaining("安全驗證") }));
-    expect(mocks.requireVendorManager).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerContext).not.toHaveBeenCalled();
     expect(mocks.create).not.toHaveBeenCalled();
   });
 

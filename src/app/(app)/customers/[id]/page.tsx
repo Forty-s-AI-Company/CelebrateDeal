@@ -3,20 +3,24 @@ import { addCustomerTagAction, grantCustomerVoucherAction, removeCustomerTagActi
 import { CsrfField } from "@/components/csrf-field";
 import { CustomerCopyButton } from "@/components/customer-copy-button";
 import { Badge, Card, PageHeader, SubmitButton, TextArea } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getCustomerProfile } from "@/lib/customer-crm";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { SalesScopeNotice } from "@/components/sales-scope-notice";
 
 const STATUS_LABELS: Record<string, string> = { following_up: "跟進中", closed_won: "已成交", closed_lost: "無意願", no_show: "未出席" };
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const [vendor, { id }] = await Promise.all([requireVendorManager(), params]);
-  const profile = await getCustomerProfile(vendor.id, id);
+  const [{ auth, vendor }, { id }] = await Promise.all([requireVendorManagerContext(), params]);
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+  const profile = await getCustomerProfile(vendor.id, id, scope.projectId);
   if (!profile) notFound();
-  const products = await getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 100 });
+  const products = await getDb().product.findMany({ where: { vendorId: vendor.id, isActive: true, ...(scope.projectId ? { salesProjects: { some: { projectId: scope.projectId } } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 100 });
   const summary = [`學員：${profile.name}`, `聯絡：${profile.maskedEmail} / ${profile.maskedPhone}`, `累計消費：NT$${Math.round(profile.lifetimeValueCents / 100).toLocaleString("zh-TW")}`, `觀看：${Math.round(profile.watchSeconds / 60)} 分鐘`, `諮詢問卷：${profile.bookingAnswers ? JSON.stringify(profile.bookingAnswers) : "未填寫"}`].join("\n");
   return <div className="space-y-6">
     <PageHeader title={`${profile.name} 的 360° 旅程`} description={`${profile.maskedEmail} · ${profile.maskedPhone}`} action={<CustomerCopyButton summary={summary} />} />
+    <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
     <div className="grid gap-4 sm:grid-cols-4"><Card><p className="text-sm text-slate-500">LTV</p><p className="mt-2 text-2xl font-semibold">NT${Math.round(profile.lifetimeValueCents / 100).toLocaleString("zh-TW")}</p></Card><Card><p className="text-sm text-slate-500">累計觀看</p><p className="mt-2 text-2xl font-semibold">{Math.round(profile.watchSeconds / 60)} 分鐘</p><p className="mt-1 text-xs text-slate-500">{profile.entryCount} 次進場</p></Card><Card><p className="text-sm text-slate-500">觀看完成率</p><p className="mt-2 text-2xl font-semibold">{profile.watchCompletionRate === null ? "—" : `${profile.watchCompletionRate}%`}</p></Card><Card><p className="text-sm text-slate-500">成交狀態</p><p className="mt-2 text-2xl font-semibold">{STATUS_LABELS[profile.consultationStatus]}</p></Card></div>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,1fr)]">
       <Card><h2 className="text-lg font-semibold">全鏈路意向時間軸</h2><ol className="mt-5 space-y-0">{profile.timeline.map((event) => <li key={event.id} className="relative border-l-2 border-blue-100 pb-6 pl-6 last:pb-0"><span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-primary" /><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-slate-900">{event.title}</p><time className="text-xs text-slate-500">{event.occurredAt.toLocaleString("zh-TW")}</time></div>{event.detail ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{event.detail}</p> : null}</li>)}</ol>{!profile.timeline.length ? <p className="mt-5 text-slate-500">尚無旅程事件。</p> : null}</Card>

@@ -130,6 +130,20 @@ const checkoutInput = {
 } as const;
 
 describe("commerce orders database service", () => {
+  it("persists the server-owned test-order signal without changing a normal order default", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValue(product("physical"));
+
+    await createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      isTestOrder: true,
+    });
+
+    expect(tx.commerceOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ isTestOrder: true }),
+    }));
+  });
+
   it("persists a server-authorized voucher as subtotal minus discount while preserving the product line price", async () => {
     const tx = transaction();
     tx.product.findFirst.mockResolvedValue(product("physical"));

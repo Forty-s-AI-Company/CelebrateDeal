@@ -44,19 +44,26 @@ type DashboardKpiLoadResult = {
   measurement: ReturnType<typeof createDashboardMeasurement>;
 };
 
-async function loadDashboardKpis(vendorId: string, diagnosticFailureScope: string | null): Promise<DashboardKpiLoadResult> {
+async function loadDashboardKpis(vendorId: string, projectId: string | null, diagnosticFailureScope: string | null): Promise<DashboardKpiLoadResult> {
   const db = getDb();
   const measurement = createDashboardMeasurement();
   const sevenDaysAgo = getDateDaysAgo(7);
 
   try {
-    const registrationCounts = await measurement.measure("registration.grouped-count", () => readDashboardRegistrationCounts(db, vendorId, sevenDaysAgo));
-    const viewerMessageCount = await measurement.measure("viewer-message.count", () => db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId, createdAtGte: sevenDaysAgo }) }));
-    const scheduledMessageCount = await measurement.measure("scheduled-message.count", () => db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId }) }));
+    const registrationCounts = await measurement.measure("registration.grouped-count", () => readDashboardRegistrationCounts(db, vendorId, sevenDaysAgo, projectId));
+    const viewerMessageCount = await measurement.measure("viewer-message.count", () => db.liveChatMessage.count({ where: { ...realViewerMessageWhere({ vendorId, createdAtGte: sevenDaysAgo }), ...(projectId ? { live: { projectId } } : {}) } }));
+    const scheduledMessageCount = await measurement.measure("scheduled-message.count", () => db.interactionEvent.count({ where: { ...scheduledMessageEventWhere({ vendorId }), ...(projectId ? { script: { ...scheduledMessageEventWhere({ vendorId }).script, lives: { some: { vendorId, projectId } } } } : {}) } }));
     if (diagnosticFailureScope === "analytics") throw new Error("dashboard_diagnostic_analytics_failure");
-    const analyticsCounts = await measurement.measure("analytics.aggregate", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo));
-    const orderCreatedCount = await measurement.measure("order.count", () => db.commerceOrder.count({ where: { vendorId, createdAt: { gte: sevenDaysAgo } } }));
-    const emailCounts = await measurement.measure("email.grouped-count", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo));
+    const analyticsCounts = await measurement.measure("analytics.aggregate", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo, projectId));
+    const orderCreatedCount = await measurement.measure("order.count", () => db.commerceOrder.count({ where: { vendorId, createdAt: { gte: sevenDaysAgo }, ...(projectId ? { projectId } : {}) } }));
+    const emailSourceScope = projectId ? await measurement.measure("email-source.select", async () => {
+      const [lives, submissions] = await Promise.all([
+        db.live.findMany({ where: { vendorId, projectId }, select: { id: true } }),
+        db.formSubmission.findMany({ where: { form: { vendorId, projectId } }, select: { id: true } }),
+      ]);
+      return { liveIds: lives.map((live) => live.id), submissionIds: submissions.map((submission) => submission.id) };
+    }) : null;
+    const emailCounts = await measurement.measure("email.grouped-count", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo, emailSourceScope));
     const funnel = calculateAnalyticsFunnel({
       views: analyticsCounts.views,
       productClicks: analyticsCounts.productClicks,
@@ -239,8 +246,8 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
   );
 }
 
-export default async function DashboardKpis({ vendorId, diagnosticFailureScope = null }: { vendorId: string; diagnosticFailureScope?: string | null }) {
-  const result = await loadDashboardKpis(vendorId, diagnosticFailureScope);
+export default async function DashboardKpis({ vendorId, projectId = null, diagnosticFailureScope = null }: { vendorId: string; projectId?: string | null; diagnosticFailureScope?: string | null }) {
+  const result = await loadDashboardKpis(vendorId, projectId, diagnosticFailureScope);
   const measurement = result.measurement.snapshot();
   emitDashboardMeasurement("kpis", measurement);
   return (

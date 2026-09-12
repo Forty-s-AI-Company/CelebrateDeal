@@ -9,6 +9,7 @@ import { issueManualCustomerVoucher } from "@/lib/customer-voucher";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { listCustomers, type CustomerListItem } from "@/lib/customer-crm";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 const Hash = z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/u);
 const Status = z.enum(["following_up", "closed_won", "closed_lost", "no_show"]);
@@ -103,10 +104,11 @@ export type CustomerSearchActionState = { status: "idle" | "success" | "error"; 
 export async function searchCustomersAction(_previous: CustomerSearchActionState, formData: FormData): Promise<CustomerSearchActionState> {
   try {
     await assertServerActionSecurity(formData);
-    const { vendor } = await requireVendorManagerContext();
+    const { auth, vendor } = await requireVendorManagerContext();
     const query = z.string().max(320).parse(value(formData, "query"));
     const tag = z.string().max(50).parse(value(formData, "tag")).toLocaleLowerCase("zh-TW");
-    const items = await listCustomers(vendor.id, query, tag);
+    const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+    const items = await listCustomers(vendor.id, query, tag, scope.projectId);
     return { status: "success", message: items.length ? `找到 ${items.length} 位學員。` : "沒有符合條件的學員。", items };
   } catch {
     return { status: "error", message: "搜尋失敗，請重新整理後再試。", items: [] };

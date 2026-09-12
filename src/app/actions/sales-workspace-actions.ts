@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
+import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
 
 function nextQuestionnaireStep(answers: SalesWorkspaceQuestionnaire) {
@@ -90,6 +90,50 @@ export async function createSalesProjectAction(formData: FormData) {
     return created;
   });
   redirect(parsed.onboardingEnabled ? "/onboarding" : `/projects/${project.id}`);
+}
+
+/** Publishes only when the selected project has a real sellable flow. */
+export async function publishSalesProjectAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { vendor } = await requireVendorManagerContext();
+  const projectId = String(formData.get("projectId") ?? "").trim();
+  if (!projectId || projectId.length > 191) throw new Error("project_not_found");
+  const db = getDb();
+  const project = await db.salesProject.findFirst({
+    where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } },
+    select: { id: true, primaryFlow: true },
+  });
+  if (!project) throw new Error("project_not_found");
+  const now = new Date();
+  const [pricedProducts, funnels, lives, consultations, paymentMethods] = await Promise.all([
+    db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
+    db.registrationForm.count({ where: { vendorId: vendor.id, projectId, isActive: true, templateId: { not: null } } }),
+    db.live.count({ where: { vendorId: vendor.id, projectId } }),
+    db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId, isActive: true }, select: { weeklySchedule: true } }),
+    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+  ]);
+  const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const ranges = (entry as { ranges?: unknown }).ranges;
+    return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+  }));
+  const ready = canPublishSalesProject(project.primaryFlow, {
+    exists: true,
+    hasLinkedProduct: pricedProducts > 0,
+    hasPricedProduct: pricedProducts > 0,
+    hasFunnelTemplate: funnels > 0,
+    hasLiveSession: lives > 0,
+    hasConsultationService: consultations.length > 0,
+    hasAvailability,
+    hasPaymentMethod: paymentMethods > 0,
+    hasPreviewableFlow: true,
+    isPublished: false,
+  });
+  if (!ready) redirect(`/projects/${encodeURIComponent(projectId)}?error=not_ready`);
+  await db.salesProject.updateMany({ where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } }, data: { status: "published", publishedAt: now } });
+  revalidatePath("/", "layout");
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${encodeURIComponent(projectId)}?published=1`);
 }
 
 export async function controlOnboardingGuideAction(control: "hide" | "remind" | "stop" | "restart") {

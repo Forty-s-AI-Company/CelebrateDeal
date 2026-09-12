@@ -4,10 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   requireVendorManager: vi.fn(),
+  getCurrentAuth: vi.fn(),
+  editableScope: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }),
   productFindFirst: vi.fn(),
   productCreate: vi.fn(),
   productUpdateMany: vi.fn(),
+  salesProjectProductCreate: vi.fn(),
   imageAssetFindFirst: vi.fn(),
   teamMembershipFindFirst: vi.fn(),
   deliveryAllowlistUpsert: vi.fn(),
@@ -17,12 +20,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, getCurrentAuth: mocks.getCurrentAuth }));
+vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({
   getDb: () => {
     const delegates = {
     product: { findFirst: mocks.productFindFirst, create: mocks.productCreate, updateMany: mocks.productUpdateMany },
+    salesProjectProduct: { create: mocks.salesProjectProductCreate },
     imageAsset: { findFirst: mocks.imageAssetFindFirst },
     teamMembership: { findFirst: mocks.teamMembershipFindFirst },
       vendorDeliveryUrlAllowlist: { upsert: mocks.deliveryAllowlistUpsert },
@@ -51,9 +56,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.getCurrentAuth.mockResolvedValue({ user: { id: "user-1" }, vendor: { id: "vendor-1" } });
+  mocks.editableScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   mocks.productFindFirst.mockResolvedValue(null);
   mocks.productCreate.mockResolvedValue({ id: "product-new" });
   mocks.productUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.salesProjectProductCreate.mockResolvedValue({ id: "project-product-1" });
   mocks.teamMembershipFindFirst.mockResolvedValue({ id: "membership-owner" });
   mocks.deliveryAllowlistUpsert.mockResolvedValue({ id: "allowlist-1" });
   mocks.deliveryConfigCreate.mockResolvedValue({ id: "delivery-config-1" });
@@ -65,6 +73,39 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("upsertProductAction", () => {
+  it("binds a new product to the server-selected sales project without reading a form project id", async () => {
+    mocks.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    const data = validProduct({ projectId: "attacker-project" });
+
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=created");
+
+    expect(mocks.salesProjectProductCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }),
+    });
+  });
+
+  it("rejects aggregate-project mutations before it queries or writes products", async () => {
+    mocks.editableScope.mockRejectedValueOnce(new Error("sales_project_required"));
+
+    const result = await upsertProductAction(initialProductActionState, validProduct());
+
+    expect(result.error).toBe("not_found");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires an edited product to be linked to the server-selected project", async () => {
+    mocks.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    mocks.productFindFirst.mockResolvedValueOnce(null);
+
+    const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-outside-project", revision: "1" }));
+
+    expect(result.error).toBe("not_found");
+    expect(mocks.productFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ salesProjectLinks: { some: { projectId: "project-1" } } }),
+    }));
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("creates a draft merchant product using merchant-facing major currency units", async () => {
     const data = validProduct({ description: "  商品說明  ", compareAt: "15.50", imageUrl: "https://example.com/image.png", checkoutUrl: "https://example.com/checkout" });
 

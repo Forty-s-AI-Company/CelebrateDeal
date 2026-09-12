@@ -2,7 +2,7 @@
 
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -12,6 +12,7 @@ import {
   type RegistrationFormInput,
   type RegistrationFormInputErrors,
 } from "@/lib/registration-form-input";
+import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 
 export type FormBuilderActionState = {
   status: "idle" | "error";
@@ -92,7 +93,20 @@ export async function upsertFormBuilderAction(
     };
   }
 
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  let scope: SalesProjectScope;
+  try {
+    scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === "sales_project_required") {
+      return {
+        status: "error",
+        message: "全部專案總覽為唯讀；請先選擇一個銷售專案後再儲存。",
+        fieldErrors: { root: "請選擇一個銷售專案後再修改表單。" },
+      };
+    }
+    throw error;
+  }
   const parsed = parseRegistrationFormInput(formData);
   if (!parsed.success) {
     return {
@@ -137,7 +151,12 @@ export async function upsertFormBuilderAction(
 
     if (id) {
       const updated = await db.registrationForm.updateMany({
-        where: { id, vendorId: vendor.id, updatedAt: expectedUpdatedAt! },
+        where: {
+          id,
+          vendorId: vendor.id,
+          updatedAt: expectedUpdatedAt!,
+          ...(scope.projectId ? { projectId: scope.projectId } : {}),
+        },
         data,
       });
       if (updated.count !== 1) {
@@ -148,7 +167,9 @@ export async function upsertFormBuilderAction(
         };
       }
     } else {
-      await db.registrationForm.create({ data: { ...data, vendorId: vendor.id } });
+      await db.registrationForm.create({
+        data: { ...data, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
+      });
     }
   } catch (error) {
     const code = databaseErrorCode(error);

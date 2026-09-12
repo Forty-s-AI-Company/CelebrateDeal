@@ -208,6 +208,12 @@ export type CreateCommerceOrderForCheckoutInput = {
   customCheckoutAnswers?: unknown;
   /** Server-validated electronic invoice choice; encrypted before persistence. */
   invoiceSelection?: CheckoutInvoiceSelection;
+  /**
+   * Only the checkout route may set this after it derives a trusted server
+   * context (demo, explicit local E2E, or capability-gated Preview sandbox).
+   * It is intentionally absent from the browser request schema.
+   */
+  isTestOrder?: boolean;
   now?: Date;
 };
 
@@ -398,6 +404,7 @@ export async function createCommerceOrderForCheckout(
     checkoutIdentityHash,
     automationCustomerKeyHash: automationCustomerKeyHash(input.vendorId, input.buyer.email),
     primaryPaymentTransactionId: input.paymentTransactionId,
+    isTestOrder: input.isTestOrder === true,
     status: "pending_payment" as const,
     currency: input.currency,
     subtotalAmountCents: calculatedTotal,

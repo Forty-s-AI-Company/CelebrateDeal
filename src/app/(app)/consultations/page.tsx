@@ -19,9 +19,6 @@ function statusTone(status: string) {
   return "blue" as const;
 }
 
-// Keeping the forms beside their scoped data makes the aggregate read-only
-// boundary explicit in this server-rendered operational page.
-// eslint-disable-next-line max-lines-per-function
 export default async function ConsultationsPage({ searchParams }: { searchParams: Promise<PageSearchParams> }) {
   const [{ auth, vendor }, params] = await Promise.all([requireVendorManagerContext(), searchParams]);
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);

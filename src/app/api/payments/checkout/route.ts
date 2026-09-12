@@ -314,6 +314,18 @@ function checkoutTransactionMetadata(input: {
   };
 }
 
+/**
+ * A buyer request may never opt itself into onboarding evidence. Test orders
+ * are derived exclusively from server configuration: the local demo adapter,
+ * a narrowly defined loopback E2E runtime, or the fixed Preview sandbox
+ * fixture guarded by the server-side WP4 capability.
+ */
+function isTrustedTestOrderContext(input: { providerId: string; productId: string }) {
+  if (input.providerId === "demo" && process.env.NODE_ENV !== "production") return true;
+  if (isExplicitLocalE2eRuntime()) return true;
+  return wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) !== null;
+}
+
 type ValidatedCheckoutIdentity =
   | { ok: true; pii: CommerceOrderPii; checkoutIdentityHash: string }
   | { ok: false; response: NextResponse };
@@ -814,6 +826,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Checkout is temporarily unavailable" }, { status: 503 });
   }
   const { provider, readiness: checkoutReadiness } = admittedProvider;
+  const isTestOrder = isTrustedTestOrderContext({ providerId: provider.id, productId: product.id });
 
   if (product.inventory <= 0) {
     return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
@@ -885,6 +898,7 @@ export async function POST(request: Request) {
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
           customCheckoutAnswers: customCheckout.answers,
+          isTestOrder,
           ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
         await consumeVoucherClaim(tx, voucherClaim, {

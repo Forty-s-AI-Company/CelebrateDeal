@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { CourseCommerceDomain } from "@/lib/course-commission";
+import { getCurrentAuth } from "@/lib/auth";
 import { mvpCommissionPolicy } from "@/lib/mvp-commission-policy";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -19,6 +20,7 @@ import {
   safeParseCustomCheckoutFields,
 } from "@/lib/commerce-custom-checkout";
 import type { ProductActionError, ProductActionState, ProductFormDraft } from "@/lib/product-action-state";
+import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -253,7 +255,12 @@ function hasPrismaErrorCode(error: unknown, code: string) {
     && error.code === code;
 }
 
-async function loadProductDependencies(db: ProductDb, vendorId: string, request: ProductRequest) {
+async function loadProductDependencies(
+  db: ProductDb,
+  vendorId: string,
+  scope: SalesProjectScope,
+  request: ProductRequest,
+) {
   if (!request.id) {
     const duplicateProduct = await db.product.findFirst({
       where: { vendorId, slug: request.productInput.slug },
@@ -270,7 +277,11 @@ async function loadProductDependencies(db: ProductDb, vendorId: string, request:
   }
   const existingProduct = request.id
     ? await db.product.findFirst({
-        where: { id: request.id, vendorId },
+        where: {
+          id: request.id,
+          vendorId,
+          ...(scope.projectId ? { salesProjectLinks: { some: { projectId: scope.projectId } } } : {}),
+        },
         select: {
           id: true,
           courseContentOwnerMembershipId: true,
@@ -420,6 +431,17 @@ export type ProductMutationResult =
   | { ok: true; destination: "/products?updated=created" | "/products?updated=saved" }
   | { ok: false; state: ProductActionState };
 
+async function resolveEditableProductScope(vendorId: string): Promise<SalesProjectScope | null> {
+  const auth = await getCurrentAuth();
+  if (!auth || auth.vendor?.id !== vendorId) return null;
+  try {
+    return await requireEditableSalesProjectScope(auth.user.id, vendorId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "sales_project_required") return null;
+    throw error;
+  }
+}
+
 /**
  * Transport-neutral product mutation. HTTP and Server Action adapters own
  * request security/authentication, while this service owns validation and the
@@ -432,8 +454,13 @@ export async function mutateProduct(
 ): Promise<ProductMutationResult> {
   const request = parseProductRequest(previousState, formData);
   if (!request.success) return { ok: false, state: request.state };
+  // This service is also used by the direct HTTP endpoint. Resolve scope from
+  // the authenticated session here so a forged form field can never select a
+  // project or bypass the aggregate read-only boundary.
+  const scope = await resolveEditableProductScope(vendorId);
+  if (!scope) return { ok: false, state: productFailure(previousState, formData, "not_found") };
   const db = getDb();
-  const dependencies = await loadProductDependencies(db, vendorId, request);
+  const dependencies = await loadProductDependencies(db, vendorId, scope, request);
   if (!dependencies.success) return { ok: false, state: productFailure(previousState, formData, dependencies.error) };
   const { existingProduct, imageAsset } = dependencies;
   const policyChanged = request.commerceDomain === "course" && existingProduct !== null
@@ -472,6 +499,11 @@ export async function mutateProduct(
     persistenceError = await db.$transaction(async (tx) => {
       const productError = await persistProduct(tx, vendorId, request, data);
       if (productError) return productError;
+      if (!request.id && scope.projectId) {
+        await tx.salesProjectProduct.create({
+          data: { vendorId, projectId: scope.projectId, productId },
+        });
+      }
       await persistProductDelivery(tx, {
         vendorId,
         productId,

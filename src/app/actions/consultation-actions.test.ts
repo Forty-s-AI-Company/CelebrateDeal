@@ -4,6 +4,7 @@ import type { ConsultationDatabase } from "./consultation-actions";
 const runtime = vi.hoisted(() => ({
   security: vi.fn(),
   manager: vi.fn(),
+  editableScope: vi.fn(),
   revalidate: vi.fn(),
   redirect: vi.fn((path: string): never => { throw new Error(`redirect:${path}`); }),
   eventCreate: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("next/cache", () => ({ revalidatePath: runtime.revalidate }));
 vi.mock("next/navigation", () => ({ redirect: runtime.redirect }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: runtime.security }));
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: runtime.manager }));
+vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: runtime.editableScope }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({
   consultationEvent: { create: runtime.eventCreate, updateMany: runtime.eventUpdateMany, findFirst: runtime.eventFindFirst, findMany: runtime.eventFindMany },
   consultationBooking: { findMany: runtime.bookingFindMany, updateMany: runtime.bookingUpdateMany },
@@ -58,7 +60,8 @@ function eventForm() {
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.security.mockResolvedValue(undefined);
-  runtime.manager.mockResolvedValue({ vendor: { id: "vendor-1" } });
+  runtime.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
+  runtime.editableScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   runtime.eventCreate.mockResolvedValue(event);
   runtime.eventUpdateMany.mockResolvedValue({ count: 1 });
   runtime.bookingUpdateMany.mockResolvedValue({ count: 1 });
@@ -67,6 +70,41 @@ beforeEach(() => {
 });
 
 describe("consultation management actions", () => {
+  it("binds new consultation events to the server-selected project", async () => {
+    runtime.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    const data = eventForm();
+    data.set("projectId", "attacker-project");
+
+    await expect(createConsultationEventAction(data)).rejects.toThrow("redirect:/consultations?updated=created");
+
+    expect(runtime.eventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ projectId: "project-1", vendorId: "vendor-1" }),
+    }));
+  });
+
+  it("rejects aggregate-project mutations before writing consultation records", async () => {
+    runtime.editableScope.mockRejectedValueOnce(new Error("sales_project_required"));
+
+    await expect(createConsultationEventAction(eventForm())).rejects.toThrow("redirect:/consultations?error=sales_project_required");
+    expect(runtime.eventCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires event and booking writes to match the server-selected project", async () => {
+    runtime.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    const edit = eventForm();
+    edit.set("eventId", "event-1");
+    await expect(updateConsultationEventAction(edit)).rejects.toThrow("redirect:/consultations?updated=saved");
+    expect(runtime.eventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ projectId: "project-1" }),
+    }));
+
+    runtime.editableScope.mockResolvedValueOnce({ projectId: "project-1", projectName: "秋季活動", isAggregate: false, isLegacyWorkspace: false });
+    await expect(cancelConsultationBookingAction(form({ bookingId: "booking-1" }))).rejects.toThrow("redirect:/consultations?updated=booking_cancelled");
+    expect(runtime.bookingUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ event: { projectId: "project-1" } }),
+    }));
+  });
+
   it("uses CSRF and the manager session vendor when creating an event", async () => {
     await expect(createConsultationEventAction(eventForm())).rejects.toThrow("redirect:/consultations?updated=created");
     expect(runtime.security).toHaveBeenCalledOnce();

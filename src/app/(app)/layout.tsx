@@ -39,7 +39,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     const [payments, members, testOrders] = await Promise.all([
       db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
       db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
-      Promise.resolve(0),
+      db.commerceOrder.count({ where: { vendorId: vendor.id, isTestOrder: true, status: "paid" } }),
     ]);
     taskProgress = evaluateWorkspaceOnboarding({ hasBasicProfile: Boolean(vendor.name.trim() && vendor.email.trim()), hasLogo: Boolean(vendor.logoUrl), hasPaymentMethod: payments > 0, hasSupportContact: Boolean(vendor.supportEmail?.trim()), hasInvitedTeamMember: members > 1, hasTestOrder: testOrders > 0 }, states);
   }

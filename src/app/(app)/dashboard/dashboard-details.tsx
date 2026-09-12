@@ -39,6 +39,7 @@ function DashboardDetailsError() {
 
 type DashboardDetailsProps = {
   vendorId: string;
+  projectId?: string | null;
   memberRole: string | null;
   supportEmailConfigured: boolean;
   trackingConfigured: boolean;
@@ -66,6 +67,7 @@ type DashboardDetailsLoadResult = {
 
 async function loadDashboardDetails({
   vendorId,
+  projectId = null,
   memberRole,
   supportEmailConfigured,
   trackingConfigured,
@@ -78,10 +80,10 @@ async function loadDashboardDetails({
 
   try {
     await applyDashboardDetailsDiagnosticDelay(diagnosticDelayMs ?? 0);
-    const liveCount = await measurement.measure("live.count", () => db.live.count({ where: { vendorId } }));
-    const productCount = await measurement.measure("product.count", () => db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true } }));
+    const liveCount = await measurement.measure("live.count", () => db.live.count({ where: { vendorId, ...(projectId ? { projectId } : {}) } }));
+    const productCount = await measurement.measure("product.count", () => db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true, ...(projectId ? { salesProjects: { some: { projectId } } } : {}) } }));
     const recentLives = await measurement.measure("recent-live.select", () => db.live.findMany({
-      where: { vendorId },
+      where: { vendorId, ...(projectId ? { projectId } : {}) },
       orderBy: { scheduledAt: "desc" },
       take: 5,
       select: { id: true, title: true, status: true, scheduledAt: true },
@@ -91,7 +93,7 @@ async function loadDashboardDetails({
       () => readDashboardLiveSubmissionCounts(db, vendorId, recentLives.map((live) => live.id)),
     );
     const upcomingLives = await measurement.measure("upcoming-live.select", () => db.live.findMany({
-      where: { vendorId, scheduledAt: { gte: now } },
+      where: { vendorId, scheduledAt: { gte: now }, ...(projectId ? { projectId } : {}) },
       orderBy: { scheduledAt: "asc" },
       take: 3,
       select: { id: true, title: true, scheduledAt: true },
@@ -105,7 +107,7 @@ async function loadDashboardDetails({
       where: { vendorId },
       select: { creditsUsed: true, creditsLimit: true, billingPlan: { select: { name: true } } },
     }));
-    const scripts = await measurement.measure("published-script.count", () => db.interactionScript.count({ where: { vendorId, status: "published" } }));
+    const scripts = await measurement.measure("published-script.count", () => db.interactionScript.count({ where: { vendorId, status: "published", ...(projectId ? { lives: { some: { vendorId, projectId } } } : {}) } }));
     const roles = await measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } }));
     const verifiedPaymentMethodCount = await measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({
       where: {
@@ -116,9 +118,12 @@ async function loadDashboardDetails({
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
     }));
-    const formCount = await measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } }));
+    const formCount = await measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true, ...(projectId ? { projectId } : {}) } }));
     const registrationEmailTemplateCount = await measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } }));
-    const sellableLiveCandidates = await measurement.measure("sellable-live.select", () => db.live.findMany(sellableLiveReadinessQuery(vendorId)));
+    const sellableLiveCandidates = await measurement.measure("sellable-live.select", () => db.live.findMany({
+      ...sellableLiveReadinessQuery(vendorId),
+      where: { ...sellableLiveReadinessQuery(vendorId).where, ...(projectId ? { projectId } : {}) },
+    }));
     const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
     const isManager = isDashboardManagerRole(memberRole);
     const onboarding = merchantOnboardingProgress({

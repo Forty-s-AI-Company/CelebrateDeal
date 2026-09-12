@@ -10,6 +10,7 @@ import DashboardKpis from "./dashboard-kpis";
 import DashboardKpisLoading from "./dashboard-kpis-loading";
 import { hasVendorFeature, normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";
 import { getDb } from "@/lib/db";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 function parseDashboardDetailsDiagnosticDelay(value: string | undefined) {
   if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return 0;
@@ -79,7 +80,11 @@ export default async function DashboardPage({ searchParams }: {
     || vendor.tracking?.facebookPixelId
     || vendor.tracking?.tiktokPixelId,
   );
-  const presentation = dashboardPresentation(await loadDashboardPersonalization(auth.user?.id, vendor.id), vendor.name);
+  const [preference, scope] = await Promise.all([
+    loadDashboardPersonalization(auth.user?.id, vendor.id),
+    getSalesProjectScope(auth.user.id, vendor.id),
+  ]);
+  const presentation = dashboardPresentation(preference, vendor.name);
 
   return (
     <>
@@ -91,7 +96,7 @@ export default async function DashboardPage({ searchParams }: {
 
       {advancedAnalyticsEnabled ? <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
         <Suspense fallback={<DashboardKpisLoading />}>
-          <DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />
+          <DashboardKpis vendorId={vendor.id} projectId={scope.projectId} diagnosticFailureScope={diagnosticFailureScope} />
         </Suspense>
       </section> : null}
 
@@ -99,6 +104,7 @@ export default async function DashboardPage({ searchParams }: {
         <Suspense fallback={<DashboardDetailsLoading />}>
           <DashboardDetails
             vendorId={vendor.id}
+            projectId={scope.projectId}
             memberRole={memberRole}
             supportEmailConfigured={supportEmailConfigured}
             trackingConfigured={trackingConfigured}

@@ -9,6 +9,7 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { generateConsultationSlots, type ConsultationSlot } from "@/lib/consultation-slot-engine";
 import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
+import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 
 const MANAGEMENT_PATH = "/consultations";
 const EVENT_ID = z.string().trim().min(1).max(191);
@@ -155,16 +156,35 @@ function redirectWithError(code: string): never {
   redirect(`${MANAGEMENT_PATH}?error=${encodeURIComponent(code)}`);
 }
 
+async function editableManagementScope() {
+  const { auth, vendor } = await requireVendorManagerContext();
+  try {
+    return { vendor, scope: await requireEditableSalesProjectScope(auth.user.id, vendor.id) };
+  } catch (error) {
+    if (error instanceof Error && error.message === "sales_project_required") redirectWithError("sales_project_required");
+    throw error;
+  }
+}
+
+function eventScopeWhere(scope: SalesProjectScope) {
+  return scope.projectId ? { projectId: scope.projectId } : {};
+}
+
+function bookingScopeWhere(scope: SalesProjectScope) {
+  return scope.projectId ? { event: { projectId: scope.projectId } } : {};
+}
+
 /** Manager-only event creation. Tenant identity is always derived from the session. */
 export async function createConsultationEventAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor } = await requireVendorManagerContext();
+  const { vendor, scope } = await editableManagementScope();
   const draft = eventDraft(formData);
   if (!draft) redirectWithError("invalid_event");
 
   await db().consultationEvent.create({
     data: {
       vendorId: vendor.id,
+      ...eventScopeWhere(scope),
       ...draft,
       weeklySchedule: draft.weeklySchedule as Prisma.InputJsonValue,
       intakeFormFields: draft.intakeFormFields as Prisma.InputJsonValue,
@@ -177,13 +197,13 @@ export async function createConsultationEventAction(formData: FormData) {
 /** Saves an existing event with a vendor-qualified conditional update. */
 export async function updateConsultationEventAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor } = await requireVendorManagerContext();
+  const { vendor, scope } = await editableManagementScope();
   const id = EVENT_ID.safeParse(text(formData, "eventId"));
   const draft = eventDraft(formData);
   if (!id.success || !draft) redirectWithError("invalid_event");
 
   const result = await db().consultationEvent.updateMany({
-    where: { id: id.data, vendorId: vendor.id },
+    where: { id: id.data, vendorId: vendor.id, ...eventScopeWhere(scope) },
     data: {
       ...draft,
       weeklySchedule: draft.weeklySchedule as Prisma.InputJsonValue,
@@ -198,13 +218,13 @@ export async function updateConsultationEventAction(formData: FormData) {
 /** Deactivation is deliberately non-destructive: booking history stays intact. */
 export async function toggleConsultationEventAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor } = await requireVendorManagerContext();
+  const { vendor, scope } = await editableManagementScope();
   const id = EVENT_ID.safeParse(text(formData, "eventId"));
   const isActive = text(formData, "isActive");
   if (!id.success || (isActive !== "true" && isActive !== "false")) redirectWithError("invalid_event");
 
   const result = await db().consultationEvent.updateMany({
-    where: { id: id.data, vendorId: vendor.id },
+    where: { id: id.data, vendorId: vendor.id, ...eventScopeWhere(scope) },
     data: { isActive: isActive === "true" },
   });
   if (result.count !== 1) redirectWithError("not_found");
@@ -215,12 +235,12 @@ export async function toggleConsultationEventAction(formData: FormData) {
 /** Cancellation is tenant-scoped, so an ID from another vendor is never mutable. */
 export async function cancelConsultationBookingAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor } = await requireVendorManagerContext();
+  const { vendor, scope } = await editableManagementScope();
   const id = EVENT_ID.safeParse(text(formData, "bookingId"));
   if (!id.success) redirectWithError("invalid_booking");
 
   const result = await db().consultationBooking.updateMany({
-    where: { id: id.data, vendorId: vendor.id, status: "scheduled" },
+    where: { id: id.data, vendorId: vendor.id, status: "scheduled", ...bookingScopeWhere(scope) },
     data: { status: "cancelled" },
   });
   if (result.count !== 1) redirectWithError("not_found_or_closed");
@@ -231,18 +251,18 @@ export async function cancelConsultationBookingAction(formData: FormData) {
 /** Records the operational outcome without ever crossing the current vendor boundary. */
 export async function updateConsultationBookingStatusAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor } = await requireVendorManagerContext();
+  const { vendor, scope } = await editableManagementScope();
   const id = EVENT_ID.safeParse(text(formData, "bookingId"));
   const status = z.enum(["completed", "no_show"]).safeParse(text(formData, "status"));
   if (!id.success || !status.success) redirectWithError("invalid_booking");
 
   const database = db();
   const booking = status.data === "no_show" ? await database.consultationBooking.findFirst?.({
-    where: { id: id.data, vendorId: vendor.id, status: "scheduled" },
+    where: { id: id.data, vendorId: vendor.id, status: "scheduled", ...bookingScopeWhere(scope) },
     select: { id: true, clientEmail: true, meetingUrl: true },
   }) : null;
   const result = await database.consultationBooking.updateMany({
-    where: { id: id.data, vendorId: vendor.id, status: "scheduled" },
+    where: { id: id.data, vendorId: vendor.id, status: "scheduled", ...bookingScopeWhere(scope) },
     data: { status: status.data },
   });
   if (result.count !== 1) redirectWithError("not_found_or_closed");

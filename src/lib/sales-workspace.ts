@@ -126,6 +126,19 @@ export type ProjectTaskSignals = {
   isPublished: boolean;
 };
 
+/** Shared release gate used by the project publish action and its tests. */
+export function canPublishSalesProject(flow: SalesProjectFlow, signals: ProjectTaskSignals) {
+  const flowReady = flow === "live"
+    ? signals.hasLiveSession
+    : signals.hasConsultationService && signals.hasAvailability;
+  return signals.exists
+    && signals.hasLinkedProduct
+    && signals.hasPricedProduct
+    && signals.hasFunnelTemplate
+    && signals.hasPaymentMethod
+    && flowReady;
+}
+
 export type PersistedTaskState = Pick<OnboardingTaskStateRecord, "taskKey" | "status" | "skipImpact" | "archivedAt">;
 export type OnboardingTaskStateRecord = {
   taskKey: string;

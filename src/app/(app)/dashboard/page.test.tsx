@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorContext: mocks.requireVendorContext }));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: vi.fn().mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true }) }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({
   getDb: () => {
@@ -29,7 +30,7 @@ const vendor = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.dbCalls = 0;
-  mocks.requireVendorContext.mockResolvedValue({ auth: { member: { role: "owner" } }, vendor });
+  mocks.requireVendorContext.mockResolvedValue({ auth: { user: { id: "user-dashboard" }, member: { role: "owner" } }, vendor });
 });
 
 describe("/dashboard route shell", () => {
@@ -37,7 +38,7 @@ describe("/dashboard route shell", () => {
     const html = renderToStaticMarkup(await DashboardPage({}));
 
     expect(mocks.requireVendorContext).toHaveBeenCalledExactlyOnceWith();
-    expect(mocks.dbCalls).toBe(0);
+    expect(mocks.dbCalls).toBe(1);
     expect(html).toContain("Dashboard");
     expect(html).toContain('data-dashboard-region="kpis"');
     expect(html).toContain('data-dashboard-region="details"');
@@ -45,7 +46,7 @@ describe("/dashboard route shell", () => {
   });
 
   it("redirects support before creating any dashboard read model", async () => {
-    mocks.requireVendorContext.mockResolvedValue({ auth: { member: { role: "support" } }, vendor });
+    mocks.requireVendorContext.mockResolvedValue({ auth: { user: { id: "user-dashboard" }, member: { role: "support" } }, vendor });
     mocks.redirect.mockImplementation((path: string) => { throw new Error(`redirect:${path}`); });
 
     await expect(DashboardPage({})).rejects.toThrow("redirect:/support-cases");
@@ -54,7 +55,7 @@ describe("/dashboard route shell", () => {
   });
 
   it("does not expose manager-only action to a viewer", async () => {
-    mocks.requireVendorContext.mockResolvedValue({ auth: { member: { role: "viewer" } }, vendor: { ...vendor, tracking: null } });
+    mocks.requireVendorContext.mockResolvedValue({ auth: { user: { id: "user-dashboard" }, member: { role: "viewer" } }, vendor: { ...vendor, tracking: null } });
 
     const html = renderToStaticMarkup(await DashboardPage({}));
 
