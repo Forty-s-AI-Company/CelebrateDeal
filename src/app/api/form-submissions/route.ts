@@ -45,6 +45,7 @@ const SubmissionAnswers = z.record(
 
 const SubmissionPayload = z.object({
   formId: z.string().min(1).max(128),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
   liveId: z.string().min(1).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
