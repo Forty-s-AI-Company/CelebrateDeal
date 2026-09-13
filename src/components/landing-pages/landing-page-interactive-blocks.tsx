@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useState } from "react";
+import { LandingPageLink } from "@/components/landing-page-link";
 
 type Slide = { imageUrl: string; alt: string; title?: string; description?: string };
 
@@ -18,18 +19,32 @@ function remaining(targetAt?: string) {
   return Number.isFinite(target) ? Math.max(0, target - Date.now()) : null;
 }
 
-export function LandingPageCountdown({ targetAt, expiredMessage }: { targetAt?: string; expiredMessage: string }) {
+type CountdownCta = { label: string; href: string; pageId?: string };
+
+export function LandingPageCountdown({ targetAt, expiredMessage, cta, expiredAction = "show_message", expiredRedirectHref }: {
+  targetAt?: string;
+  expiredMessage: string;
+  cta?: CountdownCta;
+  expiredAction?: "show_message" | "hide_cta" | "redirect";
+  expiredRedirectHref?: string;
+}) {
   const [milliseconds, setMilliseconds] = useState(() => remaining(targetAt));
   useEffect(() => {
     const timer = window.setInterval(() => setMilliseconds(remaining(targetAt)), 1_000);
     return () => window.clearInterval(timer);
   }, [targetAt]);
+  useEffect(() => {
+    if (milliseconds === 0 && expiredAction === "redirect" && expiredRedirectHref) window.location.assign(expiredRedirectHref);
+  }, [expiredAction, expiredRedirectHref, milliseconds]);
   if (milliseconds === null) return <p role="status" className="mt-3 font-bold text-amber-900">尚未設定倒數時間</p>;
-  if (milliseconds === 0) return <p role="status" className="mt-3 font-bold text-amber-900">{expiredMessage}</p>;
+  if (milliseconds === 0) {
+    if (expiredAction === "hide_cta") return null;
+    return <p role="status" className="mt-3 font-bold text-amber-900">{expiredMessage}</p>;
+  }
   const seconds = Math.floor(milliseconds / 1_000);
   const days = Math.floor(seconds / 86_400);
   const hours = Math.floor(seconds % 86_400 / 3_600);
   const minutes = Math.floor(seconds % 3_600 / 60);
   const rest = seconds % 60;
-  return <time dateTime={targetAt} className="mt-3 block font-black tabular-nums text-amber-900" aria-label={`剩餘 ${days} 天 ${hours} 小時 ${minutes} 分 ${rest} 秒`}>{days} 天 {String(hours).padStart(2, "0")}:{String(minutes).padStart(2, "0")}:{String(rest).padStart(2, "0")}</time>;
+  return <div className="mt-4"><time dateTime={targetAt} className="grid grid-cols-4 gap-2 font-black tabular-nums text-slate-950" aria-label={`剩餘 ${days} 天 ${hours} 小時 ${minutes} 分 ${rest} 秒`}>{[[days, "天"], [hours, "時"], [minutes, "分"], [rest, "秒"]].map(([value, label]) => <span key={String(label)} className="rounded-xl border border-amber-200/80 bg-white/80 px-2 py-3 text-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]"><span className="block text-2xl sm:text-3xl">{String(value).padStart(2, "0")}</span><span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</span></span>)}</time>{cta ? <div className="mt-5"><LandingPageLink href={cta.href} pageId={cta.pageId} className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 font-bold text-slate-950 shadow-sm transition hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-4">{cta.label}</LandingPageLink></div> : null}</div>;
 }

@@ -40,5 +40,7 @@ describe("landing page content", () => {
     expect(parseLandingPageContent(duplicate)).toBeNull();
     expect(parseLandingPageContent({ schemaVersion: 1, data: { root: {}, content: [{ type: "Countdown", props: { id: "timer", mode: "fixed_date", expiredMessage: "結束" } }] } })).toBeNull();
     expect(parseLandingPageContent({ schemaVersion: 1, data: { root: {}, content: [{ type: "Countdown", props: { id: "timer", mode: "live_linked", expiredMessage: "結束" } }] } })?.data.content[0]?.type).toBe("Countdown");
+    expect(parseLandingPageContent({ schemaVersion: 1, data: { root: {}, content: [{ type: "Countdown", props: { id: "timer", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", expiredAction: "redirect", expiredMessage: "結束" } }] } })).toBeNull();
+    expect(parseLandingPageContent({ schemaVersion: 1, data: { root: {}, content: [{ type: "Countdown", props: { id: "timer", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", expiredAction: "redirect", expiredRedirect: { type: "anchor", targetId: "waitlist" }, expiredMessage: "結束" } }] } })?.data.content[0]?.type).toBe("Countdown");
   });
 });
