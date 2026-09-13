@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "buildReused": true,
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-landing-qa-2sjT7A"
+}

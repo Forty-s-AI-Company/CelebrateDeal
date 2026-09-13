@@ -16,7 +16,7 @@
   },
   "reasoning_policy": {
     "strategy": "adaptive_lowest_sufficient",
-    "default_difficulty": "auto",
+    "default_difficulty": "routine",
     "difficulty_levels": ["trivial", "routine", "complex", "critical"],
     "models": {
       "gpt-5.6-sol": {"minimum": "low", "maximum": "xhigh", "default": "high"},
@@ -37,7 +37,7 @@
     "deep": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1"}
   },
   "codex_profiles": {
-    "luna": {
+    "luna_worker_style": {
       "model": "gpt-5.6-luna",
       "reasoning_effort": "high",
       "reasoning_minimum": "high",

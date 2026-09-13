@@ -1,5 +1,7 @@
 # Webinar 一頁式網站編輯器：第一版交付紀錄
 
+本文件保留第一版交付時的驗證狀態。後續視覺設計、隔離 migration 與真實登入報名流程結果，請見 [設計與完整流程驗證](landing-page-style-validation-20260913.md)。
+
 ## 範圍
 
 - Puck 固定使用 0.22.4，新增 `/landing-pages` 管理與 `/lp/[slug]` 公開頁。
