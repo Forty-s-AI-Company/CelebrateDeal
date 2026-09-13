@@ -33,9 +33,9 @@ function actionHref(action: LandingPageAction, context: LandingPageRenderContext
   return `/form/${encodeURIComponent(form.slug)}${liveId ? `?liveId=${encodeURIComponent(liveId)}` : ""}`;
 }
 
-function ActionButton({ label, action, context }: { label: string; action?: LandingPageAction; context: LandingPageRenderContext }) {
+function ActionButton({ label, action, context, inverse = false }: { label: string; action?: LandingPageAction; context: LandingPageRenderContext; inverse?: boolean }) {
   if (!action) return null;
-  return <LandingPageLink href={actionHref(action, context)} pageId={context.pageId} className="inline-flex w-fit items-center justify-center rounded-xl bg-slate-950 px-5 py-3 font-bold text-white transition hover:bg-slate-800">{label}</LandingPageLink>;
+  return <LandingPageLink href={actionHref(action, context)} pageId={context.pageId} className={`inline-flex w-fit items-center justify-center rounded-xl px-5 py-3 font-bold shadow-sm transition focus-visible:outline-2 focus-visible:outline-offset-4 ${inverse ? "bg-white text-blue-900 hover:bg-blue-50" : "bg-blue-700 text-white hover:bg-blue-800"}`}>{label}</LandingPageLink>;
 }
 
 function NestedBlocks({ blocks, context }: { blocks: Block[]; context: LandingPageRenderContext }) {
@@ -83,7 +83,7 @@ function Pricing({ block, context }: { block: Extract<Block, { type: "Pricing" }
 }
 
 function RenderHero({ block, context }: { block: Extract<Block, { type: "Hero" }>; context: LandingPageRenderContext }) {
-  return <section className={`${classes(block.props.style)} relative isolate mx-auto overflow-hidden rounded-3xl bg-slate-950 px-7 py-16 text-white`} style={styleValues(block.props.style)}>{block.props.imageUrl ? <img src={block.props.imageUrl} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-35" /> : null}<div className="max-w-3xl">{block.props.eyebrow ? <p className="text-sm font-black tracking-[0.2em] text-amber-300">{block.props.eyebrow}</p> : null}<h1 className="mt-3 text-4xl font-black sm:text-6xl">{block.props.title}</h1>{block.props.description ? <p className="mt-5 whitespace-pre-line text-lg leading-8 text-slate-200">{block.props.description}</p> : null}{block.props.ctaLabel ? <div className="mt-8"><ActionButton label={block.props.ctaLabel} action={block.props.ctaAction} context={context} /></div> : null}</div></section>;
+  return <section className={`${classes(block.props.style)} relative isolate mx-auto overflow-hidden rounded-3xl bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 px-7 py-16 text-white shadow-lg md:px-12`} style={styleValues(block.props.style)}>{block.props.imageUrl ? <img src={block.props.imageUrl} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-35" /> : null}<div className="max-w-3xl">{block.props.eyebrow ? <p className="text-sm font-black tracking-[0.2em] text-blue-200">{block.props.eyebrow}</p> : null}<h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">{block.props.title}</h1>{block.props.description ? <p className="mt-5 whitespace-pre-line text-lg leading-8 text-blue-100">{block.props.description}</p> : null}{block.props.ctaLabel ? <div className="mt-8"><ActionButton label={block.props.ctaLabel} action={block.props.ctaAction} context={context} inverse /></div> : null}</div></section>;
 }
 
 function RenderTestimonials({ block }: { block: Extract<Block, { type: "Testimonials" }> }) {
@@ -91,7 +91,7 @@ function RenderTestimonials({ block }: { block: Extract<Block, { type: "Testimon
 }
 
 function RenderCTA({ block, context }: { block: Extract<Block, { type: "CTA" }>; context: LandingPageRenderContext }) {
-  return <section className={`${classes(block.props.style)} mx-auto rounded-3xl bg-amber-400 p-8 text-center`} style={styleValues(block.props.style)}><h2 className="text-3xl font-black">{block.props.title}</h2>{block.props.description ? <p className="mt-3 whitespace-pre-line">{block.props.description}</p> : null}{block.props.ctaLabel ? <div className="mt-5"><ActionButton label={block.props.ctaLabel} action={block.props.ctaAction} context={context} /></div> : null}</section>;
+  return <section className={`${classes(block.props.style)} mx-auto rounded-3xl bg-blue-600 p-8 text-center text-white shadow-lg`} style={styleValues(block.props.style)}><h2 className="text-3xl font-black">{block.props.title}</h2>{block.props.description ? <p className="mt-3 whitespace-pre-line text-blue-100">{block.props.description}</p> : null}{block.props.ctaLabel ? <div className="mt-5"><ActionButton label={block.props.ctaLabel} action={block.props.ctaAction} context={context} inverse /></div> : null}</section>;
 }
 
 function RenderSpeaker({ block }: { block: Extract<Block, { type: "Speaker" }> }) {
@@ -114,10 +114,10 @@ function LandingPageBlock({ block, context }: { block: Block; context: LandingPa
     case "Hero": return <RenderHero block={block} context={context} />;
     case "Speaker": return <RenderSpeaker block={block} />;
     case "Benefits": return <section className={`${classes(block.props.style)} mx-auto`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-3xl font-black">{block.props.title}</h2> : null}<div className="mt-5 grid gap-4 md:grid-cols-2">{block.props.items.map((item, index) => <article key={`${item.title}-${index}`} className="rounded-2xl border border-slate-200 p-5"><h3 className="font-bold">{item.title}</h3>{item.description ? <p className="mt-2 text-slate-600">{item.description}</p> : null}</article>)}</div></section>;
-    case "Agenda": return <section className={`${classes(block.props.style)} mx-auto`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-3xl font-black">{block.props.title}</h2> : null}{block.props.items.map((item, index) => <div key={`${item.title}-${index}`} className="mt-4 border-l-2 border-amber-400 pl-4">{item.time ? <p className="text-sm font-bold text-amber-700">{item.time}</p> : null}<h3 className="font-bold">{item.title}</h3>{item.description ? <p className="text-slate-600">{item.description}</p> : null}</div>)}</section>;
+    case "Agenda": return <section className={`${classes(block.props.style)} mx-auto`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-3xl font-black">{block.props.title}</h2> : null}{block.props.items.map((item, index) => <div key={`${item.title}-${index}`} className="mt-4 border-l-2 border-blue-500 pl-4">{item.time ? <p className="text-sm font-bold text-blue-700">{item.time}</p> : null}<h3 className="font-bold">{item.title}</h3>{item.description ? <p className="text-slate-600">{item.description}</p> : null}</div>)}</section>;
     case "Carousel": return <Carousel block={block} />;
     case "Pricing": return <Pricing block={block} context={context} />;
-    case "Countdown": return <section className={`${classes(block.props.style)} mx-auto rounded-2xl bg-amber-50 p-6 text-center`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-2xl font-black">{block.props.title}</h2> : null}<LandingPageCountdown targetAt={block.props.mode === "live_linked" ? context.live?.scheduledAt : block.props.targetAt} expiredMessage={block.props.expiredMessage} /></section>;
+    case "Countdown": return <section className={`${classes(block.props.style)} mx-auto rounded-2xl border border-blue-100 bg-blue-50 p-6 text-center`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-2xl font-black">{block.props.title}</h2> : null}<LandingPageCountdown targetAt={block.props.mode === "live_linked" ? context.live?.scheduledAt : block.props.targetAt} expiredMessage={block.props.expiredMessage} /></section>;
     case "Testimonials": return <RenderTestimonials block={block} />;
     case "FAQ": return <section className={`${classes(block.props.style)} mx-auto`} style={styleValues(block.props.style)}>{block.props.title ? <h2 className="text-3xl font-black">{block.props.title}</h2> : null}{block.props.items.map((item, index) => <details key={`${item.question}-${index}`} className="mt-3 rounded-xl border border-slate-200 p-4"><summary className="cursor-pointer font-bold">{item.question}</summary><p className="mt-3 whitespace-pre-line leading-7 text-slate-600">{item.answer}</p></details>)}</section>;
     case "CTA": return <RenderCTA block={block} context={context} />;
@@ -127,5 +127,5 @@ function LandingPageBlock({ block, context }: { block: Block; context: LandingPa
 /** Server-safe public renderer. It has no dependency on Puck's editor or drag-and-drop runtime. */
 export function LandingPageRenderer({ content, context }: { content: LandingPageContent; context: LandingPageRenderContext }) {
   const rootStyle = content.data.root.props?.style;
-  return <main className={`min-h-screen bg-white px-4 py-8 text-slate-950 sm:px-6 ${classes(rootStyle)}`} style={styleValues(rootStyle)}><NestedBlocks blocks={content.data.content} context={context} /></main>;
+  return <main className={`mx-auto min-h-screen w-full max-w-6xl space-y-12 bg-white px-4 py-8 text-slate-950 sm:px-6 md:space-y-16 ${classes(rootStyle)}`} style={styleValues(rootStyle)}><NestedBlocks blocks={content.data.content} context={context} /></main>;
 }

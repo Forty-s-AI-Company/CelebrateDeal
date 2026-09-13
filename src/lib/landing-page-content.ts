@@ -196,6 +196,31 @@ export function createLandingPageContent(template: "blank" | "webinar", formId?:
           },
         },
         {
+          type: "Speaker",
+          props: {
+            id: "speaker", name: "講者姓名", role: "講者職稱（請填寫）", bio: "在這裡補上講者的專業背景與本次分享重點。",
+          },
+        },
+        {
+          type: "Agenda",
+          props: {
+            id: "agenda", title: "活動流程", items: [
+              { time: "00:00", title: "開場與主題介紹", description: "認識今天的分享內容與學習目標。" },
+              { time: "00:15", title: "主題分享", description: "請填寫本場講座的重點段落。" },
+              { time: "00:50", title: "問答與交流", description: "留下你的問題，和講者一起找到下一步。" },
+            ],
+          },
+        },
+        {
+          type: "FAQ",
+          props: {
+            id: "faq", title: "常見問題", items: [
+              { question: "活動會提供回放嗎？", answer: "請依實際活動安排補上回放說明。" },
+              { question: "報名後如何參加？", answer: "完成報名後，活動連結與提醒將依你的報名資料寄送。" },
+            ],
+          },
+        },
+        {
           type: "CTA",
           props: { id: "register", title: "準備好了嗎？", description: "現在報名，保留你的線上席次。", ctaLabel: "立即報名", ctaAction: registrationAction },
         },
