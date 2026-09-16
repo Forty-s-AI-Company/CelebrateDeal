@@ -16,8 +16,8 @@
 | EDT-LAYOUT-001 | 左欄 + 中央畫布 + toolbar | 全畫面編輯器 shell | 必做 | 已實際操作 |
 | EDT-TB-001 | Undo/Redo/Popup/Settings/Mobile/Preview/Save/Exit | 編輯器命令列 | 必做 | 全部已點擊 |
 | EDT-EL-001 | Text/Layout/Form/Payment/Media/Social/Other | 元件面板與 schema | 必做 | 全清單；代表性操作 |
-| EDT-BLK-001 | 9 分類、81 個可見變體 | 區塊模板庫 | 必做 | 每類已點開；1 block 加入 |
-| EDT-INT-001 | 選取、層級、樣式、move/copy/remove | 節點樹與 inspector | 必做 | 核心已操作；拖曳細節待補 |
+| EDT-BLK-001 | 9 分類、81 個可見變體 | 區塊模板庫 | 必做 | 每類已點開並拖入 1 個代表 block |
+| EDT-INT-001 | 選取、層級、樣式、move/copy/remove | 節點樹與 inspector | 必做 | block 拖入、選取、樣式、Undo/Redo、Save/reload 已操作；跨容器排序待補 |
 | EDT-SAVE-001 | step auto-save、canvas manual-save、Exit 防呆 | 雙儲存模型與 dirty state | 必做 | 已實際操作 |
 | EDT-RESP-001 | Desktop/Mobile override 與 visibility | RWD 編輯 | 必做 | 已實際操作 |
 | EDT-TPL-001 | 換模板警告、保留 metadata、替換頁面 | 模板替換交易 | 必做 | 已實際操作 |
@@ -31,7 +31,6 @@
 1. 使用具 Webinar 額度帳戶補查預設 steps、模板、排程與 broadcast 行為。
 2. Audience 再完成 26049/26048 的內容比較、套用與 Change template 保留規則。
 3. Elements 各功能類型逐項拖入，尤其 Form、Payment、Media、Countdown、FAQ、Raw HTML。
-4. Blocks 每類至少一個實際加入；確認跨 section 拖曳、排序、copy/delete 與巢狀限制。
+4. Blocks 的九分類均已加入代表項；仍需確認跨 section 拖曳排序、所有層級的 copy/delete 與巢狀限制。
 5. Popup 儲存後在 Preview 驗證 auto delay、exit intent、close button。
 6. Funnel settings、step 列尾選單、Automation/A-B/Stats/Leads/Sales/Deadline 各頁仍需專題調研。
-
