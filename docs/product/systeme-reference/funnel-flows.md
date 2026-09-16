@@ -74,3 +74,18 @@
 - 補充截圖：`72-webinar-plan-limit-after-slot-release.png`。
 - 狀態：受方案限制；詳情、steps、模板、View、Edit、Change template 無法驗證。
 - CelebrateDeal：仍需補查；至少先保留 goal 與三種 Webinar step type 的資料模型位置。
+
+## FUN-SECONDARY-001｜詳情次要分頁與選單
+
+- 入口：Audience Funnel > Opt-in Page Research。
+- 截圖：`82-funnel-automation-rules.png`～`89-funnel-step-menu.png`。
+- Automation Rules：無既有規則時顯示空列表；Add rule 為 disabled。
+- A/B test：顯示 Original 頁面、`Start A/B Test` 說明與 `Choose a variant`；未建立變體。
+- Stats：Total sales／Average cart value、Dates；欄位包含 Page views、Opt-ins、Sales、Earnings/Pageview、Conversion rate、Revenue。
+- Leads：Opt-in date、Email address、Funnel step name；本次無測試聯絡人。
+- Sales：Dates、Filter；欄位 Date、Step、Price、Customer、Status；本次無訂單。
+- Deadline settings：Enable deadline feature、期限天數、到期導向 step、指定到期時間、可用 deadline steps 與 Save；未啟用。
+- Funnel settings：Name、Funnel domain、Currency 與 payment pages 不收稅 checkbox；未修改。
+- Step 列尾選單：Duplicate、Move、Remove；只盤點，未執行 Remove。
+- 狀態：全部已實際開啟；會新增規則／變體或改變期限的動作僅看到入口。
+- CelebrateDeal：次要分頁架構、空狀態與欄位為必做；真正 A/B 分流與 deadline 引擎可分階段。
