@@ -4,6 +4,7 @@ import { cache } from "react";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
+import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
 import type { PageDocument } from "@/lib/funnel-page-document";
 export const dynamic = "force-dynamic";
 const load = cache(loadPublicLandingPage);
@@ -26,5 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PublicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
   const page = await load((await params).slug);
   if (!page) notFound();
-  return isPageDocument(page.content) ? <FunnelPageDocumentRenderer document={page.content} viewport="desktop" mode="preview" /> : <LandingPageRenderer content={page.content} context={page.context} />;
+  if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
+  const document = page.content;
+  return <><FunnelPageDocumentRenderer document={document} viewport="desktop" mode="preview" />{document.popups.map((popup) => <FunnelPopupPreview key={popup.id} document={document} popupId={popup.id} viewport="desktop" />)}</>;
 }
