@@ -22,12 +22,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     socialImage = page.content.data.root.props?.shareImage;
   }
   const title = seo?.title || "Webinar 活動";
-  return { title, description: seo?.description, openGraph: { title, description: seo?.description, ...(socialImage ? { images: [socialImage] } : {}) } };
+  const settings = isPageDocument(page.content) ? page.content.settings.seo : undefined;
+  return { title, description: seo?.description, keywords: settings?.keywords, authors: settings?.author ? [{ name: settings.author }] : undefined, robots: settings?.hideFromSearch ? { index: false, follow: false } : undefined, openGraph: { title, description: seo?.description, ...(socialImage ? { images: [socialImage] } : {}) } };
 }
 export default async function PublicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
   const page = await load((await params).slug);
   if (!page) notFound();
   if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
   const document = page.content;
-  return <><FunnelPageDocumentRenderer document={document} viewport="desktop" mode="preview" />{document.popups.map((popup) => <FunnelPopupPreview key={popup.id} document={document} popupId={popup.id} viewport="desktop" />)}</>;
+  return <><FunnelPageDocumentRenderer document={document} viewport="desktop" mode="preview" />{document.popups.filter((popup) => !popup.pageId || popup.pageId === document.id).map((popup) => <FunnelPopupPreview key={popup.id} document={document} popupId={popup.id} viewport="desktop" />)}</>;
 }

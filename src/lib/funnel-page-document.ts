@@ -95,7 +95,10 @@ export type FunnelNodeAction = z.infer<typeof NodeActionSchema>;
 const NodeAttributesSchema = z.record(
   z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_:-]{0,63}$/u, "HTML 屬性名稱不正確"),
   z.string().trim().max(500).refine((value) => !/[<>]/u.test(value) && !/^javascript:/iu.test(value), "HTML 屬性值不安全"),
-).refine((attributes) => Object.keys(attributes).every((key) => !key.toLowerCase().startsWith("on")), "不得設定事件屬性");
+).refine((attributes) => Object.keys(attributes).every((key) => {
+  const normalized = key.toLowerCase();
+  return !normalized.startsWith("on") && !["style", "classname", "children", "dangerouslysetinnerhtml", "ref", "key"].includes(normalized);
+}), "不得設定事件、樣式或 React 保留屬性");
 
 export const FunnelCapabilityStatusSchema = z.object({
   status: z.enum(["available", "disabled", "limited", "unverified"]),
