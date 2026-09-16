@@ -90,4 +90,16 @@ describe("Funnel page structured command history", () => {
     history = redoFunnelPageHistory(history);
     expect(history.present.settings.seo.title).toBe("CelebrateDeal Funnel");
   });
+
+  it("Funnel steps 更新使用結構化 history 並可 Undo", async () => {
+    const { createFunnelFlow, renameFunnelStep } = await import("@/lib/funnel-flow");
+    const flow = createFunnelFlow({ id: "flow_history", name: "流程", goal: "audience", domain: "history-flow" })!;
+    let history = createFunnelPageHistory({ ...fixture(), flow });
+    const renamed = renameFunnelStep(flow, "opt_in", "新的名單頁");
+    if (!renamed.ok) throw new Error(renamed.error);
+    history = dispatchFunnelPageCommand(history, { type: "update_flow", flow: renamed.flow });
+    expect(history.present.flow?.steps[0]?.name).toBe("新的名單頁");
+    history = undoFunnelPageHistory(history);
+    expect(history.present.flow?.steps[0]?.name).toBe("名單頁");
+  });
 });

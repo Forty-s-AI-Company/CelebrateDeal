@@ -13,6 +13,7 @@ import {
   type FunnelNode,
   type PageDocument,
 } from "@/lib/funnel-page-document";
+import { createFunnelFlow } from "@/lib/funnel-flow";
 import { createLandingPageContent } from "@/lib/landing-page-content";
 
 function node(type: FunnelNode["type"], id: string, children?: FunnelNode[]): FunnelNode {
@@ -52,6 +53,14 @@ describe("Funnel PageDocument v1", () => {
     text.overrides = { desktop: { style: { fontSize: 40 } }, mobile: { style: { fontSize: 34, padding: 12 }, visible: false } };
     const restored = deserializePageDocument(serializePageDocument(document));
     expect(restored?.root[0]?.children?.[0]?.children?.[0]?.children?.[0]).toMatchObject({ style: { fontSize: 40 }, overrides: { mobile: { visible: false, style: { fontSize: 34, padding: 12 } } } });
+  });
+
+  it("將 Funnel goal 與 steps 隨 PageDocument 一起保存並還原", () => {
+    const document = starter();
+    document.flow = createFunnelFlow({ id: "flow_1", name: "名單流程", goal: "audience", domain: "audience-flow", currency: "TWD" }) ?? undefined;
+    const restored = deserializePageDocument(serializePageDocument(document));
+    expect(restored?.flow?.goal).toBe("audience");
+    expect(restored?.flow?.steps.map((step) => step.type)).toEqual(["opt_in_page", "opt_in_thank_you_page", "inactive_page"]);
   });
 
   it("popup、頁面設定與限制功能具有可見 capability status", () => {

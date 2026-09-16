@@ -192,6 +192,15 @@ function FunnelPopupPreviewOverlay({
     return scheduled.cancel;
   }, [onTriggerStatus, popup, previewEnabled]);
 
+  useEffect(() => {
+    const openFromAction = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (detail && typeof detail === "object" && "popupId" in detail && detail.popupId === popup.id && !closedRef.current) setIsOpen(true);
+    };
+    window.addEventListener("celebratedeal:show-popup", openFromAction);
+    return () => window.removeEventListener("celebratedeal:show-popup", openFromAction);
+  }, [popup.id]);
+
   if (closed) return null;
 
   const exitStatus = popup.settings.openOnExitIntent ? getFunnelPopupExitIntentStatus(popup) : null;
