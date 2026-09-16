@@ -20,8 +20,9 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.tr
 
 import {
   createLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError, LandingPageNotFoundError,
-  loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
+  getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
 } from "./landing-page-service";
+import { createEmptyPageDocument } from "./funnel-page-document";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
 
@@ -56,6 +57,17 @@ beforeEach(() => {
 });
 
 describe("landing page service", () => {
+  it("儲存並重新載入 PageDocument，不需要資料庫 migration", async () => {
+    const document = createEmptyPageDocument("funnel-page", "中文 Funnel");
+    mocks.landingPageFindFirst
+      .mockResolvedValueOnce(page({ draftContent: document, draftFormId: null, versions: [] }))
+      .mockResolvedValueOnce(page({ draftContent: document, draftFormId: null, versions: [] }));
+    await expect(saveLandingPageDraft({ id: "page-1", revision: 2, name: "中文 Funnel", slug: "funnel", content: document })).resolves.toEqual({ id: "page-1", revision: 3 });
+    const reloaded = await getLandingPageForEditor("page-1");
+    expect(reloaded.page.content).toEqual(document);
+    expect(mocks.landingPageUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ draftContent: document }) }));
+  });
+
   it("rejects a registration form outside the current tenant/project before creating", async () => {
     mocks.formFindMany.mockResolvedValueOnce([]);
     await expect(createLandingPage({ name: "秋季活動", slug: "fall-launch", formId: "form-other", content: content("form-other") })).rejects.toBeInstanceOf(LandingPageInputError);

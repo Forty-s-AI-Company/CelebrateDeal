@@ -29,3 +29,12 @@
 - 未確認／受限：Webinar 流程、Payment 完整交易、reCAPTCHA、Popup exit intent、Tracking code、Affiliate、A/B test、deadline engine。
 - 回滾：移除 `funnel-page-document` 新檔，並回復 workspace/editor shell 兩個元件即可回到既有編輯器。
 
+## WP-02 checkpoint
+
+- 狀態：已完成。
+- 新增結構化 command history，涵蓋 add、update、move、duplicate、delete、move up/down、Undo、Redo；每次交易後重新驗證 PageDocument。
+- 新增 editor／preview 共用安全 renderer，支援 Section、Row、2／3／4 欄、Text、Headline、List、Content box、Image、Button、Horizontal line 與 responsive override。
+- 新建頁面使用新版 Funnel editor；既有 Puck 文件繼續沿用舊編輯器，避免未經確認的自動轉換破壞內容。
+- LandingPage 儲存服務可同時讀寫 legacy Puck document 與 PageDocument；沿用既有 JSON 欄位、revision CAS 與 immutable published version，不需資料庫 migration。
+- Raw HTML 不執行；Payment 與 reCAPTCHA 顯示 capability placeholder。
+- 回滾：回復 `landing-page-service`、workspace 與公開頁入口，並移除 history、renderer、editor 新檔；既有資料不需回滾。
