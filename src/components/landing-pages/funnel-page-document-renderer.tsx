@@ -22,6 +22,7 @@ export type FunnelPageDocumentRendererProps = {
   mode?: FunnelRenderMode;
   selectedNodeId?: string;
   onSelectNode?: (nodeId: string) => void;
+  onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void;
   className?: string;
 };
 
@@ -270,21 +271,21 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
   }
 }
 
-function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; children: ReactNode }) {
+function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, onMoveNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void; children: ReactNode }) {
   const editor = mode === "editor";
   const attributes = safeAttributes(node.attributes);
-  return <div {...attributes} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"} className={`${editor ? "relative rounded-sm transition-shadow hover:ring-1 hover:ring-amber-300" : ""} ${selectedNodeId === node.id ? "ring-2 ring-amber-500 ring-offset-2" : ""}`} style={nodeStyle(resolved.style, viewport)} onClick={onSelectNode ? (event) => { event.stopPropagation(); onSelectNode(node.id); } : undefined}>{children}</div>;
+  return <div {...attributes} draggable={editor && Boolean(onMoveNode)} onDragStart={onMoveNode ? (event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-celebratedeal-funnel-node", node.id); } : undefined} onDragOver={onMoveNode ? (event) => { if (event.dataTransfer.types.includes("application/x-celebratedeal-funnel-node")) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } } : undefined} onDrop={onMoveNode ? (event) => { const sourceId = event.dataTransfer.getData("application/x-celebratedeal-funnel-node"); if (sourceId && sourceId !== node.id) { event.preventDefault(); event.stopPropagation(); onMoveNode(sourceId, node.id); } } : undefined} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"} className={`${editor ? "relative cursor-grab rounded-sm transition-shadow hover:ring-1 hover:ring-amber-300" : ""} ${selectedNodeId === node.id ? "ring-2 ring-amber-500 ring-offset-2" : ""}`} style={nodeStyle(resolved.style, viewport)} onClick={onSelectNode ? (event) => { event.stopPropagation(); onSelectNode(node.id); } : undefined}>{children}</div>;
 }
 
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
-function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void }): ReactNode {
+function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible) return null;
   const children = node.children ?? [];
-  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />);
-  const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode}>{content}</NodeSurface>;
+  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
+  const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
     case "section": return surface(<section>{renderChildren()}</section>);
@@ -388,10 +389,10 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", selectedNodeId, onSelectNode, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />)}</main>;
+  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

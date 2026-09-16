@@ -5,23 +5,27 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
+import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing-page-content";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
+import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
-function starterDocument(): PageDocument {
+function starterDocument(goal: Exclude<FunnelGoal, "webinar"> = "custom"): PageDocument {
   const leaf = (id: string, type: FunnelNode["type"], props: Record<string, unknown>): FunnelNode => ({ schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {} });
   const document = createEmptyPageDocument("funnel-page", "新的 Funnel 頁面");
-  document.root = [{ schemaVersion: 1, id: "section_main", type: "section", props: {}, style: { padding: 32 }, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "row_main", type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "column_main", type: "columns_2", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [leaf("headline_main", "headline", { text: "在這裡寫下你的主標題", level: "h1" }), leaf("text_main", "text", { text: "用清楚的內容，帶訪客走向下一個行動。" }), leaf("button_main", "button", { label: "立即行動" })] }] }] }];
+  if (goal === "custom") return document;
+  const copy = goal === "audience" ? { headline: "加入名單，取得最新消息", text: "留下 Email，我們會把重要內容寄給你。", button: "加入名單" } : { headline: "完成你的訂購", text: "確認方案內容，再前往安全的付款流程。", button: "選擇方案" };
+  document.root = [{ schemaVersion: 1, id: "section_main", type: "section", props: {}, style: { padding: 32 }, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "row_main", type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "column_main", type: "columns_2", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [leaf("headline_main", "headline", { text: copy.headline, level: "h1" }), leaf("text_main", "text", { text: copy.text }), leaf("button_main", "button", { label: copy.button })] }] }] }];
   return document;
 }
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
 function WorkspacePreview({ content, forms, live }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"] }) {
-  if (isPageDocument(content)) return <FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />;
+  if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
 function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange }: {
@@ -31,19 +35,19 @@ function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChan
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
-function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"]) {
+function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], config?: { goal?: Exclude<FunnelGoal, "webinar">; name?: string; slug?: string }) {
   return {
-    content: page?.content ?? starterDocument(),
-    name: page?.name ?? "新的 Webinar 招生頁", slug: page?.slug ?? "",
+    content: page?.content ?? starterDocument(config?.goal),
+    name: page?.name ?? config?.name ?? "新的 Funnel 頁面", slug: page?.slug ?? config?.slug ?? "",
     formId: page?.formId ?? forms[0]?.id ?? "", liveId: page?.liveId ?? "",
     revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),
     version: String(page?.versions[0]?.version ?? ""),
   };
 }
 /** The workspace owns persistence; Puck owns only the current editing session. */
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }: { page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string }) {
+export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug }: { page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: Exclude<FunnelGoal, "webinar">; initialName?: string; initialSlug?: string }) {
   const router = useRouter();
-  const [initial] = useState(() => initialWorkspace(page, forms));
+  const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug }));
   const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
   const [name, setName] = useState(initial.name);
   const [slug, setSlug] = useState(initial.slug);

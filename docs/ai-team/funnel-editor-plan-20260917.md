@@ -54,3 +54,13 @@
 - Popup 支援建立、重新命名、刪除、關閉按鈕、顯示延遲與頁面綁定資料；自動延遲可計算觸發時間。
 - Exit intent 明確回傳 `unverified` 且不可執行；Popup width 暫存於受控 shell style，待 schema 欄位確認後再 migration。
 - 尚未完成：Popup 畫布切換與真實 overlay preview、完整 Element 專屬 inspector、Change template。
+
+## WP-05／WP-06 checkpoint 3
+
+- Funnel 清單改為實測表格流程，加入搜尋、狀態篩選、每頁 10／25／50 與空結果狀態。
+- 建立流程加入 Audience、Sell、Custom、Webinar 四種 goal；Webinar 依實測維持方案限制且 fail closed。
+- Editor canvas 支援原生 drag/drop，移動操作仍經結構化 command 與父子規則驗證。
+- 換模板使用 preview／confirm transaction，保留 metadata 與 page settings；Webinar 模板明確 `unverified`。
+- Popup overlay 共用安全 renderer，支援延遲、關閉、樣式、編輯器即時預覽及公開頁觸發；Exit intent 不註冊未驗證事件。
+- Evidence：targeted Vitest 41/41、ESLint、TypeScript 通過；production build 於 checkpoint 結尾執行。
+- 回滾：revert 本 checkpoint commit；既有 LandingPage DB schema 與舊 Puck 文件未變更。
