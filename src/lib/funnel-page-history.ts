@@ -20,6 +20,7 @@ export type FunnelPageCommand =
   | { type: "delete"; nodeId: string }
   | { type: "move_up"; nodeId: string }
   | { type: "move_down"; nodeId: string }
+  | { type: "update_settings"; settings: Partial<PageDocument["settings"]> }
   | { type: "restore"; node: FunnelNode; parentId: string | null; popupId: string | null; index: number };
 
 export type FunnelNodePatch = {
@@ -301,6 +302,11 @@ function execute(document: PageDocument, command: FunnelPageCommand): CommandRes
     case "move_up":
     case "move_down": return executeMoveAdjacent(source, command);
     case "move": return executeMove(source, command);
+    case "update_settings": {
+      const previous = cloneValue(source.settings);
+      source.settings = { ...source.settings, ...cloneValue(command.settings) };
+      return parseResult(source, { type: "update_settings", settings: previous });
+    }
   }
 }
 
