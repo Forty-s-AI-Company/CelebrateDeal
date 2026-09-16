@@ -35,6 +35,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
   const [pending, startTransition] = useTransition();
   const [version, setVersion] = useState(initial.version);
   const [preview, setPreview] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     if (!dirty) return;
     const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); };
@@ -62,11 +63,27 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
       } catch { setMessage("連線中斷，內容仍保留，請稍後再試。"); }
     });
   }
+  function exitEditor() {
+    if (dirty && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
+    router.push("/landing-pages");
+  }
   const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
   const secondaryButtonClass = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
   const blocked = pending || !valid || !name.trim() || !slug.trim();
-  return <div className="grid gap-5">
-    <section aria-labelledby="landing-page-settings" className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6">
+  return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
+    <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
+      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← 返回</button>
+      <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+      <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name || "未命名 Funnel 頁面"}</p>
+      <button type="button" disabled className={secondaryButtonClass} title="Popup 編輯將在後續工作包開放">Popups <span className="text-[10px] text-amber-700">待開放</span></button>
+      <button type="button" aria-pressed={settingsOpen} onClick={() => setSettingsOpen((value) => !value)} className={secondaryButtonClass}>頁面設定</button>
+      <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "Preview"}</button>
+      <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "Save"}</button>
+      <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Exit</button>
+      <span role="status" className={`w-full text-right text-xs font-semibold sm:w-auto ${dirty ? "text-amber-700" : "text-emerald-700"}`}>{dirty ? "● 尚未儲存" : "✓ 已儲存"}</span>
+    </header>
+    <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5">
+    <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Page setup</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
         <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (page.status === "published" ? "已發布頁面" : "草稿頁面") : "新頁面"}</span>
@@ -79,7 +96,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
       </div>
     </section>
     {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-sm">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
-    <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
       <button disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "處理中…" : "儲存草稿"}</button>
       <button disabled={pending || !valid} onClick={() => setPreview(!preview)} className={secondaryButtonClass}>{preview ? "返回編輯" : "預覽草稿"}</button>
       {page ? <>
@@ -92,7 +109,8 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
     {preview ? <LandingPageRenderer content={content} context={{ forms, live: lives.find((live) => live.id === liveId) }} /> : null}
-    <div className={preview ? "hidden" : ""}><Editor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} disabled={pending} onValidityChange={setValid} onChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><Editor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} disabled={pending} onValidityChange={setValid} onChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    </div>
   </div>;
 }
 
