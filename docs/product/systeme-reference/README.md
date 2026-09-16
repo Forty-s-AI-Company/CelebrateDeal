@@ -21,7 +21,7 @@
 - [editor-interactions.md](editor-interactions.md)：編輯、儲存、復原、裝置差異與更換模板。
 - [popups-and-settings.md](popups-and-settings.md)：Popup 與 Page settings。
 - [parity-matrix.md](parity-matrix.md)：CelebrateDeal 實作優先級映射。
-- [screenshots/](screenshots/)：目前流程證據至編號 76（36 因 Chrome 擴充功能攔截未產生；實際檔案數以資料夾為準）。
+- [screenshots/](screenshots/)：目前流程證據至編號 77（36 因 Chrome 擴充功能攔截未產生；實際檔案數以資料夾為準）。
 
 ## 狀態標記
 
