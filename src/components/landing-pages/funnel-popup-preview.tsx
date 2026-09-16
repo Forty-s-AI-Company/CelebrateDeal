@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
   parsePageDocument,
@@ -175,6 +175,15 @@ function FunnelPopupPreviewOverlay({
   const [closed, setClosed] = useState(false);
   const [waitingStatus] = useState<PopupTriggerEligibility | null>(initialWaitingStatus);
   const closedRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const closePopup = useCallback(() => {
+    closedRef.current = true;
+    setIsOpen(false);
+    setClosed(true);
+    previousFocusRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const exitStatus = getFunnelPopupExitIntentStatus(popup);
@@ -200,6 +209,25 @@ function FunnelPopupPreviewOverlay({
     window.addEventListener("celebratedeal:show-popup", openFromAction);
     return () => window.removeEventListener("celebratedeal:show-popup", openFromAction);
   }, [popup.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = globalThis.document.activeElement instanceof HTMLElement ? globalThis.document.activeElement : null;
+    const dialog = dialogRef.current;
+    dialog?.focus();
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closePopup(); return; }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && globalThis.document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && globalThis.document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    globalThis.document.addEventListener("keydown", keyboard);
+    return () => globalThis.document.removeEventListener("keydown", keyboard);
+  }, [closePopup, isOpen]);
 
   if (closed) return null;
 
@@ -230,6 +258,8 @@ function FunnelPopupPreviewOverlay({
       role="presentation"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         data-funnel-popup-overlay
         data-popup-id={popup.id}
         role="dialog"
@@ -244,11 +274,7 @@ function FunnelPopupPreviewOverlay({
             aria-label="關閉 Popup"
             data-funnel-popup-close
             className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-lg leading-none text-slate-700 shadow-sm"
-            onClick={() => {
-              closedRef.current = true;
-              setIsOpen(false);
-              setClosed(true);
-            }}
+            onClick={closePopup}
           >
             <span aria-hidden="true">×</span>
           </button>

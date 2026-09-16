@@ -10,6 +10,7 @@ import {
   type LandingPageRenderContext,
 } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
+import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 const MAX_NAME_LENGTH = 160;
@@ -72,7 +73,7 @@ export type PublicLandingPage = {
 };
 
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
-export type LandingPageStoredContent = LandingPageContent | PageDocument;
+export type LandingPageStoredContent = LandingPageContent | PageDocument | FunnelStepPages;
 
 export class LandingPageInputError extends Error {
   constructor(message = "landing_page_invalid_input") {
@@ -137,7 +138,7 @@ function databaseErrorCode(error: unknown) {
 }
 
 function inputContent(value: unknown) {
-  const content = parsePageDocument(value) ?? parseLandingPageContent(value);
+  const content = parseFunnelStepPages(value) ?? parsePageDocument(value) ?? parseLandingPageContent(value);
   if (!content) throw new LandingPageInputError();
   return content;
 }
@@ -291,7 +292,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
   const formOptions = forms.map(toFormReference);
   const liveOptions = lives.map(toLiveReference);
   return {
-    page: { id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, publishedAt: page.publishedAt, updatedAt: page.updatedAt, content: parsePageDocument(page.draftContent) ?? parseLandingPageContent(page.draftContent), formId: page.draftFormId, liveId: page.draftLiveId, versions: page.versions ?? [] },
+    page: { id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, publishedAt: page.publishedAt, updatedAt: page.updatedAt, content: parseFunnelStepPages(page.draftContent) ?? parsePageDocument(page.draftContent) ?? parseLandingPageContent(page.draftContent), formId: page.draftFormId, liveId: page.draftLiveId, versions: page.versions ?? [] },
     forms: formOptions,
     lives: liveOptions,
     context: { forms: formOptions, ...(selectedLive ? { live: toLiveReference(selectedLive) } : {}) },
@@ -400,7 +401,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     },
   });
   if (!page?.publishedVersion || !page.publishedAt || page.publishedVersion.vendorId !== page.vendorId || page.publishedVersion.pageId !== page.id) return null;
-  const content = parsePageDocument(page.publishedVersion.content) ?? parseLandingPageContent(page.publishedVersion.content);
+  const content = parseFunnelStepPages(page.publishedVersion.content) ?? parsePageDocument(page.publishedVersion.content) ?? parseLandingPageContent(page.publishedVersion.content);
   if (!content) return null;
   const formIds = registrationFormIdsInContent(content);
   if (page.publishedVersion.formId) formIds.add(page.publishedVersion.formId);
