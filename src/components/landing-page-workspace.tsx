@@ -11,7 +11,9 @@ import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
-import { createFunnelFlow } from "@/lib/funnel-flow";
+import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { FunnelStepPagesEditor } from "@/components/landing-pages/funnel-step-pages-editor";
+import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
@@ -25,23 +27,30 @@ function starterDocument(goal: Exclude<FunnelGoal, "webinar"> = "custom"): PageD
   return document;
 }
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
+function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages { return "pages" in content && "activeStepId" in content && "flow" in content; }
+function supportsFunnelCommands(content: LandingPageStoredContent): boolean { return isPageDocument(content) || isFunnelStepPages(content); }
 function WorkspacePreview({ content, forms, live }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"] }) {
+  if (isFunnelStepPages(content)) {
+    const active = getActiveFunnelStepPage(content);
+    return active ? <><FunnelPageDocumentRenderer document={active.page} viewport="desktop" mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport="desktop" />)}</> : <p role="alert">無法預覽目前 Funnel step。</p>;
+  }
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
 function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument) => void; onValidityChange: (valid: boolean) => void;
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
 }) {
+  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} disabled={pending} onChange={onDocumentChange} />;
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
 // Optional persisted and create-flow inputs are normalized at this single boundary.
 // eslint-disable-next-line complexity
 function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], config?: { goal?: Exclude<FunnelGoal, "webinar">; name?: string; slug?: string; currency?: string }) {
-  const content = page?.content ?? starterDocument(config?.goal);
+  let content = page?.content ?? starterDocument(config?.goal);
   if (!page && isPageDocument(content) && config?.goal && config.name && config.slug) {
-    content.flow = createFunnelFlow({ id: "funnel_flow", name: config.name, goal: config.goal, domain: config.slug, currency: config.currency ?? "TWD" }) ?? undefined;
+    content = createGoalFunnelStepPages({ id: "funnel_flow", name: config.name, goal: config.goal, domain: config.slug, currency: config.currency ?? "TWD" }) ?? content;
   }
   return {
     content,
@@ -107,12 +116,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← 返回</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name || "未命名 Funnel 頁面"}</p>
-      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
-      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>Redo</button>
-      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} title={isPageDocument(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>Redo</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
       <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); document.getElementById("funnel-page-settings-tab")?.click(); }} className={secondaryButtonClass}>頁面設定</button>
-      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" }))}>桌機</button>
-      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" }))}>手機</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" }))}>桌機</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" }))}>手機</button>
       <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "Preview"}</button>
       <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "Save"}</button>
       <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Exit</button>
