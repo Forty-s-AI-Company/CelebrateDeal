@@ -30,6 +30,7 @@ export function FunnelGoalPicker() {
     <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Create funnel</p>
     <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">建立新的 Funnel</h1>
     <p className="mt-2 text-slate-600">先設定基本資料與用途，再進入全畫面編輯器。</p>
+    <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">CelebrateDeal 尚未建立可驗證的 Funnel 方案配額，因此目前不套用 systeme.io 測試帳戶的 3 個上限。建立流程不會假裝檢查不存在的方案資料。</p>
     <div className="mt-8 grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2">
       <label className="text-sm font-semibold text-slate-700">名稱 *<input required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} className={field} placeholder="例如：秋季新品名單頁" /></label>
       <label className="text-sm font-semibold text-slate-700">Funnel 網址 *<div className="mt-1 flex min-h-11 items-center rounded-xl border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="pl-3 text-sm text-slate-400">/lp/</span><input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={domain} onChange={(event) => setDomain(event.target.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} className="min-w-0 flex-1 bg-transparent px-1 pr-3 text-sm outline-none" placeholder="autumn-launch" /></div></label>

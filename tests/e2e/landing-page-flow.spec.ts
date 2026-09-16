@@ -95,10 +95,14 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   })).toEqual({ name: `${pageName} 草稿更新`, publishedVersionId: storedPage.publishedVersionId });
 
   await page.goto(`/lp/${slug}?utm_source=landing-e2e&utm_medium=playwright&utm_campaign=publish-flow`);
-  await expect(page.getByRole("heading", { name: "加入名單，取得最新消息" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "一起把時間變成真正的改變" })).toBeVisible();
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-mobile.png"), fullPage: true });
+  await page.goto(`/lp/${slug}/thank-you`);
+  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
