@@ -23,6 +23,7 @@ export type FunnelPageCommand =
   | { type: "move_down"; nodeId: string }
   | { type: "update_settings"; settings: Partial<PageDocument["settings"]> }
   | { type: "update_flow"; flow?: FunnelFlow }
+  | { type: "replace_document"; document: PageDocument }
   | { type: "restore"; node: FunnelNode; parentId: string | null; popupId: string | null; index: number };
 
 export type FunnelNodePatch = {
@@ -313,6 +314,10 @@ function execute(document: PageDocument, command: FunnelPageCommand): CommandRes
       const previous = source.flow ? cloneValue(source.flow) : undefined;
       source.flow = command.flow ? cloneValue(command.flow) : undefined;
       return parseResult(source, { type: "update_flow", flow: previous });
+    }
+    case "replace_document": {
+      const next = parsePageDocument(command.document);
+      return next ? { document: next, inverse: { type: "replace_document", document: source } } : null;
     }
   }
 }
