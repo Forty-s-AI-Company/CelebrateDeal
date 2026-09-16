@@ -4,15 +4,36 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
+import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
-import { createLandingPageContent, type LandingPageContent, type LandingPageRenderContext } from "@/lib/landing-page-content";
-import type { LandingPageEditorPage } from "@/lib/landing-page-service";
+import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing-page-content";
+import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
+import type { LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
+const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
+function starterDocument(): PageDocument {
+  const leaf = (id: string, type: FunnelNode["type"], props: Record<string, unknown>): FunnelNode => ({ schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {} });
+  const document = createEmptyPageDocument("funnel-page", "新的 Funnel 頁面");
+  document.root = [{ schemaVersion: 1, id: "section_main", type: "section", props: {}, style: { padding: 32 }, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "row_main", type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "column_main", type: "columns_2", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [leaf("headline_main", "headline", { text: "在這裡寫下你的主標題", level: "h1" }), leaf("text_main", "text", { text: "用清楚的內容，帶訪客走向下一個行動。" }), leaf("button_main", "button", { label: "立即行動" })] }] }] }];
+  return document;
+}
+function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
+function WorkspacePreview({ content, forms, live }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"] }) {
+  if (isPageDocument(content)) return <FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />;
+  return <LandingPageRenderer content={content} context={{ forms, live }} />;
+}
+function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange }: {
+  content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument) => void; onValidityChange: (valid: boolean) => void;
+}) {
+  if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
+  return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
+}
 function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"]) {
   return {
-    content: page?.content ?? createLandingPageContent("webinar", forms[0]?.id),
+    content: page?.content ?? starterDocument(),
     name: page?.name ?? "新的 Webinar 招生頁", slug: page?.slug ?? "",
     formId: page?.formId ?? forms[0]?.id ?? "", liveId: page?.liveId ?? "",
     revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),
@@ -23,7 +44,7 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
 export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }: { page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string }) {
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms));
-  const [content, setContent] = useState<LandingPageContent>(initial.content);
+  const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
   const [name, setName] = useState(initial.name);
   const [slug, setSlug] = useState(initial.slug);
   const [formId, setFormId] = useState(initial.formId);
@@ -104,12 +125,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
         <button disabled={pending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
         {page.status === "published" ? <><a href={`/lp/${page.slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={version} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || dirty || !version} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
-      </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => { setContent(createLandingPageContent("blank")); setDirty(true); }}>使用空白頁</button>}
+      </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => { setContent(createEmptyPageDocument("funnel-page", name)); setDirty(true); }}>使用空白頁</button>}
       <span role="status" className="ml-auto text-xs font-medium text-slate-500">{dirty ? "● 有尚未儲存的變更" : "✓ 草稿已儲存"}</span>
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
-    {preview ? <LandingPageRenderer content={content} context={{ forms, live: lives.find((live) => live.id === liveId) }} /> : null}
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><Editor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} disabled={pending} onValidityChange={setValid} onChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    {preview ? <WorkspacePreview content={content} forms={forms} live={lives.find((live) => live.id === liveId)} /> : null}
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
     </div>
   </div>;
 }
