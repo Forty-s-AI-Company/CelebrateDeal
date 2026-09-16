@@ -10,6 +10,7 @@ import {
   type FunnelPageCommand,
 } from "@/lib/funnel-page-history";
 import { getFunnelNodeDefinition, type FunnelNode, type FunnelNodeType, type PageDocument } from "@/lib/funnel-page-document";
+import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
 
 type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void };
 
@@ -19,6 +20,12 @@ const palette: Array<{ type: FunnelNodeType; label: string }> = [
   { type: "text", label: "文字" }, { type: "headline", label: "標題" }, { type: "image", label: "圖片" },
   { type: "button", label: "按鈕" }, { type: "bulleted_list", label: "項目清單" },
   { type: "content_box", label: "內容盒" }, { type: "horizontal_line", label: "水平線" },
+  { type: "video", label: "影片" }, { type: "audio", label: "音訊" }, { type: "carousel", label: "輪播" },
+  { type: "form", label: "表單" }, { type: "form_input", label: "表單欄位" }, { type: "checkbox", label: "核取方塊" },
+  { type: "calendar", label: "行事曆" }, { type: "x_share_button", label: "X 分享" }, { type: "survey", label: "問卷" },
+  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "FAQ" },
+  { type: "raw_html", label: "Raw HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
+  { type: "payment_button", label: "付款按鈕" }, { type: "payment_method", label: "付款方式" }, { type: "offer_price", label: "方案價格" },
 ];
 
 function nodeId(type: FunnelNodeType) {
@@ -62,7 +69,7 @@ export function FunnelPageEditor({ document, disabled = false, onChange }: Props
   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
   const [selectedId, setSelectedId] = useState<string>();
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
-  const [panel, setPanel] = useState<"elements" | "settings">("elements");
+  const [panel, setPanel] = useState<"elements" | "blocks" | "settings">("elements");
 
   const path = useMemo(() => selectedId ? findPath(history.present.root, selectedId) : null, [history.present.root, selectedId]);
   const selected = path?.at(-1);
@@ -84,6 +91,12 @@ export function FunnelPageEditor({ document, disabled = false, onChange }: Props
     setSelectedId(node.id);
   }
 
+  function addBlock(templateId: string) {
+    const block = instantiateBlock(templateId);
+    commit({ type: "add", node: block, parentId: null });
+    setSelectedId(block.id);
+  }
+
   function stepHistory(direction: "undo" | "redo") {
     setHistory((current) => {
       const next = direction === "undo" ? undoFunnelPageHistory(current) : redoFunnelPageHistory(current);
@@ -101,8 +114,9 @@ export function FunnelPageEditor({ document, disabled = false, onChange }: Props
   const control = "min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
   return <section className="grid min-h-[calc(100dvh-10rem)] grid-cols-[18rem_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
     <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
-      <div className="grid grid-cols-2 border-b border-slate-200 p-2">
+      <div className="grid grid-cols-3 border-b border-slate-200 p-2">
         <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>Elements</button>
+        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>Blocks</button>
         <button className={`${control} ${panel === "settings" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("settings")}>設定</button>
       </div>
       <div className="flex items-center gap-2 border-b border-slate-200 p-2">
@@ -111,7 +125,7 @@ export function FunnelPageEditor({ document, disabled = false, onChange }: Props
         <button className={control} onClick={() => setViewport(viewport === "desktop" ? "mobile" : "desktop")}>{viewport === "desktop" ? "桌機" : "手機"}</button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        {panel === "elements" ? <div className="grid grid-cols-2 gap-2">{palette.map((item) => <button key={item.type} disabled={disabled} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:opacity-40" onClick={() => add(item.type)}>{item.label}</button>)}</div> : selected ? <div className="grid gap-4">
+        {panel === "elements" ? <div className="grid grid-cols-2 gap-2">{palette.map((item) => { const capability = getFunnelNodeDefinition(item.type).capability; const unavailable = capability.status !== "available"; return <button key={item.type} disabled={disabled || unavailable} title={unavailable ? capability.reason : undefined} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" onClick={() => add(item.type)}>{item.label}{unavailable ? <span className="mt-1 block text-[10px] font-medium text-amber-700">{capability.status === "limited" ? "方案限制" : "待驗證"}</span> : null}</button>; })}</div> : panel === "blocks" ? <div className="grid gap-2">{Object.values(FUNNEL_BLOCK_REGISTRY).map((block) => <button key={block.id} disabled={disabled} className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400" onClick={() => addBlock(block.id)}><span className="block text-sm font-bold text-slate-800">{block.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span>{block.capability ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款功能尚未啟用</span> : null}</button>)}</div> : selected ? <div className="grid gap-4">
           <div><p className="text-xs font-bold text-slate-500">Breadcrumb</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
           {["text", "headline", "button", "image"].includes(selected.type) ? <label className="grid gap-1 text-sm font-semibold">內容<input className={control} value={String(selected.props[selected.type === "button" ? "label" : selected.type === "image" ? "src" : "text"] ?? "")} onChange={(event) => updateContent(event.currentTarget.value)} /></label> : null}
           <label className="grid gap-1 text-sm font-semibold">桌機字級<input className={control} type="number" value={selected.overrides.desktop?.style?.fontSize ?? selected.style.fontSize ?? 16} onChange={(event) => commit({ type: "update", nodeId: selected.id, patch: { overrides: { desktop: { style: { fontSize: Number(event.currentTarget.value) } } } } })} /></label>
