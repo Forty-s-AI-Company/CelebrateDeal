@@ -70,6 +70,7 @@
 
 - 入口：Create > Run an evergreen webinar > Save。
 - 截圖：`02d-create-goal-webinar-selected.png`、`47-webinar-create-form.png`、`48-free-plan-limit-webinar.png`
-- 結果：goal 可選、Save 可按；送出被 webinars 與 funnels 雙重配額擋下。
+- 結果：goal 可選、Save 可按；有 3 個 Funnel 時送出被 webinars 與 funnels 雙重配額擋下。刪除 Custom、清單降為 2 後再次建立，錯誤只剩 `You have exceeded multiple limits on your current plan (webinars).`，證實 Webinar 本身受方案限制，並非只有 Funnel 名額不足。
+- 補充截圖：`72-webinar-plan-limit-after-slot-release.png`。
 - 狀態：受方案限制；詳情、steps、模板、View、Edit、Change template 無法驗證。
 - CelebrateDeal：仍需補查；至少先保留 goal 與三種 Webinar step type 的資料模型位置。

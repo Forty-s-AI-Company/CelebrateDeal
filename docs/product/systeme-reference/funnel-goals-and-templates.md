@@ -7,7 +7,7 @@
 | Build an audience | Collect email addresses and build your email list | 成功 | Opt-in、Thank You / Download、Inactive |
 | Sell | Sell a product or a service | 成功 | Order Form、Thank You Page、Inactive |
 | Custom | Build a custom funnel from scratch | 成功 | 僅 Inactive；由 Add step 自建 |
-| Run an evergreen webinar | Run evergreen webinars to automate your business | 配額阻擋 | 無法驗證 |
+| Run an evergreen webinar | Run evergreen webinars to automate your business | Webinar 方案阻擋 | 無法驗證 |
 
 - 功能 ID：GOAL-001
 - 入口：Funnels list > Create。
@@ -30,10 +30,11 @@
 
 - 清單：本輪畫面可見 9 張，第一頁 IDs 26050、26049、26048、26045、26044、26043、26041、26040、26039；同樣有 9/15/30 與分頁。
 - 26050 實際預覽：志工／社群主題長頁，導覽、hero 輸入框、賣點、FAQ、聯絡資訊、footer；已套用並 View step。
-- 26049、26048：已點預覽入口；Chrome 密碼擴充功能攔截後，僅 26049 留有畫面檔、26048 無可靠截圖，未宣稱完成內容比較。
-- 截圖：`33-audience-template-picker.png`、`34-audience-template-1-preview.png`、`35-audience-template-2-preview.png`、`38-audience-view-step.png`。
-- 狀態：一種已完整操作；另外兩種僅看到／開啟入口，受瀏覽器擴充功能干擾。
-- CelebrateDeal：必做 opt-in 模板族；仍需補查 2 個實際版面。
+- 26049：女性公益長頁，含導覽、英雄區、新聞、活動、兩組名單表單與 footer；已套用、View、Edit，標題改為 `CelebrateDeal Audience Template Research`，Save 後 reload 保留。
+- 26048：野生動物公益長頁，含大型 hero、數字指標、專案、活動、新聞、名單與聯絡表單；已套用、View、Edit，標題改為 `CelebrateDeal Wildlife Research`，Save 後 reload 保留。
+- 截圖：`33`–`35`、`38`、`73-audience-template-26049-view.png`、`74-audience-template-26049-edited.png`、`75-audience-template-26048-view.png`、`76-audience-template-26048-edited.png`。
+- 狀態：26050、26049、26048 三種模板已完成比較；後兩種已完成套用、前台、編輯、Save/reload 與換模板覆蓋流程。
+- CelebrateDeal：必做 opt-in 模板族；至少涵蓋志工招募、公益活動、環境倡議三種長頁結構。
 
 ## TPL-CUSTOM-001｜Custom / Info page
 
@@ -43,4 +44,3 @@
 - 結果：三種都實際開啟；3012 已套用進入 step settings。
 - 狀態：已實際操作。
 - CelebrateDeal：次要；提供法務純文字模板與品牌版資訊頁模板即可先達 parity。
-
