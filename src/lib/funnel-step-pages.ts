@@ -5,6 +5,7 @@ import {
   parseFunnelFlow,
   removeFunnelStep,
   renameFunnelStep,
+  setFunnelStepPath,
   type FunnelFlow,
   type FunnelFlowMutationResult,
   type FunnelStep,
@@ -351,4 +352,11 @@ export function renameFunnelStepPage(state: FunnelStepPages, stepId: string, nam
     page.name = step.name;
     return null;
   });
+}
+
+/** Updates the public step URL while retaining every independently stored page snapshot. */
+export function setFunnelStepPathPage(state: FunnelStepPages, stepId: string, path: string): FunnelStepPageMutationResult {
+  const valid = parseFunnelStepPages(state);
+  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕修改 URL Path");
+  return fromFlowMutation(valid, setFunnelStepPath(valid.flow, stepId, path), () => null);
 }

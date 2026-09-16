@@ -14,6 +14,7 @@ import {
   renameFunnelStepPage,
   replaceFunnelStepPage,
   serializeFunnelStepPages,
+  setFunnelStepPathPage,
   switchFunnelStep,
 } from "@/lib/funnel-step-pages";
 
@@ -123,7 +124,12 @@ describe("Funnel step pages", () => {
     const renamed = renameFunnelStepPage(copied.state, "info_two", "  新的　資訊頁 ");
     if (!renamed.ok) throw new Error(renamed.error);
     expect(renamed.state.pages.info_two?.name).toBe("新的 資訊頁");
-    const moved = moveFunnelStepPage(renamed.state, "info_two", 0);
+    const pathUpdated = setFunnelStepPathPage(renamed.state, "info_two", "/event-info-next/");
+    if (!pathUpdated.ok) throw new Error(pathUpdated.error);
+    expect(pathUpdated.state.flow.steps.find((step) => step.id === "info_two")?.path).toBe("event-info-next");
+    expect(pathUpdated.state.pages.info_two).toEqual(renamed.state.pages.info_two);
+    expect(setFunnelStepPathPage(pathUpdated.state, "info_two", "event-info")).toMatchObject({ ok: false });
+    const moved = moveFunnelStepPage(pathUpdated.state, "info_two", 0);
     if (!moved.ok) throw new Error(moved.error);
     expect(moved.state.flow.steps.map((step) => step.id)).toEqual(["info_two", "info_one", "inactive"]);
     expect(moved.state.pages.info_one).toBeDefined();
