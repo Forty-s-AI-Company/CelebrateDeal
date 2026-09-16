@@ -280,11 +280,11 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
-function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
+function NodeRenderer({ node, viewport, mode, flow, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible) return null;
   const children = node.children ?? [];
-  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
+  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
   const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
@@ -370,9 +370,12 @@ function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode, onMo
       const label = stringProp(props, ["label", "text", "title"], "立即行動");
       const sourceType = actionType(source);
       const popupId = sourceType === "show_popup" && source && typeof source === "object" && "popupId" in source && typeof source.popupId === "string" ? source.popupId : null;
+      const nextStepId = sourceType === "next_step" && source && typeof source === "object" && "stepId" in source && typeof source.stepId === "string" ? source.stepId : null;
+      const nextStep = nextStepId ? flow?.steps.find((step) => step.id === nextStepId) : undefined;
+      const nextStepHref = flow && nextStep ? `/lp/${flow.domain}/${nextStep.path}` : null;
       const submit = sourceType === "submit_form";
       const supportedButton = sourceType === null || sourceType === "none" || submit || Boolean(popupId);
-      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
+      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : nextStepHref ? <a href={nextStepHref} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
@@ -394,7 +397,7 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
+  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;
