@@ -11,6 +11,7 @@ import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
+import { createFunnelFlow } from "@/lib/funnel-flow";
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
@@ -35,9 +36,15 @@ function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChan
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
-function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], config?: { goal?: Exclude<FunnelGoal, "webinar">; name?: string; slug?: string }) {
+// Optional persisted and create-flow inputs are normalized at this single boundary.
+// eslint-disable-next-line complexity
+function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], config?: { goal?: Exclude<FunnelGoal, "webinar">; name?: string; slug?: string; currency?: string }) {
+  const content = page?.content ?? starterDocument(config?.goal);
+  if (!page && isPageDocument(content) && config?.goal && config.name && config.slug) {
+    content.flow = createFunnelFlow({ id: "funnel_flow", name: config.name, goal: config.goal, domain: config.slug, currency: config.currency ?? "TWD" }) ?? undefined;
+  }
   return {
-    content: page?.content ?? starterDocument(config?.goal),
+    content,
     name: page?.name ?? config?.name ?? "新的 Funnel 頁面", slug: page?.slug ?? config?.slug ?? "",
     formId: page?.formId ?? forms[0]?.id ?? "", liveId: page?.liveId ?? "",
     revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),
@@ -45,9 +52,9 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
   };
 }
 /** The workspace owns persistence; Puck owns only the current editing session. */
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug }: { page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: Exclude<FunnelGoal, "webinar">; initialName?: string; initialSlug?: string }) {
+export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency }: { page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: Exclude<FunnelGoal, "webinar">; initialName?: string; initialSlug?: string; initialCurrency?: string }) {
   const router = useRouter();
-  const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug }));
+  const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
   const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
   const [name, setName] = useState(initial.name);
   const [slug, setSlug] = useState(initial.slug);

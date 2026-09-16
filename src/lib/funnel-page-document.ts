@@ -4,6 +4,7 @@ import {
   parseLandingPageContent,
   type LandingPageContent,
 } from "@/lib/landing-page-content";
+import { parseFunnelFlow, type FunnelFlow } from "@/lib/funnel-flow";
 
 /**
  * Persisted Funnel editor contract.  This is deliberately independent from
@@ -250,6 +251,7 @@ export const PageDocumentSchema = z.object({
   root: z.array(z.lazy(() => FunnelNodeSchema)).max(100).default([]),
   popups: z.array(FunnelPopupSchema).max(50).default([]),
   settings: PageSettingsSchema.default(defaultPageSettings),
+  flow: z.custom<FunnelFlow>((value) => parseFunnelFlow(value) !== null, { message: "Funnel 流程資料不符合格式" }).optional(),
 }).strict();
 export type PageDocument = z.infer<typeof PageDocumentSchema>;
 

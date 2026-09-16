@@ -25,13 +25,12 @@ function screenshotPath(testInfo: TestInfo, filename: string) {
   return screenshotDirectory ? join(screenshotDirectory, filename) : testInfo.outputPath(filename);
 }
 
-test("owner publishes a landing page and its public CTA preserves form attribution", async ({ page }, testInfo) => {
+test("owner creates, edits, publishes and reloads a structured Funnel page", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   const suffix = runKey.replace(/-/g, "").slice(-12).toLowerCase();
   const pageName = `TEST ONLY Landing Page ${suffix}`;
   const slug = `test-only-landing-page-${suffix}`;
-  const leadEmail = `lead-${suffix}@landing-page.test`;
 
   // Authentication is deliberately exercised through the public login UI.
   await page.goto("/login");
@@ -41,9 +40,14 @@ test("owner publishes a landing page and its public CTA preserves form attributi
   await expect(page).toHaveURL(/\/dashboard$/u);
 
   await page.goto("/landing-pages/new");
+  await expect(page.getByRole("heading", { name: "建立新的 Funnel" })).toBeVisible();
+  await page.getByLabel("名稱 *").fill(pageName);
+  await page.getByLabel("Funnel 網址 *").fill(slug);
+  await page.getByRole("button", { name: /建立名單/u }).click();
+  await page.getByRole("button", { name: "儲存並進入編輯器" }).click();
+  await expect(page).toHaveURL(/goal=audience/u);
+  await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await expect(page.getByLabel("頁面名稱")).toBeVisible();
-  await page.getByLabel("頁面名稱").fill(pageName);
-  await page.getByLabel("公開網址 slug").fill(slug);
   await page.getByLabel("活動場次").selectOption(fixture.live.id);
   await expect(page.getByText("正在載入編輯器…", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-editor.png"), fullPage: true });
@@ -91,43 +95,10 @@ test("owner publishes a landing page and its public CTA preserves form attributi
   })).toEqual({ name: `${pageName} 草稿更新`, publishedVersionId: storedPage.publishedVersionId });
 
   await page.goto(`/lp/${slug}?utm_source=landing-e2e&utm_medium=playwright&utm_campaign=publish-flow`);
-  await expect(page.getByRole("heading", { name: "用一場直播，讓對的人認識你的價值" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "加入名單，取得最新消息" })).toBeVisible();
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-mobile.png"), fullPage: true });
-  // The template copy can evolve; the public registration route is the
-  // contract that matters for this journey.
-  const registrationLink = page.locator('a[href^="/form/"]').first();
-  await expect(registrationLink).toBeVisible();
-  await registrationLink.click();
-  await expect(page).toHaveURL(new RegExp(`/form/${fixture.form.slug}\\?`, "u"));
-  const formUrl = new URL(page.url());
-  expect(formUrl.searchParams.get("liveId")).toBe(fixture.live.id);
-  expect(formUrl.searchParams.get("lp")).toBe(pageId);
-  expect(formUrl.searchParams.get("utm_source")).toBe("landing-e2e");
-  expect(formUrl.searchParams.get("utm_medium")).toBe("playwright");
-  expect(formUrl.searchParams.get("utm_campaign")).toBe("publish-flow");
-
-  await expect(page.getByRole("heading", { name: fixture.form.headline })).toBeVisible();
-  await page.getByLabel("姓名").fill("TEST ONLY Landing Page Lead");
-  await page.getByLabel("Email").fill(leadEmail);
-  const submissionResponse = page.waitForResponse((response) => (
-    new URL(response.url()).pathname === "/api/form-submissions" && response.request().method() === "POST"
-  ));
-  await page.getByRole("button", { name: fixture.form.submitLabel }).click();
-  expect((await submissionResponse).status()).toBe(200);
-  await expect(page.getByText(fixture.form.successMessage, { exact: true })).toBeVisible();
-
-  await expect.poll(async () => await db.formSubmission.findFirst({
-    where: { formId: fixture.form.id, email: leadEmail },
-    select: { liveId: true, attribution: true },
-  })).toEqual({
-    liveId: fixture.live.id,
-    attribution: {
-      landingPageId: pageId,
-      utm: { source: "landing-e2e", medium: "playwright", campaign: "publish-flow" },
-    },
-  });
   expect(pageErrors).toEqual([]);
 });

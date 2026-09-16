@@ -64,3 +64,13 @@
 - Popup overlay 共用安全 renderer，支援延遲、關閉、樣式、編輯器即時預覽及公開頁觸發；Exit intent 不註冊未驗證事件。
 - Evidence：targeted Vitest 41/41、ESLint、TypeScript 通過；production build 於 checkpoint 結尾執行。
 - 回滾：revert 本 checkpoint commit；既有 LandingPage DB schema 與舊 Puck 文件未變更。
+
+## WP-06 checkpoint 4
+
+- 完整 Element inspector 已涵蓋內容、設計、動作、進階屬性與 base／desktop／mobile 編輯範圍。
+- Elements 與 Blocks 支援點擊及拖入畫布；既有節點支援同層與跨容器 drag/drop。
+- 左側面板可搜尋及收合；Delete、Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z 提供鍵盤操作。
+- Popup 可切換為獨立畫布編輯，內容仍保存於同一 PageDocument；按鈕 `show_popup` action 可安全觸發 overlay。
+- FunnelFlow v1 隨 PageDocument 保存，包含 goal、domain、currency、預設 steps 與次要分頁 capability；step 修改加入結構化 Undo/Redo。
+- E2E journey 已更新為建立 goal、編輯、save/reload、publish、desktop/mobile 公開頁；在未確認 disposable database 前只完成 Playwright discovery，不執行資料寫入。
+- 安全掃描執行但未通過：8 個既有 disposable QA scripts 被規則標記 `external_database_url`；本工作包未新增掃描 finding，也未將既有 finding 誤報為通過。
