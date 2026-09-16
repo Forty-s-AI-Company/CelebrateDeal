@@ -167,7 +167,7 @@ export function updateFunnelPopup(document: PageDocument, popupId: string, patch
   const nextPopupInput = {
     ...current,
     ...(patch.name !== undefined ? { name: patch.name } : {}),
-    ...(patch.pageId === null ? { pageId: undefined } : patch.pageId !== undefined ? { pageId: patch.pageId } : {}),
+    ...("pageId" in patch ? { pageId: patch.pageId ?? undefined } : {}),
     root: applyPopupWidth(nextRoot, width),
     ...(patch.settings !== undefined ? { settings: { ...current.settings, ...persistedSettings } } : {}),
   };

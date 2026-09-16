@@ -91,6 +91,14 @@ describe("Funnel PageDocument v1", () => {
     expect(parsePageDocument(duplicateHtmlId)).toBeNull();
   });
 
+  it("拒絕會干擾 React renderer 的保留 HTML 屬性", () => {
+    const document = starter();
+    document.root[0]!.attributes = { style: "color:red" };
+    expect(parsePageDocument(document)).toBeNull();
+    document.root[0]!.attributes = { dangerouslySetInnerHTML: "x" };
+    expect(parsePageDocument(document)).toBeNull();
+  });
+
   it("可將既有 LandingPageContent 轉為可編輯節點並轉回", () => {
     const legacy = createLandingPageContent("webinar", "form_123");
     const document = landingPageContentToPageDocument(legacy, { id: "legacy_1" });

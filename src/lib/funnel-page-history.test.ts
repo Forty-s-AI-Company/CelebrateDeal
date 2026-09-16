@@ -102,4 +102,16 @@ describe("Funnel page structured command history", () => {
     history = undoFunnelPageHistory(history);
     expect(history.present.flow?.steps[0]?.name).toBe("名單頁");
   });
+
+  it("Popup／換模板的整份結構化交易可 Undo／Redo", () => {
+    let history = createFunnelPageHistory(fixture());
+    const replaced = { ...history.present, name: "替換後", root: [] };
+    history = dispatchFunnelPageCommand(history, { type: "replace_document", document: replaced });
+    expect(history.present.name).toBe("替換後");
+    expect(history.present.root).toEqual([]);
+    history = undoFunnelPageHistory(history);
+    expect(history.present.root).toHaveLength(1);
+    history = redoFunnelPageHistory(history);
+    expect(history.present.name).toBe("替換後");
+  });
 });
