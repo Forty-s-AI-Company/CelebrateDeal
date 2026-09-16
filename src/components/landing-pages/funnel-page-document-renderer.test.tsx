@@ -67,4 +67,60 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).not.toContain("javascript:");
     expect(html).toContain('disabled=""');
   });
+
+  it("renders safe media and form elements without external submission", () => {
+    const page = documentWith([
+      node("video", "video", { props: { src: "https://cdn.example.com/demo.mp4", poster: "/poster.jpg" } }),
+      node("audio", "audio", { props: { src: "/audio.mp3" } }),
+      node("form", "form", { props: { title: "聯絡我們" }, children: [
+        node("form_input", "email", { props: { label: "Email", inputType: "email", required: true } }),
+        node("checkbox", "consent", { props: { label: "我同意接收通知" } }),
+      ] }),
+    ]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toContain("video");
+    expect(html).toContain('src="https://cdn.example.com/demo.mp4"');
+    expect(html).toContain('src="/audio.mp3"');
+    expect(html).toContain("聯絡我們");
+    expect(html).toContain('type="email"');
+    expect(html).toContain('name="email"');
+    expect(html).toContain("我同意接收通知");
+    expect(html).not.toContain("action=");
+  });
+
+  it("renders interactive content with explicit unavailable states", () => {
+    const page = documentWith([
+      node("carousel", "carousel", { props: { ariaLabel: "案例輪播" }, children: [] }),
+      node("calendar", "calendar", { props: {} }),
+      node("survey", "survey", { props: { question: "偏好的時段？", options: ["上午", "下午"] } }),
+      node("countdown", "countdown", { props: { targetDate: "2030-01-01T00:00:00.000Z" } }),
+      node("menu", "menu", { props: { items: [{ label: "首頁", href: "/" }, { label: "不安全", href: "javascript:alert(1)" }] } }),
+      node("x_share_button", "share", { props: { url: "https://celebratedeal.example/page" } }),
+      node("faq", "faq", { props: { question: "如何開始？" }, children: [node("text", "answer", { props: { text: "填寫表單即可。" } })] }),
+    ]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toContain('data-funnel-carousel="true"');
+    expect(html).toContain("尚未綁定行事曆事件");
+    expect(html).toContain("偏好的時段？");
+    expect(html).toContain("2030");
+    expect(html).toContain('href="/"');
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("分享到 X");
+    expect(html).toContain("如何開始？");
+    expect(html).toContain("填寫表單即可。");
+  });
+
+  it("never renders unsafe media URLs or executes raw HTML", () => {
+    const page = documentWith([
+      node("video", "unsafe-video", { props: { src: "javascript:alert(1)" } }),
+      node("audio", "unsafe-audio", { props: { src: "data:audio/wav;base64,ZmFrZQ==" } }),
+      node("raw_html", "raw", { props: { html: "<img src=x onerror=alert(1)>" } }),
+    ]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("data:audio");
+    expect(html).not.toContain("onerror");
+    expect(html).toContain("影片網址不安全或尚未設定");
+    expect(html).toContain("音訊網址不安全或尚未設定");
+  });
 });
