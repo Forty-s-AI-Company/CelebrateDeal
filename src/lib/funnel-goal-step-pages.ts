@@ -1,4 +1,4 @@
-import { addFunnelStep, createFunnelFlow, type FunnelFlowInput } from "@/lib/funnel-flow";
+import { createFunnelFlow, type FunnelFlowInput } from "@/lib/funnel-flow";
 import { createFunnelStepPages, parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { instantiateFunnelTemplate } from "@/lib/funnel-template-gallery";
 import type { FunnelNode } from "@/lib/funnel-page-document";
@@ -17,20 +17,15 @@ function informationalRoot(scope: string, headline: string, message: string): Fu
 
 /** Creates the complete initial Funnel in one validated transaction. */
 export function createGoalFunnelStepPages(input: FunnelFlowInput): FunnelStepPages | null {
-  let flow = createFunnelFlow(input);
+  const flow = createFunnelFlow(input);
   if (!flow || flow.goal === "webinar") return null;
-  if (flow.goal === "custom") {
-    const added = addFunnelStep(flow, { id: "info", name: "資訊頁", path: "home", type: "info_page", templateSource: "template", templateId: primaryTemplate.custom });
-    if (!added.ok) return null;
-    flow = added.flow;
-  }
   const first = flow.steps[0];
   if (!first) return null;
-  const primary = instantiateFunnelTemplate(primaryTemplate[flow.goal], `page_${flow.id}_${first.id}`);
-  const state = createFunnelStepPages(flow, { initialPage: primary, initialStepId: first.id });
+  const primary = flow.goal === "custom" ? undefined : instantiateFunnelTemplate(primaryTemplate[flow.goal], `page_${flow.id}_${first.id}`);
+  const state = createFunnelStepPages(flow, primary ? { initialPage: primary, initialStepId: first.id } : undefined);
   if (!state) return null;
   const next: FunnelStepPages = structuredClone(state);
-  for (const step of flow.steps.slice(1)) {
+  for (const step of flow.steps.slice(primary ? 1 : 0)) {
     const page = next.pages[step.id];
     if (!page) return null;
     page.root = step.isSystem
