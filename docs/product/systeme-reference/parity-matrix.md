@@ -15,22 +15,23 @@
 | TPL-CUSTOM-001 | Privacy/Terms/品牌條款模板 | 資訊與法務模板 | 次要 | 3 預覽、1 套用 |
 | EDT-LAYOUT-001 | 左欄 + 中央畫布 + toolbar | 全畫面編輯器 shell | 必做 | 已實際操作 |
 | EDT-TB-001 | Undo/Redo/Popup/Settings/Mobile/Preview/Save/Exit | 編輯器命令列 | 必做 | 全部已點擊 |
-| EDT-EL-001 | Text/Layout/Form/Payment/Media/Social/Other | 元件面板與 schema | 必做 | Text、Form、Image、Video、Audio、Carousel、Countdown、Raw HTML、FAQ 已實際加入與檢查設定 |
+| EDT-EL-001 | Text/Layout/Form/Payment/Media/Social/Other | 元件面板與 schema | 必做 | Button、Checkbox、Calendar、X share、Survey、Menu、Horizontal line 均已實際投放；reCAPTCHA 未生成；Payment 受商品／付款前置設定限制 |
 | EDT-BLK-001 | 9 分類、81 個可見變體 | 區塊模板庫 | 必做 | 每類已點開並拖入 1 個代表 block |
 | EDT-INT-001 | 選取、層級、樣式、move/copy/remove | 節點樹與 inspector | 必做 | block 拖入、選取、樣式、Undo/Redo、Save/reload 已操作；跨容器排序待補 |
 | EDT-SAVE-001 | step auto-save、canvas manual-save、Exit 防呆 | 雙儲存模型與 dirty state | 必做 | 已實際操作 |
 | EDT-RESP-001 | Desktop/Mobile override 與 visibility | RWD 編輯 | 必做 | 已實際操作 |
 | EDT-TPL-001 | 換模板警告、保留 metadata、替換頁面 | 模板替換交易 | 必做 | 已實際操作 |
-| EDT-POP-001 | Popup 列表、建立、觸發設定、樣式 | Popup 編輯器 | 次要 | 前台觸發仍需補查 |
+| EDT-POP-001 | Popup 列表、建立、觸發設定、樣式 | Popup 編輯器 | 次要 | 已 Save 並於 Preview 驗證 1 秒自動觸發；exit intent 僅看到設定 |
+| FUN-SECONDARY-001 | Automation/A-B/Stats/Leads/Sales/Deadline、Funnel settings、step menu | Funnel 分析與管理分頁 | 必做 | 全部分頁已開啟盤點；未建立規則、變體或啟用 deadline |
 | EDT-SET-001 | Typography/Language/Background/SEO/Tracking/Affiliate | 頁面設定 | 必做 | Tracking/affiliate 暫不做 |
-| PAY-001 | Payment 元件與 Sell offer type | 商品／付款整合 | 方案限制或暫不做 | 未串商品、未輸入付款資料 |
+| PAY-001 | Payment 元件與 Sell offer type | 商品／付款整合 | 方案限制或暫不做 | Offer price、Payment method、Payment button 已檢查；真實價格與付款方式需 Step settings，未串商品或輸入付款資料 |
 | WEB-001 | Webinar 詳情、模板、編輯 | Webinar 模組 | 仍需補查 | webinars + funnels 配額阻擋 |
 
 ## 實作前必須再確認
 
 1. 使用具 Webinar 額度帳戶補查預設 steps、模板、排程與 broadcast 行為。
-2. Audience 再完成 26049/26048 的內容比較、套用與 Change template 保留規則。
-3. Elements 尚需逐項拖入 Form input、Button、Checkbox、reCAPTCHA、Payment、X share button、Menu、Horizontal line；其餘主要功能類型已完成。
+2. Audience 26049／26048 均已完成套用、前台、修改保存與 Change template 流程。
+3. Elements 的 Calendar、X share button、Survey、Menu、Horizontal line 已逐項拖入驗證；reCAPTCHA 本輪投放未生成；其餘 Payment 子元件需在 Sell 與商品前置條件下補查。
 4. Blocks 的九分類均已加入代表項；仍需確認跨 section 拖曳排序、所有層級的 copy/delete 與巢狀限制。
-5. Popup 儲存後在 Preview 驗證 auto delay、exit intent、close button。
-6. Funnel settings、step 列尾選單、Automation/A-B/Stats/Leads/Sales/Deadline 各頁仍需專題調研。
+5. Popup auto delay 已完成；exit intent 與 close button On 的前台差異仍需補查。
+6. Funnel 次要分頁與選單已完成入口、欄位及空狀態盤點；真正建立規則／A-B 變體屬會新增資料的後續驗證。
