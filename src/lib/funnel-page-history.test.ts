@@ -79,5 +79,15 @@ describe("Funnel page structured command history", () => {
     expect(JSON.stringify(history.past)).not.toContain("<html");
     expect(current(history, "text_a").style.fontSize).toBe(30);
   });
-});
 
+  it("頁面設定可 Undo／Redo，且不建立第二份手機文件", () => {
+    let history = createFunnelPageHistory(fixture());
+    const previous = history.present.settings.seo.title;
+    history = dispatchFunnelPageCommand(history, { type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: "CelebrateDeal Funnel" } } });
+    expect(history.present.settings.seo.title).toBe("CelebrateDeal Funnel");
+    history = undoFunnelPageHistory(history);
+    expect(history.present.settings.seo.title).toBe(previous);
+    history = redoFunnelPageHistory(history);
+    expect(history.present.settings.seo.title).toBe("CelebrateDeal Funnel");
+  });
+});

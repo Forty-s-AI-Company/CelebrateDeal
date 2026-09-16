@@ -46,3 +46,11 @@
 - 九個 Blocks 分類各有一個可插入代表模板；插入時產生唯一 ID，展開成可獨立選取與編輯的 Section／Row／Column／Element 節點。
 - Order form 模板只呈現付款限制節點，不包含付款 action 或成功流程。
 - 尚未完成：所有 Elements 的專屬 inspector 與互動 renderer、Blocks 其餘視覺變體。
+
+## WP-03／WP-05 checkpoint 2
+
+- 已加入 Video、Audio、Carousel、Form、Form input、Checkbox、Calendar、X share、Survey、Countdown、Menu、FAQ 的安全 renderer；Calendar 未綁 event 時顯示不可用狀態。
+- Page settings 已提供語言、SEO、背景與字型設定；Tracking／Affiliate 保留限制說明。
+- Popup 支援建立、重新命名、刪除、關閉按鈕、顯示延遲與頁面綁定資料；自動延遲可計算觸發時間。
+- Exit intent 明確回傳 `unverified` 且不可執行；Popup width 暫存於受控 shell style，待 schema 欄位確認後再 migration。
+- 尚未完成：Popup 畫布切換與真實 overlay preview、完整 Element 專屬 inspector、Change template。

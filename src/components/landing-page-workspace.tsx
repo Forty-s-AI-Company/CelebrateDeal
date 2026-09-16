@@ -96,7 +96,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName }
       <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← 返回</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name || "未命名 Funnel 頁面"}</p>
-      <button type="button" disabled className={secondaryButtonClass} title="Popup 編輯將在後續工作包開放">Popups <span className="text-[10px] text-amber-700">待開放</span></button>
+      <button type="button" disabled={!isPageDocument(content)} className={secondaryButtonClass} title={isPageDocument(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
       <button type="button" aria-pressed={settingsOpen} onClick={() => setSettingsOpen((value) => !value)} className={secondaryButtonClass}>頁面設定</button>
       <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "Preview"}</button>
       <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "Save"}</button>

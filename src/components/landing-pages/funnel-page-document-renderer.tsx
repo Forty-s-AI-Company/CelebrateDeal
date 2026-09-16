@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import {
   getFunnelNodeDefinition,
@@ -205,6 +205,53 @@ function actionType(action: unknown): string | null {
   return typeof type === "string" ? type : null;
 }
 
+function safeInputType(value: unknown): "text" | "email" | "tel" | "number" | "date" | "url" | "password" {
+  return value === "email" || value === "tel" || value === "number" || value === "date" || value === "url" || value === "password" ? value : "text";
+}
+
+function safeNodeName(node: FunnelNode, props: Record<string, unknown>, fallback: string): string {
+  const value = stringProp(props, ["name", "fieldName", "id"], node.id || fallback);
+  return /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u.test(value) ? value : fallback;
+}
+
+function safeDateTime(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function safeMenuItems(value: unknown): Array<{ label: string; href: string | null }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [{ label: item.trim(), href: null }];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const label = stringProp(record, ["label", "text", "title"], "");
+    if (!label) return [];
+    return [{ label, href: safeResourceUrl(record.href ?? record.url ?? record.target) }];
+  });
+}
+
+function safeMediaSource(props: Record<string, unknown>): string | null {
+  return safeResourceUrl(props.src ?? props.url ?? props.mediaUrl ?? props.videoUrl ?? props.audioUrl);
+}
+
+function CountdownDisplay({ target }: { target: string }) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+  useEffect(() => {
+    const update = () => setRemaining(Math.max(0, new Date(target).getTime() - Date.now()));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [target]);
+  const value = remaining ?? 0;
+  const days = remaining === null ? "--" : String(Math.floor(value / 86_400_000));
+  const hours = remaining === null ? "--" : String(Math.floor((value % 86_400_000) / 3_600_000));
+  const minutes = remaining === null ? "--" : String(Math.floor((value % 3_600_000) / 60_000));
+  const seconds = remaining === null ? "--" : String(Math.floor((value % 60_000) / 1_000));
+  return <div className="grid grid-cols-4 gap-2" aria-label="倒數時間"><span><strong className="block text-xl">{days}</strong><small>天</small></span><span><strong className="block text-xl">{hours}</strong><small>小時</small></span><span><strong className="block text-xl">{minutes}</strong><small>分鐘</small></span><span><strong className="block text-xl">{seconds}</strong><small>秒</small></span></div>;
+}
+
 function capabilityMessage(node: FunnelNode): string {
   const definition = getFunnelNodeDefinition(node.type);
   if (definition.capability.status !== "available") return `功能狀態：${definition.capability.status === "disabled" ? "已停用" : definition.capability.status === "limited" ? "有限支援" : "待驗證"}。${definition.capability.reason}`;
@@ -256,6 +303,66 @@ function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode }: { 
       const src = safeResourceUrl(props.src ?? props.imageUrl ?? props.url);
       return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} className="h-auto max-w-full object-cover" />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-500">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
     }
+    case "video": {
+      const src = safeMediaSource(props);
+      const poster = safeResourceUrl(props.poster);
+      return surface(src ? <video autoPlay={props.autoplay === true} controls={props.controls !== false} poster={poster ?? undefined} preload="metadata" className="max-w-full" src={src}>{stringProp(props, ["fallback", "alt"], "您的瀏覽器不支援影片播放。")} </video> : <UnsupportedNode node={node} message="影片網址不安全或尚未設定。" />);
+    }
+    case "audio": {
+      const src = safeMediaSource(props);
+      return surface(src ? <audio controls={props.controls !== false} preload="metadata" className="w-full" src={src}>{stringProp(props, ["fallback", "alt"], "您的瀏覽器不支援音訊播放。")} </audio> : <UnsupportedNode node={node} message="音訊網址不安全或尚未設定。" />);
+    }
+    case "carousel": {
+      const label = stringProp(props, ["ariaLabel", "title"], "圖片輪播");
+      return surface(<div aria-label={label} className="space-y-3" data-funnel-carousel="true" role="region">{children.length ? renderChildren() : <p className="text-sm text-slate-500">輪播目前沒有內容。</p>}</div>);
+    }
+    case "form": {
+      const label = stringProp(props, ["ariaLabel", "title"], "表單");
+      return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()}>{stringProp(props, ["title", "heading"]) ? <h3 className="mb-4 font-semibold">{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
+    }
+    case "form_input": {
+      const label = stringProp(props, ["label", "title", "placeholder"], "欄位");
+      const inputId = `${node.id}-input`;
+      return surface(<label className="block space-y-1" htmlFor={inputId}><span className="text-sm font-medium text-slate-700">{label}</span><input id={inputId} name={safeNodeName(node, props, node.id)} type={safeInputType(props.inputType ?? props.type)} placeholder={stringProp(props, ["placeholder"])} required={props.required === true} defaultValue={typeof props.defaultValue === "string" ? props.defaultValue : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>);
+    }
+    case "checkbox": {
+      const label = stringProp(props, ["label", "text", "title"], "我同意上述內容");
+      return surface(<label className="flex items-start gap-2"><input type="checkbox" name={safeNodeName(node, props, node.id)} required={props.required === true} defaultChecked={props.checked === true} className="mt-1" /><span>{label}</span></label>);
+    }
+    case "calendar": {
+      const eventId = stringProp(props, ["eventId", "calendarId", "bookingEventId"]);
+      return surface(eventId ? <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4" data-calendar-event-id={eventId}><p className="font-medium">行事曆</p><p className="mt-1 text-sm text-slate-600">已設定事件「{eventId}」，預約流程需由既有安全整合提供。</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="text-sm text-slate-600">日期<input type="date" disabled className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1" /></label><label className="text-sm text-slate-600">時間（Asia/Taipei）<input type="time" disabled className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1" /></label></div></div> : <UnsupportedNode node={node} message="尚未綁定行事曆事件；請先設定 event ID。時區：Asia/Taipei。" />);
+    }
+    case "x_share_button": {
+      const shareTarget = safeResourceUrl(props.url ?? props.targetUrl ?? props.href);
+      const href = shareTarget ? `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareTarget)}` : null;
+      return surface(href ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 font-semibold">分享到 X</a> : <UnsupportedNode node={node} message="尚未設定安全的分享網址。" />);
+    }
+    case "survey": {
+      const question = stringProp(props, ["question", "title", "label"], "請選擇一個答案");
+      const options = stringList(props.options ?? props.choices);
+      return surface(<fieldset className="space-y-2"><legend className="font-medium">{question}</legend>{(options.length ? options : ["選項一", "選項二"]).map((option, index) => <label key={`${node.id}-option-${index}`} className="flex items-center gap-2"><input type={props.multiple === true ? "checkbox" : "radio"} name={safeNodeName(node, props, node.id)} value={option} /><span>{option}</span></label>)}</fieldset>);
+    }
+    case "countdown": {
+      const target = safeDateTime(props.targetDate ?? props.endAt ?? props.deadline);
+      if (!target) return surface(<UnsupportedNode node={node} message="尚未設定有效的截止時間。" />);
+      return surface(<div className="rounded-xl border border-slate-200 bg-white/70 p-4 text-center" data-countdown-target={target}><p className="mb-2 text-sm text-slate-500">倒數至 <time dateTime={target} className="font-semibold">{new Date(target).toLocaleString("zh-TW")}</time></p><CountdownDisplay target={target} /></div>);
+    }
+    case "menu": {
+      const items = safeMenuItems(props.items ?? props.links);
+      return surface(<nav aria-label={stringProp(props, ["ariaLabel", "title"], "頁面選單")}><ul className="flex flex-wrap gap-3">{(items.length ? items : [{ label: "尚未設定選單項目", href: null }]).map((item, index) => <li key={`${node.id}-menu-${index}`}>{item.href ? <a href={item.href} className="text-slate-700 underline-offset-2 hover:underline">{item.label}</a> : <span className="text-slate-500">{item.label}</span>}</li>)}</ul></nav>);
+    }
+    case "faq": {
+      const question = stringProp(props, ["question", "title", "label"], "常見問題");
+      const items = Array.isArray(props.items) ? props.items.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const record = item as Record<string, unknown>;
+        const itemQuestion = stringProp(record, ["question", "title", "label"], "");
+        const answer = stringProp(record, ["answer", "content", "body"], "尚未設定答案。");
+        return itemQuestion ? [{ question: itemQuestion, answer }] : [];
+      }) : [];
+      return surface(items.length ? <div className="space-y-2">{items.map((item, index) => <details key={`${node.id}-faq-${index}`} className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{item.question}</summary><p className="mt-3 text-sm text-slate-600 whitespace-pre-line">{item.answer}</p></details>)}</div> : <details className="rounded-lg border border-slate-200 p-4"><summary className="cursor-pointer font-medium">{question}</summary><div className="mt-3">{children.length ? renderChildren() : <p className="text-sm text-slate-600">尚未設定答案。</p>}</div></details>);
+    }
     case "button": {
       const source: unknown = node.actions[0] ?? props.action;
       const action = safeAction(source);
@@ -265,7 +372,7 @@ function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode }: { 
       return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type="button" disabled={unsupportedAction} aria-disabled={unsupportedAction || undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
-    default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)}>{node.type === "faq" || node.type === "carousel" ? renderChildren() : null}</UnsupportedNode>);
+    default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
   }
 }
 
