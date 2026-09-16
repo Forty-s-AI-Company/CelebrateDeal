@@ -81,6 +81,27 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).not.toContain("script");
   });
 
+  it("renders a validated next_step action as a same-Funnel public route", () => {
+    const page = documentWith([node("button", "next", { props: { label: "下一步" }, actions: [{ type: "next_step", stepId: "thanks" }] })]);
+    page.flow = {
+      schemaVersion: 1,
+      id: "flow",
+      name: "名單 Funnel",
+      goal: "audience",
+      domain: "spring-list",
+      currency: "TWD",
+      capabilities: { webinar: { status: "unverified", reason: "尚未驗證" } },
+      steps: [
+        { schemaVersion: 1, id: "lead", name: "名單頁", path: "opt-in", type: "opt_in_page", template: { source: "blank" }, isSystem: false },
+        { schemaVersion: 1, id: "thanks", name: "感謝頁", path: "thank-you", type: "opt_in_thank_you_page", template: { source: "blank" }, isSystem: false },
+        { schemaVersion: 1, id: "inactive", name: "停用頁", path: "inactive", type: "inactive_page", template: { source: "system" }, isSystem: true },
+      ],
+    };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toContain('href="/lp/spring-list/thank-you"');
+    expect(html).not.toContain('disabled=""');
+  });
+
   it("renders safe media and form elements without external submission", () => {
     const page = documentWith([
       node("video", "video", { props: { src: "https://cdn.example.com/demo.mp4", poster: "/poster.jpg" } }),

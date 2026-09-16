@@ -31,9 +31,9 @@ describe("goal funnel initial documents", () => {
     expect(payment.every((node) => node.props.disabled === true && node.actions.length === 0)).toBe(true);
   });
 
-  it("自訂 Funnel 一開始就有可編輯資訊頁，不會停在唯讀系統頁", () => {
+  it("自訂 Funnel 依實測從系統停用頁開始，由使用者新增第一個步驟", () => {
     const state = createGoalFunnelStepPages({ id: "custom", name: "自訂", goal: "custom", domain: "custom" });
-    expect(state?.flow.steps.map((step) => [step.type, step.isSystem])).toEqual([["info_page", false], ["inactive_page", true]]);
-    expect(state?.activeStepId).toBe("info");
+    expect(state?.flow.steps.map((step) => [step.type, step.isSystem])).toEqual([["inactive_page", true]]);
+    expect(state?.activeStepId).toBe("inactive");
   });
 });
