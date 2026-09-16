@@ -28,6 +28,15 @@
 - 狀態：受方案限制。
 - CelebrateDeal：必做；配額需在送出前後清楚顯示，且不得造成半建立資料。
 
+## FUN-DELETE-001｜釋放測試名額
+
+- 入口：Funnels list > `CelebrateDeal Research Custom` 列尾選單 > Delete。
+- 操作：在 `You are about to remove this funnel. Continue?` 確認視窗按 Confirm。
+- 截圖：`71-custom-funnel-deleted-slot-released.png`。
+- 結果：Custom 測試 Funnel 永久刪除，清單由 3 Funnels 變成 2 Funnels；保留 Audience 與 Sell。這是完成 Custom 流程取證後，經使用者明確確認才執行的名額釋放，不代表帳戶上限改為 2。
+- 狀態：已實際操作；雲端刪除不可復原，本機規格與截圖保留。
+- CelebrateDeal：刪除必須二次確認，並在成功後立即更新配額與清單。
+
 ## FUN-SELL-001｜Sell 詳情流程
 
 - 入口：建立 `CelebrateDeal Research Sell` > 點名稱。
@@ -64,4 +73,3 @@
 - 結果：goal 可選、Save 可按；送出被 webinars 與 funnels 雙重配額擋下。
 - 狀態：受方案限制；詳情、steps、模板、View、Edit、Change template 無法驗證。
 - CelebrateDeal：仍需補查；至少先保留 goal 與三種 Webinar step type 的資料模型位置。
-
