@@ -16,7 +16,7 @@
   },
   "reasoning_policy": {
     "strategy": "adaptive_lowest_sufficient",
-    "default_difficulty": "routine",
+    "default_difficulty": "auto",
     "difficulty_levels": ["trivial", "routine", "complex", "critical"],
     "models": {
       "gpt-5.6-sol": {"minimum": "low", "maximum": "xhigh", "default": "high"},
@@ -37,7 +37,7 @@
     "deep": {"model": "gemini-3.1-pro-high", "reasoning_effort": "high", "wrapper": ".ai-team/scripts/Invoke-AgyDeep.ps1"}
   },
   "codex_profiles": {
-    "luna_worker_style": {
+    "luna": {
       "model": "gpt-5.6-luna",
       "reasoning_effort": "high",
       "reasoning_minimum": "high",
@@ -48,6 +48,36 @@
       "fallback_only": true,
       "availability": "runtime_dependent",
       "invocation": "native_agent_handoff_only"
+    },
+    "luna_readonly_escalation": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "reasoning_minimum": "high",
+      "reasoning_maximum": "max",
+      "reasoning_selection": "adaptive_lowest_sufficient",
+      "sandbox_mode": "read-only",
+      "provider": "native_agent",
+      "fallback_only": false,
+      "availability": "runtime_dependent",
+      "invocation": "native_agent_handoff_only"
+    }
+  },
+  "fallback_chains": {
+    "gemini_fast": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "codex_luna", "max_attempts": 0}
+      ]
+    },
+    "gemini_deep": {
+      "max_total_attempts": 2,
+      "profiles": [
+        {"profile": "gemini_deep", "max_attempts": 1},
+        {"profile": "gemini_fast", "max_attempts": 1},
+        {"profile": "codex_luna", "max_attempts": 0}
+      ]
     }
   },
   "fallback_chains": {
