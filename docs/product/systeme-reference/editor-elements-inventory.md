@@ -23,7 +23,8 @@
 - Countdown：可選固定日期時間、到期不動作或 redirect URL，並設定時間／標籤字體與顏色；預設顯示 DAYS/HOURS/MINUTES/SECONDS。
 - Raw HTML：提供 Edit code、對齊、margin、裝置可見性與 HTML ID；本輪未輸入或執行外部程式碼。
 - FAQ：可新增 FAQ item、設定間距／圓角／展開收合 icon、字體、顏色、padding、shadow；每個答案區仍是可拖入其他元素的容器。
-- 僅看到入口：Form input、Button、Checkbox、reCAPTCHA、Payment、X share button、Menu、Horizontal line 尚待逐項拖入；Payment 類未串接商品或付款。
+- Form input：直接拖入時若未選 Input type，畫布顯示 `WARNING - INPUT TYPE NOT SET`；可設定類型、placeholder、Optional、icon、字體、背景、間距、border、shadow、裝置可見性與 HTML ID。截圖：`77-element-form-input-settings.png`。
+- 僅看到入口：Button、Checkbox、reCAPTCHA、Calendar、Payment、X share button、Survey、Menu、Horizontal line 尚待逐項拖入；Payment 類未串接商品或付款。
 - 可見文字設定：breadcrumb `Section > Row > Text`；move up/down、Copy、Create block、Remove；font size、line height、font type、letter spacing、文字色／背景色、padding、margin、alignment、delay、Desktop/Mobile visibility、Advanced HTML attributes、ID。
 - 桌機／手機分離：同一文字桌機 40px/24px，手機 34px/44px，padding 也不同，證實 responsive 值可分別設定。
 - CelebrateDeal：Text、layout、Form、Media、Button、FAQ、Countdown 為必做；Payment 與 Raw HTML 為方案限制／後做；每個節點需保留層級 breadcrumb 與裝置覆寫。
