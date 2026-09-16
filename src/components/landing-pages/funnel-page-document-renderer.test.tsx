@@ -68,6 +68,19 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).toContain('disabled=""');
   });
 
+  it("keeps validated Popup and form button actions executable without rendering unsafe code", () => {
+    const page = documentWith([
+      node("button", "popup-button", { props: { label: "開啟優惠" }, actions: [{ type: "show_popup", popupId: "popup_offer" }] }),
+      node("button", "submit-button", { props: { label: "送出" }, actions: [{ type: "submit_form", formId: "lead_form" }] }),
+    ]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toContain("開啟優惠");
+    expect(html).toContain('type="button"');
+    expect(html).toContain('type="submit"');
+    expect(html).not.toContain('disabled=""');
+    expect(html).not.toContain("script");
+  });
+
   it("renders safe media and form elements without external submission", () => {
     const page = documentWith([
       node("video", "video", { props: { src: "https://cdn.example.com/demo.mp4", poster: "/poster.jpg" } }),

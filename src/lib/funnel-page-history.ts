@@ -5,6 +5,7 @@ import {
   type FunnelNodeStyle,
   type PageDocument,
 } from "@/lib/funnel-page-document";
+import type { FunnelFlow } from "@/lib/funnel-flow";
 
 type NodeOverrides = FunnelNode["overrides"];
 
@@ -21,6 +22,7 @@ export type FunnelPageCommand =
   | { type: "move_up"; nodeId: string }
   | { type: "move_down"; nodeId: string }
   | { type: "update_settings"; settings: Partial<PageDocument["settings"]> }
+  | { type: "update_flow"; flow?: FunnelFlow }
   | { type: "restore"; node: FunnelNode; parentId: string | null; popupId: string | null; index: number };
 
 export type FunnelNodePatch = {
@@ -306,6 +308,11 @@ function execute(document: PageDocument, command: FunnelPageCommand): CommandRes
       const previous = cloneValue(source.settings);
       source.settings = { ...source.settings, ...cloneValue(command.settings) };
       return parseResult(source, { type: "update_settings", settings: previous });
+    }
+    case "update_flow": {
+      const previous = source.flow ? cloneValue(source.flow) : undefined;
+      source.flow = command.flow ? cloneValue(command.flow) : undefined;
+      return parseResult(source, { type: "update_flow", flow: previous });
     }
   }
 }

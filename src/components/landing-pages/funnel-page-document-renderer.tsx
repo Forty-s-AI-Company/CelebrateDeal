@@ -369,8 +369,10 @@ function NodeRenderer({ node, viewport, mode, selectedNodeId, onSelectNode, onMo
       const action = safeAction(source);
       const label = stringProp(props, ["label", "text", "title"], "立即行動");
       const sourceType = actionType(source);
-      const unsupportedAction = sourceType !== null && sourceType !== "none" && (sourceType !== "open_url" && sourceType !== "download" || !action);
-      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type="button" disabled={unsupportedAction} aria-disabled={unsupportedAction || undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
+      const popupId = sourceType === "show_popup" && source && typeof source === "object" && "popupId" in source && typeof source.popupId === "string" ? source.popupId : null;
+      const submit = sourceType === "submit_form";
+      const supportedButton = sourceType === null || sourceType === "none" || submit || Boolean(popupId);
+      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
