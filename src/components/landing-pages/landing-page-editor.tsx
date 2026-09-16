@@ -21,7 +21,6 @@ const viewports = [
   { width: 375, height: "auto" as const, icon: "Smartphone" as const, label: "手機預覽" },
   { width: 1440, height: "auto" as const, icon: "Monitor" as const, label: "桌機預覽" },
 ];
-const overrides = { headerActions: () => <></> };
 
 /**
  * Client-only Puck integration. Puck owns the live draft history, while the
@@ -50,11 +49,10 @@ export function LandingPageEditor({ content, onChange, forms, live, disabled = f
     config={config}
     data={session.content.data as Data}
     height="calc(100dvh - 8rem)"
-    headerTitle="落地頁編輯器"
+    headerTitle="CelebrateDeal Funnel 編輯器"
     viewports={viewports}
     metadata={metadata}
     permissions={disabled ? { delete: false, duplicate: false, drag: false, edit: false } : undefined}
-    overrides={overrides}
     onChange={(data) => {
       const next = parseLandingPageContent({ schemaVersion: 1, data });
       if (!next) {
