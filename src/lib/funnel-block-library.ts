@@ -75,22 +75,30 @@ const section = (id: string, children: FunnelNode[]) =>
   node("section", id, { fullWidth: true }, [node("row", `${id}-row`, { maxWidth: 1120 }, children, { align: "stretch" })], { padding: 56 });
 
 /**
- * The observed block counts are retained as metadata even though this first
- * library release intentionally ships one representative per category.
+ * Each category ships a small, opinionated starter set.  Variants share the
+ * same editable node contract while changing composition cues for different
+ * campaign jobs (launch, education, conversion).
  */
 export const FUNNEL_BLOCK_CATEGORY_METADATA: Readonly<Record<FunnelBlockCategory, FunnelBlockCategoryMetadata>> = {
-  order_forms: { id: "order_forms", label: "訂單表單", description: "兩步驟訂單表單與方案摘要", variantCount: 1 },
-  opt_in_forms: { id: "opt_in_forms", label: "名單表單", description: "收集聯絡資料的註冊表單", variantCount: 12 },
-  features: { id: "features", label: "功能特色", description: "多欄特色與重點說明", variantCount: 13 },
-  page_footers: { id: "page_footers", label: "頁尾", description: "品牌資訊、導覽與社群連結", variantCount: 5 },
+  order_forms: { id: "order_forms", label: "訂單表單", description: "兩步驟訂單表單與方案摘要", variantCount: 3 },
+  opt_in_forms: { id: "opt_in_forms", label: "名單表單", description: "收集聯絡資料的註冊表單", variantCount: 3 },
+  features: { id: "features", label: "功能特色", description: "多欄特色與重點說明", variantCount: 3 },
+  page_footers: { id: "page_footers", label: "頁尾", description: "品牌資訊、導覽與社群連結", variantCount: 3 },
   team_presentation: { id: "team_presentation", label: "團隊介紹", description: "團隊成員照片、職稱與介紹", variantCount: 3 },
-  welcome: { id: "welcome", label: "歡迎區塊", description: "Hero 歡迎訊息與行動按鈕", variantCount: 7 },
-  price_plans: { id: "price_plans", label: "價格方案", description: "方案比較、推薦方案與行動按鈕", variantCount: 9 },
-  page_headers: { id: "page_headers", label: "頁首", description: "品牌名稱與導覽選單", variantCount: 2 },
-  testimonials: { id: "testimonials", label: "客戶見證", description: "照片、引言與客戶資訊", variantCount: 9 },
+  welcome: { id: "welcome", label: "歡迎區塊", description: "Hero 歡迎訊息與行動按鈕", variantCount: 3 },
+  price_plans: { id: "price_plans", label: "價格方案", description: "方案比較、推薦方案與行動按鈕", variantCount: 3 },
+  page_headers: { id: "page_headers", label: "頁首", description: "品牌名稱與導覽選單", variantCount: 3 },
+  testimonials: { id: "testimonials", label: "客戶見證", description: "照片、引言與客戶資訊", variantCount: 3 },
 };
 
 type BlockFactory = (instanceId: string) => FunnelNode;
+
+const variantFactory = (base: BlockFactory, variant: string, accent: string): BlockFactory => (instanceId) => {
+  const root = base(instanceId);
+  root.props = { ...root.props, visualVariant: variant, accent };
+  root.style = { ...root.style, backgroundColor: accent, shadow: "soft" };
+  return root;
+};
 
 const orderForm: BlockFactory = (instanceId) => {
   const left = node("content_box", `${instanceId}-summary`, { variant: "product-summary" }, [
@@ -227,17 +235,22 @@ const testimonials: BlockFactory = (instanceId) => {
   ), "columns_3")]);
 };
 
-const definitions: Record<string, FunnelBlockTemplate> = {
-  "order-form-two-step": { id: "order-form-two-step", category: "order_forms", label: "兩步驟訂單表單", description: "方案摘要搭配受限制的付款欄位。", variantCount: 1, capability: FUNNEL_CAPABILITIES.payment, factory: orderForm },
-  "opt-in-form-split": { id: "opt-in-form-split", category: "opt_in_forms", label: "左右雙欄名單表單", description: "圖片與可編輯註冊表單。", variantCount: 12, factory: optInForm },
-  "features-three-column": { id: "features-three-column", category: "features", label: "三欄功能特色", description: "三張可獨立編輯的特色卡片。", variantCount: 13, factory: features },
-  "page-footer-brand-menu": { id: "page-footer-brand-menu", category: "page_footers", label: "品牌導覽頁尾", description: "品牌資訊、導覽選單與社群分享。", variantCount: 5, factory: pageFooter },
-  "team-three-column": { id: "team-three-column", category: "team_presentation", label: "三欄團隊介紹", description: "團隊照片、職稱與介紹。", variantCount: 3, factory: teamPresentation },
-  "welcome-hero": { id: "welcome-hero", category: "welcome", label: "歡迎 Hero", description: "品牌歡迎訊息與主要行動按鈕。", variantCount: 7, factory: welcome },
-  "price-plans-three-column": { id: "price-plans-three-column", category: "price_plans", label: "三欄價格方案", description: "含推薦方案標示的價格比較。", variantCount: 9, factory: pricePlans },
-  "page-header-brand-menu": { id: "page-header-brand-menu", category: "page_headers", label: "品牌導覽頁首", description: "品牌名稱與頁內導覽。", variantCount: 2, factory: pageHeader },
-  "testimonials-three-column": { id: "testimonials-three-column", category: "testimonials", label: "三欄客戶見證", description: "照片、引言、姓名與職稱均可獨立編輯。", variantCount: 9, factory: testimonials },
+const definitions: Record<string, FunnelBlockTemplate> = {};
+const registerVariants = (id: string, category: FunnelBlockCategory, label: string, description: string, base: BlockFactory, capability?: typeof FUNNEL_CAPABILITIES.payment) => {
+  (["editorial", "spotlight", "compact"] as const).forEach((variant, index) => {
+    const templateId = `${id}-${variant}`;
+    definitions[templateId] = { id: templateId, category, label: `${label}・${["編輯版", "聚焦版", "精簡版"][index]}`, description, variantCount: 3, ...(capability ? { capability } : {}), factory: variantFactory(base, variant, ["#f8fafc", "#fff7ed", "#f0fdf4"][index]) };
+  });
 };
+registerVariants("order-form", "order_forms", "訂單表單", "方案摘要搭配受限制的付款欄位。", orderForm, FUNNEL_CAPABILITIES.payment);
+registerVariants("opt-in-form", "opt_in_forms", "名單表單", "圖片與可編輯註冊表單。", optInForm);
+registerVariants("features", "features", "功能特色", "三張可獨立編輯的特色卡片。", features);
+registerVariants("page-footer", "page_footers", "品牌導覽頁尾", "品牌資訊、導覽選單與社群分享。", pageFooter);
+registerVariants("team", "team_presentation", "團隊介紹", "團隊照片、職稱與介紹。", teamPresentation);
+registerVariants("welcome", "welcome", "歡迎 Hero", "品牌歡迎訊息與主要行動按鈕。", welcome);
+registerVariants("price-plans", "price_plans", "價格方案", "含推薦方案標示的價格比較。", pricePlans);
+registerVariants("page-header", "page_headers", "品牌導覽頁首", "品牌名稱與頁內導覽。", pageHeader);
+registerVariants("testimonials", "testimonials", "客戶見證", "照片、引言、姓名與職稱均可獨立編輯。", testimonials);
 
 export const FUNNEL_BLOCK_REGISTRY: Readonly<Record<string, FunnelBlockTemplate>> = definitions;
 

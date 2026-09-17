@@ -20,6 +20,7 @@ describe("funnel template gallery", () => {
     expect(listFunnelTemplateGallery("sell").map((item) => item.category)).toEqual(["商品結帳", "簡潔結帳", "內容訂閱"]);
     expect(listFunnelTemplateGallery("audience").map((item) => item.category)).toEqual(["志工招募", "公益活動", "環境倡議"]);
     expect(listFunnelTemplateGallery("custom").map((item) => item.category)).toEqual(["隱私", "條款", "品牌資訊"]);
+    expect(listFunnelTemplateGallery("webinar").map((item) => item.category)).toEqual(["播放會場", "報名完成", "活動報名"]);
   });
 
   it.each(FUNNEL_TEMPLATE_GALLERY)("$id 可實例化為有效且可編輯的 PageDocument", (template) => {
@@ -60,6 +61,16 @@ describe("funnel template gallery", () => {
       expect(JSON.stringify(nodes)).toContain("發布前");
       expect(JSON.stringify(nodes)).not.toMatch(/<script|javascript:/iu);
     }
+  });
+
+  it("Webinar 三階段具備可辨識且用途不同的節點結構", () => {
+    const registration = flatten(instantiateFunnelTemplate("webinar-registration").root);
+    const thankYou = flatten(instantiateFunnelTemplate("webinar-thank-you").root);
+    const broadcast = flatten(instantiateFunnelTemplate("webinar-broadcast").root);
+    expect(registration.some((node) => node.type === "form")).toBe(true);
+    expect(JSON.stringify(thankYou)).toContain("確認 Email");
+    expect(JSON.stringify(broadcast)).toContain("播放入口");
+    expect([registration.length, thankYou.length, broadcast.length]).not.toEqual([registration.length, registration.length, registration.length]);
   });
 
   it("未知模板明確拒絕", () => {

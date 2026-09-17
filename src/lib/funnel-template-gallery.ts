@@ -184,20 +184,30 @@ const availableReason = "可展開為獨立編輯的 CelebrateDeal 節點";
 const limitedReason = "版面可編輯；需在訂單步驟綁定有效商品，付款方式由既有結帳服務提供。未綁定時不可付款";
 
 const webinarPage = (prefix: string, stage: "registration" | "thank-you" | "broadcast") => {
-  const copy = {
-    registration: ["線上分享會", "為下一個突破，留一段學習時間", "了解活動主題與講者，透過下方報名表單保留席次。"],
-    "thank-you": ["報名後續資訊", "謝謝你的參與", "若你已送出報名，請到 Email 完成確認，再記下活動時間。"],
-    broadcast: ["活動會場", "歡迎來到線上分享會", "活動開始後，可由下方入口進入觀看；重播依活動設定開放。"],
-  }[stage];
-  // 真正表單與播放入口由公開頁綁定資源提供，模板本身只有一般可編輯節點。
-  return [section(prefix, "hero", [text(prefix, "eyebrow", copy[0]!), headline(prefix, "title", copy[1]!, "h1"), text(prefix, "intro", copy[2]!)], "#eff6ff"),
-    section(prefix, "details", [headline(prefix, "details_title", "活動資訊"), text(prefix, "details_text", "請填入講者介紹、活動主題與參與方式。")])];
+  // 真正報名與播放能力仍由公開頁綁定的已驗證資源提供；模板只組合一般可編輯節點。
+  if (stage === "registration") return [
+    section(prefix, "hero", [columns(prefix, "hero_columns", [
+      box(prefix, "hero_copy", [text(prefix, "eyebrow", "CelebrateDeal 線上講堂"), headline(prefix, "title", "把模糊的想法，整理成能落地的行動", "h1"), text(prefix, "intro", "60 分鐘實作分享，帶你拆解方法、案例與下一步。"), list(prefix, "highlights", ["真實案例拆解", "現場提問交流", "課後行動清單"])]),
+      form(prefix, "registration_form", "免費保留席次", "我要報名"),
+    ])], "#eff6ff"),
+    section(prefix, "speaker", [columns(prefix, "speaker_columns", [image(prefix, "speaker_image", "講者形象照"), box(prefix, "speaker_copy", [text(prefix, "speaker_eyebrow", "本場講者"), headline(prefix, "speaker_name", "林怡安｜內容策略顧問", "h2"), text(prefix, "speaker_intro", "擅長把複雜策略整理成團隊可以一起執行的清楚步驟。")])])]),
+    section(prefix, "agenda", [headline(prefix, "agenda_title", "這場分享會會帶走什麼？"), columns(prefix, "agenda_columns", [box(prefix, "agenda_one", [headline(prefix, "agenda_one_title", "看懂卡點", "h3"), text(prefix, "agenda_one_text", "用簡單框架找出轉換流程真正卡住的位置。")]), box(prefix, "agenda_two", [headline(prefix, "agenda_two_title", "帶走做法", "h3"), text(prefix, "agenda_two_text", "把概念變成明天就能開始的小步驟。")]), box(prefix, "agenda_three", [headline(prefix, "agenda_three_title", "持續優化", "h3"), text(prefix, "agenda_three_text", "建立能被團隊共同追蹤的迭代節奏。")])], 3)]),
+  ];
+  if (stage === "thank-you") return [
+    section(prefix, "hero", [text(prefix, "eyebrow", "報名完成"), headline(prefix, "title", "席次已為你保留，接下來做三件小事", "h1"), text(prefix, "intro", "把活動放進行事曆，也記得查看收件匣中的參與資訊。")], "#ecfdf5"),
+    section(prefix, "checklist", [columns(prefix, "checklist_columns", [box(prefix, "check_mail", [headline(prefix, "check_mail_title", "01｜確認 Email", "h3"), text(prefix, "check_mail_text", "活動連結與注意事項會寄到報名信箱。")]), box(prefix, "check_calendar", [headline(prefix, "check_calendar_title", "02｜記下時間", "h3"), text(prefix, "check_calendar_text", "預留不被打擾的學習時間，準時加入。")]), box(prefix, "check_question", [headline(prefix, "check_question_title", "03｜準備問題", "h3"), text(prefix, "check_question_text", "先記下最想解決的一個問題，現場會更有收穫。")])], 3)]),
+    section(prefix, "share", [headline(prefix, "share_title", "也想邀請夥伴一起參加？"), text(prefix, "share_text", "把活動頁分享給正在面對相同挑戰的朋友。"), button(prefix, "share_button", "返回活動資訊", { type: "open_url", href: "#top", newTab: false })]),
+  ];
+  return [
+    section(prefix, "hero", [columns(prefix, "hero_columns", [box(prefix, "player", [text(prefix, "live_badge", "LIVE｜活動進行中"), headline(prefix, "title", "歡迎來到 CelebrateDeal 線上講堂", "h1"), text(prefix, "player_notice", "播放入口會依已綁定的 Webinar 場次與開放狀態顯示。")]), box(prefix, "session", [headline(prefix, "session_title", "本場重點", "h3"), list(prefix, "session_list", ["釐清目前最重要的目標", "拆解可執行的轉換路徑", "完成一份下一步行動清單"])])])], "#f8fafc"),
+    section(prefix, "notes", [columns(prefix, "notes_columns", [box(prefix, "notes_copy", [headline(prefix, "notes_title", "先把問題寫下來", "h2"), text(prefix, "notes_text", "觀看過程若有疑問，先記錄情境與期待結果，提問時會更容易得到具體建議。")]), box(prefix, "support", [headline(prefix, "support_title", "遇到播放問題？", "h3"), text(prefix, "support_text", "請先重新整理頁面並確認網路連線；仍無法觀看時，再聯絡主辦單位。")])])]),
+  ];
 };
 
 const templates: FunnelTemplateGalleryItem[] = [
-  { id: "webinar-broadcast", referenceId: "celebratedeal-webinar-broadcast", goal: "webinar", category: "Webinar 播放頁", name: "Webinar 播放頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 播放頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "broadcast") },
-  { id: "webinar-thank-you", referenceId: "celebratedeal-webinar-thank-you", goal: "webinar", category: "Webinar 感謝頁", name: "Webinar 感謝頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 感謝頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "thank-you") },
-  { id: "webinar-registration", referenceId: "celebratedeal-webinar-registration", goal: "webinar", category: "Webinar 報名頁", name: "Webinar 報名頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 報名頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "registration") },
+  { id: "webinar-broadcast", referenceId: "celebratedeal-webinar-broadcast", goal: "webinar", category: "播放會場", name: "專注播放會場", description: "直播狀態、重點摘要、提問筆記與播放問題指引。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "專注播放會場", summary: "線上活動與參與資訊", palette: ["#f8fafc", "#0f172a", "#f59e0b"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "broadcast") },
+  { id: "webinar-thank-you", referenceId: "celebratedeal-webinar-thank-you", goal: "webinar", category: "報名完成", name: "報名完成行動清單", description: "Email、行事曆與提問準備三步驟，降低報名後流失。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "報名完成行動清單", summary: "三步驟參與提醒", palette: ["#ecfdf5", "#047857", "#ffffff"], sectionCount: 3 }, build: (prefix) => webinarPage(prefix, "thank-you") },
+  { id: "webinar-registration", referenceId: "celebratedeal-webinar-registration", goal: "webinar", category: "活動報名", name: "講者型活動報名頁", description: "價值主張、報名表單、講者介紹與三欄議程重點。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "講者型活動報名頁", summary: "講者與議程導向的長頁", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 3 }, build: (prefix) => webinarPage(prefix, "registration") },
   { id: "sell-product-checkout", referenceId: "25969", goal: "sell", category: "商品結帳", name: "暖色商品結帳", description: "地址與聯絡資料、方案摘要、付款限制提示及信任區塊。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "暖色商品結帳", summary: "雙欄結帳與信任資訊", palette: ["#fff7ed", "#9a3412", "#ffffff"], sectionCount: 2 }, build: (prefix) => checkout(prefix) },
   { id: "sell-simple-checkout", referenceId: "25963", goal: "sell", category: "簡潔結帳", name: "藍白簡潔結帳", description: "精簡的聯絡資料與訂單摘要雙欄結構。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "藍白簡潔結帳", summary: "聚焦轉換的精簡版面", palette: ["#ffffff", "#2563eb", "#eff6ff"], sectionCount: 2 }, build: (prefix) => checkout(prefix, true) },
   { id: "sell-content-subscription", referenceId: "25957", goal: "sell", category: "內容訂閱", name: "內容訂閱方案", description: "訂閱價值、方案卡與 bonus 內容；付款仍維持限制狀態。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "內容訂閱方案", summary: "方案卡與加值內容", palette: ["#fffbeb", "#a16207", "#ffffff"], sectionCount: 2 }, build: subscription },

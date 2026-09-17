@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
+import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
 
 function node(type: FunnelNode["type"], id: string, extra: Partial<FunnelNode> | FunnelNode[] = {}): FunnelNode {
   const details = Array.isArray(extra) ? { children: extra } : extra;
@@ -17,6 +18,22 @@ function documentWith(nodes: FunnelNode[]): PageDocument {
 }
 
 describe("FunnelPageDocumentRenderer", () => {
+  it("keeps a renderer snapshot signature for every registered commercial block variant", () => {
+    const signatures = Object.values(FUNNEL_BLOCK_REGISTRY).map((template) => {
+      const block = instantiateBlock(template.id);
+      const page = { ...createEmptyPageDocument(`renderer-${template.id}`, template.label), root: [block] };
+      const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} mode="editor" />);
+      return {
+        id: template.id,
+        category: template.category,
+        sections: (html.match(/data-funnel-node-type="section"/gu) ?? []).length,
+        editableNodes: (html.match(/data-funnel-node-id=/gu) ?? []).length,
+        hasHorizontalOverflowGuard: html.includes("min-w-0"),
+      };
+    });
+    expect(signatures).toMatchSnapshot();
+  });
+
   it("renders the supported Section/Row/Column/Element hierarchy with safe attributes", () => {
     const page = documentWith([
       node("columns_2", "columns", { children: [node("text", "text", { props: { text: "歡迎來到 CelebrateDeal" }, attributes: { id: "hero-copy", "data-testid": "copy" } })] }),

@@ -18,7 +18,7 @@ describe("Funnel block library", () => {
     expect(Object.keys(FUNNEL_BLOCK_CATEGORY_METADATA).sort()).toEqual([...FUNNEL_BLOCK_CATEGORIES].sort());
     for (const category of FUNNEL_BLOCK_CATEGORIES) {
       const blocks = getFunnelBlocksByCategory(category);
-      expect(blocks.length).toBeGreaterThanOrEqual(1);
+      expect(blocks.length).toBeGreaterThanOrEqual(3);
       expect(blocks.every((block) => block.category === category)).toBe(true);
       expect(blocks[0]?.variantCount).toBe(FUNNEL_BLOCK_CATEGORY_METADATA[category].variantCount);
     }
@@ -35,8 +35,9 @@ describe("Funnel block library", () => {
   });
 
   it("每次加入都產生唯一 ID，且 block 內節點可獨立選取", () => {
-    const first = instantiateBlock("testimonials-three-column");
-    const second = instantiateBlock("testimonials-three-column");
+    const testimonialId = getFunnelBlocksByCategory("testimonials")[0].id;
+    const first = instantiateBlock(testimonialId);
+    const second = instantiateBlock(testimonialId);
     const firstIds = flatten([first]).map((item) => item.id);
     const secondIds = flatten([second]).map((item) => item.id);
     expect(new Set(firstIds).size).toBe(firstIds.length);
@@ -48,7 +49,8 @@ describe("Funnel block library", () => {
   });
 
   it("支付 block 明確標記受限制，不建立假的付款流程", () => {
-    const root = instantiateBlock("order-form-two-step");
+    const orderId = getFunnelBlocksByCategory("order_forms")[0].id;
+    const root = instantiateBlock(orderId);
     const paymentNodes = flatten([root]).filter((item) => ["offer_price", "payment_method", "payment_button"].includes(item.type));
     expect(paymentNodes.length).toBe(3);
     expect(paymentNodes.every((item) => item.props.disabled === true && item.props.capabilityStatus === "limited")).toBe(true);
