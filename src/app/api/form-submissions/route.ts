@@ -577,11 +577,13 @@ function nativeFormPayload(formData: FormData | null) {
   }
 
   const liveId = formData.get("liveId");
+  const landingPageId = formData.get("landingPageId");
   const referralCode = formData.get("referralCode");
   const shareCode = formData.get("shareCode");
   const redirectTo = formData.get("redirectTo");
   return {
     formId: String(formData.get("formId") ?? ""),
+    landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
     liveId: typeof liveId === "string" && liveId ? liveId : null,
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,

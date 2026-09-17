@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   delete: vi.fn(),
   save: vi.fn(),
+  saveSteps: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
   duplicate: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/landing-page-service", () => ({
   createLandingPage: mocks.create,
   deleteLandingPage: mocks.delete,
   saveLandingPageDraft: mocks.save,
+  saveLandingPageStepMetadata: mocks.saveSteps,
   publishLandingPage: mocks.publish,
   unpublishLandingPage: mocks.unpublish,
   duplicateLandingPage: mocks.duplicate,
@@ -53,6 +55,7 @@ beforeEach(() => {
   mocks.create.mockResolvedValue({ id: "page-1", revision: 1 });
   mocks.delete.mockResolvedValue({ id: "page-1" });
   mocks.save.mockResolvedValue({ id: "page-1", revision: 2 });
+  mocks.saveSteps.mockResolvedValue({ id: "page-1", revision: 3 });
   mocks.publish.mockResolvedValue({ id: "page-1", revision: 3, version: 1 });
   mocks.unpublish.mockResolvedValue({ id: "page-1", revision: 4 });
   mocks.duplicate.mockResolvedValue({ id: "page-copy", revision: 1 });
@@ -86,6 +89,19 @@ describe("landingPageAction", () => {
 
     expect(result).toMatchObject({ status: "error", message: expect.stringContaining("版本資訊") });
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("驗證並轉交 bounded Step metadata command", async () => {
+    const mutation = { type: "rename", stepId: "opt_in", name: "新版名單頁" };
+    const result = await landingPageAction(idle, form({ operation: "save_steps", id: "page-1", revision: "2", mutation: JSON.stringify(mutation) }));
+    expect(mocks.saveSteps).toHaveBeenCalledWith({ id: "page-1", revision: 2, mutation });
+    expect(result).toMatchObject({ status: "success", revision: 3 });
+  });
+
+  it("拒絕未宣告的 Step metadata command", async () => {
+    const result = await landingPageAction(idle, form({ operation: "save_steps", id: "page-1", revision: "2", mutation: JSON.stringify({ type: "replace_canvas", content: {} }) }));
+    expect(result).toMatchObject({ status: "error" });
+    expect(mocks.saveSteps).not.toHaveBeenCalled();
   });
 
   it("maps a compare-and-swap conflict to recoverable feedback", async () => {
