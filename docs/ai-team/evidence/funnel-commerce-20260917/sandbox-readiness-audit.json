@@ -39,6 +39,22 @@
     "Extend and review the fixed trusted sandbox contract to cover Funnel source, owner, product and bump references, then land it on the protected default branch through the authorized process before it receives secrets.",
     "Run the approved exact-source task and validate sanitized success, failure/cancellation and idempotency evidence before declaring Goal 3 complete."
   ],
+  "publicationScopeFollowup": {
+    "localCommitsAheadBeforeThisFollowup": 50,
+    "remotePrHeadRevalidated": "d2213ec59aebad5f5700cacea2e4abc400511b7b",
+    "remotePrState": "OPEN",
+    "outsideGoal3CommitExamples": [
+      "3431d76a fix(security): render MFA enrollment QR code",
+      "be5c9a8a fix(auth): complete MFA operations return flow",
+      "7d3d14c2 feat(ui): unify remaining operations experience",
+      "d33c2f85 feat(ui): unify SaaS operations experience",
+      "ac687959 fix(live): complete isolated integration acceptance and lifecycle repairs"
+    ],
+    "workflowFilesChangedSinceRemoteHead": [],
+    "localCiTriggers": ["push", "pull_request"],
+    "hostingIntegrationAutoDeployPolicy": "Not established by local workflow inspection; absence of a deployment workflow does not prove that hosting integrations cannot deploy.",
+    "decision": "Do not push the entire branch as a Goal 3-only update. Resolve publication scope and non-production deployment policy first; no external mutation was performed."
+  },
   "safety": {
     "githubOperations": "read-only metadata and repository source",
     "secretStoresOrRawRunLogsRead": false,
