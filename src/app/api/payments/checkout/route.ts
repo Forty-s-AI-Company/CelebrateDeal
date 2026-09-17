@@ -1109,6 +1109,6 @@ async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: s
       form: { vendorId },
       live: { is: { vendorId } },
     },
-    select: { id: true, liveId: true },
+    select: { id: true, liveId: true, live: { select: { projectId: true } } },
   });
 }

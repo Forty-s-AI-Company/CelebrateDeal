@@ -191,6 +191,8 @@ async function appendEvent(
 export type CreateCommerceOrderForCheckoutInput = {
   vendorId: string;
   productId: string;
+  /** Server-owned project attribution; never accepted directly from a buyer. */
+  projectId?: string;
   orderNumber: string;
   checkoutIdempotencyKey: string;
   paymentTransactionId: string;
@@ -393,6 +395,7 @@ export async function createCommerceOrderForCheckout(
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
+    projectId: input.projectId ?? null,
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
     checkoutIdentityHash,
