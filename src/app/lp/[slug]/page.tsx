@@ -33,7 +33,11 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
   const page = await load((await params).slug);
   if (!page) notFound();
   if (isFunnelStepPages(page.content)) {
-    if (page.content.flow.goal === "webinar") return <FunnelWebinarExperience state={page.content} stepId={page.content.flow.steps[0].id} slug={page.slug} resource={page.webinar} />;
+    if (page.content.flow.goal === "webinar") {
+      const firstStep = page.content.flow.steps[0];
+      if (!firstStep) notFound();
+      return <FunnelWebinarExperience state={page.content} stepId={firstStep.id} slug={page.slug} resource={page.webinar} />;
+    }
     const document = getPublicFunnelPage(page.content);
     if (!document) notFound();
     const nextPath = getNextPublicFunnelStepPath(page.content, document.id);

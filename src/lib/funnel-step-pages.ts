@@ -332,9 +332,10 @@ export function duplicateFunnelStepPage(state: FunnelStepPages, stepId: string, 
   return fromFlowMutation(valid, duplicateFunnelStep(valid.flow, stepId, input), (next) => {
     if (!source) return "找不到要複製的步驟";
     const copy = next.flow.steps.find((step) => !valid.flow.steps.some((old) => old.id === step.id));
-    if (!copy || !valid.pages[source.id]) return "找不到複製後的步驟或頁面";
+    const sourcePage = valid.pages[source.id];
+    if (!copy || !sourcePage) return "找不到複製後的步驟或頁面";
     next.pages[copy.id] = duplicateSnapshot(
-      valid.pages[source.id], next.flow, source.id, copy.id,
+      sourcePage, next.flow, source.id, copy.id,
       new Set(Object.values(next.pages).map((page) => page.id)), allNodeIds(valid), allPopupIds(valid),
     );
     return null;
