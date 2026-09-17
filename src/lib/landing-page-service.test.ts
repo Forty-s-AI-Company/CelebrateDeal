@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   landingPageCreate: vi.fn(), landingPageDeleteMany: vi.fn(), landingPageFindFirst: vi.fn(), landingPageFindMany: vi.fn(), landingPageUpdateMany: vi.fn(),
   versionCreate: vi.fn(), versionCount: vi.fn(), versionFindFirst: vi.fn(),
   formFindMany: vi.fn(), liveFindFirst: vi.fn(), liveFindMany: vi.fn(), transaction: vi.fn(),
+  productFindMany: vi.fn(),
 }));
 
 const database = {
@@ -12,6 +13,7 @@ const database = {
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
   registrationForm: { findMany: mocks.formFindMany },
   live: { findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany },
+  product: { findMany: mocks.productFindMany },
 };
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireManager }));
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.salesScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季專案", isAggregate: false, isLegacyWorkspace: false });
   mocks.formFindMany.mockImplementation(async (args: unknown) => formRowsFrom(args));
   mocks.liveFindFirst.mockResolvedValue(null); mocks.liveFindMany.mockResolvedValue([]);
+  mocks.productFindMany.mockResolvedValue([]);
   mocks.landingPageCreate.mockResolvedValue(page({ id: "page-new", revision: 1 }));
   mocks.landingPageDeleteMany.mockResolvedValue({ count: 1 });
   mocks.landingPageFindFirst.mockResolvedValue(page()); mocks.landingPageFindMany.mockResolvedValue([]); mocks.landingPageUpdateMany.mockResolvedValue({ count: 1 });

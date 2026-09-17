@@ -70,6 +70,7 @@ import {
 } from "@/lib/live-interaction";
 import { parseCheckoutInvoiceSelection } from "@/lib/taiwan-invoice-validator";
 import { createInvoiceCheckoutIdentityHash } from "@/lib/taiwan-invoice-request";
+import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 
 const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
   // Kept only for backward-compatible request parsing. Attribution remains
@@ -292,6 +293,7 @@ function checkoutTransactionMetadata(input: {
   orderBumpPriceCents?: number;
   postPurchaseSourceOrderId?: string;
   postPurchaseSourceProductId?: string;
+  funnel?: { slug: string; stepId: string; pageId: string; version: number; productRevision: number; orderBumpRevision?: number; agreementLabel?: string };
 }) {
   return {
     // The browser cannot choose a transaction purpose or source marker.
@@ -310,6 +312,7 @@ function checkoutTransactionMetadata(input: {
     ...(input.orderBumpPriceCents ? { orderBumpPriceCents: input.orderBumpPriceCents } : {}),
     ...(input.postPurchaseSourceOrderId ? { postPurchaseSourceOrderId: input.postPurchaseSourceOrderId } : {}),
     ...(input.postPurchaseSourceProductId ? { postPurchaseSourceProductId: input.postPurchaseSourceProductId } : {}),
+    ...(input.funnel ? { funnel: input.funnel } : {}),
     ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
 }
@@ -690,16 +693,22 @@ async function resolveCheckoutOrderBump(
 }
 
 /** 發票選項與加購商品共同綁定冪等身份，保留舊客戶端的省略行為。 */
-function checkoutInvoiceIdentity(data: CheckoutRequestData, baseCheckoutIdentityHash: string, orderBumpProduct: { id: string } | null) {
+function checkoutInvoiceIdentity(data: CheckoutRequestData, baseCheckoutIdentityHash: string, orderBumpProduct: { id: string } | null, funnel?: ResolvedFunnelCheckout) {
   const invoiceSelection = parseCheckoutInvoiceSelection(data.invoice ?? { type: "personal", carrier: "member" });
   if (!invoiceSelection) return { ok: false as const, response: NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 }) };
   const hasExplicitInvoiceSelection = data.invoice !== undefined;
   const invoiceBoundCheckoutIdentityHash = hasExplicitInvoiceSelection
     ? createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection)
     : baseCheckoutIdentityHash;
-  const checkoutIdentityHash = orderBumpProduct
+  const bumpBoundCheckoutIdentityHash = orderBumpProduct
     ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
     : invoiceBoundCheckoutIdentityHash;
+  const checkoutIdentityHash = funnel
+    ? createHash("sha256").update([
+        bumpBoundCheckoutIdentityHash, "funnel", funnel.reference.slug, funnel.reference.stepId,
+        funnel.pageId, String(funnel.reference.expectedVersion ?? funnel.version), funnel.binding.agreement?.label ?? "", "accepted",
+      ].join("\u0000")).digest("base64url")
+    : bumpBoundCheckoutIdentityHash;
 
   return { ok: true as const, invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash };
 }
@@ -716,8 +725,9 @@ function checkoutPricingMetadata(input: {
   referralCode?: string;
   formSubmissionId?: string;
   sourceLiveId?: string;
+  funnel?: ResolvedFunnelCheckout;
 }) {
-  const { data, product, postPurchase, orderBumpProduct, voucherClaim, coursePolicySnapshot, affiliateAttribution, referralCode, formSubmissionId, sourceLiveId } = input;
+  const { data, product, postPurchase, orderBumpProduct, voucherClaim, coursePolicySnapshot, affiliateAttribution, referralCode, formSubmissionId, sourceLiveId, funnel } = input;
   const standardPromotion = checkoutPromotion(voucherClaim, product.priceCents);
   const discountAmountCents = postPurchase ? product.priceCents - postPurchase.amountCents : standardPromotion.discountAmountCents;
   const primaryCheckoutAmountCents = postPurchase?.amountCents ?? standardPromotion.checkoutAmountCents;
@@ -736,6 +746,7 @@ function checkoutPricingMetadata(input: {
     orderBumpProductId: orderBumpProduct?.id,
     orderBumpPriceCents: orderBumpProduct?.priceCents,
     ...(postPurchase ? { postPurchaseSourceOrderId: postPurchase.orderId, postPurchaseSourceProductId: postPurchase.sourceProductId } : {}),
+    ...(funnel ? { funnel: { slug: funnel.reference.slug, stepId: funnel.reference.stepId, pageId: funnel.pageId, version: funnel.version, productRevision: funnel.product.revision, ...(funnel.orderBump ? { orderBumpRevision: funnel.orderBump.revision } : {}), ...(funnel.binding.agreement ? { agreementLabel: funnel.binding.agreement.label } : {}) } } : {}),
   });
 
   return { discountAmountCents, checkoutAmountCents, transactionMetadata };
@@ -746,6 +757,96 @@ function verifiedRegistrationAttribution(formSubmission: Awaited<ReturnType<type
     formSubmissionId: formSubmission?.id ?? undefined,
     sourceLiveId: formSubmission?.liveId ?? undefined,
     salesProjectId: formSubmission?.live?.projectId ?? undefined,
+  };
+}
+
+async function resolveFunnelCheckoutRequest(
+  database: ReturnType<typeof getDb>,
+  data: CheckoutRequestData,
+  existing: { status: string } | null,
+) {
+  if (!data.funnel) return { ok: true as const, funnel: undefined };
+  // A replay must retain access to its already-reserved inventory. This is a
+  // server-internal exception only after the vendor/key lookup; new requests
+  // still require currently purchasable inventory in the Funnel resolver.
+  const funnel = await resolvePublishedFunnelCheckout(
+    data.funnel, database, existing?.status === "pending" ? { allowReservedInventory: true } : undefined,
+  );
+  if (!funnel) return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout is no longer available" }, { status: 409 }) };
+  const requestMatchesBinding = data.vendorId === funnel.vendorId
+    && data.productId === funnel.product.id
+    && (!data.orderBump || Boolean(funnel.orderBump && data.orderBump.productId === funnel.orderBump.id))
+    && (!funnel.binding.agreement || data.agreementAccepted === true);
+  if (!requestMatchesBinding) return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 }) };
+  const snapshotMatches = data.funnel.expectedVersion === funnel.version
+    && data.funnel.expectedProductRevision === funnel.product.revision
+    && (!data.orderBump || data.funnel.expectedOrderBumpRevision === funnel.orderBump?.revision);
+  if (existing?.status !== "pending" && !snapshotMatches) return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 }) };
+  return { ok: true as const, funnel };
+}
+
+function funnelProductsStillMatch(
+  funnel: ResolvedFunnelCheckout | undefined,
+  product: { id: string; vendorId: string; revision: number; priceCents: number; currency: string },
+  orderBump: { id: string; revision: number; priceCents: number } | null,
+) {
+  if (!funnel) return true;
+  const primaryMatches = product.id === funnel.product.id
+    && product.vendorId === funnel.vendorId
+    && product.revision === funnel.product.revision
+    && product.priceCents === funnel.product.priceCents
+    && product.currency === funnel.product.currency;
+  const bumpMatches = !orderBump || Boolean(funnel.orderBump
+    && orderBump.id === funnel.orderBump.id
+    && orderBump.revision === funnel.orderBump.revision
+    && orderBump.priceCents === funnel.orderBump.priceCents);
+  return primaryMatches && bumpMatches;
+}
+
+async function resolveCheckoutProducts(
+  database: ReturnType<typeof getDb>,
+  data: CheckoutRequestData,
+  funnel: ResolvedFunnelCheckout | undefined,
+) {
+  const product = await database.product.findFirst({
+    where: { id: data.productId, vendorId: data.vendorId, isActive: true, fulfillmentTypeConfirmed: true, priceCents: { gt: 0 } },
+    include: { vendor: true, deliveryConfig: { select: { id: true, status: true, fulfillmentType: true } } },
+  });
+  if (!product) return { ok: false as const, response: NextResponse.json({ error: "Product not available" }, { status: 404 }) };
+  const orderBumpResult = await resolveCheckoutOrderBump(database, data, product);
+  if (!orderBumpResult.ok) return orderBumpResult;
+  const unavailable = unavailableCheckoutProductResponse(product);
+  if (unavailable) return { ok: false as const, response: unavailable };
+  if (!funnelProductsStillMatch(funnel, product, orderBumpResult.orderBumpProduct)) {
+    return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 }) };
+  }
+  return { ok: true as const, product, orderBumpProduct: orderBumpResult.orderBumpProduct };
+}
+
+async function validateCheckoutRequestData(
+  database: ReturnType<typeof getDb>,
+  request: Request,
+  data: CheckoutRequestData,
+  product: { customCheckoutFields: unknown; fulfillmentType: CommerceCheckoutFulfillmentType; id: string },
+  orderBumpProduct: { id: string } | null,
+  funnel: ResolvedFunnelCheckout | undefined,
+) {
+  const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, data.customCheckoutAnswers);
+  if (!customCheckout.ok) return customCheckout;
+  const postPurchaseResult = await resolvePostPurchaseCheckout(database, request, data, product);
+  if (!postPurchaseResult.ok) return postPurchaseResult;
+  const identity = validateCheckoutIdentity(
+    postPurchaseResult.postPurchasePii ?? data, data.vendorId, product.fulfillmentType, product.id,
+    customCheckout.fields, customCheckout.answers,
+  );
+  if (!identity.ok) return identity;
+  const invoiceIdentity = checkoutInvoiceIdentity(data, identity.checkoutIdentityHash, orderBumpProduct, funnel);
+  if (!invoiceIdentity.ok) return invoiceIdentity;
+  return {
+    customCheckout,
+    postPurchase: postPurchaseResult.postPurchase,
+    checkoutPii: identity.pii,
+    ...invoiceIdentity,
   };
 }
 
@@ -766,61 +867,21 @@ export async function POST(request: Request) {
   const { admission } = admissionResult;
 
   const db = getDb();
-  const product = await db.product.findFirst({
-    where: {
-      id: parsed.data.productId,
-      vendorId: parsed.data.vendorId,
-      isActive: true,
-      fulfillmentTypeConfirmed: true,
-      priceCents: { gt: 0 },
-    },
-    include: {
-      vendor: true,
-      deliveryConfig: {
-        select: { id: true, status: true, fulfillmentType: true },
-      },
-    },
-  });
-
-  if (!product) {
-    return NextResponse.json({ error: "Product not available" }, { status: 404 });
-  }
-  const orderBumpResult = await resolveCheckoutOrderBump(db, parsed.data, product);
-  if (!orderBumpResult.ok) return orderBumpResult.response;
-  const { orderBumpProduct } = orderBumpResult;
-  const unavailableProductResponse = unavailableCheckoutProductResponse(product);
-  if (unavailableProductResponse) return unavailableProductResponse;
-
-  // Use the database definition, never a definition supplied by the browser.
-  const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
-  if (!customCheckout.ok) return customCheckout.response;
-
-  const postPurchaseResult = await resolvePostPurchaseCheckout(db, request, parsed.data, product);
-  if (!postPurchaseResult.ok) return postPurchaseResult.response;
-  const { postPurchase, postPurchasePii } = postPurchaseResult;
-  const identity = validateCheckoutIdentity(
-    postPurchasePii ?? parsed.data,
-    parsed.data.vendorId,
-    product.fulfillmentType,
-    product.id,
-    customCheckout.fields,
-    customCheckout.answers,
-  );
-  if (!identity.ok) return identity.response;
-  const { pii: checkoutPii, checkoutIdentityHash: baseCheckoutIdentityHash } = identity;
-  const invoiceIdentity = checkoutInvoiceIdentity(parsed.data, baseCheckoutIdentityHash, orderBumpProduct);
-  if (!invoiceIdentity.ok) return invoiceIdentity.response;
-  const { invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = invoiceIdentity;
-
   const existing = await db.paymentTransaction.findUnique({
-    where: {
-      vendorId_checkoutIdempotencyKey: {
-        vendorId: parsed.data.vendorId,
-        checkoutIdempotencyKey: parsed.data.idempotencyKey,
-      },
-    },
+    where: { vendorId_checkoutIdempotencyKey: { vendorId: parsed.data.vendorId, checkoutIdempotencyKey: parsed.data.idempotencyKey } },
     include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
   });
+  const funnelResult = await resolveFunnelCheckoutRequest(db, parsed.data, existing);
+  if (!funnelResult.ok) return funnelResult.response;
+  const funnel = funnelResult.funnel;
+  const productsResult = await resolveCheckoutProducts(db, parsed.data, funnel);
+  if (!productsResult.ok) return productsResult.response;
+  const { product, orderBumpProduct } = productsResult;
+
+  const checkoutData = await validateCheckoutRequestData(db, request, parsed.data, product, orderBumpProduct, funnel);
+  if (!checkoutData.ok) return checkoutData.response;
+  const { customCheckout, postPurchase, checkoutPii, invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = checkoutData;
+
   if (existing) {
     return await existingCheckoutResponse({ request, transaction: existing, product, checkoutIdentityHash });
   }
@@ -842,7 +903,15 @@ export async function POST(request: Request) {
 
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
-  const { formSubmissionId, sourceLiveId, salesProjectId } = verifiedRegistrationAttribution(formSubmission);
+  const verifiedAttribution = verifiedRegistrationAttribution(formSubmission);
+  // A Funnel has a server-owned project. Do not attach a same-vendor but
+  // different-project registration cookie to that order's transaction record.
+  const attributionMatchesFunnel = !funnel
+    || verifiedAttribution.salesProjectId === funnel.projectId;
+  const formSubmissionId = attributionMatchesFunnel ? verifiedAttribution.formSubmissionId : undefined;
+  const sourceLiveId = attributionMatchesFunnel ? verifiedAttribution.sourceLiveId : undefined;
+  const attributedSalesProjectId = attributionMatchesFunnel ? verifiedAttribution.salesProjectId : undefined;
+  const salesProjectId = funnel?.projectId ?? attributedSalesProjectId;
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
@@ -856,7 +925,7 @@ export async function POST(request: Request) {
   });
   const { discountAmountCents, checkoutAmountCents, transactionMetadata } = checkoutPricingMetadata({
     data: parsed.data, product, postPurchase, orderBumpProduct, voucherClaim, coursePolicySnapshot,
-    affiliateAttribution, referralCode, formSubmissionId, sourceLiveId,
+    affiliateAttribution, referralCode, formSubmissionId, sourceLiveId, funnel: funnel ?? undefined,
   });
 
   const order = orderNumber();
@@ -867,6 +936,7 @@ export async function POST(request: Request) {
       vendorId: parsed.data.vendorId,
       productId: product.id,
       expectedProductRevision: product.revision,
+      ...(orderBumpProduct ? { additionalProducts: [{ productId: orderBumpProduct.id, expectedProductRevision: orderBumpProduct.revision }] } : {}),
       checkoutIdempotencyKey: parsed.data.idempotencyKey,
       transactionData: {
         vendorId: parsed.data.vendorId,

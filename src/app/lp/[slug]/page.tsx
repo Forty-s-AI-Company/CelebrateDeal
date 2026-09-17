@@ -37,8 +37,8 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
     const document = getPublicFunnelPage(page.content);
     if (!document) notFound();
     const nextPath = getNextPublicFunnelStepPath(page.content, document.id);
-    return <PublicFunnelDocument document={document} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
+    return <PublicFunnelDocument document={document} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
   }
   if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
-  return <PublicFunnelDocument document={page.content} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
+  return <PublicFunnelDocument document={page.content} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
 }

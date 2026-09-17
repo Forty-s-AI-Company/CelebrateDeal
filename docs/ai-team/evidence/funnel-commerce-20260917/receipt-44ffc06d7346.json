@@ -1,0 +1,27 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "FAIL",
+  "typecheck": "NOT_RUN",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 86,
+  "sourceSha256": "b0ea593a2e3edf561ea5c3ece2b0268a6ccbcc806950c69ca2cb42064fcb6da6",
+  "browserTestSha256": "da9cf0e5d86ff4fbbc58d62dc97d379e7aff7de834687eef00c1c10b0b6c28fb",
+  "testCounts": {
+    "passed": 283,
+    "failed": 2,
+    "pending": 0
+  },
+  "failedTests": [
+    "successful checkout response does not allow the synthetic demo checkout to create production orders",
+    "successful checkout response does not mark a normal payment provider checkout as a test order"
+  ],
+  "failureDiagnostics": [],
+  "failure": "integration tests failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-t2QB2l"
+}
