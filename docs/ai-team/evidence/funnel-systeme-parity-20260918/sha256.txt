@@ -1,3 +1,4 @@
+94c259e374cf5d463b768b0021fcdee64f911fc0b0e3bae25ea8dda0ade0e7b5  00-funnels-list.png
 43626d3d136821fe734d0d8ffd730250939109f12f7cd9d37d33aaf0ce1ead42  01-create-sell.png
 44f4da443d6e6aa3f817d2e7959b5ef5fe8eee2becc6c666fdcac9f4eedc8771  02-sell-template-picker.png
 d991208a1e4097e86edfba1a8851915760b0e9fda8f0ea3fc257f922941730b1  03-sell-configuration.png

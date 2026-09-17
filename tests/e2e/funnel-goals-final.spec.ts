@@ -40,7 +40,10 @@ async function login(page: Page) {
 async function createGoal(page: Page, goal: Goal) {
   const suffix = `${runKey.replaceAll("-", "").slice(-10)}-${goal}`;
   const slug = `test-only-final-${suffix}`;
-  await page.goto("/landing-pages/new");
+  await page.goto("/landing-pages");
+  await expect(page.getByRole("heading", { name: "Funnels", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "建立 Funnel", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/landing-pages\/new$/u);
   await page.getByLabel("名稱 *").fill(`TEST ONLY Final ${goal} ${suffix}`);
   await page.getByLabel("Funnel 網址 *").fill(slug);
   await page.getByRole("button", { name: new RegExp(`^${goals.find((item) => item.goal === goal)!.label}`, "u") }).click();

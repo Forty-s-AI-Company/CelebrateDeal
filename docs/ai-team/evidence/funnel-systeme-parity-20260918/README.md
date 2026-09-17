@@ -11,6 +11,7 @@
 
 | 參考畫面 | 目前入口與證據 | 已對齊 | 剩餘差異 | 主要修正檔案 | 驗收操作 |
 |---|---|---|---|---|---|
+| `01` Funnels list | `/landing-pages`；`00-funnels-list.png` | Funnels 標題、數量、建立入口、空狀態；四 Goal E2E 皆由此頁點入建立流程 | CelebrateDeal 使用專案工作區側欄，systeme.io 使用頂部全域導覽 | `landing-pages/page.tsx`、`funnel-list.tsx` | 從清單點「建立 Funnel」，確認進入 `/landing-pages/new` |
 | `02`–`03` 建立 Funnel | `/landing-pages/new`；`01-create-sell.png` | 名稱、網址、Goal、幣別、Save disabled/ready 狀態；成功後持久化並進 Funnel 詳情 | CelebrateDeal 使用完整建立頁；systeme.io 為 modal。欄位與後續狀態一致 | `funnel-goal-picker.tsx`、`new/page.tsx` | 填入四欄、選 Sell、儲存後確認 `/operations` |
 | `05` Sell 模板選擇 | `/landing-pages/:id/operations`；`02-sell-template-picker.png` | 左側三個預設 Steps、七分頁、選模板前其他分頁 disabled、Sell/order_form 專用模板 | 目前提供 3 個精選模板；systeme.io 顯示 9 張與分頁 | `funnel-template-gallery.ts`、`funnel-template-gallery-picker.tsx` | 建立 Sell，確認只列 Sell/order_form 模板並套用第一張 |
 | `09` Sell Configuration | 同上；`03-sell-configuration.png` | Step 名稱、URL Path、View step、Edit Page、更換模板；選模板後七分頁啟用 | systeme.io 的聯盟佣金、銷售上限、Offer/Coupon/Order bump 屬後續商務欄位，不在本輪流程重構內 | `funnel-operations-panel.tsx` | 套用模板後確認 revision 增加、Edit Page enabled |
@@ -22,7 +23,7 @@
 
 ## 自動驗收
 
-- 四 Goal 核心旅程：`tests/e2e/funnel-goals-final.spec.ts`，4/4 通過。
+- 四 Goal 核心旅程：`tests/e2e/funnel-goals-final.spec.ts`，4/4 通過；每種 Goal 都由 Funnels 清單點進建立頁。
 - Operations 完整回歸：`tests/e2e/funnel-operations.spec.ts`，1/1 通過；涵蓋儲存後立即返回、reload、revision conflict、三種報表、A/B、Automation 與 Deadline redirect。
 - 本次畫面證據：production build + Chromium，1/1 通過。
 - Funnel targeted Vitest：7 files、56 tests 通過。
