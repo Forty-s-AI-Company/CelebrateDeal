@@ -62,6 +62,7 @@ describe("sellable live readiness", () => {
             vendorId: "vendor-1",
             OR: [
               { sourceType: "url", status: "ready" },
+              { sourceType: "browser_live", status: "ready" },
               { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
               {
                 sourceType: "cloudflare_live",
