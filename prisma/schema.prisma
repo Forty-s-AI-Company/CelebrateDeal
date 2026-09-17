@@ -209,6 +209,11 @@ model Vendor {
   communityPosts                   CommunityPost[]
   communityComments                CommunityComment[]
   communityReactions               CommunityReaction[]
+  salesProjects                    SalesProject[]
+  salesProjectProducts             SalesProjectProduct[]
+  salesProjectCustomers            SalesProjectCustomer[]
+  onboardingPreferences            UserOnboardingPreference[]
+  onboardingTaskStates             OnboardingTaskState[]
 }
 
 model User {
@@ -235,6 +240,7 @@ model User {
   platformReferralCommissions  PlatformReferralCommission[]
   platformReferralPayouts      PlatformReferralPayout[]
   affiliatePortals             Affiliate[]
+  onboardingPreferences        UserOnboardingPreference[]
 }
 
 model UserSession {
@@ -440,6 +446,7 @@ model Product {
   downsellForProducts         Product[]                       @relation("ProductDownsell")
   courseLessons               CourseLesson[]
   courseLessonProgress        CourseLessonProgress[]
+  salesProjectLinks           SalesProjectProduct[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
@@ -453,6 +460,7 @@ model Product {
 model RegistrationForm {
   id                     String   @id @default(cuid())
   vendorId               String
+  projectId              String?
   name                   String
   slug                   String   @unique
   headline               String
@@ -593,6 +601,7 @@ enum FormSubmissionVerificationStatus {
 model Live {
   id                             String    @id @default(cuid())
   vendorId                       String
+  projectId                      String?
   videoId                        String?
   formId                         String?
   messageTemplateId              String?
@@ -1095,14 +1104,17 @@ model AnalyticsEvent {
   visitorId  String
   trustLevel AnalyticsTrustLevel @default(LEGACY_UNVERIFIED)
   payload    Json?
+  projectId  String?
   createdAt  DateTime            @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([eventType, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, trustLevel, eventType, createdAt])
+  @@index([vendorId, projectId, createdAt])
 }
 
 enum AnalyticsTrustLevel {
@@ -1746,6 +1758,7 @@ model CommerceOrder {
   checkoutIdentityHash            String
   automationCustomerKeyHash       String?
   primaryPaymentTransactionId     String?
+  projectId                       String?
   status                          CommerceOrderStatus @default(pending_payment)
   currency                        String              @default("TWD")
   subtotalAmountCents             Int
@@ -1777,6 +1790,7 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  project                   SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
@@ -1785,6 +1799,7 @@ model CommerceOrder {
   @@index([vendorId, status, createdAt])
   @@index([vendorId, automationCustomerKeyHash, status])
   @@index([vendorId, paidAt])
+  @@index([vendorId, projectId, status, createdAt])
 }
 
 /// Immutable commercial terms captured at purchase time. Product fields remain
@@ -3418,6 +3433,7 @@ model CustomerCrmRecord {
 
   vendor Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   notes  ConsultantNote[]
+  salesProjects SalesProjectCustomer[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, customerKeyHash])
@@ -3696,15 +3712,18 @@ model ConsultationEvent {
   weeklySchedule   Json
   intakeFormFields Json
   isActive         Boolean  @default(true)
+  projectId        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   vendor   Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   bookings ConsultationBooking[]
+  project  SalesProject?         @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
   @@index([vendorId, isActive])
   @@index([vendorId, createdAt])
+  @@index([vendorId, projectId, isActive])
 }
 
 model ConsultationBooking {
