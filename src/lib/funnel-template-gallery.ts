@@ -8,7 +8,7 @@ import {
   type PageDocument,
 } from "@/lib/funnel-page-document";
 
-export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom"] as const;
+export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
 export type FunnelTemplateStatus = "available" | "limited";
 
@@ -183,7 +183,21 @@ const brandInfo = (prefix: string) => [
 const availableReason = "可展開為獨立編輯的 CelebrateDeal 節點";
 const limitedReason = "版面可編輯；付款元件維持 limited 與 disabled，不建立假的付款完成流程";
 
+const webinarPage = (prefix: string, stage: "registration" | "thank-you" | "broadcast") => {
+  const copy = {
+    registration: ["線上分享會", "為下一個突破，留一段學習時間", "了解活動主題與講者，透過下方報名表單保留席次。"],
+    "thank-you": ["報名後續資訊", "謝謝你的參與", "若你已送出報名，請到 Email 完成確認，再記下活動時間。"],
+    broadcast: ["活動會場", "歡迎來到線上分享會", "活動開始後，可由下方入口進入觀看；重播依活動設定開放。"],
+  }[stage];
+  // 真正表單與播放入口由公開頁綁定資源提供，模板本身只有一般可編輯節點。
+  return [section(prefix, "hero", [text(prefix, "eyebrow", copy[0]!), headline(prefix, "title", copy[1]!, "h1"), text(prefix, "intro", copy[2]!)], "#eff6ff"),
+    section(prefix, "details", [headline(prefix, "details_title", "活動資訊"), text(prefix, "details_text", "請填入講者介紹、活動主題與參與方式。")])];
+};
+
 const templates: FunnelTemplateGalleryItem[] = [
+  { id: "webinar-broadcast", referenceId: "celebratedeal-webinar-broadcast", goal: "webinar", category: "Webinar 播放頁", name: "Webinar 播放頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 播放頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "broadcast") },
+  { id: "webinar-thank-you", referenceId: "celebratedeal-webinar-thank-you", goal: "webinar", category: "Webinar 感謝頁", name: "Webinar 感謝頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 感謝頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "thank-you") },
+  { id: "webinar-registration", referenceId: "celebratedeal-webinar-registration", goal: "webinar", category: "Webinar 報名頁", name: "Webinar 報名頁", description: "固定場次線上活動，提供可獨立編輯的活動內容。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "Webinar 報名頁", summary: "線上活動與參與資訊", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "registration") },
   { id: "sell-product-checkout", referenceId: "25969", goal: "sell", category: "商品結帳", name: "暖色商品結帳", description: "地址與聯絡資料、方案摘要、付款限制提示及信任區塊。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "暖色商品結帳", summary: "雙欄結帳與信任資訊", palette: ["#fff7ed", "#9a3412", "#ffffff"], sectionCount: 2 }, build: (prefix) => checkout(prefix) },
   { id: "sell-simple-checkout", referenceId: "25963", goal: "sell", category: "簡潔結帳", name: "藍白簡潔結帳", description: "精簡的聯絡資料與訂單摘要雙欄結構。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "藍白簡潔結帳", summary: "聚焦轉換的精簡版面", palette: ["#ffffff", "#2563eb", "#eff6ff"], sectionCount: 2 }, build: (prefix) => checkout(prefix, true) },
   { id: "sell-content-subscription", referenceId: "25957", goal: "sell", category: "內容訂閱", name: "內容訂閱方案", description: "訂閱價值、方案卡與 bonus 內容；付款仍維持限制狀態。", status: "limited", statusReason: limitedReason, preview: { eyebrow: "Sell", headline: "內容訂閱方案", summary: "方案卡與加值內容", palette: ["#fffbeb", "#a16207", "#ffffff"], sectionCount: 2 }, build: subscription },

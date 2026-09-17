@@ -14,9 +14,9 @@ function flatten(nodes: FunnelNode[]): FunnelNode[] {
 }
 
 describe("funnel template gallery", () => {
-  it("提供三個 goal，各三種實測模板族", () => {
-    expect(FUNNEL_TEMPLATE_GOALS).toEqual(["sell", "audience", "custom"]);
-    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(9);
+  it("提供四個 goal 與獨立 Webinar 模板", () => {
+    expect(FUNNEL_TEMPLATE_GOALS).toEqual(["sell", "audience", "custom", "webinar"]);
+    expect(FUNNEL_TEMPLATE_GALLERY).toHaveLength(12);
     expect(listFunnelTemplateGallery("sell").map((item) => item.category)).toEqual(["商品結帳", "簡潔結帳", "內容訂閱"]);
     expect(listFunnelTemplateGallery("audience").map((item) => item.category)).toEqual(["志工招募", "公益活動", "環境倡議"]);
     expect(listFunnelTemplateGallery("custom").map((item) => item.category)).toEqual(["隱私", "條款", "品牌資訊"]);

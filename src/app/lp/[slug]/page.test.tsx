@@ -4,6 +4,10 @@ const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("@/lib/landing-page-service", () => ({ loadPublicLandingPage: mocks.load }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("@/components/landing-pages/landing-page-renderer", () => ({ LandingPageRenderer: ({ content }: { content: { data: { root: { props: { title: string } } } } }) => <main>{content.data.root.props.title}</main> }));
+vi.mock("@/components/landing-pages/funnel-webinar-experience", () => ({ FunnelWebinarExperience: ({ stepId, resource }: { stepId: string; resource?: unknown }) => <main data-resource={Boolean(resource)}>{stepId}</main> }));
+import { createFunnelFlow } from "@/lib/funnel-flow";
+import { createFunnelStepPages } from "@/lib/funnel-step-pages";
+import PublicStepPage from "./[stepPath]/page";
 import PublicPage, { generateMetadata } from "./page";
 beforeEach(() => vi.clearAllMocks());
 describe("published landing route", () => {
@@ -20,4 +24,13 @@ describe("published landing route", () => {
     await expect(PublicPage({ params })).rejects.toThrow("NOT_FOUND");
     expect(await generateMetadata({ params })).toMatchObject({ robots: { index: false, follow: false } });
   });
+});
+
+
+it("routes a published Webinar to the registration and broadcast experiences", async () => {
+  const content = createFunnelStepPages(createFunnelFlow({ id: "webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!)!;
+  mocks.load.mockResolvedValue({ id: "page1", slug: "webinar", content, context: { forms: [] } });
+  expect(renderToStaticMarkup(await PublicPage({ params: Promise.resolve({ slug: "webinar" }) }))).toContain("webinar_registration");
+  expect(renderToStaticMarkup(await PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "broadcast" }) }))).toContain("webinar_broadcast");
+  await expect(PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "foreign" }) })).rejects.toThrow("NOT_FOUND");
 });

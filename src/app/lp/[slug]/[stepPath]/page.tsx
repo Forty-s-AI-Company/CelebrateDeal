@@ -1,3 +1,4 @@
+import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -13,7 +14,7 @@ async function resolve(slug: string, stepPath: string) {
   const page = await load(slug);
   const steps = page ? parseFunnelStepPages(page.content) : null;
   const document = steps ? getPublicFunnelPage(steps, stepPath) : null;
-  return { page, document };
+  return { page, document, steps };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; stepPath: string }> }): Promise<Metadata> {
@@ -27,7 +28,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function PublicFunnelStepPage({ params }: { params: Promise<{ slug: string; stepPath: string }> }) {
   const { slug, stepPath } = await params;
-  const { document } = await resolve(slug, stepPath);
+  const { page, document, steps } = await resolve(slug, stepPath);
   if (!document) notFound();
+  const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
+  if (page && steps?.flow.goal === "webinar" && step) return <FunnelWebinarExperience state={steps} stepId={step.id} slug={page.slug} resource={page.webinar} />;
   return <PublicFunnelDocument document={document} />;
 }

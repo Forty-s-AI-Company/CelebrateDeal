@@ -1,3 +1,5 @@
+import { parseFunnelWebinarSettings, type FunnelWebinarSettings } from "@/lib/funnel-webinar";
+
 /**
  * Funnel flow v1 is intentionally independent from PageDocument.  It keeps
  * the domain workflow and its page references serializable without requiring
@@ -44,6 +46,7 @@ export type FunnelFlow = {
   currency: string;
   steps: FunnelStep[];
   capabilities: { webinar: FunnelCapability };
+  webinar?: FunnelWebinarSettings;
 };
 
 export type FunnelFlowInput = { id: string; name: string; goal: FunnelGoal; domain: string; currency?: string };
@@ -83,9 +86,9 @@ const STEPS: Record<FunnelStepType, { group: FunnelStepGroup; label: string }> =
   inactive_page: { group: "system", label: "停用頁" },
 };
 
-const webinarUnverified: FunnelCapability = {
-  status: "unverified",
-  reason: "CelebrateDeal 的自動化 Webinar 編輯、排程與播放流程仍在開發中。",
+const webinarAvailable: FunnelCapability = {
+  status: "available",
+  reason: "固定場次 Webinar，依排程導向已綁定的 Live。",
 };
 const templateRequired: FunnelCapability = { status: "disabled", reason: "請先為至少一個一般步驟選擇模板，才可使用此分頁。" };
 const available: FunnelCapability = { status: "available", reason: "可安全顯示已驗證的空狀態與欄位。" };
@@ -117,7 +120,13 @@ function inactiveStep(): FunnelStep {
   return makeStep("inactive", "停用頁", "inactive", "inactive_page", { source: "system" }, true);
 }
 
-function defaultSteps(goal: Exclude<FunnelGoal, "webinar">): FunnelStep[] {
+function defaultSteps(goal: FunnelGoal): FunnelStep[] {
+  if (goal === "webinar") return [
+    makeStep("webinar_registration", "Webinar 報名頁", "registration", "webinar_registration_page", { source: "template", templateId: "webinar-registration" }),
+    makeStep("webinar_thank_you", "Webinar 感謝頁", "thank-you", "webinar_thank_you_page", { source: "template", templateId: "webinar-thank-you" }),
+    makeStep("webinar_broadcast", "Webinar 播放頁", "broadcast", "webinar_broadcast_page", { source: "template", templateId: "webinar-broadcast" }),
+    inactiveStep(),
+  ];
   if (goal === "audience") return [
     makeStep("opt_in", "名單頁", "opt-in", "opt_in_page", { source: "blank" }),
     makeStep("opt_in_thank_you", "感謝／下載頁", "thank-you", "opt_in_thank_you_page", { source: "blank" }),
@@ -174,7 +183,7 @@ function hasValidWebinarCapability(flow: Partial<FunnelFlow>): boolean {
   const capability = (flow.capabilities as Partial<FunnelFlow["capabilities"]>).webinar;
   if (!capability || !["available", "disabled", "limited", "unverified"].includes(capability.status)) return false;
   if (typeof capability.reason !== "string" || capability.reason.length > 500) return false;
-  return flow.goal !== "webinar" || capability.status === "unverified";
+  return true;
 }
 
 /** Validate an unknown persistence value without coercion. Invalid values fail closed. */
@@ -182,6 +191,7 @@ export function parseFunnelFlow(value: unknown): FunnelFlow | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const flow = value as Partial<FunnelFlow>;
   if (!hasValidFlowBase(flow) || !hasValidStepCollection(flow) || !hasValidWebinarCapability(flow)) return null;
+  if (flow.webinar !== undefined && (flow.goal !== "webinar" || !parseFunnelWebinarSettings(flow.webinar))) return null;
   return clone(flow as FunnelFlow);
 }
 
@@ -197,9 +207,9 @@ export function deserializeFunnelFlow(serialized: string): FunnelFlow | null {
   try { return parseFunnelFlow(JSON.parse(serialized) as unknown); } catch { return null; }
 }
 
-/** Webinar is intentionally rejected until the missing product behaviour is verified. */
+/** 建立獨立頁面所需的流程 metadata。 */
 export function createFunnelFlow(input: FunnelFlowInput): FunnelFlow | null {
-  if (input.goal === "webinar" || !validId(input.id) || !validName(input.name) || !validPath(input.domain)) return null;
+  if (!validId(input.id) || !validName(input.name) || !validPath(input.domain)) return null;
   const currency = (input.currency ?? "TWD").toUpperCase();
   if (!currencyPattern.test(currency)) return null;
   return parseFunnelFlow({
@@ -210,7 +220,8 @@ export function createFunnelFlow(input: FunnelFlowInput): FunnelFlow | null {
     domain: normalizedPath(input.domain),
     currency,
     steps: defaultSteps(input.goal),
-    capabilities: { webinar: webinarUnverified },
+    capabilities: { webinar: webinarAvailable },
+    ...(input.goal === "webinar" ? { webinar: { timezone: "Asia/Taipei", startsAt: null, endsAt: null, replayEndsAt: null } } : {}),
   });
 }
 
@@ -219,18 +230,15 @@ export function getFunnelStepCatalog(): ReadonlyArray<{ type: FunnelStepType; gr
     type,
     group: STEPS[type].group,
     label: STEPS[type].label,
-    capability: STEPS[type].group === "webinar" ? webinarUnverified : type === "inactive_page" ? { status: "disabled", reason: "停用頁由系統管理，不能手動新增。" } : available,
+    capability: STEPS[type].group === "webinar" ? webinarAvailable : type === "inactive_page" ? { status: "disabled", reason: "停用頁由系統管理，不能手動新增。" } : available,
   }));
 }
 
 function validFlow(flow: FunnelFlow): FunnelFlow | null { return parseFunnelFlow(flow); }
 function stepIndex(flow: FunnelFlow, stepId: string): number { return flow.steps.findIndex((step) => step.id === stepId); }
-function rejectsWebinarMutation(flow: FunnelFlow): string | null { return flow.goal === "webinar" ? webinarUnverified.reason : null; }
 function mutationFlow(flow: FunnelFlow, mutate: (next: FunnelFlow) => string | null): FunnelFlowMutationResult {
   const parsed = validFlow(flow);
   if (!parsed) return failed(flow, "Funnel 流程資料無法通過驗證，拒絕修改");
-  const webinarError = rejectsWebinarMutation(parsed);
-  if (webinarError) return failed(parsed, webinarError);
   const next = clone(parsed);
   const error = mutate(next);
   if (error) return failed(parsed, error);
@@ -241,7 +249,7 @@ function mutationFlow(flow: FunnelFlow, mutate: (next: FunnelFlow) => string | n
 export function addFunnelStep(flow: FunnelFlow, input: FunnelStepInput, index?: number): FunnelFlowMutationResult {
   return mutationFlow(flow, (next) => {
     if (!(input.type in STEPS)) return "此步驟類型不可手動新增";
-    if (STEPS[input.type].group === "webinar") return webinarUnverified.reason;
+    if (STEPS[input.type].group === "webinar" && next.goal !== "webinar") return "Webinar 步驟只能新增至 Webinar Funnel";
     if (!validName(input.name) || !validPath(input.path)) return "步驟名稱或 URL Path 不符合格式";
     const source = input.templateSource ?? (input.templateId ? "template" : "blank");
     if (source === "template" && (!input.templateId || !templateIdPattern.test(input.templateId))) return "選擇模板時必須提供安全的 template ID";
@@ -338,7 +346,7 @@ function hasSelectedTemplate(flow: FunnelFlow): boolean {
 }
 
 function statusForDataTab(flow: FunnelFlow): FunnelCapability {
-  if (flow.goal === "webinar") return webinarUnverified;
+  if (flow.goal === "webinar") return webinarAvailable;
   return hasSelectedTemplate(flow) ? available : templateRequired;
 }
 
@@ -356,6 +364,6 @@ export function getFunnelSecondaryTabs(flow: FunnelFlow): ReadonlyArray<FunnelSe
     { id: "leads", label: "名單", capability: dataTab, emptyState: { title: "目前沒有名單", columns: ["加入日期", "Email", "Funnel 步驟"] } },
     { id: "sales", label: "銷售", capability: dataTab, emptyState: { title: "目前沒有訂單", columns: ["日期", "步驟", "價格", "客戶", "狀態"] } },
     { id: "deadline_settings", label: "期限設定", capability: dataTab.status === "available" ? { status: "limited", reason: "期限欄位可保留，但倒數與導向引擎尚未啟用。" } : dataTab },
-    { id: "funnel_settings", label: "Funnel 設定", capability: parsed.goal === "webinar" ? webinarUnverified : available },
+    { id: "funnel_settings", label: "Funnel 設定", capability: parsed.goal === "webinar" ? webinarAvailable : available },
   ];
 }
