@@ -12,6 +12,10 @@ interface Issue {
 const issues: Issue[] = [];
 const screenshotDir = path.resolve(process.cwd(), "reports/browser-qa-screenshots");
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 if (!fs.existsSync(screenshotDir)) {
   fs.mkdirSync(screenshotDir, { recursive: true });
 }
@@ -192,13 +196,14 @@ async function runBrowserQA() {
         } else {
           console.log(`   ✓ 成功載入 (HTTP ${status})`);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = errorMessage(err);
         issues.push({
           category: "NAV_ERROR",
           url: `${baseUrl}${route.path}`,
-          message: `後台頁面 ${route.name} (${route.path}) 載入失敗: ${err.message}`,
+          message: `後台頁面 ${route.name} (${route.path}) 載入失敗: ${message}`,
         });
-        console.log(`   ❌ 載入例外: ${err.message}`);
+        console.log(`   ❌ 載入例外: ${message}`);
       }
     }
 
@@ -220,13 +225,14 @@ async function runBrowserQA() {
       await guestPage.waitForTimeout(2000);
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_live_viewer.png") });
       console.log(`   ✓ 直播間狀態: HTTP ${res?.status()}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/live/summer-glow-live`,
-        message: `直播間載入失敗: ${err.message}`,
+        message: `直播間載入失敗: ${message}`,
       });
-      console.log(`   ❌ 直播間載入失敗: ${err.message}`);
+      console.log(`   ❌ 直播間載入失敗: ${message}`);
     }
 
     // 6.2 報名表單
@@ -236,13 +242,14 @@ async function runBrowserQA() {
       await guestPage.waitForTimeout(2000);
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_form_page.png") });
       console.log(`   ✓ 報名表單狀態: HTTP ${res?.status()}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/form/summer-live-reminder`,
-        message: `報名表單載入失敗: ${err.message}`,
+        message: `報名表單載入失敗: ${message}`,
       });
-      console.log(`   ❌ 報名表單載入失敗: ${err.message}`);
+      console.log(`   ❌ 報名表單載入失敗: ${message}`);
     }
 
     // 6.3 商品購買 / 結帳
@@ -252,13 +259,14 @@ async function runBrowserQA() {
       await guestPage.waitForTimeout(2000);
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_product_page.png") });
       console.log(`   ✓ 商品頁狀態: HTTP ${res?.status()}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/p/glow-serum-set`,
-        message: `商品導購頁載入失敗: ${err.message}`,
+        message: `商品導購頁載入失敗: ${message}`,
       });
-      console.log(`   ❌ 商品頁載入失敗: ${err.message}`);
+      console.log(`   ❌ 商品頁載入失敗: ${message}`);
     }
 
     // 6.4 公開政策與客服頁
@@ -268,11 +276,12 @@ async function runBrowserQA() {
       await guestPage.waitForTimeout(1000);
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_support_page.png") });
       console.log(`   ✓ 客服支援頁狀態: HTTP ${res?.status()}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/support`,
-        message: `客服支援頁載入失敗: ${err.message}`,
+        message: `客服支援頁載入失敗: ${message}`,
       });
     }
 
