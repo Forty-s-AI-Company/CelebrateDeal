@@ -52,7 +52,7 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.getByLabel("密碼").fill(fixture.password);
   await page.getByRole("button", { name: "登入", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/u);
-  await expect(page.getByRole("heading", { name: "營運 Dashboard", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   await page.goto("/landing-pages/new");
   await expect(page.getByRole("heading", { name: "建立新的 Funnel" })).toBeVisible().catch(async (error: unknown) => {
     // Only structural diagnostics; never serialize session storage or request headers.
