@@ -88,6 +88,7 @@ function failure(error: unknown): LandingPageActionState {
     return { status: "error", message: "找不到這個一頁式網站，或你沒有管理它的權限。" };
   }
   if (error instanceof LandingPageInputError) {
+    if (error.message === "landing_page_operations_reference_invalid") return { status: "error", message: "這個步驟仍被 A/B、期限導向或報表設定使用。請先在 Funnel 管理調整設定，再移除或改名路徑。" };
     if (error.message === "landing_page_commerce_invalid") return { status: "error", message: "已綁定的商品必須屬於目前銷售專案，且目前可販售、有庫存、已確認交付設定，並且不能使用外部結帳連結。請重新選擇商品或調整商品設定後再試。" };
     if (error.message === "landing_page_webinar_direct_media_forbidden") return { status: "error", message: "請移除 Webinar 播放頁與彈出視窗中的直接影片元件，並綁定 Live，透過授權播放入口觀看。" };
     if (error.message === "landing_page_webinar_steps_required") return { status: "error", message: "Webinar 必須各有一個報名頁、感謝頁與播放頁，請先補齊必要步驟再發布。" };

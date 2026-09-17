@@ -1,3 +1,4 @@
+import { funnelOperationsReferencesValid } from "@/lib/funnel-operations";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -214,6 +215,11 @@ function toLiveReference(live: LiveRecord): LandingPageLiveReference {
   };
 }
 
+function validateOperationalReferences(operations: unknown, content: LandingPageStoredContent) {
+  const steps = "flow" in content ? content.flow?.steps ?? [] : [];
+  if (!funnelOperationsReferencesValid(operations, steps)) throw new LandingPageInputError("landing_page_operations_reference_invalid");
+}
+
 async function editorProject() {
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
@@ -268,7 +274,7 @@ async function requireScopedPage(database: LandingPageDb, scope: { vendorId: str
   if (!id) throw new LandingPageNotFoundError();
   const page = await database.landingPage.findFirst({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId },
-    select: { id: true, vendorId: true, projectId: true, name: true, slug: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
+    select: { id: true, vendorId: true, projectId: true, name: true, slug: true, operations: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
   });
   if (!page) throw new LandingPageNotFoundError();
   return page;
@@ -316,6 +322,7 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   const existing = await requireScopedPage(db(), scope, id);
   if (existing.revision !== revision) throw new LandingPageConflictError();
   if (existing.status === "published" && existing.slug !== slug) throw new LandingPageInputError("landing_page_slug_locked");
+  validateOperationalReferences(existing.operations, content);
   await validateBindings(db(), { ...scope, content, formId, liveId });
   const updated = await db().landingPage.updateMany({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
@@ -385,6 +392,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       const page = await requireScopedPage(transaction, scope, id);
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
+      validateOperationalReferences(page.operations, content);
       await validateBindings(transaction, { ...scope, content, formId: page.draftFormId, liveId: page.draftLiveId, publishing: true });
       const nextVersion = await transaction.landingPageVersion.count({ where: { vendorId: scope.vendorId, pageId: id } }) + 1;
       const version = await transaction.landingPageVersion.create({
@@ -444,6 +452,7 @@ export async function saveLandingPageStepMetadata(input: { id: string; revision:
   if (!content) throw new LandingPageInputError();
   const result = applyFunnelStepPersistenceMutation(content, input.mutation);
   if (!result.ok) throw new LandingPageInputError();
+  validateOperationalReferences(existing.operations, result.state);
   await validateBindings(db(), { ...scope, content: result.state, formId: existing.draftFormId, liveId: existing.draftLiveId });
   const updated = await db().landingPage.updateMany({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
@@ -492,7 +501,10 @@ export async function rollbackLandingPage(pageId: string, version: number, expec
     select: { id: true, version: true, content: true, formId: true, liveId: true, createdAt: true },
   });
   if (!versionRecord) throw new LandingPageNotFoundError();
+  const current = await requireScopedPage(db(), scope, id);
+  if (current.revision !== revision) throw new LandingPageConflictError();
   const content = inputContent(versionRecord.content);
+  validateOperationalReferences(current.operations, content);
   await validateBindings(db(), { ...scope, content, formId: versionRecord.formId, liveId: versionRecord.liveId });
   const updated = await db().landingPage.updateMany({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },

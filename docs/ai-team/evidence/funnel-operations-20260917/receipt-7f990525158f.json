@@ -1,0 +1,27 @@
+{
+  "browserScope": "minimal transport diagnostic only",
+  "status": "PASS",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "PASS",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "ad16b5876054ccc6f1515a3141a8b2e32f2df268cabc7c26f0768d59e7bc8fe4",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "7b02bcbe09f1e3e8248092edd2e00ac3cfb6b5607ea2091574666d633944a408",
+  "browserTestSha256": "05128e986eff33103fdff5b250b5cfc0f10a903d6e70c99aae1005f855c585c3",
+  "testCounts": {
+    "passed": 48,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

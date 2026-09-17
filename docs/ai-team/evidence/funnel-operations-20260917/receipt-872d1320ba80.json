@@ -1,0 +1,34 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "b432dc7382c54e79868448f49f7bc4f13d366a00b569fa06fca2887355f9e054",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "23fb6e23868f0d6b126008ee7a0dc0fee42fbcb9764d73a4caa81bed931bec7e",
+  "browserTestSha256": "bac259cf202fcfebd86e2a624e6c59ce8a745edbabcd8276a27c7f911bcef41a",
+  "testCounts": {
+    "passed": 48,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "failureDiagnostics": [
+    "    Error: expect(page).toHaveURL(expected) failed",
+    "    Timeout: 5000ms",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

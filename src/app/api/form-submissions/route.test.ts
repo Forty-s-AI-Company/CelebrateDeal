@@ -15,6 +15,10 @@ const db = {
   teamLeadAttribution: { upsert: vi.fn() },
   emailDelivery: { create: vi.fn(), findUnique: vi.fn() },
   emailSuppression: { findUnique: vi.fn() },
+  landingPage: { findFirst: vi.fn() },
+  funnelVisit: { findFirst: vi.fn() },
+  funnelSubmission: { upsert: vi.fn() },
+  $transaction: vi.fn(),
 };
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
@@ -23,6 +27,9 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 import { POST } from "@/app/api/form-submissions/route";
 import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
+import { createFunnelFlow } from "@/lib/funnel-flow";
+import { createFunnelStepPages } from "@/lib/funnel-step-pages";
+import { defaultFunnelOperations } from "@/lib/funnel-operations";
 
 function pendingSubmission(id = "submission-1", values: Record<string, unknown> = {}) {
   return {
@@ -110,11 +117,49 @@ beforeEach(() => {
   db.emailSuppression.findUnique.mockResolvedValue(null);
   db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: data.id, status: data.status }));
   db.emailDelivery.findUnique.mockResolvedValue(null);
+  db.landingPage.findFirst.mockResolvedValue(null);
+  db.funnelVisit.findFirst.mockResolvedValue(null);
+  db.funnelSubmission.upsert.mockResolvedValue({ id: "funnel-submission-1" });
+  db.$transaction.mockImplementation(async (callback: (transaction: Pick<typeof db, "formSubmission" | "funnelSubmission">) => unknown) => callback({ formSubmission: db.formSubmission, funnelSubmission: db.funnelSubmission }));
 });
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("team lead attribution", () => {
+  it("binds a Funnel submission to the proxy-issued visitor cookie instead of the legacy attribution visitor", async () => {
+    const flow = createFunnelFlow({ id: "funnel_1", name: "Funnel", goal: "audience", domain: "offer" })!;
+    const content = createFunnelStepPages(flow)!;
+    const visitorId = "visitor-12345678901234567890";
+    db.landingPage.findFirst.mockResolvedValue({
+      id: "page_1",
+      vendorId: "vendor-1",
+      operations: defaultFunnelOperations(),
+      publishedVersion: { content, formId: "form-1", liveId: null },
+    });
+    db.funnelVisit.findFirst.mockResolvedValue({ id: "visit_1" });
+
+    const request = new Request("https://app.example.test/api/form-submissions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://app.example.test",
+        "x-celebratedeal-client": "web",
+        cookie: `celebratedeal_visitor=legacy-visitor-123456789012345; celebratedeal_funnel_visitor=${visitorId}`,
+      },
+      body: JSON.stringify({
+        formId: "form-1",
+        landingPageId: "page_1",
+        funnelStepId: flow.steps[0]!.id,
+        payload: { name: "Lead", email: "lead@example.test" },
+      }),
+    });
+
+    expect((await POST(request)).status).toBe(200);
+    expect(db.funnelVisit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ visitorId }),
+    }));
+  });
+
   it("rejects submissions for a project form until that project is published", async () => {
     db.registrationForm.findUnique.mockResolvedValue({
       id: "form-1", vendorId: "vendor-1", isActive: true, projectId: "project-1",

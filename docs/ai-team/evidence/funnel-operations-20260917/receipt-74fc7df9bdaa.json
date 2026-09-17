@@ -1,0 +1,29 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "NOT_RUN",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "dc5002585fa10f29ac1b422fe380d1619e462f4bafb6f2d0d6a4f64254c2fedd",
+  "browserTestSha256": "63e01853097f590e3dec395921453d4c3f4011b88d6854bfff15c25a2c188b27",
+  "testCounts": {
+    "passed": 36,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "failureDiagnostics": [
+    "src/app/lp/[slug]/[stepPath]/page.tsx(43,118): error TS2339: Property 'renderedStepId' does not exist on type 'FunnelRuntimeDecision'.",
+    "src/app/lp/[slug]/page.tsx(46,124): error TS2339: Property 'renderedStepId' does not exist on type 'FunnelRuntimeDecision'.",
+    "src/lib/funnel-operations-service.ts(73,218): error TS2352: Conversion of type '{ flow: { name: string; domain: string; currency: \"TWD\" | \"USD\" | \"HKD\" | \"EUR\" | \"SGD\" | \"JPY\"; schemaVersion: typeof FUNNEL_FLOW_SCHEMA_VERSION; ... 4 more ...; webinar"
+  ],
+  "failure": "typecheck failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

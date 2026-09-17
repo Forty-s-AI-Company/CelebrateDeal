@@ -1,0 +1,63 @@
+{
+  "stage": "expected-foreign-404",
+  "errors": [
+    "expected-foreign-404:/landing-pages/:id/operations:Minified React error #419"
+  ],
+  "actions": [
+    {
+      "stage": "deadline-past",
+      "status": 200,
+      "finished": false,
+      "milliseconds": 0
+    },
+    {
+      "stage": "deadline-past",
+      "status": 200,
+      "finished": true,
+      "milliseconds": 110
+    },
+    {
+      "stage": "deadline-past",
+      "status": 204,
+      "finished": true,
+      "milliseconds": 34
+    },
+    {
+      "stage": "deadline-past",
+      "status": 204,
+      "finished": true,
+      "milliseconds": 20
+    },
+    {
+      "stage": "deadline-redirect",
+      "status": 200,
+      "finished": false,
+      "milliseconds": 0
+    },
+    {
+      "stage": "deadline-redirect",
+      "status": 200,
+      "finished": true,
+      "milliseconds": 106
+    },
+    {
+      "stage": "deadline-redirect",
+      "status": 204,
+      "finished": true,
+      "milliseconds": 32
+    },
+    {
+      "stage": "expected-foreign-404",
+      "status": 204,
+      "finished": true,
+      "milliseconds": 79
+    }
+  ],
+  "failureCounts": 191,
+  "ruleState": [
+    {
+      "version": 4,
+      "isActive": true
+    }
+  ]
+}

@@ -15,10 +15,11 @@ export function getPublicFunnelPage(state: FunnelStepPages, stepPath?: string): 
 
 /** Returns only a validated, non-system successor. The public slug comes from
  * the server route, never from authored flow.domain. */
-export function getNextPublicFunnelStepPath(state: FunnelStepPages, currentPageId: string): string | null {
+export function getNextPublicFunnelStepPath(state: FunnelStepPages, currentPageId: string, options: { excludeStepIds?: readonly string[] } = {}): string | null {
   const parsed = parseFunnelStepPages(state);
   if (!parsed) return null;
   const currentIndex = parsed.flow.steps.findIndex((step) => parsed.pages[step.id]?.id === currentPageId);
   if (currentIndex < 0) return null;
-  return parsed.flow.steps.slice(currentIndex + 1).find((step) => !step.isSystem)?.path ?? null;
+  const excluded = new Set(options.excludeStepIds ?? []);
+  return parsed.flow.steps.slice(currentIndex + 1).find((step) => !step.isSystem && !excluded.has(step.id))?.path ?? null;
 }

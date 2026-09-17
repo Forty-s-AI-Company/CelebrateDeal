@@ -90,8 +90,7 @@ const webinarAvailable: FunnelCapability = {
   status: "available",
   reason: "固定場次 Webinar，依排程導向已綁定的 Live。",
 };
-const templateRequired: FunnelCapability = { status: "disabled", reason: "請先為至少一個一般步驟選擇模板，才可使用此分頁。" };
-const available: FunnelCapability = { status: "available", reason: "可安全顯示已驗證的空狀態與欄位。" };
+const available: FunnelCapability = { status: "available", reason: "在 Funnel 管理中編輯、儲存與查看可信來源資料。" };
 
 function clone<T>(value: T): T {
   if (Array.isArray(value)) return value.map(clone) as T;
@@ -341,29 +340,17 @@ export function removeFunnelStep(flow: FunnelFlow, stepId: string): FunnelFlowMu
   });
 }
 
-function hasSelectedTemplate(flow: FunnelFlow): boolean {
-  return flow.steps.some((step) => !step.isSystem && step.template.source === "template" && Boolean(step.template.templateId));
-}
-
-function statusForDataTab(flow: FunnelFlow): FunnelCapability {
-  if (flow.goal === "webinar") return webinarAvailable;
-  return hasSelectedTemplate(flow) ? available : templateRequired;
-}
-
-/** Metadata for actual tabs. Values deliberately describe empty/limited states instead of inventing engines. */
+/** Operational tabs are backed by persisted settings and server-owned sources. */
 export function getFunnelSecondaryTabs(flow: FunnelFlow): ReadonlyArray<FunnelSecondaryTab> {
-  const parsed = validFlow(flow);
-  if (!parsed) return [];
-  const dataTab = statusForDataTab(parsed);
-  const statsCapability = dataTab.status === "available" ? available : dataTab;
+  if (!validFlow(flow)) return [];
   return [
-    { id: "configuration", label: "設定", capability: dataTab },
-    { id: "automation_rules", label: "自動化規則", capability: dataTab, emptyState: { title: "目前沒有自動化規則", columns: [] } },
-    { id: "ab_test", label: "A/B 測試", capability: dataTab.status === "available" ? { status: "limited", reason: "目前提供原始頁面與變體空狀態；實際分流引擎尚未啟用。" } : dataTab, emptyState: { title: "尚未建立變體", columns: ["原始頁面", "變體"] } },
-    { id: "stats", label: "統計", capability: statsCapability, emptyState: { title: "尚無可顯示的流量或銷售資料", columns: ["瀏覽", "名單", "銷售", "每次瀏覽收益", "轉換率", "營收"] } },
-    { id: "leads", label: "名單", capability: dataTab, emptyState: { title: "目前沒有名單", columns: ["加入日期", "Email", "Funnel 步驟"] } },
-    { id: "sales", label: "銷售", capability: dataTab, emptyState: { title: "目前沒有訂單", columns: ["日期", "步驟", "價格", "客戶", "狀態"] } },
-    { id: "deadline_settings", label: "期限設定", capability: dataTab.status === "available" ? { status: "limited", reason: "期限欄位可保留，但倒數與導向引擎尚未啟用。" } : dataTab },
-    { id: "funnel_settings", label: "Funnel 設定", capability: parsed.goal === "webinar" ? webinarAvailable : available },
+    { id: "configuration", label: "設定", capability: available },
+    { id: "automation_rules", label: "Automation Rules", capability: available },
+    { id: "ab_test", label: "A/B Test", capability: available },
+    { id: "stats", label: "Stats", capability: available },
+    { id: "leads", label: "Leads", capability: available },
+    { id: "sales", label: "Sales", capability: available },
+    { id: "deadline_settings", label: "Deadline Settings", capability: available },
+    { id: "funnel_settings", label: "Funnel Settings", capability: available },
   ];
 }

@@ -1,0 +1,27 @@
+{
+  "browserScope": "complete funnel operations journey",
+  "status": "PASS",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "PASS",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "e6c20a6632f0124a635f205dc9a65e6c79e14d8aff726284aaa430883757007b",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "7f48197358e09516ba70a27bdbe0856590effaa9b00458dd9866cf326697802a",
+  "browserTestSha256": "c715698f6853d30cd3c053e6b520fb862f07245f8e659ed5d3053ff520f5a72d",
+  "testCounts": {
+    "passed": 85,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": false,
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

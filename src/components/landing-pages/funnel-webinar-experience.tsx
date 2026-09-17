@@ -11,10 +11,14 @@ export type WebinarExperienceResource = {
   form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
 };
 
+function funnelSourceFields(source: { landingPageId: string; stepId: string } | undefined) {
+  return { landingPageId: source?.landingPageId ?? "", stepId: source?.stepId ?? "" };
+}
+
 /** Preview and public pages share the same document and state rendering path. */
-export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport }: {
+export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, funnelSource }: {
   state: FunnelStepPages; stepId: string; slug: string; resource?: WebinarExperienceResource;
-  preview?: boolean; viewport?: "desktop" | "mobile";
+  preview?: boolean; viewport?: "desktop" | "mobile"; funnelSource?: { landingPageId: string; stepId: string };
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
@@ -30,6 +34,7 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
   const path = (value: string) => `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(value)}`;
   const ready = resource && status.status !== "missing" && status.status !== "expired";
   const start = state.flow.webinar?.startsAt;
+  const source = funnelSourceFields(funnelSource);
   return <div className="mx-auto w-full max-w-5xl p-4" data-webinar-state={status.status}>
     <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} />
     {!step.isSystem ? <section className="mt-5 rounded-xl border border-slate-200 p-5">
@@ -38,6 +43,8 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
       {step.type === "webinar_registration_page" && ready && thankYou ? <form method="post" action="/api/form-submissions" className="mt-4 grid gap-3" onSubmit={preview ? (event) => event.preventDefault() : undefined}>
         <input type="hidden" name="formId" value={resource.form.id} />
         <input type="hidden" name="liveId" value={resource.live.id} />
+        <input type="hidden" name="landingPageId" value={source.landingPageId} />
+        <input type="hidden" name="funnelStepId" value={source.stepId} />
         <input type="hidden" name="redirectTo" value={path(thankYou.path)} />
         {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
         <button disabled={preview} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : resource.form.submitLabel}</button>

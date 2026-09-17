@@ -66,15 +66,12 @@ describe("Funnel flow v1", () => {
     expect(removed.ok && removed.flow.steps.map((step) => step.id)).toEqual(["info_2", "inactive"]);
   });
 
-  it("模板選擇前後，次要分頁會明確顯示 disabled、limited 或空資料狀態", () => {
-    const audience = flow("audience");
-    expect(getFunnelSecondaryTabs(audience).find((tab) => tab.id === "stats")?.capability.status).toBe("disabled");
-    const selected = setFunnelStepTemplate(audience, "opt_in", "audience-volunteer");
-    if (!selected.ok) throw new Error(selected.error);
-    const tabs = getFunnelSecondaryTabs(selected.flow);
-    expect(tabs.find((tab) => tab.id === "stats")).toMatchObject({ capability: { status: "available" }, emptyState: { columns: ["瀏覽", "名單", "銷售", "每次瀏覽收益", "轉換率", "營收"] } });
-    expect(tabs.find((tab) => tab.id === "ab_test")?.capability.status).toBe("limited");
-    expect(tabs.find((tab) => tab.id === "deadline_settings")?.capability.status).toBe("limited");
+  it("所有次要分頁連接管理功能，不依模板選擇鎖定", () => {
+    const tabs = getFunnelSecondaryTabs(flow("audience"));
+    expect(tabs).toHaveLength(8);
+    expect(tabs.every((tab) => tab.capability.status === "available")).toBe(true);
+    expect(tabs.map((tab) => tab.label)).toContain("A/B Test");
+    expect(tabs.every((tab) => tab.emptyState === undefined)).toBe(true);
   });
 
   it("strict parse 與 serialize/deserialize round-trip 拒絕重複、遺失或未驗證資料", () => {

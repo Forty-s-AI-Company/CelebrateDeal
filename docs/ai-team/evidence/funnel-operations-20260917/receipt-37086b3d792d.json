@@ -1,0 +1,43 @@
+{
+  "browserScope": "complete funnel operations journey",
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "37760ac1a3122c43306dfcbf165a48ef14e08a466ff9392837c437777398d160",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "4aaf5dca0c90ccda8e7d805b048d0ec4b222dad81caa55aff7e7e88f9e0952a5",
+  "browserTestSha256": "31e9d341dfdd00877bab55104fb8d93aefc96b232b8e57333ccb5e896dea2122",
+  "testCounts": {
+    "passed": 83,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": false,
+  "failureDiagnostics": [
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"errors\":[],\"ruleState\":[{\"version\":4,\"isActive\":true}]}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-create\",\"status\":200,\"finished\":true,\"milliseconds\":49}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":90}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":150}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":204,\"finished\":true,\"milliseconds\":26}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":88}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":193}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":204,\"finished\":true,\"milliseconds\":22}",
+    "    Error occurred during query execution:",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

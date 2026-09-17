@@ -1,0 +1,228 @@
+[
+  {
+    "method": "GET",
+    "path": "/affiliate-portal/login",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/password-reset/request",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/register",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/affiliate-portal/login",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/register",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/password-reset/request",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/login",
+    "status": 303,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/login",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/api/security/csp-report",
+    "status": 204,
+    "finished": true,
+    "action": false
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/onboarding",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/products/new",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/onboarding",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/products/new",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "GET",
+    "path": "/onboarding",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/products/new",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/landing-pages/:id",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/onboarding",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/products/new",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "GET",
+    "path": "/dashboard",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "status": 200,
+    "finished": false,
+    "action": true
+  },
+  {
+    "method": "POST",
+    "path": "/landing-pages/:id/operations",
+    "failed": "net::ERR_ABORTED"
+  }
+]

@@ -159,6 +159,12 @@ export type AutomationEvent = {
   vendorId: string;
   eventId: string;
   trigger: AutomationTrigger;
+  /**
+   * A trusted LandingPage id supplied by the server-side funnel submission
+   * path. It is optional so vendor-wide rules retain their existing behaviour
+   * for events that do not originate from a funnel.
+   */
+  funnelPageId?: string;
   subjectType: "buyer_order" | "buyer_registration" | "viewer_session";
   subjectId: string;
   subjectKeyHash: string;
@@ -362,7 +368,14 @@ async function executeAction(
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
   const rules = await db.automationRule.findMany({
-    where: { vendorId: event.vendorId, trigger: event.trigger, isActive: true },
+    where: {
+      vendorId: event.vendorId,
+      trigger: event.trigger,
+      isActive: true,
+      // An unscoped rule remains vendor-wide. A scoped rule can only run for
+      // the exact trusted funnel page that emitted the event.
+      OR: [{ funnelPageId: null }, ...(event.funnelPageId ? [{ funnelPageId: event.funnelPageId }] : [])],
+    },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, version: true, condition: true, actions: true },
   });

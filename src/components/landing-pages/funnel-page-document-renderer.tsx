@@ -37,6 +37,8 @@ export type FunnelPageDocumentRendererProps = {
 export type FunnelSubmissionContext = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   landingPageId: string;
+  /** A public route supplies this server-resolved step for trusted attribution. */
+  funnelStepId?: string;
   liveId?: string;
   redirectTo?: string;
 };
@@ -299,7 +301,7 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
       const response = await fetch("/api/form-submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
-        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, liveId: submission.liveId ?? null, payload }),
+        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload }),
       });
       if (!response.ok) {
         setStatus("error"); setMessage(response.status === 429 ? "送出次數過多，請稍後再試。" : "資料未能送出，請檢查欄位後再試。");

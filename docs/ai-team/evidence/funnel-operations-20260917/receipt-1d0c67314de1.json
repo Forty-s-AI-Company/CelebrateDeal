@@ -1,0 +1,43 @@
+{
+  "browserScope": "complete funnel operations journey",
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "37760ac1a3122c43306dfcbf165a48ef14e08a466ff9392837c437777398d160",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "a2f79eca7148ef6774e23458b18ed03a422e71adad9bd8c17a4a9746539b9dfc",
+  "browserTestSha256": "c93b694fe8f0ae1e81f8433cee2ffe77a45df57a784d6cc232107489fa04b35f",
+  "testCounts": {
+    "passed": 83,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "failureDiagnostics": [
+    "QA_DIAGNOSTIC {\"stage\":\"public-submission\",\"errors\":[],\"ruleState\":[{\"version\":4,\"isActive\":true}]}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-create\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-create\",\"status\":200,\"finished\":true,\"milliseconds\":43}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":94}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":133}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":204,\"finished\":true,\"milliseconds\":22}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":83}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":72}",
+    "QA_DIAGNOSTIC {\"stage\":\"public-submission\",\"status\":200,\"finished\":true,\"milliseconds\":196}",
+    "    Error: page.goto: Navigation to \"http://127.0.0.1:31149/landing-pages/cmu5i04w50004vdh4z88gdzef/operations\" is interrupted by another navigation to \"http://127.0.0.1:31149/lp/test-only-operations-e17d1fd11ffb-edited/thank-you\"",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

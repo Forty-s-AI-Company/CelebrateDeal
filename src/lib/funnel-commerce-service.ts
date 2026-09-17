@@ -11,6 +11,8 @@ import {
 } from "@/lib/funnel-commerce";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
+import { parseFunnelOperations } from "@/lib/funnel-operations";
+import { isFunnelDeadlineExpired, resolveFunnelDeadline } from "@/lib/funnel-runtime";
 import { safeParseCustomCheckoutFields, type CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 
 type CommerceScope = { vendorId: string; projectId: string };
@@ -167,7 +169,7 @@ export async function resolvePublishedFunnelCheckout(reference: unknown, databas
       project: { is: { status: "published", publishedAt: { not: null } } },
     },
     select: {
-      id: true, vendorId: true, projectId: true, slug: true, publishedVersionId: true,
+      id: true, vendorId: true, projectId: true, slug: true, publishedVersionId: true, operations: true,
       publishedVersion: { select: { id: true, vendorId: true, pageId: true, version: true, content: true } },
     },
   });
@@ -176,6 +178,15 @@ export async function resolvePublishedFunnelCheckout(reference: unknown, databas
   const step = steps?.flow.steps.find((candidate) => candidate.id === parsedReference.data.stepId);
   const document = steps?.pages[parsedReference.data.stepId];
   if (!step || step.type !== "order_form" || !document) return null;
+  // Checkout writes must obey the same absolute deadline as the public page.
+  // A redirect target is intentionally accessible, but any order-form source
+  // that would be redirected or closed cannot create a transaction.
+  const deadline = resolveFunnelDeadline({
+    steps: steps.flow.steps,
+    requestedStepId: step.id,
+    operations: parseFunnelOperations(page.operations),
+  });
+  if (deadline.status !== "render" || isFunnelDeadlineExpired(parseFunnelOperations(page.operations))) return null;
   const bindingResult = FunnelCommerceBindingSchema.safeParse(document.commerce);
   if (!bindingResult.success) return null;
   const scope = { vendorId: page.vendorId, projectId: page.projectId };

@@ -120,6 +120,8 @@ model Vendor {
   lives                            Live[]
   landingPages                     LandingPage[]
   landingPageVersions              LandingPageVersion[]
+  funnelVisits                     FunnelVisit[]
+  funnelSubmissions                FunnelSubmission[]
   templates                        MessageTemplate[]
   analytics                        AnalyticsEvent[]
   interactionScripts               InteractionScript[]
@@ -521,6 +523,8 @@ model LandingPage {
   status             LandingPageStatus @default(draft)
   publishedVersionId String?
   revision           Int               @default(1)
+  /// Mutable operational controls stay outside immutable published snapshots.
+  operations         Json?
   publishedAt        DateTime?
   unpublishedAt      DateTime?
   createdAt          DateTime          @default(now())
@@ -532,12 +536,56 @@ model LandingPage {
   draftLive        Live?               @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
   versions         LandingPageVersion[] @relation("LandingPageVersions")
   publishedVersion LandingPageVersion? @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
+  funnelVisits      FunnelVisit[]
+  funnelSubmissions FunnelSubmission[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, id, publishedVersionId])
   @@unique([vendorId, projectId, slug])
   @@index([vendorId, projectId, updatedAt])
   @@index([vendorId, status, publishedAt])
+}
+
+/// Server-delivered public Funnel views. visitorId is only an opaque pseudonym.
+model FunnelVisit {
+  id           String   @id @default(cuid())
+  vendorId     String
+  pageId       String
+  stepId       String
+  /// Original control/URL step, retained even when A/B renders a variant.
+  logicalStepId String
+  visitorId    String
+  experimentId String?
+  arm          String?
+  createdAt    DateTime @default(now())
+
+  vendor      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page        LandingPage        @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  submissions FunnelSubmission[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, pageId, id])
+  @@index([vendorId, pageId, logicalStepId, createdAt])
+  @@index([vendorId, pageId, visitorId, createdAt])
+}
+
+/// Server-validated public form submissions only; browser page/step data is not trusted.
+model FunnelSubmission {
+  id           String   @id @default(cuid())
+  vendorId     String
+  pageId       String
+  stepId       String
+  submissionId String   @unique
+  visitId      String?
+  createdAt    DateTime @default(now())
+
+  vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page       LandingPage    @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  visit      FunnelVisit?   @relation(fields: [vendorId, pageId, visitId], references: [vendorId, pageId, id], onDelete: Restrict)
+
+  @@index([vendorId, pageId, stepId, createdAt])
+  @@index([vendorId, pageId, visitId])
 }
 
 /// Append-only snapshots. A rollback creates a new page draft from one of
@@ -588,6 +636,7 @@ model FormSubmission {
   teamAttribution          TeamLeadAttribution?
   chatMessages             LiveChatMessage[]
   liveInteractionResponses LiveInteractionResponse[]
+  funnelSubmission         FunnelSubmission?
 
   @@unique([liveId, id])
   @@index([formId, verificationStatus, createdAt])
@@ -3345,6 +3394,7 @@ model AutomationRule {
   condition   Json
   actions     Json
   isActive    Boolean  @default(true)
+  funnelPageId String?
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -3354,6 +3404,7 @@ model AutomationRule {
 
   @@unique([vendorId, id])
   @@index([vendorId, trigger, isActive])
+  @@index([vendorId, funnelPageId, trigger, isActive])
 }
 
 model AutomationExecutionLog {

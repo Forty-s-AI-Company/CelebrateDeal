@@ -31,4 +31,11 @@ describe("public funnel page selection", () => {
     expect(getNextPublicFunnelStepPath(state, second.id)).toBeNull();
     expect(getNextPublicFunnelStepPath(state, "unknown")).toBeNull();
   });
+
+  it("A/B 變體不會變更邏輯控制步驟的下一頁", () => {
+    const state = createGoalFunnelStepPages({ id: "flow", name: "名單 Funnel", goal: "audience", domain: "audience" })!;
+    const control = state.pages[state.flow.steps[0]!.id]!;
+    const variant = state.flow.steps[1]!;
+    expect(getNextPublicFunnelStepPath(state, control.id, { excludeStepIds: [variant.id] })).toBeNull();
+  });
 });

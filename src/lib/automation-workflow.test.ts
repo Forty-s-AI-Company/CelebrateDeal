@@ -67,6 +67,20 @@ describe("smart automation workflow engine", () => {
     expect(automationCustomerKeyHash("vendor-2", "buyer@example.com")).not.toBe(automationCustomerKeyHash("vendor-1", "buyer@example.com"));
   });
 
+  it("keeps vendor-wide rules for every event and admits a scoped rule only for its trusted funnel page", async () => {
+    const db = { automationRule: { findMany: vi.fn().mockResolvedValue([]) } };
+
+    await dispatchAutomationEvent(db as never, { ...event, trigger: "form_registered", subjectType: "buyer_registration", subjectId: "registration-1" });
+    expect(db.automationRule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ OR: [{ funnelPageId: null }] }),
+    }));
+
+    await dispatchAutomationEvent(db as never, { ...event, trigger: "form_registered", subjectType: "buyer_registration", subjectId: "registration-1", funnelPageId: "page-1" });
+    expect(db.automationRule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ OR: [{ funnelPageId: null }, { funnelPageId: "page-1" }] }),
+    }));
+  });
+
   it("runs tag, voucher and LINE actions once and keeps bearer values out of logs", async () => {
     const update = vi.fn().mockResolvedValue({});
     const db = {

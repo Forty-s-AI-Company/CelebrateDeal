@@ -1,0 +1,38 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "FAIL",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "b3f5aefcf1915487b310ba6f2203cecef13e516d9064c4957e98d11ca9637c5e",
+  "browserTestSha256": "523d3849a733395a56ed25ec179ad42a9f8f5ffea415e72edbdc7b870dbdb461",
+  "testCounts": {
+    "passed": 44,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "failureDiagnostics": [
+    "src/app/api/form-submissions/route.db.test.ts(72,66): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.db.test.ts(74,40): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(128,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(153,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(177,18): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(178,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(179,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(191,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(214,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(215,18): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(238,12): error TS18048: 'response' is possibly 'undefined'.",
+    "src/app/api/form-submissions/route.test.ts(254,12): error TS18048: 'response' is possibly 'undefined'."
+  ],
+  "failure": "typecheck failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}

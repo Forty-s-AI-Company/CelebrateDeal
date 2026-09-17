@@ -224,6 +224,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>Redo</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
+      <FunnelManagementLink page={page} content={content} pending={pending} stepPending={stepPending} dirty={dirty} className={secondaryButtonClass} navigate={(href) => router.push(href)} />
       <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); document.getElementById("funnel-page-settings-tab")?.click(); }} className={secondaryButtonClass}>頁面設定</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("desktop"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" })); }}>桌機</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("mobile"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" })); }}>手機</button>
@@ -293,4 +294,9 @@ function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, 
       if (match) onSelect(match.id, lives.find((item) => item.id === match.id)?.formId);
     }}><option value="">請選擇已綁定活動的可播放影片</option>{resources?.lives.filter((live) => live.videoReady && live.videoId).map((live) => <option key={live.id} value={live.id}>{live.videoTitle} · {lives.find((item) => item.id === live.id)?.title}</option>)}</select><span>沿用活動 Studio 的來源影片；選擇影片會同步選擇其活動。實際播放仍依 Live 排程與觀看權限。</span></label>
   </>;
+}
+
+function FunnelManagementLink({ page, content, pending, stepPending, dirty, className, navigate }: { page?: PageInput; content: LandingPageStoredContent; pending: boolean; stepPending: boolean; dirty: boolean; className: string; navigate: (href: string) => void }) {
+  if (!page || !isFunnelStepPages(content)) return null;
+  return <button type="button" disabled={pending || stepPending} className={className} onClick={() => { if (!dirty || window.confirm("尚有未儲存的頁面內容，確定離開編輯器？")) navigate(`/landing-pages/${page.id}/operations`); }}>Funnel 管理</button>;
 }

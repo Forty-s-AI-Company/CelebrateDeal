@@ -11,10 +11,29 @@ function request(pathname: string, method = "GET") {
 }
 
 describe("Next Proxy lineage marker", () => {
-  it("matches only the public marker path", () => {
-    expect(config.matcher).toBe("/__celebratedeal_wp187_fingerprint\\.json");
+  it("matches the public marker and Funnel routes", () => {
+    expect(config.matcher).toEqual(["/__celebratedeal_wp187_fingerprint\\.json", "/lp/:path*"]);
     expect(proxy(request(MARKER_PATH)).status).toBe(200);
     expect(proxy(request("/login")).status).toBe(200);
+  });
+
+  it("injects one opaque Funnel visitor pseudonym on the first LP request and reuses a valid cookie", () => {
+    const first = proxy(request("/lp/offer"));
+    expect(first.headers.get("set-cookie")).toMatch(/celebratedeal_funnel_visitor=[A-Za-z0-9-]{20,100}/u);
+    expect(first.headers.get("x-middleware-request-cookie")).toContain("celebratedeal_funnel_visitor=");
+
+    const repeat = proxy(new NextRequest("https://staging.example.test/lp/offer", {
+      headers: { cookie: "celebratedeal_funnel_visitor=visitor-12345678901234567890" },
+    }));
+    expect(repeat.headers.get("set-cookie")).toBeNull();
+    expect(repeat.headers.get("x-middleware-request-cookie")).toBeNull();
+
+    const invalid = proxy(new NextRequest("https://staging.example.test/lp/offer", {
+      headers: { cookie: "celebratedeal_funnel_visitor=invalid; existing=value" },
+    }));
+    const forwarded = invalid.headers.get("x-middleware-request-cookie") ?? "";
+    expect(forwarded).toContain("existing=value");
+    expect(forwarded.match(/celebratedeal_funnel_visitor=/gu) ?? []).toHaveLength(1);
   });
 
   it("returns the deterministic GET contract", async () => {

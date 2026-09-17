@@ -37,6 +37,12 @@ describe("Webinar shared preview/public experience", () => {
     expect(html).toContain('value="/lp/current-slug/thank-you"');
     expect(html).toContain("完成確認");
   });
+  it("posts a server-rendered Funnel source for revalidation", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} funnelSource={{ landingPageId: "page_1", stepId: "webinar_registration" }} />);
+    expect(html).toContain('name="landingPageId" value="page_1"');
+    expect(html).toContain('name="funnelStepId" value="webinar_registration"');
+  });
   it("shares mobile rendering and blocks preview submission", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
     const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} preview viewport="mobile" />);

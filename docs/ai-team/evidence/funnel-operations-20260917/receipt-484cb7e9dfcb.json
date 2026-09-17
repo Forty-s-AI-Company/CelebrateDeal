@@ -1,0 +1,43 @@
+{
+  "browserScope": "complete funnel operations journey",
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "no payment or provider interaction; synthetic funnel operations only",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "sourceSha256": "ad16b5876054ccc6f1515a3141a8b2e32f2df268cabc7c26f0768d59e7bc8fe4",
+  "sourceFingerprintPolicy": "production sources exclude colocated test files; tests separately fingerprinted",
+  "testSourcesSha256": "553173eb480babf9c9e69a868dd06f1d8c3832eea7528e6b52f30c82b897f500",
+  "browserTestSha256": "31e9d341dfdd00877bab55104fb8d93aefc96b232b8e57333ccb5e896dea2122",
+  "testCounts": {
+    "passed": 48,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "failureDiagnostics": [
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"errors\":[],\"ruleState\":[{\"version\":4,\"isActive\":true}]}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-create\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-create\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":false,\"milliseconds\":0}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":204,\"finished\":true,\"milliseconds\":37}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":149}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":200,\"finished\":true,\"milliseconds\":189}",
+    "QA_DIAGNOSTIC {\"stage\":\"automation-update\",\"status\":404,\"finished\":false,\"milliseconds\":0}",
+    "    Error: expect(received).toBe(expected) // Object.is equality",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "    Error Context: test-results\\funnel-operations-Funnel-s-95492-enforce-the-public-deadline\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-operations-qa-T1DOeL"
+}
