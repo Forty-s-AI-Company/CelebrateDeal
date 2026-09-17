@@ -89,6 +89,9 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Funnel/browser QA uses isolated Next build directories. They are
+    // generated bundles, not authored source, and must not enter ESLint.
+    ".next-*/**",
     "out/**",
     "build/**",
     // Test coverage is generated output, not source code to lint.
