@@ -180,7 +180,7 @@ const brandInfo = (prefix: string) => [
   section(prefix, "contact", [headline(prefix, "contact_title", "想進一步認識我們？"), button(prefix, "contact_button", "聯絡 CelebrateDeal", { type: "open_url", href: "#contact", newTab: false })]),
 ];
 
-const availableReason = "依 systeme.io 實測模板族建立，可展開為獨立編輯節點";
+const availableReason = "可展開為獨立編輯的 CelebrateDeal 節點";
 const limitedReason = "版面可編輯；付款元件維持 limited 與 disabled，不建立假的付款完成流程";
 
 const templates: FunnelTemplateGalleryItem[] = [
