@@ -61,6 +61,17 @@ const SubmissionPayload = z.object({
   }).strict().optional(),
 });
 
+function submissionAttribution(
+  utm: z.infer<typeof SubmissionPayload>["utm"],
+  landingPageId: string | undefined,
+) {
+  if (!utm && !landingPageId) return undefined;
+  return {
+    ...(utm ? { utm } : {}),
+    ...(landingPageId ? { landingPageId } : {}),
+  };
+}
+
 function stableSubmissionId(formId: string, liveId: string | null, email: string) {
   const digest = createHash("sha256")
     .update(JSON.stringify([formId, liveId, email]))
@@ -431,10 +442,7 @@ export async function POST(request: Request) {
         phone,
         source: submittedLiveId ? "live" : "form",
         // Marketing attribution is visitor-supplied, never an authorization or commission input.
-        attribution: parsed.data.utm || parsed.data.landingPageId ? {
-          ...(parsed.data.utm ? { utm: parsed.data.utm } : {}),
-          ...(parsed.data.landingPageId ? { landingPageId: parsed.data.landingPageId } : {}),
-        } : undefined,
+        attribution: submissionAttribution(parsed.data.utm, parsed.data.landingPageId),
         answers: normalizedAnswers as Prisma.InputJsonValue,
         verificationStatus: "UNVERIFIED",
         verificationVersion: 1,
