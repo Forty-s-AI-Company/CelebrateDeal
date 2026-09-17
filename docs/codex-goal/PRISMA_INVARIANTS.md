@@ -8,11 +8,11 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 121 |
-| Migration directories | 79 |
+| Prisma models | 122 |
+| Migration directories | 82 |
 | Isolated PostgreSQL version | 16（本輪 pro-audit；先前驗證為 18.3） |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 79/79 current chain；本輪 loopback disposable PostgreSQL 完整 forward-apply 成功 |
+| Applied migrations in isolated DB | 82/82 current chain；本輪 loopback disposable PostgreSQL 完整 forward-apply 成功 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -31,7 +31,7 @@
 | 類別 | 數量 | Models |
 |---|---:|---|
 | Identity／tenant root | 9 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`StudentPortalAccessToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 24 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveQuestion`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`LiveInteractionRun`、`LiveInteractionResponse`、`ConsultationEvent`、`ConsultationBooking`、`Blacklist` |
+| Content／live／lead | 25 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveMediaSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveQuestion`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`LiveInteractionRun`、`LiveInteractionResponse`、`ConsultationEvent`、`ConsultationBooking`、`Blacklist` |
 | Affiliate／billing／payment／ops | 40 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`ElectronicInvoice`、`ElectronicInvoiceAllowance`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry`、`CommissionRuleSet`、`CommissionRateTier`、`CommissionUplineLevel`、`CommissionQuantityTier`、`CommissionProductOverride` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
@@ -121,6 +121,9 @@
 | `20260908143000_customer_crm_cockpit` | customer CRM record and consultant notes |
 | `20260908230000_evergreen_webinar_vendor_settings` | tenant-owned evergreen webinar settings |
 | `20260909100000_student_portal_access_tokens` | single-use student portal magic/checkout token digests |
+| `20260911010000_private_live_chat` | tenant-bound instructor/private live-chat persistence and idempotency |
+| `20260911020000_presenter_layout` | browser-live presenter layout and short-lived media session state |
+| `20260911070000_live_danmaku` | tenant-bound danmaku state and epoch controls |
 
 ## 已由資料庫強制的主要 invariants
 
