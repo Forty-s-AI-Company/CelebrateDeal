@@ -85,7 +85,7 @@ const STEPS: Record<FunnelStepType, { group: FunnelStepGroup; label: string }> =
 
 const webinarUnverified: FunnelCapability = {
   status: "unverified",
-  reason: "Webinar 在實測帳戶受方案限制，預設 steps、模板、排程與播放行為尚未驗證。",
+  reason: "CelebrateDeal 的自動化 Webinar 編輯、排程與播放流程仍在開發中。",
 };
 const templateRequired: FunnelCapability = { status: "disabled", reason: "請先為至少一個一般步驟選擇模板，才可使用此分頁。" };
 const available: FunnelCapability = { status: "available", reason: "可安全顯示已驗證的空狀態與欄位。" };
