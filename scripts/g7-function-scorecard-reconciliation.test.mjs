@@ -26,7 +26,10 @@ const expectedFunctionIds = [
 const expectedCategoryIds = Array.from({ length: 10 }, (_, index) => `CAT${String(index + 1).padStart(2, "0")}`);
 
 function digest(relativePath) {
-  return crypto.createHash("sha256").update(fs.readFileSync(path.join(root, relativePath))).digest("hex");
+  // Git stores these canonical text artifacts with LF. Normalize checkout
+  // line endings so the same evidence verifies on Windows and Linux runners.
+  const contents = fs.readFileSync(path.join(root, relativePath), "utf8").replaceAll("\r\n", "\n");
+  return crypto.createHash("sha256").update(contents).digest("hex");
 }
 
 test("fixed function inventory is complete, unique and every candidate is at least seven", () => {

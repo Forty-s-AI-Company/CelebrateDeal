@@ -15,6 +15,10 @@ const categories = Object.values(snapshot.categories);
 const total = categories.reduce((sum, category) => sum + category.score, 0);
 
 const sha256File = (absolutePath) => `sha256:${crypto.createHash("sha256").update(fs.readFileSync(absolutePath)).digest("hex")}`;
+const sha256CanonicalTextFile = (absolutePath) => {
+  const contents = fs.readFileSync(absolutePath, "utf8").replaceAll("\r\n", "\n");
+  return `sha256:${crypto.createHash("sha256").update(contents).digest("hex")}`;
+};
 const allSnapshotProvenance = [
   ...categories.flatMap((category) => category.provenance),
   ...Object.values(snapshot.gates).flatMap((gate) => gate.provenance),
@@ -24,9 +28,9 @@ const allSnapshotProvenance = [
 const runtimeProvenancePaths = [...new Set(allSnapshotProvenance.filter((relativePath) => relativePath.startsWith(".ai-team/reports/")))].sort();
 assert.equal(provenanceManifest.schemaVersion, "current-readiness-provenance/v1");
 assert.equal(provenanceManifest.sourceSnapshot.json.path, "docs/launch/current-readiness-snapshot-20260802.json");
-assert.equal(provenanceManifest.sourceSnapshot.json.sha256, sha256File(snapshotPath));
+assert.equal(provenanceManifest.sourceSnapshot.json.sha256, sha256CanonicalTextFile(snapshotPath));
 assert.equal(provenanceManifest.sourceSnapshot.markdown.path, "docs/launch/current-readiness-snapshot-20260802.md");
-assert.equal(provenanceManifest.sourceSnapshot.markdown.sha256, sha256File(snapshotMarkdownPath));
+assert.equal(provenanceManifest.sourceSnapshot.markdown.sha256, sha256CanonicalTextFile(snapshotMarkdownPath));
 assert.ok(Array.isArray(provenanceManifest.runtimeArtifacts));
 const runtimeArtifacts = [...provenanceManifest.runtimeArtifacts].sort((left, right) => left.path.localeCompare(right.path));
 assert.deepEqual(runtimeArtifacts.map((artifact) => artifact.path), runtimeProvenancePaths);
