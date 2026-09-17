@@ -5,7 +5,7 @@ import type { FunnelNode } from "./funnel-page-document";
 const flatten = (nodes: FunnelNode[]): FunnelNode[] => nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])]);
 
 describe("goal funnel initial documents", () => {
-  it.each(["sell", "audience", "custom"] as const)("%s 建立每一步的獨立可渲染頁面", (goal) => {
+  it.each(["sell", "audience", "custom", "webinar"] as const)("%s 建立每一步的獨立可渲染頁面", (goal) => {
     const state = createGoalFunnelStepPages({ id: `flow_${goal}`, name: goal, goal, domain: goal });
     expect(state).not.toBeNull();
     if (!state) return;

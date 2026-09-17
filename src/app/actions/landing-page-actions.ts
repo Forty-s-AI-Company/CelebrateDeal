@@ -71,6 +71,10 @@ function failure(error: unknown): LandingPageActionState {
     return { status: "error", message: "找不到這個一頁式網站，或你沒有管理它的權限。" };
   }
   if (error instanceof LandingPageInputError) {
+    if (error.message === "landing_page_webinar_direct_media_forbidden") return { status: "error", message: "請移除 Webinar 播放頁與彈出視窗中的直接影片元件，並綁定 Live，透過授權播放入口觀看。" };
+    if (error.message === "landing_page_webinar_steps_required") return { status: "error", message: "Webinar 必須各有一個報名頁、感謝頁與播放頁，請先補齊必要步驟再發布。" };
+    if (error.message === "landing_page_webinar_resources_required") return { status: "error", message: "Webinar 尚未具備可發布的資源。請選擇同專案的報名表與 Live，確認 Live 使用相同表單，且來源影片已處理完成。" };
+    if (error.message === "landing_page_webinar_schedule_required") return { status: "error", message: "請先設定 Webinar 的開始與結束時間，再重新發布。" };
     return { status: "error", message: "請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。" };
   }
   return { status: "error", message: "暫時無法完成操作；內容仍保留，請稍後再試。" };

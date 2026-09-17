@@ -9,7 +9,7 @@ const GOALS: Array<{ id: FunnelGoal; title: string; description: string; disable
   { id: "audience", title: "建立名單", description: "收集 Email，預設建立名單頁與感謝頁流程。" },
   { id: "sell", title: "銷售商品或服務", description: "建立訂單與感謝頁；正式付款會在完成商品與金流設定後啟用。" },
   { id: "custom", title: "自訂 Funnel", description: "從空白流程開始，自行加入資訊、表單或銷售頁。" },
-  { id: "webinar", title: "自動化 Webinar", description: "自動化 Webinar 編輯流程仍在開發中。", disabled: true },
+  { id: "webinar", title: "自動化 Webinar", description: "建立報名、感謝與播放頁，串接既有活動並設定播放與重播期間。" },
 ];
 
 export function FunnelGoalPicker() {
