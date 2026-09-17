@@ -952,6 +952,7 @@ export async function POST(request: Request) {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
+          projectId: salesProjectId,
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
