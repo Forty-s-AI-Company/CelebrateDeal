@@ -16,6 +16,8 @@ import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sa
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+import { listFunnelCommerceProducts, publicFunnelCommerceViews, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
+import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   live: { id: string; slug: string; videoId: string; videoTitle: string };
@@ -86,6 +88,7 @@ export type LandingPageEditorData = {
   lives: LandingPageLiveReference[];
   context: LandingPageRenderContext;
   webinarResources: FunnelWebinarResources;
+  commerceProducts: FunnelCommerceProduct[];
 };
 
 export type LandingPageList = {
@@ -102,6 +105,7 @@ export type PublicLandingPage = {
   webinar?: PublicFunnelWebinarResource;
   submissionForm?: PublicFunnelWebinarResource["form"];
   submissionLiveId?: string;
+  commerceByPageId?: Record<string, FunnelCommerceView>;
 };
 
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
@@ -138,7 +142,7 @@ export class LandingPageScopeError extends Error {
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
 type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
-type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live">;
+type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "product">;
 
 function db() {
   return getDb();
@@ -221,6 +225,13 @@ async function validateBindings(
   database: LandingPageDb,
   input: { vendorId: string; projectId: string; content: LandingPageStoredContent; formId: string | null; liveId: string | null; publishing?: boolean },
 ) {
+  try {
+    await validateFunnelCommerceBindings(
+      { vendorId: input.vendorId, projectId: input.projectId }, input.content, database as ReturnType<typeof getDb>,
+    );
+  } catch {
+    throw new LandingPageInputError("landing_page_commerce_invalid");
+  }
   const referencedFormIds = registrationFormIdsInContent(input.content);
   if (input.formId) referencedFormIds.add(input.formId);
   const formIds = [...referencedFormIds];
@@ -327,6 +338,12 @@ export async function listFunnelWebinarResources(): Promise<FunnelWebinarResourc
   };
 }
 
+/** Auth-scoped catalog inventory for the new Funnel editor route. */
+export async function listFunnelCommerceProductsForEditor() {
+  const scope = await editorProject();
+  return listFunnelCommerceProducts(scope);
+}
+
 export async function getLandingPageForEditor(pageId: string): Promise<LandingPageEditorData> {
   const scope = await editorProject();
   const page = await db().landingPage.findFirst({
@@ -337,9 +354,10 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
     },
   });
   if (!page) throw new LandingPageNotFoundError();
-  const [forms, lives] = await Promise.all([
+  const [forms, lives, commerceProducts] = await Promise.all([
     db().registrationForm.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true }, orderBy: { name: "asc" } }),
     db().live.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } }, select: { id: true, slug: true, title: true, status: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } }, orderBy: { scheduledAt: "desc" } }),
+    listFunnelCommerceProducts(scope),
   ]);
   const selectedLive = page.draftLiveId ? lives.find((live) => live.id === page.draftLiveId) ?? null : null;
   const formOptions = forms.map(toFormReference);
@@ -350,6 +368,7 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
       lives: lives.map((live) => ({ id: live.id, videoId: live.videoId, videoTitle: live.video?.title ?? null, videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video) })),
       forms: forms.flatMap((form) => { const fields = parseRegistrationFormFields(form.fields); return fields.success ? [{ id: form.id, fields: fields.data, submitLabel: form.submitLabel, successMessage: form.successMessage }] : []; }),
     },
+    commerceProducts,
     forms: formOptions,
     lives: liveOptions,
     context: { forms: formOptions, ...(selectedLive ? { live: toLiveReference(selectedLive) } : {}) },
@@ -534,6 +553,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
   if (page.publishedVersion.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return null;
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content)) ? webinarResource(forms.find((form) => form.id === page.publishedVersion?.formId), live, page.vendorId) : undefined;
   // Resource projections deliberately contain no playback URL or admission token.
+  const commerceByPageId = await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content, page.slug);
   return {
     ...(webinar ? { webinar } : {}),
     ...publicSubmissionProjection(forms, page.publishedVersion.formId, live?.id),
@@ -542,6 +562,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     content,
     context: { pageId: page.id, forms: forms.map(toFormReference), ...(live ? { live: toLiveReference(live) } : {}) },
     publishedAt: page.publishedAt,
+    ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),
   };
 }
 

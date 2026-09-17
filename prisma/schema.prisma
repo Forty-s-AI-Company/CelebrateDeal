@@ -2303,6 +2303,9 @@ model InventoryReservation {
   productId            String
   paymentTransactionId String    @unique
   quantity             Int       @default(1)
+  /// Immutable server-owned list of every product whose stock was reserved.
+  /// Null means a pre-order-bump legacy reservation and falls back to productId/quantity.
+  items                Json?
   status               String    @default("reserved")
   expiresAt            DateTime
   committedAt          DateTime?

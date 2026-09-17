@@ -29,6 +29,19 @@ describe("commerce checkout contract", () => {
     }).success).toBe(false);
   });
 
+  it("keeps Funnel snapshot revisions as bounded untrusted values for server comparison", () => {
+    expect(CommerceCheckoutRequestSchema.safeParse({
+      vendorId: "vendor-1", productId: "product-1", idempotencyKey: "123e4567-e89b-12d3-a456-426614174000",
+      admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`,
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4, expectedOrderBumpRevision: 2 },
+    }).success).toBe(true);
+    expect(CommerceCheckoutRequestSchema.safeParse({
+      vendorId: "vendor-1", productId: "product-1", idempotencyKey: "123e4567-e89b-12d3-a456-426614174000",
+      admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`,
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 0, expectedProductRevision: -1 },
+    }).success).toBe(false);
+  });
+
   it("validates provider actions before the browser consumes them", () => {
     expect(CommerceCheckoutResponseSchema.safeParse({
       ok: true,
@@ -98,6 +111,7 @@ describe("commerce checkout contract", () => {
     expect(checkoutErrorMessage(409)).toContain("重新整理");
     expect(checkoutErrorMessage(425)).toContain("沿用同一筆訂單");
     expect(checkoutErrorMessage(502)).toContain("尚未向你收款");
+    expect(checkoutErrorMessage(503)).toContain("付款設定");
   });
 
   it("retains one checkout identity across ambiguous server failures", () => {
