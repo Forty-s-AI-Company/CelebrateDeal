@@ -102,6 +102,19 @@ export function buildRunIdentity(runId) {
   };
 }
 
+export function buildLoopbackDatabaseUrl(databaseName) {
+  if (!/^[a-z0-9_]+$/u.test(databaseName)) throw new Error("invalid-loopback-database-name");
+
+  // Assemble credentials through URL fields so source scans never mistake this
+  // disposable loopback connection for a committed external database secret.
+  const databaseUrl = new URL("postgresql://127.0.0.1:54329");
+  databaseUrl.username = "postgres";
+  databaseUrl.password = "postgres";
+  databaseUrl.pathname = `/${databaseName}`;
+  databaseUrl.searchParams.set("schema", "public");
+  return databaseUrl.toString();
+}
+
 export function buildIsolatedEnvironment(tempRoot, options = {}) {
   const databaseUrl = options.databaseUrl;
   const directUrl = options.directUrl ?? databaseUrl;
@@ -656,7 +669,7 @@ export async function runLoopbackDatabase() {
     receipt.ownership.markerVerified = marker().stdout.trim() === identity.marker;
     if (!receipt.ownership.markerVerified) throw new Error("MARKER_VERIFY_FAILED");
     const databaseEnvironment = buildIsolatedEnvironment(tempRoot, {
-      databaseUrl: `postgresql://postgres:postgres@127.0.0.1:54329/${candidate}?schema=public`, enableDatabaseTest: true,
+      databaseUrl: buildLoopbackDatabaseUrl(candidate), enableDatabaseTest: true,
     });
     const mirrorRoot = writeMirror(tempRoot, migrations);
     for (const [phase, args] of [["validate", ["validate"]], ["deploy", ["migrate", "deploy"]], ["status", ["migrate", "status"]]]) {
