@@ -1306,7 +1306,7 @@ describe("checkout form submission attribution", () => {
         form: { vendorId: "vendor-1" },
         live: { is: { vendorId: "vendor-1" } },
       },
-      select: { id: true, liveId: true },
+      select: { id: true, liveId: true, live: { select: { projectId: true } } },
     });
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),
