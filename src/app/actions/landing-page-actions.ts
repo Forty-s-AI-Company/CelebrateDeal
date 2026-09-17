@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
   createLandingPage,
+  deleteLandingPage,
   duplicateLandingPage,
   LandingPageConflictError,
   LandingPageInputError,
@@ -18,7 +19,7 @@ import {
 
 const MAX_CONTENT_BYTES = 128 * 1024;
 
-type LandingPageOperation = "create" | "save" | "publish" | "unpublish" | "duplicate" | "rollback";
+type LandingPageOperation = "create" | "save" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -39,7 +40,7 @@ function revision(formData: FormData, key = "revision") {
 
 function operation(formData: FormData): LandingPageOperation | null {
   const raw = value(formData, "operation");
-  return raw === "create" || raw === "save" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback"
+  return raw === "create" || raw === "save" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback" || raw === "delete"
     ? raw
     : null;
 }
@@ -132,6 +133,12 @@ export async function landingPageAction(
       if (!id) return { status: "error", message: "找不到要複製的一頁式網站。" };
       const duplicate = await duplicateLandingPage(id);
       return success("已建立草稿副本。", duplicate);
+    }
+
+    if (command === "delete") {
+      const expectedRevision = revision(formData);
+      if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再刪除。" };
+      return success("Funnel、草稿與所有發布歷史已刪除。", await deleteLandingPage(id, expectedRevision));
     }
 
     const expectedRevision = revision(formData);

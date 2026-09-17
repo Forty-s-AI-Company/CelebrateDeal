@@ -119,6 +119,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         // Restoring a historical snapshot intentionally starts a fresh editing
         // session. Ordinary save/publish must preserve current UI and history.
         if (operation === "rollback") window.location.reload();
+        if (operation === "delete") router.push("/landing-pages");
         // The action already revalidates this route and returns its updated RSC
         // tree. A second refresh inside the same transition can keep Save pending.
       } catch { setMessage("連線中斷，內容仍保留，請稍後再試。"); }
@@ -174,6 +175,9 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       {page ? <>
         <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
         <button disabled={pending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
+        <button disabled={pending || dirty} onClick={() => {
+          if (window.confirm("確定要永久刪除這個 Funnel、草稿與所有發布歷史嗎？此操作無法復原。")) run("delete");
+        }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
         {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
       </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => { setContent(createEmptyPageDocument("funnel-page", name)); setDirty(true); }}>使用空白頁</button>}
