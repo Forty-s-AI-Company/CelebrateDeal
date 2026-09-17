@@ -108,7 +108,7 @@ export const FunnelCapabilityStatusSchema = z.object({
 
 const defaultCapability = (status: FunnelCapabilityStatus, reason: string, upgradeRequired = false): FunnelCapability => ({ status, reason, upgradeRequired });
 
-/** Feature flags are explicit so unavailable systeme.io features never fail silently. */
+/** Feature flags are explicit so unavailable editor features never fail silently. */
 export const FUNNEL_CAPABILITIES = {
   payment: defaultCapability("limited", "尚未連結商品與付款方式；不建立假的付款完成流程", true),
   rawHtml: defaultCapability("disabled", "為避免編輯器執行危險腳本，目前僅保留不可執行的限制狀態"),

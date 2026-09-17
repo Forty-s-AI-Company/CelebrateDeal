@@ -78,7 +78,7 @@ function findNodeLocation(nodes: FunnelNode[], id: string, parentId: string | nu
   }
   return null;
 }
-function capabilityBadge(status: string) { return status === "limited" ? "方案限制" : "待驗證"; }
+function capabilityBadge(status: string) { return status === "limited" ? "功能未啟用" : "待驗證"; }
 function applyHistoryDirection(history: ReturnType<typeof createFunnelPageHistory>, direction: "undo" | "redo") {
   if (direction === "undo") return undoFunnelPageHistory(history);
   return redoFunnelPageHistory(history);
