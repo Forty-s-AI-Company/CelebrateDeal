@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 const db = {
   product: { findFirst: vi.fn() },
@@ -38,6 +39,7 @@ const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
 }));
+const funnelCommerceMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
@@ -55,6 +57,7 @@ vi.mock("@/lib/buyer-support-access", () => ({
 }));
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
 vi.mock("@/lib/post-purchase-upsell-access", () => postPurchaseOfferMocks);
+vi.mock("@/lib/funnel-commerce-service", () => funnelCommerceMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash, protectCommerceOrderPii } from "@/lib/commerce-order-pii";
@@ -170,6 +173,7 @@ beforeEach(() => {
     idempotencyKey,
     expiresAt: new Date("2027-01-01T00:00:00.000Z"),
   });
+  funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(null);
   inventoryMocks.createReservedPaymentTransaction.mockImplementation(async (
     { transactionData, createCommerceOrder }: {
       transactionData: unknown;
@@ -218,6 +222,107 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  function publishedFunnel(overrides: Record<string, unknown> = {}) {
+    return {
+      reference: { slug: "offer", stepId: "order_form" }, vendorId: "vendor-1", projectId: "project-funnel", pageId: "page-1", version: 7,
+      binding: { schemaVersion: 1, productId: "product-1", formMode: "single", agreement: { label: "我同意購買條款" } },
+      product: { id: "product-1", vendorId: "vendor-1", name: "Test product", description: null, priceCents: 1200, currency: "TWD", fulfillmentType: "physical", inventory: 3, revision: 4, customCheckoutFields: [] },
+      ...overrides,
+    };
+  }
+
+  it("拒絕未勾選已發佈 Funnel 協議，不建立庫存保留", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel());
+
+    const response = await POST(checkoutRequest(undefined, { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 } }));
+
+    expect(response.status).toBe(409);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("拒絕已取消發佈或不存在的 Funnel locator", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(null);
+
+    const response = await POST(checkoutRequest("celebratedeal_form_submission=submission-legacy", { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(409);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("拒絕竄改 Funnel 主商品或未綁定加購商品", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel());
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true, productId: "other-product", orderBump: { productId: "forged-bump" },
+    }));
+
+    expect(response.status).toBe(409);
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("以已發佈 Funnel 專案歸因，並把版本與協議加入冪等身份", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel());
+    const response = await POST(checkoutRequest(undefined, { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-funnel" }));
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ funnel: { slug: "offer", stepId: "order_form", pageId: "page-1", version: 7, productRevision: 4, agreementLabel: "我同意購買條款" } }) }) }));
+  });
+
+  it("不把跨專案的表單 cookie 歸因附加到 Funnel 訂單", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel());
+    const response = await POST(checkoutRequest(undefined, { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything(), sourceLiveId: expect.anything() }) }),
+    }));
+  });
+
+  it("不把未歸屬專案的表單 cookie 歸因附加到 Funnel 訂單", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel());
+    db.formSubmission.findFirst.mockResolvedValueOnce({ id: "submission-legacy", liveId: "live-legacy", live: { projectId: null } });
+
+    const response = await POST(checkoutRequest("celebratedeal_form_submission=submission-legacy", { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ metadata: expect.not.objectContaining({ formSubmissionId: expect.anything(), sourceLiveId: expect.anything() }) }),
+    }));
+  });
+
+  it("拒絕載入後已重新發布的 Funnel 版本或商品價格", async () => {
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(publishedFunnel({ version: 8, product: { ...publishedFunnel().product, priceCents: 1300, revision: 5 } }));
+
+    const response = await POST(checkoutRequest(undefined, { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(409);
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("已保留最後庫存的 Funnel pending checkout 可用同一把 key 安全重播", async () => {
+    const funnel = publishedFunnel({ product: { ...publishedFunnel().product, inventory: 0 } });
+    funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(funnel);
+    db.product.findFirst.mockResolvedValueOnce({ ...(await db.product.findFirst()), inventory: 0 });
+    const funnelIdentity = createHash("sha256").update([
+      identityHash(), "funnel", "offer", "order_form", "page-1", "7", "我同意購買條款", "accepted",
+    ].join("\u0000")).digest("base64url");
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing", vendorId: "vendor-1", providerName: "demo", checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123", grossAmountCents: 1200, currency: "TWD", status: "pending",
+      primaryCommerceOrder: { id: "order-1", checkoutIdentityHash: funnelIdentity },
+      metadata: { productId: "product-1", checkoutAmountCents: 1200, funnel: { slug: "offer", stepId: "order_form", pageId: "page-1", version: 7, agreementLabel: "我同意購買條款" }, checkoutSession: { provider: "demo", mode: "manual", nextAction: "demo_checkout_transaction_created", externalRequired: false } },
+    });
+
+    const response = await POST(checkoutRequest(undefined, { funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, agreementAccepted: true }));
+
+    expect(response.status).toBe(200);
+    expect(funnelCommerceMocks.resolvePublishedFunnelCheckout).toHaveBeenCalledWith({ slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4 }, db, { allowReservedInventory: true });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("prices an order bump from the same-tenant server record and passes only its authorized id", async () => {
     const primary = await db.product.findFirst();
     db.product.findFirst
@@ -238,6 +343,9 @@ describe("successful checkout response", () => {
     expect(response.status).toBe(200);
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ grossAmountCents: 1_500, netAmountCents: 1_500 }),
+    }));
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      additionalProducts: [{ productId: "bump-1", expectedProductRevision: 4 }],
     }));
     expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(
       expect.anything(),
@@ -1198,7 +1306,7 @@ describe("checkout form submission attribution", () => {
         form: { vendorId: "vendor-1" },
         live: { is: { vendorId: "vendor-1" } },
       },
-      select: { id: true, liveId: true },
+      select: { id: true, liveId: true, live: { select: { projectId: true } } },
     });
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),

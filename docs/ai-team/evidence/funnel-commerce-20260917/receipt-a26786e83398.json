@@ -1,0 +1,31 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 86,
+  "sourceSha256": "b0ea593a2e3edf561ea5c3ece2b0268a6ccbcc806950c69ca2cb42064fcb6da6",
+  "browserTestSha256": "e25b24cdc63bb08e7df569e3d4a8bdce3ae9dd687ee3199ebf30b91f13500279",
+  "testCounts": {
+    "passed": 285,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "failureDiagnostics": [
+    "    Error: locator.fill: Error: strict mode violation: getByLabel('名稱 *') resolved to 2 elements:",
+    "      - waiting for getByLabel('名稱 *')",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-ZLaTko"
+}

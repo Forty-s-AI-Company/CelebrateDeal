@@ -1,0 +1,28 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "NOT_RUN",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "sourceSha256": "e4d84cb60886bf35606afc82d4a8864b80af6ffed214b6779a0ace812d832bc5",
+  "browserTestSha256": "c0558a18cb0ba894f6fff472e337219316cc7dc8c790fb6a18be266a7f9b4b6b",
+  "testCounts": {
+    "passed": 281,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "failureDiagnostics": [
+    "src/app/api/payments/checkout/route.ts(747,37): error TS2339: Property 'live' does not exist on type '{ id: string; liveId: string | null; }'.",
+    "src/app/api/payments/checkout/route.ts(955,11): error TS2353: Object literal may only specify known properties, and 'projectId' does not exist in type 'CreateCommerceOrderForCheckoutInput'."
+  ],
+  "failure": "typecheck failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-qU2j79"
+}

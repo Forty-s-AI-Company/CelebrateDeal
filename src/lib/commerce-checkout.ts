@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { allowedPaymentUrl } from "@/lib/payment-checkout-presentation";
+import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 
 export const COMMERCE_FULFILLMENT_TYPES = ["physical", "digital", "service", "course"] as const;
 export type CommerceCheckoutFulfillmentType = (typeof COMMERCE_FULFILLMENT_TYPES)[number];
@@ -27,6 +28,9 @@ export const CommerceCheckoutRequestSchema = z.object({
   customCheckoutAnswers: z.unknown().optional(),
   orderBump: CommerceOrderBumpSelectionSchema.optional(),
   postPurchaseToken: z.string().max(2_200).optional(),
+  /** A locator only; POST re-resolves the published Funnel before any write. */
+  funnel: FunnelCheckoutReferenceSchema.optional(),
+  agreementAccepted: z.boolean().optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({
@@ -80,6 +84,7 @@ export function checkoutErrorMessage(status: number) {
   if (status === 409) return "商品可能已售完，或這次結帳資料已變更；請重新整理後再試一次。";
   if (status === 425) return "訂單正在建立中，請稍候後重試；系統會沿用同一筆訂單。";
   if (status === 429) return "操作太頻繁，請稍候再試。";
+  if (status === 503) return "付款服務目前尚未就緒；尚未向你收款，請稍後重試或聯絡商家確認付款設定。";
   return "目前無法開始付款；尚未向你收款，請稍後重試。";
 }
 

@@ -1,0 +1,27 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "FAIL",
+  "typecheck": "NOT_RUN",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "sourceSha256": "1f7840351f4b23b330f21c47ab37d1f55ebecdc8b1392d18c2da0eb725adeaef",
+  "browserTestSha256": "c0558a18cb0ba894f6fff472e337219316cc7dc8c790fb6a18be266a7f9b4b6b",
+  "testCounts": {
+    "passed": 280,
+    "failed": 1,
+    "pending": 0
+  },
+  "failedTests": [
+    "checkout form submission attribution carries a verified same-vendor live registration into transaction metadata"
+  ],
+  "failureDiagnostics": [],
+  "failure": "integration tests failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-3gYMdN"
+}

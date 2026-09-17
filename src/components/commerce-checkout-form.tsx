@@ -1,5 +1,7 @@
 "use client";
 
+import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
+
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -24,6 +26,9 @@ import {
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
 type CommerceCheckoutFormProps = {
+  funnel?: FunnelCheckoutReference;
+  agreementLabel?: string;
+  formMode?: "single" | "two_step";
   vendorId: string;
   productId: string;
   productName: string;
@@ -146,6 +151,32 @@ function CheckoutShippingFields({ disabled }: { disabled: boolean }) {
   );
 }
 
+function CheckoutProgress({ mode, step, disabled, onBack }: { mode: "single" | "two_step"; step: 1 | 2; disabled: boolean; onBack: () => void }) {
+  if (mode !== "two_step") return null;
+  return <nav aria-label="結帳進度" className="flex items-center justify-between gap-3 text-sm font-semibold"><span aria-current={step === 1 ? "step" : undefined}>1. 聯絡資料</span><span aria-current={step === 2 ? "step" : undefined}>2. 訂單確認</span>{step === 2 ? <button type="button" disabled={disabled} className="text-blue-700 underline" onClick={onBack}>返回聯絡資料</button> : null}</nav>;
+}
+
+function CheckoutOrderBump({ offer, selected, disabled, currency, onChange }: { offer?: CommerceCheckoutFormProps["orderBump"]; selected: boolean; disabled: boolean; currency: string; onChange: (selected: boolean) => void }) {
+  if (!offer) return null;
+  return <label className="relative flex cursor-pointer items-start gap-4 overflow-hidden rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-[0_0_28px_rgba(251,191,36,0.24)]">
+    <span className="absolute right-3 top-3 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">{offer.badge ?? "加購商品"}</span>
+    <input type="checkbox" name="orderBumpSelected" checked={selected} onChange={(event) => onChange(event.currentTarget.checked)} disabled={disabled} className="mt-1 h-5 w-5 shrink-0 accent-orange-600" />
+    <span className="min-w-0 pr-20"><span className="block text-base font-black text-slate-950">加購推薦：{offer.title}</span><span className="mt-1 block text-sm leading-6 text-slate-700">{offer.description}</span><span className="mt-2 block font-black text-orange-700">只要 {formatCheckoutPrice(offer.priceCents, currency)}</span></span>
+  </label>;
+}
+
+function checkoutFunnelFields(funnel: FunnelCheckoutReference | undefined, agreementLabel: string | undefined, formData: FormData) {
+  return funnel ? { funnel, agreementAccepted: agreementLabel ? formData.get("funnelAgreement") === "on" : false } : {};
+}
+
+function checkoutInvoice(formData: FormData) {
+  const text = (name: string) => String(formData.get(name) ?? "").trim();
+  const type = text("invoiceType");
+  if (type === "company") return { type, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") };
+  if (type === "donation") return { type, donationCode: text("invoiceDonationCode") };
+  return { type: "personal", carrier: text("invoiceCarrier"), ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
+}
+
 export function CommerceCheckoutForm({
   vendorId,
   productId,
@@ -157,11 +188,16 @@ export function CommerceCheckoutForm({
   currency = "TWD",
   orderBump,
   postPurchaseToken,
+  funnel,
+  agreementLabel,
+  formMode = "single",
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
   const [orderBumpSelected, setOrderBumpSelected] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
+  const contactStep = formMode === "two_step" && checkoutStep === 1;
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
   const requiresShipping = checkoutRequiresShipping(fulfillmentType);
@@ -216,6 +252,11 @@ export function CommerceCheckoutForm({
     if (isPending || phase === "success") return;
 
     const form = event.currentTarget;
+    // Step one is local UI only: no admission, order or inventory reservation.
+    if (contactStep) {
+      if (form.reportValidity()) setCheckoutStep(2);
+      return;
+    }
     const formData = new FormData(form);
     const text = (name: string) => String(formData.get(name) ?? "").trim();
     const buyer = {
@@ -237,16 +278,7 @@ export function CommerceCheckoutForm({
       field.key,
       field.type === "checkbox" ? formData.get(`custom_${field.key}`) === "on" : text(`custom_${field.key}`),
     ]));
-    const invoiceType = text("invoiceType") as "personal" | "company" | "donation";
-    const invoice = invoiceType === "company"
-      ? { type: invoiceType, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") }
-      : invoiceType === "donation"
-        ? { type: invoiceType, donationCode: text("invoiceDonationCode") }
-        : {
-            type: "personal" as const,
-            carrier: text("invoiceCarrier") as "member" | "mobile" | "citizen_certificate",
-            ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}),
-          };
+    const invoice = checkoutInvoice(formData);
 
     setPhase("submitting");
     setMessage("正在確認商品與安全結帳資格，接著會建立訂單並保留庫存。");
@@ -304,6 +336,7 @@ export function CommerceCheckoutForm({
             },
           } : {}),
           ...(postPurchaseToken ? { postPurchaseToken } : {}),
+          ...checkoutFunnelFields(funnel, agreementLabel, formData),
         }),
         signal: controller.signal,
       });
@@ -383,7 +416,12 @@ export function CommerceCheckoutForm({
       aria-busy={isPending}
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
-      {postPurchaseToken ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">已安全沿用上一筆已驗證訂單的聯絡資料；不會把資料放進網址或頁面。</p> : <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} />}
+      <CheckoutProgress mode={formMode} step={checkoutStep} disabled={fieldsDisabled} onBack={() => setCheckoutStep(1)} />
+      <div hidden={formMode === "two_step" && checkoutStep === 2}>
+        {postPurchaseToken ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">已安全沿用上一筆已驗證訂單的聯絡資料；不會把資料放進網址或頁面。</p> : <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} />}
+      </div>
+      {contactStep ? <button type="submit" className="min-h-12 rounded-xl bg-blue-700 px-5 py-3 font-bold text-white">下一步：確認訂單</button> : null}
+      <fieldset disabled={contactStep} hidden={contactStep} className={contactStep ? "hidden" : "grid gap-6"}>
 
       <CheckoutInvoiceFields disabled={fieldsDisabled} />
 
@@ -393,26 +431,7 @@ export function CommerceCheckoutForm({
 
       <CheckoutCustomFields fields={customCheckoutFields} disabled={fieldsDisabled} />
 
-      {orderBump ? (
-        <label className="relative flex cursor-pointer items-start gap-4 overflow-hidden rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-[0_0_28px_rgba(251,191,36,0.24)]">
-          <span className="absolute right-3 top-3 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
-            {orderBump.badge ?? "限時加購優惠"}
-          </span>
-          <input
-            type="checkbox"
-            name="orderBumpSelected"
-            checked={orderBumpSelected}
-            onChange={(event) => setOrderBumpSelected(event.currentTarget.checked)}
-            disabled={fieldsDisabled}
-            className="mt-1 h-5 w-5 shrink-0 accent-orange-600"
-          />
-          <span className="min-w-0 pr-20">
-            <span className="block text-base font-black text-slate-950">加購推薦：{orderBump.title}</span>
-            <span className="mt-1 block text-sm leading-6 text-slate-700">{orderBump.description}</span>
-            <span className="mt-2 block font-black text-orange-700">只要 {formatCheckoutPrice(orderBump.priceCents, currency)}</span>
-          </span>
-        </label>
-      ) : null}
+      <CheckoutOrderBump offer={orderBump} selected={orderBumpSelected} disabled={fieldsDisabled} currency={currency} onChange={setOrderBumpSelected} />
 
       {typeof priceCents === "number" ? (
         <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
@@ -437,6 +456,8 @@ export function CommerceCheckoutForm({
         </span>
       </label>
 
+      {agreementLabel ? <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" name="funnelAgreement" required disabled={fieldsDisabled} className="mt-1 h-4 w-4" /><span>{agreementLabel}</span></label> : null}
+
       <button
         type="submit"
         disabled={fieldsDisabled}
@@ -447,6 +468,7 @@ export function CommerceCheckoutForm({
         {isPending ? <LoaderCircle className="animate-spin" size={20} aria-hidden="true" /> : <PackageCheck size={20} aria-hidden="true" />}
         {phase === "submitting" ? "正在建立訂單…" : phase === "redirecting" ? "正在前往付款…" : phase === "success" ? "訂單已建立" : `購買「${productName}」`}
       </button>
+      </fieldset>
 
       <p
         ref={statusRef}

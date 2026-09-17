@@ -46,6 +46,7 @@ const SubmissionAnswers = z.record(
 
 const SubmissionPayload = z.object({
   formId: z.string().min(1).max(128),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
   liveId: z.string().min(1).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
@@ -59,6 +60,17 @@ const SubmissionPayload = z.object({
     term: z.string().trim().max(160).optional(),
   }).strict().optional(),
 });
+
+function submissionAttribution(
+  utm: z.infer<typeof SubmissionPayload>["utm"],
+  landingPageId: string | undefined,
+) {
+  if (!utm && !landingPageId) return undefined;
+  return {
+    ...(utm ? { utm } : {}),
+    ...(landingPageId ? { landingPageId } : {}),
+  };
+}
 
 function stableSubmissionId(formId: string, liveId: string | null, email: string) {
   const digest = createHash("sha256")
@@ -429,7 +441,8 @@ export async function POST(request: Request) {
         customerKeyHash: automationCustomerKeyHash(form.vendorId, email),
         phone,
         source: submittedLiveId ? "live" : "form",
-        attribution: parsed.data.utm ? { utm: parsed.data.utm } : undefined,
+        // Marketing attribution is visitor-supplied, never an authorization or commission input.
+        attribution: submissionAttribution(parsed.data.utm, parsed.data.landingPageId),
         answers: normalizedAnswers as Prisma.InputJsonValue,
         verificationStatus: "UNVERIFIED",
         verificationVersion: 1,
@@ -565,11 +578,13 @@ function nativeFormPayload(formData: FormData | null) {
   }
 
   const liveId = formData.get("liveId");
+  const landingPageId = formData.get("landingPageId");
   const referralCode = formData.get("referralCode");
   const shareCode = formData.get("shareCode");
   const redirectTo = formData.get("redirectTo");
   return {
     formId: String(formData.get("formId") ?? ""),
+    landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
     liveId: typeof liveId === "string" && liveId ? liveId : null,
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,

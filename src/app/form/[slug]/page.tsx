@@ -12,7 +12,7 @@ import { getCsrfToken } from "@/lib/csrf";
 
 type PublicFormPageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ submitted?: string }>;
+  searchParams: Promise<{ submitted?: string; liveId?: string }>;
 };
 
 function submittedVerificationMessage(successMessage: string) {
@@ -58,8 +58,15 @@ export async function generateViewport({ params }: Pick<PublicFormPageProps, "pa
 export default async function PublicFormPage({ params, searchParams }: PublicFormPageProps) {
   const { slug } = await params;
   const query = await searchParams;
-  const form = await getPublicRegistrationForm(slug);
+  let form = await getPublicRegistrationForm(slug);
   if (!form) notFound();
+
+  // An explicit webinar link must never silently register for a different session.
+  if (query.liveId) {
+    const selected = form.sessions.find((session) => session.id === query.liveId);
+    if (!selected) notFound();
+    form = { ...form, sessions: [selected] };
+  }
 
   const themeColor = form.themeColor ?? "#2563eb";
   const style = { "--registration-theme": themeColor } as React.CSSProperties;
