@@ -1,0 +1,35 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "sourceSha256": "c0d21d20c299156240e88ebab1bcea9745937e183d9edcf568da4adbda70d366",
+  "browserTestSha256": "c0558a18cb0ba894f6fff472e337219316cc7dc8c790fb6a18be266a7f9b4b6b",
+  "testCounts": {
+    "passed": 281,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": false,
+  "failureDiagnostics": [
+    "    Error: expect(locator).toBeVisible() failed",
+    "    Timeout: 5000ms",
+    "    Error: element(s) not found",
+    "      - waiting for getByRole('heading', { name: '營運 Dashboard', exact: true })",
+    "      57 |   await expect(page.getByRole(\"heading\", { name: \"建立新的 Funnel\" })).toBeVisible().catch(async (error: unknown) => {",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-Nii5rQ"
+}

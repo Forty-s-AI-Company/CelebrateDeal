@@ -1,0 +1,27 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "FAIL",
+  "typecheck": "NOT_RUN",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "sourceSha256": "180bfc5194afd24aa815f14251e87e49d6e6123c112fa8dfaac99afbea14004b",
+  "browserTestSha256": "c0558a18cb0ba894f6fff472e337219316cc7dc8c790fb6a18be266a7f9b4b6b",
+  "testCounts": {
+    "passed": 280,
+    "failed": 1,
+    "pending": 0
+  },
+  "failedTests": [
+    "successful checkout response 以已發佈 Funnel 專案歸因，並把版本與協議加入冪等身份"
+  ],
+  "failureDiagnostics": [],
+  "failure": "integration tests failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-uwhO3O"
+}
