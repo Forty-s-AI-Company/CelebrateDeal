@@ -47,6 +47,13 @@ export type FunnelStepPageSelection = {
   editable: boolean;
 };
 
+export type FunnelStepPersistenceMutation =
+  | { type: "add"; input: FunnelStepInput; index?: number }
+  | { type: "move"; stepId: string; toIndex: number }
+  | { type: "remove"; stepId: string }
+  | { type: "rename"; stepId: string; name: string }
+  | { type: "set_path"; stepId: string; path: string };
+
 const MAX_SERIALIZED_LENGTH = 20_000_000;
 const MAX_IDENTIFIER_LENGTH = 100;
 
@@ -365,4 +372,18 @@ export function setFunnelStepPathPage(state: FunnelStepPages, stepId: string, pa
   const valid = parseFunnelStepPages(state);
   if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕修改 URL Path");
   return fromFlowMutation(valid, setFunnelStepPath(valid.flow, stepId, path), () => null);
+}
+
+/** Applies the narrow command accepted by metadata auto-save. Page content can
+ * only be created by `add`; existing page snapshots are never accepted from
+ * the client and therefore cannot be overwritten by a background save. */
+export function applyFunnelStepPersistenceMutation(
+  state: FunnelStepPages,
+  mutation: FunnelStepPersistenceMutation,
+): FunnelStepPageMutationResult {
+  if (mutation.type === "add") return addFunnelStepPage(state, mutation.input, mutation.index);
+  if (mutation.type === "move") return moveFunnelStepPage(state, mutation.stepId, mutation.toIndex);
+  if (mutation.type === "remove") return removeFunnelStepPage(state, mutation.stepId);
+  if (mutation.type === "rename") return renameFunnelStepPage(state, mutation.stepId, mutation.name);
+  return setFunnelStepPathPage(state, mutation.stepId, mutation.path);
 }

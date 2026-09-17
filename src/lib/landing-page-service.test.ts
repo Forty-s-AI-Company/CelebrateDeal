@@ -21,6 +21,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.tr
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError, LandingPageNotFoundError,
   listFunnelWebinarResources, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
+  saveLandingPageStepMetadata,
 } from "./landing-page-service";
 import { createEmptyPageDocument } from "./funnel-page-document";
 
@@ -151,6 +152,28 @@ describe("Webinar resource boundary", () => {
     await expect(createLandingPage({ name: "Webinar", slug: "webinar", content: document })).rejects.toThrow("landing_page_webinar_steps_required");
     mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: null, liveId: null } });
     expect(await loadPublicLandingPage("webinar")).toBeNull();
+  });
+
+  it("自動儲存只套用 Step metadata command，不接受客戶端畫布快照", async () => {
+    const flow = createFunnelFlow({ id: "flow_1", name: "名單 Funnel", goal: "audience", domain: "audience" })!;
+    const state = createFunnelStepPages(flow)!;
+    mocks.landingPageFindFirst.mockResolvedValueOnce(page({ draftContent: state, draftFormId: null }));
+
+    await expect(saveLandingPageStepMetadata({
+      id: "page-1", revision: 2, mutation: { type: "rename", stepId: "opt_in", name: "新版名單頁" },
+    })).resolves.toEqual({ id: "page-1", revision: 3 });
+
+    const saved = mocks.landingPageUpdateMany.mock.calls.at(-1)?.[0].data.draftContent;
+    expect(saved.flow.steps.find((step: { id: string }) => step.id === "opt_in").name).toBe("新版名單頁");
+    expect(saved.pages.opt_in).toMatchObject({ id: state.pages.opt_in!.id, root: state.pages.opt_in!.root, name: "新版名單頁" });
+    expect(saved.pages.opt_in_thank_you).toEqual(state.pages.opt_in_thank_you);
+  });
+
+  it("Step metadata revision 過期時拒絕覆寫", async () => {
+    const flow = createFunnelFlow({ id: "flow_1", name: "名單 Funnel", goal: "audience", domain: "audience" })!;
+    mocks.landingPageFindFirst.mockResolvedValueOnce(page({ draftContent: createFunnelStepPages(flow), revision: 3 }));
+    await expect(saveLandingPageStepMetadata({ id: "page-1", revision: 2, mutation: { type: "rename", stepId: "opt_in", name: "衝突名稱" } })).rejects.toBeInstanceOf(LandingPageConflictError);
+    expect(mocks.landingPageUpdateMany).not.toHaveBeenCalled();
   });
 
   it("以 tenant/project/revision CAS 解除發布版本後永久刪除 Funnel", async () => {

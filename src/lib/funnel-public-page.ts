@@ -12,3 +12,13 @@ export function getPublicFunnelPage(state: FunnelStepPages, stepPath?: string): 
   const page = parsed.pages[step.id];
   return page ? { ...page, flow: parsed.flow } : null;
 }
+
+/** Returns only a validated, non-system successor. The public slug comes from
+ * the server route, never from authored flow.domain. */
+export function getNextPublicFunnelStepPath(state: FunnelStepPages, currentPageId: string): string | null {
+  const parsed = parseFunnelStepPages(state);
+  if (!parsed) return null;
+  const currentIndex = parsed.flow.steps.findIndex((step) => parsed.pages[step.id]?.id === currentPageId);
+  if (currentIndex < 0) return null;
+  return parsed.flow.steps.slice(currentIndex + 1).find((step) => !step.isSystem)?.path ?? null;
+}

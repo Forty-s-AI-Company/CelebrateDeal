@@ -11,7 +11,7 @@ import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelWebinarResources, LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
-import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { getActiveFunnelStepPage, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 import { FunnelStepPagesEditor } from "@/components/landing-pages/funnel-step-pages-editor";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 
@@ -35,6 +35,13 @@ function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
 function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages { return "pages" in content && "activeStepId" in content && "flow" in content; }
 function supportsFunnelCommands(content: LandingPageStoredContent): boolean { return isPageDocument(content) || isFunnelStepPages(content); }
+function workspaceBlocked(input: { pending: boolean; stepPending: boolean; valid: boolean; name: string; slug: string }) {
+  return input.pending || input.stepPending || !input.valid || !input.name.trim() || !input.slug.trim();
+}
+function saveStateLabel(dirty: boolean, stepPending: boolean) {
+  if (stepPending) return "● 步驟儲存中";
+  return dirty ? "● 尚未儲存" : "✓ 已儲存";
+}
 function WorkspacePreview({ content, forms, live }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"] }) {
   if (isFunnelStepPages(content)) {
     const active = getActiveFunnelStepPage(content);
@@ -43,11 +50,11 @@ function WorkspacePreview({ content, forms, live }: { content: LandingPageStored
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
-function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange }: {
+function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onStepMutation, onValidityChange }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onStepMutation: (content: FunnelStepPages, mutation: FunnelStepPersistenceMutation) => void; onValidityChange: (valid: boolean) => void;
 }) {
-  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} disabled={pending} onChange={onDocumentChange} />;
+  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
@@ -81,7 +88,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const [message, setMessage] = useState("");
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
+  const [stepPending, setStepPending] = useState(false);
   const inFlight = useRef(false);
+  const revisionRef = useRef(initial.revision);
+  const stepQueue = useRef<FunnelStepPersistenceMutation[]>([]);
+  const stepSaving = useRef(false);
+  const stepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [published, setPublished] = useState(initial.published);
   const [version, setVersion] = useState(initial.version);
   const selectedVersion = currentPublishedVersion(version, page);
@@ -95,8 +107,61 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
 
+  useEffect(() => () => { if (stepTimer.current) clearTimeout(stepTimer.current); }, []);
+
+  async function flushStepQueue() {
+    if (!page || stepSaving.current || stepQueue.current.length === 0) return;
+    stepSaving.current = true;
+    setMessage("正在自動儲存步驟…");
+    while (stepQueue.current.length > 0) {
+      const mutation = stepQueue.current.shift()!;
+      const data = new FormData();
+      data.set(csrfName, csrfToken);
+      data.set("operation", "save_steps");
+      data.set("id", page.id);
+      data.set("revision", String(revisionRef.current));
+      data.set("mutation", JSON.stringify(mutation));
+      try {
+        const result = await landingPageAction({ status: "success", message: "" }, data);
+        if (result.status !== "success" || !result.revision) {
+          stepQueue.current = [];
+          setDirty(true);
+          setMessage(result.message || "步驟自動儲存失敗；畫面內容仍保留，請重新整理後重試。");
+          break;
+        }
+        revisionRef.current = result.revision;
+        setRevision(result.revision);
+        setMessage("步驟已自動儲存。");
+      } catch {
+        stepQueue.current = [];
+        setDirty(true);
+        setMessage("連線中斷，步驟變更仍保留在畫面上，請恢復連線後手動儲存。");
+        break;
+      }
+    }
+    stepSaving.current = false;
+    setStepPending(false);
+  }
+
+  function queueStepMutation(next: FunnelStepPages, mutation: FunnelStepPersistenceMutation) {
+    setContent(next);
+    if (!page) { setDirty(true); return; }
+    setStepPending(true);
+    const debounced = mutation.type === "rename" || mutation.type === "set_path";
+    if (debounced) {
+      const last = stepQueue.current.at(-1);
+      if (last?.type === mutation.type && last.stepId === mutation.stepId) stepQueue.current[stepQueue.current.length - 1] = mutation;
+      else stepQueue.current.push(mutation);
+      if (stepTimer.current) clearTimeout(stepTimer.current);
+      stepTimer.current = setTimeout(() => { stepTimer.current = null; void flushStepQueue(); }, 700);
+      return;
+    }
+    stepQueue.current.push(mutation);
+    void flushStepQueue();
+  }
+
   function run(operation: string) {
-    if (inFlight.current) return;
+    if (inFlight.current || stepPending) return;
     inFlight.current = true;
     setPending(true);
     const data = new FormData();
@@ -111,7 +176,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         const result = await landingPageAction({ status: "success", message: "" }, data);
         setMessage(result.message);
         if (result.status !== "success") return;
-        if (result.revision) setRevision(result.revision);
+        if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
         if (operation === "save" || operation === "create") setDirty(false);
@@ -130,14 +195,15 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     });
   }
   function exitEditor() {
-    if (dirty && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
+    const leavingUnsaved = dirty || stepPending;
+    if (leavingUnsaved && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
     router.push("/landing-pages");
   }
   const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
   const secondaryButtonClass = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
   const selectedLive = lives.find((live) => live.id === liveId);
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
-  const blocked = pending || !valid || !name.trim() || !slug.trim();
+  const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
       <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← 返回</button>
@@ -152,7 +218,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "Preview"}</button>
       <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "Save"}</button>
       <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Exit</button>
-      <span role="status" className={`w-full text-right text-xs font-semibold sm:w-auto ${dirty ? "text-amber-700" : "text-emerald-700"}`}>{dirty ? "● 尚未儲存" : "✓ 已儲存"}</span>
+      <span role="status" className={`w-full text-right text-xs font-semibold sm:w-auto ${dirty || stepPending ? "text-amber-700" : "text-emerald-700"}`}>{saveStateLabel(dirty, stepPending)}</span>
     </header>
     <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5">
     <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
@@ -174,18 +240,18 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       <button disabled={pending || !valid} onClick={() => setPreview(!preview)} className={secondaryButtonClass}>{preview ? "返回編輯" : "預覽草稿"}</button>
       {page ? <>
         <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
-        <button disabled={pending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
-        <button disabled={pending || dirty} onClick={() => {
+        <button disabled={pending || stepPending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
+        <button disabled={pending || stepPending || dirty} onClick={() => {
           if (window.confirm("確定要永久刪除這個 Funnel、草稿與所有發布歷史嗎？此操作無法復原。")) run("delete");
         }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
-        {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
-        {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
+        {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
+        {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
       </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => { setContent(createEmptyPageDocument("funnel-page", name)); setDirty(true); }}>使用空白頁</button>}
       <span role="status" className="ml-auto text-xs font-medium text-slate-500">{dirty ? "● 有尚未儲存的變更" : "✓ 草稿已儲存"}</span>
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
     {preview ? isWebinar(content) ? <FunnelWebinarExperience state={content} stepId={content.activeStepId} slug={slug} resource={webinarResource} preview viewport={previewViewport} /> : <WorkspacePreview content={content} forms={forms} live={selectedLive} /> : null}
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onStepMutation={queueStepMutation} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
     </div>
   </div>;
 }

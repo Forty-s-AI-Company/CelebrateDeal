@@ -2,7 +2,8 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 
 import {
   getFunnelNodeDefinition,
@@ -24,6 +25,15 @@ export type FunnelPageDocumentRendererProps = {
   onSelectNode?: (nodeId: string) => void;
   onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void;
   className?: string;
+  submission?: FunnelSubmissionContext;
+  publicSurface?: boolean;
+};
+
+export type FunnelSubmissionContext = {
+  form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
+  landingPageId: string;
+  liveId?: string;
+  redirectTo?: string;
 };
 
 type ResolvedNode = {
@@ -271,6 +281,39 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
   }
 }
 
+function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (status === "submitting" || status === "success") return;
+    setStatus("submitting"); setMessage("");
+    const values = new FormData(event.currentTarget);
+    const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
+    try {
+      const response = await fetch("/api/form-submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, liveId: submission.liveId ?? null, payload }),
+      });
+      if (!response.ok) {
+        setStatus("error"); setMessage(response.status === 429 ? "送出次數過多，請稍後再試。" : "資料未能送出，請檢查欄位後再試。");
+        return;
+      }
+      setStatus("success"); setMessage(submission.form.successMessage);
+      if (submission.redirectTo) window.location.assign(submission.redirectTo);
+    } catch {
+      setStatus("error"); setMessage("連線中斷，資料尚未送出，請稍後再試。");
+    }
+  }
+  return <form aria-label={label} onSubmit={submit} className="space-y-4">
+    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+    {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+    <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
+    {message ? <p role={status === "error" ? "alert" : "status"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
+  </form>;
+}
+
 function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, onMoveNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void; children: ReactNode }) {
   const editor = mode === "editor";
   const attributes = safeAttributes(node.attributes);
@@ -280,11 +323,11 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
-function NodeRenderer({ node, viewport, mode, flow, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
+function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible) return null;
   const children = node.children ?? [];
-  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
+  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
   const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
@@ -319,6 +362,9 @@ function NodeRenderer({ node, viewport, mode, flow, selectedNodeId, onSelectNode
     }
     case "form": {
       const label = stringProp(props, ["ariaLabel", "title"], "表單");
+      const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
+      if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} />);
+      if (publicSurface) return surface(<UnsupportedNode node={node} message="此 Funnel 尚未綁定可公開使用的報名表，表單已停用。" />);
       return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()}>{stringProp(props, ["title", "heading"]) ? <h3 className="mb-4 font-semibold">{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
     }
     case "form_input": {
@@ -394,10 +440,10 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
+  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

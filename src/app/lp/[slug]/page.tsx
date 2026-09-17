@@ -7,7 +7,7 @@ import { LandingPageRenderer } from "@/components/landing-pages/landing-page-ren
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
 import type { PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
-import { getPublicFunnelPage } from "@/lib/funnel-public-page";
+import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
 export const dynamic = "force-dynamic";
 const load = cache(loadPublicLandingPage);
 function isPageDocument(content: NonNullable<Awaited<ReturnType<typeof loadPublicLandingPage>>>["content"]): content is PageDocument { return "root" in content && "settings" in content; }
@@ -36,8 +36,9 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
     if (page.content.flow.goal === "webinar") return <FunnelWebinarExperience state={page.content} stepId={page.content.flow.steps[0].id} slug={page.slug} resource={page.webinar} />;
     const document = getPublicFunnelPage(page.content);
     if (!document) notFound();
-    return <PublicFunnelDocument document={document} />;
+    const nextPath = getNextPublicFunnelStepPath(page.content, document.id);
+    return <PublicFunnelDocument document={document} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
   }
   if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
-  return <PublicFunnelDocument document={page.content} />;
+  return <PublicFunnelDocument document={page.content} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
 }
