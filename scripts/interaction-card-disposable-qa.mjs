@@ -4,7 +4,7 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { listCanonicalMigrations, writeMirror } from "./prisma-loopback-disposable-migration-runner.mjs";
-import { buildIsolatedEnvironment } from "./private-chat-disposable-qa.mjs";
+import { buildIsolatedEnvironment, buildLoopbackDatabaseUrl } from "./private-chat-disposable-qa.mjs";
 
 // 只建立原先不存在的 allowlisted loopback DB；保留 ownership marker 才可清除。
 const root = process.cwd();
@@ -33,7 +33,7 @@ try {
   const migrations = listCanonicalMigrations();
   for (const migration of migrations) if (/\b(?:CREATE|ALTER|DROP)\s+(?:ROLE|USER|DATABASE|SYSTEM)\b/iu.test(fs.readFileSync(path.join(root, "prisma/migrations", migration, "migration.sql"), "utf8"))) throw new Error("CLUSTER_MUTATION_REJECTED");
   const mirror = writeMirror(temp, migrations);
-  const env = buildIsolatedEnvironment(temp, { databaseUrl: `postgresql://postgres:postgres@127.0.0.1:54329/${owned}?schema=public`, enableDatabaseTest: true });
+  const env = buildIsolatedEnvironment(temp, { databaseUrl: buildLoopbackDatabaseUrl(owned), enableDatabaseTest: true });
   for (const [name, args] of [["validate", ["validate"]], ["migrate", ["migrate", "deploy"]]]) {
     const result = run(process.execPath, [path.join(root, "node_modules/prisma/build/index.js"), ...args, "--config", path.join(mirror, "prisma.config.mjs")], env, mirror);
     receipt.phases[name] = result.status === 0 ? "PASS" : "FAIL";
