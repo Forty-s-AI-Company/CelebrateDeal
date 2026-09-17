@@ -12,7 +12,8 @@ const id = crypto.randomBytes(6).toString('hex');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'celebratedeal-landing-qa-'));
 let app = path.join(work, 'app');
 const name = `celebratedeal-landing-qa-${id}`;
-const evidence = path.join(root, 'docs/ai-team/evidence/landing-style-20260913');
+const finalIntegration = process.argv.includes('--final');
+const evidence = path.join(root, finalIntegration ? 'docs/ai-team/evidence/funnel-final-integration-20260917' : 'docs/ai-team/evidence/landing-style-20260913');
 fs.mkdirSync(evidence, { recursive: true });
 const reusableFiles = ['package.json', 'tsconfig.json', 'next.config.ts', 'postcss.config.mjs', 'sentry.server.config.ts', 'sentry.edge.config.ts'];
 function sourceDigest(base) {
@@ -36,7 +37,15 @@ if (process.argv.includes('--reuse-build') || process.argv.includes('--refresh-b
   app = previousApp; reuseBuild = process.argv.includes('--reuse-build');
 } else fs.mkdirSync(app);
 const env = { PATH: process.env.PATH ?? '', SystemRoot: process.env.SystemRoot ?? '', ComSpec: process.env.ComSpec ?? '', PATHEXT: process.env.PATHEXT ?? '', TEMP: work, TMP: work, CI: 'true', CHECKPOINT_DISABLE: '1', PRISMA_HIDE_UPDATE_MESSAGE: 'true', SENTRY_DISABLE_AUTO_UPLOAD: 'true' };
-const receipt = { status: 'RUNNING', migrations: 'NOT_RUN', build: 'NOT_RUN', browser: 'NOT_RUN', cleanup: 'NOT_RUN', sourceEnvRead: false, target: 'new disposable loopback PostgreSQL', migrationCount: 0 };
+const browserTest = finalIntegration ? 'tests/e2e/funnel-goals-final.spec.ts' : 'tests/e2e/landing-page-flow.spec.ts';
+const receipt = {
+  scope: finalIntegration ? 'four Funnel goals final browser journey' : 'landing page browser journey',
+  status: 'RUNNING', migrations: 'NOT_RUN', build: 'NOT_RUN', browser: 'NOT_RUN', cleanup: 'NOT_RUN',
+  sourceEnvRead: false, target: 'new disposable loopback PostgreSQL', migrationCount: 0,
+  sourceSha256: sourceDigest(root),
+  browserTestSha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(root, browserTest))).digest('hex'),
+  expectedBrowserTests: finalIntegration ? 4 : 1,
+};
 function run(command, args, cwd = app, extra = {}) {
   return spawnSync(command, args, { cwd, env: { ...env, ...extra }, encoding: 'utf8', windowsHide: true, maxBuffer: 12 * 1024 * 1024 });
 }
@@ -80,7 +89,8 @@ try {
   } else process.stdout.write('Reusing source-identical production build.\n');
   receipt.build = 'PASS';
   receipt.buildReused = reuseBuild;
-  const config = `import { defineConfig } from '@playwright/test';\nexport default defineConfig({testDir:'./tests/e2e',testMatch:'landing-page-flow.spec.ts',timeout:180000,workers:1,retries:0,reporter:'list',use:{baseURL:'http://127.0.0.1:31137',trace:'off',launchOptions:{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}},webServer:{command:${JSON.stringify(`"${process.execPath}" "${next}" start --hostname 127.0.0.1 --port 31137`)},url:'http://127.0.0.1:31137/login',reuseExistingServer:false,timeout:120000,env:{NODE_ENV:'production'}}});`;
+  const matches = finalIntegration ? ['funnel-goals-final.spec.ts'] : ['landing-page-flow.spec.ts'];
+  const config = `import { defineConfig } from '@playwright/test';\nexport default defineConfig({testDir:'./tests/e2e',testMatch:${JSON.stringify(matches)},timeout:180000,expect:{timeout:20000},workers:1,retries:0,reporter:'list',use:{baseURL:'http://127.0.0.1:31137',trace:'off',launchOptions:{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}},webServer:{command:${JSON.stringify(`"${process.execPath}" "${next}" start --hostname 127.0.0.1 --port 31137`)},url:'http://127.0.0.1:31137/login',reuseExistingServer:false,timeout:120000,env:{NODE_ENV:'production'}}});`;
   fs.writeFileSync(path.join(app, 'playwright.landing.config.ts'), config);
   const browser = run(process.execPath, [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'playwright.landing.config.ts']);
   receipt.browser = browser.status === 0 ? 'PASS' : 'FAIL';

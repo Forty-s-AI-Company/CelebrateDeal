@@ -98,7 +98,9 @@ function DeadlineSettings({ value, steps, onChange }: { value: FunnelOperations[
     <label className="flex items-center gap-2"><input type="checkbox" checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />啟用截止時間</label>
     <label className="grid gap-1 text-sm">時區<input className={control} value={value.timezone} onChange={(event) => onChange({ ...value, timezone: event.target.value })} placeholder="Asia/Taipei" /></label>
     <label className="grid gap-1 text-sm">截止時間（含時區偏移）<input className={control} value={value.expiresAt ?? ""} onChange={(event) => onChange({ ...value, expiresAt: event.target.value || null })} placeholder="2026-12-31T23:59:00+08:00" /><span className="text-slate-500">例如 2026-12-31T23:59:00+08:00；DST 地區請明確填入當時 offset。</span></label>
-    <p className="text-sm">指定時區顯示：{local}</p>
+    {/* ICU punctuation can differ between Node and Chromium even with the same
+        locale/time zone. The persisted ISO value remains the source of truth. */}
+    <p className="text-sm" suppressHydrationWarning>指定時區顯示：{local}</p>
     <label className="grid gap-1 text-sm">截止行為<select className={control} value={value.behavior} onChange={(event) => onChange({ ...value, behavior: event.target.value as "closed" | "redirect" })}><option value="closed">顯示已截止</option><option value="redirect">導向指定步驟</option></select></label>
     {value.behavior === "redirect" ? <label className="grid gap-1 text-sm">過期導向<select className={control} value={value.redirectPath} onChange={(event) => onChange({ ...value, redirectPath: event.target.value })}><option value="">請選擇已發布步驟</option>{steps.slice(1).map((step) => <option key={step.id} value={step.path}>{step.name} · {step.path}</option>)}</select></label> : null}
     <p className="text-sm text-slate-500">截止瞬間即生效，公開頁及提交／結帳均由伺服器判定。到期導向頁可繼續閱讀，不能繼續提交或結帳。</p>

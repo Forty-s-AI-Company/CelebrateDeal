@@ -12,7 +12,6 @@ import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/l
 import type { FunnelWebinarResources, LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 import { getActiveFunnelStepPage, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
-import { FunnelStepPagesEditor } from "@/components/landing-pages/funnel-step-pages-editor";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 
@@ -21,6 +20,7 @@ import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webin
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
+const FunnelStepsEditor = dynamic(() => import("@/components/landing-pages/funnel-step-pages-editor").then((module) => module.FunnelStepPagesEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel steps…</p> });
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
 function currentPublishedVersion(version: string, page?: PageInput): string {
   return version || String(page?.versions[0]?.version ?? "");
@@ -56,7 +56,7 @@ function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChan
   commerceProducts: FunnelCommerceProduct[];
   pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onStepMutation: (content: FunnelStepPages, mutation: FunnelStepPersistenceMutation) => void; onValidityChange: (valid: boolean) => void;
 }) {
-  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} commerceProducts={commerceProducts} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
+  if (isFunnelStepPages(content)) return <FunnelStepsEditor state={content} commerceProducts={commerceProducts} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }

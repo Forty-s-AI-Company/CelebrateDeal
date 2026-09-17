@@ -1,0 +1,13 @@
+{
+  "scope": "four Funnel goals final browser journey",
+  "status": "PASS",
+  "migrations": "PASS",
+  "build": "PASS",
+  "browser": "PASS",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 87,
+  "buildReused": true,
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-landing-qa-spL8k6"
+}
