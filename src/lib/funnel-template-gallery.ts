@@ -7,6 +7,7 @@ import {
   type FunnelNodeType,
   type PageDocument,
 } from "@/lib/funnel-page-document";
+import type { FunnelStepType } from "@/lib/funnel-flow";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -231,8 +232,22 @@ export function getFunnelTemplateGalleryItem(templateId: string): FunnelTemplate
   return FUNNEL_TEMPLATE_GALLERY.find((template) => template.id === templateId) ?? null;
 }
 
-export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal): readonly FunnelTemplateGalleryItem[] {
-  return goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY;
+export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: FunnelStepType): readonly FunnelTemplateGalleryItem[] {
+  const goalTemplates = goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY;
+  if (!stepType) return goalTemplates;
+  if (goal === "webinar") {
+    const templatesByStep: Partial<Record<FunnelStepType, string>> = {
+      webinar_registration_page: "webinar-registration",
+      webinar_thank_you_page: "webinar-thank-you",
+      webinar_broadcast_page: "webinar-broadcast",
+    };
+    const templateId = templatesByStep[stepType];
+    return templateId ? goalTemplates.filter((template) => template.id === templateId) : [];
+  }
+  if (goal === "custom") return ["info_page", "contact_us_page"].includes(stepType) ? goalTemplates : [];
+  if (goal === "audience") return ["opt_in_page", "inline_form", "popup_form", "link_in_bio"].includes(stepType) ? goalTemplates : [];
+  if (goal === "sell") return ["order_form", "sales_page", "upsell", "downsell"].includes(stepType) ? goalTemplates : [];
+  return [];
 }
 
 /** Build a fresh, validated PageDocument. No template object or node reference is shared. */

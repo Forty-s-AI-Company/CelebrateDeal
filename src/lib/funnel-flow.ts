@@ -127,12 +127,12 @@ function defaultSteps(goal: FunnelGoal): FunnelStep[] {
     inactiveStep(),
   ];
   if (goal === "audience") return [
-    makeStep("opt_in", "名單頁", "opt-in", "opt_in_page", { source: "blank" }),
+    makeStep("opt_in", "名單頁", "opt-in", "opt_in_page", { source: "template" }),
     makeStep("opt_in_thank_you", "感謝／下載頁", "thank-you", "opt_in_thank_you_page", { source: "blank" }),
     inactiveStep(),
   ];
   if (goal === "sell") return [
-    makeStep("order_form", "訂單表單", "order-form", "order_form", { source: "blank" }),
+    makeStep("order_form", "訂單表單", "order-form", "order_form", { source: "template" }),
     makeStep("thank_you", "感謝頁", "thank-you", "thank_you_page", { source: "blank" }),
     inactiveStep(),
   ];

@@ -11,7 +11,7 @@ import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelWebinarResources, LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
-import { getActiveFunnelStepPage, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
+import { getActiveFunnelStepPage, replaceFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 
@@ -20,7 +20,6 @@ import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webin
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
-const FunnelStepsEditor = dynamic(() => import("@/components/landing-pages/funnel-step-pages-editor").then((module) => module.FunnelStepPagesEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel steps…</p> });
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
 function currentPublishedVersion(version: string, page?: PageInput): string {
   return version || String(page?.versions[0]?.version ?? "");
@@ -51,12 +50,26 @@ function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: 
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
-function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onStepMutation, onValidityChange, commerceProducts }: {
+function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange, commerceProducts }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
   commerceProducts: FunnelCommerceProduct[];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onStepMutation: (content: FunnelStepPages, mutation: FunnelStepPersistenceMutation) => void; onValidityChange: (valid: boolean) => void;
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
 }) {
-  if (isFunnelStepPages(content)) return <FunnelStepsEditor state={content} commerceProducts={commerceProducts} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
+  if (isFunnelStepPages(content)) {
+    const active = getActiveFunnelStepPage(content);
+    if (!active) return <p role="alert" className="p-8">找不到目前要編輯的 Funnel step。</p>;
+    return <FunnelEditor
+      key={`${active.page.id}-${revision}`}
+      document={active.page}
+      commerceProducts={commerceProducts}
+      commerceEnabled={active.step.type === "order_form"}
+      disabled={pending || !active.editable}
+      onChange={(document) => {
+        const result = replaceFunnelStepPage(content, active.step.id, document, active.step.template.templateId);
+        if (result.ok) onDocumentChange(result.state);
+      }}
+    />;
+  }
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
@@ -85,7 +98,10 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
 }
 /** The workspace owns persistence; Puck owns only the current editing session. */
 function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return products ?? []; }
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products }: { commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string }) {
+// This legacy-compatible workspace still handles publish history, previews,
+// webinar bindings, and three persisted content schemas at one boundary.
+// eslint-disable-next-line complexity
+export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
   const commerceProducts = normalizeCommerceProducts(products);
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
@@ -100,12 +116,9 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const [message, setMessage] = useState("");
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
-  const [stepPending, setStepPending] = useState(false);
+  const stepPending = false;
   const inFlight = useRef(false);
   const revisionRef = useRef(initial.revision);
-  const stepQueue = useRef<FunnelStepPersistenceMutation[]>([]);
-  const stepSaving = useRef(false);
-  const stepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [published, setPublished] = useState(initial.published);
   const [version, setVersion] = useState(initial.version);
   const selectedVersion = currentPublishedVersion(version, page);
@@ -119,59 +132,6 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
 
-  useEffect(() => () => { if (stepTimer.current) clearTimeout(stepTimer.current); }, []);
-
-  async function flushStepQueue() {
-    if (!page || stepSaving.current || stepQueue.current.length === 0) return;
-    stepSaving.current = true;
-    setMessage("正在自動儲存步驟…");
-    while (stepQueue.current.length > 0) {
-      const mutation = stepQueue.current.shift()!;
-      const data = new FormData();
-      data.set(csrfName, csrfToken);
-      data.set("operation", "save_steps");
-      data.set("id", page.id);
-      data.set("revision", String(revisionRef.current));
-      data.set("mutation", JSON.stringify(mutation));
-      try {
-        const result = await landingPageAction({ status: "success", message: "" }, data);
-        if (result.status !== "success" || !result.revision) {
-          stepQueue.current = [];
-          setDirty(true);
-          setMessage(result.message || "步驟自動儲存失敗；畫面內容仍保留，請重新整理後重試。");
-          break;
-        }
-        revisionRef.current = result.revision;
-        setRevision(result.revision);
-        setMessage("步驟已自動儲存。");
-      } catch {
-        stepQueue.current = [];
-        setDirty(true);
-        setMessage("連線中斷，步驟變更仍保留在畫面上，請恢復連線後手動儲存。");
-        break;
-      }
-    }
-    stepSaving.current = false;
-    setStepPending(false);
-  }
-
-  function queueStepMutation(next: FunnelStepPages, mutation: FunnelStepPersistenceMutation) {
-    setContent(next);
-    if (!page) { setDirty(true); return; }
-    setStepPending(true);
-    const debounced = mutation.type === "rename" || mutation.type === "set_path";
-    if (debounced) {
-      const last = stepQueue.current.at(-1);
-      if (last?.type === mutation.type && last.stepId === mutation.stepId) stepQueue.current[stepQueue.current.length - 1] = mutation;
-      else stepQueue.current.push(mutation);
-      if (stepTimer.current) clearTimeout(stepTimer.current);
-      stepTimer.current = setTimeout(() => { stepTimer.current = null; void flushStepQueue(); }, 700);
-      return;
-    }
-    stepQueue.current.push(mutation);
-    void flushStepQueue();
-  }
-
   function run(operation: string) {
     if (inFlight.current || stepPending) return;
     inFlight.current = true;
@@ -180,7 +140,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     data.set(csrfName, csrfToken);
     data.set("operation", operation);
     if (page) data.set("id", page.id);
-    data.set("revision", String(revision));
+    data.set("revision", String(revisionRef.current));
     data.set("name", name); data.set("slug", slug); data.set("formId", formId); data.set("liveId", liveId);
     data.set("content", JSON.stringify(content)); data.set("version", selectedVersion);
     startTransition(async () => {
@@ -209,7 +169,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   function exitEditor() {
     const leavingUnsaved = dirty || stepPending;
     if (leavingUnsaved && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
-    router.push("/landing-pages");
+    router.push(returnHref ?? "/landing-pages");
   }
   const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
   const secondaryButtonClass = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
@@ -218,13 +178,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← 返回</button>
+      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回 Configuration" : "返回"}</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>Redo</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
-      <FunnelManagementLink page={page} content={content} pending={pending} stepPending={stepPending} dirty={dirty} className={secondaryButtonClass} navigate={(href) => router.push(href)} />
       <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); document.getElementById("funnel-page-settings-tab")?.click(); }} className={secondaryButtonClass}>頁面設定</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("desktop"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" })); }}>桌機</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("mobile"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" })); }}>手機</button>
@@ -264,7 +223,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
     <CurrentWorkspacePreview show={preview} content={content} slug={slug} resource={webinarResource} viewport={previewViewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onStepMutation={queueStepMutation} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
     </div>
   </div>;
 }
@@ -294,9 +253,4 @@ function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, 
       if (match) onSelect(match.id, lives.find((item) => item.id === match.id)?.formId);
     }}><option value="">請選擇已綁定活動的可播放影片</option>{resources?.lives.filter((live) => live.videoReady && live.videoId).map((live) => <option key={live.id} value={live.id}>{live.videoTitle} · {lives.find((item) => item.id === live.id)?.title}</option>)}</select><span>沿用活動 Studio 的來源影片；選擇影片會同步選擇其活動。實際播放仍依 Live 排程與觀看權限。</span></label>
   </>;
-}
-
-function FunnelManagementLink({ page, content, pending, stepPending, dirty, className, navigate }: { page?: PageInput; content: LandingPageStoredContent; pending: boolean; stepPending: boolean; dirty: boolean; className: string; navigate: (href: string) => void }) {
-  if (!page || !isFunnelStepPages(content)) return null;
-  return <button type="button" disabled={pending || stepPending} className={className} onClick={() => { if (!dirty || window.confirm("尚有未儲存的頁面內容，確定離開編輯器？")) navigate(`/landing-pages/${page.id}/operations`); }}>Funnel 管理</button>;
 }

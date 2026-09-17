@@ -63,6 +63,13 @@ describe("funnel template gallery", () => {
     }
   });
 
+  it("依 step type 過濾模板，不把其他用途的模板混入目前步驟", () => {
+    expect(listFunnelTemplateGallery("webinar", "webinar_registration_page").map((item) => item.id)).toEqual(["webinar-registration"]);
+    expect(listFunnelTemplateGallery("webinar", "webinar_broadcast_page").map((item) => item.id)).toEqual(["webinar-broadcast"]);
+    expect(listFunnelTemplateGallery("sell", "thank_you_page")).toEqual([]);
+    expect(listFunnelTemplateGallery("custom", "info_page").map((item) => item.id)).toEqual(["custom-privacy", "custom-terms", "custom-brand-info"]);
+  });
+
   it("Webinar 三階段具備可辨識且用途不同的節點結構", () => {
     const registration = flatten(instantiateFunnelTemplate("webinar-registration").root);
     const thankYou = flatten(instantiateFunnelTemplate("webinar-thank-you").root);

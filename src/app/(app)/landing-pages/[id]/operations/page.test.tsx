@@ -15,7 +15,7 @@ beforeEach(() => vi.clearAllMocks());
 
 it("renders a generic unavailable state without loading reports or exposing editor data", async () => {
   mocks.load.mockRejectedValue(new FunnelOperationsError("foreign private name"));
-  const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "foreign" }) }));
+  const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "foreign" }), searchParams: Promise.resolve({}) }));
   expect(html).toContain("無法開啟 Funnel");
   expect(html).not.toContain("foreign private name");
   expect(html).not.toContain("private editor");
@@ -26,6 +26,6 @@ it("renders a generic unavailable state without loading reports or exposing edit
 it("does not disguise an unexpected database failure as an unavailable resource", async () => {
   const failure = new Error("database unavailable");
   mocks.load.mockRejectedValue(failure);
-  await expect(Page({ params: Promise.resolve({ id: "page" }) })).rejects.toBe(failure);
+  await expect(Page({ params: Promise.resolve({ id: "page" }), searchParams: Promise.resolve({}) })).rejects.toBe(failure);
   expect(mocks.reports).not.toHaveBeenCalled();
 });

@@ -11,24 +11,23 @@ describe("goal funnel initial documents", () => {
     if (!state) return;
     expect(Object.keys(state.pages)).toHaveLength(state.flow.steps.length);
     expect(new Set(Object.values(state.pages).map((page) => page.id)).size).toBe(state.flow.steps.length);
-    expect(Object.values(state.pages).every((page) => page.root.length > 0)).toBe(true);
+    expect(Object.values(state.pages).every((page) => Array.isArray(page.root))).toBe(true);
   });
 
-  it("名單 Funnel 的第一步含可編輯表單、輸入與送出按鈕", () => {
+  it("名單 Funnel 的第一步等待選擇模板，沒有預先套用內容", () => {
     const state = createGoalFunnelStepPages({ id: "audience", name: "名單", goal: "audience", domain: "audience" });
     expect(state).not.toBeNull();
     if (!state) return;
-    const types = flatten(state.pages[state.flow.steps[0]!.id]!.root).map((node) => node.type);
-    expect(types).toEqual(expect.arrayContaining(["form", "form_input", "button"]));
+    expect(state.flow.steps[0]!.template).toEqual({ source: "template" });
+    expect(flatten(state.pages[state.flow.steps[0]!.id]!.root)).toEqual([]);
   });
 
-  it("銷售 Funnel 的付款節點全部維持 disabled 且沒有 actions", () => {
+  it("銷售 Funnel 的第一步等待選擇模板，避免建立後直接假裝已有結帳頁", () => {
     const state = createGoalFunnelStepPages({ id: "sell", name: "銷售", goal: "sell", domain: "sell" });
     expect(state).not.toBeNull();
     if (!state) return;
-    const payment = flatten(state.pages[state.flow.steps[0]!.id]!.root).filter((node) => ["offer_price", "payment_method", "payment_button"].includes(node.type));
-    expect(payment.length).toBeGreaterThan(0);
-    expect(payment.every((node) => node.props.disabled === true && node.actions.length === 0)).toBe(true);
+    expect(state.flow.steps[0]!.template).toEqual({ source: "template" });
+    expect(flatten(state.pages[state.flow.steps[0]!.id]!.root)).toEqual([]);
   });
 
   it("自訂 Funnel 依實測從系統停用頁開始，由使用者新增第一個步驟", () => {

@@ -69,8 +69,13 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("TEST ONLY Commerce Funnel");
   await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
   await page.getByRole("button", { name: /銷售商品或服務/u }).click();
-  await page.getByRole("button", { name: "儲存並進入編輯器" }).click();
-  await expect(page).toHaveURL(/goal=sell/u);
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
+  const funnelId = new URL(page.url()).pathname.split("/").at(-2)!;
+  await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
+  await expect(page.getByRole("status")).toContainText("模板已套用");
+  await page.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   const productSelect = page.getByRole("combobox", { name: /^本步驟商品/u });
   await expect(productSelect).toBeVisible();
@@ -81,7 +86,7 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   const agreement = "TEST ONLY 我同意此商品交付條款";
   await page.getByRole("textbox", { name: "額外同意條款（選填）", exact: true }).fill(agreement);
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
-  await expect(page).toHaveURL(/\/landing-pages\/(?!new$)[^/?]+$/u);
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await expect(page.getByRole("button", { name: "發布已儲存草稿", exact: true })).toBeEnabled();
   await page.reload();
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();

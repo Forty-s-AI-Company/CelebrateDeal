@@ -49,7 +49,7 @@ export function FunnelList({ pages, readOnly = false }: { pages: LandingPageSumm
           <td className="px-5 py-4"><p className="font-semibold text-slate-950">{page.name}</p><p className="mt-1 font-mono text-xs text-slate-500">/lp/{page.slug}</p></td>
           <td className="px-5 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${page.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{page.status === "published" ? "✓ 已發布" : "草稿"}</span></td>
           <td className="px-5 py-4 text-slate-600"><time dateTime={page.updatedAt.toISOString()}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short" }).format(page.updatedAt)}</time></td>
-          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 Funnel →</Link>}</td>
+          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 Funnel →</Link>}</td>
         </tr>)}</tbody>
       </table>
     </div>

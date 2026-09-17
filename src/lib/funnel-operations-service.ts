@@ -29,7 +29,19 @@ async function scopedPage(pageId: string, database = getDb()) {
 
 export async function loadFunnelOperations(pageId: string) {
   const { page, state, operations } = await scopedPage(pageId);
-  return { pageId: page.id, name: page.name, slug: page.slug, currency: state.flow.currency, revision: page.revision, status: page.status, operations, steps: state.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })) };
+  return {
+    pageId: page.id,
+    name: page.name,
+    slug: page.slug,
+    currency: state.flow.currency,
+    revision: page.revision,
+    status: page.status,
+    operations,
+    content: state,
+    formId: page.draftFormId,
+    liveId: page.draftLiveId,
+    steps: state.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })),
+  };
 }
 export type FunnelOperationsEditor = Awaited<ReturnType<typeof loadFunnelOperations>>;
 

@@ -44,21 +44,21 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   await page.getByLabel("名稱 *").fill(pageName);
   await page.getByLabel("Funnel 網址 *").fill(slug);
   await page.getByRole("button", { name: /建立名單/u }).click();
-  await page.getByRole("button", { name: "儲存並進入編輯器" }).click();
-  await expect(page).toHaveURL(/goal=audience/u);
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
+  const pageId = new URL(page.url()).pathname.split("/").at(-2);
+  if (!pageId) throw new Error("Funnel create navigation did not include an id.");
+  await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
+  await expect(page.getByRole("status")).toContainText("模板已套用");
+  await page.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await expect(page.getByLabel("頁面名稱")).toBeVisible();
   await page.getByLabel("活動場次").selectOption(fixture.live.id);
   await expect(page.getByText("正在載入編輯器…", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-editor.png"), fullPage: true });
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
-  // /landing-pages/new also matches a generic final segment; await the actual redirect.
-  await expect(page).not.toHaveURL(/\/landing-pages\/new$/u);
-  await expect(page).toHaveURL(/\/landing-pages\/[^/]+$/u);
-
-  const editorPath = new URL(page.url()).pathname;
-  const pageId = editorPath.split("/").at(-1);
-  if (!pageId) throw new Error("Landing page create navigation did not include an id.");
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   await expect(page.getByRole("button", { name: "發布已儲存草稿" })).toBeEnabled();
   await page.getByRole("button", { name: "發布已儲存草稿" }).click();
 
