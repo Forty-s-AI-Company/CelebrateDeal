@@ -20,9 +20,12 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.tr
 
 import {
   createLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError, LandingPageNotFoundError,
-  getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
+  listFunnelWebinarResources, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
 } from "./landing-page-service";
 import { createEmptyPageDocument } from "./funnel-page-document";
+
+import { createFunnelFlow } from "./funnel-flow";
+import { createFunnelStepPages } from "./funnel-step-pages";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
 
@@ -129,4 +132,88 @@ describe("landing page service", () => {
     expect(duplicate.id).toBe("page-copy");
     expect(mocks.landingPageCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1", slug: "fall-launch-copy", draftContent: content() }) }));
   });
+});
+
+
+function webinarDraft() {
+  const flow = createFunnelFlow({ id: "webinar_flow", name: "Webinar", goal: "webinar", domain: "webinar" })!;
+  flow.webinar = { timezone: "Asia/Taipei", startsAt: "2026-09-17T01:00:00.000Z", endsAt: "2026-09-17T02:00:00.000Z", replayEndsAt: null };
+  return createFunnelStepPages(flow)!;
+}
+const webinarFields = [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }];
+function webinarLive(videoChanges: Record<string, unknown> = {}) {
+  return { id: "live-1", vendorId: "vendor-1", projectId: "project-1", slug: "webinar-live", title: "Webinar", status: "scheduled", scheduledAt: now, formId: "form-1", videoId: "video-1", video: { id: "video-1", vendorId: "vendor-1", title: "影片", sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true, cloudflareLiveInputUid: null, liveInputStatus: null, ...videoChanges } };
+}
+describe("Webinar resource boundary", () => {
+  it("rejects a standalone document masquerading as a multi-step Webinar", async () => {
+    const document = { ...createEmptyPageDocument("standalone", "Webinar"), flow: webinarDraft().flow };
+    await expect(createLandingPage({ name: "Webinar", slug: "webinar", content: document })).rejects.toThrow("landing_page_webinar_steps_required");
+    mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: null, liveId: null } });
+    expect(await loadPublicLandingPage("webinar")).toBeNull();
+  });
+  it("allows an incomplete draft but refuses publication without resources", async () => {
+    const document = webinarDraft();
+    await expect(createLandingPage({ name: "Webinar", slug: "webinar", content: document })).resolves.toBeDefined();
+    mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: document, draftFormId: null, draftLiveId: null }));
+    await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_resources_required");
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
+  });
+  it.each([{ vendorId: "other" }, { id: "other" }, { cloudflareReadyToStream: false }, { status: "archived" }])("rejects foreign, mismatched or unready source: %j", async (changes) => {
+    mocks.formFindMany.mockResolvedValue([{ id: "form-1", slug: "form", name: "表單", fields: webinarFields }]);
+    mocks.liveFindFirst.mockResolvedValue(webinarLive(changes));
+    mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: webinarDraft(), draftLiveId: "live-1" }));
+    await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_resources_required");
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
+  });
+  it("publishes ready scoped bindings and projects no playback URL", async () => {
+    const document = webinarDraft();
+    mocks.formFindMany.mockResolvedValue([{ id: "form-1", slug: "form", name: "表單", fields: webinarFields }]);
+    mocks.liveFindFirst.mockResolvedValue(webinarLive());
+    mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: document, draftLiveId: "live-1" }));
+    await expect(publishLandingPage("page-1", 2)).resolves.toBeDefined();
+    mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: "form-1", liveId: "live-1", live: webinarLive() } });
+    const published = await loadPublicLandingPage("webinar");
+    expect(published?.webinar?.live).toEqual({ id: "live-1", slug: "webinar-live", videoId: "video-1", videoTitle: "影片" });
+    mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: "form-1", liveId: "live-1", live: webinarLive({ vendorId: "other" }) } });
+    expect((await loadPublicLandingPage("webinar"))?.webinar).toBeUndefined();
+  });
+});
+
+it("lists only scoped Webinar source metadata without serializing video URLs", async () => {
+  mocks.liveFindMany.mockResolvedValue([webinarLive()]);
+  mocks.formFindMany.mockResolvedValue([{ id: "form-1", fields: webinarFields, submitLabel: "報名", successMessage: "已收到" }]);
+  expect(await listFunnelWebinarResources()).toMatchObject({ lives: [{ id: "live-1", videoId: "video-1", videoTitle: "影片", videoReady: true }], forms: [{ id: "form-1", fields: webinarFields }] });
+  expect(mocks.liveFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
+});
+
+it.each([false, true])("refuses an ended Live without replay permission or with expired replay: %s", async (replayEnabled) => {
+  const live = { ...webinarLive(), status: "ended", replayEnabled, replayAvailableUntil: new Date("2000-01-01T00:00:00Z") };
+  const document = webinarDraft();
+  mocks.formFindMany.mockResolvedValue([{ id: "form-1", slug: "form", name: "表單", fields: webinarFields }]);
+  mocks.liveFindFirst.mockResolvedValue(live);
+  mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: document, draftLiveId: "live-1" }));
+  await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_resources_required");
+  mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: "form-1", liveId: "live-1", live } });
+  expect((await loadPublicLandingPage("webinar"))?.webinar).toBeUndefined();
+});
+it("requires one registration, thank-you and broadcast step before publishing", async () => {
+  const document = webinarDraft();
+  document.flow.steps = document.flow.steps.filter((step) => step.type !== "webinar_thank_you_page");
+  delete document.pages.webinar_thank_you;
+  mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: document, draftFormId: null }));
+  await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_steps_required");
+});
+
+it("refuses direct video publication and suppresses runtime playback resources", async () => {
+  const document = webinarDraft();
+  const node = (id: string, type: string, children?: unknown[]) => ({ schemaVersion: 1, id, type, props: {}, style: {}, overrides: {}, visible: true, attributes: {}, actions: [], ...(children ? { children } : {}) });
+  document.pages.webinar_broadcast.root.push(node("direct_section", "section", [node("direct_row", "row", [node("direct_column", "columns_2", [node("direct_video", "video")])])]) as import("./funnel-page-document").FunnelNode);
+  mocks.formFindMany.mockResolvedValue([{ id: "form-1", slug: "form", name: "表單", fields: webinarFields }]);
+  mocks.liveFindFirst.mockResolvedValue(webinarLive());
+  mocks.landingPageFindFirst.mockResolvedValue(page({ draftContent: document, draftLiveId: "live-1" }));
+  await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_webinar_direct_media_forbidden");
+  mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: "form-1", liveId: "live-1", live: webinarLive() } });
+  const loaded = await loadPublicLandingPage("webinar");
+  expect(loaded).not.toBeNull();
+  expect(loaded?.webinar).toBeUndefined();
 });

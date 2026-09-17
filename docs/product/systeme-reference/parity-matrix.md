@@ -1,5 +1,7 @@
 # systeme.io → CelebrateDeal parity matrix
 
+> 2026-09-17 CelebrateDeal 開發更新：四種 Goal 已開放，Webinar 使用既有 Live 架構的獨立產品規格，詳見 [Webinar Funnel](../webinar-funnel.md)。下表保留參考站原始實測紀錄；Webinar 未實測項目仍不宣稱 parity，配額／方案限制不移植到 CelebrateDeal。
+
 | 功能 ID | systeme.io 實測功能 | CelebrateDeal 對應 | 優先級 | 實測狀態／備註 |
 |---|---|---|---|---|
 | FUN-LIST-001 | Funnel 表格、搜尋、狀態、建立、分頁 | 中文 Funnel 管理清單 | 必做 | 已實際操作 |

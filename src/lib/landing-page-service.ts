@@ -13,6 +13,34 @@ import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document
 import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
+import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
+import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
+import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+export type PublicFunnelWebinarResource = {
+  form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
+  live: { id: string; slug: string; videoId: string; videoTitle: string };
+};
+export type FunnelWebinarResources = {
+  lives: Array<{ id: string; videoId: string | null; videoTitle: string | null; videoReady: boolean }>;
+  forms: PublicFunnelWebinarResource["form"][];
+};
+const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
+function webinarContent(content: LandingPageStoredContent) {
+  return "flow" in content && content.flow?.goal === "webinar";
+}
+function invalidWebinarContainer(content: LandingPageStoredContent) {
+  return webinarContent(content) && !("pages" in content);
+}
+function completeWebinarSteps(content: LandingPageStoredContent) {
+  const steps = "flow" in content ? content.flow?.steps : undefined;
+  return Boolean(steps && ["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"].every((type) => steps.filter((step) => step.type === type).length === 1));
+}
+function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, vendorId: string): PublicFunnelWebinarResource | undefined {
+  if (live?.status === "ended" && (!live.replayEnabled || (live.replayAvailableUntil && live.replayAvailableUntil.getTime() <= Date.now()))) return undefined;
+  const fields = parseRegistrationFormFields(form?.fields);
+  if (!form || !fields.success || !live?.videoId || live.video?.id !== live.videoId || live.video.vendorId !== vendorId || !isLiveVideoReady(live.video)) return undefined;
+  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title } };
+}
 const MAX_NAME_LENGTH = 160;
 const MAX_SLUG_LENGTH = 100;
 const MAX_IDENTIFIER_LENGTH = 100;
@@ -57,6 +85,7 @@ export type LandingPageEditorData = {
   forms: LandingPageFormReference[];
   lives: LandingPageLiveReference[];
   context: LandingPageRenderContext;
+  webinarResources: FunnelWebinarResources;
 };
 
 export type LandingPageList = {
@@ -70,6 +99,7 @@ export type PublicLandingPage = {
   content: LandingPageStoredContent;
   context: LandingPageRenderContext;
   publishedAt: Date;
+  webinar?: PublicFunnelWebinarResource;
 };
 
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
@@ -103,8 +133,8 @@ export class LandingPageScopeError extends Error {
   }
 }
 
-type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean };
-type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null };
+type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
+type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
 type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live">;
 
@@ -139,7 +169,8 @@ function databaseErrorCode(error: unknown) {
 
 function inputContent(value: unknown) {
   const content = parseFunnelStepPages(value) ?? parsePageDocument(value) ?? parseLandingPageContent(value);
-  if (!content) throw new LandingPageInputError();
+    if (!content) throw new LandingPageInputError();
+    if (invalidWebinarContainer(content)) throw new LandingPageInputError("landing_page_webinar_steps_required");
   return content;
 }
 
@@ -186,14 +217,14 @@ async function editorProject() {
 
 async function validateBindings(
   database: LandingPageDb,
-  input: { vendorId: string; projectId: string; content: LandingPageStoredContent; formId: string | null; liveId: string | null },
+  input: { vendorId: string; projectId: string; content: LandingPageStoredContent; formId: string | null; liveId: string | null; publishing?: boolean },
 ) {
   const referencedFormIds = registrationFormIdsInContent(input.content);
   if (input.formId) referencedFormIds.add(input.formId);
   const formIds = [...referencedFormIds];
   const forms = formIds.length === 0 ? [] : await database.registrationForm.findMany({
     where: { vendorId: input.vendorId, projectId: input.projectId, isActive: true, id: { in: formIds } },
-    select: { id: true, slug: true, name: true },
+    select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
   });
   if (forms.length !== formIds.length) throw new LandingPageInputError("landing_page_form_invalid");
 
@@ -201,13 +232,20 @@ async function validateBindings(
   if (input.liveId) {
     live = await database.live.findFirst({
       where: { id: input.liveId, vendorId: input.vendorId, projectId: input.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
-      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, formId: true },
+      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } },
     });
     if (!live) throw new LandingPageInputError("landing_page_live_invalid");
     const liveFormId = live.formId;
     if (!liveFormId || formIds.length === 0 || formIds.some((formId) => formId !== liveFormId)) {
       throw new LandingPageInputError("landing_page_live_form_mismatch");
     }
+  }
+  if (input.publishing && webinarContent(input.content)) {
+    if ("pages" in input.content && hasDirectWebinarVideo(input.content)) throw new LandingPageInputError("landing_page_webinar_direct_media_forbidden");
+    if (!completeWebinarSteps(input.content)) throw new LandingPageInputError("landing_page_webinar_steps_required");
+    if (!input.formId || !input.liveId || !webinarResource(forms.find((form) => form.id === input.formId), live, input.vendorId)) throw new LandingPageInputError("landing_page_webinar_resources_required");
+    const settings = "flow" in input.content ? input.content.flow?.webinar : undefined;
+    if (!settings?.startsAt || !settings.endsAt) throw new LandingPageInputError("landing_page_webinar_schedule_required");
   }
   return { forms, live };
 }
@@ -274,6 +312,19 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   return { id, revision: revision + 1 };
 }
 
+/** New funnels use the same scoped resource inventory as existing drafts. */
+export async function listFunnelWebinarResources(): Promise<FunnelWebinarResources> {
+  const scope = await editorProject();
+  const [forms, lives] = await Promise.all([
+    db().registrationForm.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { id: true, fields: true, submitLabel: true, successMessage: true }, orderBy: { name: "asc" } }),
+    db().live.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } }, select: { id: true, videoId: true, video: { select: videoSelect } }, orderBy: { scheduledAt: "desc" } }),
+  ]);
+  return {
+    lives: lives.map((live) => ({ id: live.id, videoId: live.videoId, videoTitle: live.video?.title ?? null, videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video) })),
+    forms: forms.flatMap((form) => { const fields = parseRegistrationFormFields(form.fields); return fields.success ? [{ id: form.id, fields: fields.data, submitLabel: form.submitLabel, successMessage: form.successMessage }] : []; }),
+  };
+}
+
 export async function getLandingPageForEditor(pageId: string): Promise<LandingPageEditorData> {
   const scope = await editorProject();
   const page = await db().landingPage.findFirst({
@@ -285,14 +336,18 @@ export async function getLandingPageForEditor(pageId: string): Promise<LandingPa
   });
   if (!page) throw new LandingPageNotFoundError();
   const [forms, lives] = await Promise.all([
-    db().registrationForm.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { id: true, slug: true, name: true }, orderBy: { name: "asc" } }),
-    db().live.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } }, select: { id: true, slug: true, title: true, status: true, scheduledAt: true, formId: true }, orderBy: { scheduledAt: "desc" } }),
+    db().registrationForm.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true }, orderBy: { name: "asc" } }),
+    db().live.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } }, select: { id: true, slug: true, title: true, status: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, videoId: true, video: { select: videoSelect } }, orderBy: { scheduledAt: "desc" } }),
   ]);
   const selectedLive = page.draftLiveId ? lives.find((live) => live.id === page.draftLiveId) ?? null : null;
   const formOptions = forms.map(toFormReference);
   const liveOptions = lives.map(toLiveReference);
   return {
     page: { id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, publishedAt: page.publishedAt, updatedAt: page.updatedAt, content: parseFunnelStepPages(page.draftContent) ?? parsePageDocument(page.draftContent) ?? parseLandingPageContent(page.draftContent), formId: page.draftFormId, liveId: page.draftLiveId, versions: page.versions ?? [] },
+    webinarResources: {
+      lives: lives.map((live) => ({ id: live.id, videoId: live.videoId, videoTitle: live.video?.title ?? null, videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video) })),
+      forms: forms.flatMap((form) => { const fields = parseRegistrationFormFields(form.fields); return fields.success ? [{ id: form.id, fields: fields.data, submitLabel: form.submitLabel, successMessage: form.successMessage }] : []; }),
+    },
     forms: formOptions,
     lives: liveOptions,
     context: { forms: formOptions, ...(selectedLive ? { live: toLiveReference(selectedLive) } : {}) },
@@ -309,7 +364,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       const page = await requireScopedPage(transaction, scope, id);
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
-      await validateBindings(transaction, { ...scope, content, formId: page.draftFormId, liveId: page.draftLiveId });
+      await validateBindings(transaction, { ...scope, content, formId: page.draftFormId, liveId: page.draftLiveId, publishing: true });
       const nextVersion = await transaction.landingPageVersion.count({ where: { vendorId: scope.vendorId, pageId: id } }) + 1;
       const version = await transaction.landingPageVersion.create({
         data: { vendorId: scope.vendorId, pageId: id, version: nextVersion, content: content as Prisma.InputJsonValue, formId: page.draftFormId, liveId: page.draftLiveId },
@@ -397,23 +452,26 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     where: { slug: safeSlug, status: "published", publishedVersionId: { not: null }, project: { is: { status: "published", publishedAt: { not: null } } } },
     select: {
       id: true, vendorId: true, projectId: true, slug: true, publishedAt: true,
-      publishedVersion: { select: { id: true, vendorId: true, pageId: true, version: true, content: true, formId: true, liveId: true, createdAt: true, live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, formId: true, vendorId: true, projectId: true } } } },
+      publishedVersion: { select: { id: true, vendorId: true, pageId: true, version: true, content: true, formId: true, liveId: true, createdAt: true, live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, replayEnabled: true, replayAvailableUntil: true, formId: true, vendorId: true, projectId: true, videoId: true, video: { select: videoSelect } } } } },
     },
   });
   if (!page?.publishedVersion || !page.publishedAt || page.publishedVersion.vendorId !== page.vendorId || page.publishedVersion.pageId !== page.id) return null;
   const content = parseFunnelStepPages(page.publishedVersion.content) ?? parsePageDocument(page.publishedVersion.content) ?? parseLandingPageContent(page.publishedVersion.content);
-  if (!content) return null;
+    if (!content || invalidWebinarContainer(content)) return null;
   const formIds = registrationFormIdsInContent(content);
   if (page.publishedVersion.formId) formIds.add(page.publishedVersion.formId);
   const ids = [...formIds];
   const forms = ids.length === 0 ? [] : await db().registrationForm.findMany({
     where: { id: { in: ids }, vendorId: page.vendorId, projectId: page.projectId, isActive: true },
-    select: { id: true, slug: true, name: true },
+    select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
   });
   if (forms.length !== ids.length) return null;
   const live = page.publishedVersion.live;
   if (page.publishedVersion.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return null;
+  const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content)) ? webinarResource(forms.find((form) => form.id === page.publishedVersion?.formId), live, page.vendorId) : undefined;
+  // Resource projections deliberately contain no playback URL or admission token.
   return {
+    ...(webinar ? { webinar } : {}),
     id: page.id,
     slug: page.slug,
     content,

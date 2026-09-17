@@ -1,3 +1,4 @@
+import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -32,6 +33,7 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
   const page = await load((await params).slug);
   if (!page) notFound();
   if (isFunnelStepPages(page.content)) {
+    if (page.content.flow.goal === "webinar") return <FunnelWebinarExperience state={page.content} stepId={page.content.flow.steps[0].id} slug={page.slug} resource={page.webinar} />;
     const document = getPublicFunnelPage(page.content);
     if (!document) notFound();
     return <PublicFunnelDocument document={document} />;

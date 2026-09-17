@@ -6,6 +6,7 @@ import {
   removeFunnelStep,
   renameFunnelStep,
   setFunnelStepPath,
+  setFunnelStepTemplate,
   type FunnelFlow,
   type FunnelFlowMutationResult,
   type FunnelStep,
@@ -231,7 +232,7 @@ export function getActiveFunnelStepPage(state: FunnelStepPages): FunnelStepPageS
 }
 
 /** Replaces only one selected PageDocument while retaining its step-owned document identity. */
-export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, page: PageDocument): FunnelStepPageMutationResult {
+export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, page: PageDocument, templateId?: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
   if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕儲存頁面");
   const step = valid.flow.steps.find((item) => item.id === stepId);
@@ -241,6 +242,11 @@ export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, pa
   if (!snapshot) return failure(valid, "頁面資料不符合 PageDocument 規格");
   snapshot.id = valid.pages[stepId]!.id;
   const next = clone(valid);
+  if (templateId) {
+    const updated = setFunnelStepTemplate(next.flow, stepId, templateId);
+    if (!updated.ok) return failure(valid, updated.error);
+    next.flow = updated.flow;
+  }
   next.pages[stepId] = snapshot;
   const parsed = parseFunnelStepPages(next);
   return parsed ? success(parsed) : failure(valid, "頁面包含與其他 Funnel step 重複的 ID 或失效動作，已回復原狀");

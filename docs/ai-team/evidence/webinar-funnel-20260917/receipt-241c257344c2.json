@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 85,
+  "sourceSha256": "419ebc0e55771a273f1c389dc94d5dbe06cbd75a7e3260904a8fbd431bb37482",
+  "browserTestSha256": "93645c9e585077b9650db5fecd1ea595feefbec777107a57793d5db52eb5d693",
+  "buildReused": true,
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-webinar-qa-0iBObf"
+}

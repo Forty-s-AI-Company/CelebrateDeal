@@ -22,11 +22,11 @@ function flow(goal: "audience" | "sell" | "custom" = "custom"): FunnelFlow {
 }
 
 describe("Funnel flow v1", () => {
-  it("依實測 goal 建立 Audience、Sell、Custom 預設步驟，並明確拒絕未驗證 Webinar", () => {
+  it("依實測 goal 建立 Audience、Sell、Custom 預設步驟，並建立固定場次 Webinar", () => {
     expect(flow("audience").steps.map((step) => step.type)).toEqual(["opt_in_page", "opt_in_thank_you_page", "inactive_page"]);
     expect(flow("sell").steps.map((step) => step.type)).toEqual(["order_form", "thank_you_page", "inactive_page"]);
     expect(flow("custom").steps.map((step) => step.type)).toEqual(["inactive_page"]);
-    expect(createFunnelFlow({ id: "webinar_flow", name: "Webinar", goal: "webinar", domain: "evergreen" })).toBeNull();
+    expect(createFunnelFlow({ id: "webinar_flow", name: "Webinar", goal: "webinar", domain: "evergreen" })?.steps.map((step) => step.type)).toEqual(["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page", "inactive_page"]);
   });
 
   it("提供分群 step type catalog，並將 Webinar 與停用頁顯示為不可安全新增", () => {
@@ -34,7 +34,7 @@ describe("Funnel flow v1", () => {
     expect(catalog.find((item) => item.type === "order_form")).toMatchObject({ group: "sales", capability: { status: "available" } });
     expect(catalog.find((item) => item.type === "opt_in_page")).toMatchObject({ group: "audience" });
     expect(catalog.find((item) => item.type === "info_page")).toMatchObject({ group: "general" });
-    expect(catalog.find((item) => item.type === "webinar_registration_page")?.capability.status).toBe("unverified");
+    expect(catalog.find((item) => item.type === "webinar_registration_page")?.capability.status).toBe("available");
     expect(catalog.find((item) => item.type === "inactive_page")?.capability.status).toBe("disabled");
   });
 
@@ -84,7 +84,7 @@ describe("Funnel flow v1", () => {
     expect(restored).toEqual(original.flow);
     expect(parseFunnelFlow({ ...original.flow, steps: [...original.flow.steps, original.flow.steps[0]] })).toBeNull();
     expect(deserializeFunnelFlow("{")).toBeNull();
-    expect(parseFunnelFlow({ ...original.flow, goal: "webinar", capabilities: { webinar: { status: "available", reason: "錯誤" } } })).toBeNull();
+    expect(parseFunnelFlow({ ...original.flow, goal: "webinar", webinar: { timezone: "invalid" } })).toBeNull();
     expect(() => serializeFunnelFlow({ ...original.flow, domain: "not/a/path" })).toThrow();
   });
 });
