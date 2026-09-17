@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
+import { getCsrfToken } from "@/lib/csrf";
 import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
 import { FUNNEL_VISITOR_COOKIE, recordPublicFunnelVisit, resolveFunnelVisitorId, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
@@ -46,7 +47,8 @@ export default async function PublicFunnelStepPage({ params }: { params: Promise
   if (!rendered) notFound();
   const logicalDocument = getPublicFunnelPage(steps, step.path);
   const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
-  return <PublicFunnelDocument document={rendered} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
+  const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
+  return <PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
 }
 
 function PublicFunnelClosed() {

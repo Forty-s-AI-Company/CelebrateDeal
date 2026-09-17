@@ -85,7 +85,7 @@ describe("FunnelPopupPreview", () => {
     expect(html).not.toContain("Popup 內容");
   });
 
-  it("reports exit intent as unverified and never schedules it", () => {
+  it("reports exit intent as an explicit desktop capability", () => {
     vi.useFakeTimers();
     const candidate = popup({ openOnExitIntent: true });
     const onOpen = vi.fn();
@@ -93,11 +93,10 @@ describe("FunnelPopupPreview", () => {
     vi.advanceTimersByTime(2_000);
 
     expect(scheduled.status.status).toBe("available");
-    expect(getFunnelPopupExitIntentStatus(candidate).status).toBe("unverified");
+    expect(getFunnelPopupExitIntentStatus(candidate).status).toBe("available");
     expect(onOpen).toHaveBeenCalledTimes(1);
     const html = renderToStaticMarkup(<FunnelPopupPreview document={documentWith(candidate)} popupId={candidate.id} previewEnabled />);
-    expect(html).toContain('data-funnel-popup-exit-intent-status="unverified"');
-    expect(html).toContain("Exit intent：unverified");
+    expect(html).toContain('data-funnel-popup-exit-intent-status="available"');
   });
 
   it("renders untrusted raw HTML as a safe capability state inside the overlay", () => {
@@ -107,6 +106,7 @@ describe("FunnelPopupPreview", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("window.pwned");
     expect(html).toContain("原始 HTML");
-    expect(html).toContain("目前無法在此預覽");
+    expect(html).toContain('sandbox=""');
+    expect(html).toContain("Content-Security-Policy");
   });
 });

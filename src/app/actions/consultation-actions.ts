@@ -3,6 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
@@ -11,6 +12,8 @@ import { generateConsultationSlots, type ConsultationSlot } from "@/lib/consulta
 import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const MANAGEMENT_PATH = "/consultations";
 const EVENT_ID = z.string().trim().min(1).max(191);
@@ -95,6 +98,16 @@ function db(): ConsultationDatabase {
   // The Prisma client can lag the schema during a staged migration. Keep this
   // boundary narrow; the production client remains the only runtime database.
   return getDb() as unknown as ConsultationDatabase;
+}
+
+async function publicBookingRequest() {
+  const incoming = await headers();
+  const forwarded = new Headers();
+  for (const name of ["cf-connecting-ip", "x-forwarded-for", "user-agent"]) {
+    const value = incoming.get(name);
+    if (value) forwarded.set(name, value);
+  }
+  return new Request(getCanonicalAppUrl(), { headers: forwarded });
 }
 
 function text(formData: FormData, key: string) {
@@ -364,9 +377,9 @@ export async function getConsultationSlots(eventId: string, date: string) {
   const database = db();
   const event = await database.consultationEvent.findFirst({
     where: { id: id.data, isActive: true },
-    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true },
+    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
   });
-  if (!event) return [];
+  if (!event || (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt))) return [];
   const ranges = eventDayRanges(date, event.timezone);
   if (!ranges) return [];
   const bookings = await bookingRecordsForDay(database, event, ranges.actual);
@@ -431,7 +444,7 @@ export async function reserveConsultationBooking(
     return await database.$transaction(async (transaction) => {
       const event = await transaction.consultationEvent.findFirst({
         where: { id: input.eventId, isActive: true },
-        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, intakeFormFields: true, isActive: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
+        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, intakeFormFields: true, isActive: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
       });
       if (!event) return { status: "unavailable" };
       if (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt)) return { status: "unavailable" };
@@ -458,6 +471,11 @@ export async function reserveConsultationBooking(
       }));
       const requestedSlot = slots.find((slot) => slot.startTime.getTime() === requestedStart.getTime());
       if (!requestedSlot) return { status: "unavailable" };
+
+      const existingFutureBookings = await transaction.consultationBooking.count({
+        where: { eventId: event.id, clientEmail: input.clientEmail.toLowerCase(), status: "scheduled", endTime: { gt: new Date() } },
+      });
+      if (existingFutureBookings > 0) return { status: "unavailable" };
 
       const answers = parseIntakeResponses(input.answers, event.intakeFormFields);
       if (!answers) return { status: "unavailable" };
@@ -520,6 +538,8 @@ export async function createConsultationBookingAction(formData: FormData): Promi
     answers: rawAnswers,
   });
   if (!parsed.success) return { status: "unavailable" };
+  const limited = await checkRateLimit(await publicBookingRequest(), `consultation-booking:${parsed.data.eventId}`, 8, 15 * 60 * 1000);
+  if (limited) return { status: "unavailable" };
   const database = db();
   const result = await reserveConsultationBooking(database, parsed.data);
   if (result.status === "booked") {

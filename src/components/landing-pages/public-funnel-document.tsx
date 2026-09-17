@@ -6,7 +6,7 @@ import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-prev
 import type { PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelCommerceView } from "@/lib/funnel-commerce";
 
-export function PublicFunnelDocument({ document, viewport, submission, commerce }: { document: PageDocument; viewport?: "desktop" | "mobile"; submission?: FunnelSubmissionContext; commerce?: FunnelCommerceView }) {
+export function PublicFunnelDocument({ document, viewport, submission, consultation, commerce }: { document: PageDocument; viewport?: "desktop" | "mobile"; submission?: FunnelSubmissionContext; consultation?: { csrfToken: string; events: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }> }; commerce?: FunnelCommerceView }) {
   const [responsiveViewport, setResponsiveViewport] = useState<"desktop" | "mobile">("desktop");
   useEffect(() => {
     const media = window.matchMedia("(max-width: 639px)");
@@ -16,7 +16,7 @@ export function PublicFunnelDocument({ document, viewport, submission, commerce 
   }, []);
   const selectedViewport = viewport ?? responsiveViewport;
   return <>
-    <FunnelPageDocumentRenderer document={document} viewport={selectedViewport} mode="preview" submission={submission} commerce={commerce} publicSurface />
+    <FunnelPageDocumentRenderer document={document} viewport={selectedViewport} mode="preview" submission={submission} consultation={consultation} commerce={commerce} publicSurface />
     {document.popups
       .filter((popup) => !popup.pageId || popup.pageId === document.id)
       .map((popup) => <FunnelPopupPreview key={popup.id} document={document} commerce={commerce} publicSurface popupId={popup.id} viewport={selectedViewport} />)}

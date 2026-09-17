@@ -6,6 +6,10 @@ import { createContext, useContext, useEffect, useState, type CSSProperties, typ
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
 import { FunnelCommerceElement } from "./funnel-commerce-element";
+import { ConsultationBookingBlock } from "@/components/funnel-blocks/consultation-booking-block";
+import { FunnelDocumentCarousel } from "./funnel-document-carousel";
+import { FunnelSurvey } from "./funnel-survey";
+import { SandboxedHtml } from "./sandboxed-html";
 
 const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView }>({});
 
@@ -32,6 +36,7 @@ export type FunnelPageDocumentRendererProps = {
   submission?: FunnelSubmissionContext;
   publicSurface?: boolean;
   commerce?: FunnelCommerceView;
+  consultation?: { csrfToken: string; events: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }> };
 };
 
 export type FunnelSubmissionContext = {
@@ -330,12 +335,12 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
-function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
+function NodeRenderer({ node, viewport, mode, flow, submission, consultation, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; consultation?: FunnelPageDocumentRendererProps["consultation"]; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
   const commerceContext = useContext(CommerceRenderContext);
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible) return null;
   const children = node.children ?? [];
-  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
+  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
   const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
@@ -368,7 +373,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = 
     }
     case "carousel": {
       const label = stringProp(props, ["ariaLabel", "title"], "圖片輪播");
-      return surface(<div aria-label={label} className="space-y-3" data-funnel-carousel="true" role="region">{children.length ? renderChildren() : <p className="text-sm text-slate-500">輪播目前沒有內容。</p>}</div>);
+      return surface(mode === "preview" ? <FunnelDocumentCarousel id={node.id} label={label}>{children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} />)}</FunnelDocumentCarousel> : <div aria-label={label} className="space-y-3" data-funnel-carousel="true" role="region">{children.length ? renderChildren() : <p className="text-sm text-slate-500">輪播目前沒有內容。</p>}</div>);
     }
     case "form": {
       const label = stringProp(props, ["ariaLabel", "title"], "表單");
@@ -392,7 +397,10 @@ function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = 
     }
     case "calendar": {
       const eventId = stringProp(props, ["eventId", "calendarId", "bookingEventId"]);
-      return surface(eventId ? <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4" data-calendar-event-id={eventId}><p className="font-medium">行事曆</p><p className="mt-1 text-sm text-slate-600">已設定事件「{eventId}」，預約流程需由既有安全整合提供。</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="text-sm text-slate-600">日期<input type="date" disabled className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1" /></label><label className="text-sm text-slate-600">時間（Asia/Taipei）<input type="time" disabled className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1" /></label></div></div> : <UnsupportedNode node={node} message="尚未綁定行事曆事件；請先設定 event ID。時區：Asia/Taipei。" />);
+      const event = consultation?.events.find((candidate) => candidate.id === eventId);
+      const executable = Boolean(event);
+      if (!executable || !consultation) return surface(<UnsupportedNode node={node} message="尚未綁定行事曆事件，或事件不屬於此 Funnel 的公開專案；預約功能已停用。" />);
+      return surface(<ConsultationBookingBlock eventId={eventId} csrfToken={consultation.csrfToken} settings={{ title: event!.title, description: event!.description ?? undefined, timezone: event!.timezone, durationMinutes: event!.durationMinutes, submitLabel: stringProp(props, ["submitLabel"], "送出預約"), successMessage: stringProp(props, ["successMessage"], "預約已送出。"), intakeFields: Array.isArray(event!.intakeFormFields) ? event!.intakeFormFields as never[] : [] }} />);
     }
     case "x_share_button": {
       const shareTarget = safeResourceUrl(props.url ?? props.targetUrl ?? props.href);
@@ -402,8 +410,14 @@ function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = 
     case "survey": {
       const question = stringProp(props, ["question", "title", "label"], "請選擇一個答案");
       const options = stringList(props.options ?? props.choices);
-      return surface(<fieldset className="space-y-2"><legend className="font-medium">{question}</legend>{(options.length ? options : ["選項一", "選項二"]).map((option, index) => <label key={`${node.id}-option-${index}`} className="flex items-center gap-2"><input type={props.multiple === true ? "checkbox" : "radio"} name={safeNodeName(node, props, node.id)} value={option} /><span>{option}</span></label>)}</fieldset>);
+      const surveyOptions = options.length ? options : ["選項一", "選項二"];
+      return surface(publicSurface && mode === "preview" ? <FunnelSurvey nodeId={node.id} question={question} options={surveyOptions} multiple={props.multiple === true} required={props.required === true} fieldKey={safeNodeName(node, props, node.id)} submission={submission} /> : <fieldset className="space-y-2"><legend className="font-medium">{question}</legend>{surveyOptions.map((option, index) => <label key={`${node.id}-option-${index}`} className="flex items-center gap-2"><input type={props.multiple === true ? "checkbox" : "radio"} name={safeNodeName(node, props, node.id)} value={option} /><span>{option}</span></label>)}</fieldset>);
     }
+    case "raw_html": {
+      const html = stringProp(props, ["html", "content"]);
+      return surface(html ? <div><p className="sr-only">原始 HTML 已在 sandbox 隔離預覽</p><SandboxedHtml html={html} label={stringProp(props, ["title", "ariaLabel"], "隔離的自訂內容")} /></div> : <UnsupportedNode node={node} message="尚未提供可隔離顯示的 HTML。" />);
+    }
+    case "recaptcha": return surface(<UnsupportedNode node={node} message="CelebrateDeal 尚未具備已驗證的 server verification 與網域設定，因此 reCAPTCHA 不可用。" />);
     case "countdown": {
       const target = safeDateTime(props.targetDate ?? props.endAt ?? props.deadline);
       if (!target) return surface(<UnsupportedNode node={node} message="尚未設定有效的截止時間。" />);
@@ -454,10 +468,10 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, commerce, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main></CommerceRenderContext.Provider>;
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main></CommerceRenderContext.Provider>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

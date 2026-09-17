@@ -99,6 +99,20 @@ export function getFunnelPopupExitIntentStatus(popup: FunnelPopup): PopupTrigger
   return validatePopupTrigger(popup, "exit_intent");
 }
 
+export function registerDesktopExitIntent(onExit: () => void): { status: PopupTriggerEligibility; cancel: () => void } {
+  const desktop = window.innerWidth >= 768;
+  if (!desktop) return { status: { trigger: "exit_intent", status: "disabled", executable: false, canTrigger: false, reason: "行動裝置不支援 Exit Intent" }, cancel: () => undefined };
+  let fired = false;
+  const listener = (event: MouseEvent) => {
+    if (fired || event.clientY > 0) return;
+    fired = true;
+    onExit();
+    window.removeEventListener("mouseout", listener);
+  };
+  window.addEventListener("mouseout", listener);
+  return { status: { trigger: "exit_intent", status: "available", executable: true, canTrigger: true, reason: "桌機 Exit Intent 已啟用" }, cancel: () => window.removeEventListener("mouseout", listener) };
+}
+
 function popupStyle(popup: FunnelPopup): CSSProperties {
   const settings = popup.settings;
   const width = widthValue(popup.root[0]?.style.width);
@@ -184,6 +198,7 @@ function FunnelPopupPreviewOverlay({
   const initialWaitingStatus = !previewEnabled ? validatePopupTrigger(popup, "automatic_delay") : null;
   const [isOpen, setIsOpen] = useState(previewEnabled);
   const [closed, setClosed] = useState(false);
+  const [exitRuntimeStatus, setExitRuntimeStatus] = useState<PopupTriggerEligibility | null>(null);
   const [waitingStatus] = useState<PopupTriggerEligibility | null>(initialWaitingStatus);
   const closedRef = useRef(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -198,7 +213,14 @@ function FunnelPopupPreviewOverlay({
 
   useEffect(() => {
     const exitStatus = getFunnelPopupExitIntentStatus(popup);
-    if (popup.settings.openOnExitIntent) onTriggerStatus?.(exitStatus);
+    const exitRegistration = popup.settings.openOnExitIntent && exitStatus.executable ? registerDesktopExitIntent(() => {
+      if (!closedRef.current) window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId: popup.id } }));
+    }) : null;
+    if (popup.settings.openOnExitIntent) {
+      const status = exitRegistration?.status ?? exitStatus;
+      setExitRuntimeStatus(status);
+      onTriggerStatus?.(status);
+    }
 
     const scheduled = scheduleFunnelPopupOpen(popup, {
       previewEnabled,
@@ -209,7 +231,7 @@ function FunnelPopupPreviewOverlay({
     if (!previewEnabled) {
       onTriggerStatus?.(scheduled.status);
     }
-    return scheduled.cancel;
+    return () => { scheduled.cancel(); exitRegistration?.cancel(); };
   }, [onTriggerStatus, popup, previewEnabled]);
 
   useEffect(() => {
@@ -242,7 +264,7 @@ function FunnelPopupPreviewOverlay({
 
   if (closed) return null;
 
-  const exitStatus = popup.settings.openOnExitIntent ? getFunnelPopupExitIntentStatus(popup) : null;
+  const exitStatus = popup.settings.openOnExitIntent ? (exitRuntimeStatus ?? getFunnelPopupExitIntentStatus(popup)) : null;
   if (!isOpen) {
     return (
       <div
@@ -254,7 +276,7 @@ function FunnelPopupPreviewOverlay({
         aria-live="polite"
       >
         {waitingStatus ? <span className="sr-only">{statusLabel(waitingStatus)}</span> : null}
-        {exitStatus ? <p data-funnel-popup-exit-intent-status="unverified" className="text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
+        {exitStatus ? <p data-funnel-popup-exit-intent-status={exitStatus.status} className="text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
       </div>
     );
   }
@@ -291,7 +313,7 @@ function FunnelPopupPreviewOverlay({
           </button>
         ) : null}
         <FunnelPageDocumentRenderer document={content} commerce={commerce} publicSurface={publicSurface} viewport={viewport} mode="preview" className="min-h-0" />
-        {exitStatus ? <p data-funnel-popup-exit-intent-status="unverified" className="mt-3 text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
+        {exitStatus ? <p data-funnel-popup-exit-intent-status={exitStatus.status} className="mt-3 text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
       </div>
     </div>
   );

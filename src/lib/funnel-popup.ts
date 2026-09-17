@@ -193,8 +193,8 @@ export function bindFunnelPopupToPage(document: PageDocument, popupId: string, p
 
 /**
  * Returns an explicit execution status for preview/runtime callers.
- * Automatic delay is safe to preview. Exit intent remains unverified and is
- * never reported as executable until a real cross-browser integration exists.
+ * Automatic delay and desktop exit intent share the same explicit capability
+ * contract. The UI still performs a pointer-capability check before listening.
  */
 export function validatePopupTrigger(popup: FunnelPopup, trigger: PopupTrigger): PopupTriggerEligibility {
   const parsed = FunnelPopupSchema.safeParse(popup);
@@ -221,9 +221,9 @@ export function validatePopupTrigger(popup: FunnelPopup, trigger: PopupTrigger):
   }
   return {
     trigger,
-    status: "unverified",
-    executable: false,
-    canTrigger: false,
+    status: "available",
+    executable: true,
+    canTrigger: true,
     reason: current.capabilities.exitIntent.reason || FUNNEL_CAPABILITIES.exitIntent.reason,
   };
 }

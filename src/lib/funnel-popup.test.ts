@@ -31,7 +31,7 @@ describe("Funnel Popup domain operations", () => {
     const popup = firstPopup(document!);
     expect(popup.name).toBe("歡迎視窗");
     expect(popup.settings.showCloseButton).toBe(false);
-    expect(popup.capabilities.exitIntent.status).toBe("unverified");
+    expect(popup.capabilities.exitIntent.status).toBe("available");
 
     const section = popup.root[0];
     const row = section?.children?.[0];
@@ -83,13 +83,13 @@ describe("Funnel Popup domain operations", () => {
     expect(validatePopupTrigger(firstPopup(disabled!), "automatic_delay")).toMatchObject({ status: "disabled", executable: false });
   });
 
-  it("Exit intent 明確回傳 unverified，不可靜默執行", () => {
+  it("Exit intent 明確回傳桌機可執行狀態", () => {
     const created = createPopup(popupDocument(), { settings: { openOnExitIntent: true } });
     const popup = firstPopup(created!);
     const result = validatePopupTrigger(popup, "exit_intent");
-    expect(result.status).toBe("unverified");
-    expect(result.executable).toBe(false);
-    expect(result.canTrigger).toBe(false);
+    expect(result.status).toBe("available");
+    expect(result.executable).toBe(true);
+    expect(result.canTrigger).toBe(true);
 
     const pageResult = getFunnelPopupTriggerEligibility(created!, popup.id, "exit_intent");
     expect(pageResult).toEqual(result);

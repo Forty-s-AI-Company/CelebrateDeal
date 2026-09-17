@@ -21,6 +21,9 @@ const cspReportOnly = [
 const disableSentryAutoUpload = process.env.SENTRY_DISABLE_AUTO_UPLOAD === "true";
 
 const nextConfig: NextConfig = {
+  // Browser-only component QA can run beside a developer's active Next server
+  // without sharing its build lock or cache.
+  ...(process.env.FUNNEL_ELEMENTS_E2E === "true" ? { distDir: ".next-funnel-elements" } : {}),
   allowedDevOrigins: ["127.0.0.1"],
   images: {
     // 商家圖片直接由瀏覽器向來源站載入；專案所有 Image 目前也都明確

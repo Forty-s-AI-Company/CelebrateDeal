@@ -115,7 +115,7 @@ export const FUNNEL_CAPABILITIES = {
   rawHtml: defaultCapability("disabled", "為避免編輯器執行危險腳本，目前僅保留不可執行的限制狀態"),
   tracking: defaultCapability("disabled", "追蹤碼與自訂程式碼需經安全整合後才可啟用"),
   recaptcha: defaultCapability("unverified", "目前沒有可驗證的 reCAPTCHA 網域金鑰，因此暫不可用"),
-  exitIntent: defaultCapability("unverified", "已保留設定入口，但尚未完成跨瀏覽器觸發驗證"),
+  exitIntent: defaultCapability("available", "桌機游標從視窗頂端離開時單次觸發；行動裝置不支援"),
   affiliate: defaultCapability("disabled", "聯盟徽章尚未連接可驗證的方案資料"),
 } as const satisfies Record<string, { status: FunnelCapabilityStatus; reason: string; upgradeRequired?: boolean }>;
 

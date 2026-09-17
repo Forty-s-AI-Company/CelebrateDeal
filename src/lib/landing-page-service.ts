@@ -107,6 +107,7 @@ export type PublicLandingPage = {
   submissionForm?: PublicFunnelWebinarResource["form"];
   submissionLiveId?: string;
   commerceByPageId?: Record<string, FunnelCommerceView>;
+  consultationEvents?: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }>;
 };
 
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
@@ -143,7 +144,7 @@ export class LandingPageScopeError extends Error {
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
 type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
-type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "product">;
+type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "product" | "consultationEvent">;
 
 function db() {
   return getDb();
@@ -439,6 +440,36 @@ function publicSubmissionProjection(forms: FormRecord[], formId: string | null, 
   return { ...(form ? { submissionForm: form } : {}), ...(liveId ? { submissionLiveId: liveId } : {}) };
 }
 
+function consultationEventIdsInContent(content: LandingPageStoredContent): Set<string> {
+  const ids = new Set<string>();
+  const visitNodes = (nodes: PageDocument["root"]) => {
+    for (const node of nodes) {
+      if (node.type === "calendar") {
+        const candidate = node.props.eventId ?? node.props.calendarId ?? node.props.bookingEventId;
+        if (typeof candidate === "string" && candidate.trim()) ids.add(candidate.trim());
+      }
+      if (node.children) visitNodes(node.children);
+    }
+  };
+  const visitDocument = (document: Omit<PageDocument, "flow"> | PageDocument) => {
+    visitNodes(document.root);
+    for (const popup of document.popups) visitNodes(popup.root);
+  };
+  if ("pages" in content) Object.values(content.pages).forEach(visitDocument);
+  else if ("root" in content && "settings" in content) visitDocument(content);
+  return ids;
+}
+
+async function publicConsultationEvents(database: LandingPageDb, scope: { vendorId: string; projectId: string | null }, content: LandingPageStoredContent) {
+  const referencedIds = [...consultationEventIdsInContent(content)];
+  if (referencedIds.length === 0) return [];
+  const events = await database.consultationEvent.findMany({
+    where: { id: { in: referencedIds }, vendorId: scope.vendorId, projectId: scope.projectId, isActive: true, project: { is: { status: "published", publishedAt: { not: null } } } },
+    select: { id: true, title: true, description: true, timezone: true, durationMinutes: true, intakeFormFields: true },
+  });
+  return events.length === referencedIds.length ? events : [];
+}
+
 /** CAS metadata save that re-reads the latest draft and applies one bounded
  * command. It intentionally cannot replace existing canvas snapshots. */
 export async function saveLandingPageStepMetadata(input: { id: string; revision: number; mutation: FunnelStepPersistenceMutation }) {
@@ -537,6 +568,9 @@ export async function duplicateLandingPage(pageId: string) {
   });
 }
 
+// Existing legacy/page/step compatibility branches make this loader broad;
+// capability-specific projections remain isolated in helpers above.
+// eslint-disable-next-line complexity
 export async function loadPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
   // The version content and bindings are immutable. Referenced forms and live
   // sessions remain live resources, so their tenant/project/public readiness is
@@ -566,6 +600,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content)) ? webinarResource(forms.find((form) => form.id === page.publishedVersion?.formId), live, page.vendorId) : undefined;
   // Resource projections deliberately contain no playback URL or admission token.
   const commerceByPageId = await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content, page.slug);
+  const trustedConsultationEvents = await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content);
   return {
     ...(webinar ? { webinar } : {}),
     ...publicSubmissionProjection(forms, page.publishedVersion.formId, live?.id),
@@ -575,6 +610,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     context: { pageId: page.id, forms: forms.map(toFormReference), ...(live ? { live: toLiveReference(live) } : {}) },
     publishedAt: page.publishedAt,
     ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),
+    ...(trustedConsultationEvents.length > 0 ? { consultationEvents: trustedConsultationEvents } : {}),
   };
 }
 

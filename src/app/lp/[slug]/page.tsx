@@ -10,6 +10,7 @@ import type { PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelStepPages } from "@/lib/funnel-step-pages";
 import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
 import { FUNNEL_VISITOR_COOKIE, recordPublicFunnelVisit, resolveFunnelVisitorId, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
+import { getCsrfToken } from "@/lib/csrf";
 export const dynamic = "force-dynamic";
 const load = cache(loadPublicLandingPage);
 function isPageDocument(content: NonNullable<Awaited<ReturnType<typeof loadPublicLandingPage>>>["content"]): content is PageDocument { return "root" in content && "settings" in content; }
@@ -34,6 +35,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PublicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
   const page = await load((await params).slug);
   if (!page) notFound();
+  const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
   if (isFunnelStepPages(page.content)) {
     const requestedStep = page.content.flow.steps.find((step) => !step.isSystem);
     if (!requestedStep) notFound();
@@ -49,10 +51,10 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
     if (!document) notFound();
     const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
     const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
-    return <PublicFunnelDocument document={document} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
+    return <PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
   }
   if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
-  return <PublicFunnelDocument document={page.content} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
+  return <PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
 }
 
 function PublicFunnelClosed() {

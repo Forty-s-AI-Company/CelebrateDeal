@@ -50,10 +50,11 @@ describe("FunnelPageDocumentRenderer", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("window.pwned");
-    expect(html).toContain("原始 HTML");
+    expect(html).toContain("原始 HTML 已在 sandbox 隔離預覽");
+    expect(html).toContain('sandbox=""');
     expect(html).toContain("尚未連結商品與付款方式");
     expect(html).toContain("reCAPTCHA");
-    expect(html).toContain("待驗證");
+    expect(html).toContain("server verification 與網域設定");
   });
 
   it("allows only validated HTTPS or same-site action hrefs", () => {
@@ -139,6 +140,29 @@ describe("FunnelPageDocumentRenderer", () => {
     const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} publicSurface />);
     expect(html).toContain("尚未綁定可公開使用的報名表");
     expect(html).not.toContain('type="submit"');
+  });
+
+  it("公開 Calendar 只採用 server-resolved event metadata", () => {
+    const page = documentWith([node("calendar", "calendar", { props: { eventId: "event-1", title: "偽造標題", timezone: "UTC" } })]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} publicSurface consultation={{ csrfToken: "synthetic-csrf", events: [{ id: "event-1", title: "可信諮詢", description: "由服務端解析", timezone: "Asia/Taipei", durationMinutes: 45, intakeFormFields: [] }] }} />);
+    expect(html).toContain("可信諮詢");
+    expect(html).toContain("Asia/Taipei");
+    expect(html).toContain("45 分鐘");
+    expect(html).not.toContain("偽造標題");
+  });
+
+  it("公開 Survey 僅能綁定既有表單欄位並一起收集必要 identity", () => {
+    const page = documentWith([node("survey", "survey", { props: { name: "preference", question: "偏好時段", options: ["上午", "下午"], required: true } })]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} publicSurface submission={{ landingPageId: "page-1", form: { id: "form-1", submitLabel: "送出", successMessage: "已保存", fields: [
+      { key: "name", label: "姓名", type: "text", required: true },
+      { key: "email", label: "Email", type: "email", required: true },
+      { key: "preference", label: "偏好", type: "text", required: true },
+    ] } }} />);
+    expect(html).toContain("偏好時段");
+    expect(html).toContain('name="preference"');
+    expect(html).toContain('name="name"');
+    expect(html).toContain('name="email"');
+    expect(html).not.toContain("未授權");
   });
 
   it("renders interactive content with explicit unavailable states", () => {

@@ -30,6 +30,7 @@
 
 # next.js
 /.next/
+/.next-funnel-elements/
 /out/
 
 # production
