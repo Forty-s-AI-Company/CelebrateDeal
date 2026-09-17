@@ -5,6 +5,7 @@ import {
   type LandingPageContent,
 } from "@/lib/landing-page-content";
 import { parseFunnelFlow, type FunnelFlow } from "@/lib/funnel-flow";
+import { FunnelCommerceBindingSchema } from "@/lib/funnel-commerce";
 
 /**
  * Persisted Funnel editor contract.  This is deliberately independent from
@@ -110,7 +111,7 @@ const defaultCapability = (status: FunnelCapabilityStatus, reason: string, upgra
 
 /** Feature flags are explicit so unavailable editor features never fail silently. */
 export const FUNNEL_CAPABILITIES = {
-  payment: defaultCapability("limited", "尚未連結商品與付款方式；不建立假的付款完成流程", true),
+  payment: defaultCapability("limited", "需在訂單步驟綁定有效商品與既有安全結帳；優惠碼輸入及獨立運費規則尚未支援"),
   rawHtml: defaultCapability("disabled", "為避免編輯器執行危險腳本，目前僅保留不可執行的限制狀態"),
   tracking: defaultCapability("disabled", "追蹤碼與自訂程式碼需經安全整合後才可啟用"),
   recaptcha: defaultCapability("unverified", "目前沒有可驗證的 reCAPTCHA 網域金鑰，因此暫不可用"),
@@ -254,6 +255,7 @@ export const PageDocumentSchema = z.object({
   root: z.array(z.lazy(() => FunnelNodeSchema)).max(100).default([]),
   popups: z.array(FunnelPopupSchema).max(50).default([]),
   settings: PageSettingsSchema.default(defaultPageSettings),
+  commerce: FunnelCommerceBindingSchema.optional(),
   flow: z.custom<FunnelFlow>((value) => parseFunnelFlow(value) !== null, { message: "Funnel 流程資料不符合格式" }).optional(),
 }).strict();
 export type PageDocument = z.infer<typeof PageDocumentSchema>;

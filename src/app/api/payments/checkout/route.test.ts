@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 const db = {
   product: { findFirst: vi.fn() },
@@ -33,6 +34,7 @@ const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
 }));
+const funnelCommerceMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
@@ -144,6 +146,7 @@ beforeEach(() => {
     idempotencyKey,
     expiresAt: new Date("2027-01-01T00:00:00.000Z"),
   });
+  funnelCommerceMocks.resolvePublishedFunnelCheckout.mockResolvedValue(null);
   inventoryMocks.createReservedPaymentTransaction.mockImplementation(async (
     { transactionData, createCommerceOrder }: {
       transactionData: unknown;

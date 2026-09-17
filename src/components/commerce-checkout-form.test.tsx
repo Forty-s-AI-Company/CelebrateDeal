@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
 
 describe("CommerceCheckoutForm", () => {
+  it("renders two-step contact first with order fields disabled until confirmation", () => {
+    const html = renderToStaticMarkup(<CommerceCheckoutForm vendorId="v" productId="p" productName="商品" fulfillmentType="physical" formMode="two_step" funnel={{ slug: "shop", stepId: "order" }} agreementLabel="我同意本商品條款" />);
+    expect(html).toContain("下一步：確認訂單");
+    expect(html).toContain('aria-label="結帳進度"');
+    expect(html).toMatch(/<fieldset[^>]*disabled=""[^>]*hidden=""/u);
+    expect(html).toContain('name="funnelAgreement"');
+    expect(html).toContain("我同意本商品條款");
+    expect(html).not.toContain("admissionToken");
+    expect(html).not.toContain("idempotencyKey");
+  });
+
   it("renders physical shipping fields, payment boundaries, and accessible pending hooks", () => {
     const html = renderToStaticMarkup(
       <CommerceCheckoutForm

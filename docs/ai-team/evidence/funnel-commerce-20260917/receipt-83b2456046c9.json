@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "PASS",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "externalAssets": "optional remote Inter stylesheet replaced with inert local CSS; all other external browser requests blocked",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 86,
+  "sourceSha256": "b0ea593a2e3edf561ea5c3ece2b0268a6ccbcc806950c69ca2cb42064fcb6da6",
+  "browserTestSha256": "99d836946c79e76bdd479521fc9d4be9b455c34340daa5bd15220bc6a0353c47",
+  "testCounts": {
+    "passed": 285,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-ZLaTko"
+}

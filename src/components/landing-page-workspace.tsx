@@ -14,6 +14,7 @@ import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 import { getActiveFunnelStepPage, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 import { FunnelStepPagesEditor } from "@/components/landing-pages/funnel-step-pages-editor";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
+import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 
 import { FunnelWebinarSettings } from "@/components/landing-pages/funnel-webinar-settings";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
@@ -42,21 +43,30 @@ function saveStateLabel(dirty: boolean, stepPending: boolean) {
   if (stepPending) return "● 步驟儲存中";
   return dirty ? "● 尚未儲存" : "✓ 已儲存";
 }
-function WorkspacePreview({ content, forms, live }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"] }) {
+function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"]; commerceProducts: FunnelCommerceProduct[]; viewport: "desktop" | "mobile" }) {
   if (isFunnelStepPages(content)) {
     const active = getActiveFunnelStepPage(content);
-    return active ? <><FunnelPageDocumentRenderer document={active.page} viewport="desktop" mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport="desktop" />)}</> : <p role="alert">無法預覽目前 Funnel step。</p>;
+    return active ? <><FunnelPageDocumentRenderer document={active.page} commerce={commerceViewForBinding(active.page.commerce, commerceProducts)} viewport={viewport} mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport={viewport} />)}</> : <p role="alert">無法預覽目前 Funnel step。</p>;
   }
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
-function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onStepMutation, onValidityChange }: {
+function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onStepMutation, onValidityChange, commerceProducts }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
+  commerceProducts: FunnelCommerceProduct[];
   pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onStepMutation: (content: FunnelStepPages, mutation: FunnelStepPersistenceMutation) => void; onValidityChange: (valid: boolean) => void;
 }) {
-  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
+  if (isFunnelStepPages(content)) return <FunnelStepPagesEditor state={content} commerceProducts={commerceProducts} disabled={pending} onChange={onDocumentChange} onStepMutation={onStepMutation} />;
   if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
+}
+function CurrentWorkspacePreview({ show, content, slug, resource, viewport, commerceProducts, forms, live }: {
+  show: boolean; content: LandingPageStoredContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
+  viewport: "desktop" | "mobile"; commerceProducts: FunnelCommerceProduct[]; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
+}) {
+  if (!show) return null;
+  if (isWebinar(content)) return <FunnelWebinarExperience state={content} stepId={content.activeStepId} slug={slug} resource={resource} preview viewport={viewport} />;
+  return <WorkspacePreview content={content} commerceProducts={commerceProducts} viewport={viewport} forms={forms} live={live} />;
 }
 // Optional persisted and create-flow inputs are normalized at this single boundary.
 // eslint-disable-next-line complexity
@@ -74,7 +84,9 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
   };
 }
 /** The workspace owns persistence; Puck owns only the current editing session. */
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources }: { webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string }) {
+function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return products ?? []; }
+export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products }: { commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string }) {
+  const commerceProducts = normalizeCommerceProducts(products);
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
   const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
@@ -250,8 +262,8 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       <span role="status" className="ml-auto text-xs font-medium text-slate-500">{dirty ? "● 有尚未儲存的變更" : "✓ 草稿已儲存"}</span>
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
-    {preview ? isWebinar(content) ? <FunnelWebinarExperience state={content} stepId={content.activeStepId} slug={slug} resource={webinarResource} preview viewport={previewViewport} /> : <WorkspacePreview content={content} forms={forms} live={selectedLive} /> : null}
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onStepMutation={queueStepMutation} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    <CurrentWorkspacePreview show={preview} content={content} slug={slug} resource={webinarResource} viewport={previewViewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onStepMutation={queueStepMutation} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
     </div>
   </div>;
 }

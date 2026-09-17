@@ -481,14 +481,20 @@ export async function POST(request: Request) {
   const { pii: checkoutPii, checkoutIdentityHash } = identity;
 
   const existing = await db.paymentTransaction.findUnique({
-    where: {
-      vendorId_checkoutIdempotencyKey: {
-        vendorId: parsed.data.vendorId,
-        checkoutIdempotencyKey: parsed.data.idempotencyKey,
-      },
-    },
+    where: { vendorId_checkoutIdempotencyKey: { vendorId: parsed.data.vendorId, checkoutIdempotencyKey: parsed.data.idempotencyKey } },
     include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
   });
+  const funnelResult = await resolveFunnelCheckoutRequest(db, parsed.data, existing);
+  if (!funnelResult.ok) return funnelResult.response;
+  const funnel = funnelResult.funnel;
+  const productsResult = await resolveCheckoutProducts(db, parsed.data, funnel);
+  if (!productsResult.ok) return productsResult.response;
+  const { product, orderBumpProduct } = productsResult;
+
+  const checkoutData = await validateCheckoutRequestData(db, request, parsed.data, product, orderBumpProduct, funnel);
+  if (!checkoutData.ok) return checkoutData.response;
+  const { customCheckout, postPurchase, checkoutPii, invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = checkoutData;
+
   if (existing) {
     return await existingCheckoutResponse({ request, transaction: existing, product, checkoutIdentityHash });
   }
@@ -534,6 +540,7 @@ export async function POST(request: Request) {
       vendorId: parsed.data.vendorId,
       productId: product.id,
       expectedProductRevision: product.revision,
+      ...(orderBumpProduct ? { additionalProducts: [{ productId: orderBumpProduct.id, expectedProductRevision: orderBumpProduct.revision }] } : {}),
       checkoutIdempotencyKey: parsed.data.idempotencyKey,
       transactionData: {
         vendorId: parsed.data.vendorId,

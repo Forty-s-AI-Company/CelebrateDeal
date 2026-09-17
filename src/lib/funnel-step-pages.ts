@@ -250,6 +250,8 @@ export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, pa
   snapshot.id = valid.pages[stepId]!.id;
   const next = clone(valid);
   if (templateId) {
+    // Replacing visual content must not silently change the merchant's offer.
+    snapshot.commerce = valid.pages[stepId]!.commerce;
     const updated = setFunnelStepTemplate(next.flow, stepId, templateId);
     if (!updated.ok) return failure(valid, updated.error);
     next.flow = updated.flow;

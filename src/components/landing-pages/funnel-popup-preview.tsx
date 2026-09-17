@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { FunnelCommerceView } from "@/lib/funnel-commerce";
 
 import {
   parsePageDocument,
@@ -23,6 +24,8 @@ import {
  * fail-closed state without pretending that exit intent has been verified.
  */
 export type FunnelPopupPreviewProps = {
+  commerce?: FunnelCommerceView;
+  publicSurface?: boolean;
   document: PageDocument;
   popupId: string;
   viewport?: FunnelViewport;
@@ -134,6 +137,8 @@ export function FunnelPopupPreview({
   previewEnabled = false,
   className = "",
   onTriggerStatus,
+  commerce,
+  publicSurface,
 }: FunnelPopupPreviewProps) {
   const parsed = useMemo(() => parsePageDocument(document), [document]);
   const popup = parsed?.popups.find((candidate) => candidate.id === popupId) ?? null;
@@ -144,6 +149,8 @@ export function FunnelPopupPreview({
     <FunnelPopupPreviewOverlay
       key={`${popup.id}:${previewEnabled ? "editor" : "preview"}`}
       document={parsed}
+      commerce={commerce}
+      publicSurface={publicSurface}
       popup={popup}
       viewport={viewport}
       previewEnabled={previewEnabled}
@@ -154,6 +161,8 @@ export function FunnelPopupPreview({
 }
 
 type FunnelPopupPreviewOverlayProps = {
+  commerce?: FunnelCommerceView;
+  publicSurface?: boolean;
   document: PageDocument;
   popup: FunnelPopup;
   viewport: FunnelViewport;
@@ -169,6 +178,8 @@ function FunnelPopupPreviewOverlay({
   previewEnabled,
   className,
   onTriggerStatus,
+  commerce,
+  publicSurface,
 }: FunnelPopupPreviewOverlayProps) {
   const initialWaitingStatus = !previewEnabled ? validatePopupTrigger(popup, "automatic_delay") : null;
   const [isOpen, setIsOpen] = useState(previewEnabled);
@@ -279,7 +290,7 @@ function FunnelPopupPreviewOverlay({
             <span aria-hidden="true">×</span>
           </button>
         ) : null}
-        <FunnelPageDocumentRenderer document={content} viewport={viewport} mode="preview" className="min-h-0" />
+        <FunnelPageDocumentRenderer document={content} commerce={commerce} publicSurface={publicSurface} viewport={viewport} mode="preview" className="min-h-0" />
         {exitStatus ? <p data-funnel-popup-exit-intent-status="unverified" className="mt-3 text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
       </div>
     </div>

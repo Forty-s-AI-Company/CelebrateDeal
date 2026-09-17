@@ -277,6 +277,7 @@ export function changeFunnelTemplate(document: PageDocument, options: FunnelTemp
     root: nextRoot,
     popups: nextPopups,
     settings: cleanSettings,
+    ...(parsed.commerce ? { commerce: parsed.commerce } : {}),
     ...(parsed.flow ? { flow: parsed.flow } : {}),
   });
   if (!candidate) return rejected(parsed, "模板內容無法通過 PageDocument 驗證，拒絕套用");

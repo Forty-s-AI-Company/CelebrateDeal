@@ -92,19 +92,19 @@ const checkout = (prefix: string, compact = false) => [
       text(prefix, "customer_title", compact ? "聯絡資料" : "完成訂購資料", { fontSize: 28, lineHeight: 1.2 }),
       node(prefix, "customer_name", "form_input", { inputType: "text", label: "姓名" }),
       node(prefix, "customer_email", "form_input", { inputType: "email", label: "電子信箱" }),
-      text(prefix, "customer_notice", "付款功能尚未連結商品與金流，現在不會送出付款或建立訂單。"),
+      text(prefix, "customer_notice", "請前往安全結帳頁填寫聯絡資料與配送地址；此處僅展示版面，不收集訂購資料。"),
     ]),
     node(prefix, "order", "form", { variant: "checkout-summary", ...limitedPayment }, [
       text(prefix, "order_title", "方案摘要", { fontSize: 28, lineHeight: 1.2 }),
       text(prefix, "order_name", compact ? "你的精選方案" : "CelebrateDeal 成長方案"),
       node(prefix, "order_price", "offer_price", limitedPayment),
       node(prefix, "payment_method", "payment_method", limitedPayment),
-      node(prefix, "payment_button", "payment_button", { ...limitedPayment, label: "付款功能尚未啟用" }),
+      node(prefix, "payment_button", "payment_button", { ...limitedPayment, label: "前往安全結帳" }),
     ]),
   ])], compact ? "white" : "#fff7ed"),
   section(prefix, "trust", [columns(prefix, "trust_columns", [
     box(prefix, "support", [headline(prefix, "support_title", "有問題嗎？", "h3"), text(prefix, "support_text", "請先聯絡客服確認方案與付款方式。")]),
-    box(prefix, "promise", [headline(prefix, "promise_title", "安心確認", "h3"), text(prefix, "promise_text", "正式付款啟用前，所有付款欄位都維持停用。")]),
+    box(prefix, "promise", [headline(prefix, "promise_title", "安心確認", "h3"), text(prefix, "promise_text", "金額以安全結帳頁為準。只有付款服務確認成功後，訂單才會更新付款狀態。")]),
   ])]),
 ];
 
@@ -181,7 +181,7 @@ const brandInfo = (prefix: string) => [
 ];
 
 const availableReason = "可展開為獨立編輯的 CelebrateDeal 節點";
-const limitedReason = "版面可編輯；付款元件維持 limited 與 disabled，不建立假的付款完成流程";
+const limitedReason = "版面可編輯；需在訂單步驟綁定有效商品，付款方式由既有結帳服務提供。未綁定時不可付款";
 
 const webinarPage = (prefix: string, stage: "registration" | "thank-you" | "broadcast") => {
   const copy = {

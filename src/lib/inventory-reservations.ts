@@ -30,6 +30,123 @@ export class CheckoutIdempotencyConflictError extends Error {
   }
 }
 
+/** The reservation boundary only accepts server-resolved, immutable product IDs. */
+export class InventoryReservationInputError extends Error {
+  constructor(message = "Inventory reservation input is invalid.") {
+    super(message);
+    this.name = "InventoryReservationInputError";
+  }
+}
+
+export type AdditionalInventoryProduct = {
+  productId: string;
+  expectedProductRevision: number;
+};
+
+type ReservationItem = {
+  productId: string;
+  quantity: number;
+};
+
+type ReservationItemWithRevision = ReservationItem & {
+  expectedProductRevision?: number;
+};
+
+type ReservationRecord = {
+  id: string;
+  vendorId: string;
+  productId: string;
+  quantity: number;
+  status: string;
+  items: Prisma.JsonValue | null;
+};
+
+function isOpaqueId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  return value.length > 0
+    && value.length <= 191
+    && value === value.trim()
+    && !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+function isProductRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isInventoryQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function reservationItemsForCheckout({
+  productId,
+  expectedProductRevision,
+  additionalProducts,
+}: {
+  productId: string;
+  expectedProductRevision?: number;
+  additionalProducts?: AdditionalInventoryProduct[];
+}): ReservationItemWithRevision[] {
+  if (!isOpaqueId(productId) || (expectedProductRevision !== undefined && !isProductRevision(expectedProductRevision))) {
+    throw new InventoryReservationInputError();
+  }
+  if (!additionalProducts) {
+    return [{ productId, quantity: 1, ...(expectedProductRevision !== undefined ? { expectedProductRevision } : {}) }];
+  }
+
+  const items: ReservationItemWithRevision[] = [{
+    productId,
+    quantity: 1,
+    ...(expectedProductRevision !== undefined ? { expectedProductRevision } : {}),
+  }];
+  const seenProductIds = new Set([productId]);
+  for (const additional of additionalProducts) {
+    if (!additional || !isOpaqueId(additional.productId) || !isProductRevision(additional.expectedProductRevision) || seenProductIds.has(additional.productId)) {
+      throw new InventoryReservationInputError();
+    }
+    seenProductIds.add(additional.productId);
+    items.push({ productId: additional.productId, quantity: 1, expectedProductRevision: additional.expectedProductRevision });
+  }
+  return items;
+}
+
+function orderedReservationItems<T extends ReservationItem>(items: T[]): T[] {
+  return [...items].sort((left, right) => left.productId.localeCompare(right.productId));
+}
+
+/**
+ * New records must have a complete immutable snapshot. Legacy null records are
+ * intentionally limited to their original primary product; no historical
+ * order-bump stock is inferred from mutable order or payment metadata.
+ */
+function snapshotReservationItems(reservation: ReservationRecord): ReservationItem[] {
+  if (reservation.items === null) {
+    return [{ productId: reservation.productId, quantity: reservation.quantity }];
+  }
+  if (!Array.isArray(reservation.items) || reservation.items.length === 0) {
+    throw new Error("Inventory reservation item snapshot is invalid.");
+  }
+
+  const seenProductIds = new Set<string>();
+  const items: ReservationItem[] = [];
+  for (const rawItem of reservation.items) {
+    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+      throw new Error("Inventory reservation item snapshot is invalid.");
+    }
+    const item = rawItem as Record<string, unknown>;
+    const productId = item.productId;
+    const quantity = item.quantity;
+    if (!isOpaqueId(productId) || !isInventoryQuantity(quantity) || seenProductIds.has(productId)) {
+      throw new Error("Inventory reservation item snapshot is invalid.");
+    }
+    seenProductIds.add(productId);
+    items.push({ productId, quantity });
+  }
+  if (!seenProductIds.has(reservation.productId)) {
+    throw new Error("Inventory reservation item snapshot is invalid.");
+  }
+  return items;
+}
+
 function isSerializableConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
 }
@@ -62,6 +179,7 @@ export async function createReservedPaymentTransaction({
   vendorId,
   productId,
   expectedProductRevision,
+  additionalProducts,
   checkoutIdempotencyKey,
   transactionData,
   createCommerceOrder,
@@ -70,6 +188,8 @@ export async function createReservedPaymentTransaction({
   vendorId: string;
   productId: string;
   expectedProductRevision?: number;
+  /** Server-resolved order-bump products. Quantities are deliberately fixed to one. */
+  additionalProducts?: AdditionalInventoryProduct[];
   checkoutIdempotencyKey?: string;
   transactionData: Prisma.PaymentTransactionUncheckedCreateInput;
   /**
@@ -83,6 +203,10 @@ export async function createReservedPaymentTransaction({
   ) => Promise<void>;
   now?: Date;
 }) {
+  if (!isOpaqueId(vendorId) || transactionData.vendorId !== vendorId) {
+    throw new InventoryReservationInputError();
+  }
+  const reservationItems = reservationItemsForCheckout({ productId, expectedProductRevision, additionalProducts });
   try {
     return await runSerializable(async (tx) => {
       if (checkoutIdempotencyKey) {
@@ -93,20 +217,26 @@ export async function createReservedPaymentTransaction({
         if (existing) throw new CheckoutIdempotencyConflictError(existing.id);
       }
 
-      const reserved = await tx.product.updateMany({
-        where: {
-          id: productId,
-          vendorId,
-          isActive: true,
-          inventory: { gte: 1 },
-          ...(expectedProductRevision ? { revision: expectedProductRevision } : {}),
-        },
-        data: { inventory: { decrement: 1 }, revision: { increment: 1 } },
-      });
-      if (reserved.count !== 1) {
-        if (expectedProductRevision) {
-          const current = await tx.product.findFirst({ where: { id: productId, vendorId, isActive: true, inventory: { gte: 1 } }, select: { revision: true } });
-          if (current && current.revision !== expectedProductRevision) throw new ProductChangedError();
+      // Always mutate products in a stable order. This keeps two multi-item
+      // checkout attempts from taking locks in opposite directions.
+      for (const item of orderedReservationItems(reservationItems)) {
+        const reserved = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            vendorId,
+            isActive: true,
+            inventory: { gte: item.quantity },
+            ...(item.expectedProductRevision !== undefined ? { revision: item.expectedProductRevision } : {}),
+          },
+          data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+        });
+        if (reserved.count === 1) continue;
+        if (item.expectedProductRevision !== undefined) {
+          const current = await tx.product.findFirst({
+            where: { id: item.productId, vendorId, isActive: true, inventory: { gte: item.quantity } },
+            select: { revision: true },
+          });
+          if (current && current.revision !== item.expectedProductRevision) throw new ProductChangedError();
         }
         throw new InventoryUnavailableError();
       }
@@ -119,6 +249,7 @@ export async function createReservedPaymentTransaction({
           productId,
           paymentTransactionId: transaction.id,
           quantity: 1,
+          items: reservationItems.map(({ productId: reservedProductId, quantity }) => ({ productId: reservedProductId, quantity })) as Prisma.InputJsonValue,
           status: "reserved",
           expiresAt: new Date(now.getTime() + INVENTORY_RESERVATION_TTL_MS),
         },
@@ -142,13 +273,7 @@ export async function createReservedPaymentTransaction({
 
 async function releaseReservation(
   tx: Prisma.TransactionClient,
-  reservation: {
-    id: string;
-    vendorId: string;
-    productId: string;
-    quantity: number;
-    status: string;
-  },
+  reservation: ReservationRecord,
   reason: string,
   now: Date,
 ) {
@@ -164,10 +289,13 @@ async function releaseReservation(
   });
   if (released.count !== 1) return false;
 
-  await tx.product.updateMany({
-    where: { id: reservation.productId, vendorId: reservation.vendorId },
-    data: { inventory: { increment: reservation.quantity }, revision: { increment: 1 } },
-  });
+  for (const item of orderedReservationItems(snapshotReservationItems(reservation))) {
+    const restocked = await tx.product.updateMany({
+      where: { id: item.productId, vendorId: reservation.vendorId },
+      data: { inventory: { increment: item.quantity }, revision: { increment: 1 } },
+    });
+    if (restocked.count !== 1) throw new Error("Inventory reservation product is unavailable for release.");
+  }
   return true;
 }
 
@@ -199,7 +327,7 @@ export async function failPendingCheckoutAndReleaseInventory({
 
     const reservation = await tx.inventoryReservation.findUnique({
       where: { paymentTransactionId: transactionId },
-      select: { id: true, vendorId: true, productId: true, quantity: true, status: true },
+      select: { id: true, vendorId: true, productId: true, quantity: true, status: true, items: true },
     });
     if (!reservation || reservation.vendorId !== vendorId) return true;
 
@@ -211,7 +339,7 @@ export async function failPendingCheckoutAndReleaseInventory({
 function trustedProductId(metadata: unknown) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const productId = (metadata as Record<string, unknown>).productId;
-  return typeof productId === "string" && productId.length > 0 ? productId : null;
+  return isOpaqueId(productId) ? productId : null;
 }
 
 export async function applyPaymentInventoryTransition(
@@ -230,7 +358,7 @@ export async function applyPaymentInventoryTransition(
 ) {
   const reservation = await tx.inventoryReservation.findUnique({
     where: { paymentTransactionId: transaction.id },
-    select: { id: true, vendorId: true, productId: true, quantity: true, status: true },
+    select: { id: true, vendorId: true, productId: true, quantity: true, status: true, items: true },
   });
   const productId = trustedProductId(trustedCheckoutMetadata);
 
@@ -244,6 +372,10 @@ export async function applyPaymentInventoryTransition(
   if (eventType === "paid") {
     if (reservation?.status === "committed") return "already_committed" as const;
     if (reservation?.status === "reserved") {
+      // A paid reservation does not move stock again, but validating the
+      // immutable snapshot here prevents a corrupt partial snapshot from
+      // becoming a permanent committed sale.
+      snapshotReservationItems(reservation);
       await tx.inventoryReservation.updateMany({
         where: { id: reservation.id, status: "reserved" },
         data: { status: "committed", committedAt: now, releasedAt: null, releaseReason: null },
@@ -251,19 +383,23 @@ export async function applyPaymentInventoryTransition(
       return "committed" as const;
     }
 
-    const resolvedProductId = reservation?.productId ?? productId;
-    if (!resolvedProductId) return "not_tracked" as const;
+    const resolvedItems = reservation
+      ? snapshotReservationItems(reservation)
+      : productId ? [{ productId, quantity: 1 }] : null;
+    if (!resolvedItems) return "not_tracked" as const;
 
-    const reacquired = await tx.product.updateMany({
-      where: {
-        id: resolvedProductId,
-        vendorId: transaction.vendorId,
-        isActive: true,
-        inventory: { gte: 1 },
-      },
-      data: { inventory: { decrement: 1 }, revision: { increment: 1 } },
-    });
-    if (reacquired.count !== 1) throw new InventoryUnavailableError();
+    for (const item of orderedReservationItems(resolvedItems)) {
+      const reacquired = await tx.product.updateMany({
+        where: {
+          id: item.productId,
+          vendorId: transaction.vendorId,
+          isActive: true,
+          inventory: { gte: item.quantity },
+        },
+        data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+      });
+      if (reacquired.count !== 1) throw new InventoryUnavailableError();
+    }
 
     if (reservation) {
       const committed = await tx.inventoryReservation.updateMany({
@@ -275,9 +411,10 @@ export async function applyPaymentInventoryTransition(
       await tx.inventoryReservation.create({
         data: {
           vendorId: transaction.vendorId,
-          productId: resolvedProductId,
+          productId: resolvedItems[0]!.productId,
           paymentTransactionId: transaction.id,
           quantity: 1,
+          items: resolvedItems as Prisma.InputJsonValue,
           status: "committed",
           expiresAt: now,
           committedAt: now,
@@ -325,6 +462,7 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
           quantity: true,
           status: true,
           expiresAt: true,
+          items: true,
         },
       });
       if (!reservation || reservation.status !== "reserved" || reservation.expiresAt > now) return "unchanged";
@@ -334,6 +472,7 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
         select: { status: true },
       });
       if (transaction?.status === "paid") {
+        snapshotReservationItems(reservation);
         const updated = await tx.inventoryReservation.updateMany({
           where: { id: reservation.id, status: "reserved" },
           data: { status: "committed", committedAt: now },

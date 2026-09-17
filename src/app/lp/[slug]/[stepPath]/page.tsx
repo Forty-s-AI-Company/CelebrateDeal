@@ -33,5 +33,5 @@ export default async function PublicFunnelStepPage({ params }: { params: Promise
   const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
   if (page && steps?.flow.goal === "webinar" && step) return <FunnelWebinarExperience state={steps} stepId={step.id} slug={page.slug} resource={page.webinar} />;
   const nextPath = steps ? getNextPublicFunnelStepPath(steps, document.id) : null;
-  return <PublicFunnelDocument document={document} submission={page?.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
+  return <PublicFunnelDocument document={document} commerce={page?.commerceByPageId?.[document.id]} submission={page?.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
 }

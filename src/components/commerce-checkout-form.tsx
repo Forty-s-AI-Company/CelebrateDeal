@@ -1,5 +1,7 @@
 "use client";
 
+import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
+
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -23,6 +25,9 @@ import {
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
 type CommerceCheckoutFormProps = {
+  funnel?: FunnelCheckoutReference;
+  agreementLabel?: string;
+  formMode?: "single" | "two_step";
   vendorId: string;
   productId: string;
   productName: string;
@@ -147,6 +152,11 @@ export function CommerceCheckoutForm({
     if (isPending || phase === "success") return;
 
     const form = event.currentTarget;
+    // Step one is local UI only: no admission, order or inventory reservation.
+    if (contactStep) {
+      if (form.reportValidity()) setCheckoutStep(2);
+      return;
+    }
     const formData = new FormData(form);
     const text = (name: string) => String(formData.get(name) ?? "").trim();
     const buyer = {
@@ -361,6 +371,8 @@ export function CommerceCheckoutForm({
         </span>
       </label>
 
+      {agreementLabel ? <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" name="funnelAgreement" required disabled={fieldsDisabled} className="mt-1 h-4 w-4" /><span>{agreementLabel}</span></label> : null}
+
       <button
         type="submit"
         disabled={isPending || phase === "success"}
@@ -371,6 +383,7 @@ export function CommerceCheckoutForm({
         {isPending ? <LoaderCircle className="animate-spin" size={20} aria-hidden="true" /> : <PackageCheck size={20} aria-hidden="true" />}
         {phase === "submitting" ? "正在建立訂單…" : phase === "redirecting" ? "正在前往付款…" : phase === "success" ? "訂單已建立" : `購買「${productName}」`}
       </button>
+      </fieldset>
 
       <p
         ref={statusRef}

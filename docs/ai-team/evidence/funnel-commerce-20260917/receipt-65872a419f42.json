@@ -1,0 +1,30 @@
+{
+  "status": "FAIL",
+  "migrations": "PASS",
+  "tests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "browser": "FAIL",
+  "cleanup": "PASS",
+  "sourceEnvRead": false,
+  "paymentEvidence": "browser transport mock and local integration only; no provider or sandbox payment",
+  "target": "new disposable loopback PostgreSQL",
+  "migrationCount": 86,
+  "sourceSha256": "b0ea593a2e3edf561ea5c3ece2b0268a6ccbcc806950c69ca2cb42064fcb6da6",
+  "browserTestSha256": "bf4349b8d2be9c4a23d4ec021d4e9b9fbfa1e2256f6cd84d15271c4f1e08c8bd",
+  "testCounts": {
+    "passed": 285,
+    "failed": 0,
+    "pending": 0
+  },
+  "failedTests": [],
+  "buildReused": true,
+  "failureDiagnostics": [
+    "    Error: expect(received).toEqual(expected) // deep equality",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "    Error Context: test-results\\funnel-commerce-商品綁定、可信價格與兩步驟結帳（付款-transport-mock，非-sandbox）\\error-context.md",
+    "  1 failed"
+  ],
+  "failure": "browser failed",
+  "mirror": "C:\\Users\\eden\\AppData\\Local\\Temp\\celebratedeal-commerce-qa-ZLaTko"
+}

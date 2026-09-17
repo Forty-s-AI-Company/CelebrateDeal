@@ -94,7 +94,7 @@
       "profiles": [
         {"profile": "gemini_deep", "max_attempts": 1},
         {"profile": "gemini_fast", "max_attempts": 1},
-        {"profile": "codex_luna", "max_attempts": 0}
+        {"profile": "codex_astra", "max_attempts": 0}
       ]
     }
   }

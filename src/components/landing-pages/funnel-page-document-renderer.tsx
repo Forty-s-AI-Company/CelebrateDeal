@@ -2,8 +2,12 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+import { FunnelCommerceElement } from "./funnel-commerce-element";
+
+const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView }>({});
 
 import {
   getFunnelNodeDefinition,
@@ -27,6 +31,7 @@ export type FunnelPageDocumentRendererProps = {
   className?: string;
   submission?: FunnelSubmissionContext;
   publicSurface?: boolean;
+  commerce?: FunnelCommerceView;
 };
 
 export type FunnelSubmissionContext = {
@@ -324,6 +329,7 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
 function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
+  const commerceContext = useContext(CommerceRenderContext);
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible) return null;
   const children = node.children ?? [];
@@ -331,6 +337,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = 
   const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
+    case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
+      return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
     case "section": return surface(<section>{renderChildren()}</section>);
     case "row": return surface(<div className="flex min-w-0 flex-col gap-4">{renderChildren()}</div>);
     case "columns_2": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-2"}`}>{renderChildren()}</div>);
@@ -362,6 +370,10 @@ function NodeRenderer({ node, viewport, mode, flow, submission, publicSurface = 
     }
     case "form": {
       const label = stringProp(props, ["ariaLabel", "title"], "表單");
+      // Checkout layout forms are not lead forms: keep their editable children
+      // visible, but collect buyer information only in the trusted checkout.
+      if (props.variant === "checkout-contact") return surface(<fieldset disabled>{renderChildren()}</fieldset>);
+      if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label}>{renderChildren()}</div>);
       const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
       if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} />);
       if (publicSurface) return surface(<UnsupportedNode node={node} message="此 Funnel 尚未綁定可公開使用的報名表，表單已停用。" />);
@@ -440,10 +452,10 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, commerce, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main>;
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main></CommerceRenderContext.Provider>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;
