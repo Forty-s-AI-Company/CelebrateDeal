@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireManager: vi.fn(), editableScope: vi.fn(), salesScope: vi.fn(),
-  landingPageCreate: vi.fn(), landingPageFindFirst: vi.fn(), landingPageFindMany: vi.fn(), landingPageUpdateMany: vi.fn(),
+  landingPageCreate: vi.fn(), landingPageDeleteMany: vi.fn(), landingPageFindFirst: vi.fn(), landingPageFindMany: vi.fn(), landingPageUpdateMany: vi.fn(),
   versionCreate: vi.fn(), versionCount: vi.fn(), versionFindFirst: vi.fn(),
   formFindMany: vi.fn(), liveFindFirst: vi.fn(), liveFindMany: vi.fn(), transaction: vi.fn(),
 }));
 
 const database = {
-  landingPage: { create: mocks.landingPageCreate, findFirst: mocks.landingPageFindFirst, findMany: mocks.landingPageFindMany, updateMany: mocks.landingPageUpdateMany },
+  landingPage: { create: mocks.landingPageCreate, deleteMany: mocks.landingPageDeleteMany, findFirst: mocks.landingPageFindFirst, findMany: mocks.landingPageFindMany, updateMany: mocks.landingPageUpdateMany },
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
   registrationForm: { findMany: mocks.formFindMany },
   live: { findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany },
@@ -19,7 +19,7 @@ vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: 
 vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction }) }));
 
 import {
-  createLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError, LandingPageNotFoundError,
+  createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError, LandingPageNotFoundError,
   listFunnelWebinarResources, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft,
 } from "./landing-page-service";
 import { createEmptyPageDocument } from "./funnel-page-document";
@@ -54,6 +54,7 @@ beforeEach(() => {
   mocks.formFindMany.mockImplementation(async (args: unknown) => formRowsFrom(args));
   mocks.liveFindFirst.mockResolvedValue(null); mocks.liveFindMany.mockResolvedValue([]);
   mocks.landingPageCreate.mockResolvedValue(page({ id: "page-new", revision: 1 }));
+  mocks.landingPageDeleteMany.mockResolvedValue({ count: 1 });
   mocks.landingPageFindFirst.mockResolvedValue(page()); mocks.landingPageFindMany.mockResolvedValue([]); mocks.landingPageUpdateMany.mockResolvedValue({ count: 1 });
   mocks.versionCount.mockResolvedValue(0); mocks.versionCreate.mockResolvedValue({ id: "version-1", version: 1, content: content(), formId: "form-1", liveId: null, createdAt: now }); mocks.versionFindFirst.mockResolvedValue(null);
   mocks.transaction.mockImplementation(async (callback: (transaction: typeof database) => Promise<unknown>) => callback(database));
@@ -150,6 +151,24 @@ describe("Webinar resource boundary", () => {
     await expect(createLandingPage({ name: "Webinar", slug: "webinar", content: document })).rejects.toThrow("landing_page_webinar_steps_required");
     mocks.landingPageFindFirst.mockResolvedValue({ ...page(), publishedAt: now, publishedVersion: { vendorId: "vendor-1", pageId: "page-1", content: document, formId: null, liveId: null } });
     expect(await loadPublicLandingPage("webinar")).toBeNull();
+  });
+
+  it("以 tenant/project/revision CAS 解除發布版本後永久刪除 Funnel", async () => {
+    await expect(deleteLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1" });
+
+    expect(mocks.landingPageUpdateMany).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 },
+      data: { publishedVersionId: null, revision: { increment: 1 } },
+    });
+    expect(mocks.landingPageDeleteMany).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 3 },
+    });
+  });
+
+  it("刪除 CAS 衝突時不會繼續刪除", async () => {
+    mocks.landingPageUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(deleteLandingPage("page-1", 2)).rejects.toBeInstanceOf(LandingPageConflictError);
+    expect(mocks.landingPageDeleteMany).not.toHaveBeenCalled();
   });
   it("allows an incomplete draft but refuses publication without resources", async () => {
     const document = webinarDraft();

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   csrf: vi.fn(),
   create: vi.fn(),
+  delete: vi.fn(),
   save: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.csrf }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/landing-page-service", () => ({
   createLandingPage: mocks.create,
+  deleteLandingPage: mocks.delete,
   saveLandingPageDraft: mocks.save,
   publishLandingPage: mocks.publish,
   unpublishLandingPage: mocks.unpublish,
@@ -49,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.csrf.mockResolvedValue(undefined);
   mocks.create.mockResolvedValue({ id: "page-1", revision: 1 });
+  mocks.delete.mockResolvedValue({ id: "page-1" });
   mocks.save.mockResolvedValue({ id: "page-1", revision: 2 });
   mocks.publish.mockResolvedValue({ id: "page-1", revision: 3, version: 1 });
   mocks.unpublish.mockResolvedValue({ id: "page-1", revision: 4 });
@@ -97,5 +100,11 @@ describe("landingPageAction", () => {
     await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2", content: "not-json" }));
 
     expect(mocks.publish).toHaveBeenCalledWith("page-1", 2);
+  });
+
+  it("刪除前要求 revision，並只轉交受 scope 保護的識別資料", async () => {
+    const result = await landingPageAction(idle, form({ operation: "delete", id: "page-1", revision: "2" }));
+    expect(mocks.delete).toHaveBeenCalledWith("page-1", 2);
+    expect(result).toMatchObject({ status: "success", id: "page-1", message: expect.stringContaining("已刪除") });
   });
 });

@@ -398,6 +398,34 @@ export async function unpublishLandingPage(pageId: string, expectedRevision: num
   return { id, revision: revision + 1 };
 }
 
+/**
+ * Permanently removes a scoped Funnel and its append-only versions.
+ * The published pointer must be detached first because Prisma intentionally
+ * protects the referenced version with a restrictive foreign key.
+ */
+export async function deleteLandingPage(pageId: string, expectedRevision: number) {
+  const scope = await editorProject();
+  const id = identifier(pageId);
+  const revision = positiveRevision(expectedRevision);
+  if (!id || !revision) throw new LandingPageInputError();
+
+  const database = db();
+  await requireScopedPage(database, scope, id);
+  return database.$transaction(async (transaction) => {
+    const detached = await transaction.landingPage.updateMany({
+      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
+      data: { publishedVersionId: null, revision: { increment: 1 } },
+    });
+    if (detached.count !== 1) throw new LandingPageConflictError();
+
+    const deleted = await transaction.landingPage.deleteMany({
+      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision: revision + 1 },
+    });
+    if (deleted.count !== 1) throw new LandingPageConflictError();
+    return { id };
+  });
+}
+
 export async function rollbackLandingPage(pageId: string, version: number, expectedRevision: number) {
   const scope = await editorProject();
   const id = identifier(pageId);
