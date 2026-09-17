@@ -1,0 +1,50 @@
+{
+  "status": "INCOMPLETE_EXTERNAL_PREREQUISITES",
+  "checkedOn": "2026-09-17",
+  "implementationCommit": "d759ca0102767f8c2d4ba2f636a31d71cfb50a02",
+  "localWorktreeInitiallyClean": true,
+  "repository": "Forty-s-AI-Company/CelebrateDeal",
+  "pullRequest": {
+    "number": 210,
+    "state": "OPEN",
+    "headRef": "codex/one-stop-webinar-flow",
+    "headSha": "d2213ec59aebad5f5700cacea2e4abc400511b7b",
+    "localCommitsAheadAtAudit": 49
+  },
+  "exactImplementationShaGithubDeployments": [],
+  "deploymentEvidenceLimit": "No GitHub deployment is registered for this implementation SHA; this is not an inventory of every external hosting service.",
+  "trustedDefaultBranch": {
+    "name": "master",
+    "protected": true,
+    "sha": "4747314743330ca783bc1ae6387aa528d20eb7bd",
+    "workflow": ".github/workflows/secure-staging-validation.yml",
+    "fixedTasks": [
+      "wp2-readonly-restore",
+      "wp4-payuni-sandbox-binding-preflight",
+      "wp4-payuni-sandbox-reconciliation",
+      "wp4-payuni-sandbox-refund-recovery",
+      "wp4-payuni-buyer-payment-check",
+      "wp4-payuni-buyer-callback-retry",
+      "wp4-payuni-buyer-existing-continuation",
+      "wp4-payuni-sandbox-subscription",
+      "line-notifications-e2e"
+    ],
+    "runner": "scripts/mvp-payuni-sandbox-e2e.mjs",
+    "funnelSpecificTaskPresent": false,
+    "observedCheckoutScope": "Existing fixed WP4 checkout paths; no Funnel page/step fixture or Funnel reference found in the inspected runner. Existing provider receipts alone do not prove the new Funnel path."
+  },
+  "requiredNextSteps": [
+    "Resolve the publication scope of the 49 local commits before synchronizing PR 210; do not treat a Goal 3 checkpoint as approval to publish unrelated changes.",
+    "Obtain an exact-source non-production Preview with the additive inventory migration applied through the approved environment process.",
+    "Extend and review the fixed trusted sandbox contract to cover Funnel source, owner, product and bump references, then land it on the protected default branch through the authorized process before it receives secrets.",
+    "Run the approved exact-source task and validate sanitized success, failure/cancellation and idempotency evidence before declaring Goal 3 complete."
+  ],
+  "safety": {
+    "githubOperations": "read-only metadata and repository source",
+    "secretStoresOrRawRunLogsRead": false,
+    "workflowDispatched": false,
+    "pushOrMerge": false,
+    "deploymentOrMigrationExecuted": false,
+    "providerPaymentOrRefundExecuted": false
+  }
+}
