@@ -116,8 +116,10 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const [message, setMessage] = useState("");
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
+  const [exitQueued, setExitQueued] = useState(false);
   const stepPending = false;
   const inFlight = useRef(false);
+  const pendingOperation = useRef<string | null>(null);
   const revisionRef = useRef(initial.revision);
   const [published, setPublished] = useState(initial.published);
   const [version, setVersion] = useState(initial.version);
@@ -131,10 +133,16 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
+  useEffect(() => {
+    if (!exitQueued || pending || dirty || inFlight.current) return;
+    setExitQueued(false);
+    router.push(returnHref ?? "/landing-pages");
+  }, [dirty, exitQueued, pending, returnHref, router]);
 
   function run(operation: string) {
     if (inFlight.current || stepPending) return;
     inFlight.current = true;
+    pendingOperation.current = operation;
     setPending(true);
     const data = new FormData();
     data.set(csrfName, csrfToken);
@@ -147,7 +155,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
       try {
         const result = await landingPageAction({ status: "success", message: "" }, data);
         setMessage(result.message);
-        if (result.status !== "success") return;
+        if (result.status !== "success") { setExitQueued(false); return; }
         if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
@@ -159,14 +167,22 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         if (operation === "delete") router.push("/landing-pages");
         // The action already revalidates this route and returns its updated RSC
         // tree. A second refresh inside the same transition can keep Save pending.
-      } catch { setMessage("連線中斷，內容仍保留，請稍後再試。"); }
+      } catch { setExitQueued(false); setMessage("連線中斷，內容仍保留，請稍後再試。"); }
       finally {
         inFlight.current = false;
+        pendingOperation.current = null;
         setPending(false);
       }
     });
   }
   function exitEditor() {
+    if (inFlight.current) {
+      if (pendingOperation.current === "save") {
+        setExitQueued(true);
+        setMessage("儲存完成後會返回原本的 Configuration。");
+      }
+      return;
+    }
     const leavingUnsaved = dirty || stepPending;
     if (leavingUnsaved && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
     router.push(returnHref ?? "/landing-pages");

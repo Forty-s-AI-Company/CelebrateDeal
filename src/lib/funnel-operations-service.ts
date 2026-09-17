@@ -59,7 +59,7 @@ function validateReferences(operations: FunnelOperations, state: NonNullable<Ret
   if (operations.deadline.enabled && operations.deadline.behavior === "redirect") {
     const destination = published?.flow.steps.find((step) => !step.isSystem && step.path === operations.deadline.redirectPath);
     if (!destination || published?.flow.steps[0]?.id === destination.id) throw new FunnelOperationsError("到期導向必須是已發布的非首頁步驟。");
-    if (experiment && [experiment.controlStepId, experiment.variantStepId].includes(destination.id)) throw new FunnelOperationsError("到期導向不能是 A/B 測試步驟。");
+    if (experiment?.status === "running" && [experiment.controlStepId, experiment.variantStepId].includes(destination.id)) throw new FunnelOperationsError("到期導向不能是進行中的 A/B 測試步驟。");
   }
 }
 

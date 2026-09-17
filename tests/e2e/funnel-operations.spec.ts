@@ -82,9 +82,10 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   async function saveSettings() {
     const before = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
     await panel.getByRole("button", { name: "儲存設定", exact: true }).click();
+    await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
     await expect.poll(async () => (await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } })).revision).toBe(before.revision + 1);
     const remainingSave = panel.getByRole("button", { name: "儲存設定", exact: true });
-    if (await remainingSave.count()) await expect(remainingSave).toBeDisabled();
+    await expect.poll(async () => (await remainingSave.count()) === 0 || await remainingSave.isDisabled()).toBe(true);
   }
   await panel.getByLabel("名稱", { exact: true }).fill("TEST ONLY Renamed Funnel");
   const changedSlug = `${slug}-edited`;
@@ -154,6 +155,8 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   const stored = await db.landingPage.findUniqueOrThrow({ where: { id: pageId } });
   const flow = parseFunnelStepPages(stored.draftContent)!.flow;
   const publicSteps = flow.steps.filter(step => !step.isSystem);
+  expect(publicSteps.length).toBeGreaterThanOrEqual(2);
+  const deadlineRedirectStep = publicSteps.at(-1)!;
   await page.goto(`/lp/${changedSlug}`);
   await page.reload();
   await expect.poll(() => db.funnelVisit.count({ where: { pageId, vendorId: fixture.vendor.id } })).toBeGreaterThanOrEqual(2);
@@ -255,15 +258,16 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
   stage = "deadline-redirect";
   await panel.getByRole("combobox", { name: /^截止行為/u }).selectOption("redirect");
-  await panel.getByRole("combobox", { name: /^過期導向/u }).selectOption(publicSteps[2].path);
+  await panel.getByRole("combobox", { name: /^過期導向/u }).selectOption(deadlineRedirectStep.path);
   await saveSettings();
   await page.goto(`/lp/${changedSlug}`);
-  await expect(page).toHaveURL(origin + `/lp/${changedSlug}/${publicSteps[2].path}`);
+  await expect(page).toHaveURL(origin + `/lp/${changedSlug}/${deadlineRedirectStep.path}`);
   await expect(page.locator("[data-funnel-renderer]")).toBeAttached();
   await expect(page.getByRole("heading", { name: "此活動已截止", exact: true })).toHaveCount(0);
   await page.goto(operationsPath);
 
   await expect(panel).toBeVisible();
+  await page.getByRole("button", { name: "Funnel settings", exact: true }).click();
   await expect(panel.getByLabel("名稱", { exact: true })).toHaveValue("TEST ONLY Winning Revision");
   // This screenshot contains only synthetic test values; no trace/session export.
   await page.screenshot({ path: process.env.FUNNEL_OPERATIONS_QA_SCREENSHOT_DIR

@@ -53,6 +53,13 @@ describe("Funnel operations tenant/CAS boundary",()=>{
   const operations=defaultFunnelOperations();operations.deadline={enabled:true,expiresAt:"2027-01-01T00:00:00Z",timezone:"Asia/Taipei",behavior:"redirect",redirectPath:content.flow.steps[0]!.path};
   await expect(saveFunnelOperations({...input(),operations})).rejects.toThrow("非首頁");
  });
+ it("allows a stopped experiment step as the published deadline destination",async()=>{
+  const experiment={id:"exp-stopped",status:"stopped" as const,controlStepId:content.flow.steps[0]!.id,variantStepId:content.flow.steps[1]!.id,controlWeight:50,variantWeight:50,winner:null};
+  const previous={...defaultFunnelOperations(),experiment};
+  mocks.find.mockResolvedValue({...page(),operations:previous});
+  const operations={...previous,deadline:{enabled:true,expiresAt:"2027-01-01T00:00:00Z",timezone:"Asia/Taipei",behavior:"redirect" as const,redirectPath:content.flow.steps[1]!.path}};
+  await expect(saveFunnelOperations({...input(),operations})).resolves.toEqual({revision:5});
+ });
 });
 describe("trusted report queries",()=>{
  it("scopes every source to tenant/page and uses paid order projection only",async()=>{
