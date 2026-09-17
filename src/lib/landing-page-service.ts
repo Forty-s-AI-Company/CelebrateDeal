@@ -10,7 +10,7 @@ import {
   type LandingPageRenderContext,
 } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
-import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { applyFunnelStepPersistenceMutation, parseFunnelStepPages, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
@@ -100,6 +100,8 @@ export type PublicLandingPage = {
   context: LandingPageRenderContext;
   publishedAt: Date;
   webinar?: PublicFunnelWebinarResource;
+  submissionForm?: PublicFunnelWebinarResource["form"];
+  submissionLiveId?: string;
 };
 
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
@@ -398,6 +400,40 @@ export async function unpublishLandingPage(pageId: string, expectedRevision: num
   return { id, revision: revision + 1 };
 }
 
+function publicSubmissionForm(forms: FormRecord[], formId: string | null) {
+  if (!formId) return undefined;
+  const form = forms.find((candidate) => candidate.id === formId);
+  const fields = parseRegistrationFormFields(form?.fields);
+  if (!form || !fields.success) return undefined;
+  return { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到你的資料。" };
+}
+function publicSubmissionProjection(forms: FormRecord[], formId: string | null, liveId?: string) {
+  const form = publicSubmissionForm(forms, formId);
+  return { ...(form ? { submissionForm: form } : {}), ...(liveId ? { submissionLiveId: liveId } : {}) };
+}
+
+/** CAS metadata save that re-reads the latest draft and applies one bounded
+ * command. It intentionally cannot replace existing canvas snapshots. */
+export async function saveLandingPageStepMetadata(input: { id: string; revision: number; mutation: FunnelStepPersistenceMutation }) {
+  const scope = await editorProject();
+  const id = identifier(input.id);
+  const revision = positiveRevision(input.revision);
+  if (!id || !revision) throw new LandingPageInputError();
+  const existing = await requireScopedPage(db(), scope, id);
+  if (existing.revision !== revision) throw new LandingPageConflictError();
+  const content = parseFunnelStepPages(existing.draftContent);
+  if (!content) throw new LandingPageInputError();
+  const result = applyFunnelStepPersistenceMutation(content, input.mutation);
+  if (!result.ok) throw new LandingPageInputError();
+  await validateBindings(db(), { ...scope, content: result.state, formId: existing.draftFormId, liveId: existing.draftLiveId });
+  const updated = await db().landingPage.updateMany({
+    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
+    data: { draftContent: result.state as unknown as Prisma.InputJsonValue, revision: { increment: 1 } },
+  });
+  if (updated.count !== 1) throw new LandingPageConflictError();
+  return { id, revision: revision + 1 };
+}
+
 /**
  * Permanently removes a scoped Funnel and its append-only versions.
  * The published pointer must be detached first because Prisma intentionally
@@ -500,6 +536,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
   // Resource projections deliberately contain no playback URL or admission token.
   return {
     ...(webinar ? { webinar } : {}),
+    ...publicSubmissionProjection(forms, page.publishedVersion.formId, live?.id),
     id: page.id,
     slug: page.slug,
     content,

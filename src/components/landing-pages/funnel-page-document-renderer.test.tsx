@@ -122,6 +122,25 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).not.toContain("action=");
   });
 
+  it("公開頁只使用伺服器驗證過的 Registration Form 欄位", () => {
+    const page = documentWith([node("form", "authored-form", { children: [node("form_input", "forged", { props: { name: "admin", label: "不可信欄位" } })] })]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} submission={{ landingPageId: "page-1", form: { id: "form-1", submitLabel: "加入名單", successMessage: "收到", fields: [
+      { key: "name", label: "姓名", type: "text", required: true },
+      { key: "email", label: "Email", type: "email", required: true },
+    ] } }} />);
+    expect(html).toContain('name="name"');
+    expect(html).toContain('name="email"');
+    expect(html).toContain("加入名單");
+    expect(html).not.toContain('name="admin"');
+  });
+
+  it("公開頁未綁定 Registration Form 時明確停用，不顯示假送出流程", () => {
+    const page = documentWith([node("form", "unbound-form", { children: [node("button", "submit", { actions: [{ type: "submit_form", formId: "unbound-form" }] })] })]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} publicSurface />);
+    expect(html).toContain("尚未綁定可公開使用的報名表");
+    expect(html).not.toContain('type="submit"');
+  });
+
   it("renders interactive content with explicit unavailable states", () => {
     const page = documentWith([
       node("carousel", "carousel", { props: { ariaLabel: "案例輪播" }, children: [] }),

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
-import { getPublicFunnelPage } from "@/lib/funnel-public-page";
+import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 
@@ -32,5 +32,6 @@ export default async function PublicFunnelStepPage({ params }: { params: Promise
   if (!document) notFound();
   const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
   if (page && steps?.flow.goal === "webinar" && step) return <FunnelWebinarExperience state={steps} stepId={step.id} slug={page.slug} resource={page.webinar} />;
-  return <PublicFunnelDocument document={document} />;
+  const nextPath = steps ? getNextPublicFunnelStepPath(steps, document.id) : null;
+  return <PublicFunnelDocument document={document} submission={page?.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
 }

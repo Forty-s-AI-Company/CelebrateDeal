@@ -13,13 +13,15 @@ import {
   publishLandingPage,
   rollbackLandingPage,
   saveLandingPageDraft,
+  saveLandingPageStepMetadata,
   unpublishLandingPage,
   type LandingPageActionState,
 } from "@/lib/landing-page-service";
+import type { FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 
 const MAX_CONTENT_BYTES = 128 * 1024;
 
-type LandingPageOperation = "create" | "save" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
+type LandingPageOperation = "create" | "save" | "save_steps" | "publish" | "unpublish" | "duplicate" | "rollback" | "delete";
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -40,9 +42,23 @@ function revision(formData: FormData, key = "revision") {
 
 function operation(formData: FormData): LandingPageOperation | null {
   const raw = value(formData, "operation");
-  return raw === "create" || raw === "save" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback" || raw === "delete"
+  return raw === "create" || raw === "save" || raw === "save_steps" || raw === "publish" || raw === "unpublish" || raw === "duplicate" || raw === "rollback" || raw === "delete"
     ? raw
     : null;
+}
+
+function stepMutation(formData: FormData): FunnelStepPersistenceMutation | null {
+  const raw = value(formData, "mutation");
+  if (!raw || Buffer.byteLength(raw, "utf8") > 8 * 1024) return null;
+  try {
+    const candidate = JSON.parse(raw) as Record<string, unknown>;
+    if (candidate.type === "rename" && typeof candidate.stepId === "string" && typeof candidate.name === "string") return candidate as FunnelStepPersistenceMutation;
+    if (candidate.type === "set_path" && typeof candidate.stepId === "string" && typeof candidate.path === "string") return candidate as FunnelStepPersistenceMutation;
+    if (candidate.type === "remove" && typeof candidate.stepId === "string") return candidate as FunnelStepPersistenceMutation;
+    if (candidate.type === "move" && typeof candidate.stepId === "string" && Number.isSafeInteger(candidate.toIndex)) return candidate as FunnelStepPersistenceMutation;
+    if (candidate.type === "add" && candidate.input && typeof candidate.input === "object" && (candidate.index === undefined || Number.isSafeInteger(candidate.index))) return candidate as FunnelStepPersistenceMutation;
+    return null;
+  } catch { return null; }
 }
 
 function draftFrom(formData: FormData) {
@@ -133,6 +149,14 @@ export async function landingPageAction(
       if (!id) return { status: "error", message: "找不到要複製的一頁式網站。" };
       const duplicate = await duplicateLandingPage(id);
       return success("已建立草稿副本。", duplicate);
+    }
+
+
+    if (command === "save_steps") {
+      const expectedRevision = revision(formData);
+      const mutation = stepMutation(formData);
+      if (!id || !expectedRevision || !mutation) return { status: "error", message: "步驟資料或版本資訊不完整，請重新整理後再試。" };
+      return success("步驟已自動儲存。", await saveLandingPageStepMetadata({ id, revision: expectedRevision, mutation }));
     }
 
     if (command === "delete") {
