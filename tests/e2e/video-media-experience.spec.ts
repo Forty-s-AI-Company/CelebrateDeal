@@ -131,6 +131,16 @@ async function loginOwner(page: Page) {
   await expect(page.locator("[data-dashboard-scope]")).toHaveCount(2);
 }
 
+async function openAdvancedSettings(page: Page) {
+  const summary = page.locator("summary").filter({ hasText: "進階設定" });
+  await expect(summary).toBeVisible();
+  await summary.click();
+}
+
+async function closeAdvancedSettings(page: Page) {
+  await page.locator("summary").filter({ hasText: "進階設定" }).click();
+}
+
 function stubCanvasAndVideo(page: Page) {
   return page.addInitScript(({ png }) => {
     const bytes = Uint8Array.from(atob(png), (character) => character.charCodeAt(0));
@@ -281,8 +291,10 @@ test("new video browser flow exposes metadata, timeline, crop controls and mocke
     element.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
   });
 
-  await expect(page.getByLabel("長度秒數")).toHaveValue("125");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("3");
+  await openAdvancedSettings(page);
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("125");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("3");
+  await closeAdvancedSettings(page);
   const timeline = page.getByRole("slider", { name: "選取影片縮圖畫面" });
   await expect(timeline).toBeVisible();
   await timeline.fill("30");
@@ -339,10 +351,11 @@ test("provider polling updates processing video to ready and authoritative durat
   }));
   await loginOwner(page);
   await page.goto(`/videos/${fixture.processingVideoId}/edit`, { waitUntil: "load" });
+  await openAdvancedSettings(page);
   await expect(page.getByText("Provider 狀態：ready")).toBeVisible();
   await expect(page.getByText("Cloudflare ready，影片可播放。")).toBeVisible();
-  await expect(page.getByLabel("長度秒數")).toHaveValue("321");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("6");
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("321");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("6");
 });
 
 test("mobile video flow keeps metadata, thumbnail controls and loading feedback usable", async ({ page }) => {
@@ -402,18 +415,22 @@ test("mobile video flow keeps metadata, thumbnail controls and loading feedback 
     element.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
   });
 
-  await expect(page.getByLabel("長度秒數")).toHaveValue("61");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("2");
+  await openAdvancedSettings(page);
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("61");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("2");
+  await closeAdvancedSettings(page);
   const timeline = page.getByRole("slider", { name: "選取影片縮圖畫面" });
   await timeline.fill("12");
   await expect(timeline).toHaveValue("12");
-  await page.getByRole("button", { name: "使用目前畫面作為縮圖" }).click();
-  await page.getByRole("button", { name: "4:5", exact: true }).click();
-  await expect(page.getByRole("button", { name: "4:5", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const captureThumbnail = page.getByRole("button", { name: "使用目前畫面作為縮圖" });
+  await captureThumbnail.press("Enter");
+  const portraitCrop = page.getByRole("button", { name: "4:5", exact: true });
+  await portraitCrop.press("Enter");
+  await expect(portraitCrop).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("縮放縮圖").fill("1.2");
   await expect(page.getByText("縮圖上傳完成，儲存表單後即會套用。")).toBeVisible();
 
-  await page.getByRole("button", { name: "開始上傳" }).first().click();
+  await page.getByRole("button", { name: "開始上傳" }).first().press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "檔案已送達 Cloudflare Stream" })).toBeVisible();
   const layout = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,

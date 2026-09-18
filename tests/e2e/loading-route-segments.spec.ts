@@ -169,8 +169,11 @@ test("protected app loading segment is visible during a controlled RSC navigatio
     page,
     testInfo,
     targetPath: "/settings/security",
-    linkName: "安全",
-    setup: () => loginOwner(page),
+    linkName: "安全性",
+    setup: async () => {
+      await loginOwner(page);
+      await page.getByRole("button", { name: "開啟工作區與帳號選單", exact: true }).click();
+    },
     loading: async () => {
       const loading = page.locator("section[aria-busy=\"true\"][aria-labelledby=\"protected-app-loading-title\"]");
       await expect(loading).toBeVisible();
@@ -225,7 +228,7 @@ test("videos loading segment is visible during a controlled RSC navigation", asy
     page,
     testInfo,
     targetPath: "/videos",
-    linkName: "影片",
+    linkName: "媒體素材",
     setup: () => loginOwner(page),
     loading: async () => {
       const loading = page.locator("section[aria-busy=\"true\"][aria-labelledby=\"videos-loading-title\"]");
