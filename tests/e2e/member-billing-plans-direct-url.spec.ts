@@ -53,7 +53,9 @@ test("active member is denied billing plans before finance queries or MFA", asyn
       overflowEventUnitPriceCents: 2_109,
       overflowAffiliateUnitPriceCents: 1_098,
       overflowStorageMinutePriceCents: 987,
-      paymentServiceFeeCents: 876,
+      // Avoid a short formatted value such as "$9", which is also an RSC reference.
+      // Keep the same disclosure assertion with a distinctive synthetic amount.
+      paymentServiceFeeCents: 876_543,
       transactionFeeRateBps: 765,
       affiliateManagementFeeCents: 654,
       description: `wp78-plan-description-${suffix}`,
