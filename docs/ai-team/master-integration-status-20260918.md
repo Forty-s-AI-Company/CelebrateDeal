@@ -5,11 +5,11 @@
 ## 本輪 checkpoint
 
 - origin/master 基準：4747314743330ca783bc1ae6387aa528d20eb7bd。
-- one-stop-webinar-flow 已合併遠端 6 個 CI 修正並推送 e1700a86；後續掃描修正 d5a1d71e 已推送。PR #210 仍有 master 衝突，strict-index 已修正並推送 c2fec462；CI 已通過 strict-index，後續發現 3 個測試檔的過期 mock；已修正，頁面 8/8 與付款 webhook 6/6 targeted tests 通過，等待新 checkpoint CI。
+- one-stop-webinar-flow 已合併遠端 6 個 CI 修正並推送 e1700a86；後續掃描修正 d5a1d71e 已推送。PR #210 仍有 master 衝突，strict-index 已修正並推送 c2fec462；CI 已通過 strict-index，後續發現 3 個測試檔的過期 mock；已修正，頁面 8/8 與付款 webhook 6/6 targeted tests 通過，已追加 API 播放入口合約登錄 9609cc5a（8/8 targeted tests）與 migrations 87 筆同步 5f46fbb6（首次 TAP 923/924，唯一失敗修正後相關 6/6 通過）。852c1194 同步 browser canary 修正；等待最新 required quality。
 - 本機隔離 generate/typegen/typecheck 通過；Funnel targeted 43/43；同步修正 targeted 15/16 初次通過，inventory 根因修正後 1/1 通過；node evidence contracts 5/5；lint 0 errors（3 個既有圖片 warnings）。
 - 原有 .codex/config.toml 未提交變更保留；未進 commit。
-- PR #212 / 0f378146：PayUni receipt 保留副作用計數；67 mock/workflow tests、lint 通過，獨立小 diff 審查無 blocking finding。master 現有 production dependency audit 阻擋合併。
-- 依賴 PR #213 / caa822d1 獨立在 codex/master-dependency-audit-20260918：Next.js／sharp 公告漏洞，未降低 audit 門檻。已補齊跨平台 lockfile 與 Playwright core 1.61.1 peer 對齊；標準 npm ci dry-run 通過，required quality 待驗。
+- PR #212 / 9c2f5663（原功能 commit 0f378146）：PayUni receipt 保留副作用計數；67 mock/workflow tests、lint 通過，獨立小 diff 審查無 blocking finding。已納入依賴修正；前輪 CI 通過 coverage／DB，browser 的 $9 canary 與 RSC 參照碰撞已修正，本地同版本隔離 Chromium 1/1 通過，必要 CI 待驗。
+- 依賴 PR #213 / 7f07a5f6 獨立在 codex/master-dependency-audit-20260918：Next.js／sharp 公告漏洞，未降低 audit 門檻。已補齊跨平台 lockfile 與 Playwright core 1.61.1 peer 對齊；標準 npm ci dry-run 通過，required quality 待驗。最終 lock 完整 audit 0 漏洞，標準 npm ci 實際安裝成功；全部權限與資料外洩斷言保留，僅將合成費用改為不碰撞 RSC 的金額，獨立小 diff 複審通過。
 - 已刪除 108 條本地分支：95 條一般 auto 分支全部 patch 等價、無獨有 merge commit、無在用 worktree、遠端保留；11 條 checkout 歷史分支經實際語意比對後確認由 master 承接，另 2 條為 master 祖先。沒有刪除遠端分支或工作目錄。
 
 ## 批次與保留決策
@@ -270,6 +270,13 @@ GitHub 有 commit **不等於整個目錄已備份**。必須同時確認 HEAD �
 | wp4-secure-runner-cbae30af | cf33299a | 1 | 是 | 保留：未提交變更 |
 
 本輪新建 CelebrateDeal-integration-20260918 仍為使用中的整合 worktree，保留。其他本輪 master 小批次 worktree 位於 Local/Temp，不在上述目錄刪除範圍。
+
+## 本地隔離診斷
+
+- master browser 使用獨立新建 loopback PostgreSQL，migrations 成功；既有開發 DB 未使用。
+- 本機鏡像與套件對齊後重現 `$9` disclosure canary 誤判；修正 fixture 後 1/1 通過且啟用 fail-on-flaky-tests。沒有減少 assertion 或 coverage threshold。
+- task-owned container 經完整 ID／名稱／label 核對後移除；保留 sanitized evidence。
+- receipt worktree 的暫存快取刪除曾被工具政策拒絕，已保留，未嘗試繞過。
 
 ## 還原與安全界線
 
