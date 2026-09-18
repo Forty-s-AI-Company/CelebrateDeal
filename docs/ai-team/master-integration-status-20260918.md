@@ -4,21 +4,21 @@
 
 ## 本輪 checkpoint
 
-- origin/master 基準：4747314743330ca783bc1ae6387aa528d20eb7bd。
-- one-stop-webinar-flow 已合併遠端 6 個 CI 修正並推送 e1700a86；後續掃描修正 d5a1d71e 已推送。PR #210 仍有 master 衝突，strict-index 已修正並推送 c2fec462；CI 已通過 strict-index，後續發現 3 個測試檔的過期 mock；已修正，頁面 8/8 與付款 webhook 6/6 targeted tests 通過，已追加 API 播放入口合約登錄 9609cc5a（8/8 targeted tests）與 migrations 87 筆同步 5f46fbb6（首次 TAP 923/924，唯一失敗修正後相關 6/6 通過）。852c1194 同步 browser canary 修正；等待最新 required quality。
+- 初始盤點基準：4747314743330ca783bc1ae6387aa528d20eb7bd；最新 origin/master：f770e2b57663413cfa5b11499aedde00e8aeaf42（受保護 PR #212 squash merge）。
+- one-stop-webinar-flow 已合併遠端 6 個 CI 修正並推送 e1700a86；後續掃描修正 d5a1d71e 已推送。PR #210 仍有 master 衝突，strict-index 已修正並推送 c2fec462；CI 已通過 strict-index，後續發現 3 個測試檔的過期 mock；已修正，頁面 8/8 與付款 webhook 6/6 targeted tests 通過，已追加 API 播放入口合約登錄 9609cc5a（8/8 targeted tests）與 migrations 87 筆同步 5f46fbb6（首次 TAP 923/924，唯一失敗修正後相關 6/6 通過）。852c1194 同步 browser canary 修正；最新已完成的 source checkpoint f8deb6de：required quality FAILED（run 35333966368），阻擋為 Funnel development-only harness 在 production CI 下不可用，以及 mobile accessibility flaky。
 - 本機隔離 generate/typegen/typecheck 通過；Funnel targeted 43/43；同步修正 targeted 15/16 初次通過，inventory 根因修正後 1/1 通過；node evidence contracts 5/5；lint 0 errors（3 個既有圖片 warnings）。
 - 原有 .codex/config.toml 未提交變更保留；未進 commit。
-- PR #212 / 9c2f5663（原功能 commit 0f378146）：PayUni receipt 保留副作用計數；67 mock/workflow tests、lint 通過，獨立小 diff 審查無 blocking finding。已納入依賴修正；前輪 CI 通過 coverage／DB，browser 的 $9 canary 與 RSC 參照碰撞已修正，本地同版本隔離 Chromium 1/1 通過，必要 CI 待驗。
-- 依賴 PR #213 / 7f07a5f6 獨立在 codex/master-dependency-audit-20260918：Next.js／sharp 公告漏洞，未降低 audit 門檻。已補齊跨平台 lockfile 與 Playwright core 1.61.1 peer 對齊；標準 npm ci dry-run 通過，required quality 待驗。最終 lock 完整 audit 0 漏洞，標準 npm ci 實際安裝成功；全部權限與資料外洩斷言保留，僅將合成費用改為不碰撞 RSC 的金額，獨立小 diff 複審通過。
+- PR #212 已合併為 f770e2b5：receipt integrity 與 dependency 修正共 7 檔。exact head 9c2f5663 的 push／PR 兩份 required quality 全部 SUCCESS；CI workflow 與 production 部署設定沒有變更。
+- PR #213 已關閉為被 #212 包含；逐檔確認 package.json、lockfile、browser test 與 evidence 和新 master 一致。audit 0 漏洞，標準 npm ci 成功，沒有放寬品質門檻。
 - 已刪除 108 條本地分支：95 條一般 auto 分支全部 patch 等價、無獨有 merge commit、無在用 worktree、遠端保留；11 條 checkout 歷史分支經實際語意比對後確認由 master 承接，另 2 條為 master 祖先。沒有刪除遠端分支或工作目錄。
 
 ## 批次與保留決策
 
 | 批次 | 範圍 | 狀態／下一步 |
 |---|---|---|
-| A | one-stop 本機／遠端同步 | 已推送；strict-index 與 16 targeted tests 通過，等待 exact-head CI；不在 conflict 狀態 merge |
-| B | master dependencies | 修 Next.js／sharp audit；獨立 PR 通過 required quality 後合併 |
-| C | PayUni receipt integrity | PR #212，只移植最小 helper/test；待 B 後重驗 |
+| A | one-stop 本機／遠端同步 | 已推送同步；Vitest／coverage／TAP／PostgreSQL 通過，browser FAILED，保留未完成分支 |
+| B | master dependencies | 完成；透過 #212 組合 PR 合併，#213 已關閉為被包含 |
+| C | PayUni receipt integrity | 完成；PR #212 全部 required quality 通過，master f770e2b5 |
 | D | 低風險歷史分支清理 | 108 條 local refs 已清理；remote 保留 |
 | E | 長期分支剩餘 UI／Funnel／workspace | 保留來源，先按 src 實際差異及依賴分批；不整份覆蓋 master |
 | F | 高風險 runner／LINE／退款 | master 後續實作優先；僅經實際 diff 證明的新增功能才移植 |
@@ -162,11 +162,11 @@
 | codex/line-runner-binding-diagnostic | c14160e7 | patch 已等價整合 | 保留遠端；本地非一般 auto 範圍或仍有 worktree |
 | codex/line-runner-stage-diagnostic | 3cf0c7b4 | patch 已等價整合 | 保留遠端；本地非一般 auto 範圍或仍有 worktree |
 | codex/live-admission-retry-backoff | 74c61991 | patch 已等價整合 | 保留在用 worktree；保留遠端；本地非一般 auto 範圍或仍有 worktree |
-| codex/master-dependency-audit-20260918 | 35275928 | 實作／驗證中 | 保留；獨立修復 dependency audit |
-| codex/master-integration-sync-20260918 | c2fec462 | 同步已推送，整合未完成 | 保留；PR #210 conflict 保留；strict-index 本機已通過，CI 進行中 |
-| codex/master-receipt-counters-20260918 | 0f378146 | 本機通過，PR 待 CI | 保留；PR #212，需先解除 dependency audit |
+| codex/master-dependency-audit-20260918 | 7f07a5f6 | 已整合 | #212 已包含、#213 關閉；保留在用 worktree／遠端 evidence |
+| codex/master-integration-sync-20260918 | f8deb6de | 同步已推送，整合未完成 | 保留；Vitest／coverage／TAP／PostgreSQL 已通過，browser FAILED；不整份覆蓋 master |
+| codex/master-receipt-counters-20260918 | 9c2f5663 | 已整合 | #212 merged，兩份 required quality 通過；在用 worktree 保留 |
 | codex/mvp-payuni-e2e-20260903 | a9748571 | patch 已等價整合 | 保留在用 worktree；保留遠端；本地非一般 auto 範圍或仍有 worktree |
-| codex/one-stop-webinar-flow | e1700a86 | 同步已推送，整合未完成 | 保留；PR #210 conflict 保留；strict-index 本機已通過，CI 進行中 |
+| codex/one-stop-webinar-flow | f8deb6de | 同步已推送，整合未完成 | 保留；Vitest／coverage／TAP／PostgreSQL 已通過，browser FAILED；不整份覆蓋 master |
 | codex/openhands-ai-team-reset | b2e3eebb | 已整合 | 已刪本地 ref；遠端／master 保存，可依 HEAD 還原 |
 | codex/payuni-preview-return-origin | 0616beaa | patch 已等價整合 | 保留遠端；本地非一般 auto 範圍或仍有 worktree |
 | codex/payuni-production-query-hard-blocker | abc55736 | 待實際差異審查 | 保留在用 worktree；保留；無法以歷史提交數判斷產品完成度 |
@@ -270,6 +270,14 @@ GitHub 有 commit **不等於整個目錄已備份**。必須同時確認 HEAD �
 | wp4-secure-runner-cbae30af | cf33299a | 1 | 是 | 保留：未提交變更 |
 
 本輪新建 CelebrateDeal-integration-20260918 仍為使用中的整合 worktree，保留。其他本輪 master 小批次 worktree 位於 Local/Temp，不在上述目錄刪除範圍。
+
+## one-stop 未完成事項與下一批 scope
+
+- CI run 35333966368，source checkpoint f8deb6de：安裝、audit、型別、strict-index、Vitest／coverage、TAP、PostgreSQL 皆通過；Release browser gates FAILED，後續 build／preflight 未執行。
+- `tests/e2e/funnel-advanced-elements.spec.ts` 的 3 個案例於 lines 5／15／26 timeout，卡在 lines 7／19／28。`src/app/browser-qa/funnel-elements/page.tsx` 明確要求 NODE_ENV=development，但主 Playwright config 啟動 production build。現有 `playwright.funnel-elements.config.ts` 與 `scripts/funnel-elements-browser-qa.mjs` 使用獨立 development harness；下一批應讓所有案例在對應模式中成為必要 gate，不得 skip、降低斷言或將 QA 頁面無條件開放。
+- `tests/e2e/accessibility.spec.ts:529` mobile shell 案例 retry 後通過，首次於 loginOwner 的 dashboard URL assertion（line 73）timeout；因 fail-on-flaky-tests，仍視為未通過。需在隔離 browser 中釐清登入轉址穩定性，不直接提高 timeout 掩蓋。
+- PR #210 沒有整支合併；保留來源與各未完成 worktree。下一批優先修上述兩個具體 Browser 問題，再處理 Funnel／workspace 功能差異；不以 ahead count 或整份舊檔覆蓋 master。
+- 最後文件 checkpoint 只更新盤點／證據；不宣稱上述 source failure 已修復。
 
 ## 本地隔離診斷
 

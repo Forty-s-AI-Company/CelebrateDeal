@@ -1572,8 +1572,9 @@
     {
       "branch": "codex/master-dependency-audit-20260918",
       "head": "3527592881917ee5dae37b9c55320ec9eb6d2f79",
-      "status": "NEEDS_DIFF_REVIEW",
-      "localDeleted": false
+      "status": "INTEGRATED_VIA_PR_212",
+      "localDeleted": false,
+      "finalEvidence": "Exact changed files included in origin/master f770e2b5; active worktree retained."
     },
     {
       "branch": "codex/master-integration-sync-20260918",
@@ -1594,8 +1595,9 @@
       ],
       "cherryPlus": 0,
       "cherryMinus": 0,
-      "status": "ANCESTOR_ORIGIN_MASTER",
-      "localDeleted": false
+      "status": "INTEGRATED_VIA_PR_212",
+      "localDeleted": false,
+      "finalEvidence": "Exact changed files included in origin/master f770e2b5; active worktree retained."
     },
     {
       "branch": "codex/mvp-payuni-e2e-20260903",
@@ -3807,5 +3809,32 @@
       "src/components/commerce-checkout-form.tsx"
     ],
     "integration_action": "Do not cherry-pick or merge this historical chain; retain master."
+  },
+  "latestMaster": "f770e2b57663413cfa5b11499aedde00e8aeaf42",
+  "inventoryNote": "master/cherry counts are the initial snapshot, not feature counts. latestMaster and finalIntegration reflect the protected merge.",
+  "finalIntegration": {
+    "pr": 212,
+    "head": "9c2f566381cf80a1d426d697c9a1ae7f8bd74e2a",
+    "merge": "f770e2b57663413cfa5b11499aedde00e8aeaf42",
+    "requiredQuality": "SUCCESS (push and pull_request)",
+    "supersededPr": 213
+  },
+  "oneStopValidation": {
+    "sourceHead": "f8deb6decc9e6164553f529ab5513c74fafd9769",
+    "run": 35333966368,
+    "status": "FAILED",
+    "passed": [
+      "dependency audit",
+      "typecheck",
+      "strict-index",
+      "Vitest and coverage",
+      "TAP",
+      "PostgreSQL concurrency"
+    ],
+    "blockers": [
+      "development-only funnel harness executed by production browser suite: three timeouts",
+      "mobile accessibility login redirect flaky"
+    ],
+    "mergedToMaster": false
   }
 }
