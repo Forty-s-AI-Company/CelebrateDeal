@@ -18,6 +18,7 @@ import {
   defaultBrowserSubmit,
   defaultSubscriptionBrowserSubmit,
   finalizeMvpPayUniSubscriptionReceipt,
+  finalizeMvpPayUniReceipt,
   isPayUniPaymentPageUrl,
   FIXED_PAYUNI_ENV,
   FIXED_SUBSCRIPTION_PURPOSE,
@@ -1006,6 +1007,25 @@ test("verifies exact ready Preview lineage and health before secret injection", 
   assert.equal(await verifyMvpPayUniLineage(source, {
     verifyDeploymentImpl: async () => ({ host: previewHost, deploymentMatched: true, sourceMatched: false, preview: true, ready: true }),
   }), false);
+});
+
+test("final validation failure preserves already executed payment and refund counters", async () => {
+  const receipt = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
+  assert.equal(receipt.result, "PASS");
+  const actualEffects = { ...receipt.sideEffects };
+  const actualChecks = { ...receipt.checks };
+  // 模擬 mock 流程完成後才發現 schema 損壞，不得將實際副作用歸零。
+  receipt.schemaVersion = "invalid-schema";
+  const result = finalizeMvpPayUniReceipt(receipt);
+  assert.equal(result, receipt);
+  assert.equal(result.result, "BLOCKED");
+  assert.equal(result.failure, "INTERNAL_REJECTED");
+  assert.deepEqual(result.sideEffects, actualEffects);
+  assert.deepEqual(result.checks, actualChecks);
+  for (const key of ["paymentReservationsCreated", "browserPaymentSubmissions", "payments", "refundPosts", "reconcilePosts"]) {
+    assert.equal(result.sideEffects[key], 1);
+  }
+  assert.equal(validateMvpPayUniReceipt(result).ok, false);
 });
 
 test("receipt validator accepts the complete fixed, sanitized one-purpose receipt", async () => {

@@ -695,6 +695,11 @@ function fail(receipt, code) {
   return receipt;
 }
 
+export function finalizeMvpPayUniReceipt(receipt) {
+  // 驗證失敗仍須保留已發生的副作用，讓獨立 validator 拒絕不完整證據。
+  return validateMvpPayUniReceipt(receipt).ok ? receipt : fail(receipt, "INTERNAL_REJECTED");
+}
+
 function responseJson(response) {
   if (!response || typeof response !== "object" || !Number.isInteger(response.status) || !response.body || typeof response.body !== "object") {
     throw new Error("NETWORK_REJECTED");
@@ -1434,8 +1439,7 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
     fail(receipt, error instanceof Error && error.message === "NETWORK_REJECTED" ? "NETWORK_REJECTED" : "INTERNAL_REJECTED");
   }
 
-  if (!validateMvpPayUniReceipt(receipt).ok) return fail(createReceipt(invocation.sourceSha), "INTERNAL_REJECTED");
-  return receipt;
+  return finalizeMvpPayUniReceipt(receipt);
 }
 
 function assertSubscriptionSessionResponse(response) {
