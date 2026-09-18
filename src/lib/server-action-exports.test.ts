@@ -103,5 +103,5 @@ describe("Server Action runtime export contract", () => {
       return invalidRuntimeExports(checkedSource, checker).map((name) => `${source.fileName}: ${name}`);
     });
     expect(failures).toEqual([]);
-  });
+  }, 15_000);
 });

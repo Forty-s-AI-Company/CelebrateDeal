@@ -12,6 +12,10 @@ interface Issue {
 const issues: Issue[] = [];
 const screenshotDir = path.resolve(process.cwd(), "reports/browser-qa-screenshots");
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 if (!fs.existsSync(screenshotDir)) {
   fs.mkdirSync(screenshotDir, { recursive: true });
 }
@@ -193,7 +197,7 @@ async function runBrowserQA() {
           console.log(`   ✓ 成功載入 (HTTP ${status})`);
         }
       } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         issues.push({
           category: "NAV_ERROR",
           url: `${baseUrl}${route.path}`,
@@ -222,7 +226,7 @@ async function runBrowserQA() {
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_live_viewer.png") });
       console.log(`   ✓ 直播間狀態: HTTP ${res?.status()}`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/live/summer-glow-live`,
@@ -239,7 +243,7 @@ async function runBrowserQA() {
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_form_page.png") });
       console.log(`   ✓ 報名表單狀態: HTTP ${res?.status()}`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/form/summer-live-reminder`,
@@ -256,7 +260,7 @@ async function runBrowserQA() {
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_product_page.png") });
       console.log(`   ✓ 商品頁狀態: HTTP ${res?.status()}`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/p/glow-serum-set`,
@@ -273,7 +277,7 @@ async function runBrowserQA() {
       await guestPage.screenshot({ path: path.join(screenshotDir, "guest_support_page.png") });
       console.log(`   ✓ 客服支援頁狀態: HTTP ${res?.status()}`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       issues.push({
         category: "NAV_ERROR",
         url: `${baseUrl}/support`,
