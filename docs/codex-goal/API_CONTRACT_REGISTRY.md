@@ -102,6 +102,8 @@
 | 83 | `POST /api/live-media` | owner/admin、same-origin、client marker 與限流；media origin 必須配置 | strict live/action signaling payload | live、video 與 browser-live source 必須同 vendor且處於可播放 lifecycle | 建立或停止短效 media session；server 只回傳必要 signaling contract | private no-store；400／401／403／404／409／429／503 | 同路徑 route unit；跨網路媒體主機為外部 gate |
 | 84 | `GET /api/live-presenter`／`POST /api/live-presenter` | active vendor owner/admin；POST 另需 same-origin、client marker 與限流 | bounded live query；strict layout／broadcast mutation | live 與 video 固定同 vendor；來源切換使用 status/videoId CAS | GET 讀取安全設定；POST 保存排版並可建立 browser-live source，競爭時回滾新來源 | private no-store；400／401／403／404／409／429／503 | 同路徑 route unit + disposable PostgreSQL regression |
 
+| 85 | `GET /lp/[slug]/[stepPath]/play` | 公開活動入口；server time gate，目的播放頁仍保留 admission 驗證 | slug／stepPath route params | 已發布頁面必須對應 webinar broadcast step；runtime 決策與截止時間由 server 驗證 | 不建立付款或播放 session；303 至 server 綁定且 encoded 的 live slug | private no-store；404／409／410／503 或同源 303 | 同路徑 route unit + API registry contract |
+
 ## 固定 WP4 Sandbox ops
 
 以下九個 POST 入口先驗證 `JOB_SECRET`，再限制 Preview、PayUni Sandbox、executor enabled 與完整 server-owned source SHA。只接受空 body，不接受 caller 指定交易、金額、provider host 或租戶；回應均為 no-store。它們的存在與本機測試不代表實際 Sandbox 已通過。
