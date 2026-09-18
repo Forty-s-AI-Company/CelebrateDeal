@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
 
@@ -139,6 +139,11 @@ async function openAdvancedSettings(page: Page) {
 
 async function closeAdvancedSettings(page: Page) {
   await page.locator("summary").filter({ hasText: "進階設定" }).click();
+}
+
+async function clickCentered(locator: Locator) {
+  await locator.evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" }));
+  await locator.click();
 }
 
 function stubCanvasAndVideo(page: Page) {
@@ -391,6 +396,10 @@ test("mobile video flow keeps metadata, thumbnail controls and loading feedback 
 
   await loginOwner(page);
   await page.goto("/videos/new", { waitUntil: "load" });
+  const onboardingToggle = page.locator('header[class*="lg:hidden"] button[aria-controls="onboarding-task-content"]');
+  if (await onboardingToggle.getAttribute("aria-expanded") === "true") {
+    await onboardingToggle.click();
+  }
   await page.getByLabel("影片名稱").fill("手機版影片 E2E");
   await page.locator('input[type="file"][accept="video/*"]').setInputFiles({
     name: "mobile-e2e.mp4",
@@ -423,14 +432,14 @@ test("mobile video flow keeps metadata, thumbnail controls and loading feedback 
   await timeline.fill("12");
   await expect(timeline).toHaveValue("12");
   const captureThumbnail = page.getByRole("button", { name: "使用目前畫面作為縮圖" });
-  await captureThumbnail.press("Enter");
+  await clickCentered(captureThumbnail);
   const portraitCrop = page.getByRole("button", { name: "4:5", exact: true });
-  await portraitCrop.press("Enter");
+  await clickCentered(portraitCrop);
   await expect(portraitCrop).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("縮放縮圖").fill("1.2");
   await expect(page.getByText("縮圖上傳完成，儲存表單後即會套用。")).toBeVisible();
 
-  await page.getByRole("button", { name: "開始上傳" }).first().press("Enter");
+  await clickCentered(page.getByRole("button", { name: "開始上傳" }).first());
   await expect(page.getByRole("status").filter({ hasText: "檔案已送達 Cloudflare Stream" })).toBeVisible();
   const layout = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
