@@ -4,6 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { listCanonicalMigrations, writeMirror } from './prisma-loopback-disposable-migration-runner.mjs';
 import { createLiveQaIsolation, runLiveQaNode, writeLiveQaVitestConfig } from './live-qa-isolation.mjs';
+import { buildLoopbackDatabaseUrl } from './private-chat-disposable-qa.mjs';
 
 // Only this runner owns this fresh database. No existing database is migrated or cleaned.
 const qa = createLiveQaIsolation('live-db');
@@ -33,7 +34,7 @@ try {
     break;
   }
   if (!owned) throw new Error('NO_UNUSED_DATABASE');
-  const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:54329/${owned}?schema=public`;
+  const databaseUrl = buildLoopbackDatabaseUrl(owned);
   const env = { DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, RT01_D2_DISPOSABLE_DB: 'true', CSRF_SECRET: 'live-integration-synthetic-signing-seed-only' };
   const mirror = writeMirror(qa.temp, migrations);
   for (const [name, args, cwd] of [
