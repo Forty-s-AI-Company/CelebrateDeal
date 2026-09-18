@@ -36,6 +36,14 @@ beforeEach(() => {
 });
 
 describe("funnel automation service", () => {
+  it("rejects a missing membership before reading the scoped page", async () => {
+    runtime.manager.mockResolvedValue({ ...managerContext, auth: { ...managerContext.auth, member: null } });
+    await expect(listFunnelAutomationRules({ pageId: "page-1" }, runtime.db as never)).rejects.toThrow();
+    expect(runtime.scope).not.toHaveBeenCalled();
+    expect(runtime.db.landingPage.findFirst).not.toHaveBeenCalled();
+    expect(runtime.audit).not.toHaveBeenCalled();
+  });
+
   it("lists only rules owned by the selected project page and hides invalid stored actions", async () => {
     runtime.db.automationRule.findMany.mockResolvedValue([
       { id: "rule-1", name: "已報名", isActive: true, version: 2, actions: [{ type: "add_customer_tag", tag: "講座已報名" }], updatedAt: new Date("2026-09-17T00:00:00.000Z") },

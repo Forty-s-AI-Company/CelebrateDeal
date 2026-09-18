@@ -237,9 +237,14 @@ const testimonials: BlockFactory = (instanceId) => {
 
 const definitions: Record<string, FunnelBlockTemplate> = {};
 const registerVariants = (id: string, category: FunnelBlockCategory, label: string, description: string, base: BlockFactory, capability?: typeof FUNNEL_CAPABILITIES.payment) => {
-  (["editorial", "spotlight", "compact"] as const).forEach((variant, index) => {
+  // 將樣式與配色成組保存，避免平行陣列索引缺值。
+  ([
+    ["editorial", "編輯版", "#f8fafc"],
+    ["spotlight", "聚焦版", "#fff7ed"],
+    ["compact", "精簡版", "#f0fdf4"],
+  ] as const).forEach(([variant, variantLabel, background]) => {
     const templateId = `${id}-${variant}`;
-    definitions[templateId] = { id: templateId, category, label: `${label}・${["編輯版", "聚焦版", "精簡版"][index]}`, description, variantCount: 3, ...(capability ? { capability } : {}), factory: variantFactory(base, variant, ["#f8fafc", "#fff7ed", "#f0fdf4"][index]) };
+    definitions[templateId] = { id: templateId, category, label: `${label}・${variantLabel}`, description, variantCount: 3, ...(capability ? { capability } : {}), factory: variantFactory(base, variant, background) };
   });
 };
 registerVariants("order-form", "order_forms", "訂單表單", "方案摘要搭配受限制的付款欄位。", orderForm, FUNNEL_CAPABILITIES.payment);

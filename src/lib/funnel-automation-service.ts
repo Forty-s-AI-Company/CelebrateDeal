@@ -61,6 +61,8 @@ async function scopedPage(database: FunnelAutomationDb, input: { pageId: unknown
   const pageId = ruleId(input.pageId);
   if (!pageId) throw new FunnelAutomationInputError();
   const { auth, vendor } = await requireVendorManagerContext();
+  // 保留實際 membership 作為 audit actor；缺少身分時拒絕繼續查詢。
+  if (!auth.member) throw new FunnelAutomationScopeError();
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   if (!scope.projectId) throw new FunnelAutomationScopeError();
   const page = await database.landingPage.findFirst({
