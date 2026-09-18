@@ -25,4 +25,3 @@
 - 截圖：`11`、`24`、`25`、`29`。
 - 狀態：全部已實際點擊。
 - CelebrateDeal：必做；按鈕 disabled/enabled 與離開防呆是核心 UX。
-

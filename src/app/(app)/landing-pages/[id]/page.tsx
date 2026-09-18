@@ -26,4 +26,3 @@ export default async function EditLandingPage({ params, searchParams }: { params
   }
   return <LandingPageWorkspace key={`${page.id}-${query.step ?? "default"}`} returnHref={returnHref} commerceProducts={data.commerceProducts} page={{ id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, content, formId: page.formId, liveId: page.liveId, versions: page.versions.map(({ version }) => ({ version })) }} webinarResources={data.webinarResources} forms={data.forms} lives={data.lives} csrfName={CSRF_FIELD_NAME} csrfToken={await getCsrfToken()} />;
 }
-

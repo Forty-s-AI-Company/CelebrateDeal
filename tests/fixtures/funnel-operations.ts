@@ -25,4 +25,3 @@ export async function createFunnelSalesProjectionFixture(db: PrismaClient, input
   } });
   return { orderNumber, paymentId: payment.id };
 }
-

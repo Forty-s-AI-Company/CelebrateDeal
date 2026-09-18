@@ -1,6 +1,6 @@
 # systeme.io 一頁式網站編輯器研究筆記
 
-> 研究日期：2026-09-13（Asia/Taipei）  
+> 研究日期：2026-09-13（Asia/Taipei）
 > 範圍：使用者已開啟的 systeme.io Page Editor；僅查看與加入後復原測試，**未按 Save**。
 
 ## 介面結構圖

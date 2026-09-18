@@ -13,4 +13,3 @@ export default async function LandingPagesPage() {
     {pages.length ? <FunnelList pages={pages} readOnly={scope.isAggregate} /> : <Card className="border-dashed border-slate-300 bg-slate-50/60"><div className="mx-auto max-w-md py-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl text-blue-700">✦</div><h2 className="mt-4 text-lg font-bold text-slate-950">開始建立第一個 Funnel</h2><p className="mt-2 text-sm leading-6 text-slate-500">選擇銷售、名單蒐集或自訂用途，再進入中文版全畫面編輯器。</p>{!scope.isAggregate ? <div className="mt-5"><ButtonLink href="/landing-pages/new">建立 Funnel</ButtonLink></div> : null}</div></Card>}
   </>;
 }
-
