@@ -8,11 +8,19 @@ import { hashPassword } from "../../src/lib/password";
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
 const runId = randomUUID();
+const ownerEmails = {
+  authenticatedShell: `a11y-shell-${runId}@celebratedeal.local`,
+  guidedProject: `a11y-project-${runId}@celebratedeal.local`,
+  staticRoutes: `a11y-static-${runId}@celebratedeal.local`,
+  dynamicRoutes: `a11y-dynamic-${runId}@celebratedeal.local`,
+  mobileShell: `a11y-mobile-${runId}@celebratedeal.local`,
+};
 const fixture = {
   email: `a11y-${runId}@celebratedeal.local`,
   slug: `a11y-${runId}`,
   vendorId: "",
   userId: "",
+  ownerUserIds: [] as string[],
   videoId: "",
   productId: "",
   formId: "",
@@ -65,9 +73,9 @@ async function expectNoBlockingAxeViolations(page: Page) {
   expect(blocking, "頁面不可出現 axe critical/serious 違規").toEqual([]);
 }
 
-async function loginOwner(page: Page) {
+async function loginOwner(page: Page, email: string) {
   await gotoStableRoute(page, "/login");
-  await page.getByLabel("Email").fill(fixture.email);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
@@ -122,6 +130,27 @@ test.beforeAll(async () => {
       },
     },
   });
+  // Each scenario gets its own login bucket. This keeps the production
+  // per-account rate limit intact while making retries independent.
+  const scenarioOwners = await Promise.all(
+    Object.values(ownerEmails).map((email) =>
+      db.user.create({
+        data: {
+          email,
+          name: "Accessibility Test Owner",
+          passwordHash: hashPassword(password),
+          status: "active",
+          memberships: {
+            create: {
+              vendorId: vendor.id,
+              role: "owner",
+              status: "active",
+            },
+          },
+        },
+      }),
+    ),
+  );
   const adminUser = await db.user.create({
     data: {
       email: fixture.adminEmail,
@@ -235,6 +264,7 @@ test.beforeAll(async () => {
 
   fixture.vendorId = vendor.id;
   fixture.userId = user.id;
+  fixture.ownerUserIds = scenarioOwners.map((owner) => owner.id);
   fixture.adminUserId = adminUser.id;
   fixture.videoId = video.id;
   fixture.productId = product.id;
@@ -250,8 +280,9 @@ test.afterAll(async () => {
   if (fixture.vendorId) {
     await db.vendor.deleteMany({ where: { id: fixture.vendorId } });
   }
-  if (fixture.userId) {
-    await db.user.deleteMany({ where: { id: fixture.userId } });
+  const ownerUserIds = [fixture.userId, ...fixture.ownerUserIds].filter(Boolean);
+  if (ownerUserIds.length > 0) {
+    await db.user.deleteMany({ where: { id: { in: ownerUserIds } } });
   }
   if (fixture.adminUserId) {
     await db.user.deleteMany({ where: { id: fixture.adminUserId } });
@@ -312,7 +343,7 @@ test("mobile login succeeds after rejecting invalid email input", async ({ page 
 });
 
 test("authenticated shell exposes a working skip link and passes axe", async ({ page }) => {
-  await loginOwner(page);
+  await loginOwner(page, ownerEmails.authenticatedShell);
   await page.keyboard.press("Tab");
 
   const skipLink = page.getByRole("link", { name: "跳至主要內容" });
@@ -324,7 +355,7 @@ test("authenticated shell exposes a working skip link and passes axe", async ({ 
 });
 
 test("owner can create a guided project and switch between project and aggregate scopes", async ({ page }) => {
-  await loginOwner(page);
+  await loginOwner(page, ownerEmails.guidedProject);
   await gotoStableRoute(page, "/projects/new");
   const projectName = `A11y Sales Project ${runId.slice(0, 8)}`;
   await page.getByLabel("專案名稱").fill(projectName);
@@ -348,7 +379,7 @@ test("owner can create a guided project and switch between project and aggregate
 
 test("static authenticated owner routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
-  await loginOwner(page);
+  await loginOwner(page, ownerEmails.staticRoutes);
   await enableOwnerMfa(page);
   const routes = [
     "/dashboard",
@@ -409,7 +440,7 @@ test("static authenticated owner routes have no blocking axe violations", async 
 
 test("dynamic owner and public commerce routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(90_000);
-  await loginOwner(page);
+  await loginOwner(page, ownerEmails.dynamicRoutes);
   const routes = [
     `/videos/${fixture.videoId}/edit`,
     `/products/${fixture.productId}/edit`,
@@ -528,7 +559,7 @@ test("reduced-motion preference suppresses authored motion", async ({ page }) =>
 
 test("mobile shell has no horizontal page overflow and primary targets are touch-sized", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loginOwner(page);
+  await loginOwner(page, ownerEmails.mobileShell);
 
   const overflowDetails = await page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;

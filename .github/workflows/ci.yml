@@ -163,6 +163,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Funnel development harness browser gate
+        run: node scripts/funnel-elements-browser-qa.mjs
+
       - name: Release browser gates
         run: npm run e2e -- --fail-on-flaky-tests
         env:

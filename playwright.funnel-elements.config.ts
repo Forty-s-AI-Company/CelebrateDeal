@@ -22,7 +22,10 @@ const nextCli = path.join(process.cwd(), "node_modules", "next", "dist", "bin", 
 /** Browser-only security/interaction contract. It deliberately uses
  * `page.setContent`, so it needs neither application secrets nor a database. */
 export default defineConfig({
-  testDir: "./tests/e2e",
+  // Keep the development-only harness out of the production E2E suite. CI
+  // runs this directory through the dedicated gate below, so every assertion
+  // remains required without exposing the harness in a production build.
+  testDir: "./tests/browser-dev",
   testMatch: "funnel-advanced-elements.spec.ts",
   timeout: 60_000,
   workers: 1,
