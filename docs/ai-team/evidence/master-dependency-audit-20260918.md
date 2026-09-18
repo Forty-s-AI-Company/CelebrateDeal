@@ -1,5 +1,17 @@
 # Master dependency audit — 2026-09-18
 
+## Final portable lock correction
+
+The first Windows lock was not portable: Linux SWC/Rollup optional packages were absent. Its local install result does not establish Linux CI readiness. The earlier checks below are retained as diagnostic history.
+
+The final lock was rebuilt with isolated npm 11.19.1 in a directory without node_modules, then reconciled with CI-compatible npm 10.9.8 to retain the optional `magicast` peer. Neither command uses legacy-peer-deps. All unrelated direct dependency versions were pinned to the existing master lock during generation and the original manifest ranges restored afterward.
+
+- Standard npm 10.9.8 `ci --dry-run --ignore-scripts`: exit 0.
+- Linux x64 GNU SWC and Rollup entries: present (also preserves other supported platform packages).
+- Direct resolved version changes: only Next.js, eslint-config-next, Vitest and coverage-v8; existing AWS SDK, Sentry, hls.js, icons, Zod, Playwright and TypeScript versions remain unchanged.
+- Full isolated audit after npm 11 generation: zero vulnerabilities. Required CI still performs its unchanged production audit and actual Linux installation.
+- No install/build/typecheck outcome from an earlier lock is relabelled as a final source PASS. Full required quality remains pending.
+
 ## Scope
 
 This checkpoint updates only the dependency manifests for the master production audit:
