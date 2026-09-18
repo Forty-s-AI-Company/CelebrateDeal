@@ -61,3 +61,6 @@ The standalone TypeScript check was attempted before that generation and therefo
 ## Checkpoint
 
 This evidence records the dependency and audit result only. Production deployment, database access, secret loading, and external side effects were not performed.
+
+## Playwright peer alignment
+CI at d9b2fd97 passed installation, production audit and lint, then failed typecheck because the fresh peer resolution installed playwright-core 1.63.0 alongside Playwright 1.61.1. Added an exact playwright-core 1.61.1 override. Standard npm 10 lock synchronization and ci --dry-run both passed; Linux SWC remains present. Required CI remains the final typecheck evidence.
