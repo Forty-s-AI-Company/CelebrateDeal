@@ -279,7 +279,7 @@ export function AppShell({
         <div className="flex items-center justify-between">
           <Link href={homeHref} className="inline-flex min-h-11 items-center gap-2.5 font-semibold text-slate-900">
             <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600"><Tags className="size-4" aria-hidden="true" /></span>
-            <span><span className="block text-sm">CelebrateDeal</span><span className="block max-w-40 truncate text-[10px] font-medium text-slate-400">{vendorName}</span></span>
+            <span><span className="block text-sm">CelebrateDeal</span><span className="block max-w-40 truncate text-[10px] font-medium text-slate-600">{vendorName}</span></span>
           </Link>
           <form action={logoutAction}>
             <CsrfField />

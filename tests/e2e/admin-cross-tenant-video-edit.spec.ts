@@ -51,18 +51,16 @@ test("admin cannot open another vendor video edit route through direct URL navig
     const replacementVideoInput = page.locator('input[type="file"][accept="video/*"]');
     await expect(replacementVideoInput).toHaveCount(1);
     await expect(replacementVideoInput).toBeAttached();
-    await expect(page.getByText("進階：使用既有外部影片 URL", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("影片 URL")).toBeHidden();
-    await page.getByText("進階：使用既有外部影片 URL", { exact: true }).click();
-    await expect(page.getByLabel("影片 URL")).toHaveValue(ownVideo.videoUrl);
+    await page.locator("summary").filter({ hasText: "進階設定" }).click();
+    await expect(page.getByLabel("既有外部影片網址")).toHaveValue(ownVideo.videoUrl);
     await expect(page.getByText("進階：使用既有圖片 URL", { exact: true })).toBeVisible();
     await expect(page.getByLabel("圖片 URL")).toBeHidden();
     await page.getByText("進階：使用既有圖片 URL", { exact: true }).click();
     await expect(page.getByLabel("圖片 URL")).toHaveValue(ownVideo.thumbnailUrl ?? "");
-    await expect(page.getByLabel("長度秒數")).toHaveValue(String(ownVideo.durationSec));
-    await expect(page.getByLabel("估算用量分鐘")).toHaveValue(String(ownVideo.estimatedMinutes));
-    await expect(page.getByLabel("狀態")).toHaveValue(ownVideo.status);
-    await expect(page.getByText("尚未建立 Live Input", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue(String(ownVideo.durationSec));
+    await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue(String(ownVideo.estimatedMinutes));
+    await expect(page.getByLabel("素材狀態")).toHaveValue(ownVideo.status);
+    await expect(page.getByText("尚未建立直播輸入來源。", { exact: true })).toBeVisible();
 
     const foreignPath = `/videos/${foreignVideo.id}/edit`;
     const foreignDataCanaries = [foreignVideo.title, foreignVideo.description ?? "", foreignVideoUrl, foreignThumbnailUrl];
@@ -81,7 +79,7 @@ test("admin cannot open another vendor video edit route through direct URL navig
       finalStatus: 200,
     });
     await expect(page.getByRole("heading", { name: "編輯影片" })).toHaveCount(0);
-    for (const label of ["影片名稱", "影片描述", "影片 URL", "圖片 URL", "長度秒數", "估算用量分鐘", "狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);
+    for (const label of ["影片名稱", "影片描述", "既有外部影片網址", "圖片 URL", "系統偵測長度（秒）", "系統估算用量（分鐘）", "素材狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);
     for (const value of [foreignVideo.id, ...foreignDataCanaries]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     const documentContent = await page.content();
     // Next.js serializes the requested dynamic route ID into the 404 RSC payload.

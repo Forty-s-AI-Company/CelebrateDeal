@@ -101,8 +101,8 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-mobile.png"), fullPage: true });
   await page.goto(`/lp/${slug}/thank-you`);
-  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "感謝／下載頁" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "感謝／下載頁" })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });

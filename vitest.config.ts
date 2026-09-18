@@ -41,6 +41,9 @@ export default defineConfig({
     exclude: [
       ...configDefaults.exclude,
       "tests/e2e/**",
+      // Development-only Playwright harnesses run through their dedicated
+      // browser gate and must never be collected as Vitest unit tests.
+      "tests/browser-dev/**",
       // This Playwright suite runs in its own required CI Browser gate with
       // the loopback REST adapter, not in Vitest's unit-test process.
       "tests/e2e-support/**",

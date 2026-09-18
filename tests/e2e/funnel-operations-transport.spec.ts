@@ -36,13 +36,20 @@ test("diagnostic: isolated operations save without prior editor transitions", as
     await page.getByLabel("密碼").fill(fixture.password);
     await page.getByRole("button", { name: "登入", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/u);
-    await page.goto(`/landing-pages/${row.id}/operations`);
+    const operationsPath = `/landing-pages/${row.id}/operations`;
+    const operationsResponse = await page.goto(operationsPath);
+    expect(operationsResponse?.status()).toBe(200);
+    await expect(page).toHaveURL(new RegExp(`${operationsPath}$`, "u"));
+    await expect(page.getByRole("heading", { name: "無法開啟 Funnel", exact: true })).toHaveCount(0);
     const panel = page.getByRole("region", { name: "Funnel 管理", exact: true });
+    await expect(panel).toBeVisible();
     for (let index = 1; index <= 3; index++) {
-      await panel.getByLabel("名稱", { exact: true }).fill(`TEST ONLY Transport ${index}`);
-      await panel.getByRole("button", { name: "儲存設定", exact: true }).click();
+      await panel.getByRole("button", { name: "Funnel settings", exact: true }).click();
+      const settings = page.getByRole("dialog", { name: "Funnel settings", exact: true });
+      await settings.getByLabel("名稱", { exact: true }).fill(`TEST ONLY Transport ${index}`);
+      await settings.getByRole("button", { name: "儲存設定", exact: true }).click();
       await expect.poll(async () => (await db.landingPage.findUniqueOrThrow({ where: { id: row.id } })).revision).toBe(index + 1);
-      await expect(panel.getByRole("button", { name: "儲存設定", exact: true })).toBeEnabled();
+      await expect(settings).toHaveCount(0);
       completedSaves++;
     }
   } finally {
