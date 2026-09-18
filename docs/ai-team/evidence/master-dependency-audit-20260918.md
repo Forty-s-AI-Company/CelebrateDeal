@@ -64,3 +64,6 @@ This evidence records the dependency and audit result only. Production deploymen
 
 ## Playwright peer alignment
 CI at d9b2fd97 passed installation, production audit and lint, then failed typecheck because the fresh peer resolution installed playwright-core 1.63.0 alongside Playwright 1.61.1. Added an exact playwright-core 1.61.1 override. Standard npm 10 lock synchronization and ci --dry-run both passed; Linux SWC remains present. Required CI remains the final typecheck evidence.
+
+## Browser disclosure canary compatibility
+Required CI passed typecheck, coverage, TAP and PostgreSQL checks but failed member-billing-plans-direct-url. Isolated local reproduction with Next 16.3.5 / Playwright 1.61.1 confirmed the formatted synthetic fee `$9` collided with an RSC reference. Changed only the synthetic fee to 876543 cents; all disclosure, authorization and database snapshot assertions remain. Targeted Chromium test passed 1/1 with --fail-on-flaky-tests (8.5s), reusing the same successful production build because only test fixture data changed. Standard npm ci completed successfully. Disposable migrations succeeded; task-owned container identity and label verified before exact removal. No existing database was used. Earlier reproduction attempts failed due to mirror setup, not product behavior.
