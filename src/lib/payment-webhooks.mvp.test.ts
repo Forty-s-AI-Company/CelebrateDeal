@@ -26,6 +26,8 @@ const dependencies = vi.hoisted(() => {
   };
   const tx = {
     paymentTransaction,
+    // 此 fixture 沒有 canonical commerce order；仍保留真實的租戶限定查詢。
+    commerceOrder: { findFirst: vi.fn() },
     affiliate: { findFirst: vi.fn() },
     product: { findFirst: vi.fn() },
     teamLeadAttribution: { findFirst: vi.fn() },
@@ -120,6 +122,7 @@ beforeEach(() => {
 
   dependencies.db.vendor.findUnique.mockResolvedValue({ id: "vendor-mvp-1", slug: "vendor-mvp" });
   dependencies.tx.paymentTransaction.findFirst.mockResolvedValue(transaction);
+  dependencies.tx.commerceOrder.findFirst.mockResolvedValue(null);
   dependencies.tx.paymentTransaction.update.mockImplementation(async ({ data }) => ({ ...transaction, ...data }));
   dependencies.db.$transaction.mockImplementation(async (callback: (tx: typeof dependencies.tx) => unknown) => callback(dependencies.tx));
   dependencies.inventoryTransition.mockResolvedValue(undefined);
@@ -159,6 +162,17 @@ describe("payment webhook phase-two commission policy", () => {
     expect(dependencies.inventoryTransition).toHaveBeenCalledOnce();
     expect(dependencies.commerceTransition).toHaveBeenCalledOnce();
     expect(dependencies.paidDelivery).toHaveBeenCalledOnce();
+    expect(dependencies.tx.commerceOrder.findFirst).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-mvp-1",
+        primaryPaymentTransactionId: "transaction-mvp-1",
+        status: { in: ["paid", "partially_refunded"] },
+        isTestOrder: false,
+        projectId: { not: null },
+        automationCustomerKeyHash: { not: null },
+      },
+      select: { projectId: true, automationCustomerKeyHash: true },
+    });
   });
 
   it("不建立新平台推薦佣金時，仍會啟用受信任的 pending SaaS 訂閱", async () => {

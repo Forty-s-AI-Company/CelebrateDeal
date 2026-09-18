@@ -20,6 +20,7 @@ vi.mock("@/components/ui", () => ({
   Card: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   EmptyState: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <div data-testid="empty-state"><h2>{title}</h2><p>{description}</p>{action}</div>,
   PageHeader: ({ title, description, action }: { title: string; description: string; action?: ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{action}</header>,
+  ListSummary: ({ items }: { items: Array<{ label: string; value: number }> }) => <div data-testid="list-summary">{items.map((item) => <span key={item.label}>{item.label}:{item.value}</span>)}</div>,
 }));
 
 import VideosPage from "./page";

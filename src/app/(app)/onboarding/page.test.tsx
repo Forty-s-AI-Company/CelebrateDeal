@@ -11,11 +11,20 @@ const mocks = vi.hoisted(() => ({
   templateFindMany: vi.fn(),
   videoCount: vi.fn(),
   liveFindMany: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager, requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("@/components/onboarding-task-center", () => ({ OnboardingTaskCenter: () => null }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    userOnboardingPreference: { findUnique: vi.fn().mockResolvedValue(null) },
+    salesProject: { findMany: vi.fn().mockResolvedValue([]) },
+    onboardingTaskState: { findMany: vi.fn().mockResolvedValue([]) },
+    salesProjectProduct: { count: vi.fn().mockResolvedValue(0) },
+    consultationEvent: { findMany: vi.fn().mockResolvedValue([]) },
+    vendorMember: { count: vi.fn().mockResolvedValue(0) },
+    commerceOrder: { count: vi.fn().mockResolvedValue(0) },
     paymentMethodReference: { count: mocks.paymentMethodCount },
     product: { count: mocks.productCount },
     registrationForm: { findMany: mocks.formFindMany },
@@ -32,6 +41,9 @@ import { sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
 const vendor = {
   id: "vendor-onboarding",
+  name: "測試商家",
+  email: "vendor@example.test",
+  logoUrl: "https://example.test/logo.png",
   supportEmail: "support@example.test",
   tracking: { googleTagManagerId: "GTM-SYNTHETIC", facebookPixelId: null, tiktokPixelId: null },
 };
@@ -39,6 +51,7 @@ const vendor = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendorManager.mockResolvedValue(vendor);
+  mocks.requireVendorManagerContext.mockResolvedValue({ auth: { user: { id: "user-onboarding" } }, vendor });
   for (const count of [
     mocks.paymentMethodCount,
     mocks.productCount,
@@ -79,7 +92,7 @@ describe("/onboarding route", () => {
   it("derives a complete refresh-safe journey from tenant-scoped sellable data", async () => {
     const html = renderToStaticMarkup(await OnboardingPage());
 
-    expect(mocks.requireVendorManager).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.requireVendorManagerContext).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.paymentMethodCount).toHaveBeenCalledWith({
       where: {
         vendorId: vendor.id,
@@ -116,7 +129,10 @@ describe("/onboarding route", () => {
   });
 
   it("links directly to the first missing persisted requirement", async () => {
-    mocks.requireVendorManager.mockResolvedValue({ ...vendor, supportEmail: null, tracking: null });
+    mocks.requireVendorManagerContext.mockResolvedValue({
+      auth: { user: { id: "user-onboarding" } },
+      vendor: { ...vendor, name: "", email: "", supportEmail: null, tracking: null },
+    });
     for (const count of [
       mocks.paymentMethodCount,
       mocks.productCount,

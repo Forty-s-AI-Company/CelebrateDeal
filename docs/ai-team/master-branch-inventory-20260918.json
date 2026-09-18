@@ -1,0 +1,3811 @@
+{
+  "master": "4747314743330ca783bc1ae6387aa528d20eb7bd",
+  "branches": [
+    {
+      "branch": "ai-team/isolated-write-smoke-20260712-0405",
+      "head": "d8c85fbbb39e1a72668fa49df171df49e5ef45d1",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "ai-team/isolated-write-smoke-20260712-0405"
+      ],
+      "cherryPlus": 3,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "chore/ai-team-v5.1-migration",
+      "head": "937f796d25d0e27db753b7786ea77ea3e773a686",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "chore/ai-team-v5.1-migration"
+      ],
+      "cherryPlus": 185,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/ai-team-skills-automation-foundation",
+      "head": "bf45235f8b10fa1fded2da0a4c079e5b883cfef0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/ai-team-skills-automation-foundation"
+      ],
+      "cherryPlus": 13,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-affiliate-performance-list-bombmy-parity-retry-b07e0e3b",
+      "head": "38bbb04571895dc1713e19fbfbf32eebd5ba9ad6",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-affiliate-performance-list-bombmy-parity-retry-b07e0e3b"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-add-vendor-member-email-invitation-0ce8f8e8",
+      "head": "79494a34dcbbc85538fccf5c33cb5c30d68e4686",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-add-vendor-member-email-invitation-0ce8f8e8"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-affiliate-click-paid-order-attribution-f7538669",
+      "head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-affiliate-click-paid-order-attribution-f7538669"
+      ],
+      "cherryPlus": 28,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-align-settlement-platform-fee-refunds-087dd8f2",
+      "head": "0f8f58f8b417004a88d7a586bf76a16daec5aac3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-align-settlement-platform-fee-refunds-087dd8f2"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-block-untracked-checkout-fallback-17dd29e7",
+      "head": "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-block-untracked-checkout-fallback-17dd29e7"
+      ],
+      "cherryPlus": 25,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-checkout-failure-update-fallback-fc6dd84f",
+      "head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-checkout-failure-update-fallback-fc6dd84f"
+      ],
+      "cherryPlus": 22,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-failure-compensation-5088a79f",
+      "head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-checkout-metadata-failure-compensation-5088a79f"
+      ],
+      "cherryPlus": 31,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-write-failure-7ce63750",
+      "head": "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-checkout-metadata-write-failure-7ce63750"
+      ],
+      "cherryPlus": 23,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-checkout-response-no-store-b059af2b",
+      "head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-checkout-response-no-store-b059af2b"
+      ],
+      "cherryPlus": 32,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-checkout-transaction-create-failure-eff9bf94",
+      "head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-checkout-transaction-create-failure-eff9bf94"
+      ],
+      "cherryPlus": 24,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-clarify-team-report-financial-periods-e85fba2a",
+      "head": "5b91672e3976d57cb978cebabb43631518bf455f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-clarify-team-report-financial-periods-e85fba2a"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-clear-consumed-form-attribution-cookie-0ba12ab0",
+      "head": "3c7a5c82cfc5df991eacb7ad3d46bcfb552e5ca2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-clear-consumed-form-attribution-cookie-0ba12ab0"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-confirm-vendor-member-deactivation-3f8fb123",
+      "head": "3ace54c10b581285a297c5e95e677178314e1c52",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-confirm-vendor-member-deactivation-3f8fb123"
+      ],
+      "cherryPlus": 6,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-dedupe-refund-commission-retries-b8852f88",
+      "head": "cd26e31cf020832bc2a9d358f71ca8671176c171",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-dedupe-refund-commission-retries-b8852f88"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-detach-live-from-interaction-script-e8ccc0ff",
+      "head": "638707f9f043498136107b38968e49a0c38e9133",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-detach-live-from-interaction-script-e8ccc0ff"
+      ],
+      "cherryPlus": 8,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-fix-full-refund-affiliate-adjustments-b93d1f46",
+      "head": "1897c4533a9029264bb79cedaedf6644e44757ea",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-fix-full-refund-affiliate-adjustments-b93d1f46"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-fix-live-analytics-kpi-window-ef3a2883",
+      "head": "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-fix-live-analytics-kpi-window-ef3a2883"
+      ],
+      "cherryPlus": 9,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-guard-late-paid-webhook-commission-32405d2a",
+      "head": "918b0c8718f330145849e151b1179c579a21e766",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-guard-late-paid-webhook-commission-32405d2a"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-handle-password-reset-email-failure-f444b1d2",
+      "head": "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-handle-password-reset-email-failure-f444b1d2"
+      ],
+      "cherryPlus": 7,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-harden-login-rate-limits-367f02af",
+      "head": "fd315e6c03b566caac998fa24b3bbba4fad54114",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-harden-login-rate-limits-367f02af"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-hide-retired-billing-plans-fd8e1c24",
+      "head": "d901dcd89a979300e540d08ed6a42a64e73633f0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-hide-retired-billing-plans-fd8e1c24"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-live-analytics-empty-states-cd25b32d",
+      "head": "30230f4ab63c65481324a128ff1369deee073c83",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-live-analytics-empty-states-cd25b32d"
+      ],
+      "cherryPlus": 10,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-live-checkout-failure-feedback-7a44bfcb",
+      "head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-live-checkout-failure-feedback-7a44bfcb"
+      ],
+      "cherryPlus": 29,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-make-payout-csv-download-read-only-f041294c",
+      "head": "ea9dc38869a4de3f25fc81c9bb9197e41c9823eb",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-make-payout-csv-download-read-only-f041294c"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-mark-checkout-provider-failures-14cc4e06",
+      "head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-mark-checkout-provider-failures-14cc4e06"
+      ],
+      "cherryPlus": 15,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-net-monthly-revenue-after-refunds-6776de67",
+      "head": "36c2582067bb3463d2258c739d01fde71f2c3289",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-net-monthly-revenue-after-refunds-6776de67"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-net-platform-fees-after-refunds-8df43b10",
+      "head": "04c10ff73a74c2b5bb2b3911cf304687a0ce1fe1",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-net-platform-fees-after-refunds-8df43b10"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-persist-interaction-script-reorder-e2e-ffc4cf00",
+      "head": "320d63b9f515b878ceb03a78bcda464b3f5d40f3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-persist-interaction-script-reorder-e2e-ffc4cf00"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-persist-interaction-timeline-reorder-a2a160eb",
+      "head": "b3a393a08f059fd8e3d92249393715770405fdc2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-persist-interaction-timeline-reorder-a2a160eb"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-persist-lead-attribution-through-checkout-5927e20d",
+      "head": "101b8402ffb4e106a394ee2715a72c5e335c7caa",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-persist-lead-attribution-through-checkout-5927e20d"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-preserve-payment-occurrence-on-refund-a5b20cc2",
+      "head": "60f652fecaf1b773ab29b5164583e02d7ac8c10f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-preserve-payment-occurrence-on-refund-a5b20cc2"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-prevent-concurrent-manual-refund-overdraw-fd62bbbd",
+      "head": "f43f5be0d40c6b3288463f962bb5f217c8346e79",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-prevent-concurrent-manual-refund-overdraw-fd62bbbd"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-prevent-duplicate-live-checkout-313cb628",
+      "head": "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-prevent-duplicate-live-checkout-313cb628"
+      ],
+      "cherryPlus": 27,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-protect-partner-profile-email-8674ef8a",
+      "head": "2be8fbb42f915142ea5331ec0229244d31fe15e8",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-protect-partner-profile-email-8674ef8a"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-mfa-verification-1cc12a43",
+      "head": "e7abdc1791e60635001a629e52b6d21922d2a601",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-rate-limit-mfa-verification-1cc12a43"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-password-reset-server-action-a5a9d8df",
+      "head": "280197db0dad8fee124e9edfb4498a8f8164e28f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-rate-limit-password-reset-server-action-a5a9d8df"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-vendor-member-invitations-eef6dbb2",
+      "head": "3225b4613ab547983838a9d2c50511b9db21f9a3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-rate-limit-vendor-member-invitations-eef6dbb2"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-record-team-conversion-attribution-15e880f4",
+      "head": "bb610057a913bb073af6589fc65a604661343255",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-record-team-conversion-attribution-15e880f4"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-refresh-member-invitation-after-resend-06339e6d",
+      "head": "69777162d90f4c8d6bfffb4e687dd4060774f464",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-refresh-member-invitation-after-resend-06339e6d"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-refresh-team-funnel-audit-8610acda",
+      "head": "2b122ecef86afa3e2bd0e7cb1626ca83af6361f3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-refresh-team-funnel-audit-8610acda"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-reject-mismatched-payment-webhook-vendor-identifiers-ebbe8cd3",
+      "head": "64a6ecd0005259127e4569bd1fdfd7f58f7c0d2d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-reject-mismatched-payment-webhook-vendor-identifiers-ebbe8cd3"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-reject-unknown-payment-webhook-provider-bd0fca24",
+      "head": "57946984b5ad6e6a5820dd68647a1b9b55648a5e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-reject-unknown-payment-webhook-provider-bd0fca24"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-reject-unscoped-payment-webhooks-87aeb639",
+      "head": "1be712f431a27107ce030a8362525025dbd64be6",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-reject-unscoped-payment-webhooks-87aeb639"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-remove-vendor-payout-export-button-7ee25ba0",
+      "head": "2e4166b5b9c8c65a5f2eb7e98539138e0f488ebe",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-remove-vendor-payout-export-button-7ee25ba0"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-resend-vendor-member-invitation-0253ef56",
+      "head": "031b47ac54829780c98f05d97f2115191e6a1602",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-resend-vendor-member-invitation-0253ef56"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-restrict-payment-webhook-provider-79d0e42f",
+      "head": "f62c724320ba901f96a0f30072682b7a64cc46b3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-restrict-payment-webhook-provider-79d0e42f"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-retry-serializable-refund-conflicts-1ed9f441",
+      "head": "7d78e77e7e1620d5691315815b694057e20dba4b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-retry-serializable-refund-conflicts-1ed9f441"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-scope-billing-usage-monthly-transactions-ae8ec7a1",
+      "head": "d17f41911b952fb7514780808083fdf01c7a8938",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-scope-billing-usage-monthly-transactions-ae8ec7a1"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-scope-billing-usage-record-to-current-month-7a2cfa02",
+      "head": "031f481b93474df04a07c64d3286b34d2b47d3d4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-scope-billing-usage-record-to-current-month-7a2cfa02"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-scope-vendor-payouts-page-9673b0b8",
+      "head": "365070ae5a85727fe2b8c07fa378604263bcbe3b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-scope-vendor-payouts-page-9673b0b8"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-secure-webhook-order-authority-a2605f45",
+      "head": "acb5b5fa90cdbb0ef700ab2bc2e017250e931f6a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-secure-webhook-order-authority-a2605f45"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-show-team-attributed-conversions-111fb900",
+      "head": "01c8db6c0263970efd9c3f8cb6bdc4dfd00044ef",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-show-team-attributed-conversions-111fb900"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-submit-payuni-checkout-form-8b5a4e44",
+      "head": "90e3a9d744584cc0de64ac8e8837f5dd2684e03d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-submit-payuni-checkout-form-8b5a4e44"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-team-performance-date-scoped-refunds-c27f8b70",
+      "head": "912ea80d225ce585073d88b59572220ce1a975a0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-team-performance-date-scoped-refunds-c27f8b70"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-analytics-smoke-route-00cb84a4",
+      "head": "1cf2701dae1c153a96f834baa2a70996654456f2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-admin-analytics-smoke-route-00cb84a4"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-cloudflare-ops-routes-a69e2520",
+      "head": "e2e85858d81304ec977c745f7078f14e49791e08",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-admin-cloudflare-ops-routes-a69e2520"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-ops-email-route-59f4c2a8",
+      "head": "f1eec5b0f2c18453abc57f410114ee7616df5410",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-admin-ops-email-route-59f4c2a8"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-preflight-route-e504cc9b",
+      "head": "c37c9f801f169d716ec0690e3f6c6bccc1b3a3f4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-admin-preflight-route-e504cc9b"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-cloudflare-resource-endpoint-auth-1fc52db7",
+      "head": "3b01efad1957eb87c62c2d8b503328192e16d26c",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-cloudflare-resource-endpoint-auth-1fc52db7"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-health-api-route-f45fa790",
+      "head": "53fe02c4122cd025817294c7625e90dc43c209ea",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-health-api-route-f45fa790"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-live-stepper-preview-8d4b75c7",
+      "head": "7f1b3fd26e48a41e9e003c848594fa102000f220",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-live-stepper-preview-8d4b75c7"
+      ],
+      "cherryPlus": 3,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-test-monitoring-smoke-endpoint-97b0f459",
+      "head": "5762d2136fee9cf965fed92a4eb46b1cc470bb56",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-monitoring-smoke-endpoint-97b0f459"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-password-reset-confirm-route-3ff4807b",
+      "head": "1a809d1f918a4a79f7bfc1024598753d0879a349",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-password-reset-confirm-route-3ff4807b"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-password-reset-request-route-1f04be46",
+      "head": "53f2e7f0c179a105588c06697d8b8525a5258f84",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-password-reset-request-route-1f04be46"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-system-role-library-import-094d9cd7",
+      "head": "65417af2b0e2461af4dce08f2b7c70eaabe35cae",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-system-role-library-import-094d9cd7"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-pages-route-3c1efddb",
+      "head": "da20026661e0a829e396aa992ec1cd5dc69aa93e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-team-funnel-pages-route-3c1efddb"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-partner-profile-route-95d86b41",
+      "head": "3d378de9194e0dc9171768d4cbd18731f2ab1b32",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-team-funnel-partner-profile-route-95d86b41"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-product-slots-route-8a450add",
+      "head": "d195a2e71f12f39063d1e5152fc6585a671fd90e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-team-funnel-product-slots-route-8a450add"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-share-claim-route-d7f91e7e",
+      "head": "1d106f93642bdea9ca8d9f408338cd1e922018da",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-team-funnel-share-claim-route-d7f91e7e"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-template-publish-route-d6b3a898",
+      "head": "d953767329c1c0d054d0e829de116afe23eaf71a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-team-funnel-template-publish-route-d6b3a898"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-test-vendor-member-deactivation-399b7b28",
+      "head": "2cceebba802dec508faaad166e37fa1e51b09ed5",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-vendor-member-deactivation-399b7b28"
+      ],
+      "cherryPlus": 5,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-auto-test-webhook-retry-job-route-08292622",
+      "head": "e2a9029b343ab0ebdacde78af076f208eb2e8c45",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-test-webhook-retry-job-route-08292622"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-validate-interaction-script-timestamps-f1ad5709",
+      "head": "20a9abe0664d113458da866df6ef14f420409a0e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-validate-interaction-script-timestamps-f1ad5709"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-validate-manual-refund-fees-a8884f1a",
+      "head": "07b43774d60068b1128b0d8109b0f0ea61fb3cdf",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-validate-manual-refund-fees-a8884f1a"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-validate-manual-refund-remaining-amount-a3fa1a59",
+      "head": "569a249009550f52299189248a2c2614ab5b69c6",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-validate-manual-refund-remaining-amount-a3fa1a59"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-validate-refund-settlement-month-436c7d85",
+      "head": "77f241279fc64c04479856ebdc38cb951d88d696",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-validate-refund-settlement-month-436c7d85"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-validate-settlement-month-key-1693da3b",
+      "head": "c96c178082b148261e53ce62b66c167cd2096c18",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-validate-settlement-month-key-1693da3b"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-vendor-invoice-csv-export-841d59b9",
+      "head": "c83d2ebcaccc43b753215714d2bf7623360203c0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-vendor-invoice-csv-export-841d59b9"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-verify-checkout-referral-attribution-6b406470",
+      "head": "ded82898a687220496add74827691676e84c8b31",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-verify-checkout-referral-attribution-6b406470"
+      ],
+      "cherryPlus": 30,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-auto-verify-interaction-timeline-drag-drop-e2e-18a9a618",
+      "head": "5786ed8594e077d1b6e6548cf005881a60bc3a7a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-auto-verify-interaction-timeline-drag-drop-e2e-18a9a618"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-cloudflare-diagnostics-redaction-regressions-a4b40a18",
+      "head": "3f0eb497b6c0d8ffe412664cd4e923651694f6ef",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-cloudflare-diagnostics-redaction-regressions-a4b40a18"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-cloudflare-production-official-signature-d60049d5",
+      "head": "c15be272d4dde43cd19cbf1147d6b633abc0a5e1",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-cloudflare-production-official-signature-d60049d5"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-csp-report-only-regressions-9f13a855",
+      "head": "178a83022d02c45a699d53810914ecb3d5962dd3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-csp-report-only-regressions-9f13a855"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-csp-report-rate-limit-429-regressions-7c770a60",
+      "head": "2b775029e9fcee28b705d5b96c7f64fec32a2081",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-csp-report-rate-limit-429-regressions-7c770a60"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-dashboard-seven-day-conversion-funnel-138c807a",
+      "head": "72fa82fa89097bb26f49eb04917ea81a6bec4a61",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-dashboard-seven-day-conversion-funnel-138c807a"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-dashboard-upcoming-live-countdown-24f1b9e8",
+      "head": "8b7403849db18ca160f8950f09486d22467e049e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-dashboard-upcoming-live-countdown-24f1b9e8"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-health-database-ok-e2e-regressions-93737079",
+      "head": "e0ae3a3938bcbfafcd86a66bf97621cd98d3b406",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-health-database-ok-e2e-regressions-93737079"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-job-secret-endpoint-401-regressions-47e6734e",
+      "head": "06d0bd5a39ef73cdc70f1e0d61b87bedb3bfece0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-job-secret-endpoint-401-regressions-47e6734e"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-live-analytics-conversion-funnel-e52533a7",
+      "head": "8b3a84774ab1b8d6a8ba2743c7f1e73a0008b879",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-live-analytics-conversion-funnel-e52533a7"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-live-stepper-grounded-preview-63bea109",
+      "head": "f5512bf0f0a256bcaf732307cdd330a91dad90e0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-live-stepper-grounded-preview-63bea109"
+      ],
+      "cherryPlus": 1,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-login-rate-limit-audit-e2e-regressions-e8279702",
+      "head": "7e019b90264bc8fd2c1442985dcde1ff94d45512",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-login-rate-limit-audit-e2e-regressions-e8279702"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-password-reset-ui-smoke-isolated-email-regressions-cf0963fd",
+      "head": "541049f54c72e133df1eec522dacadf196dae9d1",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-password-reset-ui-smoke-isolated-email-regressions-cf0963fd"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-payment-webhook-test-fixture-isolation-6a70376d",
+      "head": "cfaffa911571f5cfb0ceead36b9cbca3ecccbc1e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-payment-webhook-test-fixture-isolation-6a70376d"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-public-json-origin-guard-regressions-ff8b3f06",
+      "head": "61fb072e380b0fc4a76380974554a7760a18345e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-public-json-origin-guard-regressions-ff8b3f06"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-public-route-rate-limit-429-regressions-b7657b95",
+      "head": "62f3fea564149e6ffd879b5ce7b677358a006150",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-public-route-rate-limit-429-regressions-b7657b95"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-rate-limit-provider-fail-closed-regressions-1a6eed23",
+      "head": "f3685f77e18227b9ff7faacc171803ac6a195296",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-rate-limit-provider-fail-closed-regressions-1a6eed23"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-reconcile-cloudflare-integration-report-67363dbd",
+      "head": "506068c7abdd37e5dd8435bfe43452e8b58cbdec",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-reconcile-cloudflare-integration-report-67363dbd"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-reconcile-interaction-drag-sort-report-2f84c183",
+      "head": "851fe73eb25000bd16024a262424ba367e09beca",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-reconcile-interaction-drag-sort-report-2f84c183"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-reconcile-password-reset-mfa-report-8810c4c0",
+      "head": "e259055eec8e01fc2ac3bdd45ae43f8cc876ced7",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-reconcile-password-reset-mfa-report-8810c4c0"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-security-password-reset-smoke-isolation-regressions-f0bef089",
+      "head": "8f988acd84fb57747f39b559e9c30c7402a50264",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-security-password-reset-smoke-isolation-regressions-f0bef089"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-architecture-baseline-30371aa7",
+      "head": "9ef1b5402af0632e50d90eb597b47f3d2b2faaae",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-architecture-baseline-30371aa7"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-attribution-registration-ef0c2d52",
+      "head": "01bab501117e4befabc1be97f91eddf42eebbad5",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-attribution-registration-ef0c2d52"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-authorization-scope-cc5772e6",
+      "head": "94680515b90e4eee6bac8898beb5111bfb0636cd",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-authorization-scope-cc5772e6"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-browser-e2e-visual-qa-573eca99",
+      "head": "83ead8f0861418f37cdf2dfbaad5080c6feea80d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-browser-e2e-visual-qa-573eca99"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/auto-team-funnel-completion-audit-f3db1725",
+      "head": "6759087f8c63ea3390d9a273219e2156be25a5c6",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-completion-audit-f3db1725"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-domain-model-94474d24",
+      "head": "8b943327e3ba96bb5fc9448f79d41758709816c5",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-domain-model-94474d24"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-dynamic-field-catalog-8aa1c17e",
+      "head": "0802d766de9d73f84d82c62d41fe30a4379e0714",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-dynamic-field-catalog-8aa1c17e"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-dynamic-fields-29600e53",
+      "head": "e1ac994c91f2a18d4ea574851d8cbb9ea78dc4b4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-dynamic-fields-29600e53"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-page-template-services-abd771d4",
+      "head": "3edd225baaf8c9f1555978b07ab4eebda4236a04",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-page-template-services-abd771d4"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-partner-page-ui-4665c01d",
+      "head": "536c22bd6b9e0067d84cd64bada3793dc6972d99",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-partner-page-ui-4665c01d"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-partner-product-slots-cf93509d",
+      "head": "08bc28332fb704980887c102ad2e613a4ae60e98",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-partner-product-slots-cf93509d"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-performance-reporting-8f344c87",
+      "head": "10acdee8b51b01a2fd917d4937fd5f6cae77643b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-performance-reporting-8f344c87"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-public-page-rendering-68778a80",
+      "head": "92cb4a4f7176781479aa6799f966516b739f98e4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-public-page-rendering-68778a80"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-share-copy-service-d4f832d0",
+      "head": "0f3aa739f77c1a70269198665f63a537d6eaf1d2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-share-copy-service-d4f832d0"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-template-management-ui-259d80f4",
+      "head": "20aaa3fd193c960c61c9a8bf193c1643e5c94a76",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-template-management-ui-259d80f4"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-team-funnel-template-text-renderer-208103e5",
+      "head": "e6df2099d9d7025237b577250764bd01f32cee01",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-team-funnel-template-text-renderer-208103e5"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/auto-webhook-retry-worker-regressions-27e3474f",
+      "head": "b97476218d59fceab02b405c978d50be8aebd10a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/auto-webhook-retry-worker-regressions-27e3474f"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/current-source-evidence-20260903",
+      "head": "1806f4b8d0500311409afff66aba384cab010f0d",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/funnel-goal3",
+      "head": "de515182fc5fbcccbefa348f33ee7fad1d6ca715",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 33,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/funnel-goal3-only",
+      "head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/funnel-goal3-only"
+      ],
+      "cherryPlus": 519,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/isolate-mfa-test-env",
+      "head": "e3d276de2dc27b979f737aaa0ece66ad1aa2439b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/isolate-mfa-test-env"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-oa-delivery-report",
+      "head": "5b9d599d94440fd432081dcdcb11745471930bf8",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-oa-delivery-report"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-oa-notification-closure",
+      "head": "992e945063b57214d969e736f643688438a155af",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-oa-notification-closure"
+      ],
+      "cherryPlus": 8,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-receipt-path-fix",
+      "head": "7c30ac74cf8960302946d0e5d418759be7ab2e2d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-receipt-path-fix"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-receipt-validation-fix",
+      "head": "5273069270da6e54b14e647647c932f83b726803",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-receipt-validation-fix"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-runner-binding-diagnostic",
+      "head": "c14160e79cae6ba7a06dc27008dfe0fce010c0e9",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-runner-binding-diagnostic"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/line-runner-stage-diagnostic",
+      "head": "3cf0c7b43c81b7b37aa0c5da69bdc9ef81642eaf",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/line-runner-stage-diagnostic"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/live-admission-retry-backoff",
+      "head": "74c619917fb4f893c053819485456d8b28fbc9c0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/live-admission-retry-backoff"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/master-dependency-audit-20260918",
+      "head": "3527592881917ee5dae37b9c55320ec9eb6d2f79",
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/master-integration-sync-20260918",
+      "head": "c2fec462bb940005be9ead3197c13b1627a3c631",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 531,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/master-receipt-counters-20260918",
+      "head": "0f3781466dcb352729d1643528e07e18acd4e0ef",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [
+        "master"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/mvp-payuni-e2e-20260903",
+      "head": "a97485710ea24beab2928dc415a326c27da3e41f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/mvp-payuni-e2e-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/one-stop-webinar-flow",
+      "head": "e1700a868d12f39eef55826bf0d549ec20ce585c",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 531,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/openhands-ai-team-reset",
+      "head": "b2e3eebb58c705c76fc21cd63ce264a14baad81a",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/payuni-preview-return-origin",
+      "head": "0616beaa1403cbc4aef88a1f846c1552aa8cbdb7",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/payuni-preview-return-origin"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/payuni-production-query-hard-blocker",
+      "head": "abc55736ff4e5ff0c8e39399f4d1571cd0c4e08d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 1,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/payuni-query-hard-blocker-20260903",
+      "head": "45612059ab90eb89eae83d418c4af115427370eb",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 1,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/payuni-sandbox-external-qa",
+      "head": "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/payuni-sandbox-external-qa"
+      ],
+      "cherryPlus": 111,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/payuni-webhook-transaction-timeout",
+      "head": "259083f16449e379d24e9dae24533b25b02292a5",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/payuni-webhook-transaction-timeout"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/pr210-secret-scan-fix",
+      "head": "e1f38be324e349969a657be376aa1602e804c2dd",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/one-stop-webinar-flow"
+      ],
+      "cherryPlus": 477,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/recovery-live-stepper-qa-20260719",
+      "head": "22f06a69bf79149f673d7800225045990e68cb07",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp2-db-failure-classification",
+      "head": "74e55f89be70b73a0a1d7396e8779737578fd369",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp2-db-failure-classification"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp2-pooler-readonly",
+      "head": "f82adc4cac8169b434ecd9a9d3005e84e88e44cf",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp2-pooler-readonly"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp2-receipt-preservation",
+      "head": "b946834610ad2d240573d8998a204e04933f7ccb",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp2-receipt-preservation"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp2-restore-extension-placement",
+      "head": "146f8db0616fef63451d80f2d8d23a243f58860b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp2-restore-extension-placement"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp2-squash-lineage",
+      "head": "2be14ad2650f4c44bc541c5b76f1f366d3d3ed92",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp2-squash-lineage"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-binding-annotation-20260903",
+      "head": "f902d24a78d59dc4e4136c5924009bbf1afb9b2d",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-binding-annotation-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-binding-preflight-20260903",
+      "head": "1745f92eabc209bb809c131781bd547596b2c28f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-binding-preflight-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-browser-network-diagnostic-20260903",
+      "head": "c457a7c4a795ab23e7d8a1badada61268388f0f2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-browser-network-diagnostic-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-buyer-callback-retry",
+      "head": "f9e2f870181ff1fd42db2cc5f5631082d9eb494b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-buyer-callback-retry"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-buyer-existing-continuation",
+      "head": "c3bc84c78216c9afa72fe78dc56803fde1123722",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-buyer-existing-continuation"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-buyer-payment-check",
+      "head": "cfdc9f3d4a77b777cfc8fa5337cbaa69b37f5724",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-buyer-payment-check"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-callback-proof-20260903",
+      "head": "0b38bfeb94027e8a768a859d800ac11b63dfbba4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-callback-proof-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-current-preview-recovery",
+      "head": "ec49b0ea1086fa556dbd7acfa50ddc03d5dd7206",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-current-preview-recovery"
+      ],
+      "cherryPlus": 3,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-eventual-refund-reconcile",
+      "head": "b7bfc48857cb191f88bce1c499ba739d2b13fec2",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-eventual-refund-reconcile"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 3,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-eventual-refund-reconcile-clean",
+      "head": "70a1d83f099b6f0fcf39a246d88dd2c35c3f6964",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-eventual-refund-reconcile-clean"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-exact-preview-004ac887",
+      "head": "a1ffc4a9e5d64fc8fe3a7f6e5ed72303de6c707b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-exact-preview-004ac887"
+      ],
+      "cherryPlus": 1,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-executor-enabled-preview",
+      "head": "3f6f230d145130ed52962aa7abafc727df81e452",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-executor-enabled-preview"
+      ],
+      "cherryPlus": 1,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-existing-refund-recovery",
+      "head": "fea1e5fff68d26fec725eca49f7eefea7ad5e76a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-existing-refund-recovery"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-fixed-executor-v3",
+      "head": "e1105745dcfa915e897dd711a59590824fff464a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-fixed-executor-v3"
+      ],
+      "cherryPlus": 4,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-fixture-root-cause-20260903",
+      "head": "f31ee23bc8092a1d3aa4548d6a10a8242d072261",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-fixture-root-cause-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-lineage-candidate-fix-20260903",
+      "head": "cd3571dd818444e51e9c8fec9b3992126ffafd6b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 1,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-lineage-status-url-fix",
+      "head": "e18e15efe63c93980e6f1531e1f70f058a541bdf",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-lineage-status-url-fix"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-master-979ff07",
+      "head": "979ff0798c88c93b20390aa73cf749c2669b4ecf",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [
+        "codex/wp4-master-979ff07"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": true
+    },
+    {
+      "branch": "codex/wp4-master-exact-preview",
+      "head": "065fb82b8dc6006ac10d0976b7d82cccf4f8ea4e",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-master-exact-preview"
+      ],
+      "cherryPlus": 3,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-network-error-classification-20260903",
+      "head": "ec980b7f5c61cd593400417dc451091f6255ac0c",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-network-error-classification-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payment-page-host-20260903",
+      "head": "29d7be61c2f59142714ec9ccaa473c0e45260a70",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payment-page-host-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-browser-stage-20260903",
+      "head": "500f4477858e5504deabc3772eb6d1954ebf2bc0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-browser-stage-20260903"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-navigation-classifier-20260903",
+      "head": "6666a4d2592648f0aa947b6d0c598ba68ca55ab4",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-navigation-classifier-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-navigation-commit-20260903",
+      "head": "d25214e463d19a7f584eed8679a5f8c138427a21",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-navigation-commit-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-navigation-race-20260903",
+      "head": "2e21f1092804d193cdbfe93ec59d182b6a083471",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-navigation-race-20260903"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-navigation-response",
+      "head": "e7c139e8a2cecf1feff3b3e58f07e7d246ce263a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-navigation-response"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-network-cause-20260903",
+      "head": "edae9d6322aade50e57a04e595e7816d9db5cd64",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-network-cause-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-scheduled-submit-20260903",
+      "head": "bf0f85bd394120d6d91a88ee17c1b6f843ce11b5",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-scheduled-submit-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-secure-runner",
+      "head": "20bc8973538c6b46925254c04c19242a18b60695",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-secure-runner-20260903",
+      "head": "20bc8973538c6b46925254c04c19242a18b60695",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-success-card-20260903",
+      "head": "dbc340011f94944416dd252de10d46578fa7a563",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-success-card-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-payuni-vendor-egress-20260903",
+      "head": "0974dcb6c6d2b43cc863b33e49ccc1566b5ee42f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-payuni-vendor-egress-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-pin-chromium-payuni-egress-20260903",
+      "head": "7d162a659789489c4ac1d9c8812e01818691bf7f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-pin-chromium-payuni-egress-20260903"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-preserve-payuni-dns-order-20260903",
+      "head": "2fe1911f8d6e1a5dd2ee1d886003433c466adcf0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-preserve-payuni-dns-order-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-receipt-fix-20260903",
+      "head": "eac0a3430df3ca0beed06a9c63cbd2cb13414fa7",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 335,
+      "cherryMinus": 1,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-receipt-remediation-20260903",
+      "head": "c06fdd1e79e11571a76a3b87b9386ff6392696ab",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [],
+      "cherryPlus": 1,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-reconciliation-fallback",
+      "head": "34133663fdd292daf5b4720e104769cbaf1c8256",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-reconciliation-fallback"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 2,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-recovery-database-diagnostics",
+      "head": "0d862d955918f8a1f464d7b17762903229fce3ad",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-recovery-database-diagnostics"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-recovery-local-classification",
+      "head": "ba69689e0f01e5a373023b030d0925b36c825b7a",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-recovery-local-classification"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-recovery-transaction-stage",
+      "head": "b8180304f29ea2e9f85a9645e95db749b5c2a3b0",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-recovery-transaction-stage"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-refund-projection-window",
+      "head": "1052a46d002149b5c06104927ed0fab32b049214",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-refund-projection-window"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-refund-rejection-recovery",
+      "head": "88084d0470021d0c9b03c5cdb2f460cde90bc70b",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-refund-rejection-recovery"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-reservation-diagnostic-20260903",
+      "head": "2540d24584e15bf49090d412df5524bc64aef00f",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-reservation-diagnostic-20260903"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-sandbox-executor-master",
+      "head": "aecd0d18437dedcaa7ea786951be33c933c033ec",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-sandbox-executor-master"
+      ],
+      "cherryPlus": 3,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-sandbox-executor-v2",
+      "head": "46a9e36cc66fff0bef348e4a32aa7f071fa96134",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-sandbox-executor-v2"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-secure-runner",
+      "head": "7b320ff097b363a9b7a3b0cdfd4d83a1750ca4eb",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-secure-runner"
+      ],
+      "cherryPlus": 2,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-secure-runner-cbae30af",
+      "head": "cf33299a3bfc15dcfa5aa6a4aaf72aac3d2584bc",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-secure-runner-cbae30af"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-secure-runner-executor",
+      "head": "6ef0908be688b681353eb90ca13196610823f417",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-secure-runner-executor"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 1,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-secure-runner-master",
+      "head": "73825fad7f08e1d3c68eebf3bfe16091bacb8287",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-secure-runner-master"
+      ],
+      "cherryPlus": 7,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-source-bound-checkout",
+      "head": "23fdee6d3027ffaa8fbb0bfb947517c8c4b6b980",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-source-bound-checkout"
+      ],
+      "cherryPlus": 5,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-subscription-runner",
+      "head": "93b4db2c49b63f78b907c3bc2547f1229440d3c3",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-subscription-runner"
+      ],
+      "cherryPlus": 6,
+      "cherryMinus": 0,
+      "status": "NEEDS_DIFF_REVIEW",
+      "localDeleted": false
+    },
+    {
+      "branch": "codex/wp4-whole-twd-refund",
+      "head": "0d58cefd68ec6f16a3b922e7bb5b337549345e18",
+      "ancestorOriginMaster": false,
+      "remoteRefsContainingHead": [
+        "codex/wp4-whole-twd-refund"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 2,
+      "status": "PATCH_EQUIVALENT",
+      "localDeleted": false
+    },
+    {
+      "branch": "master",
+      "head": "4747314743330ca783bc1ae6387aa528d20eb7bd",
+      "ancestorOriginMaster": true,
+      "remoteRefsContainingHead": [
+        "master"
+      ],
+      "cherryPlus": 0,
+      "cherryMinus": 0,
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    },
+    {
+      "branch": "origin/codex/wp4-exact-preview-800746c",
+      "head": "800746cb49c945003cbda40db2e49d9ef695f597",
+      "status": "ANCESTOR_ORIGIN_MASTER",
+      "localDeleted": false
+    }
+  ],
+  "cleanup": [
+    {
+      "branch": "codex/auto-affiliate-performance-list-bombmy-parity-retry-b07e0e3b",
+      "head": "38bbb04571895dc1713e19fbfbf32eebd5ba9ad6",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-align-settlement-platform-fee-refunds-087dd8f2",
+      "head": "0f8f58f8b417004a88d7a586bf76a16daec5aac3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-clarify-team-report-financial-periods-e85fba2a",
+      "head": "5b91672e3976d57cb978cebabb43631518bf455f",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-clear-consumed-form-attribution-cookie-0ba12ab0",
+      "head": "3c7a5c82cfc5df991eacb7ad3d46bcfb552e5ca2",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-dedupe-refund-commission-retries-b8852f88",
+      "head": "cd26e31cf020832bc2a9d358f71ca8671176c171",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-fix-full-refund-affiliate-adjustments-b93d1f46",
+      "head": "1897c4533a9029264bb79cedaedf6644e44757ea",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-guard-late-paid-webhook-commission-32405d2a",
+      "head": "918b0c8718f330145849e151b1179c579a21e766",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-hide-retired-billing-plans-fd8e1c24",
+      "head": "d901dcd89a979300e540d08ed6a42a64e73633f0",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-make-payout-csv-download-read-only-f041294c",
+      "head": "ea9dc38869a4de3f25fc81c9bb9197e41c9823eb",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-net-monthly-revenue-after-refunds-6776de67",
+      "head": "36c2582067bb3463d2258c739d01fde71f2c3289",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-net-platform-fees-after-refunds-8df43b10",
+      "head": "04c10ff73a74c2b5bb2b3911cf304687a0ce1fe1",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-persist-interaction-script-reorder-e2e-ffc4cf00",
+      "head": "320d63b9f515b878ceb03a78bcda464b3f5d40f3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-persist-interaction-timeline-reorder-a2a160eb",
+      "head": "b3a393a08f059fd8e3d92249393715770405fdc2",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-persist-lead-attribution-through-checkout-5927e20d",
+      "head": "101b8402ffb4e106a394ee2715a72c5e335c7caa",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-preserve-payment-occurrence-on-refund-a5b20cc2",
+      "head": "60f652fecaf1b773ab29b5164583e02d7ac8c10f",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-prevent-concurrent-manual-refund-overdraw-fd62bbbd",
+      "head": "f43f5be0d40c6b3288463f962bb5f217c8346e79",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-protect-partner-profile-email-8674ef8a",
+      "head": "2be8fbb42f915142ea5331ec0229244d31fe15e8",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-mfa-verification-1cc12a43",
+      "head": "e7abdc1791e60635001a629e52b6d21922d2a601",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-password-reset-server-action-a5a9d8df",
+      "head": "280197db0dad8fee124e9edfb4498a8f8164e28f",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-rate-limit-vendor-member-invitations-eef6dbb2",
+      "head": "3225b4613ab547983838a9d2c50511b9db21f9a3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-record-team-conversion-attribution-15e880f4",
+      "head": "bb610057a913bb073af6589fc65a604661343255",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-refresh-member-invitation-after-resend-06339e6d",
+      "head": "69777162d90f4c8d6bfffb4e687dd4060774f464",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-refresh-team-funnel-audit-8610acda",
+      "head": "2b122ecef86afa3e2bd0e7cb1626ca83af6361f3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-reject-mismatched-payment-webhook-vendor-identifiers-ebbe8cd3",
+      "head": "64a6ecd0005259127e4569bd1fdfd7f58f7c0d2d",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-reject-unknown-payment-webhook-provider-bd0fca24",
+      "head": "57946984b5ad6e6a5820dd68647a1b9b55648a5e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-reject-unscoped-payment-webhooks-87aeb639",
+      "head": "1be712f431a27107ce030a8362525025dbd64be6",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-remove-vendor-payout-export-button-7ee25ba0",
+      "head": "2e4166b5b9c8c65a5f2eb7e98539138e0f488ebe",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-resend-vendor-member-invitation-0253ef56",
+      "head": "031b47ac54829780c98f05d97f2115191e6a1602",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-restrict-payment-webhook-provider-79d0e42f",
+      "head": "f62c724320ba901f96a0f30072682b7a64cc46b3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-retry-serializable-refund-conflicts-1ed9f441",
+      "head": "7d78e77e7e1620d5691315815b694057e20dba4b",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-scope-billing-usage-monthly-transactions-ae8ec7a1",
+      "head": "d17f41911b952fb7514780808083fdf01c7a8938",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-scope-billing-usage-record-to-current-month-7a2cfa02",
+      "head": "031f481b93474df04a07c64d3286b34d2b47d3d4",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-scope-vendor-payouts-page-9673b0b8",
+      "head": "365070ae5a85727fe2b8c07fa378604263bcbe3b",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-secure-webhook-order-authority-a2605f45",
+      "head": "acb5b5fa90cdbb0ef700ab2bc2e017250e931f6a",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-show-team-attributed-conversions-111fb900",
+      "head": "01c8db6c0263970efd9c3f8cb6bdc4dfd00044ef",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-submit-payuni-checkout-form-8b5a4e44",
+      "head": "90e3a9d744584cc0de64ac8e8837f5dd2684e03d",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-team-performance-date-scoped-refunds-c27f8b70",
+      "head": "912ea80d225ce585073d88b59572220ce1a975a0",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-analytics-smoke-route-00cb84a4",
+      "head": "1cf2701dae1c153a96f834baa2a70996654456f2",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-cloudflare-ops-routes-a69e2520",
+      "head": "e2e85858d81304ec977c745f7078f14e49791e08",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-ops-email-route-59f4c2a8",
+      "head": "f1eec5b0f2c18453abc57f410114ee7616df5410",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-admin-preflight-route-e504cc9b",
+      "head": "c37c9f801f169d716ec0690e3f6c6bccc1b3a3f4",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-cloudflare-resource-endpoint-auth-1fc52db7",
+      "head": "3b01efad1957eb87c62c2d8b503328192e16d26c",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-health-api-route-f45fa790",
+      "head": "53fe02c4122cd025817294c7625e90dc43c209ea",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-monitoring-smoke-endpoint-97b0f459",
+      "head": "5762d2136fee9cf965fed92a4eb46b1cc470bb56",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-password-reset-confirm-route-3ff4807b",
+      "head": "1a809d1f918a4a79f7bfc1024598753d0879a349",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-password-reset-request-route-1f04be46",
+      "head": "53f2e7f0c179a105588c06697d8b8525a5258f84",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-system-role-library-import-094d9cd7",
+      "head": "65417af2b0e2461af4dce08f2b7c70eaabe35cae",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-pages-route-3c1efddb",
+      "head": "da20026661e0a829e396aa992ec1cd5dc69aa93e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-partner-profile-route-95d86b41",
+      "head": "3d378de9194e0dc9171768d4cbd18731f2ab1b32",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-product-slots-route-8a450add",
+      "head": "d195a2e71f12f39063d1e5152fc6585a671fd90e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-share-claim-route-d7f91e7e",
+      "head": "1d106f93642bdea9ca8d9f408338cd1e922018da",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-team-funnel-template-publish-route-d6b3a898",
+      "head": "d953767329c1c0d054d0e829de116afe23eaf71a",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-test-webhook-retry-job-route-08292622",
+      "head": "e2a9029b343ab0ebdacde78af076f208eb2e8c45",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-validate-interaction-script-timestamps-f1ad5709",
+      "head": "20a9abe0664d113458da866df6ef14f420409a0e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-validate-manual-refund-fees-a8884f1a",
+      "head": "07b43774d60068b1128b0d8109b0f0ea61fb3cdf",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-validate-manual-refund-remaining-amount-a3fa1a59",
+      "head": "569a249009550f52299189248a2c2614ab5b69c6",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-validate-refund-settlement-month-436c7d85",
+      "head": "77f241279fc64c04479856ebdc38cb951d88d696",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-validate-settlement-month-key-1693da3b",
+      "head": "c96c178082b148261e53ce62b66c167cd2096c18",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-vendor-invoice-csv-export-841d59b9",
+      "head": "c83d2ebcaccc43b753215714d2bf7623360203c0",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-verify-interaction-timeline-drag-drop-e2e-18a9a618",
+      "head": "5786ed8594e077d1b6e6548cf005881a60bc3a7a",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-cloudflare-diagnostics-redaction-regressions-a4b40a18",
+      "head": "3f0eb497b6c0d8ffe412664cd4e923651694f6ef",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-cloudflare-production-official-signature-d60049d5",
+      "head": "c15be272d4dde43cd19cbf1147d6b633abc0a5e1",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-csp-report-only-regressions-9f13a855",
+      "head": "178a83022d02c45a699d53810914ecb3d5962dd3",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-csp-report-rate-limit-429-regressions-7c770a60",
+      "head": "2b775029e9fcee28b705d5b96c7f64fec32a2081",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-dashboard-seven-day-conversion-funnel-138c807a",
+      "head": "72fa82fa89097bb26f49eb04917ea81a6bec4a61",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-dashboard-upcoming-live-countdown-24f1b9e8",
+      "head": "8b7403849db18ca160f8950f09486d22467e049e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-health-database-ok-e2e-regressions-93737079",
+      "head": "e0ae3a3938bcbfafcd86a66bf97621cd98d3b406",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-job-secret-endpoint-401-regressions-47e6734e",
+      "head": "06d0bd5a39ef73cdc70f1e0d61b87bedb3bfece0",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-live-analytics-conversion-funnel-e52533a7",
+      "head": "8b3a84774ab1b8d6a8ba2743c7f1e73a0008b879",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-login-rate-limit-audit-e2e-regressions-e8279702",
+      "head": "7e019b90264bc8fd2c1442985dcde1ff94d45512",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-password-reset-ui-smoke-isolated-email-regressions-cf0963fd",
+      "head": "541049f54c72e133df1eec522dacadf196dae9d1",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-payment-webhook-test-fixture-isolation-6a70376d",
+      "head": "cfaffa911571f5cfb0ceead36b9cbca3ecccbc1e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-public-json-origin-guard-regressions-ff8b3f06",
+      "head": "61fb072e380b0fc4a76380974554a7760a18345e",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-public-route-rate-limit-429-regressions-b7657b95",
+      "head": "62f3fea564149e6ffd879b5ce7b677358a006150",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-rate-limit-provider-fail-closed-regressions-1a6eed23",
+      "head": "f3685f77e18227b9ff7faacc171803ac6a195296",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-reconcile-cloudflare-integration-report-67363dbd",
+      "head": "506068c7abdd37e5dd8435bfe43452e8b58cbdec",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-reconcile-interaction-drag-sort-report-2f84c183",
+      "head": "851fe73eb25000bd16024a262424ba367e09beca",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-reconcile-password-reset-mfa-report-8810c4c0",
+      "head": "e259055eec8e01fc2ac3bdd45ae43f8cc876ced7",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-security-password-reset-smoke-isolation-regressions-f0bef089",
+      "head": "8f988acd84fb57747f39b559e9c30c7402a50264",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-architecture-baseline-30371aa7",
+      "head": "9ef1b5402af0632e50d90eb597b47f3d2b2faaae",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-attribution-registration-ef0c2d52",
+      "head": "01bab501117e4befabc1be97f91eddf42eebbad5",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-authorization-scope-cc5772e6",
+      "head": "94680515b90e4eee6bac8898beb5111bfb0636cd",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-completion-audit-f3db1725",
+      "head": "6759087f8c63ea3390d9a273219e2156be25a5c6",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-domain-model-94474d24",
+      "head": "8b943327e3ba96bb5fc9448f79d41758709816c5",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-dynamic-field-catalog-8aa1c17e",
+      "head": "0802d766de9d73f84d82c62d41fe30a4379e0714",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-dynamic-fields-29600e53",
+      "head": "e1ac994c91f2a18d4ea574851d8cbb9ea78dc4b4",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-page-template-services-abd771d4",
+      "head": "3edd225baaf8c9f1555978b07ab4eebda4236a04",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-partner-page-ui-4665c01d",
+      "head": "536c22bd6b9e0067d84cd64bada3793dc6972d99",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-partner-product-slots-cf93509d",
+      "head": "08bc28332fb704980887c102ad2e613a4ae60e98",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-performance-reporting-8f344c87",
+      "head": "10acdee8b51b01a2fd917d4937fd5f6cae77643b",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-public-page-rendering-68778a80",
+      "head": "92cb4a4f7176781479aa6799f966516b739f98e4",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-share-copy-service-d4f832d0",
+      "head": "0f3aa739f77c1a70269198665f63a537d6eaf1d2",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-template-management-ui-259d80f4",
+      "head": "20aaa3fd193c960c61c9a8bf193c1643e5c94a76",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-team-funnel-template-text-renderer-208103e5",
+      "head": "e6df2099d9d7025237b577250764bd01f32cee01",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-webhook-retry-worker-regressions-27e3474f",
+      "head": "b97476218d59fceab02b405c978d50be8aebd10a",
+      "deleted": true,
+      "reason": "equivalent patches; remote retained; unused worktree"
+    },
+    {
+      "branch": "codex/auto-auto-mark-checkout-provider-failures-14cc4e06",
+      "head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-checkout-failure-update-fallback-fc6dd84f",
+      "head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-write-failure-7ce63750",
+      "head": "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-checkout-transaction-create-failure-eff9bf94",
+      "head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-block-untracked-checkout-fallback-17dd29e7",
+      "head": "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-prevent-duplicate-live-checkout-313cb628",
+      "head": "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-affiliate-click-paid-order-attribution-f7538669",
+      "head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-live-checkout-failure-feedback-7a44bfcb",
+      "head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-verify-checkout-referral-attribution-6b406470",
+      "head": "ded82898a687220496add74827691676e84c8b31",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-failure-compensation-5088a79f",
+      "head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    },
+    {
+      "branch": "codex/auto-auto-checkout-response-no-store-b059af2b",
+      "head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+      "deleted": true,
+      "reason": "master semantic successor verified; remote retained"
+    }
+  ],
+  "semanticReview": [
+    {
+      "branch": "codex/recovery-live-stepper-qa-20260719",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "22f06a69bf79149f673d7800225045990e68cb07",
+        "cherryPlus": 2,
+        "uniqueCommits": [
+          "27b506171e5f0c0c89965afc8d4ceab90b757758",
+          "22f06a69bf79149f673d7800225045990e68cb07"
+        ],
+        "files": [
+          "src/components/live-stepper-form.test.tsx"
+        ],
+        "reason": "master 測試檔已包含該分支所修正的 React element traversal helper 與即時預覽 assertions，顯示測試需求已被後續 master 版本承接。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-mark-checkout-provider-failures-14cc4e06",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "cherryPlus": 15,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "67b3fffd94a107c55e6ec4a8a1441645283e6ad0"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-checkout-failure-update-fallback-fc6dd84f",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "cherryPlus": 22,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "39b8dedf2ea140bc264088c9d1843d99196586ff"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-write-failure-7ce63750",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "cherryPlus": 23,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "b92d3e91a28f41e3f0fb219db5ad5b80746c387b"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-checkout-transaction-create-failure-eff9bf94",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "cherryPlus": 24,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "2401481ce4ea07b1bb7448c62be0db589b73c85e"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-block-untracked-checkout-fallback-17dd29e7",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+        "cherryPlus": 25,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-prevent-duplicate-live-checkout-313cb628",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "cherryPlus": 27,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "94e66bdf36b446b12a05dc3312f0d12eeb86421f"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-affiliate-click-paid-order-attribution-f7538669",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "cherryPlus": 28,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+          "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "src/lib/payment-webhooks.test.ts",
+          "src/lib/payment-webhooks.ts",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-live-checkout-failure-feedback-7a44bfcb",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "cherryPlus": 29,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+          "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+          "1ff1b5135f723c2da1e4509625284c376d8cf83e"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "src/lib/payment-webhooks.test.ts",
+          "src/lib/payment-webhooks.ts",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-verify-checkout-referral-attribution-6b406470",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "ded82898a687220496add74827691676e84c8b31",
+        "cherryPlus": 30,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+          "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+          "135dba89c5fc6f8105d2f471542868a662307257",
+          "ded82898a687220496add74827691676e84c8b31"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "src/lib/payment-webhooks.test.ts",
+          "src/lib/payment-webhooks.ts",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-checkout-metadata-failure-compensation-5088a79f",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "cherryPlus": 31,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+          "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+          "135dba89c5fc6f8105d2f471542868a662307257",
+          "6bdb34c0c55cc331b5144bff3833c3fe830aad52",
+          "227c102b7f49221a9d0fea17536ce2ed9e82312c"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "src/lib/payment-webhooks.test.ts",
+          "src/lib/payment-webhooks.ts",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    },
+    {
+      "branch": "codex/auto-auto-checkout-response-no-store-b059af2b",
+      "classification": "SUPERSEDED",
+      "evidence": {
+        "head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "cherryPlus": 32,
+        "uniqueCommits": [
+          "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+          "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+          "8b3f8dad046f2481f3933558419048a242ad57a3",
+          "197df95e584ebdcad066afe0fb660c022de87812",
+          "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+          "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+          "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+          "19e6d963d979a138b465fc4726d79432915807b7",
+          "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+          "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+          "50817b4aa99ccbd0515ec4f0972576061a7436dd",
+          "c5575481688d9eb86432bec35b26deecef56e518",
+          "c70ec679ee9c5e3c161fb49f2b85ff275d1c6ad4",
+          "85863897e95f587b8ded1e9a13338e58347b9750",
+          "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+          "1639cf42403b7cf5a234148441c56ba96f5e2121",
+          "2fae3e0d94aa77337aa9d6ee4ce21236aaaae025",
+          "8ffa710b17fdb20fcd13263f87a6cbecef0bee67",
+          "a5ee43847b3cb47e8a7b5b0781b69bc820cbc5f8",
+          "130a3745ade0060ab45bbf50dc510d9723fddda5",
+          "fb7e46afe913fe557315239a85936e4680d5aaca",
+          "3256618139369e0db5a1f4bc71d113eaa95b7821",
+          "2033a24c123e69eac7c0843e8101b78addc41d47",
+          "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+          "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+          "ead76b5c52c35f7f1c05f49b4999c2f38ac3a9c0",
+          "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+          "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+          "135dba89c5fc6f8105d2f471542868a662307257",
+          "6bdb34c0c55cc331b5144bff3833c3fe830aad52",
+          "2e29c7a97e398b2d03e35e2ec9021cbd45caa719",
+          "1a918f9e2e1974abc229c4bd76d97d17b398bf63"
+        ],
+        "files": [
+          ".ai-team/project.yaml",
+          ".env.example",
+          "docs/ai-team-payuni-sandbox-qa.md",
+          "package.json",
+          "scripts/payuni-sandbox-external-qa.mjs",
+          "scripts/payuni-sandbox-external-qa.test.mjs",
+          "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+          "src/app/(app)/lives/[id]/analytics/page.tsx",
+          "src/app/(app)/settings/security/page.tsx",
+          "src/app/actions.test.ts",
+          "src/app/actions.ts",
+          "src/app/api/auth/password-reset/request/route.test.ts",
+          "src/app/api/auth/password-reset/request/route.ts",
+          "src/app/api/payments/checkout/route.test.ts",
+          "src/app/api/payments/checkout/route.ts",
+          "src/components/interaction-script-form.test.tsx",
+          "src/components/interaction-script-form.tsx",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-playback.tsx",
+          "src/components/live-stepper-form.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.test.tsx",
+          "src/components/vendor-member-deactivation-confirmation.tsx",
+          "src/lib/payment-webhooks.test.ts",
+          "src/lib/payment-webhooks.ts",
+          "tests/e2e/smoke.spec.ts"
+        ],
+        "reason": "master 已有對應錯誤處理／付款歸因／防重複流程與回歸測試；詳見 checkout 語意審查 JSON。"
+      }
+    }
+  ],
+  "checkoutReview": {
+    "scope": "checkout historical auto-branch dependency chain",
+    "master": "4747314743330ca783bc1ae6387aa528d20eb7bd",
+    "chain_tip": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+    "overall": "MASTER_SUPERSEDED",
+    "branches": [
+      {
+        "branch": "codex/auto-auto-mark-checkout-provider-failures-14cc4e06",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "POST records provider_checkout_failed, returns a generic 502, and the master test verifies that provider details do not leak."
+      },
+      {
+        "branch": "codex/auto-auto-checkout-failure-update-fallback-fc6dd84f",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "POST keeps the same generic 502 when the failed-state recovery write also fails; the exact regression test remains on master."
+      },
+      {
+        "branch": "codex/auto-auto-checkout-metadata-write-failure-7ce63750",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "POST catches checkout-session metadata persistence failure and returns no checkout payload; later master compensation logic is stricter."
+      },
+      {
+        "branch": "codex/auto-auto-checkout-transaction-create-failure-eff9bf94",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "POST fails with a generic 502 before creating a provider session; the exact regression test remains on master."
+      },
+      {
+        "branch": "codex/auto-auto-block-untracked-checkout-fallback-17dd29e7",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "LivePlayback now sends internal products only to the same-origin buyer-details route and validates explicit merchant URLs before external navigation."
+      },
+      {
+        "branch": "codex/auto-auto-prevent-duplicate-live-checkout-313cb628",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "useCheckoutNavigationLock and disabled/aria-busy purchase controls keep all purchase actions locked until navigation settles or times out."
+      },
+      {
+        "branch": "codex/auto-auto-affiliate-click-paid-order-attribution-f7538669",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "Checkout stores a server-verified affiliateClickId and processPaymentWebhook updates only the matching click after a paid event, excluding retries, failures, refunds, and mismatches."
+      },
+      {
+        "branch": "codex/auto-auto-live-checkout-failure-feedback-7a44bfcb",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "LivePlayback reports navigation/identity failures, while CommerceCheckoutForm owns payment API pending and generic error feedback after the flow moved to the buyer-details page."
+      },
+      {
+        "branch": "codex/auto-auto-verify-checkout-referral-attribution-6b406470",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "affiliateAttributionFromRequest ignores request referralCode and accepts only a signed same-visitor, same-vendor, active server-resolved click under the current live policy."
+      },
+      {
+        "branch": "codex/auto-auto-checkout-metadata-failure-compensation-5088a79f",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "POST marks the reserved transaction failed with checkout_metadata_failed and still returns the generic 502 if compensation itself fails; both paths are tested."
+      },
+      {
+        "branch": "codex/auto-auto-checkout-response-no-store-b059af2b",
+        "status": "MASTER_SUPERSEDED",
+        "reason": "checkoutResponse preserves Cache-Control: no-store on successful payloads; the exact regression test remains on master."
+      }
+    ],
+    "reviewed_files": [
+      "src/app/api/payments/checkout/route.ts",
+      "src/app/api/payments/checkout/route.test.ts",
+      "src/components/live-playback.tsx",
+      "src/components/live-playback.test.tsx",
+      "src/lib/payment-webhooks.ts",
+      "src/lib/payment-webhooks.test.ts",
+      "src/components/commerce-checkout-form.tsx"
+    ],
+    "integration_action": "Do not cherry-pick or merge this historical chain; retain master."
+  }
+}
