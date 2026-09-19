@@ -102,6 +102,160 @@ describe("normalizeInteractionEventDraft", () => {
     expect(interactionEventTypeLabel("chat_message")).toBe("官方留言");
     expect(interactionEventTypeLabel("product_spotlight")).toBe("商品聚焦");
     expect(interactionEventTypeLabel("cta_switch")).toBe("CTA 切換");
+    expect(interactionEventTypeLabel("lucky_draw")).toBe("幸運大抽獎");
+    expect(interactionEventTypeLabel("poll")).toBe("即時投票");
+    expect(interactionEventTypeLabel("flash_voucher")).toBe("空投限時紅包");
     expect(interactionEventTypeLabel("fake_viewer")).toBe("未知事件");
+  });
+
+  it("normalizes lucky draw timing and slogan", () => {
+    expect(normalizeInteractionEventDraft({
+      eventType: "lucky_draw",
+      triggerSec: 90,
+      title: "週年抽獎",
+      metadata: { durationSec: 20, slogan: "週年快樂" },
+    })).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "lucky_draw",
+        title: "週年抽獎",
+        metadata: { kind: "lucky_draw", durationSec: 20, slogan: "週年快樂" },
+      }),
+    });
+    expect(normalizeInteractionEventDraft({
+      eventType: "lucky_draw",
+      triggerSec: 90,
+      metadata: { slogan: "" },
+    }).success).toBe(false);
+  });
+
+  it("canonicalizes poll options so clients cannot choose arbitrary identifiers", () => {
+    expect(normalizeInteractionEventDraft({
+      eventType: "poll",
+      triggerSec: 120,
+      metadata: { question: "最喜歡哪一款？", options: ["藍色", { id: "forged", label: "紅色" }] },
+    })).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "poll",
+        title: "最喜歡哪一款？",
+        metadata: {
+          kind: "poll",
+          durationSec: 60,
+          question: "最喜歡哪一款？",
+          options: [
+            { id: "option-1", label: "藍色" },
+            { id: "option-2", label: "紅色" },
+          ],
+        },
+      }),
+    });
+    expect(normalizeInteractionEventDraft({
+      eventType: "poll",
+      triggerSec: 120,
+      metadata: { question: "只有一項", options: ["唯一選項"] },
+    }).success).toBe(false);
+  });
+
+  it("validates percentage and fixed flash vouchers", () => {
+    expect(normalizeInteractionEventDraft({
+      eventType: "flash_voucher",
+      triggerSec: 180,
+      title: "前 50 名九折",
+      metadata: {
+        durationSec: 45,
+        maxClaims: 50,
+        discountType: "percentage",
+        discountValue: 10,
+        productId: "product-1",
+      },
+    })).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "flash_voucher",
+        productId: "product-1",
+        metadata: {
+          kind: "flash_voucher",
+          durationSec: 45,
+          maxClaims: 50,
+          discountType: "percentage",
+          discountValue: 10,
+          productId: "product-1",
+        },
+      }),
+    });
+    expect(normalizeInteractionEventDraft({
+      eventType: "flash_voucher",
+      triggerSec: 180,
+      metadata: { maxClaims: 10, discountType: "percentage", discountValue: 100 },
+    }).success).toBe(false);
+  });
+
+  it("validates advanced lucky draw with eligibility, prize name and exclude previous winners", () => {
+    const result = normalizeInteractionEventDraft({
+      eventType: "lucky_draw",
+      triggerSec: 100,
+      title: "抽 iPhone 16",
+      metadata: {
+        durationSec: 60,
+        slogan: "恭喜發財",
+        prizeName: "iPhone 16 Pro",
+        eligibility: "purchased",
+        excludePreviousWinners: true,
+      },
+    });
+    expect(result).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "lucky_draw",
+        title: "抽 iPhone 16",
+        metadata: {
+          kind: "lucky_draw",
+          durationSec: 60,
+          slogan: "恭喜發財",
+          prizeName: "iPhone 16 Pro",
+          eligibility: "purchased",
+          excludePreviousWinners: true,
+        },
+      }),
+    });
+  });
+
+  it("validates flash sale promotions and rejects missing productId", () => {
+    const result = normalizeInteractionEventDraft({
+      eventType: "flash_sale",
+      triggerSec: 300,
+      title: "限時下殺",
+      metadata: {
+        durationSec: 300,
+        productId: "product-live-1",
+        salePriceCents: 99000,
+        originalPriceCents: 298000,
+        stockLimit: 20,
+        announcementText: "直播限定 3 折優惠！",
+      },
+    });
+    expect(result).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        eventType: "flash_sale",
+        productId: "product-live-1",
+        metadata: {
+          kind: "flash_sale",
+          durationSec: 300,
+          productId: "product-live-1",
+          salePriceCents: 99000,
+          originalPriceCents: 298000,
+          stockLimit: 20,
+          announcementText: "直播限定 3 折優惠！",
+        },
+      }),
+    });
+    expect(normalizeInteractionEventDraft({
+      eventType: "flash_sale",
+      triggerSec: 300,
+      metadata: { durationSec: 300 },
+    }).success).toBe(false);
+    expect(interactionEventTypeLabel("flash_sale")).toBe("限時快閃搶購");
   });
 });
