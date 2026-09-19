@@ -470,6 +470,17 @@ model Live {
   quotaPolicy               Json?
   /// Activity-wide public card danmaku switch and generation; never stores private messages.
   danmakuState              Json?
+  /// Evergreen playback stays bound to this Live's tenant-owned video.
+  isEvergreen                    Boolean   @default(false)
+  evergreenScheduleMode          String    @default("just_in_time")
+  evergreenIntervalMinutes       Int       @default(15)
+  evergreenDailyTimes            String[]  @default([])
+  evergreenSessionStartAt        DateTime?
+  evergreenPitchAtSeconds        Int?
+  evergreenConsultationAtSeconds Int?
+  /// Preview controls are merchant-only; public playback remains at normal speed.
+  evergreenPreviewEnabled        Boolean   @default(false)
+  evergreenPreviewRate           Float     @default(1)
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 

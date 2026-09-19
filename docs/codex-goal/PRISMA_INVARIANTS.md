@@ -9,10 +9,10 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 99 |
-| Migration directories | 64 |
+| Migration directories | 65 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 64/64 current chain；由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
+| Applied migrations in isolated DB | 65/65 current chain；由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -94,6 +94,7 @@
 | `20260906003000_advanced_live_interactions` | tenant-bound interaction runs and immutable participant responses |
 | `20260907090000_live_lucky_draw_purchase_claim` | verified registration identity and hashed lucky-draw claim material |
 | `20260907180000_live_qa_spotlight` | tenant-bound viewer questions and one spotlight per live |
+| `20260908230000_evergreen_webinar_vendor_settings` | per-live evergreen scheduling, timeline anchors and merchant preview controls |
 | `20260911070000_live_danmaku` | public danmaku state on Live |
 | `20260911080000_live_interaction_tenant_integrity` | fail-closed run/live and registration/live composite ownership |
 
@@ -176,7 +177,7 @@
 ## 驗收判定
 
 - 99/99 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE 或 supporting/telemetry 類別。
-- 64 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 65 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
