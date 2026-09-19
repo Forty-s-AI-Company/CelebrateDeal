@@ -9,7 +9,6 @@ export const FLASH_VOUCHER_TTL_MS = 24 * 60 * 60 * 1_000;
 export function hashInteractionBearer(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
-
 const LUCKY_DRAW_CLAIM_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const LUCKY_DRAW_CLAIM_PATTERN = /^CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/u;
 
