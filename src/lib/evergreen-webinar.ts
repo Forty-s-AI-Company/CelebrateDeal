@@ -28,6 +28,7 @@ export type EvergreenTimelineEvent = {
 };
 
 const DAILY_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
+class NonexistentLocalTimeError extends Error {}
 
 function validDate(value: Date | string | undefined, label: string) {
   if (value === undefined) return null;
@@ -78,7 +79,7 @@ function zonedDate(year: number, month: number, day: number, hour: number, minut
   const result = new Date(guess);
   const parts = timezoneParts(result, timezone);
   if (Number(parts.year) !== year || Number(parts.month) !== month || Number(parts.day) !== day || Number(parts.hour) !== hour || Number(parts.minute) !== minute) {
-    throw new Error("daily time does not exist in the configured timezone");
+    throw new NonexistentLocalTimeError("daily time does not exist in the configured timezone");
   }
   return result;
 }
@@ -103,7 +104,7 @@ function recurringStart(schedule: EvergreenSchedule, now: Date) {
       } catch (error) {
         // A spring-forward gap removes only that local occurrence. Other
         // configured times and the next valid day must remain available.
-        if (!(error instanceof Error) || error.message !== "daily time does not exist in the configured timezone") throw error;
+        if (!(error instanceof NonexistentLocalTimeError)) throw error;
       }
     }
   }
@@ -150,22 +151,24 @@ export type WatchProgressSample = {
   elapsedWallSeconds: number;
   claimedWatchSeconds: number;
   playbackRate?: number;
-  previewMode?: boolean;
 };
 
 /** Fail-closed anti-cheat check for public playback heartbeats. */
-export function validateEvergreenWatchProgress(sample: WatchProgressSample) {
+export function validateEvergreenWatchProgress(
+  sample: WatchProgressSample,
+  serverContext: { merchantPreview: boolean } = { merchantPreview: false },
+) {
   const values = [sample.previousOffsetSeconds, sample.reportedOffsetSeconds, sample.elapsedWallSeconds, sample.claimedWatchSeconds];
   if (values.some((value) => !Number.isFinite(value) || value < 0)) return { accepted: false as const, reason: "invalid_number" as const };
   const playbackRate = sample.playbackRate ?? 1;
   const previewRates = [0.5, 1, 1.25, 1.5, 2];
-  if (!Number.isFinite(playbackRate) || playbackRate <= 0 || (sample.previewMode && !previewRates.includes(playbackRate))) {
+  if (!Number.isFinite(playbackRate) || playbackRate <= 0 || (serverContext.merchantPreview && !previewRates.includes(playbackRate))) {
     return { accepted: false as const, reason: "playback_rate" as const };
   }
-  if (!sample.previewMode && playbackRate !== 1) return { accepted: false as const, reason: "playback_rate" as const };
+  if (!serverContext.merchantPreview && playbackRate !== 1) return { accepted: false as const, reason: "playback_rate" as const };
   const mediaDelta = sample.reportedOffsetSeconds - sample.previousOffsetSeconds;
   if (mediaDelta < 0) return { accepted: false as const, reason: "rewind" as const };
-  const allowance = Math.max(2, sample.elapsedWallSeconds * (sample.previewMode ? Math.max(1, playbackRate) : 1) + 2);
+  const allowance = Math.max(2, sample.elapsedWallSeconds * (serverContext.merchantPreview ? Math.max(1, playbackRate) : 1) + 2);
   if (mediaDelta > allowance || sample.claimedWatchSeconds > sample.elapsedWallSeconds + 2 || sample.claimedWatchSeconds > mediaDelta + 2) {
     return { accepted: false as const, reason: "time_jump" as const };
   }

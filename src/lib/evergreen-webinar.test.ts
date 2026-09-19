@@ -47,6 +47,11 @@ describe("evergreen webinar session engine", () => {
   it("starts on-demand immediately", () => {
     expect(getEvergreenPlaybackState({ mode: "on_demand", durationSeconds: 90 }, "2026-09-08T00:00:00.000Z")).toMatchObject({ roomState: "playing", offsetSeconds: 0 });
   });
+
+  it("rejects an unknown persisted schedule mode", () => {
+    expect(() => getEvergreenPlaybackState({ mode: "unexpected" as never, durationSeconds: 90 }, "2026-09-08T00:00:00.000Z"))
+      .toThrow("mode must be a supported evergreen schedule mode");
+  });
 });
 
 describe("evergreen timeline and watch integrity", () => {
@@ -62,11 +67,18 @@ describe("evergreen timeline and watch integrity", () => {
   });
 
   it("allows accelerated preview without inflating credited watch time", () => {
-    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 30, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: 2, previewMode: true })).toEqual({ accepted: true, watchSeconds: 5 });
+    expect(validateEvergreenWatchProgress(
+      { previousOffsetSeconds: 20, reportedOffsetSeconds: 30, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: 2 },
+      { merchantPreview: true },
+    )).toEqual({ accepted: true, watchSeconds: 5 });
   });
 
   it("rejects non-finite preview rates and watch credit without media progress", () => {
-    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 3_600, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: Number.POSITIVE_INFINITY, previewMode: true })).toEqual({ accepted: false, reason: "playback_rate" });
+    expect(validateEvergreenWatchProgress(
+      { previousOffsetSeconds: 20, reportedOffsetSeconds: 3_600, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: Number.POSITIVE_INFINITY },
+      { merchantPreview: true },
+    )).toEqual({ accepted: false, reason: "playback_rate" });
     expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 20, elapsedWallSeconds: 5, claimedWatchSeconds: 5 })).toEqual({ accepted: false, reason: "time_jump" });
+    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 30, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: 2 })).toEqual({ accepted: false, reason: "playback_rate" });
   });
 });
