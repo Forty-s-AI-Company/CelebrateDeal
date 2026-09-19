@@ -1,0 +1,158 @@
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
+import { normalizeInteractionEventDraft, type AdvancedInteractionMetadata } from "@/lib/interaction-event";
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+
+export const FLASH_VOUCHER_COOKIE = "celebratedeal_flash_voucher";
+export const FLASH_VOUCHER_TTL_MS = 24 * 60 * 60 * 1_000;
+
+export function hashInteractionBearer(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+const LUCKY_DRAW_CLAIM_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const LUCKY_DRAW_CLAIM_PATTERN = /^CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/u;
+
+/**
+ * Creates an opaque 8-character Crockford-base32 claim code with OS CSPRNG
+ * bytes. It intentionally has no dependency on a run ID or other public data.
+ */
+export function createLuckyDrawClaimCode() {
+  let body = "";
+  while (body.length < 8) {
+    const byte = randomBytes(1)[0];
+    // Rejection sampling avoids modulo bias (256 is not divisible by 32 only
+    // if this alphabet changes; keeping it explicit protects that invariant).
+    if (byte === undefined || byte >= 256 - (256 % LUCKY_DRAW_CLAIM_ALPHABET.length)) continue;
+    body += LUCKY_DRAW_CLAIM_ALPHABET[byte % LUCKY_DRAW_CLAIM_ALPHABET.length];
+  }
+  return `CD-WIN-${body.slice(0, 4)}-${body.slice(4)}`;
+}
+
+export function hashLuckyDrawClaimCode(value: string) {
+  // The visible code has intentionally limited entropy for manual entry. A
+  // server-side pepper prevents an exposed database hash from becoming an
+  // offline code-verification oracle.
+  return createHmac("sha256", deriveSensitiveDataKey("live-lucky-draw-claim-hash:v1"))
+    .update(value)
+    .digest("hex");
+}
+
+export function isLuckyDrawClaimCode(value: string) {
+  return LUCKY_DRAW_CLAIM_PATTERN.test(value);
+}
+
+/** Compares fixed-length hex hashes without leaking a prefix through timing. */
+export function luckyDrawClaimHashesMatch(expectedHash: string | null | undefined, suppliedCode: string) {
+  if (!expectedHash || !isLuckyDrawClaimCode(suppliedCode)) return false;
+  const expected = Buffer.from(expectedHash, "hex");
+  const supplied = Buffer.from(hashLuckyDrawClaimCode(suppliedCode), "hex");
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+}
+
+export function luckyDrawClaimEnvelopePurpose(vendorId: string, responseId: string) {
+  return `live-lucky-draw-claim:v1:${vendorId}:${responseId}`;
+}
+
+export function createInteractionBearer() {
+  return randomBytes(32).toString("base64url");
+}
+
+export function interactionEndsAt(startsAt: Date, metadata: AdvancedInteractionMetadata) {
+  return new Date(startsAt.getTime() + metadata.durationSec * 1_000);
+}
+
+export function calculateVoucherDiscount(
+  priceCents: number,
+  metadata: AdvancedInteractionMetadata,
+  currency?: string,
+) {
+  if (metadata.kind !== "flash_voucher" || !Number.isSafeInteger(priceCents) || priceCents <= 0) return 0;
+  const raw = metadata.discountType === "percentage"
+    ? Math.floor(priceCents * metadata.discountValue / 100)
+    : metadata.discountValue;
+  const bounded = Math.max(0, Math.min(priceCents - 1, raw));
+  // PayUni accepts whole TWD amounts. Keep the final charge provider-safe
+  // instead of producing a fractional-dollar amount from a percentage coupon.
+  return currency === "TWD" ? Math.floor(bounded / 100) * 100 : bounded;
+}
+
+export type LivePurchaseBroadcastItem = {
+  id: string;
+  buyerMaskedName: string;
+  productName: string;
+  secondsAgo: number;
+  city?: string;
+};
+
+export function maskCustomerName(rawName: string): string {
+  const name = rawName.trim();
+  if (!name) return "熱門學員";
+  if (name.length <= 1) return `${name}*`;
+  if (name.length === 2) return `${name[0]}*`;
+  if (name.length === 3) return `${name[0]}*${name[2]}`;
+  return `${name[0]}${"*".repeat(name.length - 2)}${name[name.length - 1]}`;
+}
+
+export function filterEligibleLuckyDrawEntries<T extends { id: string; participantHash: string }>(
+  entries: readonly T[],
+  options?: { excludedParticipantHashes?: ReadonlySet<string> },
+): T[] {
+  if (!options?.excludedParticipantHashes || options.excludedParticipantHashes.size === 0) {
+    return [...entries];
+  }
+  return entries.filter((entry) => !options.excludedParticipantHashes?.has(entry.participantHash));
+}
+
+export function pickLuckyDrawWinner<T>(entries: readonly T[], randomIndex = randomInt) {
+  if (entries.length === 0) return null;
+  return entries[randomIndex(entries.length)] ?? null;
+}
+
+export function pollPercentages(options: Array<{ id: string; label: string }>, values: readonly string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return pollPercentagesFromCounts(options, counts);
+}
+
+export function pollPercentagesFromCounts(options: Array<{ id: string; label: string }>, counts: ReadonlyMap<string, number>) {
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return options.map((option) => {
+    const votes = counts.get(option.id) ?? 0;
+    return { ...option, votes, percentage: total === 0 ? 0 : Math.round(votes * 100 / total) };
+  });
+}
+
+export async function resolveEligibleVoucherClaim(
+  db: PrismaClient,
+  bearer: string | null | undefined,
+  input: { vendorId: string; productId: string; priceCents: number; currency: string; now?: Date },
+) {
+  if (!bearer || !/^[A-Za-z0-9_-]{43}$/u.test(bearer)) return null;
+  const now = input.now ?? new Date();
+  const claim = await db.liveInteractionResponse.findUnique({
+    where: { claimTokenHash: hashInteractionBearer(bearer) },
+    include: { run: true },
+  });
+  if (
+    !claim
+    || claim.vendorId !== input.vendorId
+    || claim.eventType !== "flash_voucher"
+    || claim.usedOrderId
+    || !claim.expiresAt
+    || claim.expiresAt <= now
+    || (claim.productId && claim.productId !== input.productId)
+    || claim.run.eventType !== "flash_voucher"
+  ) return null;
+  const normalized = normalizeInteractionEventDraft({
+    eventType: "flash_voucher",
+    triggerSec: 0,
+    title: claim.run.title,
+    productId: claim.productId,
+    metadata: claim.run.configuration,
+  });
+  if (!normalized.success || normalized.data.metadata?.kind !== "flash_voucher") return null;
+  const discountAmountCents = calculateVoucherDiscount(input.priceCents, normalized.data.metadata, input.currency);
+  return discountAmountCents > 0 ? { id: claim.id, discountAmountCents } : null;
+}
+
