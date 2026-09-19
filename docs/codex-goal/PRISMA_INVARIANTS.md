@@ -1,18 +1,18 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-09-07（Asia/Taipei）
+最後更新：2026-09-19（Asia/Taipei）
 
-基準 revision：`35d8f59341bc`
+基準 revision：`4ed3b463`
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 96 |
-| Migration directories | 59 |
+| Prisma models | 99 |
+| Migration directories | 64 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 59/59 current chain；由 CI disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
+| Applied migrations in isolated DB | 64/64 current chain；由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證 |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -20,7 +20,7 @@
 | 類別 | 數量 | Models |
 |---|---:|---|
 | Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 19 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
+| Content／live／lead | 22 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
 | Affiliate／billing／payment／ops | 33 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
@@ -91,6 +91,11 @@
 | `20260818090000_custom_checkout_fields` | product custom checkout field definitions |
 | `20260819090000_wp1_video_archive_state` | tenant-scoped soft archive and restore state for videos; provider assets are retained |
 | `20260905113000_line_official_account` | tenant-scoped encrypted LINE OA credentials, identities, login state and idempotent delivery outbox |
+| `20260906003000_advanced_live_interactions` | tenant-bound interaction runs and immutable participant responses |
+| `20260907090000_live_lucky_draw_purchase_claim` | verified registration identity and hashed lucky-draw claim material |
+| `20260907180000_live_qa_spotlight` | tenant-bound viewer questions and one spotlight per live |
+| `20260911070000_live_danmaku` | public danmaku state on Live |
+| `20260911080000_live_interaction_tenant_integrity` | fail-closed run/live and registration/live composite ownership |
 
 ## 已由資料庫強制的主要 invariants
 
@@ -122,6 +127,7 @@
 | Platform referral commission 不與 merchant affiliate 混用 | `PlatformReferralCommission.paymentTransactionId @unique`；獨立 commission ledger 與 owner snapshot；ledger `disputeCaseId` index | 僅讀取 server-created transaction metadata 與 immutable subscription attribution；refund／dispute ledger 不能低於零，chargeback lost 只沖銷一次 |
 | Platform referral payout 不與 merchant/course payout 混用 | `PlatformReferralPayout.ownerUserId/monthKey @unique`；獨立 batch relation | payout 只彙整 platform referral ledger balance；batch 不保存銀行 credential、不執行 provider transfer |
 | Checkout retry 不重複建立交易 | `PaymentTransaction @@unique([vendorId,checkoutIdempotencyKey])`；nullable 只保留 legacy rows | checkout route 要求 UUID key；SERIALIZABLE reservation 先檢查既有 key，完成後 replay 保存的 provider payload；key 綁定商品／金額／幣別 | route unit + loopback PostgreSQL concurrent duplicate regression |
+| Live interaction response 不跨 tenant/live | composite `[vendorId,liveId,runId]` 與 `[liveId,formSubmissionId]` foreign keys；每場單一 spotlight partial unique | migration 對既存 mismatch fail closed；合法 submission 刪除只清空 response reference | empty-DB 64 migration replay + cross-live negative writes + delete regressions |
 
 ### Payment／inventory／webhook
 
@@ -169,8 +175,8 @@
 
 ## 驗收判定
 
-- 96/96 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE 或 supporting/telemetry 類別。
-- 59 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 99/99 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE 或 supporting/telemetry 類別。
+- 64 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
