@@ -32,6 +32,18 @@ describe("evergreen webinar session engine", () => {
     expect(playing).toMatchObject({ roomState: "playing", offsetSeconds: 1800 });
   });
 
+  it("skips a spring-forward gap and uses the first fall-back occurrence", () => {
+    const spring = getEvergreenPlaybackState({
+      mode: "recurring_daily", timezone: "America/New_York", dailyTimes: ["02:30", "04:00"], durationSeconds: 1800,
+    }, "2026-03-08T06:45:00.000Z");
+    expect(spring.sessionStartAt.toISOString()).toBe("2026-03-08T08:00:00.000Z");
+
+    const fall = getEvergreenPlaybackState({
+      mode: "recurring_daily", timezone: "America/New_York", dailyTimes: ["01:30"], durationSeconds: 1800,
+    }, "2026-11-01T04:00:00.000Z");
+    expect(fall.sessionStartAt.toISOString()).toBe("2026-11-01T05:30:00.000Z");
+  });
+
   it("starts on-demand immediately", () => {
     expect(getEvergreenPlaybackState({ mode: "on_demand", durationSeconds: 90 }, "2026-09-08T00:00:00.000Z")).toMatchObject({ roomState: "playing", offsetSeconds: 0 });
   });
@@ -50,6 +62,11 @@ describe("evergreen timeline and watch integrity", () => {
   });
 
   it("allows accelerated preview without inflating credited watch time", () => {
-    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 40, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: 4, previewMode: true })).toEqual({ accepted: true, watchSeconds: 5 });
+    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 30, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: 2, previewMode: true })).toEqual({ accepted: true, watchSeconds: 5 });
+  });
+
+  it("rejects non-finite preview rates and watch credit without media progress", () => {
+    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 3_600, elapsedWallSeconds: 5, claimedWatchSeconds: 5, playbackRate: Number.POSITIVE_INFINITY, previewMode: true })).toEqual({ accepted: false, reason: "playback_rate" });
+    expect(validateEvergreenWatchProgress({ previousOffsetSeconds: 20, reportedOffsetSeconds: 20, elapsedWallSeconds: 5, claimedWatchSeconds: 5 })).toEqual({ accepted: false, reason: "time_jump" });
   });
 });

@@ -98,7 +98,13 @@ function recurringStart(schedule: EvergreenSchedule, now: Date) {
     const day = new Date(noon + dayOffset * 86_400_000);
     for (const time of dailyTimes) {
       const [hour, minute] = time.split(":").map(Number);
-      candidates.push(zonedDate(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), hour!, minute!, timezone));
+      try {
+        candidates.push(zonedDate(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), hour!, minute!, timezone));
+      } catch (error) {
+        // A spring-forward gap removes only that local occurrence. Other
+        // configured times and the next valid day must remain available.
+        if (!(error instanceof Error) || error.message !== "daily time does not exist in the configured timezone") throw error;
+      }
     }
   }
   const latestActive = candidates
@@ -112,6 +118,7 @@ function recurringStart(schedule: EvergreenSchedule, now: Date) {
 
 export function getEvergreenPlaybackState(schedule: EvergreenSchedule, serverTime: Date | string): EvergreenPlaybackState {
   assertDuration(schedule.durationSeconds);
+  if (!EVERGREEN_SCHEDULE_MODES.includes(schedule.mode)) throw new Error("mode must be a supported evergreen schedule mode");
   const now = validDate(serverTime, "serverTime")!;
   const fixedStart = validDate(schedule.sessionStartAt, "sessionStartAt");
   const sessionStartAt = fixedStart ?? (schedule.mode === "just_in_time"
@@ -151,12 +158,16 @@ export function validateEvergreenWatchProgress(sample: WatchProgressSample) {
   const values = [sample.previousOffsetSeconds, sample.reportedOffsetSeconds, sample.elapsedWallSeconds, sample.claimedWatchSeconds];
   if (values.some((value) => !Number.isFinite(value) || value < 0)) return { accepted: false as const, reason: "invalid_number" as const };
   const playbackRate = sample.playbackRate ?? 1;
+  const previewRates = [0.5, 1, 1.25, 1.5, 2];
+  if (!Number.isFinite(playbackRate) || playbackRate <= 0 || (sample.previewMode && !previewRates.includes(playbackRate))) {
+    return { accepted: false as const, reason: "playback_rate" as const };
+  }
   if (!sample.previewMode && playbackRate !== 1) return { accepted: false as const, reason: "playback_rate" as const };
   const mediaDelta = sample.reportedOffsetSeconds - sample.previousOffsetSeconds;
   if (mediaDelta < 0) return { accepted: false as const, reason: "rewind" as const };
   const allowance = Math.max(2, sample.elapsedWallSeconds * (sample.previewMode ? Math.max(1, playbackRate) : 1) + 2);
-  if (mediaDelta > allowance || sample.claimedWatchSeconds > sample.elapsedWallSeconds + 2) {
+  if (mediaDelta > allowance || sample.claimedWatchSeconds > sample.elapsedWallSeconds + 2 || sample.claimedWatchSeconds > mediaDelta + 2) {
     return { accepted: false as const, reason: "time_jump" as const };
   }
-  return { accepted: true as const, watchSeconds: Math.min(sample.claimedWatchSeconds, sample.elapsedWallSeconds) };
+  return { accepted: true as const, watchSeconds: Math.min(sample.claimedWatchSeconds, sample.elapsedWallSeconds, mediaDelta) };
 }
