@@ -46,6 +46,13 @@ enum StreamOperationsAlertSeverity {
   CRITICAL
 }
 
+enum LiveQuestionStatus {
+  pending
+  spotlight
+  answered
+  hidden
+}
+
 model Vendor {
   id           String   @id @default(cuid())
   name         String
@@ -71,6 +78,9 @@ model Vendor {
   commerceDeliverySnapshots        CommerceOrderItemDeliverySnapshot[]
   forms                            RegistrationForm[]
   lives                            Live[]
+  liveInteractionRuns              LiveInteractionRun[]
+  liveInteractionResponses         LiveInteractionResponse[]
+  liveQuestions                    LiveQuestion[]
   templates                        MessageTemplate[]
   analytics                        AnalyticsEvent[]
   interactionScripts               InteractionScript[]
@@ -414,11 +424,12 @@ model FormSubmission {
   affiliateClickId      String?
   createdAt             DateTime                         @default(now())
 
-  form            RegistrationForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  live            Live?                @relation(fields: [liveId], references: [id], onDelete: SetNull)
-  affiliateClick  AffiliateClick?      @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
-  teamAttribution TeamLeadAttribution?
-  chatMessages    LiveChatMessage[]
+  form                     RegistrationForm          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  live                     Live?                     @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  affiliateClick           AffiliateClick?           @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
+  teamAttribution          TeamLeadAttribution?
+  chatMessages             LiveChatMessage[]
+  liveInteractionResponses LiveInteractionResponse[]
 
   @@unique([liveId, id])
   @@index([formId, verificationStatus, createdAt])
@@ -457,6 +468,8 @@ model Live {
   streamMode                String    @default("vod")
   cloudflareLiveInputUid    String?
   quotaPolicy               Json?
+  /// Activity-wide public card danmaku switch and generation; never stores private messages.
+  danmakuState              Json?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 
@@ -481,6 +494,9 @@ model Live {
   studioDrafts               LiveStudioDraft[]
   reminderReconciliationJobs LiveReminderReconciliationJob[]
   liveChatMessages           LiveChatMessage[]
+  questions                  LiveQuestion[]
+  interactionRuns            LiveInteractionRun[]
+  interactionResponses       LiveInteractionResponse[]
   notificationRules          LiveNotificationRule[]
 
   @@unique([vendorId, id])
@@ -2780,4 +2796,92 @@ model TeamConversionAttribution {
   @@index([teamId, promoterMembershipId, attributedAt])
   @@index([teamId, leaderMembershipId, attributedAt])
   @@index([leadAttributionId])
+}
+
+/// Tenant-bound viewer questions. Participant identity is represented only by
+/// a server-derived hash; displayName is optional for anonymous questions.
+model LiveQuestion {
+  id              String             @id @default(cuid())
+  vendorId        String
+  liveId          String
+  participantHash String
+  displayName     String?
+  body            String
+  status          LiveQuestionStatus @default(pending)
+  spotlightedAt   DateTime?
+  answeredAt      DateTime?
+  hiddenAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live   Live   @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([vendorId, liveId, status, createdAt])
+  @@index([liveId, participantHash, createdAt])
+}
+
+/// One server-authoritative activation of an advanced live interaction. Script
+/// activations are idempotent per live/event; manual activations are independent.
+model LiveInteractionRun {
+  id                String   @id @default(cuid())
+  vendorId          String
+  liveId            String
+  source            String
+  sourceEventId     String?
+  eventType         String
+  title             String
+  configuration     Json
+  status            String   @default("active")
+  startsAt          DateTime @default(now())
+  endsAt            DateTime
+  winnerResponseId  String?
+  createdByMemberId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  vendor    Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live      Live                      @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  responses LiveInteractionResponse[]
+
+  @@unique([liveId, sourceEventId])
+  @@unique([vendorId, id])
+  @@unique([vendorId, liveId, id])
+  @@index([vendorId, liveId, status, endsAt])
+}
+
+/// A single viewer's immutable choice/entry/claim for one run. Viewer tokens and
+/// voucher bearer tokens are stored only as hashes.
+model LiveInteractionResponse {
+  id                               String    @id @default(cuid())
+  vendorId                         String
+  liveId                           String
+  runId                            String
+  participantHash                  String
+  /// Server-verified registration identity for purchased-only draw entries.
+  /// Never accept this from the browser request body.
+  formSubmissionId                 String?
+  eventType                        String
+  value                            String
+  displayName                      String?
+  claimTokenHash                   String?   @unique
+  /// Lucky-draw redemption material: only the hash is used for verification;
+  /// the encrypted envelope is only decrypted for the winning viewer.
+  winnerClaimCodeEncryptedEnvelope String?
+  winnerClaimedAt                  DateTime?
+  productId                        String?
+  discountAmountCents              Int?
+  expiresAt                        DateTime?
+  usedOrderId                      String?
+  createdAt                        DateTime  @default(now())
+
+  vendor         Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live           Live               @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  run            LiveInteractionRun @relation(fields: [vendorId, liveId, runId], references: [vendorId, liveId, id], onDelete: Cascade)
+  formSubmission FormSubmission?    @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: NoAction)
+
+  @@unique([runId, participantHash])
+  @@index([vendorId, liveId, eventType, createdAt])
+  @@index([vendorId, liveId, formSubmissionId])
+  @@index([usedOrderId])
 }
