@@ -179,7 +179,7 @@
 ## 驗收判定
 
 - 101/101 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation 或 supporting/telemetry 類別。
-- 66 migration directories 已納入 canonical inventory，並由乾淨的 loopback disposable PostgreSQL 完整 forward-apply。
+- 66 migration directories 已納入 canonical inventory；65/66 已由既有驗證 forward-apply，新增 consultation migration 尚待 isolated DB forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
