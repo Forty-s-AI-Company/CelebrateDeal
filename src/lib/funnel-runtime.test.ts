@@ -62,6 +62,8 @@ describe("public Funnel runtime", () => {
     expect(decidePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", steps, operations: null, visitorId })).toEqual({ status: "unavailable" });
     expect(decidePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", steps, operations: defaultFunnelOperations(), visitorId: "invalid" })).toEqual({ status: "unavailable" });
     expect(decidePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", steps, operations: { ...defaultFunnelOperations(), experiment }, visitorId })).toMatchObject({ status: "render", renderedStepId: "opt_in_thank_you", experiment: { id: "experiment_1", arm: "variant" } });
+    const controlExperiment = { ...experiment, status: "running" as const, controlWeight: 100, variantWeight: 0, winner: null };
+    expect(decidePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", steps, operations: { ...defaultFunnelOperations(), experiment: controlExperiment }, visitorId })).toMatchObject({ status: "render", renderedStepId: "opt_in", experiment: { id: "experiment_1", arm: "control" } });
     expect(decidePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", steps: steps.filter((step) => step.id !== "opt_in_thank_you"), operations: { ...defaultFunnelOperations(), experiment }, visitorId })).toEqual({ status: "unavailable" });
   });
 
@@ -100,6 +102,7 @@ describe("public Funnel runtime", () => {
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "not-a-date" } } })).toEqual({ status: "unavailable" });
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: null } } })).toEqual({ status: "unavailable" });
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: false, expiresAt: null } }, now: new Date("2026-09-17T02:00:00.000Z") }).status).toBe("render");
+    expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "2027-09-17T10:00:00+08:00" } } } ).status).toBe("render");
     const missingTarget = { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "2026-09-17T10:00:00+08:00", behavior: "redirect" as const, redirectPath: "missing" } };
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: missingTarget, now: new Date("2026-09-17T02:00:00.000Z") })).toEqual({ status: "closed" });
     const sameTarget = { ...missingTarget, deadline: { ...missingTarget.deadline, redirectPath: "opt-in" } };

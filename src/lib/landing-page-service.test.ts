@@ -159,4 +159,13 @@ describe("landing page scoped mutations", () => {
     expect(result?.submissionForm).toMatchObject({ id: "form-1", submitLabel: "送出", successMessage: "收到" });
     expect(result?.context.forms).toEqual([{ id: "form-1", slug: "signup", name: "報名表" }]);
   });
+
+  it("公開 loader 拒絕已綁定但不存在的直播", async () => {
+    const flow = createFunnelFlow({ id: "flow_live", name: "公開直播", goal: "audience", domain: "audience" })!;
+    const content = createFunnelStepPages(flow)!;
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: "form-1", liveId: "live-1", live: null } })]);
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "收到" }]);
+
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+  });
 });
