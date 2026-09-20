@@ -44,6 +44,7 @@ const nodeTapContractTests = findNodeTapContractTests(__dirname)
 const testExclude = [
   ...configDefaults.exclude,
   "tests/e2e/**",
+  "tests/browser-dev/**",
   ".ai-team/tmp/**",
   ...nodeTapContractTests,
 ];
