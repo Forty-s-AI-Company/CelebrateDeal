@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), reports: vi.fn(), csrf: vi.fn() }));
+vi.mock("@/lib/auth", () => ({ requireVendorManager: vi.fn() }));
 vi.mock("@/lib/funnel-operations-service", () => ({
   FunnelOperationsError: class extends Error {},
   loadFunnelOperations: mocks.load, loadFunnelReports: mocks.reports,
