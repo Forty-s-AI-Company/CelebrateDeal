@@ -80,6 +80,17 @@ model Vendor {
   tracking                         TrackingSetting?
   videos                           Video[]
   products                         Product[]
+  automationRules                  AutomationRule[]
+  automationExecutionLogs          AutomationExecutionLog[]
+  customerTagAssignments           CustomerTagAssignment[]
+  automationVoucherGrants          AutomationVoucherGrant[]
+  customerCrmRecords               CustomerCrmRecord[]
+  salesProjects                    SalesProject[]
+  onboardingPreferences            UserOnboardingPreference[]
+  onboardingTaskStates             OnboardingTaskState[]
+  salesProjectProducts             SalesProjectProduct[]
+  salesProjectCustomers            SalesProjectCustomer[]
+  consultantNotes                  ConsultantNote[]
   deliveryUrlAllowlist             VendorDeliveryUrlAllowlist[]
   productDeliveryConfigs           ProductDeliveryConfig[]
   commerceDeliverySnapshots        CommerceOrderItemDeliverySnapshot[]
@@ -179,6 +190,7 @@ model User {
   platformReferralAttributions PlatformReferralAttribution[]
   platformReferralCommissions  PlatformReferralCommission[]
   platformReferralPayouts      PlatformReferralPayout[]
+  onboardingPreferences        UserOnboardingPreference[]
 }
 
 model UserSession {
@@ -371,6 +383,8 @@ model Product {
   courseCommissionAllocations CourseCommissionAllocation[]
   commerceOrderItems          CommerceOrderItem[]
   deliveryConfig              ProductDeliveryConfig?
+  automationVoucherGrants     AutomationVoucherGrant[]
+  salesProjectLinks           SalesProjectProduct[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
@@ -380,15 +394,17 @@ model Product {
 }
 
 model RegistrationForm {
-  id                     String   @id @default(cuid())
+  id                     String        @id @default(cuid())
   vendorId               String
+  projectId              String?
+  salesProject           SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
   name                   String
-  slug                   String   @unique
+  slug                   String        @unique
   headline               String
   description            String?
-  submitLabel            String   @default("送出報名")
+  submitLabel            String        @default("送出報名")
   fields                 Json
-  successMessage         String   @default("已收到你的資料，開播前會再提醒你。")
+  successMessage         String        @default("已收到你的資料，開播前會再提醒你。")
   heroImageUrl           String?
   heroImageAssetId       String?
   backgroundImageUrl     String?
@@ -401,11 +417,11 @@ model RegistrationForm {
   notice                 String?
   seoTitle               String?
   seoDescription         String?
-  maxVisibleSessions     Int      @default(0)
-  hideExpiredSessions    Boolean  @default(true)
-  isActive               Boolean  @default(true)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  maxVisibleSessions     Int           @default(0)
+  hideExpiredSessions    Boolean       @default(true)
+  isActive               Boolean       @default(true)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   vendor               Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   heroImageAsset       ImageAsset?      @relation("RegistrationFormHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
@@ -452,46 +468,49 @@ enum FormSubmissionVerificationStatus {
 }
 
 model Live {
-  id                        String    @id @default(cuid())
-  vendorId                  String
-  videoId                   String?
-  formId                    String?
-  messageTemplateId         String?
-  liveReminderTemplateId    String?
-  liveReminderOffsetMinutes Int       @default(60)
-  interactionScriptId       String?
-  teamId                    String?
-  seminarOwnerMembershipId  String?
-  title                     String
-  slug                      String    @unique
-  description               String?
-  scheduledAt               DateTime
-  status                    String    @default("draft")
-  startedAt                 DateTime?
-  endedAt                   DateTime?
-  replayAvailableUntil      DateTime?
-  heroImageUrl              String?
-  heroImageAssetId          String?
-  accentCopy                String?
-  replayEnabled             Boolean   @default(true)
-  streamMode                String    @default("vod")
-  cloudflareLiveInputUid    String?
-  quotaPolicy               Json?
+  id                             String                   @id @default(cuid())
+  vendorId                       String
+  projectId                      String?
+  automationExecutionLogs        AutomationExecutionLog[]
+  salesProject                   SalesProject?            @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
+  videoId                        String?
+  formId                         String?
+  messageTemplateId              String?
+  liveReminderTemplateId         String?
+  liveReminderOffsetMinutes      Int                      @default(60)
+  interactionScriptId            String?
+  teamId                         String?
+  seminarOwnerMembershipId       String?
+  title                          String
+  slug                           String                   @unique
+  description                    String?
+  scheduledAt                    DateTime
+  status                         String                   @default("draft")
+  startedAt                      DateTime?
+  endedAt                        DateTime?
+  replayAvailableUntil           DateTime?
+  heroImageUrl                   String?
+  heroImageAssetId               String?
+  accentCopy                     String?
+  replayEnabled                  Boolean                  @default(true)
+  streamMode                     String                   @default("vod")
+  cloudflareLiveInputUid         String?
+  quotaPolicy                    Json?
   /// Activity-wide public card danmaku switch and generation; never stores private messages.
-  danmakuState              Json?
+  danmakuState                   Json?
   /// Evergreen playback stays bound to this Live's tenant-owned video.
-  isEvergreen                    Boolean   @default(false)
-  evergreenScheduleMode          String    @default("just_in_time")
-  evergreenIntervalMinutes       Int       @default(15)
-  evergreenDailyTimes            String[]  @default([])
+  isEvergreen                    Boolean                  @default(false)
+  evergreenScheduleMode          String                   @default("just_in_time")
+  evergreenIntervalMinutes       Int                      @default(15)
+  evergreenDailyTimes            String[]                 @default([])
   evergreenSessionStartAt        DateTime?
   evergreenPitchAtSeconds        Int?
   evergreenConsultationAtSeconds Int?
   /// Preview controls are merchant-only; public playback remains at normal speed.
-  evergreenPreviewEnabled        Boolean   @default(false)
-  evergreenPreviewRate           Float     @default(1)
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
+  evergreenPreviewEnabled        Boolean                  @default(false)
+  evergreenPreviewRate           Float                    @default(1)
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
 
   vendor                     Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   heroImageAsset             ImageAsset?                     @relation("LiveHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
@@ -875,14 +894,16 @@ model EmailSuppression {
 }
 
 model AnalyticsEvent {
-  id         String              @id @default(cuid())
-  vendorId   String
-  liveId     String?
-  eventType  String
-  visitorId  String
-  trustLevel AnalyticsTrustLevel @default(LEGACY_UNVERIFIED)
-  payload    Json?
-  createdAt  DateTime            @default(now())
+  id           String              @id @default(cuid())
+  vendorId     String
+  projectId    String?
+  salesProject SalesProject?       @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
+  liveId       String?
+  eventType    String
+  visitorId    String
+  trustLevel   AnalyticsTrustLevel @default(LEGACY_UNVERIFIED)
+  payload      Json?
+  createdAt    DateTime            @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
@@ -1457,6 +1478,9 @@ model PaymentTransaction {
 model CommerceOrder {
   id                          String              @id @default(cuid())
   vendorId                    String
+  automationCustomerKeyHash   String?
+  projectId                   String?
+  salesProject                SalesProject?       @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
   orderNumber                 String
   checkoutIdempotencyKey      String
   checkoutIdentityHash        String
@@ -1500,22 +1524,22 @@ model CommerceOrder {
 /// Immutable commercial terms captured at purchase time. Product fields remain
 /// snapshots so later catalogue edits cannot rewrite a completed order.
 model CommerceOrderItem {
-  id                   String                  @id @default(cuid())
-  vendorId             String
-  orderId              String
-  productId            String?
-  lineIndex            Int
-  productName          String
-  productSlug          String
-  commerceDomain       String
-  fulfillmentType      CommerceFulfillmentType
-  unitPriceCents       Int
-  quantity             Int
-  lineTotalCents       Int
-  imageUrl             String?
-  nonSensitiveSnapshot Json
+  id                                     String                  @id @default(cuid())
+  vendorId                               String
+  orderId                                String
+  productId                              String?
+  lineIndex                              Int
+  productName                            String
+  productSlug                            String
+  commerceDomain                         String
+  fulfillmentType                        CommerceFulfillmentType
+  unitPriceCents                         Int
+  quantity                               Int
+  lineTotalCents                         Int
+  imageUrl                               String?
+  nonSensitiveSnapshot                   Json
   customCheckoutAnswersEncryptedEnvelope String?
-  createdAt            DateTime                @default(now())
+  createdAt                              DateTime                @default(now())
 
   vendor              Vendor                             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   order               CommerceOrder                      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
@@ -2907,19 +2931,21 @@ model LiveInteractionResponse {
 }
 
 model ConsultationEvent {
-  id               String   @id @default(cuid())
+  id               String        @id @default(cuid())
   vendorId         String
+  projectId        String?
+  salesProject     SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
   title            String
   description      String?
-  durationMinutes  Int      @default(30)
-  bufferMinutes    Int      @default(0)
+  durationMinutes  Int           @default(30)
+  bufferMinutes    Int           @default(0)
   dailyLimit       Int?
-  timezone         String   @default("Asia/Taipei")
+  timezone         String        @default("Asia/Taipei")
   weeklySchedule   Json
   intakeFormFields Json
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   vendor   Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   bookings ConsultationBooking[]
@@ -2932,6 +2958,7 @@ model ConsultationEvent {
 model ConsultationBooking {
   id              String                    @id @default(cuid())
   vendorId        String
+  customerKeyHash String?
   eventId         String
   startTime       DateTime
   endTime         DateTime
@@ -2950,4 +2977,272 @@ model ConsultationBooking {
   @@unique([vendorId, id])
   @@index([vendorId, eventId, startTime])
   @@index([vendorId, eventId, status, startTime])
+}
+
+model AutomationRule {
+  id           String   @id @default(cuid())
+  vendorId     String
+  name         String
+  description  String?
+  trigger      String
+  condition    Json
+  actions      Json
+  isActive     Boolean  @default(true)
+  funnelPageId String?
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vendor        Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  executionLogs AutomationExecutionLog[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, trigger, isActive])
+  @@index([vendorId, funnelPageId, trigger, isActive])
+}
+
+model AutomationExecutionLog {
+  id               String    @id @default(cuid())
+  vendorId         String
+  ruleId           String
+  idempotencyKey   String
+  eventId          String
+  liveId           String?
+  trigger          String
+  subjectType      String
+  subjectKeyHash   String?
+  status           String    @default("running")
+  conditionMatched Boolean?
+  actionResults    Json?
+  errorCode        String?
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  vendor                 Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  rule                   AutomationRule           @relation(fields: [vendorId, ruleId], references: [vendorId, id], onDelete: Cascade)
+  live                   Live?                    @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
+  customerTagAssignments CustomerTagAssignment[]
+  voucherGrants          AutomationVoucherGrant[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, idempotencyKey])
+  @@index([vendorId, ruleId, createdAt])
+  @@index([vendorId, eventId])
+  @@index([vendorId, status, startedAt])
+  @@index([vendorId, liveId, subjectType, trigger])
+}
+
+model CustomerTagAssignment {
+  id                   String   @id @default(cuid())
+  vendorId             String
+  customerKeyHash      String
+  tag                  String
+  sourceExecutionLogId String?
+  createdAt            DateTime @default(now())
+
+  vendor             Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sourceExecutionLog AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, customerKeyHash, tag])
+  @@index([vendorId, customerKeyHash])
+  @@index([vendorId, tag, createdAt])
+}
+
+model AutomationVoucherGrant {
+  id                   String    @id @default(cuid())
+  vendorId             String
+  customerKeyHash      String
+  productId            String
+  claimTokenHash       String    @unique
+  discountType         String
+  discountValue        Int
+  currency             String    @default("TWD")
+  sourceExecutionLogId String?
+  expiresAt            DateTime
+  redeemedAt           DateTime?
+  usedOrderId          String?
+  createdAt            DateTime  @default(now())
+
+  vendor             Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product            Product                 @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  sourceExecutionLog AutomationExecutionLog? @relation(fields: [vendorId, sourceExecutionLogId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, customerKeyHash, expiresAt])
+  @@index([vendorId, productId, expiresAt])
+  @@index([usedOrderId])
+}
+
+model CustomerCrmRecord {
+  id                 String                     @id @default(cuid())
+  vendorId           String
+  customerKeyHash    String
+  consultationStatus CustomerConsultationStatus @default(following_up)
+  updatedAt          DateTime                   @updatedAt
+  createdAt          DateTime                   @default(now())
+
+  vendor        Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  notes         ConsultantNote[]
+  salesProjects SalesProjectCustomer[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, customerKeyHash])
+  @@index([vendorId, consultationStatus, updatedAt])
+}
+
+model SalesProject {
+  id                String             @id @default(cuid())
+  vendorId          String
+  name              String
+  slug              String
+  mode              SalesWorkspaceMode
+  primaryFlow       SalesProjectFlow
+  status            SalesProjectStatus @default(draft)
+  onboardingEnabled Boolean            @default(true)
+  publishedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  vendor        Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products      SalesProjectProduct[]
+  customers     SalesProjectCustomer[]
+  forms         RegistrationForm[]
+  lives         Live[]
+  consultations ConsultationEvent[]
+  orders        CommerceOrder[]
+  analytics     AnalyticsEvent[]
+  taskStates    OnboardingTaskState[]
+  preferences   UserOnboardingPreference[] @relation("SelectedSalesProject")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, slug])
+  @@index([vendorId, status, updatedAt])
+}
+
+model SalesProjectProduct {
+  id        String   @id @default(cuid())
+  vendorId  String
+  projectId String
+  productId String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  product Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, productId])
+  @@index([vendorId, projectId, sortOrder])
+  @@index([vendorId, productId])
+}
+
+model SalesProjectCustomer {
+  id              String   @id @default(cuid())
+  vendorId        String
+  projectId       String
+  customerKeyHash String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor   Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project  SalesProject      @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  customer CustomerCrmRecord @relation(fields: [vendorId, customerKeyHash], references: [vendorId, customerKeyHash], onDelete: Cascade)
+
+  @@unique([vendorId, projectId, customerKeyHash])
+  @@index([vendorId, customerKeyHash])
+}
+
+model UserOnboardingPreference {
+  id                   String              @id @default(cuid())
+  userId               String
+  vendorId             String
+  questionnaireAnswers Json?
+  questionnaireStep    Int                 @default(0)
+  questionnaireDoneAt  DateTime?
+  recommendedMode      SalesWorkspaceMode?
+  selectedMode         SalesWorkspaceMode?
+  selectedProjectId    String?
+  taskPanelCollapsed   Boolean             @default(false)
+  taskPanelHiddenUntil DateTime?
+  guideDismissedAt     DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  selectedProject SalesProject? @relation("SelectedSalesProject", fields: [vendorId, selectedProjectId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([userId, vendorId])
+  @@index([vendorId, selectedProjectId])
+}
+
+model OnboardingTaskState {
+  id         String               @id @default(cuid())
+  vendorId   String
+  projectId  String?
+  /// "workspace" for merchant-level tasks, otherwise the stable project ID.
+  scopeKey   String
+  taskKey    String
+  status     OnboardingTaskStatus @default(not_started)
+  skipImpact String?
+  archivedAt DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  vendor  Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, scopeKey, taskKey])
+  @@index([vendorId, projectId, status])
+}
+
+model ConsultantNote {
+  id               String   @id @default(cuid())
+  vendorId         String
+  customerRecordId String
+  body             String
+  actorId          String
+  actorLabel       String
+  createdAt        DateTime @default(now())
+
+  vendor         Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  customerRecord CustomerCrmRecord @relation(fields: [vendorId, customerRecordId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, customerRecordId, createdAt])
+}
+
+enum SalesWorkspaceMode {
+  live_course
+  consulting
+  flagship
+}
+
+enum SalesProjectFlow {
+  live
+  consultation
+}
+
+enum SalesProjectStatus {
+  draft
+  published
+  archived
+}
+
+enum OnboardingTaskStatus {
+  not_started
+  in_progress
+  completed
+  skipped
+  needs_attention
+  archived
+}
+
+enum CustomerConsultationStatus {
+  following_up
+  closed_won
+  closed_lost
+  no_show
 }
