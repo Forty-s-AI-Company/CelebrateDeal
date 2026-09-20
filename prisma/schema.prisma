@@ -53,6 +53,13 @@ enum LiveQuestionStatus {
   hidden
 }
 
+enum ConsultationBookingStatus {
+  scheduled
+  completed
+  cancelled
+  no_show
+}
+
 model Vendor {
   id           String   @id @default(cuid())
   name         String
@@ -145,6 +152,8 @@ model Vendor {
   supportCaseEvents                SupportCaseEvent[]
   supportRefundHandoffs            SupportRefundHandoff[]
   buyerSupportOrderGrants          BuyerSupportOrderGrant[]
+  consultationEvents               ConsultationEvent[]
+  consultationBookings             ConsultationBooking[]
 }
 
 model User {
@@ -2895,4 +2904,50 @@ model LiveInteractionResponse {
   @@index([vendorId, liveId, eventType, createdAt])
   @@index([vendorId, liveId, formSubmissionId])
   @@index([usedOrderId])
+}
+
+model ConsultationEvent {
+  id               String   @id @default(cuid())
+  vendorId         String
+  title            String
+  description      String?
+  durationMinutes  Int      @default(30)
+  bufferMinutes    Int      @default(0)
+  dailyLimit       Int?
+  timezone         String   @default("Asia/Taipei")
+  weeklySchedule   Json
+  intakeFormFields Json
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  vendor   Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  bookings ConsultationBooking[]
+
+  @@unique([vendorId, id])
+  @@index([vendorId, isActive])
+  @@index([vendorId, createdAt])
+}
+
+model ConsultationBooking {
+  id              String                    @id @default(cuid())
+  vendorId        String
+  eventId         String
+  startTime       DateTime
+  endTime         DateTime
+  status          ConsultationBookingStatus @default(scheduled)
+  clientName      String
+  clientEmail     String
+  clientPhone     String
+  answers         Json?
+  meetingUrl      String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  vendor Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  event  ConsultationEvent @relation(fields: [vendorId, eventId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, id])
+  @@index([vendorId, eventId, startTime])
+  @@index([vendorId, eventId, status, startTime])
 }
