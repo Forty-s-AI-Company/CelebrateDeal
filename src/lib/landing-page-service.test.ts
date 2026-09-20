@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   manager: vi.fn(), editableScope: vi.fn(), salesScope: vi.fn(),
   create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
   versionCreate: vi.fn(), versionCount: vi.fn(), versionFindFirst: vi.fn(), formFindMany: vi.fn(), liveFindFirst: vi.fn(),
-  transaction: vi.fn(), validateCommerce: vi.fn(),
+  transaction: vi.fn(), validateCommerce: vi.fn(), listCommerce: vi.fn(),
 }));
 
 const database = {
@@ -18,11 +18,11 @@ const database = {
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope, getSalesProjectScope: mocks.salesScope }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction }) }));
-vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: vi.fn(), validateFunnelCommerceBindings: mocks.validateCommerce }));
+vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
 
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
-  LandingPageNotFoundError, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
+  LandingPageNotFoundError, getLandingPageForEditor, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
@@ -40,11 +40,11 @@ beforeEach(() => {
   mocks.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
   mocks.editableScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季專案", isAggregate: false, isLegacyWorkspace: false });
   mocks.salesScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季專案", isAggregate: false, isLegacyWorkspace: false });
-  mocks.formFindMany.mockResolvedValue([]); mocks.liveFindFirst.mockResolvedValue(null);
+  mocks.formFindMany.mockResolvedValue([]); mocks.liveFindFirst.mockResolvedValue(null); database.live.findMany.mockResolvedValue([]);
   mocks.findFirst.mockResolvedValue(page()); mocks.findMany.mockResolvedValue([]); mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.create.mockResolvedValue(page({ id: "page-new" })); mocks.deleteMany.mockResolvedValue({ count: 1 });
   mocks.versionCount.mockResolvedValue(0); mocks.versionCreate.mockResolvedValue({ id: "version-1", version: 1, content: document, formId: null, liveId: null, createdAt: now });
-  mocks.versionFindFirst.mockResolvedValue(null); mocks.validateCommerce.mockResolvedValue(undefined);
+  mocks.versionFindFirst.mockResolvedValue(null); mocks.validateCommerce.mockResolvedValue(undefined); mocks.listCommerce.mockResolvedValue([]);
   mocks.transaction.mockImplementation(async (callback: (value: typeof database) => Promise<unknown>) => callback(database));
 });
 
@@ -92,5 +92,22 @@ describe("landing page scoped mutations", () => {
     mocks.findFirst.mockResolvedValueOnce(page()).mockResolvedValueOnce(null);
     await duplicateLandingPage("page-1");
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", slug: "fall-launch-copy" } }));
+  });
+
+  it("editor loader 僅回傳目前 vendor/project 的頁面與資源", async () => {
+    const scheduledAt = new Date("2026-09-20T10:00:00.000Z");
+    mocks.findFirst.mockResolvedValueOnce(page({ draftFormId: "form-1", draftLiveId: "live-1", versions: [] }));
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [], submitLabel: "送出", successMessage: "收到" }]);
+    database.live.findMany.mockResolvedValueOnce([{ id: "live-1", slug: "launch", title: "直播", status: "scheduled", scheduledAt, formId: "form-1", videoId: null, video: null }]);
+    mocks.listCommerce.mockResolvedValueOnce([{ id: "product-1", name: "商品", priceCents: 100, currency: "TWD", fulfillmentType: "digital" }]);
+
+    const result = await getLandingPageForEditor("page-1");
+
+    expect(result.page.liveId).toBe("live-1");
+    expect(result.forms).toEqual([{ id: "form-1", slug: "signup", name: "報名表" }]);
+    expect(result.lives[0]).toMatchObject({ id: "live-1", formId: "form-1", status: "scheduled" });
+    expect(result.commerceProducts).toHaveLength(1);
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
+    expect(database.live.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
   });
 });
