@@ -59,6 +59,7 @@ beforeEach(() => {
   mocks.hasActiveLiveViewerSession.mockResolvedValue(true);
   mocks.recordStreamUsageLedgerEntry.mockResolvedValue({ duplicate: false, entryId: "usage-1", source: "TEAM_FUNNEL_PAGE" });
 });
+
 describe("POST /api/stream-usage", () => {
   it("records a server-validated heartbeat and returns only bounded status", async () => {
     const response = await POST(request());

@@ -34,6 +34,7 @@ function errorResponse(error: StreamUsageValidationError) {
   }
   return NextResponse.json({ error: "Invalid usage event" }, { status: 400 });
 }
+
 function admissionRequiredResponse() {
   return NextResponse.json(
     { error: "Playback unavailable" },
