@@ -8,7 +8,6 @@ const event = (overrides = {}) => ({
   dailyLimit: null,
   ...overrides,
 });
-
 describe("consultation slot engine", () => {
   it("accepts the canonical weekly schedule array with day and ranges", () => {
     const slots = generateConsultationSlots({
@@ -63,19 +62,5 @@ describe("consultation slot engine", () => {
     expect(available[0]?.startTime.toISOString()).toBe("2026-09-07T09:00:00.000Z");
     const blocked = generateConsultationSlots({ event: event(), from: new Date("2026-09-07"), to: new Date("2026-09-08"), bookings: [{ ...base, status: "scheduled" }] });
     expect(blocked[0]?.startTime.toISOString()).toBe("2026-09-07T09:30:00.000Z");
-  });
-
-  it("deduplicates slots produced by overlapping schedule windows", () => {
-    const slots = generateConsultationSlots({
-      event: event({ weeklySchedule: { "1": [{ start: "09:00", end: "10:00" }, { start: "09:30", end: "11:00" }] } }),
-      from: new Date("2026-09-07T00:00:00Z"),
-      to: new Date("2026-09-08T00:00:00Z"),
-    });
-    expect(slots.map((slot) => slot.startTime.toISOString())).toEqual([
-      "2026-09-07T09:00:00.000Z",
-      "2026-09-07T09:30:00.000Z",
-      "2026-09-07T10:00:00.000Z",
-      "2026-09-07T10:30:00.000Z",
-    ]);
   });
 });

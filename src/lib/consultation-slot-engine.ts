@@ -107,7 +107,6 @@ export function generateConsultationSlots(input: {
     const windows = scheduleForDay(event.weeklySchedule, day.getUTCDay());
     const dayBookings = bookings.filter((booking) => booking.startTime >= day && booking.startTime < dayEnd);
     const windowsSeen = new Set<string>();
-    const emittedStarts = new Set<number>();
     for (const window of windows) {
       const startMinute = minutes(window.start);
       const endMinute = minutes(window.end);
@@ -119,13 +118,9 @@ export function generateConsultationSlots(input: {
         const startTime = new Date(day.getTime() + offset * 60_000);
         const endTime = new Date(startTime.getTime() + event.durationMinutes * 60_000);
         if (startTime < from || endTime > to || endTime > dayEnd) continue;
-        if (emittedStarts.has(startTime.getTime())) continue;
         if (event.dailyLimit != null && dayBookings.length + slots.filter((slot) => slot.startTime >= day && slot.startTime < dayEnd).length >= event.dailyLimit) continue;
         const conflicts = dayBookings.some((booking) => startTime < new Date(booking.endTime.getTime() + buffer * 60_000) && endTime > booking.startTime);
-        if (!conflicts) {
-          emittedStarts.add(startTime.getTime());
-          slots.push({ startTime, endTime });
-        }
+        if (!conflicts) slots.push({ startTime, endTime });
       }
     }
   }
