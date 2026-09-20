@@ -53,6 +53,11 @@ enum LiveQuestionStatus {
   hidden
 }
 
+enum LandingPageStatus {
+  draft
+  published
+}
+
 enum ConsultationBookingStatus {
   scheduled
   completed
@@ -133,6 +138,10 @@ model Vendor {
   auditLogs                        AuditLog[]
   webhookEvents                    WebhookEvent[]
   sessions                         UserSession[]
+  landingPages                     LandingPage[]
+  landingPageVersions              LandingPageVersion[]
+  funnelVisits                     FunnelVisit[]
+  funnelSubmissions                FunnelSubmission[]
   salesTeams                       SalesTeam[]
   teamTemplates                    TeamFunnelTemplate[]
   teamTemplateVersions             TeamFunnelTemplateVersion[]
@@ -429,6 +438,8 @@ model RegistrationForm {
   promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
   submissions          FormSubmission[]
   lives                Live[]
+  landingPages         LandingPage[]        @relation("LandingPageDraftForm")
+  landingPageVersions  LandingPageVersion[] @relation("LandingPageVersionForm")
 
   @@unique([vendorId, id])
   @@index([vendorId, projectId])
@@ -456,6 +467,7 @@ model FormSubmission {
   teamAttribution          TeamLeadAttribution?
   chatMessages             LiveChatMessage[]
   liveInteractionResponses LiveInteractionResponse[]
+  funnelSubmission         FunnelSubmission?
 
   @@unique([liveId, id])
   @@index([formId, verificationStatus, createdAt])
@@ -538,6 +550,8 @@ model Live {
   interactionRuns            LiveInteractionRun[]
   interactionResponses       LiveInteractionResponse[]
   notificationRules          LiveNotificationRule[]
+  landingPages               LandingPage[]        @relation("LandingPageDraftLive")
+  landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
@@ -3113,6 +3127,7 @@ model SalesProject {
   vendor        Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   products      SalesProjectProduct[]
   customers     SalesProjectCustomer[]
+  landingPages  LandingPage[]
   forms         RegistrationForm[]
   lives         Live[]
   consultations ConsultationEvent[]
@@ -3250,4 +3265,99 @@ enum CustomerConsultationStatus {
   closed_won
   closed_lost
   no_show
+}
+
+model LandingPage {
+  id                 String            @id @default(cuid())
+  vendorId           String
+  projectId          String
+  name               String
+  slug               String
+  draftContent       Json
+  draftFormId        String?
+  draftLiveId        String?
+  status             LandingPageStatus @default(draft)
+  publishedVersionId String?
+  revision           Int               @default(1)
+  operations         Json?
+  publishedAt        DateTime?
+  unpublishedAt      DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  vendor           Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project          SalesProject        @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  draftForm        RegistrationForm?   @relation("LandingPageDraftForm", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)
+  draftLive        Live?               @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
+  versions         LandingPageVersion[] @relation("LandingPageVersions")
+  publishedVersion LandingPageVersion? @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
+  funnelVisits     FunnelVisit[]
+  funnelSubmissions FunnelSubmission[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, id, publishedVersionId])
+  @@unique([vendorId, projectId, slug])
+  @@index([vendorId, projectId, updatedAt])
+  @@index([vendorId, status, publishedAt])
+}
+
+model FunnelVisit {
+  id           String   @id @default(cuid())
+  vendorId     String
+  pageId       String
+  stepId       String
+  logicalStepId String
+  visitorId    String
+  experimentId String?
+  arm          String?
+  createdAt    DateTime @default(now())
+
+  vendor      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page        LandingPage        @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  submissions FunnelSubmission[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, pageId, id])
+  @@index([vendorId, pageId, logicalStepId, createdAt])
+  @@index([vendorId, pageId, visitorId, createdAt])
+}
+
+model FunnelSubmission {
+  id           String   @id @default(cuid())
+  vendorId     String
+  pageId       String
+  stepId       String
+  submissionId String   @unique
+  visitId      String?
+  createdAt    DateTime @default(now())
+
+  vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page       LandingPage    @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  visit      FunnelVisit?   @relation(fields: [vendorId, pageId, visitId], references: [vendorId, pageId, id], onDelete: Restrict)
+
+  @@index([vendorId, pageId, stepId, createdAt])
+  @@index([vendorId, pageId, visitId])
+}
+
+model LandingPageVersion {
+  id        String   @id @default(cuid())
+  vendorId  String
+  pageId    String
+  version   Int
+  content   Json
+  formId    String?
+  liveId    String?
+  createdAt DateTime @default(now())
+
+  vendor       Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  page         LandingPage       @relation("LandingPageVersions", fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  form         RegistrationForm? @relation("LandingPageVersionForm", fields: [vendorId, formId], references: [vendorId, id], onDelete: Restrict)
+  live         Live?             @relation("LandingPageVersionLive", fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)
+  publishedFor LandingPage?      @relation("LandingPagePublishedVersion")
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, pageId, id])
+  @@unique([vendorId, pageId, version])
+  @@index([vendorId, pageId, createdAt])
 }
