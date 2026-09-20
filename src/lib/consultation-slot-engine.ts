@@ -133,4 +133,3 @@ export function generateConsultationSlots(input: {
 }
 
 export const getAvailableConsultationSlots = generateConsultationSlots;
-

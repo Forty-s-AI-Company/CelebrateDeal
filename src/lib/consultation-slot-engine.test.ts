@@ -8,7 +8,6 @@ const event = (overrides = {}) => ({
   dailyLimit: null,
   ...overrides,
 });
-
 describe("consultation slot engine", () => {
   it("accepts the canonical weekly schedule array with day and ranges", () => {
     const slots = generateConsultationSlots({
@@ -79,4 +78,3 @@ describe("consultation slot engine", () => {
     ]);
   });
 });
-
