@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   manager: vi.fn(), editableScope: vi.fn(), salesScope: vi.fn(),
   create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
   versionCreate: vi.fn(), versionCount: vi.fn(), versionFindFirst: vi.fn(), formFindMany: vi.fn(), liveFindFirst: vi.fn(),
-  transaction: vi.fn(), validateCommerce: vi.fn(), listCommerce: vi.fn(),
+  transaction: vi.fn(), validateCommerce: vi.fn(), listCommerce: vi.fn(), publicCommerce: vi.fn(),
 }));
 
 const database = {
@@ -12,17 +12,18 @@ const database = {
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
   registrationForm: { findMany: mocks.formFindMany },
   live: { findFirst: mocks.liveFindFirst, findMany: vi.fn() },
+  consultationEvent: { findMany: vi.fn() },
   product: { findMany: vi.fn() },
 };
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope, getSalesProjectScope: mocks.salesScope }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction }) }));
-vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
+vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, publicFunnelCommerceViews: mocks.publicCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
 
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
-  LandingPageNotFoundError, getLandingPageForEditor, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
+  LandingPageNotFoundError, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
@@ -44,7 +45,7 @@ beforeEach(() => {
   mocks.findFirst.mockResolvedValue(page()); mocks.findMany.mockResolvedValue([]); mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.create.mockResolvedValue(page({ id: "page-new" })); mocks.deleteMany.mockResolvedValue({ count: 1 });
   mocks.versionCount.mockResolvedValue(0); mocks.versionCreate.mockResolvedValue({ id: "version-1", version: 1, content: document, formId: null, liveId: null, createdAt: now });
-  mocks.versionFindFirst.mockResolvedValue(null); mocks.validateCommerce.mockResolvedValue(undefined); mocks.listCommerce.mockResolvedValue([]);
+  mocks.versionFindFirst.mockResolvedValue(null); mocks.validateCommerce.mockResolvedValue(undefined); mocks.listCommerce.mockResolvedValue([]); mocks.publicCommerce.mockResolvedValue([]);
   mocks.transaction.mockImplementation(async (callback: (value: typeof database) => Promise<unknown>) => callback(database));
 });
 
@@ -109,5 +110,62 @@ describe("landing page scoped mutations", () => {
     expect(result.commerceProducts).toHaveLength(1);
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
     expect(database.live.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
+  });
+
+  it("公開 slug 在跨專案不唯一時 fail closed", async () => {
+    mocks.findMany.mockResolvedValueOnce([page({ id: "page-a" }), page({ id: "page-b" })]);
+
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 2,
+      where: expect.objectContaining({ slug: "fall-launch", status: "published" }),
+    }));
+  });
+
+  it("公開 Funnel loader 只組合已發布且同租戶的內容", async () => {
+    const flow = createFunnelFlow({ id: "flow_public", name: "公開名單", goal: "audience", domain: "audience" })!;
+    const content = createFunnelStepPages(flow)!;
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null, live: null } })]);
+
+    const result = await loadPublicLandingPage(" FALL-LAUNCH ");
+
+    expect(result).toMatchObject({ id: "page-1", slug: "fall-launch", publishedAt: now, content });
+    expect(result?.context).toEqual({ pageId: "page-1", forms: [] });
+    expect(mocks.publicCommerce).toHaveBeenCalledWith({ vendorId: "vendor-1", projectId: "project-1" }, content);
+  });
+
+  it("公開 Funnel loader 對 snapshot、內容與表單邊界 fail closed", async () => {
+    const published = (version: Record<string, unknown>) => page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content: createFunnelStepPages(createFunnelFlow({ id: "flow_public", name: "公開名單", goal: "audience", domain: "audience" })!)!, formId: null, liveId: null, live: null, ...version } });
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: null })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ content: { invalid: true } })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ vendorId: "other-vendor" })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ formId: "form-1" })]);
+    mocks.formFindMany.mockResolvedValueOnce([]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    await expect(loadPublicLandingPage("not a valid slug")).resolves.toBeNull();
+  });
+
+  it("公開 loader 投影同專案的有效表單", async () => {
+    const flow = createFunnelFlow({ id: "flow_form", name: "公開報名", goal: "audience", domain: "audience" })!;
+    const content = createFunnelStepPages(flow)!;
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: "form-1", liveId: null, live: null } })]);
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "", successMessage: "" }]);
+
+    const result = await loadPublicLandingPage("fall-launch");
+
+    expect(result?.submissionForm).toMatchObject({ id: "form-1", submitLabel: "送出報名", successMessage: "已收到報名，請留意確認信。" });
+    expect(result?.context.forms).toEqual([{ id: "form-1", slug: "signup", name: "報名表" }]);
+  });
+
+  it("公開 loader 拒絕已綁定但不存在的直播", async () => {
+    const flow = createFunnelFlow({ id: "flow_live", name: "公開直播", goal: "audience", domain: "audience" })!;
+    const content = createFunnelStepPages(flow)!;
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: "form-1", liveId: "live-1", live: null } })]);
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "收到" }]);
+
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
   });
 });

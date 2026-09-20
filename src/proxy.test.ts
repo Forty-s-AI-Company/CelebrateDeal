@@ -12,7 +12,7 @@ function request(pathname: string, method = "GET") {
 
 describe("Next Proxy lineage marker", () => {
   it("matches only the public marker path", () => {
-    expect(config.matcher).toBe("/__celebratedeal_wp187_fingerprint\\.json");
+    expect(config.matcher).toEqual(["/__celebratedeal_wp187_fingerprint\\.json", "/lp/:path*"]);
     expect(proxy(request(MARKER_PATH)).status).toBe(200);
     expect(proxy(request("/login")).status).toBe(200);
   });

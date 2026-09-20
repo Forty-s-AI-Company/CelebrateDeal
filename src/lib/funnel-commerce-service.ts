@@ -127,3 +127,26 @@ export function publicCommerceViewForDocument(
   const view = commerceViewForBinding(document.commerce, products);
   return view ? { ...view, ...(checkoutPath ? { checkoutPath } : {}) } : undefined;
 }
+
+/** Public Funnel projection: only ready products bound to the current project
+ * are exposed, while merchant/provider fields remain server-side. */
+export async function publicFunnelCommerceViews(
+  scope: CommerceScope,
+  content: unknown,
+  database = getDb(),
+): Promise<Record<string, FunnelCommerceView>> {
+  const documents = documentsIn(content);
+  const ids = [...new Set(bindingsIn(content).flatMap((binding) => [
+    binding.productId,
+    ...(binding.orderBumpProductId ? [binding.orderBumpProductId] : []),
+  ]))];
+  if (ids.length === 0) return {};
+  const products = (await catalogProducts(database, scope, ids)).flatMap((product) => {
+    const safe = safeProduct(product);
+    return safe ? [safe] : [];
+  });
+  return Object.fromEntries(documents.flatMap((document) => {
+    const view = commerceViewForBinding(document.commerce, products);
+    return view ? [[document.id, view] as const] : [];
+  }));
+}
