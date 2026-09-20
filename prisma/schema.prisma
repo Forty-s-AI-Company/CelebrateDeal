@@ -487,9 +487,9 @@ model Live {
   description                    String?
   scheduledAt                    DateTime
   status                         String                   @default("draft")
-  startedAt                      DateTime?
-  endedAt                        DateTime?
-  replayAvailableUntil           DateTime?
+  startedAt                 DateTime?
+  endedAt                   DateTime?
+  replayAvailableUntil      DateTime?
   heroImageUrl                   String?
   heroImageAssetId               String?
   accentCopy                     String?
