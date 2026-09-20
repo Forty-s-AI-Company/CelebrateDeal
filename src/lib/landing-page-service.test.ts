@@ -22,7 +22,7 @@ vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mo
 
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
-  LandingPageNotFoundError, getLandingPageForEditor, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
+  LandingPageNotFoundError, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
@@ -109,5 +109,15 @@ describe("landing page scoped mutations", () => {
     expect(result.commerceProducts).toHaveLength(1);
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
     expect(database.live.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
+  });
+
+  it("公開 slug 在跨專案不唯一時 fail closed", async () => {
+    mocks.findMany.mockResolvedValueOnce([page({ id: "page-a" }), page({ id: "page-b" })]);
+
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 2,
+      where: expect.objectContaining({ slug: "fall-launch", status: "published" }),
+    }));
   });
 });

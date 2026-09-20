@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   attributionCookieFromRequest,
@@ -26,6 +27,7 @@ import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers
 import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
 import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
+import { funnelVisitorIdFromRequest, resolveTrustedFunnelSubmission } from "@/lib/funnel-runtime";
 import {
   createFormSubmissionLineBindingToken,
   FORM_SUBMISSION_LINE_BINDING_COOKIE,
@@ -45,11 +47,20 @@ const SubmissionAnswers = z.record(
 
 const SubmissionPayload = z.object({
   formId: z.string().min(1).max(128),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
+  funnelStepId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,95}$/u).optional(),
   liveId: z.string().min(1).max(128).nullable().optional(),
   payload: SubmissionAnswers,
   referralCode: z.string().min(1).max(80).nullable().optional(),
   shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
   redirectTo: z.string().max(2_048).optional(),
+  utm: z.object({
+    source: z.string().trim().max(120).optional(),
+    medium: z.string().trim().max(120).optional(),
+    campaign: z.string().trim().max(160).optional(),
+    content: z.string().trim().max(160).optional(),
+    term: z.string().trim().max(160).optional(),
+  }).strict().optional(),
 });
 
 function stableSubmissionId(formId: string, liveId: string | null, email: string) {
@@ -188,6 +199,21 @@ async function hasVisiblePublicRegistrationSession({
   });
 }
 
+async function missingLiveSelectionResponse(input: {
+  submittedLiveId: string | null;
+  formId: string;
+  vendorId: string;
+  hideExpiredSessions: boolean;
+}) {
+  if (input.submittedLiveId) return null;
+  const hasVisibleSession = await hasVisiblePublicRegistrationSession({
+    formId: input.formId,
+    vendorId: input.vendorId,
+    hideExpiredSessions: input.hideExpiredSessions,
+  });
+  return hasVisibleSession ? NextResponse.json({ error: "Live session selection required" }, { status: 400 }) : null;
+}
+
 type VerifiableSubmission = {
   id: string;
   name: string;
@@ -197,6 +223,73 @@ type VerifiableSubmission = {
   verificationVersion: number;
   verificationExpiresAt: Date | null;
 };
+
+type TrustedFunnelSource = NonNullable<Awaited<ReturnType<typeof resolveTrustedFunnelSubmission>>>;
+type TrustedFunnelSourceResolution =
+  | { ok: true; source: TrustedFunnelSource | null }
+  | { ok: false; response: NextResponse };
+
+async function resolveTrustedFunnelSource(input: {
+  landingPageId: string | undefined;
+  funnelStepId: string | undefined;
+  formId: string;
+  liveId: string | null;
+  request: Request;
+}): Promise<TrustedFunnelSourceResolution> {
+  if (!input.funnelStepId) return { ok: true, source: null };
+  if (!input.landingPageId) return { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+  const visitorId = funnelVisitorIdFromRequest(input.request);
+  if (!visitorId) return { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+  const source = await resolveTrustedFunnelSubmission({
+    pageId: input.landingPageId,
+    stepId: input.funnelStepId,
+    formId: input.formId,
+    liveId: input.liveId,
+    visitorId,
+  });
+  return source
+    ? { ok: true, source }
+    : { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+}
+
+const verifiableSubmissionSelect = {
+  id: true,
+  name: true,
+  email: true,
+  liveId: true,
+  verificationStatus: true,
+  verificationVersion: true,
+  verificationExpiresAt: true,
+} satisfies Prisma.FormSubmissionSelect;
+
+/** The new registration and its immutable Funnel provenance commit together. */
+async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null): Promise<VerifiableSubmission> {
+  const database = getDb();
+  if (!source) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
+  return database.$transaction(async (transaction) => {
+    const submission = await transaction.formSubmission.create({ data, select: verifiableSubmissionSelect });
+    await transaction.funnelSubmission.upsert({
+      where: { submissionId: submission.id },
+      create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
+      update: {},
+      select: { id: true },
+    });
+    return submission;
+  });
+}
+
+function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelSource: TrustedFunnelSource | null }) {
+  return {
+    vendorId: input.vendorId,
+    eventId: `form-registered:${input.submissionId}`,
+    trigger: "form_registered" as const,
+    subjectType: "buyer_registration" as const,
+    subjectId: input.submissionId,
+    subjectKeyHash: automationCustomerKeyHash(input.vendorId, input.email),
+    recipientEmail: input.email,
+    ...(input.funnelSource ? { funnelPageId: input.funnelSource.pageId } : {}),
+  };
+}
 
 async function refreshExpiredVerification(submission: VerifiableSubmission, now = new Date()) {
   if (
@@ -274,6 +367,11 @@ async function enqueueSubmissionVerificationSafely({
   }
 }
 
+function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T | null {
+  if (!form || !form.isActive) return null;
+  return form;
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
@@ -304,14 +402,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: contactError }, { status: 400 });
   }
 
-  const form = await getDb().registrationForm.findUnique({
+  const form = availablePublicForm(await getDb().registrationForm.findUnique({
     where: { id: parsed.data.formId },
     include: {
       vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
     },
-  });
-  if (!form || !form.isActive) {
+  }));
+  if (!form) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  }
+  if (form.projectId) {
+    const project = await getDb().salesProject.findFirst({
+      where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } },
+      select: { id: true },
+    });
+    if (!project) return NextResponse.json({ error: "Form not found" }, { status: 404 });
   }
 
   const fieldSpecs = parseRegistrationFormFields(form.fields);
@@ -324,16 +429,8 @@ export async function POST(request: Request) {
   }
 
   const submittedLiveId = parsed.data.liveId ?? null;
-  if (!submittedLiveId) {
-    const hasVisibleSession = await hasVisiblePublicRegistrationSession({
-      formId: form.id,
-      vendorId: form.vendorId,
-      hideExpiredSessions: form.hideExpiredSessions,
-    });
-    if (hasVisibleSession) {
-      return NextResponse.json({ error: "Live session selection required" }, { status: 400 });
-    }
-  }
+  const missingLiveResponse = await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
+  if (missingLiveResponse) return missingLiveResponse;
 
   const liveContext = await loadFormLiveQuotaPolicy({
     formId: form.id,
@@ -343,6 +440,13 @@ export async function POST(request: Request) {
   if (!liveContext.found) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
   }
+
+  // A public Funnel source is only accepted when the current published page,
+  // its bound form/live pair, deadline and observed visit all re-resolve.
+  // Legacy form posts omit funnelStepId and retain their existing behavior.
+  const funnelResolution = await resolveTrustedFunnelSource({ landingPageId: parsed.data.landingPageId, funnelStepId: parsed.data.funnelStepId, formId: form.id, liveId: submittedLiveId, request });
+  if (!funnelResolution.ok) return funnelResolution.response;
+  const funnelSource = funnelResolution.source;
 
   const blocked = await getDb().blacklist.findFirst({
     where: {
@@ -411,8 +515,7 @@ export async function POST(request: Request) {
   const verificationExpiresAt = new Date(Date.now() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
   let submission: VerifiableSubmission;
   try {
-    submission = await getDb().formSubmission.create({
-      data: {
+    submission = await createPublicSubmission({
         id: submissionId,
         formId: parsed.data.formId,
         liveId: submittedLiveId,
@@ -425,17 +528,7 @@ export async function POST(request: Request) {
         verificationVersion: 1,
         verificationExpiresAt,
         affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        liveId: true,
-        verificationStatus: true,
-        verificationVersion: true,
-        verificationExpiresAt: true,
-      },
-    });
+      }, funnelSource);
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
     const concurrentSubmission = await getDb().formSubmission.findUnique({
@@ -479,6 +572,14 @@ export async function POST(request: Request) {
   });
   if (!verificationQueued) {
     return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+  }
+
+  // Registration succeeds independently from marketing delivery. The durable
+  // automation execution key makes a retried request converge without a resend.
+  try {
+    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId: form.vendorId, submissionId: submission.id, email, funnelSource }));
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId: form.vendorId });
   }
 
   return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
@@ -539,11 +640,15 @@ function nativeFormPayload(formData: FormData | null) {
   }
 
   const liveId = formData.get("liveId");
+  const landingPageId = formData.get("landingPageId");
+  const funnelStepId = formData.get("funnelStepId");
   const referralCode = formData.get("referralCode");
   const shareCode = formData.get("shareCode");
   const redirectTo = formData.get("redirectTo");
   return {
     formId: String(formData.get("formId") ?? ""),
+    landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
+    funnelStepId: typeof funnelStepId === "string" && funnelStepId ? funnelStepId : undefined,
     liveId: typeof liveId === "string" && liveId ? liveId : null,
     payload,
     referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,

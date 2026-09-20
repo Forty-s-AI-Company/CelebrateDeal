@@ -16,8 +16,8 @@ import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sa
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
-import { listFunnelCommerceProducts, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
-import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { listFunnelCommerceProducts, publicFunnelCommerceViews, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
+import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   live: { id: string; slug: string; videoId: string; videoTitle: string };
@@ -97,6 +97,19 @@ export type LandingPageList = {
   scope: { projectId: string | null; projectName: string | null; isAggregate: boolean; isLegacyWorkspace: boolean };
 };
 
+export type PublicLandingPage = {
+  id: string;
+  slug: string;
+  content: LandingPageStoredContent;
+  context: LandingPageRenderContext;
+  publishedAt: Date;
+  webinar?: PublicFunnelWebinarResource;
+  submissionForm?: PublicFunnelWebinarResource["form"];
+  submissionLiveId?: string;
+  commerceByPageId?: Record<string, FunnelCommerceView>;
+  consultationEvents?: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }>;
+};
+
 /** Existing Puck documents remain readable while new Funnel documents roll out additively. */
 export type LandingPageStoredContent = LandingPageContent | PageDocument | FunnelStepPages;
 
@@ -131,7 +144,7 @@ export class LandingPageScopeError extends Error {
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
 type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
-type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live">;
+type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent">;
 
 function db() {
   return getDb();
@@ -184,6 +197,60 @@ export function registrationFormIdsInContent(content: LandingPageStoredContent) 
   };
   visit(content);
   return ids;
+}
+
+function publicSubmissionForm(forms: FormRecord[], formId: string | null) {
+  if (!formId) return undefined;
+  const form = forms.find((candidate) => candidate.id === formId);
+  const fields = parseRegistrationFormFields(form?.fields);
+  if (!form || !fields.success) return undefined;
+  return {
+    id: form.id,
+    fields: fields.data,
+    submitLabel: form.submitLabel || "送出報名",
+    successMessage: form.successMessage || "已收到報名，請留意確認信。",
+  };
+}
+
+function publicSubmissionProjection(forms: FormRecord[], formId: string | null, liveId?: string) {
+  const form = publicSubmissionForm(forms, formId);
+  return { ...(form ? { submissionForm: form } : {}), ...(liveId ? { submissionLiveId: liveId } : {}) };
+}
+
+function consultationEventIdsInContent(content: LandingPageStoredContent): Set<string> {
+  const ids = new Set<string>();
+  const visitNodes = (nodes: PageDocument["root"]) => {
+    for (const node of nodes) {
+      if (node.type === "calendar") {
+        const candidate = node.props.eventId ?? node.props.calendarId ?? node.props.bookingEventId;
+        if (typeof candidate === "string" && candidate.trim()) ids.add(candidate.trim());
+      }
+      if (node.children) visitNodes(node.children);
+    }
+  };
+  const visitDocument = (document: PageDocument) => {
+    visitNodes(document.root);
+    for (const popup of document.popups) visitNodes(popup.root);
+  };
+  if ("pages" in content) Object.values(content.pages).forEach(visitDocument);
+  else if ("root" in content && "settings" in content) visitDocument(content);
+  return ids;
+}
+
+async function publicConsultationEvents(database: LandingPageDb, scope: { vendorId: string; projectId: string | null }, content: LandingPageStoredContent) {
+  const referencedIds = [...consultationEventIdsInContent(content)];
+  if (referencedIds.length === 0) return [];
+  const events = await database.consultationEvent.findMany({
+    where: {
+      id: { in: referencedIds },
+      vendorId: scope.vendorId,
+      projectId: scope.projectId,
+      isActive: true,
+      salesProject: { is: { status: "published", publishedAt: { not: null } } },
+    },
+    select: { id: true, title: true, description: true, timezone: true, durationMinutes: true, intakeFormFields: true },
+  });
+  return events.length === referencedIds.length ? events : [];
 }
 
 function toFormReference(form: FormRecord): LandingPageFormReference {
@@ -541,4 +608,93 @@ export async function duplicateLandingPage(pageId: string) {
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: page.draftFormId, draftLiveId: page.draftLiveId },
     select: { id: true, vendorId: true, projectId: true, name: true, slug: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
   });
+}
+
+/**
+ * Resolves a published page for the public Funnel surface. Slugs are scoped
+ * to vendor/project, so an ambiguous cross-tenant slug fails closed instead
+ * of choosing an arbitrary page.
+ */
+// eslint-disable-next-line complexity
+export async function loadPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
+  const safeSlug = pageSlug(slug);
+  if (!safeSlug) return null;
+  const candidates = await db().landingPage.findMany({
+    where: {
+      slug: safeSlug,
+      status: "published",
+      publishedVersionId: { not: null },
+      project: { is: { status: "published", publishedAt: { not: null } } },
+    },
+    take: 2,
+    select: {
+      id: true,
+      vendorId: true,
+      projectId: true,
+      slug: true,
+      publishedAt: true,
+      publishedVersion: {
+        select: {
+          id: true,
+          vendorId: true,
+          pageId: true,
+          content: true,
+          formId: true,
+          liveId: true,
+          live: {
+            select: {
+              id: true,
+              slug: true,
+              title: true,
+              status: true,
+              scheduledAt: true,
+              replayEnabled: true,
+              replayAvailableUntil: true,
+              formId: true,
+              vendorId: true,
+              projectId: true,
+              videoId: true,
+              video: { select: videoSelect },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (candidates.length !== 1) return null;
+  const page = candidates[0];
+  const version = page.publishedVersion;
+  if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return null;
+  const content = parseFunnelStepPages(version.content) ?? parsePageDocument(version.content) ?? parseLandingPageContent(version.content);
+  if (!content || invalidWebinarContainer(content)) return null;
+
+  const formIds = registrationFormIdsInContent(content);
+  if (version.formId) formIds.add(version.formId);
+  const ids = [...formIds];
+  const forms = ids.length === 0 ? [] : await db().registrationForm.findMany({
+    where: { id: { in: ids }, vendorId: page.vendorId, projectId: page.projectId, isActive: true },
+    select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
+  });
+  if (forms.length !== ids.length) return null;
+  const live = version.live;
+  if (version.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return null;
+
+  const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content))
+    ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId)
+    : undefined;
+  const commerceByPageId = page.projectId
+    ? await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content)
+    : {};
+  const consultationEvents = await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content);
+  return {
+    ...(webinar ? { webinar } : {}),
+    ...publicSubmissionProjection(forms, version.formId, live?.id),
+    id: page.id,
+    slug: page.slug,
+    content,
+    context: { pageId: page.id, forms: forms.map(toFormReference), ...(live ? { live: toLiveReference(live) } : {}) },
+    publishedAt: page.publishedAt,
+    ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),
+    ...(consultationEvents.length > 0 ? { consultationEvents } : {}),
+  };
 }
