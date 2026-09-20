@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
 import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
 import type { FunnelOperations, FunnelExperiment } from "@/lib/funnel-operations";
 import type { FunnelOperationsEditor, FunnelReports } from "@/lib/funnel-operations-service";
 
 type Props = { initial: FunnelOperationsEditor; initialReports: FunnelReports; initialStepId: string; csrfName: string; csrfToken: string };
-const tabs = ["A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
+const tabs = ["A/B test", "Automation Rules", "Stats", "Leads", "Sales", "Deadline settings"] as const;
 
 export function FunnelOperationsPanel({ initial, initialReports, initialStepId, csrfName, csrfToken }: Props) {
   const [editor, setEditor] = useState(initial);
@@ -47,6 +48,7 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
           {editor.operations.experiment.status === "winner" ? <label>Winner<select className="ml-2 rounded border p-2" value={editor.operations.experiment.winner ?? "control"} onChange={(event) => updateExperiment({ ...editor.operations.experiment!, winner: event.target.value as "control" | "variant" })}><option value="control">control</option><option value="variant">variant</option></select></label> : null}
         </>}
       </div> : null}
+      {tab === "Automation Rules" ? <div className="mt-5"><FunnelAutomationSettings pageId={editor.pageId} csrfName={csrfName} csrfToken={csrfToken} /></div> : null}
       {tab === "Deadline settings" ? <div className="mt-5 grid gap-4">
         <label className="flex gap-2"><input type="checkbox" checked={editor.operations.deadline.enabled} onChange={(event) => void save({ ...editor.operations, deadline: { ...editor.operations.deadline, enabled: event.target.checked } })} />啟用到期設定</label>
         <label>Timezone<input className="ml-2 rounded border p-2" value={editor.operations.deadline.timezone} onChange={(event) => void save({ ...editor.operations, deadline: { ...editor.operations.deadline, timezone: event.target.value } })} /></label>
