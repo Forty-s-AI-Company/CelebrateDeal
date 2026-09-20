@@ -1,8 +1,10 @@
 import { FunnelList } from "@/components/landing-pages/funnel-list";
 import { Card, PageHeader } from "@/components/ui";
+import { requireVendorManager } from "@/lib/auth";
 import { listLandingPages } from "@/lib/landing-page-service";
 
 export default async function LandingPagesPage() {
+  await requireVendorManager();
   const { pages, scope } = await listLandingPages();
   const publishedCount = pages.filter((page) => page.status === "published").length;
 
