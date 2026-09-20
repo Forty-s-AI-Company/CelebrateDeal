@@ -41,6 +41,8 @@ export default defineConfig({
     exclude: [
       ...configDefaults.exclude,
       "tests/e2e/**",
+      // Development browser harnesses run exclusively through Playwright.
+      "tests/browser-dev/**",
       // Historical AI Team snapshots are evidence, not active test sources.
       ".ai-team/tmp/**",
       // Browser QA mirrors are disposable copies of the source tree, not
