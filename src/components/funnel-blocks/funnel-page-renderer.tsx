@@ -20,12 +20,10 @@ export function FunnelPageRenderer({ blocks, form, themeColor, consultationBooki
     }
     if (block.type === "lead_form") return <LeadFormBlock key={block.id} settings={block.settings} form={form} themeColor={themeColor} />;
     if (block.type === "consultation_booking") {
-      const event = form.consultationEvent;
-      const settings = event ? { ...block.settings, title: event.title, durationMinutes: event.durationMinutes, timezone: event.timezone, intakeFields: Array.isArray(event.intakeFormFields) ? event.intakeFormFields as typeof block.settings.intakeFields : block.settings.intakeFields } : block.settings;
-      return <ConsultationBookingBlock key={block.id} settings={settings} {...consultationBooking} />;
+      if (!consultationBooking) return <section key={block.id} role="status" className="mx-auto max-w-2xl px-4 py-10 text-center text-sm text-slate-600">預約功能目前無法使用，請稍後再試。</section>;
+      return <ConsultationBookingBlock key={block.id} settings={block.settings} {...consultationBooking} />;
     }
     if (block.type === "hero_banner") return <section key={block.id} className="relative isolate overflow-hidden bg-slate-950 text-white">{block.settings.imageUrl ? <Image src={block.settings.imageUrl} alt={block.settings.imageAlt} fill unoptimized loading="lazy" sizes="100vw" className="-z-20 object-cover" /> : null}<div className="absolute inset-0 -z-10 bg-slate-950/65" /><div className="mx-auto grid min-h-[480px] max-w-6xl content-center px-5 py-20 sm:px-8">{block.settings.eyebrow ? <p className="mb-3 text-sm font-black uppercase tracking-[0.2em] text-orange-300">{block.settings.eyebrow}</p> : null}<h1 className="max-w-4xl text-4xl font-black tracking-tight sm:text-6xl">{block.settings.headline}</h1>{block.settings.description ? <p className="mt-5 max-w-2xl whitespace-pre-line text-lg leading-8 text-slate-200">{block.settings.description}</p> : null}{block.settings.ctaLabel && block.settings.ctaHref ? <a href={block.settings.ctaHref} className="mt-8 w-fit rounded-xl bg-[var(--funnel-theme)] px-6 py-3 font-black text-white">{block.settings.ctaLabel}</a> : null}</div></section>;
     return <section key={block.id} className="mx-auto max-w-4xl px-4 py-12 sm:px-6">{block.settings.title ? <h2 className="mb-6 text-3xl font-black text-slate-950">{block.settings.title}</h2> : null}<div className="grid gap-3">{block.settings.items.map((item) => <details key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-bold text-slate-950">{item.question}</summary><p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">{item.answer}</p></details>)}</div></section>;
   })}</main>;
 }
-
