@@ -431,6 +431,7 @@ model RegistrationForm {
   lives                Live[]
 
   @@unique([vendorId, id])
+  @@index([vendorId, projectId])
 }
 
 model FormSubmission {
@@ -541,6 +542,7 @@ model Live {
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
+  @@index([vendorId, projectId, status])
 }
 
 /// Tenant-owned image upload metadata. Object keys are generated server-side
@@ -911,6 +913,7 @@ model AnalyticsEvent {
   @@index([eventType, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, trustLevel, eventType, createdAt])
+  @@index([vendorId, projectId, createdAt])
 }
 
 enum AnalyticsTrustLevel {
@@ -1518,6 +1521,7 @@ model CommerceOrder {
   @@unique([vendorId, checkoutIdempotencyKey])
   @@unique([vendorId, primaryPaymentTransactionId])
   @@index([vendorId, status, createdAt])
+  @@index([vendorId, projectId, status, createdAt])
   @@index([vendorId, paidAt])
 }
 
@@ -2952,6 +2956,7 @@ model ConsultationEvent {
 
   @@unique([vendorId, id])
   @@index([vendorId, isActive])
+  @@index([vendorId, projectId, isActive])
   @@index([vendorId, createdAt])
 }
 

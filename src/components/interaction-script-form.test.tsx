@@ -117,6 +117,7 @@ function renderForm({ roles = [], events = [] }: { roles?: InteractionRole[]; ev
     boundLives: [{
       id: "test-fixture-live-1",
       vendorId: "test-fixture-vendor-1",
+      projectId: null,
       videoId: null,
       formId: null,
       messageTemplateId: null,
