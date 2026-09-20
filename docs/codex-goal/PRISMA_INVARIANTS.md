@@ -184,7 +184,7 @@
 
 ## 驗收判定
 
-- 101/101 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation 或 supporting/telemetry 類別。
+- 112/112 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation、automation、CRM、sales workspace 或 supporting/telemetry 類別。
 - 71 migration directories 已納入 canonical inventory；66/71 已由既有驗證 forward-apply，新增 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
