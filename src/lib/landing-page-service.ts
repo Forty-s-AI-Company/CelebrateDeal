@@ -663,6 +663,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
   });
   if (candidates.length !== 1) return null;
   const page = candidates[0];
+  if (!page) return null;
   const version = page.publishedVersion;
   if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return null;
   const content = parseFunnelStepPages(version.content) ?? parsePageDocument(version.content) ?? parseLandingPageContent(version.content);
