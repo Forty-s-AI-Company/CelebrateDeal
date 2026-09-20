@@ -82,6 +82,7 @@ describe("POST /api/stream-usage", () => {
     expect(mocks.recordStreamUsageLedgerEntry).toHaveBeenCalledWith({ ...payload, viewerKeyHash: "viewer-hash" });
     expect(mocks.dispatchAutomationEvent).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       eventId: payload.eventId,
+      liveId: payload.liveId,
       trigger: "viewer_watch_progress",
       watchSecondsTotal: 120,
     }));

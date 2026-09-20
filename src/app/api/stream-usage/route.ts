@@ -115,6 +115,7 @@ export async function POST(request: Request) {
       const automationEvent = {
         vendorId: parsed.data.vendorId,
         eventId: parsed.data.eventId,
+        liveId: parsed.data.liveId,
         subjectType: registration?.subjectType ?? "viewer_session",
         subjectId: registration?.subjectId ?? admitted.id,
         subjectKeyHash: registration?.subjectKeyHash ?? admitted.tokenHash,
