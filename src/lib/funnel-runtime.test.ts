@@ -25,6 +25,8 @@ describe("public Funnel runtime", () => {
       headers: { cookie: `unrelated=value; celebratedeal_funnel_visitor=${visitorId}` },
     });
     expect(funnelVisitorIdFromRequest(request)).toBe(visitorId);
+    expect(funnelVisitorIdFromRequest(new Request("https://app.example.test/api/form-submissions", { headers: { cookie: "celebratedeal_funnel_visitor=short" } }))).toBeNull();
+    expect(funnelVisitorIdFromRequest(new Request("https://app.example.test/api/form-submissions", { headers: { cookie: "celebratedeal_funnel_visitor=%E0%A4%A" } }))).toBeNull();
   });
 
   it("assigns a visitor to the same A/B arm deterministically", () => {
@@ -35,6 +37,8 @@ describe("public Funnel runtime", () => {
     };
     expect(assignFunnelExperiment("page_1", experiment, visitorId)).toEqual(assignFunnelExperiment("page_1", experiment, visitorId));
     expect(assignFunnelExperiment("page_1", experiment, visitorId)).toMatchObject({ id: "experiment_1", arm: expect.stringMatching(/^(control|variant)$/u) });
+    expect(assignFunnelExperiment("page_1", { ...experiment, controlWeight: 100, variantWeight: 0 }, visitorId)).toEqual({ id: "experiment_1", arm: "control" });
+    expect(assignFunnelExperiment("page_1", { ...experiment, controlWeight: 0, variantWeight: 100 }, visitorId)).toEqual({ id: "experiment_1", arm: "variant" });
   });
 
   it("fails closed for invalid visitors and resolves winner assignments", () => {
@@ -99,6 +103,7 @@ describe("public Funnel runtime", () => {
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: sameTarget, now: new Date("2026-09-17T02:00:00.000Z") }).status).toBe("render");
     expect(isFunnelDeadlineExpired(null)).toBe(false);
     expect(isFunnelDeadlineExpired(base, new Date("2026-09-17T02:00:00.000Z"))).toBe(false);
+    expect(isFunnelDeadlineExpired({ ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "2026-09-17T10:00:00+08:00" } }, new Date("2026-09-17T02:00:00.000Z"))).toBe(true);
     expect(isFunnelDeadlineExpired({ ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "not-a-date" } }, new Date("2026-09-17T02:00:00.000Z"))).toBe(false);
   });
 
@@ -139,9 +144,12 @@ describe("public Funnel runtime", () => {
     await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: database as never })).resolves.toMatchObject({ decision: { status: "render" } });
     await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: { ...database, landingPage: { findFirst: vi.fn().mockResolvedValue(null) } } as never })).resolves.toBeNull();
     await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: { ...database, landingPage: { findFirst: vi.fn().mockResolvedValue({ ...await database.landingPage.findFirst(), publishedVersion: null }) } } as never })).resolves.toBeNull();
+    await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: { ...database, landingPage: { findFirst: vi.fn().mockResolvedValue({ ...await database.landingPage.findFirst(), publishedVersion: { content: { invalid: true }, formId: null, liveId: null } }) } } as never })).resolves.toBeNull();
     await expect(recordPublicFunnelVisit({ pageId: "page_1", vendorId: "vendor_1", stepId: "opt_in", logicalStepId: "opt_in", visitorId: "invalid", experiment: null, database: database as never })).resolves.toBeNull();
     await expect(recordPublicFunnelVisit({ pageId: "page_1", vendorId: "vendor_1", stepId: "opt_in", logicalStepId: "opt_in", visitorId, experiment: { id: "experiment_1", arm: "control" }, database: database as never })).resolves.toEqual({ id: "visit-1" });
+    await expect(recordPublicFunnelVisit({ pageId: "page_1", vendorId: "vendor_1", stepId: "opt_in", logicalStepId: "opt_in", visitorId, experiment: null, database: database as never })).resolves.toEqual({ id: "visit-1" });
     await expect(recordTrustedFunnelSubmission({ vendorId: "vendor_1", pageId: "page_1", stepId: "opt_in", submissionId: "submission-1", visitId: null, database: database as never })).resolves.toEqual({ id: "submission-1" });
+    await expect(recordTrustedFunnelSubmission({ vendorId: "vendor_1", pageId: "page_1", stepId: "opt_in", submissionId: "submission-2", visitId: "visit-1", database: database as never })).resolves.toEqual({ id: "submission-1" });
     expect(visitCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ visitorId, experimentId: "experiment_1", arm: "control" }) }));
     expect(submissionUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.not.objectContaining({ visitId: expect.anything() }) }));
   });

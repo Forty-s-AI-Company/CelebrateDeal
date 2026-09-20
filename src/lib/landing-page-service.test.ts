@@ -133,4 +133,18 @@ describe("landing page scoped mutations", () => {
     expect(result?.context).toEqual({ pageId: "page-1", forms: [] });
     expect(mocks.publicCommerce).toHaveBeenCalledWith({ vendorId: "vendor-1", projectId: "project-1" }, content);
   });
+
+  it("公開 Funnel loader 對 snapshot、內容與表單邊界 fail closed", async () => {
+    const published = (version: Record<string, unknown>) => page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content: createFunnelStepPages(createFunnelFlow({ id: "flow_public", name: "公開名單", goal: "audience", domain: "audience" })!)!, formId: null, liveId: null, live: null, ...version } });
+    mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: null })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ content: { invalid: true } })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ vendorId: "other-vendor" })]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    mocks.findMany.mockResolvedValueOnce([published({ formId: "form-1" })]);
+    mocks.formFindMany.mockResolvedValueOnce([]);
+    await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+    await expect(loadPublicLandingPage("not a valid slug")).resolves.toBeNull();
+  });
 });
