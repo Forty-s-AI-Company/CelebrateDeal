@@ -152,11 +152,11 @@ describe("landing page scoped mutations", () => {
     const flow = createFunnelFlow({ id: "flow_form", name: "公開報名", goal: "audience", domain: "audience" })!;
     const content = createFunnelStepPages(flow)!;
     mocks.findMany.mockResolvedValueOnce([page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: "form-1", liveId: null, live: null } })]);
-    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "收到" }]);
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "", successMessage: "" }]);
 
     const result = await loadPublicLandingPage("fall-launch");
 
-    expect(result?.submissionForm).toMatchObject({ id: "form-1", submitLabel: "送出", successMessage: "收到" });
+    expect(result?.submissionForm).toMatchObject({ id: "form-1", submitLabel: "送出報名", successMessage: "已收到報名，請留意確認信。" });
     expect(result?.context.forms).toEqual([{ id: "form-1", slug: "signup", name: "報名表" }]);
   });
 
