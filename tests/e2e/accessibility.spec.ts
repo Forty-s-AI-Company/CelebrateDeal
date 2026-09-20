@@ -10,9 +10,11 @@ const password = "A11y-Test-Password-123!";
 const runId = randomUUID();
 const fixture = {
   email: `a11y-${runId}@celebratedeal.local`,
+  ownerEmails: Array.from({ length: 8 }, (_, index) => `a11y-${runId}-${index}@celebratedeal.local`),
   slug: `a11y-${runId}`,
   vendorId: "",
   userId: "",
+  ownerUserIds: [] as string[],
   videoId: "",
   productId: "",
   formId: "",
@@ -65,9 +67,11 @@ async function expectNoBlockingAxeViolations(page: Page) {
   expect(blocking, "頁面不可出現 axe critical/serious 違規").toEqual([]);
 }
 
+let ownerLoginIndex = 0;
 async function loginOwner(page: Page) {
   await gotoStableRoute(page, "/login");
-  await page.getByLabel("Email").fill(fixture.email);
+  const email = fixture.ownerEmails[ownerLoginIndex++ % fixture.ownerEmails.length];
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
@@ -108,7 +112,7 @@ test.beforeAll(async () => {
   });
   const user = await db.user.create({
     data: {
-      email: fixture.email,
+      email: fixture.ownerEmails[0],
       name: "Accessibility Test Owner",
       passwordHash: hashPassword(password),
       status: "active",
@@ -121,6 +125,19 @@ test.beforeAll(async () => {
       },
     },
   });
+  fixture.ownerUserIds.push(user.id);
+  for (const email of fixture.ownerEmails.slice(1)) {
+    const owner = await db.user.create({
+      data: {
+        email,
+        name: "Accessibility Test Owner",
+        passwordHash: hashPassword(password),
+        status: "active",
+        memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } },
+      },
+    });
+    fixture.ownerUserIds.push(owner.id);
+  }
   const adminUser = await db.user.create({
     data: {
       email: fixture.adminEmail,
@@ -249,9 +266,7 @@ test.afterAll(async () => {
   if (fixture.vendorId) {
     await db.vendor.deleteMany({ where: { id: fixture.vendorId } });
   }
-  if (fixture.userId) {
-    await db.user.deleteMany({ where: { id: fixture.userId } });
-  }
+  if (fixture.ownerUserIds.length > 0) await db.user.deleteMany({ where: { id: { in: fixture.ownerUserIds } } });
   if (fixture.adminUserId) {
     await db.user.deleteMany({ where: { id: fixture.adminUserId } });
   }
