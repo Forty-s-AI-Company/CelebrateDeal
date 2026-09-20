@@ -204,6 +204,8 @@ async function appendEvent(
 export type CreateCommerceOrderForCheckoutInput = {
   vendorId: string;
   productId: string;
+  /** Server-derived sales project scope; never accepted directly from browser input. */
+  projectId?: string | null;
   orderNumber: string;
   checkoutIdempotencyKey: string;
   paymentTransactionId: string;
@@ -228,6 +230,7 @@ export async function createCommerceOrderForCheckout(
 ) {
   assertOpaqueId(input.vendorId, "vendorId");
   assertOpaqueId(input.productId, "productId");
+  if (input.projectId) assertOpaqueId(input.projectId, "projectId");
   assertOpaqueId(input.orderNumber, "orderNumber");
   assertOpaqueId(input.checkoutIdempotencyKey, "checkoutIdempotencyKey");
   assertOpaqueId(input.paymentTransactionId, "paymentTransactionId");
@@ -239,7 +242,13 @@ export async function createCommerceOrderForCheckout(
   }
 
   const product = await tx.product.findFirst({
-    where: { id: input.productId, vendorId: input.vendorId, isActive: true, fulfillmentTypeConfirmed: true },
+    where: {
+      id: input.productId,
+      vendorId: input.vendorId,
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+      ...(input.projectId ? { salesProjectLinks: { some: { vendorId: input.vendorId, projectId: input.projectId } } } : {}),
+    },
     select: {
       id: true,
       name: true,
@@ -313,6 +322,7 @@ export async function createCommerceOrderForCheckout(
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
+    projectId: input.projectId ?? null,
     orderNumber: input.orderNumber,
     checkoutIdempotencyKey: input.checkoutIdempotencyKey,
     checkoutIdentityHash,

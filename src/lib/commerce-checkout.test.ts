@@ -27,6 +27,16 @@ describe("commerce checkout contract", () => {
       buyer: {},
       forgedProvider: "production",
     }).success).toBe(false);
+    expect(CommerceCheckoutRequestSchema.safeParse({
+      vendorId: "vendor-1",
+      productId: "product-1",
+      idempotencyKey: "123e4567-e89b-12d3-a456-426614174000",
+      admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`,
+      buyer: { name: "王小明" },
+      shipping: null,
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+      agreementAccepted: true,
+    }).success).toBe(true);
   });
 
   it("validates provider actions before the browser consumes them", () => {
