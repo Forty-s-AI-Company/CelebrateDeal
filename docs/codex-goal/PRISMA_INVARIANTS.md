@@ -8,11 +8,11 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 101 |
-| Migration directories | 66 |
+| Prisma models | 112 |
+| Migration directories | 71 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
-| Applied migrations in isolated DB | 65/66 current chain；既有 65 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；本 PR 新增 consultation migration 尚待 isolated DB forward-apply |
+| Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；本 PR 新增 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
 | DB-backed security regression | 原有 3 files／45 tests；另新增 form concurrency 與 tenant-ledger FK 2 files／2 tests |
 
 ## Model 分類
@@ -28,6 +28,7 @@
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE identity／delivery | 4 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
+| Automation／CRM／Sales workspace | 11 | `AutomationRule`、`AutomationExecutionLog`、`CustomerTagAssignment`、`AutomationVoucherGrant`、`CustomerCrmRecord`、`ConsultantNote`、`SalesProject`、`SalesProjectProduct`、`SalesProjectCustomer`、`UserOnboardingPreference`、`OnboardingTaskState` |
 
 ## Migration chain
 
@@ -78,6 +79,11 @@
 | `20260809010000_g7_13_analytics_authenticity` | server-owned analytics authenticity and replay identity |
 | `20260809020000_g7_13b_form_submission_verification` | one-time form submission verification state and token identity |
 | `20260809030000_g7_21_live_reminder_email` | live reminder scheduling fields and delivery linkage |
+| `20260906013000_smart_automation_workflows` | automation rules, execution logs, customer tags, voucher grants |
+| `20260908113000_automation_customer_funnel_identity` | commerce order automation customer identity |
+| `20260908143000_customer_crm_cockpit` | CRM identity/status and consultant notes |
+| `20260912103000_sales_workspace_onboarding` | sales projects, customer membership, onboarding preferences/state |
+| `20260920100000_automation_execution_live_scope` | nullable trusted live scope on automation execution logs; pending isolated DB apply |
 | `20260809040000_g7_23_live_reminder_reconciliation` | durable live reminder revision and reconciliation state |
 | `20260809050000_g7_26_split_refund_handoff` | split refund state and support handoff metadata |
 | `20260809060000_g7_28_affiliate_payout_outcome_reason` | affiliate payout outcome reason snapshot |
@@ -178,8 +184,8 @@
 
 ## 驗收判定
 
-- 101/101 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation 或 supporting/telemetry 類別。
-- 66 migration directories 已納入 canonical inventory；65/66 已由既有驗證 forward-apply，新增 consultation migration 尚待 isolated DB forward-apply。
+- 112/112 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation、automation、CRM、sales workspace 或 supporting/telemetry 類別。
+- 71 migration directories 已納入 canonical inventory；66/71 已由既有驗證 forward-apply，新增 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
