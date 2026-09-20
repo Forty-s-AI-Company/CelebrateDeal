@@ -5,6 +5,9 @@ import { getDb } from "@/lib/db";
 import {
   parseLandingPageContent,
   type LandingPageContent,
+  type LandingPageFormReference,
+  type LandingPageLiveReference,
+  type LandingPageRenderContext,
 } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
 import { applyFunnelStepPersistenceMutation, parseFunnelStepPages, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
@@ -13,7 +16,8 @@ import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sa
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
-import { validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
+import { listFunnelCommerceProducts, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
+import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   live: { id: string; slug: string; videoId: string; videoTitle: string };
@@ -65,6 +69,27 @@ export type LandingPageSummary = {
   revision: number;
   publishedAt: Date | null;
   updatedAt: Date;
+};
+
+export type LandingPageEditorPage = LandingPageSummary & {
+  content: LandingPageStoredContent | null;
+  formId: string | null;
+  liveId: string | null;
+  versions: Array<{ id: string; version: number; createdAt: Date }>;
+};
+
+export type FunnelWebinarResources = {
+  lives: Array<{ id: string; videoId: string | null; videoTitle: string | null; videoReady: boolean }>;
+  forms: PublicFunnelWebinarResource["form"][];
+};
+
+export type LandingPageEditorData = {
+  page: LandingPageEditorPage;
+  forms: LandingPageFormReference[];
+  lives: LandingPageLiveReference[];
+  context: LandingPageRenderContext;
+  webinarResources: FunnelWebinarResources;
+  commerceProducts: FunnelCommerceProduct[];
 };
 
 export type LandingPageList = {
@@ -161,6 +186,22 @@ export function registrationFormIdsInContent(content: LandingPageStoredContent) 
   return ids;
 }
 
+function toFormReference(form: FormRecord): LandingPageFormReference {
+  return { id: form.id, slug: form.slug, name: form.name };
+}
+
+function toLiveReference(live: LiveRecord): LandingPageLiveReference {
+  if (!PUBLIC_LIVE_STATUSES.has(live.status)) throw new LandingPageInputError("landing_page_live_not_public");
+  return {
+    id: live.id,
+    slug: live.slug,
+    title: live.title,
+    status: live.status as LandingPageLiveReference["status"],
+    scheduledAt: live.scheduledAt.toISOString(),
+    ...(live.formId ? { formId: live.formId } : {}),
+  };
+}
+
 function validateOperationalReferences(operations: unknown, content: LandingPageStoredContent) {
   const steps = "flow" in content ? content.flow?.steps ?? [] : [];
   if (!funnelOperationsReferencesValid(operations, steps)) throw new LandingPageInputError("landing_page_operations_reference_invalid");
@@ -253,6 +294,87 @@ export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" 
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: formId, draftLiveId: liveId },
     select: { id: true, vendorId: true, projectId: true, name: true, slug: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
   });
+}
+
+/** Lists only resources in the selected sales project for the editor. */
+export async function listFunnelWebinarResources(): Promise<FunnelWebinarResources> {
+  const scope = await editorProject();
+  const [forms, lives] = await Promise.all([
+    db().registrationForm.findMany({
+      where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true },
+      select: { id: true, fields: true, submitLabel: true, successMessage: true },
+      orderBy: { name: "asc" },
+    }),
+    db().live.findMany({
+      where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
+      select: { id: true, videoId: true, video: { select: videoSelect } },
+      orderBy: { scheduledAt: "desc" },
+    }),
+  ]);
+  return {
+    lives: lives.map((live) => ({
+      id: live.id,
+      videoId: live.videoId,
+      videoTitle: live.video?.title ?? null,
+      videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video),
+    })),
+    forms: forms.flatMap((form) => {
+      const fields = parseRegistrationFormFields(form.fields);
+      return fields.success ? [{ id: form.id, fields: fields.data, submitLabel: form.submitLabel, successMessage: form.successMessage }] : [];
+    }),
+  };
+}
+
+/** Returns the scoped editor contract without exposing public or cross-project resources. */
+export async function getLandingPageForEditor(pageId: string): Promise<LandingPageEditorData> {
+  const scope = await editorProject();
+  const page = await db().landingPage.findFirst({
+    where: { id: identifier(pageId) ?? "", vendorId: scope.vendorId, projectId: scope.projectId },
+    select: {
+      id: true, name: true, slug: true, status: true, revision: true, publishedAt: true, updatedAt: true,
+      draftContent: true, draftFormId: true, draftLiveId: true,
+      versions: { select: { id: true, version: true, createdAt: true }, orderBy: { version: "desc" } },
+    },
+  });
+  if (!page) throw new LandingPageNotFoundError();
+  const [forms, lives, commerceProducts] = await Promise.all([
+    db().registrationForm.findMany({
+      where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true },
+      select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
+      orderBy: { name: "asc" },
+    }),
+    db().live.findMany({
+      where: { vendorId: scope.vendorId, projectId: scope.projectId, status: { in: [...PUBLIC_LIVE_STATUSES] } },
+      select: { id: true, slug: true, title: true, status: true, scheduledAt: true, formId: true, videoId: true, video: { select: videoSelect } },
+      orderBy: { scheduledAt: "desc" },
+    }),
+    listFunnelCommerceProducts(scope),
+  ]);
+  const selectedLive = page.draftLiveId ? lives.find((live) => live.id === page.draftLiveId) ?? null : null;
+  const formOptions = forms.map(toFormReference);
+  const liveOptions = lives.map(toLiveReference);
+  return {
+    page: {
+      id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision,
+      publishedAt: page.publishedAt, updatedAt: page.updatedAt,
+      content: parseFunnelStepPages(page.draftContent) ?? parsePageDocument(page.draftContent) ?? parseLandingPageContent(page.draftContent),
+      formId: page.draftFormId, liveId: page.draftLiveId, versions: page.versions ?? [],
+    },
+    webinarResources: {
+      lives: lives.map((live) => ({
+        id: live.id, videoId: live.videoId, videoTitle: live.video?.title ?? null,
+        videoReady: live.video?.vendorId === scope.vendorId && isLiveVideoReady(live.video),
+      })),
+      forms: forms.flatMap((form) => {
+        const fields = parseRegistrationFormFields(form.fields);
+        return fields.success ? [{ id: form.id, fields: fields.data, submitLabel: form.submitLabel, successMessage: form.successMessage }] : [];
+      }),
+    },
+    commerceProducts,
+    forms: formOptions,
+    lives: liveOptions,
+    context: { forms: formOptions, ...(selectedLive ? { live: toLiveReference(selectedLive) } : {}) },
+  };
 }
 
 export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraftInput, "id" | "revision">> & Omit<LandingPageDraftInput, "id" | "revision">) {
