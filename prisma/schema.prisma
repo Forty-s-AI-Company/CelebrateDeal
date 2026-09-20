@@ -1502,6 +1502,8 @@ model CommerceOrder {
   checkoutIdempotencyKey      String
   checkoutIdentityHash        String
   primaryPaymentTransactionId String?
+  /// Server-owned marker for non-charging test checkout evidence.
+  isTestOrder                Boolean             @default(false)
   status                      CommerceOrderStatus @default(pending_payment)
   currency                    String              @default("TWD")
   subtotalAmountCents         Int
@@ -1536,6 +1538,7 @@ model CommerceOrder {
   @@unique([vendorId, primaryPaymentTransactionId])
   @@index([vendorId, status, createdAt])
   @@index([vendorId, projectId, status, createdAt])
+  @@index([vendorId, isTestOrder, status, createdAt])
   @@index([vendorId, paidAt])
 }
 

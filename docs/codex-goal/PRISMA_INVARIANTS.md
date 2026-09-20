@@ -9,7 +9,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 116 |
-| Migration directories | 73 |
+| Migration directories | 74 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -84,6 +84,7 @@
 | `20260908113000_automation_customer_funnel_identity` | commerce order automation customer identity |
 | `20260908143000_customer_crm_cockpit` | CRM identity/status and consultant notes |
 | `20260912103000_sales_workspace_onboarding` | sales projects, customer membership, onboarding preferences/state |
+| `20260912123000_test_order_signal` | server-owned non-charging test-order marker and lookup index |
 | `20260913100000_landing_pages` | tenant/project scoped landing pages and immutable published versions |
 | `20260917100000_funnel_runtime_attribution` | landing page operations, funnel visits/submissions, and source attribution bindings |
 | `20260920100000_automation_execution_live_scope` | nullable trusted live scope on automation execution logs; pending isolated DB apply |
@@ -188,7 +189,7 @@
 ## 驗收判定
 
 - 116/116 models 已納入 identity、tenant、payment、form、Team Funnel、commerce、support、LINE、consultation、automation、CRM、sales workspace、Funnel 公開頁與 supporting/telemetry 類別。
-- 73 migration directories 已納入 canonical inventory；66/73 已由既有驗證 forward-apply，新增 7 條 automation／CRM／sales workspace／Funnel foundation migration 尚待 isolated DB forward-apply。
+- 74 migration directories 已納入 canonical inventory；66/74 已由既有驗證 forward-apply，新增 8 條 automation／CRM／sales workspace／Funnel foundation migration 尚待 isolated DB forward-apply。
 - 已有 DB-backed concurrency：password reset、payment logical order、refund ledger、commission、Cloudflare status、form deterministic submission。
 - DB-I03～DB-I07 已有本機 reviewed migration、backfill/preflight policy 與跨 tenant negative regression；尚未取得 Production/Staging aggregate preflight，也未獲外部 migration 授權。
 - DB-I01、DB-I02、DB-I08～DB-I10 仍為可重現的 schema gap；未完成語意決策、aggregate preflight 與 reviewed migration 前，Q07 不能標為 100。
