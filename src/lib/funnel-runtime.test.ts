@@ -25,6 +25,7 @@ describe("public Funnel runtime", () => {
       headers: { cookie: `unrelated=value; celebratedeal_funnel_visitor=${visitorId}` },
     });
     expect(funnelVisitorIdFromRequest(request)).toBe(visitorId);
+    expect(funnelVisitorIdFromRequest(new Request("https://app.example.test/api/form-submissions"))).toBeNull();
     expect(funnelVisitorIdFromRequest(new Request("https://app.example.test/api/form-submissions", { headers: { cookie: "celebratedeal_funnel_visitor=short" } }))).toBeNull();
     expect(funnelVisitorIdFromRequest(new Request("https://app.example.test/api/form-submissions", { headers: { cookie: "celebratedeal_funnel_visitor=%E0%A4%A" } }))).toBeNull();
   });
@@ -48,6 +49,7 @@ describe("public Funnel runtime", () => {
     expect(assignFunnelExperiment("page_1", { id: "experiment_1", status: "winner", controlStepId: "opt_in", variantStepId: "opt_in_thank_you", controlWeight: 50, variantWeight: 50, winner: "variant" }, "invalid")).toBeNull();
     expect(assignFunnelExperiment("page_1", { id: "experiment_1", status: "winner", controlStepId: "opt_in", variantStepId: "opt_in_thank_you", controlWeight: 50, variantWeight: 50, winner: "variant" }, visitorId)).toEqual({ id: "experiment_1", arm: "variant" });
     expect(assignFunnelExperiment("page_1", { id: "experiment_1", status: "stopped", controlStepId: "opt_in", variantStepId: "opt_in_thank_you", controlWeight: 50, variantWeight: 50, winner: null }, visitorId)).toBeNull();
+    expect(assignFunnelExperiment("page_1", { id: "experiment_1", status: "winner", controlStepId: "opt_in", variantStepId: "opt_in_thank_you", controlWeight: 50, variantWeight: 50, winner: null }, visitorId)).toBeNull();
   });
 
   it("covers unavailable, variant and missing-rendered-step decisions", () => {
@@ -96,6 +98,7 @@ describe("public Funnel runtime", () => {
     expect(resolveFunnelDeadline({ steps, requestedStepId: "missing", operations: base })).toEqual({ status: "unavailable" });
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: null })).toEqual({ status: "unavailable" });
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "not-a-date" } } })).toEqual({ status: "unavailable" });
+    expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: null } } })).toEqual({ status: "unavailable" });
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: { ...base, deadline: { ...base.deadline, enabled: false, expiresAt: null } }, now: new Date("2026-09-17T02:00:00.000Z") }).status).toBe("render");
     const missingTarget = { ...base, deadline: { ...base.deadline, enabled: true, expiresAt: "2026-09-17T10:00:00+08:00", behavior: "redirect" as const, redirectPath: "missing" } };
     expect(resolveFunnelDeadline({ steps, requestedStepId: "opt_in", operations: missingTarget, now: new Date("2026-09-17T02:00:00.000Z") })).toEqual({ status: "closed" });
