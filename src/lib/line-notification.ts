@@ -32,7 +32,7 @@ function textComponent(text: string, weight: "regular" | "bold" = "regular") {
 }
 function actionButton(label: string, uri: string) {
   const url = new URL(uri);
-  if (!new Set(["https:", "http:"]).has(url.protocol)) throw new Error("Invalid LINE action URL.");
+  if (url.protocol !== "https:") throw new Error("Invalid LINE action URL.");
   return { type: "button", style: "primary", color: "#16a34a", action: { type: "uri", label: label.slice(0, 40), uri: url.toString() } };
 }
 

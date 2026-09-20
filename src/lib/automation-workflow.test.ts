@@ -30,6 +30,11 @@ const event = {
 };
 
 describe("smart automation workflow engine", () => {
+  it("fails closed for an unscoped watch event before querying rules", async () => {
+    const db = { automationRule: { findMany: vi.fn() } };
+    await expect(dispatchAutomationEvent(db as never, { ...event, trigger: "viewer_watch_progress" })).resolves.toEqual([{ ruleId: "__scope__", status: "missing_live_scope" }]);
+    expect(db.automationRule.findMany).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("CSRF_SECRET", "automation-workflow-test-secret-longer-than-32-bytes");
@@ -217,6 +222,7 @@ describe("smart automation workflow engine", () => {
     const watchEvent = {
       ...event,
       eventId: "heartbeat-1",
+      liveId: "live-a",
       trigger: "viewer_watch_progress" as const,
       subjectType: "buyer_registration" as const,
       subjectId: "registration-1",
@@ -296,6 +302,7 @@ describe("smart automation workflow engine", () => {
     const firstHeartbeat = {
       ...event,
       eventId: "heartbeat-1",
+      liveId: "live-a",
       trigger: "viewer_watch_progress" as const,
       subjectType: "buyer_registration" as const,
       subjectId: "registration-1",

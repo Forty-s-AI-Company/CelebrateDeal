@@ -227,7 +227,7 @@ function executionIdempotencyKey(rule: ParsedRule, event: AutomationEvent) {
   // supported triggers to their durable business subject so one paid order (or
   // one viewer crossing a threshold) cannot execute the same rule twice.
   const eventIdentity = event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte"
-    ? `viewer:${event.subjectKeyHash}:version:${rule.version}`
+    ? `viewer:${event.liveId}:${event.subjectKeyHash}:version:${rule.version}`
     : `order:${event.subjectId}:version:${rule.version}`;
   return createHash("sha256").update(`automation:v1:${event.vendorId}:${rule.id}:${event.trigger}:${eventIdentity}`).digest("hex");
 }
@@ -369,6 +369,9 @@ async function executeAction(
  * execution log and cannot issue a second voucher, tag, or LINE outbox row.
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
+  if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
+    return [{ ruleId: "__scope__", status: "missing_live_scope" }];
+  }
   const rules = await db.automationRule.findMany({
     where: {
       vendorId: event.vendorId,
