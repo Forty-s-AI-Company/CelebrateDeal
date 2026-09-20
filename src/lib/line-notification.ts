@@ -11,6 +11,7 @@ export const LINE_NOTIFICATION_TRIGGERS = [
   "order_created",
   "order_paid",
   "commission_credited",
+  "automation",
 ] as const;
 export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
 
@@ -29,10 +30,9 @@ const money = new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD
 function textComponent(text: string, weight: "regular" | "bold" = "regular") {
   return { type: "text", text, wrap: true, weight, color: "#1f2937" };
 }
-
 function actionButton(label: string, uri: string) {
   const url = new URL(uri);
-  if (!new Set(["https:", "http:"]).has(url.protocol)) throw new Error("Invalid LINE action URL.");
+  if (url.protocol !== "https:") throw new Error("Invalid LINE action URL.");
   return { type: "button", style: "primary", color: "#16a34a", action: { type: "uri", label: label.slice(0, 40), uri: url.toString() } };
 }
 
@@ -90,6 +90,22 @@ export function buildCommissionLineMessage(input: {
     text: [`佣金已入帳：${amountText}`, input.orderNumber ? `來源訂單：${input.orderNumber}` : null]
       .filter(Boolean)
       .join("\n"),
+  };
+}
+
+/** Builds merchant-authored automation copy without allowing arbitrary LINE payloads. */
+export function buildAutomationLineMessage(input: {
+  message: string;
+  buttonLabel?: string | null;
+  buttonUrl?: string | null;
+}): LineMessage {
+  const message = input.message.trim().slice(0, 1_500);
+  if (!message) throw new Error("Automation LINE message is required.");
+  if (!input.buttonLabel || !input.buttonUrl) return { type: "text", text: message };
+  return {
+    type: "flex",
+    altText: message.slice(0, 400),
+    contents: bubble("商家專屬通知", [message], actionButton(input.buttonLabel, input.buttonUrl)),
   };
 }
 
