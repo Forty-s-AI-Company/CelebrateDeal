@@ -341,7 +341,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
       </section>
       <section className="mt-6" aria-labelledby="affiliate-attribution-title">
         <Card>
-          <h2 id="affiliate-attribution-title" className="text-lg font-semibold text-slate-950">推廣團隊與分銷夥伴貢獻榜</h2>
+          <h2 id="affiliate-attribution-title" className="text-lg font-semibold text-slate-950">聯盟來源與分銷夥伴貢獻榜</h2>
           <p className="mt-1 text-sm text-slate-500">只統計本場直播、目前商家的點擊、報名與伺服器歸因訂單。</p>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
