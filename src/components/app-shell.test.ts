@@ -80,6 +80,7 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/forms");
     expect(links).toContain("/onboarding");
     expect(links).toContain("/settings/brand");
+    expect(links).toContain("/settings/automations");
     expect(links).not.toContain("/admin/billing/dashboard");
   });
 
