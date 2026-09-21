@@ -1653,9 +1653,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, [admissionStatus, isPlayableRuntime, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !shouldUseHls(playableSource, playableUrl)) return;
+    const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
+    if (!video || !hlsUrl) return;
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = playableUrl;
+      video.src = hlsUrl;
       return;
     }
     let disposed = false;
@@ -1665,7 +1666,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         if (disposed || !Hls.isSupported()) return;
         const player = new Hls();
         hls = player;
-        player.loadSource(playableUrl);
+        player.loadSource(hlsUrl);
         player.attachMedia(video);
       })
       .catch(() => undefined);
