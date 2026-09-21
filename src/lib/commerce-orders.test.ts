@@ -128,6 +128,46 @@ const checkoutInput = {
 } as const;
 
 describe("commerce orders database service", () => {
+  it("creates a second immutable order item for a same-project order bump", async () => {
+    const tx = transaction();
+    tx.product.findFirst
+      .mockResolvedValueOnce(product("physical"))
+      .mockResolvedValueOnce({ ...product("digital"), id: "bump-1", name: "成交腳本包", slug: "closing-scripts", priceCents: 300 });
+
+    await createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 1_500,
+      orderBumpProductId: "bump-1",
+      projectId: "project-1",
+    });
+
+    expect(tx.commerceOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ subtotalAmountCents: 1_500, totalAmountCents: 1_500, projectId: "project-1" }),
+    }));
+    expect(tx.commerceOrderItem.create).toHaveBeenCalledTimes(2);
+    expect(tx.commerceOrderItem.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        productId: "bump-1",
+        lineIndex: 1,
+        unitPriceCents: 300,
+        lineTotalCents: 300,
+        nonSensitiveSnapshot: expect.objectContaining({ orderBump: true }),
+      }),
+    }));
+  });
+
+  it("rejects an order bump that is not re-read in the same tenant transaction", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValueOnce(product("physical")).mockResolvedValueOnce(null);
+
+    await expect(createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 1_500,
+      orderBumpProductId: "other-tenant-product",
+    })).rejects.toThrow("Order bump product is unavailable");
+    expect(tx.commerceOrder.create).not.toHaveBeenCalled();
+  });
+
   it.each(["physical", "digital", "service", "course"] as const)("creates a sanitized %s fulfillment placeholder", async (fulfillmentType) => {
     const tx = transaction();
     tx.product.findFirst.mockResolvedValue(product(fulfillmentType));
