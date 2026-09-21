@@ -120,6 +120,26 @@ describe("customer CRM aggregation", () => {
     await expect(listCustomers("vendor-a", "", "", "empty-project")).resolves.toEqual([]);
   });
 
+  it("searches canonical identities and applies tags across registration and booking sources", async () => {
+    const findMany = (result: unknown[]) => vi.fn<(args: unknown) => Promise<unknown[]>>().mockResolvedValue(result);
+    database.current = {
+      formSubmission: { findMany: findMany([
+        { name: "Alice", email: "alice@example.test", phone: null, customerKeyHash: "alice-hash", createdAt: new Date("2026-01-01Z") },
+        { name: "Alice Chen", email: "alice.chen@example.test", phone: "0912345678", customerKeyHash: "alice-hash", createdAt: new Date("2026-01-02Z") },
+      ]) },
+      consultationBooking: { findMany: findMany([{ clientName: "Booking Bob", clientEmail: "bob@example.test", clientPhone: null, customerKeyHash: "bob-hash", status: "scheduled", createdAt: new Date("2026-01-03Z") }]) },
+      commerceOrder: { findMany: findMany([]) },
+      streamUsageLedgerEntry: { groupBy: vi.fn().mockResolvedValue([]) },
+      customerTagAssignment: { findMany: findMany([{ customerKeyHash: "alice-hash", tag: "VIP", createdAt: new Date("2026-01-02Z") }]) },
+      automationVoucherGrant: { findMany: findMany([]) },
+      automationExecutionLog: { findMany: findMany([]) },
+      customerCrmRecord: { findMany: findMany([]) },
+    };
+
+    await expect(listCustomers("vendor-a", "alice chen", "VIP")).resolves.toMatchObject([{ customerKeyHash: "alice-hash", name: "Alice Chen", maskedPhone: "091***678" }]);
+    await expect(listCustomers("vendor-a", "booking bob")).resolves.toMatchObject([{ customerKeyHash: "bob-hash", bookingStatus: "scheduled" }]);
+  });
+
   it("loads a complete profile with scoped activity and derived metrics", async () => {
     const createdAt = new Date("2026-01-01T00:00:00Z");
     const later = new Date("2026-01-02T00:00:00Z");
