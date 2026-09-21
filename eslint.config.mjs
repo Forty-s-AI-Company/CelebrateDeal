@@ -98,6 +98,9 @@ const eslintConfig = defineConfig([
     // Playwright recreates this directory at run start; ignoring it also avoids
     // an ESLint filesystem race when browser tests and lint overlap in CI.
     "test-results/**",
+    // Third-party MediaPipe/wasm presenter assets are browser payloads, not
+    // application source; linting the generated bundle produces false errors.
+    "public/presenter-segmentation/**",
     "next-env.d.ts",
   ]),
 ]);

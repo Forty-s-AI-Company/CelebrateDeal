@@ -67,6 +67,23 @@ describe("resolveLivePlaybackSource", () => {
     }));
   });
 
+  it("returns an admitted internal WHEP source for browser broadcasts", async () => {
+    db.live.findFirst.mockResolvedValue(liveRecord({
+      video: {
+        ...liveRecord().video,
+        videoUrl: "https://media.invalid/browser-live",
+        sourceType: "browser_live",
+        status: "ready",
+      },
+    }));
+    await expect(resolveLivePlaybackSource(db as never, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      token,
+      now,
+    })).resolves.toEqual({ protocol: "whep", playbackUrl: "/api/live-media?direction=read" });
+  });
+
   it.each([
     ["missing session", null],
     ["expired session", { vendorId: "vendor-1", liveId: "live-1", expiresAt: new Date("2026-08-07T09:59:59.000Z") }],

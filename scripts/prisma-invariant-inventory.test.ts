@@ -17,8 +17,8 @@ describe("Prisma invariant inventory", () => {
 
     // Keep these totals intentional: the canonical inventory below must be
     // updated in the same change as any schema model or migration directory.
-    expect(models).toHaveLength(118);
-    expect(migrations).toHaveLength(77);
+    expect(models).toHaveLength(119);
+    expect(migrations).toHaveLength(78);
     expect(models.filter((model) => !inventory.includes(`\`${model}\``))).toEqual([]);
     expect(migrations.filter((migration) => !inventory.includes(`\`${migration}\``))).toEqual([]);
   });

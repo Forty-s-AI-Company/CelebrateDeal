@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pause, Play, Send, ShoppingBag, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
+import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
@@ -141,6 +142,7 @@ type LiveAdmissionStatus = "checking" | "admitted" | "blocked";
 export type LivePlaybackSource = {
   playbackUrl: string;
   playbackStartSeconds: number;
+  protocol?: "whep";
 };
 
 export function normalizePlaybackStartSeconds(value: unknown) {
@@ -188,6 +190,10 @@ function createDirectPlaybackSource(videoUrl: string | null | undefined): LivePl
 function projectPlaybackSource(payload: unknown, runtimeState: LiveRuntimeState): LivePlaybackSource | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
   const rawPlaybackUrl = (payload as { playbackUrl?: unknown }).playbackUrl;
+  if ((payload as { protocol?: unknown }).protocol === "whep") {
+    if (typeof rawPlaybackUrl !== "string" || !rawPlaybackUrl.startsWith("/api/live-media?")) return null;
+    return { playbackUrl: rawPlaybackUrl, playbackStartSeconds: 0, protocol: "whep" };
+  }
   const playbackUrl = typeof rawPlaybackUrl === "string" ? parseSafeExternalHttpUrl(rawPlaybackUrl) : null;
   if (!playbackUrl) return null;
   return {
@@ -1052,6 +1058,23 @@ function playbackVideoClass(isCheckoutOverlay: boolean) {
   return `${isCheckoutOverlay ? "pointer-events-none " : ""}h-full w-full object-cover`;
 }
 
+function playbackMediaProps(source: LivePlaybackSource | null, url: string | null, isCheckoutOverlay: boolean) {
+  const browser = source?.protocol === "whep";
+  return {
+    className: `${playbackVideoClass(isCheckoutOverlay)} ${browser ? "object-contain" : ""}`,
+    src: browser ? undefined : url ?? undefined,
+  };
+}
+
+function shouldUseHls(source: LivePlaybackSource | null, url: string | null) {
+  return Boolean(url) && source?.protocol !== "whep" && isHlsPlaybackUrl(url!);
+}
+
+function BrowserMediaReceiver({ source, videoRef, liveId, vendorId }: { source: LivePlaybackSource | null; videoRef: RefObject<HTMLVideoElement | null>; liveId: string; vendorId: string }) {
+  if (source?.protocol !== "whep") return null;
+  return <LiveMediaReceiver videoRef={videoRef} liveId={liveId} vendorId={vendorId} />;
+}
+
 function playbackSectionClass(isCheckoutOverlay: boolean) {
   return isCheckoutOverlay
     ? "contents"
@@ -1532,6 +1555,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, admissionStatus);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
   const playableUrl = playableSource?.playbackUrl ?? null;
+  const playbackMedia = playbackMediaProps(playableSource, playableUrl, isCheckoutOverlay);
   const playbackSourceState = playbackSourceStatus({
     streamQuotaExhausted,
     isPlayableRuntime,
@@ -1629,9 +1653,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   }, [admissionStatus, isPlayableRuntime, live.id, live.vendorId, liveShareCode, referralCode, sourcePageSlug, visitorId]);
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !playableUrl || !isHlsPlaybackUrl(playableUrl)) return;
+    const hlsUrl = shouldUseHls(playableSource, playableUrl) ? playableUrl : null;
+    if (!video || !hlsUrl) return;
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = playableUrl;
+      video.src = hlsUrl;
       return;
     }
     let disposed = false;
@@ -1641,7 +1666,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         if (disposed || !Hls.isSupported()) return;
         const player = new Hls();
         hls = player;
-        player.loadSource(playableUrl);
+        player.loadSource(hlsUrl);
         player.attachMedia(video);
       })
       .catch(() => undefined);
@@ -1650,7 +1675,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       disposed = true;
       hls?.destroy();
     };
-  }, [playableUrl]);
+  }, [playableSource, playableUrl]);
 
   function trackProgress(seconds: number) {
     const checkpoints = [30, 60, 120, 300, 600] as const;
@@ -1695,8 +1720,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
             <video
               ref={videoRef}
-              className={playbackVideoClass(isCheckoutOverlay)}
-              src={playableUrl ?? undefined}
+              className={playbackMedia.className}
+              src={playbackMedia.src}
               controls={visibleAdmissionStatus === "admitted" && !streamQuotaExhausted}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
@@ -1730,6 +1755,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           ) : (
             <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
           )}
+          <BrowserMediaReceiver source={playableSource} videoRef={videoRef} liveId={live.id} vendorId={live.vendorId} />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
           {isCheckoutOverlay && isPlayableRuntime ? (
             <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}

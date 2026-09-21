@@ -2695,6 +2695,7 @@ describe("upsertLiveAction", () => {
             cloudflareLiveInputUid: { not: null },
             liveInputStatus: "created",
           },
+          { sourceType: "browser_live", status: "ready" },
         ],
       },
       select: { id: true, durationSec: true },

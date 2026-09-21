@@ -69,6 +69,7 @@ describe("sellable live readiness", () => {
                 cloudflareLiveInputUid: { not: null },
                 liveInputStatus: "created",
               },
+              { sourceType: "browser_live", status: "ready" },
             ],
           },
         },

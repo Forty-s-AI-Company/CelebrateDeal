@@ -59,6 +59,9 @@ export async function resolveLivePlaybackSource(db: PrismaClient, input: Playbac
   if (runtime.state === "unavailable" || runtime.state === "waiting") return null;
   if (live?.video?.vendorId !== input.vendorId) return null;
   if (!isExistingLiveVideoReady(live?.video)) return null;
+  if (live.video.sourceType === "browser_live") {
+    return { protocol: "whep", playbackUrl: "/api/live-media?direction=read" };
+  }
   const playbackUrl = parseSafeExternalHttpUrl(live?.video?.videoUrl);
   if (!playbackUrl) return null;
   return runtime.playbackStartSeconds === null

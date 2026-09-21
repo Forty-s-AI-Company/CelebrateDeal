@@ -124,6 +124,7 @@ function renderForm({ roles = [], events = [] }: { roles?: InteractionRole[]; ev
       liveReminderTemplateId: null,
       liveReminderOffsetMinutes: 60,
       interactionScriptId: "test-fixture-script-1",
+      presenterLayout: null,
       teamId: null,
       seminarOwnerMembershipId: null,
       title: "七月新品直播",

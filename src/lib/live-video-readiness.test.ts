@@ -27,6 +27,15 @@ describe("live video readiness", () => {
     })).toBe(true);
   });
 
+  it("accepts only ready browser broadcasts and exposes them to new bindings", () => {
+    expect(isLiveVideoReady({ ...base, sourceType: "browser_live", status: "ready" })).toBe(true);
+    expect(isExistingLiveVideoReady({ ...base, sourceType: "browser_live", status: "ready" })).toBe(true);
+    expect(isLiveVideoReady({ ...base, sourceType: "browser_live", status: "processing" })).toBe(false);
+    expect(liveReadyVideoWhere("vendor-1")).toMatchObject({
+      OR: expect.arrayContaining([{ sourceType: "browser_live", status: "ready" }]),
+    });
+  });
+
   it("builds the same current-vendor fail-closed query used by forms and actions", () => {
     expect(liveReadyVideoWhere("vendor-1", "video-1")).toMatchObject({
       id: "video-1",
