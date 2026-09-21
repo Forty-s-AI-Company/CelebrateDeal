@@ -9,7 +9,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 116 |
-| Migration directories | 74 |
+| Migration directories | 75 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -88,6 +88,7 @@
 | `20260913100000_landing_pages` | tenant/project scoped landing pages and immutable published versions |
 | `20260917100000_funnel_runtime_attribution` | landing page operations, funnel visits/submissions, and source attribution bindings |
 | `20260920100000_automation_execution_live_scope` | nullable trusted live scope on automation execution logs; pending isolated DB apply |
+| `20260921110000_post_purchase_upsell` | tenant-qualified product upsell/downsell relationships and immutable offer configuration |
 | `20260809040000_g7_23_live_reminder_reconciliation` | durable live reminder revision and reconciliation state |
 | `20260809050000_g7_26_split_refund_handoff` | split refund state and support handoff metadata |
 | `20260809060000_g7_28_affiliate_payout_outcome_reason` | affiliate payout outcome reason snapshot |
