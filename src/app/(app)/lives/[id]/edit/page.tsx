@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
 import { LiveStepperForm } from "@/components/live-stepper-form";
+import { LiveInteractionStudio } from "@/components/live-interaction-studio";
+import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
@@ -15,6 +16,7 @@ import {
   REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE,
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
+import { getSalesProjectScope } from "@/lib/sales-project-scope";
 
 type LiveEditorFormCandidate = { id: string; name: string; fields: unknown };
 type LiveEditorTemplateCandidate = {
@@ -38,20 +40,31 @@ type EvergreenLiveCandidate = {
   evergreenPreviewRate?: number;
 };
 
-function prepareEvergreenSettings(live: EvergreenLiveCandidate, timeZone: string): EvergreenWebinarSettingsValue {
-  const scheduleMode = ["just_in_time", "recurring_daily", "on_demand"].includes(live.evergreenScheduleMode ?? "")
+function selectedProjectResources(projectId: string | null) {
+  if (!projectId) return { liveAndForm: {}, products: {} };
+  return {
+    liveAndForm: { projectId },
+    products: { salesProjectLinks: { some: { projectId } } },
+  };
+}
+
+function prepareEvergreenSettings(
+  live: EvergreenLiveCandidate,
+  timeZone: string,
+): EvergreenWebinarSettingsValue {
+  const evergreenScheduleMode = ["just_in_time", "recurring_daily", "on_demand"].includes(live.evergreenScheduleMode ?? "")
     ? live.evergreenScheduleMode as EvergreenWebinarSettingsValue["evergreenScheduleMode"]
     : "just_in_time";
-  const intervalMinutes = [5, 15, 30].includes(live.evergreenIntervalMinutes ?? 15)
+  const evergreenIntervalMinutes = [5, 15, 30].includes(live.evergreenIntervalMinutes ?? 15)
     ? live.evergreenIntervalMinutes as EvergreenWebinarSettingsValue["evergreenIntervalMinutes"]
     : 15;
-  const previewRate = [0.5, 1, 1.25, 1.5, 2].includes(live.evergreenPreviewRate ?? 1)
+  const evergreenPreviewRate = [0.5, 1, 1.25, 1.5, 2].includes(live.evergreenPreviewRate ?? 1)
     ? live.evergreenPreviewRate as EvergreenWebinarSettingsValue["evergreenPreviewRate"]
     : 1;
   return {
     isEvergreen: live.isEvergreen ?? false,
-    evergreenScheduleMode: scheduleMode,
-    evergreenIntervalMinutes: intervalMinutes,
+    evergreenScheduleMode,
+    evergreenIntervalMinutes,
     evergreenDailyTimes: live.evergreenDailyTimes ?? [],
     evergreenSessionStartAt: live.evergreenSessionStartAt
       ? formatZonedDateTimeLocal(live.evergreenSessionStartAt, timeZone)
@@ -59,7 +72,7 @@ function prepareEvergreenSettings(live: EvergreenLiveCandidate, timeZone: string
     evergreenPitchAtSeconds: live.evergreenPitchAtSeconds ?? null,
     evergreenConsultationAtSeconds: live.evergreenConsultationAtSeconds ?? null,
     evergreenPreviewEnabled: live.evergreenPreviewEnabled ?? false,
-    evergreenPreviewRate: previewRate,
+    evergreenPreviewRate,
   };
 }
 
@@ -133,13 +146,15 @@ export default async function EditLivePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext();
+  const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+  const resourceScope = selectedProjectResources(scope.projectId);
   const { id } = await params;
   const { error, notice } = await searchParams;
   const db = getDb();
   const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
     db.live.findFirst({
-      where: { id, vendorId: vendor.id },
+      where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: { products: true, notificationRules: { orderBy: [{ trigger: "asc" }, { sortOrder: "asc" }, { id: "asc" }] } },
     }),
     db.video.findMany({
@@ -148,12 +163,17 @@ export default async function EditLivePage({
       orderBy: { createdAt: "desc" },
     }),
     db.product.findMany({
-      where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true, name: true, inventory: true },
+      where: {
+        vendorId: vendor.id,
+        isActive: true,
+        fulfillmentTypeConfirmed: true,
+        ...resourceScope.products,
+      },
+      select: { id: true, name: true, inventory: true, checkoutUrl: true },
       orderBy: { createdAt: "desc" },
     }),
     db.registrationForm.findMany({
-      where: { vendorId: vendor.id, isActive: true },
+      where: { vendorId: vendor.id, isActive: true, ...resourceScope.liveAndForm },
       select: { id: true, name: true, fields: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -202,7 +222,9 @@ export default async function EditLivePage({
   ]);
   if (!live) notFound();
 
-  const evergreenSettings = prepareEvergreenSettings(live, vendor.timezone);
+  // Keep the edit surface tolerant while a shared worktree's generated Prisma
+  // client catches up with the accompanying schema migration.
+  const evergreenSettings = prepareEvergreenSettings(live as typeof live & EvergreenLiveCandidate, vendor.timezone);
 
   const preparedResources = prepareLiveEditorResources({ live, videos, products, formCandidates, templateCandidates });
   const { forms, templates } = preparedResources;
@@ -272,6 +294,47 @@ export default async function EditLivePage({
         updatedAt: savedDraft.updatedAt.toISOString(),
       }
     : undefined;
+  const activeDrawRuns = live.status === "live"
+    ? await db.liveInteractionRun.findMany({
+        where: { vendorId: vendor.id, liveId: live.id, eventType: "lucky_draw", winnerResponseId: null },
+        orderBy: { startsAt: "desc" },
+        take: 5,
+        select: { id: true, title: true, _count: { select: { responses: true } } },
+      })
+    : [];
+  const activePollRuns = live.status === "live"
+    ? await db.liveInteractionRun.findMany({
+        where: { vendorId: vendor.id, liveId: live.id, eventType: "poll", status: "active", endsAt: { gt: new Date() } },
+        orderBy: { startsAt: "desc" },
+        take: 10,
+        select: { id: true, title: true, _count: { select: { responses: true } } },
+      })
+    : [];
+  const claimableDrawRuns = live.status === "live"
+    ? await db.liveInteractionRun.findMany({
+        where: { vendorId: vendor.id, liveId: live.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+        orderBy: { startsAt: "desc" },
+        take: 20,
+        select: { id: true, title: true, winnerResponseId: true },
+      })
+    : [];
+  const unclaimedWinnerIds = claimableDrawRuns.length === 0
+    ? new Set<string>()
+    : new Set((await db.liveInteractionResponse.findMany({
+        where: {
+          vendorId: vendor.id,
+          id: { in: claimableDrawRuns.flatMap((run) => run.winnerResponseId ? [run.winnerResponseId] : []) },
+          claimTokenHash: { not: null },
+          winnerClaimedAt: null,
+        },
+        select: { id: true },
+      })).map((response) => response.id));
+  const liveQuestions = live.status === "live" ? await db.liveQuestion.findMany({
+    where: { vendorId: vendor.id, liveId: live.id },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: { id: true, body: true, displayName: true, status: true, createdAt: true },
+  }) : [];
 
   return (
     <>
@@ -301,6 +364,17 @@ export default async function EditLivePage({
         error={error}
         notice={notice}
         value={evergreenSettings}
+      />
+      <LiveInteractionStudio
+        liveId={live.id}
+        csrfToken={csrfToken}
+        products={products}
+        initialDrawRuns={activeDrawRuns.map((run) => ({ id: run.id, title: run.title, responseCount: run._count.responses }))}
+        initialPollRuns={activePollRuns.map((run) => ({ id: run.id, title: run.title, responseCount: run._count.responses }))}
+        initialClaimRuns={claimableDrawRuns
+          .filter((run) => run.winnerResponseId && unclaimedWinnerIds.has(run.winnerResponseId))
+          .map((run) => ({ id: run.id, title: run.title }))}
+        initialQuestions={liveQuestions.map((question) => ({ ...question, createdAt: question.createdAt.toISOString() }))}
       />
       <LiveStepperForm
         videos={videos}

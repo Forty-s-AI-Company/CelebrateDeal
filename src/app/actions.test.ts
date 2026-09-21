@@ -4417,7 +4417,7 @@ describe("upsertInteractionScriptAction", () => {
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", id: { in: ["product-1"] }, isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true },
+      select: { id: true, checkoutUrl: true },
     });
     expect(mocks.interactionScriptCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({

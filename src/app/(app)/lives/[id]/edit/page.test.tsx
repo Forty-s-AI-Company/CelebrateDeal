@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireVendorManager: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   getCsrfToken: vi.fn(),
   liveFindFirst: vi.fn(),
   videoFindMany: vi.fn(),
@@ -19,7 +21,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("@/lib/auth", () => ({
+  requireVendorManager: mocks.requireVendorManager,
+  requireVendorManagerContext: mocks.requireVendorManagerContext,
+}));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -88,6 +94,11 @@ const live = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
+  mocks.requireVendorManagerContext.mockResolvedValue({
+    auth: { user: { id: "user-1" } },
+    vendor: { id: "vendor-1", timezone: "Asia/Taipei" },
+  });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null });
   mocks.getCsrfToken.mockResolvedValue("csrf-token");
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.videoFindMany.mockResolvedValue([]);
@@ -127,7 +138,7 @@ describe("EditLivePage unified Live Studio", () => {
     });
     expect(mocks.productFindMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor-1", isActive: true, fulfillmentTypeConfirmed: true },
-      select: { id: true, name: true, inventory: true },
+      select: { id: true, name: true, inventory: true, checkoutUrl: true },
       orderBy: { createdAt: "desc" },
     });
     expect(mocks.formFindMany).toHaveBeenCalledWith({
@@ -154,7 +165,10 @@ describe("EditLivePage unified Live Studio", () => {
   });
 
   it("formats the same UTC instant using another merchant timezone", async () => {
-    mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "America/New_York" });
+    mocks.requireVendorManagerContext.mockResolvedValue({
+      auth: { user: { id: "user-1" } },
+      vendor: { id: "vendor-1", timezone: "America/New_York" },
+    });
 
     const tree = await EditLivePage({
       params: Promise.resolve({ id: "live-1" }),

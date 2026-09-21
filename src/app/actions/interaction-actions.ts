@@ -22,6 +22,18 @@ import {
 import type { InteractionRoleActionState, InteractionRoleFormValues } from "@/lib/interaction-role-action-state";
 import { parseInteractionTriggerSeconds } from "@/lib/interaction-timeline";
 import { isEligibleScheduledRole } from "@/lib/live-chat-contract";
+import {
+  createLuckyDrawClaimCode,
+  hashLuckyDrawClaimCode,
+  interactionEndsAt,
+  isLuckyDrawClaimCode,
+  luckyDrawClaimHashesMatch,
+  luckyDrawClaimEnvelopePurpose,
+  pickLuckyDrawWinner,
+  pollPercentagesFromCounts,
+} from "@/lib/live-interaction";
+import { encryptSensitiveValue } from "@/lib/sensitive-data";
+import { canTransitionLiveQuestionStatus, LiveQuestionStatusSchema } from "@/lib/live-question";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -31,6 +43,337 @@ function text(formData: FormData, key: string, fallback = "") {
 function optionalText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
+}
+
+export type LiveInteractionStudioState = {
+  status: "idle" | "success" | "error";
+  message: string;
+  runId?: string;
+};
+
+export async function startLiveInteractionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const liveId = text(formData, "liveId");
+  const eventType = text(formData, "eventType");
+  const title = text(formData, "title");
+  const durationSec = Number(text(formData, "durationSec"));
+  const productId = optionalText(formData, "productId");
+  const metadata = eventType === "lucky_draw"
+    ? {
+        kind: eventType,
+        durationSec,
+        slogan: text(formData, "slogan", "立即抽獎"),
+        prizeName: optionalText(formData, "prizeName") ?? undefined,
+        eligibility: text(formData, "eligibility", "slogan"),
+        excludePreviousWinners: text(formData, "excludePreviousWinners") === "true" || text(formData, "excludePreviousWinners") === "on",
+      }
+    : eventType === "poll"
+      ? {
+          kind: eventType,
+          durationSec,
+          question: text(formData, "question"),
+          options: text(formData, "options").split(/\r?\n/u),
+          selectionMode: text(formData, "selectionMode", "single"),
+          maxSelections: Number(text(formData, "maxSelections", "2")),
+        }
+      : eventType === "flash_sale"
+        ? {
+            kind: eventType,
+            durationSec,
+            productId: productId ?? "",
+            salePriceCents: text(formData, "salePriceCents") ? Number(text(formData, "salePriceCents")) * 100 : undefined,
+            originalPriceCents: text(formData, "originalPriceCents") ? Number(text(formData, "originalPriceCents")) * 100 : undefined,
+            stockLimit: text(formData, "stockLimit") ? Number(text(formData, "stockLimit")) : undefined,
+            announcementText: optionalText(formData, "announcementText") ?? undefined,
+          }
+        : {
+            kind: eventType,
+            durationSec,
+            maxClaims: Number(text(formData, "maxClaims")),
+            discountType: text(formData, "discountType"),
+            discountValue: Number(text(formData, "discountValue")) * (text(formData, "discountType") === "fixed" ? 100 : 1),
+            productId,
+          };
+  const normalized = normalizeInteractionEventDraft({ eventType, triggerSec: 0, title, productId, metadata });
+  if (!normalized.success || !normalized.data.metadata) return { status: "error", message: normalized.success ? "互動設定不完整。" : normalized.error };
+  const live = await getDb().live.findFirst({
+    where: { id: liveId, vendorId: vendor.id, status: "live" },
+    select: {
+      id: true,
+      products: {
+        where: productId ? { productId, product: { checkoutUrl: null } } : undefined,
+        take: 1,
+        select: { productId: true },
+      },
+    },
+  });
+  if (!live) return { status: "error", message: "只有正在直播中的直播間可以手動發起互動。" };
+  if (productId && live.products.length !== 1) return { status: "error", message: "指定商品不在這場直播的銷售清單中。" };
+  const now = new Date();
+  const run = await getDb().liveInteractionRun.create({
+    data: {
+      vendorId: vendor.id,
+      liveId,
+      source: "manual",
+      eventType: normalized.data.eventType,
+      title: normalized.data.title,
+      configuration: normalized.data.metadata as unknown as Prisma.InputJsonValue,
+      startsAt: now,
+      endsAt: interactionEndsAt(now, normalized.data.metadata),
+      createdByMemberId: auth.member?.id ?? null,
+    },
+  });
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_started",
+    targetType: "LiveInteractionRun",
+    targetId: run.id,
+    after: auditSnapshot({ liveId, eventType: run.eventType, endsAt: run.endsAt }),
+  });
+  return { status: "success", message: "互動已即時送到觀眾端。", runId: run.id };
+}
+
+export async function endLiveInteractionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  if (!runId || runId.length > 128) return { status: "error", message: "互動場次無效。" };
+  const endedAt = new Date();
+  const result = await getDb().liveInteractionRun.updateMany({
+    where: { id: runId, vendorId: vendor.id, status: "active", eventType: "poll" },
+    data: { status: "closed", endsAt: endedAt },
+  });
+  if (result.count !== 1) return { status: "error", message: "投票不存在或已經結束。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_poll_ended",
+    targetType: "LiveInteractionRun",
+    targetId: runId,
+    after: auditSnapshot({ status: "closed", endsAt: endedAt }),
+  });
+  return { status: "success", message: "投票已提前結束，觀眾端會保留最終結果。", runId };
+}
+
+export async function getLivePollStudioSnapshotAction(liveId: string) {
+  const vendor = await requireVendorManager();
+  if (!liveId || liveId.length > 128) return [];
+  const runs = await getDb().liveInteractionRun.findMany({
+    where: { vendorId: vendor.id, liveId, eventType: "poll", status: "active", endsAt: { gt: new Date() } },
+    orderBy: { startsAt: "desc" }, take: 10,
+    select: { id: true, title: true, configuration: true, _count: { select: { responses: true } } },
+  });
+  return Promise.all(runs.map(async (run) => {
+    const normalized = normalizeInteractionEventDraft({ eventType: "poll", triggerSec: 0, title: run.title, metadata: run.configuration });
+    if (!normalized.success || normalized.data.metadata?.kind !== "poll") return null;
+    const groups = await getDb().liveInteractionResponse.groupBy({ by: ["value"], where: { vendorId: vendor.id, liveId, runId: run.id }, _count: { _all: true } });
+    const counts = new Map<string, number>();
+    for (const group of groups) {
+      let values = [group.value];
+      if (group.value.startsWith("[")) {
+        try { const parsed = JSON.parse(group.value) as unknown; if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) values = parsed; } catch { /* Keep legacy value. */ }
+      }
+      for (const value of values) counts.set(value, (counts.get(value) ?? 0) + group._count._all);
+    }
+    return { id: run.id, title: run.title, responseCount: run._count.responses, pollResults: pollPercentagesFromCounts(normalized.data.metadata.options, counts) };
+  })).then((items) => items.filter((item): item is NonNullable<typeof item> => item !== null));
+}
+
+export async function moderateLiveQuestionAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const questionId = text(formData, "questionId");
+  const nextStatus = LiveQuestionStatusSchema.safeParse(text(formData, "status"));
+  if (!questionId || questionId.length > 128 || !nextStatus.success) return { status: "error", message: "問題或狀態無效。" };
+  const now = new Date();
+  const outcome = await getDb().$transaction(async (tx) => {
+    const question = await tx.liveQuestion.findFirst({ where: { id: questionId, vendorId: vendor.id }, select: { id: true, liveId: true, status: true } });
+    if (!question || !canTransitionLiveQuestionStatus(question.status, nextStatus.data)) return null;
+    if (nextStatus.data === "spotlight") {
+      await tx.liveQuestion.updateMany({
+        where: { vendorId: vendor.id, liveId: question.liveId, status: "spotlight", id: { not: question.id } },
+        data: { status: "answered", answeredAt: now },
+      });
+    }
+    return tx.liveQuestion.update({
+      where: { id: question.id },
+      data: {
+        status: nextStatus.data,
+        ...(nextStatus.data === "spotlight" ? { spotlightedAt: now } : {}),
+        ...(nextStatus.data === "answered" ? { answeredAt: now } : {}),
+        ...(nextStatus.data === "hidden" ? { hiddenAt: now } : {}),
+      },
+      select: { id: true, liveId: true },
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if (!outcome) return { status: "error", message: "問題不存在，或不允許這個狀態轉換。" };
+  await writeAuditLog({ vendorId: vendor.id, ...managerAuditIdentity(auth), action: "live_question_moderated", targetType: "LiveQuestion", targetId: outcome.id, after: auditSnapshot({ status: nextStatus.data }) });
+  revalidatePath(`/lives/${outcome.liveId}/edit`);
+  return { status: "success", message: nextStatus.data === "spotlight" ? "問題已精選上牆。" : "問題狀態已更新。" };
+}
+
+export async function drawLiveInteractionWinnerAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  const outcome = await getDb().$transaction(async (tx) => {
+    // All eligibility reads, the draw CAS and the code material write share a
+    // serializable boundary. A stale Studio can therefore never publish an
+    // unbound winner or a public/deterministic redemption code.
+    const run = await tx.liveInteractionRun.findFirst({
+      where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: null },
+      include: { responses: { orderBy: { createdAt: "asc" }, select: { id: true, participantHash: true, formSubmissionId: true } } },
+    });
+    if (!run) return { status: "missing" as const };
+    const runConfig = typeof run.configuration === "object" && run.configuration !== null && !Array.isArray(run.configuration)
+      ? run.configuration as Record<string, unknown>
+      : {};
+    let eligibleResponses = run.responses;
+    if (runConfig.eligibility === "purchased") {
+      const submissionIds = [...new Set(run.responses.flatMap((response) => response.formSubmissionId ? [response.formSubmissionId] : []))];
+      const paidTransactions = submissionIds.length === 0 ? [] : await tx.paymentTransaction.findMany({
+        where: {
+          vendorId: vendor.id,
+          status: "paid",
+          OR: submissionIds.map((formSubmissionId) => ({
+            metadata: { path: ["formSubmissionId"], equals: formSubmissionId },
+          })),
+          primaryCommerceOrder: {
+            is: {
+              vendorId: vendor.id,
+              status: "paid",
+              items: { some: { product: { is: { liveProducts: { some: { vendorId: vendor.id, liveId: run.liveId } } } } } },
+            },
+          },
+        },
+        select: { metadata: true },
+      });
+      const paidSubmissionIds = new Set(paidTransactions.flatMap(({ metadata }) => {
+        if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+        const formSubmissionId = (metadata as Record<string, unknown>).formSubmissionId;
+        return typeof formSubmissionId === "string" ? [formSubmissionId] : [];
+      }));
+      // Re-check at draw time so a stale or tampered enrollment can never win.
+      eligibleResponses = eligibleResponses.filter((response) => (
+        response.formSubmissionId !== null && paidSubmissionIds.has(response.formSubmissionId)
+      ));
+    }
+    if (Boolean(runConfig.excludePreviousWinners)) {
+      const previousWinnerRuns = await tx.liveInteractionRun.findMany({
+        where: { liveId: run.liveId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+        select: { winnerResponseId: true },
+      });
+      const previousWinnerResponseIds = previousWinnerRuns.map((item) => item.winnerResponseId).filter((id): id is string => id !== null);
+      if (previousWinnerResponseIds.length > 0) {
+        const winnerResponses = await tx.liveInteractionResponse.findMany({
+          where: { vendorId: vendor.id, id: { in: previousWinnerResponseIds } },
+          select: { participantHash: true },
+        });
+        const excludedHashes = new Set(winnerResponses.map((item) => item.participantHash));
+        eligibleResponses = eligibleResponses.filter((item) => !excludedHashes.has(item.participantHash));
+      }
+    }
+
+    const winner = pickLuckyDrawWinner(eligibleResponses);
+    if (!winner) return { status: "no_eligible" as const, responseCount: run.responses.length };
+
+    const claimCode = createLuckyDrawClaimCode();
+    const updated = await tx.liveInteractionRun.updateMany({
+      where: { id: run.id, vendorId: vendor.id, winnerResponseId: null },
+      data: { winnerResponseId: winner.id, status: "closed", endsAt: new Date() },
+    });
+    if (updated.count !== 1) return { status: "conflict" as const };
+    const claimStored = await tx.liveInteractionResponse.updateMany({
+      where: { id: winner.id, vendorId: vendor.id, runId: run.id, claimTokenHash: null, winnerClaimedAt: null },
+      data: {
+        claimTokenHash: hashLuckyDrawClaimCode(claimCode),
+        winnerClaimCodeEncryptedEnvelope: encryptSensitiveValue(
+          claimCode,
+          luckyDrawClaimEnvelopePurpose(vendor.id, winner.id),
+        ),
+      },
+    });
+    if (claimStored.count !== 1) throw new Error("LUCKY_DRAW_CLAIM_STORAGE_FAILED");
+    return { status: "drawn" as const, runId: run.id, winnerResponseId: winner.id };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  if (outcome.status === "missing") return { status: "error", message: "抽獎場次不存在或已經抽過獎。" };
+  if (outcome.status === "no_eligible") {
+    return {
+      status: "error",
+      message: outcome.responseCount === 0
+        ? "目前還沒有符合資格的抽獎留言或登記。"
+        : "所有參與者皆已在先前場次中過獎，無其他符合資格之參與者。",
+    };
+  }
+  if (outcome.status === "conflict") return { status: "error", message: "另一個 Studio 已完成抽獎，請重新整理。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_winner_drawn",
+    targetType: "LiveInteractionRun",
+    targetId: outcome.runId,
+    after: auditSnapshot({ winnerResponseId: outcome.winnerResponseId, claimCodeStored: true }),
+  });
+  return { status: "success", message: "得獎者已隨機抽出，觀眾端正在顯示彩帶與動態特效。", runId: outcome.runId };
+}
+
+/** Vendor-only redemption; the compare-and-set prevents a second claim. */
+export async function verifyLuckyDrawWinnerClaimAction(
+  _previous: LiveInteractionStudioState,
+  formData: FormData,
+): Promise<LiveInteractionStudioState> {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const runId = text(formData, "runId");
+  const claimCode = text(formData, "claimCode").toUpperCase();
+  if (!runId || runId.length > 128 || !isLuckyDrawClaimCode(claimCode)) {
+    return { status: "error", message: "核銷碼格式不正確。" };
+  }
+  const outcome = await getDb().$transaction(async (tx) => {
+    const run = await tx.liveInteractionRun.findFirst({
+      where: { id: runId, vendorId: vendor.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
+      select: { id: true, winnerResponseId: true },
+    });
+    if (!run?.winnerResponseId) return "missing" as const;
+    const winner = await tx.liveInteractionResponse.findFirst({
+      where: { id: run.winnerResponseId, runId: run.id, vendorId: vendor.id },
+      select: { id: true, claimTokenHash: true, winnerClaimedAt: true },
+    });
+    if (!winner || !luckyDrawClaimHashesMatch(winner.claimTokenHash, claimCode)) return "invalid" as const;
+    if (winner.winnerClaimedAt) return "already_claimed" as const;
+    const claimed = await tx.liveInteractionResponse.updateMany({
+      where: { id: winner.id, runId: run.id, vendorId: vendor.id, claimTokenHash: hashLuckyDrawClaimCode(claimCode), winnerClaimedAt: null },
+      data: { winnerClaimedAt: new Date() },
+    });
+    return claimed.count === 1 ? "claimed" as const : "already_claimed" as const;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if (outcome === "missing") return { status: "error", message: "抽獎場次或得獎資料不存在。" };
+  if (outcome === "invalid") return { status: "error", message: "核銷碼不正確。" };
+  if (outcome === "already_claimed") return { status: "error", message: "此獎項已完成核銷。" };
+  await writeAuditLog({
+    vendorId: vendor.id,
+    ...managerAuditIdentity(auth),
+    action: "live_interaction_winner_claimed",
+    targetType: "LiveInteractionRun",
+    targetId: runId,
+    after: auditSnapshot({ claimVerified: true }),
+  });
+  return { status: "success", message: "核銷完成。", runId };
 }
 
 function managerAuditIdentity(auth: Awaited<ReturnType<typeof requireVendorManagerContext>>["auth"]) {
@@ -357,13 +700,7 @@ export async function importSystemRolesAction(formData: FormData) {
   redirect("/interaction-roles");
 }
 
-/**
- * Performs the interaction-script write independently from its navigation
- * transport. Both the legacy Server Action and the native same-origin POST
- * route therefore retain the exact CSRF, authorization, tenant, transaction
- * and audit boundary.
- */
-export async function saveInteractionScript(formData: FormData): Promise<string> {
+export async function upsertInteractionScriptAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
   const auditActor = managerAuditIdentity(auth);
@@ -377,27 +714,41 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
   const productIds = formData.getAll("productId").map(String);
   const ctaLabels = formData.getAll("ctaLabel").map(String);
   const ctaUrls = formData.getAll("ctaUrl").map(String);
+  const submittedMetadata = formData.getAll("eventMetadata").map(String);
   const invalidEventPath = id
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_event`
     : "/interaction-scripts/new?error=invalid_event";
 
-  if (eventTypes.length > 200) return invalidEventPath;
+  if (eventTypes.length > 200) {
+    redirect(invalidEventPath);
+  }
   if (eventTypes.length === 0 || [roleIds, titles, messages, productIds, ctaLabels, ctaUrls]
     .some((column) => column.length !== eventTypes.length)) {
-    return invalidEventPath;
+    redirect(invalidEventPath);
+  }
+  if (submittedMetadata.length > 0 && submittedMetadata.length !== eventTypes.length) {
+    redirect(invalidEventPath);
   }
   if (parsedTriggerSecs.length !== eventTypes.length || parsedTriggerSecs.some((triggerSec) => triggerSec === null)) {
-    return invalidEventPath;
+    redirect(invalidEventPath);
   }
   const triggerSecs = parsedTriggerSecs.map((triggerSec) => {
-    if (triggerSec === null) return null;
+    if (triggerSec === null) redirect(invalidEventPath);
     return triggerSec;
   });
-  if (triggerSecs.some((triggerSec) => triggerSec === null)) return invalidEventPath;
 
+  const metadata = eventTypes.map((_, index) => {
+    const raw = submittedMetadata[index];
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      redirect(invalidEventPath);
+    }
+  });
   const eventResults = eventTypes.map((eventType, index) => {
     const triggerSec = triggerSecs[index];
-    if (triggerSec === undefined || triggerSec === null) return { success: false as const };
+    if (triggerSec === undefined) redirect(invalidEventPath);
 
     return normalizeInteractionEventDraft({
       eventType,
@@ -408,25 +759,27 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
       ctaLabel: ctaLabels[index],
       ctaUrl: ctaUrls[index],
       roleId: roleIds[index],
+      metadata: metadata[index],
     }, index);
   });
-  if (eventResults.some((result) => !result.success)) return invalidEventPath;
+  if (eventResults.some((result) => !result.success)) redirect(invalidEventPath);
   const events = eventResults.flatMap((result) => result.success ? [result.data] : []);
 
   const referencedRoleIds = [...new Set(events.flatMap((event) => event.roleId ? [event.roleId] : []))];
   const referencedProductIds = [...new Set(events.flatMap((event) => event.productId ? [event.productId] : []))];
+  const voucherProductIds = new Set(events.flatMap((event) => event.eventType === "flash_voucher" && event.productId ? [event.productId] : []));
   const invalidReferencePath = id
     ? `/interaction-scripts/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : "/interaction-scripts/new?error=invalid_reference";
   if ([id, ...referencedRoleIds, ...referencedProductIds].some((value) => value && value.length > 128)) {
-    return invalidReferencePath;
+    redirect(invalidReferencePath);
   }
 
   const name = text(formData, "name");
   const description = optionalText(formData, "description");
   const status = text(formData, "status", "draft");
   if (!name || name.length > 160 || (description?.length ?? 0) > 1_000 || (status !== "draft" && status !== "published")) {
-    return invalidEventPath;
+    redirect(invalidEventPath);
   }
   const data = { name, description, status };
 
@@ -460,7 +813,7 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
         referencedProductIds.length > 0
           ? tx.product.findMany({
               where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true, fulfillmentTypeConfirmed: true },
-              select: { id: true },
+              select: { id: true, checkoutUrl: true },
             })
           : Promise.resolve([]),
       ]);
@@ -468,6 +821,7 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
         referencedRoles.length !== referencedRoleIds.length
         || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
         || referencedProducts.length !== referencedProductIds.length
+        || referencedProducts.some((product) => voucherProductIds.has(product.id) && Boolean(product.checkoutUrl))
       ) {
         throw new InteractionScriptReferenceError();
       }
@@ -477,7 +831,13 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
           await tx.interactionScript.update({ where: { id, vendorId: vendor.id }, data });
           await tx.interactionEvent.deleteMany({ where: { scriptId: id } });
           for (const event of events) {
-            await tx.interactionEvent.create({ data: { ...event, scriptId: id } });
+            await tx.interactionEvent.create({
+              data: {
+                ...event,
+                metadata: event.metadata as Prisma.InputJsonValue | undefined,
+                scriptId: id,
+              },
+            });
           }
         } catch (error) {
           if (isRecordNotFoundError(error)) throw new InteractionScriptMissingError();
@@ -490,20 +850,25 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
         data: {
           ...data,
           vendorId: vendor.id,
-          events: { create: events },
+          events: {
+            create: events.map((event) => ({
+              ...event,
+              metadata: event.metadata as Prisma.InputJsonValue | undefined,
+            })),
+          },
         },
       });
       return script.id;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (error instanceof InteractionScriptMissingError || isRecordNotFoundError(error)) {
-      return "/interaction-scripts?error=missing_script";
+      redirect("/interaction-scripts?error=missing_script");
     }
     if (error instanceof InteractionScriptReferenceError) {
-      return invalidReferencePath;
+      redirect(invalidReferencePath);
     }
     if (isInteractionScriptWriteConflict(error)) {
-      return "/interaction-scripts?error=conflict";
+      redirect("/interaction-scripts?error=conflict");
     }
     throw error;
   }
@@ -517,11 +882,27 @@ export async function saveInteractionScript(formData: FormData): Promise<string>
     after: auditSnapshot({ name, status, eventCount: events.length }),
   });
 
-  return "/interaction-scripts";
+  redirect("/interaction-scripts");
 }
 
-export async function upsertInteractionScriptAction(formData: FormData) {
-  redirect(await saveInteractionScript(formData));
+/**
+ * Native same-origin form transport. The shared mutation still owns every
+ * validation and tenant boundary; this adapter only unwraps Next's bounded
+ * redirect destination for the route handler.
+ */
+export async function saveInteractionScript(formData: FormData): Promise<string> {
+  try {
+    await upsertInteractionScriptAction(formData);
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "digest" in error) {
+      const digest = (error as { digest?: unknown }).digest;
+      if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT;")) {
+        return digest.split(";")[2] ?? "/interaction-scripts";
+      }
+    }
+    throw error;
+  }
+  return "/interaction-scripts";
 }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
@@ -599,6 +980,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         ctaLabel: event.ctaLabel,
         ctaUrl: event.ctaUrl,
         roleId: event.roleId,
+        metadata: event.metadata,
       }, index));
       if (eventResults.some((result) => !result.success)) {
         throw new InteractionScriptInvalidEventError();
@@ -606,6 +988,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
       const normalizedEvents = eventResults.flatMap((result) => result.success ? [result.data] : []);
       const referencedRoleIds = [...new Set(normalizedEvents.flatMap((event) => event.roleId ? [event.roleId] : []))];
       const referencedProductIds = [...new Set(normalizedEvents.flatMap((event) => event.productId ? [event.productId] : []))];
+      const voucherProductIds = new Set(normalizedEvents.flatMap((event) => event.eventType === "flash_voucher" && event.productId ? [event.productId] : []));
       const [referencedRoles, referencedProducts] = await Promise.all([
         referencedRoleIds.length > 0
           ? tx.interactionRole.findMany({
@@ -625,7 +1008,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         referencedProductIds.length > 0
           ? tx.product.findMany({
               where: { vendorId: vendor.id, id: { in: referencedProductIds }, isActive: true },
-              select: { id: true },
+              select: { id: true, checkoutUrl: true },
             })
           : Promise.resolve([]),
       ]);
@@ -633,6 +1016,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
         referencedRoles.length !== referencedRoleIds.length
         || referencedRoles.some((role) => !isEligibleScheduledRole(role, vendor.id))
         || referencedProducts.length !== referencedProductIds.length
+        || referencedProducts.some((product) => voucherProductIds.has(product.id) && Boolean(product.checkoutUrl))
       ) {
         throw new InteractionScriptReferenceError();
       }
@@ -645,7 +1029,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
           description: script.description,
           status: "draft",
           events: {
-            create: normalizedEvents.map((event, index) => ({
+            create: normalizedEvents.map((event) => ({
               eventType: event.eventType,
               triggerSec: event.triggerSec,
               title: event.title,
@@ -654,7 +1038,7 @@ export async function duplicateInteractionScriptAction(formData: FormData) {
               ctaLabel: event.ctaLabel,
               ctaUrl: event.ctaUrl,
               roleId: event.roleId,
-              metadata: script.events[index]?.metadata as Prisma.InputJsonValue,
+              metadata: event.metadata as Prisma.InputJsonValue | undefined,
             })),
           },
         },
