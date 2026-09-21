@@ -106,6 +106,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
   const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
+  const contentRef = useRef<LandingPageStoredContent>(initial.content);
   const [name, setName] = useState(initial.name);
   const [slug, setSlug] = useState(initial.slug);
   const [formId, setFormId] = useState(initial.formId);
@@ -150,7 +151,9 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     if (page) data.set("id", page.id);
     data.set("revision", String(revisionRef.current));
     data.set("name", name); data.set("slug", slug); data.set("formId", formId); data.set("liveId", liveId);
-    data.set("content", JSON.stringify(content)); data.set("version", selectedVersion);
+    // Read the synchronous snapshot so a rapid sequence of controlled input
+    // events cannot save the previous render's content.
+    data.set("content", JSON.stringify(contentRef.current)); data.set("version", selectedVersion);
     startTransition(async () => {
       try {
         const result = await landingPageAction({ status: "success", message: "" }, data);
@@ -174,6 +177,11 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         setPending(false);
       }
     });
+  }
+  function updateContent(next: LandingPageStoredContent) {
+    contentRef.current = next;
+    setContent(next);
+    setDirty(true);
   }
   function exitEditor() {
     if (inFlight.current) {
@@ -221,7 +229,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">活動場次<select disabled={pending} aria-label="活動場次" className={inputClass} value={liveId} onChange={(e) => { setLiveId(e.target.value); setDirty(true); }}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
       </div>
     </section>
-    <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={(next) => { setContent(next); setDirty(true); }} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />
+    <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />
     {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-sm">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
       <button disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "處理中…" : "儲存草稿"}</button>
@@ -234,12 +242,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
         {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
-      </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => { setContent(createEmptyPageDocument("funnel-page", name)); setDirty(true); }}>使用空白頁</button>}
+      </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => updateContent(createEmptyPageDocument("funnel-page", name))}>使用空白頁</button>}
       <span role="status" className="ml-auto text-xs font-medium text-slate-500">{dirty ? "● 有尚未儲存的變更" : "✓ 草稿已儲存"}</span>
     </div>
     {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
     <CurrentWorkspacePreview show={preview} content={content} slug={slug} resource={webinarResource} viewport={previewViewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={(next) => { setContent(next); setDirty(true); }} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(content)) { setContent(next); setDirty(true); } }} /></div>
+    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(contentRef.current)) updateContent(next); }} /></div>
     </div>
   </div>;
 }
