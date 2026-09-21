@@ -466,9 +466,12 @@ model FormSubmission {
   liveId                String?
   name                  String
   email                 String
+  /// Vendor-bound irreversible identity used to join CRM activity without storing a second customer profile.
+  customerKeyHash       String?
   phone                 String?
   answers               Json?
   source                String                           @default("form")
+  attribution           Json?
   verificationStatus    FormSubmissionVerificationStatus @default(UNVERIFIED)
   verificationVersion   Int                              @default(1)
   verificationExpiresAt DateTime?
@@ -488,6 +491,7 @@ model FormSubmission {
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
+  @@index([formId, customerKeyHash, createdAt])
 }
 
 enum FormSubmissionVerificationStatus {
@@ -2690,6 +2694,8 @@ model PartnerFunnelPage {
 model StreamUsageLedgerEntry {
   id                       String   @id @default(cuid())
   vendorId                 String
+  viewerKeyHash            String?
+  customerKeyHash          String?
   liveId                   String
   sourcePageId             String?
   teamId                   String?
@@ -2718,6 +2724,8 @@ model StreamUsageLedgerEntry {
   @@index([sourcePageId, monthKey])
   @@index([promoterMembershipId, monthKey])
   @@index([liveId, capturedAt])
+  @@index([liveId, viewerKeyHash, capturedAt])
+  @@index([vendorId, customerKeyHash, capturedAt])
 }
 
 /// Immutable provider-report comparison against the server-owned usage ledger.

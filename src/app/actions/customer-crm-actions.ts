@@ -8,9 +8,12 @@ import { getDb } from "@/lib/db";
 import { issueManualCustomerVoucher } from "@/lib/customer-voucher";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
-import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
+import { listCustomers, type CustomerListItem } from "@/lib/customer-crm";
+import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 const Hash = z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/u);
+const Status = z.enum(["following_up", "closed_won", "closed_lost", "no_show"]);
+const Tag = z.string().trim().min(1).max(50);
 
 function value(formData: FormData, key: string) {
   const item = formData.get(key);
@@ -18,59 +21,116 @@ function value(formData: FormData, key: string) {
 }
 
 function refresh(hash: string) {
+  revalidatePath("/customers");
   revalidatePath(`/customers/${encodeURIComponent(hash)}`);
 }
 
-/**
- * Issues a short-lived manual voucher only inside the selected sales project.
- * The caller transaction persists the grant and encrypted email atomically.
- */
-export async function grantCustomerVoucherAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const { auth, vendor } = await requireVendorManagerContext();
-  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
-  const productId = z.string().min(1).max(191).parse(value(formData, "productId"));
+async function requireCustomerMutationScope(auth: { user: { id: string } }, vendor: { id: string }, customerKeyHash: string) {
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
-  const db = getDb();
-
   if (scope.projectId) {
-    const membership = await db.salesProjectCustomer.findUnique({
+    const membership = await getDb().salesProjectCustomer.findUnique({
       where: { vendorId_projectId_customerKeyHash: { vendorId: vendor.id, projectId: scope.projectId, customerKeyHash } },
       select: { id: true },
     });
     if (!membership) throw new Error("customer_not_in_selected_project");
   }
+  return scope;
+}
 
-  const product = await db.product.findFirst({
-    where: {
-      id: productId,
-      vendorId: vendor.id,
-      isActive: true,
-      ...(scope.projectId ? { salesProjectLinks: { some: { vendorId: vendor.id, projectId: scope.projectId } } } : {}),
-    },
-    select: { id: true, name: true, currency: true },
+/** Adds an append-only note and updates the tenant-owned CRM record atomically. */
+export async function saveConsultantNoteAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
+  await requireCustomerMutationScope(auth, vendor, customerKeyHash);
+  const body = z.string().trim().min(1).max(4_000).parse(value(formData, "body"));
+  const status = Status.parse(value(formData, "status"));
+  await getDb().$transaction(async (transaction) => {
+    const record = await transaction.customerCrmRecord.upsert({
+      where: { vendorId_customerKeyHash: { vendorId: vendor.id, customerKeyHash } },
+      create: { vendorId: vendor.id, customerKeyHash, consultationStatus: status },
+      update: { consultationStatus: status },
+    });
+    await transaction.consultantNote.create({ data: { vendorId: vendor.id, customerRecordId: record.id, body, actorId: auth.member!.id, actorLabel: auth.member!.role } });
   });
-  if (!product) throw new Error("找不到可派券的商品");
+  refresh(customerKeyHash);
+}
 
+export async function updateCustomerStatusAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
+  await requireCustomerMutationScope(auth, vendor, customerKeyHash);
+  const consultationStatus = Status.parse(value(formData, "status"));
+  await getDb().customerCrmRecord.upsert({ where: { vendorId_customerKeyHash: { vendorId: vendor.id, customerKeyHash } }, create: { vendorId: vendor.id, customerKeyHash, consultationStatus }, update: { consultationStatus } });
+  refresh(customerKeyHash);
+}
+
+export async function addCustomerTagAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
+  await requireCustomerMutationScope(auth, vendor, customerKeyHash);
+  const tag = Tag.parse(value(formData, "tag")).toLocaleLowerCase("zh-TW");
+  await getDb().customerTagAssignment.upsert({ where: { vendorId_customerKeyHash_tag: { vendorId: vendor.id, customerKeyHash, tag } }, create: { vendorId: vendor.id, customerKeyHash, tag }, update: {} });
+  refresh(customerKeyHash);
+}
+
+export async function removeCustomerTagAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
+  await requireCustomerMutationScope(auth, vendor, customerKeyHash);
+  const tag = Tag.parse(value(formData, "tag")).toLocaleLowerCase("zh-TW");
+  await getDb().customerTagAssignment.deleteMany({ where: { vendorId: vendor.id, customerKeyHash, tag } });
+  refresh(customerKeyHash);
+}
+
+/** Issues a short-lived manual voucher through the canonical hashed bearer contract. */
+export async function grantCustomerVoucherAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { auth, vendor } = await requireVendorManagerContext();
+  const customerKeyHash = Hash.parse(value(formData, "customerKeyHash"));
+  const productId = z.string().min(1).max(191).parse(value(formData, "productId"));
+  const scope = await requireCustomerMutationScope(auth, vendor, customerKeyHash);
+  const db = getDb();
+  const product = await db.product.findFirst({ where: { id: productId, vendorId: vendor.id, isActive: true, ...(scope.projectId ? { salesProjectLinks: { some: { vendorId: vendor.id, projectId: scope.projectId } } } : {}) }, select: { id: true, name: true, currency: true } });
+  if (!product) throw new Error("找不到可派券的商品");
   const projectForm = scope.projectId ? { projectId: scope.projectId } : {};
   const projectEvent = scope.projectId ? { projectId: scope.projectId } : {};
-  const [verifiedSubmissions, bookings] = await Promise.all([
-    db.formSubmission.findMany({ where: { form: { vendorId: vendor.id, ...projectForm }, verificationStatus: "VERIFIED" }, select: { email: true }, orderBy: { createdAt: "desc" } }),
-    db.consultationBooking.findMany({ where: { vendorId: vendor.id, event: projectEvent }, select: { clientEmail: true }, orderBy: { createdAt: "desc" } }),
-  ]);
-  let recipientEmail = verifiedSubmissions.find((row) => automationCustomerKeyHash(vendor.id, row.email) === customerKeyHash)?.email
-    ?? bookings.find((row) => automationCustomerKeyHash(vendor.id, row.clientEmail) === customerKeyHash)?.clientEmail;
-
+  const identity = await db.formSubmission.findFirst({ where: { customerKeyHash, form: { vendorId: vendor.id, ...projectForm }, verificationStatus: "VERIFIED" }, select: { email: true }, orderBy: { createdAt: "desc" } })
+    ?? await db.consultationBooking.findFirst({ where: { vendorId: vendor.id, customerKeyHash, event: projectEvent }, select: { clientEmail: true }, orderBy: { createdAt: "desc" } });
+  let recipientEmail = identity && "email" in identity ? identity.email : identity?.clientEmail;
   if (!recipientEmail) {
-    const order = await db.commerceOrder.findFirst({
-      where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
-      select: { id: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true }, orderBy: { createdAt: "desc" },
-    });
+    const order = await db.commerceOrder.findFirst({ where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, ...(scope.projectId ? { projectId: scope.projectId } : {}) }, select: { id: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true }, orderBy: { createdAt: "desc" } });
     if (order) recipientEmail = revealCommerceOrderPii({ buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: order.shippingEncryptedEnvelope }, { vendorId: vendor.id, orderId: order.id }).buyer.email;
   }
-
+  if (!recipientEmail) {
+    const [legacySubmissions, legacyBookings] = await Promise.all([
+      db.formSubmission.findMany({ where: { form: { vendorId: vendor.id, ...projectForm }, customerKeyHash: null, verificationStatus: "VERIFIED" }, select: { email: true } }),
+      db.consultationBooking.findMany({ where: { vendorId: vendor.id, customerKeyHash: null, event: projectEvent }, select: { clientEmail: true } }),
+    ]);
+    recipientEmail = legacySubmissions.find((row) => automationCustomerKeyHash(vendor.id, row.email) === customerKeyHash)?.email
+      ?? legacyBookings.find((row) => automationCustomerKeyHash(vendor.id, row.clientEmail) === customerKeyHash)?.clientEmail;
+  }
   if (!recipientEmail) throw new Error("找不到已驗證的學員聯絡方式");
-
   await db.$transaction(async (transaction) => issueManualCustomerVoucher({ db: transaction, vendorId: vendor.id, customerKeyHash, product, recipientEmail }));
   refresh(customerKeyHash);
+}
+
+export type CustomerSearchActionState = { status: "idle" | "success" | "error"; message: string; items: CustomerListItem[] };
+
+/** Keeps raw Email/phone search terms in a CSRF-protected POST body, never the URL. */
+export async function searchCustomersAction(_previous: CustomerSearchActionState, formData: FormData): Promise<CustomerSearchActionState> {
+  try {
+    await assertServerActionSecurity(formData);
+    const { auth, vendor } = await requireVendorManagerContext();
+    const query = z.string().max(320).parse(value(formData, "query"));
+    const tag = z.string().max(50).parse(value(formData, "tag")).toLocaleLowerCase("zh-TW");
+    const scope = await getSalesProjectScope(auth.user.id, vendor.id);
+    const items = await listCustomers(vendor.id, query, tag, scope.projectId);
+    return { status: "success", message: items.length ? `找到 ${items.length} 位學員。` : "沒有符合條件的學員。", items };
+  } catch {
+    return { status: "error", message: "搜尋失敗，請重新整理後再試。", items: [] };
+  }
 }

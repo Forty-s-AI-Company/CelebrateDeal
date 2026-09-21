@@ -1,0 +1,11 @@
+import { createSalesProjectAction } from "@/app/actions/sales-workspace-actions";
+import { CsrfField } from "@/components/csrf-field";
+import { Card, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+
+export default async function NewProjectPage() {
+  const { vendor } = await requireVendorManagerContext();
+  const publishedCount = await getDb().salesProject.count({ where: { vendorId: vendor.id, status: "published" } });
+  return <><PageHeader title="建立銷售專案" description="先選擇建立方式；無論預設值為何，之後都能從任務中心重新啟用導引。" /><form action={createSalesProjectAction} className="mx-auto grid max-w-3xl gap-5"><CsrfField /><Card><h2 className="text-lg font-semibold text-slate-950">專案資料</h2><div className="mt-4 grid gap-4"><Field label="專案名稱" name="name" required maxLength={120} placeholder="例如：AI 變現直播" /><Field label="網址代稱" name="slug" required maxLength={160} placeholder="ai-live-launch" /><SelectField label="推薦工作模式" name="mode" defaultValue="live_course"><option value="live_course">純直播賣課模式</option><option value="consulting">高客單諮詢模式</option><option value="flagship">全功能旗艦模式</option></SelectField><SelectField label="優先建立的流程" name="primaryFlow" defaultValue="live"><option value="live">直播銷講流程</option><option value="consultation">諮詢預約流程</option></SelectField></div></Card><Card><h2 className="text-lg font-semibold text-slate-950">建立方式</h2><p className="mt-1 text-sm text-slate-600">{publishedCount === 0 ? "這是第一個專案，預設使用上線導引。" : "你已發布過專案，預設可快速建立。"}</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="rounded-xl border border-slate-200 p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50"><input type="radio" name="creationPath" value="guided" defaultChecked={publishedCount === 0} className="mr-2" /><b>使用上線導引</b><span className="mt-2 block text-sm text-slate-600">跟著步驟完成商品、頁面、金流與發布</span></label><label className="rounded-xl border border-slate-200 p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50"><input type="radio" name="creationPath" value="quick" defaultChecked={publishedCount > 0} className="mr-2" /><b>快速建立</b><span className="mt-2 block text-sm text-slate-600">直接進入編輯器，自行完成設定</span></label></div></Card><div className="flex justify-end"><SubmitButton pendingChildren="建立中…">建立專案</SubmitButton></div></form></>;
+}
