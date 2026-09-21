@@ -44,4 +44,59 @@ describe("electronic invoice durable job", () => {
     await expect(runElectronicInvoiceJob({ db: db as never, adapter, now })).resolves.toMatchObject({ attempted: 1, voided: 1, issued: 0 });
     expect(adapter.issue).not.toHaveBeenCalled();
   });
+
+  it("skips unpaid queue entries and counts a successful issue", async () => {
+    const now = new Date("2026-09-08T00:00:00Z");
+    const queuedWithoutPayment = { id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", attemptCount: 0, order: { primaryPaymentTransactionId: null, status: "paid" } };
+    const queuedWithPayment = { id: "invoice-2", vendorId: "vendor-1", orderId: "order-2", attemptCount: 0, order: { primaryPaymentTransactionId: "payment-2", status: "paid" } };
+    const electronicInvoice = {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findFirst: vi.fn()
+        .mockResolvedValueOnce({ id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "allowance", invoiceNumber: "CD12345678", amountCents: 10_500, attemptCount: 0, nextAttemptAt: now, processingStartedAt: null })
+        .mockResolvedValueOnce({ id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "voided", invoiceNumber: "CD12345678", amountCents: 10_500, attemptCount: 0, nextAttemptAt: now, processingStartedAt: null }),
+      findMany: vi.fn().mockResolvedValueOnce([queuedWithoutPayment, queuedWithPayment]).mockResolvedValueOnce([]),
+    };
+    const db = {
+      electronicInvoice,
+      electronicInvoiceAllowance: { count: vi.fn() },
+      commerceOrder: { findFirst: vi.fn() },
+    };
+    const adapter = { issue: vi.fn().mockResolvedValue({ invoiceNumber: "CD12345678", randomCode: "1234", issuedAt: now }), createAllowance: vi.fn(), void: vi.fn() };
+    await expect(runElectronicInvoiceJob({ db: db as never, adapter, now })).resolves.toMatchObject({ attempted: 2, issued: 0, failed: 0 });
+    expect(adapter.issue).not.toHaveBeenCalled();
+  });
+
+  it("counts an allowance and a voided refund while isolating refund failures", async () => {
+    const now = new Date("2026-09-08T00:00:00Z");
+    const electronicInvoice = {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findFirst: vi.fn()
+        .mockResolvedValueOnce({ id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "allowance", invoiceNumber: "CD12345678", amountCents: 10_500, attemptCount: 0, nextAttemptAt: now, processingStartedAt: null })
+        .mockResolvedValueOnce({ id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "voided", invoiceNumber: "CD12345678", amountCents: 10_500, attemptCount: 0, nextAttemptAt: now, processingStartedAt: null }),
+      findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{
+        vendorId: "vendor-1", orderId: "order-1", status: "issued",
+        order: { refunds: [
+          { id: "refund-1", amountCents: 100, cumulativeAmountCents: 100, occurredAt: now },
+          { id: "refund-2", amountCents: 10_400, cumulativeAmountCents: 10_500, occurredAt: now },
+        ] },
+      }]),
+    };
+    const allowanceCount = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const db = {
+      electronicInvoice,
+      electronicInvoiceAllowance: {
+        count: allowanceCount,
+        findUnique: vi.fn().mockResolvedValue(null),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { pretaxAmountCents: 0, taxAmountCents: 0 } }),
+        upsert: vi.fn().mockResolvedValue({ id: "allowance-1" }),
+      },
+      commerceOrder: { findFirst: vi.fn() },
+    };
+    const adapter = {
+      issue: vi.fn(),
+      createAllowance: vi.fn().mockResolvedValue({ allowanceNumber: "AL123", issuedAt: now }),
+      void: vi.fn().mockResolvedValue({ voidedAt: now }),
+    };
+    await expect(runElectronicInvoiceJob({ db: db as never, adapter, now })).resolves.toMatchObject({ voided: 1, failed: 0 });
+  });
 });

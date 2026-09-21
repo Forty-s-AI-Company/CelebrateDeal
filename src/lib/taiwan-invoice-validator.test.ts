@@ -4,6 +4,7 @@ import {
   isValidDonationCode,
   isValidMobileBarcode,
   isValidTaiwanBusinessId,
+  parseCheckoutInvoiceSelection,
   validateCheckoutInvoiceSelection,
 } from "@/lib/taiwan-invoice-validator";
 
@@ -40,5 +41,26 @@ describe("Taiwan invoice validators", () => {
   it("returns checkout-ready field messages", () => {
     expect(validateCheckoutInvoiceSelection({ type: "company", businessId: "12345678", companyName: "測試公司" })).toContain("統一編號");
     expect(validateCheckoutInvoiceSelection({ type: "donation", donationCode: "12" })).toContain("捐贈碼");
+    expect(validateCheckoutInvoiceSelection({ type: "company", businessId: "04595257", companyName: "   " })).toContain("發票抬頭");
+    expect(validateCheckoutInvoiceSelection({ type: "personal", carrier: "mobile", carrierNumber: "bad" })).toContain("手機條碼");
+    expect(validateCheckoutInvoiceSelection({ type: "personal", carrier: "citizen_certificate", carrierNumber: "bad" })).toContain("自然人憑證");
+    expect(validateCheckoutInvoiceSelection({ type: "personal", carrier: "member" })).toBeNull();
+  });
+
+  it("parses only validated invoice selections", () => {
+    expect(parseCheckoutInvoiceSelection(null)).toBeNull();
+    expect(parseCheckoutInvoiceSelection([])).toBeNull();
+    expect(parseCheckoutInvoiceSelection({ type: "company", businessId: "04595257", companyName: " 測試公司 " }))
+      .toEqual({ type: "company", businessId: "04595257", companyName: "測試公司" });
+    expect(parseCheckoutInvoiceSelection({ type: "donation", donationCode: "123" }))
+      .toEqual({ type: "donation", donationCode: "123" });
+    expect(parseCheckoutInvoiceSelection({ type: "personal", carrier: "member" }))
+      .toEqual({ type: "personal", carrier: "member" });
+    expect(parseCheckoutInvoiceSelection({ type: "personal", carrier: "mobile", carrierNumber: "/ABC1234" }))
+      .toEqual({ type: "personal", carrier: "mobile", carrierNumber: "/ABC1234" });
+    expect(parseCheckoutInvoiceSelection({ type: "personal", carrier: "citizen_certificate", carrierNumber: "AB12345678901234" }))
+      .toEqual({ type: "personal", carrier: "citizen_certificate", carrierNumber: "AB12345678901234" });
+    expect(parseCheckoutInvoiceSelection({ type: "personal", carrier: "mobile", carrierNumber: "bad" })).toBeNull();
+    expect(parseCheckoutInvoiceSelection({ type: "unknown" })).toBeNull();
   });
 });

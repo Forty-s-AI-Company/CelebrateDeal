@@ -14,6 +14,8 @@ describe("Taiwan electronic invoice lifecycle", () => {
   it("splits tax-inclusive amounts without losing cents", () => {
     expect(splitTaiwanVat(10_500)).toEqual({ pretaxAmountCents: 10_000, taxAmountCents: 500 });
     expect(Object.values(splitTaiwanVat(1)).reduce((sum, value) => sum + value, 0)).toBe(1);
+    expect(() => splitTaiwanVat(-1)).toThrow("non-negative");
+    expect(() => splitTaiwanVat(Number.MAX_SAFE_INTEGER + 1)).toThrow("safe integer");
   });
 
   it("creates stable local invoice identities through the adapter contract", async () => {
@@ -45,6 +47,18 @@ describe("Taiwan electronic invoice lifecycle", () => {
       create: expect.objectContaining({ status: "queued", amountCents: 10_500, pretaxAmountCents: 10_000, taxAmountCents: 500 }),
     }));
     expect(db.electronicInvoice.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("ignores paid events that have no complete invoice selection", async () => {
+    const db = {
+      commerceOrder: { findFirst: vi.fn().mockResolvedValue(null) },
+      electronicInvoice: { upsert: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
+      electronicInvoiceAllowance: {},
+    };
+    await expect(scheduleAndIssueOrderInvoice(db as never, {
+      vendorId: "vendor-1", paymentTransactionId: "payment-1", occurredAt: new Date(),
+    })).resolves.toBeNull();
+    expect(db.electronicInvoice.upsert).not.toHaveBeenCalled();
   });
 
   it("issues an idempotent tenant-bound order snapshot", async () => {
@@ -88,6 +102,29 @@ describe("Taiwan electronic invoice lifecycle", () => {
     expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ processingStartedAt: null, attemptCount: 1 }),
     }));
+  });
+
+  it("fails closed for missing invoices and queued partial refunds", async () => {
+    const occurredAt = new Date("2026-09-08T00:00:00Z");
+    const missingDb = { commerceOrder: {}, electronicInvoice: { findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() }, electronicInvoiceAllowance: {} };
+    await expect(reconcileElectronicInvoiceRefund(missingDb as never, {
+      vendorId: "vendor-1", orderId: "order-1", commerceRefundId: "refund-1", refundAmountCents: 100, cumulativeAmountCents: 100, occurredAt,
+    })).resolves.toBeNull();
+
+    const queued = { id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "queued", amountCents: 10_500, attemptCount: 0, processingStartedAt: null };
+    const queuedDb = { commerceOrder: {}, electronicInvoice: { findFirst: vi.fn().mockResolvedValue(queued), updateMany: vi.fn().mockResolvedValue({ count: 0 }) }, electronicInvoiceAllowance: {} };
+    await expect(reconcileElectronicInvoiceRefund(queuedDb as never, {
+      vendorId: "vendor-1", orderId: "order-1", commerceRefundId: "refund-1", refundAmountCents: 100, cumulativeAmountCents: 100, occurredAt,
+    })).resolves.toEqual(queued);
+  });
+
+  it("returns an issued snapshot unchanged when no adapter is available", async () => {
+    const invoice = { id: "invoice-1", vendorId: "vendor-1", orderId: "order-1", status: "issued", invoiceNumber: "CD12345678", amountCents: 10_500, attemptCount: 0, nextAttemptAt: new Date("2026-09-08T00:00:00Z"), processingStartedAt: null };
+    const db = { commerceOrder: {}, electronicInvoice: { findFirst: vi.fn().mockResolvedValue(invoice), updateMany: vi.fn() }, electronicInvoiceAllowance: {} };
+    await expect(reconcileElectronicInvoiceRefund(db as never, {
+      vendorId: "vendor-1", orderId: "order-1", commerceRefundId: "refund-1", refundAmountCents: 100, cumulativeAmountCents: 100, occurredAt: new Date("2026-09-08T00:00:00Z"),
+    })).resolves.toEqual(invoice);
+    expect(db.electronicInvoice.updateMany).not.toHaveBeenCalled();
   });
 
   it("creates an allowance for a partial refund and voids on a full refund", async () => {
