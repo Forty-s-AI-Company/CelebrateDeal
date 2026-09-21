@@ -78,6 +78,8 @@ model Vendor {
   supportEmail String?
   senderName   String?
   contactUrl   String?
+  /// 只控制商家後台可見模組；停用不會刪除既有業務資料。
+  enabledFeatureModules String[] @default(["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced"])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

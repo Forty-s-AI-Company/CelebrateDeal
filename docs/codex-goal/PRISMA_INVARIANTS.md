@@ -1,6 +1,6 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-09-19（Asia/Taipei）
+最後更新：2026-09-21（Asia/Taipei）
 
 基準 revision：`4ed3b463`
 
@@ -9,7 +9,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 118 |
-| Migration directories | 76 |
+| Migration directories | 77 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -109,6 +109,7 @@
 | `20260907090000_live_lucky_draw_purchase_claim` | verified registration identity and hashed lucky-draw claim material |
 | `20260907180000_live_qa_spotlight` | tenant-bound viewer questions and one spotlight per live |
 | `20260908100000_consultation_booking` | tenant-scoped consultation events/bookings, active-slot uniqueness and booking status |
+| `20260908090000_vendor_feature_toggles` | tenant-scoped backend module visibility settings; additive, no data deletion |
 | `20260908230000_evergreen_webinar_vendor_settings` | per-live evergreen scheduling, timeline anchors and merchant preview controls |
 | `20260911070000_live_danmaku` | public danmaku state on Live |
 | `20260911080000_live_interaction_tenant_integrity` | fail-closed run/live and registration/live composite ownership |
