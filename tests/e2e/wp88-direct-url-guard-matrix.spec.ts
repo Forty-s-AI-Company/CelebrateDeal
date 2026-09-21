@@ -78,12 +78,12 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(77);
+  expect(sourceFiles).toHaveLength(78);
   expect(familyCounts).toEqual({
     vendorContext: 7,
     vendorManagerMfa: 2,
     vendorSupportMfa: 2,
-    vendorOwner: 2,
+    vendorOwner: 3,
     vendorManager: 40,
     vendorFinance: 11,
     authenticated: 1,
