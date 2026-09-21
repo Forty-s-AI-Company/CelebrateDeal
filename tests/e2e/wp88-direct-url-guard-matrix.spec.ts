@@ -84,8 +84,8 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     vendorManagerMfa: 2,
     vendorSupportMfa: 2,
     vendorOwner: 3,
-    vendorManager: 41,
-    vendorFinance: 11,
+    vendorManager: 40,
+    vendorFinance: 12,
     authenticated: 1,
     platformFinance: 12,
   });
