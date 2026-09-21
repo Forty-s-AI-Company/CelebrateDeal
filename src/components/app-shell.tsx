@@ -11,10 +11,12 @@ const navGroups = [
     label: "營運",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Gauge },
+      { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
       { href: "/videos", label: "影片", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
       { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
+      { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
       { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
       { href: "/forms", label: "報名表", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
