@@ -117,3 +117,4 @@
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。
+| 78 | `GET /lp/[slug]/[stepPath]/play` | public webinar route | bounded slug and stepPath | published webinar broadcast step and server runtime gate | same-origin encoded 303; no write | private no-store; 404/409/410/503 | route unit + browser journey |
