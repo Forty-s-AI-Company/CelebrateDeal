@@ -25,10 +25,11 @@ vi.mock("react-dom", async (importOriginal) => {
 });
 
 import { navigationForRole } from "./app-shell";
+import type { VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 import { AppShell } from "./app-shell";
 
-function linksFor(role: string | null, isPlatformAdmin = false) {
-  return navigationForRole(role, isPlatformAdmin).flatMap((group) => group.items.map((item) => item.href));
+function linksFor(role: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
+  return navigationForRole(role, isPlatformAdmin, enabledModules).flatMap((group) => group.items.map((item) => item.href));
 }
 
 function renderShell({ memberRole, isPlatformAdmin = false, vendorName = "測試商家" }: { memberRole: string | null; isPlatformAdmin?: boolean; vendorName?: string }) {
@@ -82,6 +83,16 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/settings/brand");
     expect(links).toContain("/settings/automations");
     expect(links).not.toContain("/admin/billing/dashboard");
+  });
+
+  it("filters feature-owned navigation while keeping the module settings entry", () => {
+    const links = linksFor("owner", false, ["funnel_builder"]);
+
+    expect(links).toContain("/forms");
+    expect(links).toContain("/settings/features");
+    expect(links).not.toContain("/lives");
+    expect(links).not.toContain("/affiliates");
+    expect(links).not.toContain("/billing/payouts");
   });
 
   it("hides every finance route from a non-finance member", () => {

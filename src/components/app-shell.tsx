@@ -3,6 +3,7 @@ import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, ClipboardList, Cloud, Credi
 import { logoutAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 import { PublicResourceLinks } from "@/components/public-policy";
 
 const navGroups = [
@@ -10,12 +11,12 @@ const navGroups = [
     label: "營運",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: Gauge },
-      { href: "/lives", label: "直播間", icon: Radio, managerOnly: true },
-      { href: "/videos", label: "影片", icon: PlaySquare, managerOnly: true },
+      { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
+      { href: "/videos", label: "影片", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
       { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
       { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
-      { href: "/forms", label: "報名表", icon: ClipboardList, managerOnly: true },
+      { href: "/forms", label: "報名表", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
       { href: "/messages/deliveries", label: "寄送紀錄", icon: ReceiptText, managerOnly: true },
     ],
@@ -23,12 +24,12 @@ const navGroups = [
   {
     label: "自動化",
     items: [
-      { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true },
-      { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true },
+      { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
+      { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
       { href: "/blacklists", label: "黑名單", icon: Ban, managerOnly: true },
-      { href: "/affiliates", label: "聯盟夥伴", icon: Handshake, managerOnly: true },
-      { href: "/team-templates", label: "團隊展業", icon: UsersRound },
-      { href: "/team-performance", label: "展業成效", icon: BarChart3 },
+      { href: "/affiliates", label: "聯盟夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
+      { href: "/team-templates", label: "團隊展業", icon: UsersRound, feature: "funnel_builder" },
+      { href: "/team-performance", label: "展業成效", icon: BarChart3, feature: "affiliate_program" },
     ],
   },
   {
@@ -39,9 +40,9 @@ const navGroups = [
       { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true },
       { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true },
       { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
-      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true },
-      { href: "/affiliates/commissions", label: "聯盟佣金", icon: Handshake, financeOnly: true },
-      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true },
+      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
+      { href: "/affiliates/commissions", label: "聯盟佣金", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
+      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
       { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
       { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
       { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText, adminOnly: true },
@@ -56,12 +57,13 @@ const navGroups = [
       { href: "/settings/brand", label: "品牌", icon: Palette, managerOnly: true },
       { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
       { href: "/settings/automations", label: "自動化", icon: Bot, managerOnly: true },
+      { href: "/settings/features", label: "功能模組", icon: Tags, managerOnly: true },
       { href: "/settings/security", label: "安全", icon: Shield },
     ],
   },
 ];
 
-export function navigationForRole(memberRole: string | null, isPlatformAdmin = false) {
+export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
   if (isPlatformAdmin) {
     return navGroups
       .map((group) => ({
@@ -93,7 +95,8 @@ export function navigationForRole(memberRole: string | null, isPlatformAdmin = f
         const adminOnly = "adminOnly" in item && item.adminOnly;
         if (adminOnly) return false;
         if ("financeOnly" in item && item.financeOnly && !isFinance) return false;
-        return !("managerOnly" in item && item.managerOnly) || isManager;
+        if ("managerOnly" in item && item.managerOnly && !isManager) return false;
+        return !("feature" in item && item.feature) || !enabledModules || hasVendorFeature(enabledModules, item.feature as VendorFeatureModule);
       }),
     }))
     .filter((group) => group.items.length > 0);
@@ -104,13 +107,15 @@ export function AppShell({
   vendorName,
   memberRole,
   isPlatformAdmin = false,
+  enabledModules,
 }: {
   children: React.ReactNode;
   vendorName: string;
   memberRole: string | null;
   isPlatformAdmin?: boolean;
+  enabledModules?: readonly VendorFeatureModule[];
 }) {
-  const visibleGroups = navigationForRole(memberRole, isPlatformAdmin);
+  const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
 
   return (
