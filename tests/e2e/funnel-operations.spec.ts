@@ -66,7 +66,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   const operationsPath = new URL(page.url()).pathname;
   const pageId = operationsPath.split("/").at(-2)!;
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
-  await expect(page.getByRole("status")).toContainText("模板已套用");
+  await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
   await page.getByRole("button", { name: "Edit Page", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   const editorPath = new URL(page.url()).pathname;
