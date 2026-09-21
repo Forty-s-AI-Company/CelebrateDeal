@@ -684,7 +684,7 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId)
     : undefined;
   const commerceByPageId = page.projectId
-    ? await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content)
+    ? await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content, page.slug)
     : {};
   const consultationEvents = await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content);
   return {

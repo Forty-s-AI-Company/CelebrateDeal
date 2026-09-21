@@ -3,6 +3,7 @@
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
 import {
   CommerceCheckoutAdmissionResponseSchema,
   checkoutErrorMessage,
@@ -29,6 +30,8 @@ type CommerceCheckoutFormProps = {
   fulfillmentType: CommerceCheckoutFulfillmentType;
   customCheckoutFields?: CustomCheckoutFields;
   recoveryOnly?: boolean;
+  funnel?: FunnelCheckoutReference;
+  agreementLabel?: string;
 };
 
 function submitProviderForm(action: string, payload: Record<string, string>) {
@@ -90,6 +93,8 @@ export function CommerceCheckoutForm({
   fulfillmentType,
   customCheckoutFields = [],
   recoveryOnly = false,
+  funnel,
+  agreementLabel,
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
@@ -217,6 +222,7 @@ export function CommerceCheckoutForm({
           admissionToken: admission.current.admissionToken,
           buyer,
           shipping,
+          ...(funnel ? { funnel, ...(agreementLabel ? { agreementAccepted: formData.get("funnelAgreement") === "on" } : {}) } : {}),
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
         }),
         signal: controller.signal,
@@ -360,6 +366,11 @@ export function CommerceCheckoutForm({
           <Link href="/policies/refunds" className="font-semibold text-blue-700 underline">退款政策</Link>；這些文件在正式上線前仍需真人 owner 核准。
         </span>
       </label>
+
+      {agreementLabel ? <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
+        <input type="checkbox" name="funnelAgreement" required className="mt-1 h-4 w-4" disabled={isPending || phase === "success"} />
+        <span>{agreementLabel}</span>
+      </label> : null}
 
       <button
         type="submit"

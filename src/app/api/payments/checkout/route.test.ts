@@ -29,6 +29,7 @@ const checkoutReadiness = vi.fn();
 const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }));
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
+const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock("@/lib/buyer-support-access", () => ({
   }),
 }));
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
+vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
 
 import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
@@ -103,6 +105,16 @@ function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}) {
   });
 }
 
+function funnelResolution(overrides: Record<string, unknown> = {}) {
+  return {
+    reference: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+    vendorId: "vendor-1", projectId: "project-1", pageId: "page-1", version: 2,
+    binding: { schemaVersion: 1, productId: "product-1", formMode: "single", agreement: { label: "我同意" } },
+    product: { id: "product-1", vendorId: "vendor-1", name: "Test product", description: null, priceCents: 1200, currency: "TWD", fulfillmentType: "physical", inventory: 3, revision: 4, customCheckoutFields: [] },
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("CSRF_SECRET", "checkout-route-test-secret-that-is-at-least-32-bytes");
@@ -126,6 +138,7 @@ beforeEach(() => {
   db.affiliateClick.findFirst.mockResolvedValue(null);
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", liveId: "live-1" });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
+  funnelMocks.resolvePublishedFunnelCheckout.mockReset();
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -186,6 +199,29 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("re-resolves Funnel scope and persists only the server-derived project", async () => {
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution());
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+      agreementAccepted: true,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(funnelMocks.resolvePublishedFunnelCheckout).toHaveBeenCalledWith(expect.objectContaining({ slug: "offer", stepId: "order_form" }), db, undefined);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-1" }));
+  });
+
+  it("rejects a stale published Funnel snapshot before reserving stock", async () => {
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution({ version: 3 }));
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+      agreementAccepted: true,
+    }));
+
+    expect(response.status).toBe(409);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
   it("requires a bounded caller idempotency key", async () => {
     const response = await POST(checkoutRequest(undefined, { idempotencyKey: undefined }));
 

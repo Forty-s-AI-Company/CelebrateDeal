@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFunnelFlow } from "@/lib/funnel-flow";
 import { createFunnelStepPages } from "@/lib/funnel-step-pages";
 
-const mocks = vi.hoisted(() => ({ productFindMany: vi.fn() }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.productFindMany } }) }));
+const mocks = vi.hoisted(() => ({ productFindMany: vi.fn(), landingPageFindMany: vi.fn() }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.productFindMany }, landingPage: { findMany: mocks.landingPageFindMany } }) }));
 
-import { listFunnelCommerceProducts, publicCommerceViewForDocument, validateFunnelCommerceBindings } from "./funnel-commerce-service";
+import { listFunnelCommerceProducts, publicCommerceViewForDocument, publicFunnelCommerceViews, resolvePublishedFunnelCheckout, validateFunnelCommerceBindings } from "./funnel-commerce-service";
 
 const scope = { vendorId: "vendor-1", projectId: "project-1" };
 function product(overrides: Record<string, unknown> = {}) {
@@ -55,5 +55,44 @@ describe("funnel commerce catalog boundary", () => {
       product: { id: "product-1", name: "主商品", priceCents: 1200, currency: "TWD", fulfillmentType: "physical" },
       checkoutPath: "/checkout",
     });
+  });
+
+  it("只對 order step 發出已編碼的公開 checkout path", async () => {
+    mocks.productFindMany.mockResolvedValue([{ ...product(), description: null, customCheckoutFields: [], revision: 4 }]);
+    const views = await publicFunnelCommerceViews(scope, commerceState(), "offer");
+    expect(Object.values(views)).toEqual([{
+      product: { id: "product-1", name: "主商品", priceCents: 1200, currency: "TWD", fulfillmentType: "physical" },
+      checkoutPath: "/lp/offer/order_form/checkout",
+    }]);
+    await expect(publicFunnelCommerceViews(scope, { root: [], settings: {} }, "offer")).resolves.toEqual({});
+  });
+
+  it("只解析已發布、已綁定目前 sales project 的 order step", async () => {
+    const state = commerceState();
+    mocks.landingPageFindMany.mockResolvedValue([{
+      id: "page-1", vendorId: "vendor-1", projectId: "project-1", slug: "offer", publishedAt: new Date(), publishedVersionId: "version-2", operations: null,
+      publishedVersion: { id: "version-2", vendorId: "vendor-1", pageId: "page-1", version: 2, content: state },
+    }]);
+    mocks.productFindMany.mockResolvedValue([{ ...product(), description: "可下載", customCheckoutFields: [], revision: 4 }]);
+    await expect(resolvePublishedFunnelCheckout({ slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 })).resolves.toMatchObject({
+      projectId: "project-1", pageId: "page-1", version: 2, product: { id: "product-1", revision: 4, description: "可下載" },
+    });
+  });
+
+  it("對已截止或非 order step fail closed", async () => {
+    const state = commerceState();
+    state.flow.steps[0]!.type = "sales_page";
+    mocks.landingPageFindMany.mockResolvedValue([{
+      id: "page-1", vendorId: "vendor-1", projectId: "project-1", slug: "offer", publishedAt: new Date(), publishedVersionId: "version-2", operations: null,
+      publishedVersion: { id: "version-2", vendorId: "vendor-1", pageId: "page-1", version: 2, content: state },
+    }]);
+    await expect(resolvePublishedFunnelCheckout({ slug: "offer", stepId: "order_form" })).resolves.toBeNull();
+  });
+
+  it("對重複 published slug 與缺少 publishedAt fail closed", async () => {
+    mocks.landingPageFindMany.mockResolvedValue([{ id: "page-1" }, { id: "page-2" }]);
+    await expect(resolvePublishedFunnelCheckout({ slug: "offer", stepId: "order_form" })).resolves.toBeNull();
+    mocks.landingPageFindMany.mockResolvedValue([{ id: "page-1", publishedAt: null }]);
+    await expect(resolvePublishedFunnelCheckout({ slug: "offer", stepId: "order_form" })).resolves.toBeNull();
   });
 });

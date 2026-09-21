@@ -131,7 +131,7 @@ describe("landing page scoped mutations", () => {
 
     expect(result).toMatchObject({ id: "page-1", slug: "fall-launch", publishedAt: now, content });
     expect(result?.context).toEqual({ pageId: "page-1", forms: [] });
-    expect(mocks.publicCommerce).toHaveBeenCalledWith({ vendorId: "vendor-1", projectId: "project-1" }, content);
+    expect(mocks.publicCommerce).toHaveBeenCalledWith({ vendorId: "vendor-1", projectId: "project-1" }, content, "fall-launch");
   });
 
   it("公開 Funnel loader 對 snapshot、內容與表單邊界 fail closed", async () => {

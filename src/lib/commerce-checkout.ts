@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { allowedPaymentUrl } from "@/lib/payment-checkout-presentation";
+import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 
 export const COMMERCE_FULFILLMENT_TYPES = ["physical", "digital", "service", "course"] as const;
 export type CommerceCheckoutFulfillmentType = (typeof COMMERCE_FULFILLMENT_TYPES)[number];
@@ -15,6 +16,9 @@ export const CommerceCheckoutRequestSchema = z.object({
   buyer: z.unknown(),
   shipping: z.unknown().nullable().optional(),
   customCheckoutAnswers: z.unknown().optional(),
+  /** A locator only; the server re-resolves the published Funnel before any write. */
+  funnel: FunnelCheckoutReferenceSchema.optional(),
+  agreementAccepted: z.boolean().optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({

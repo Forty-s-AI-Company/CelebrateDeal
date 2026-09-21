@@ -51,6 +51,7 @@ import {
 } from "@/lib/buyer-support-access";
 import { allowsLegacyAffiliateAttribution } from "@/lib/live-quota-policy";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
+import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import {
   ATTRIBUTION_TTL_SECONDS,
   attributionCookieFromRequest,
@@ -148,6 +149,7 @@ function checkoutTransactionMetadata(input: {
   formSubmissionId?: string;
   /** Only assigned from a server-validated, verified registration. */
   sourceLiveId?: string;
+  funnel?: ResolvedFunnelCheckout;
 }) {
   return {
     // This server-owned marker distinguishes a merchant buyer checkout from
@@ -162,8 +164,51 @@ function checkoutTransactionMetadata(input: {
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
+    ...(input.funnel ? {
+      funnel: {
+        slug: input.funnel.reference.slug,
+        stepId: input.funnel.reference.stepId,
+        pageId: input.funnel.pageId,
+        version: input.funnel.version,
+        productRevision: input.funnel.product.revision,
+        ...(input.funnel.binding.agreement ? { agreementLabel: input.funnel.binding.agreement.label } : {}),
+      },
+    } : {}),
     ...(wp4SourceBoundTransactionMetadata("buyer_order", { productId: input.productId }) ?? {}),
   };
+}
+
+async function resolveFunnelCheckoutRequest(
+  database: ReturnType<typeof getDb>,
+  data: CheckoutRequestData,
+  existing: { status: string } | null,
+) {
+  if (!data.funnel) return { ok: true as const, funnel: undefined };
+  const funnel = await resolvePublishedFunnelCheckout(
+    data.funnel,
+    database,
+    existing?.status === "pending" ? { allowReservedInventory: true } : undefined,
+  );
+  if (!funnel) return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout is no longer available" }, { status: 409 }) };
+  const requestMatchesBinding = data.vendorId === funnel.vendorId
+    && data.productId === funnel.product.id
+    && (!funnel.binding.agreement || data.agreementAccepted === true);
+  const snapshotMatches = data.funnel.expectedVersion === funnel.version
+    && data.funnel.expectedProductRevision === funnel.product.revision;
+  if (!requestMatchesBinding || (existing?.status !== "pending" && !snapshotMatches)) {
+    return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 }) };
+  }
+  return { ok: true as const, funnel };
+}
+
+function funnelProductSnapshotResponse(
+  funnel: ResolvedFunnelCheckout | undefined,
+  product: { id: string; revision: number },
+) {
+  if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision)) {
+    return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
+  }
+  return null;
 }
 
 type ValidatedCheckoutIdentity =
@@ -426,6 +471,10 @@ async function existingCheckoutResponse({
   }
 }
 
+// The route intentionally keeps the admission, scope, revision and idempotency
+// guards in one auditable transaction boundary; the surrounding helpers keep
+// provider and persistence details out of this control flow.
+// eslint-disable-next-line complexity
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -443,6 +492,18 @@ export async function POST(request: Request) {
   const { admission } = admissionResult;
 
   const db = getDb();
+  const existing = await db.paymentTransaction.findUnique({
+    where: {
+      vendorId_checkoutIdempotencyKey: {
+        vendorId: parsed.data.vendorId,
+        checkoutIdempotencyKey: parsed.data.idempotencyKey,
+      },
+    },
+    include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
+  });
+  const funnelResult = await resolveFunnelCheckoutRequest(db, parsed.data, existing);
+  if (!funnelResult.ok) return funnelResult.response;
+  const funnel = funnelResult.funnel;
   const product = await db.product.findFirst({
     where: {
       id: parsed.data.productId,
@@ -480,15 +541,6 @@ export async function POST(request: Request) {
   if (!identity.ok) return identity.response;
   const { pii: checkoutPii, checkoutIdentityHash } = identity;
 
-  const existing = await db.paymentTransaction.findUnique({
-    where: {
-      vendorId_checkoutIdempotencyKey: {
-        vendorId: parsed.data.vendorId,
-        checkoutIdempotencyKey: parsed.data.idempotencyKey,
-      },
-    },
-    include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
-  });
   if (existing) {
     return await existingCheckoutResponse({ request, transaction: existing, product, checkoutIdentityHash });
   }
@@ -496,6 +548,8 @@ export async function POST(request: Request) {
   if (admission.productRevision !== product.revision) {
     return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
   }
+  const funnelSnapshotResponse = funnelProductSnapshotResponse(funnel, product);
+  if (funnelSnapshotResponse) return funnelSnapshotResponse;
 
   const admittedProvider = admittedCheckoutProvider();
   if (!admittedProvider) {
@@ -524,6 +578,7 @@ export async function POST(request: Request) {
     affiliateClickId: affiliateAttribution?.affiliateClickId,
     formSubmissionId,
     sourceLiveId,
+    funnel,
   });
 
   const order = orderNumber();
@@ -551,6 +606,7 @@ export async function POST(request: Request) {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
+          projectId: funnel?.projectId,
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
