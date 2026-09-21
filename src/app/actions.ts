@@ -86,14 +86,13 @@ import {
   upsertInteractionRoleAction as upsertInteractionRoleActionImpl,
   upsertInteractionRoleActionState as upsertInteractionRoleActionStateImpl,
   upsertInteractionScriptAction as upsertInteractionScriptActionImpl,
-} from "./actions/interaction-actions";
-export {
-  startLiveInteractionAction,
-  endLiveInteractionAction,
-  getLivePollStudioSnapshotAction,
-  moderateLiveQuestionAction,
-  drawLiveInteractionWinnerAction,
-  verifyLuckyDrawWinnerClaimAction,
+  startLiveInteractionAction as startLiveInteractionActionImpl,
+  endLiveInteractionAction as endLiveInteractionActionImpl,
+  getLivePollStudioSnapshotAction as getLivePollStudioSnapshotActionImpl,
+  moderateLiveQuestionAction as moderateLiveQuestionActionImpl,
+  drawLiveInteractionWinnerAction as drawLiveInteractionWinnerActionImpl,
+  verifyLuckyDrawWinnerClaimAction as verifyLuckyDrawWinnerClaimActionImpl,
+  type LiveInteractionStudioState,
 } from "./actions/interaction-actions";
 import {
   archiveVideoAction as archiveVideoActionImpl,
@@ -1465,6 +1464,13 @@ export async function importSystemRolesAction(formData: FormData) {
 export async function upsertInteractionScriptAction(formData: FormData) {
   return upsertInteractionScriptActionImpl(formData);
 }
+
+export async function startLiveInteractionAction(previousState: LiveInteractionStudioState, formData: FormData) { return startLiveInteractionActionImpl(previousState, formData); }
+export async function endLiveInteractionAction(previousState: LiveInteractionStudioState, formData: FormData) { return endLiveInteractionActionImpl(previousState, formData); }
+export async function getLivePollStudioSnapshotAction(liveId: string) { return getLivePollStudioSnapshotActionImpl(liveId); }
+export async function moderateLiveQuestionAction(previousState: LiveInteractionStudioState, formData: FormData) { return moderateLiveQuestionActionImpl(previousState, formData); }
+export async function drawLiveInteractionWinnerAction(previousState: LiveInteractionStudioState, formData: FormData) { return drawLiveInteractionWinnerActionImpl(previousState, formData); }
+export async function verifyLuckyDrawWinnerClaimAction(previousState: LiveInteractionStudioState, formData: FormData) { return verifyLuckyDrawWinnerClaimActionImpl(previousState, formData); }
 
 export async function unbindInteractionScriptFromLiveAction(formData: FormData) {
   return unbindInteractionScriptFromLiveActionImpl(formData);
