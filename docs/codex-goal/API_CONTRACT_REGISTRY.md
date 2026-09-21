@@ -118,3 +118,7 @@
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。
 | 78 | `GET /lp/[slug]/[stepPath]/play` | public webinar route | bounded slug and stepPath | published webinar broadcast step and server runtime gate | same-origin encoded 303; no write | private no-store; 404/409/410/503 | route unit + browser journey |
+| 79 | `GET /api/live-danmaku` | same-origin + client marker | bounded live id and cursor query | active live and vendor-owned interaction scope | read-only danmaku snapshot; private no-store | 400/401/404/429 safe JSON | route unit |
+| 80 | `POST /api/live-danmaku` | same-origin + client marker | bounded live id and message body | authenticated vendor-owned live scope | append interaction message with server timestamp and rate limit | 400/401/404/429 safe JSON | route unit |
+| 81 | `GET /api/live-danmaku/scripted` | same-origin + client marker | bounded live id and cursor query | published scripted-role scope | read-only scripted snapshot; private no-store | 400/401/404/429 safe JSON | route unit |
+| 82 | `POST /api/live-danmaku/scripted` | same-origin + client marker | bounded live id and scripted role payload | authenticated vendor-owned live scope | append scripted interaction with server validation | 400/401/404/429 safe JSON | route unit |

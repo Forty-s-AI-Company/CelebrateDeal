@@ -3,16 +3,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireVendor: vi.fn(),
+  requireVendorManagerContext: vi.fn(),
+  getSalesProjectScope: vi.fn(),
   liveFindFirst: vi.fn(),
   analyticsFindMany: vi.fn(),
   formSubmissionCount: vi.fn(),
   liveChatMessageCount: vi.fn(),
   interactionEventCount: vi.fn(),
   paymentTransactionCount: vi.fn(),
+  paymentTransactionAggregate: vi.fn(),
   emailDeliveryGroupBy: vi.fn(),
+  liveInteractionRunFindMany: vi.fn(),
+  liveInteractionResponseGroupBy: vi.fn(),
+  liveInteractionResponseFindMany: vi.fn(),
+  liveQuestionGroupBy: vi.fn(),
+  liveQuestionFindMany: vi.fn(),
+  queryRaw: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendor }));
+vi.mock("@/lib/auth", () => ({
+  requireVendorManager: mocks.requireVendor,
+  requireVendorManagerContext: mocks.requireVendorManagerContext,
+}));
+vi.mock("@/lib/sales-project-scope", () => ({ getSalesProjectScope: mocks.getSalesProjectScope }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     live: { findFirst: mocks.liveFindFirst },
@@ -20,8 +33,21 @@ vi.mock("@/lib/db", () => ({
     formSubmission: { count: mocks.formSubmissionCount },
     liveChatMessage: { count: mocks.liveChatMessageCount },
     interactionEvent: { count: mocks.interactionEventCount },
-    paymentTransaction: { count: mocks.paymentTransactionCount },
+    paymentTransaction: {
+      count: mocks.paymentTransactionCount,
+      aggregate: mocks.paymentTransactionAggregate,
+    },
+    liveInteractionRun: { findMany: mocks.liveInteractionRunFindMany },
+    liveInteractionResponse: {
+      groupBy: mocks.liveInteractionResponseGroupBy,
+      findMany: mocks.liveInteractionResponseFindMany,
+    },
+    liveQuestion: {
+      groupBy: mocks.liveQuestionGroupBy,
+      findMany: mocks.liveQuestionFindMany,
+    },
     emailDelivery: { groupBy: mocks.emailDeliveryGroupBy },
+    $queryRaw: mocks.queryRaw,
   }),
 }));
 
@@ -56,11 +82,34 @@ const verifiedAnalyticsSessions = [
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendor.mockResolvedValue({ id: "vendor-current" });
+  mocks.requireVendorManagerContext.mockResolvedValue({
+    auth: { user: { id: "user-current" } },
+    vendor: { id: "vendor-current", timezone: "Asia/Taipei" },
+  });
+  mocks.getSalesProjectScope.mockResolvedValue({ projectId: null });
   mocks.liveFindFirst.mockResolvedValue(live);
   mocks.formSubmissionCount.mockResolvedValueOnce(6).mockResolvedValueOnce(4);
   mocks.liveChatMessageCount.mockResolvedValue(3);
   mocks.interactionEventCount.mockResolvedValue(7);
   mocks.paymentTransactionCount.mockResolvedValue(2);
+  mocks.paymentTransactionAggregate.mockResolvedValue({
+    _count: { _all: 0 },
+    _sum: { grossAmountCents: null },
+  });
+  mocks.liveInteractionRunFindMany.mockResolvedValue([]);
+  mocks.liveInteractionResponseGroupBy.mockResolvedValue([]);
+  mocks.liveInteractionResponseFindMany.mockResolvedValue([]);
+  mocks.liveQuestionGroupBy.mockResolvedValue([]);
+  mocks.liveQuestionFindMany.mockResolvedValue([]);
+  mocks.queryRaw.mockResolvedValue([{
+    attributionKey: "summer-partner",
+    name: "summer-partner",
+    clicks: 1,
+    registrations: 0,
+    confirmedOrders: 0,
+    pendingOrders: 0,
+    confirmedGrossCents: 0,
+  }]);
   mocks.emailDeliveryGroupBy.mockResolvedValue([
     { status: "sent", _count: { _all: 12 } },
     { status: "failed", _count: { _all: 1 } },
@@ -68,7 +117,8 @@ beforeEach(() => {
   ]);
   mocks.analyticsFindMany
     .mockResolvedValueOnce(verifiedAnalyticsSessions)
-    .mockResolvedValueOnce(recentEvents);
+    .mockResolvedValueOnce(recentEvents)
+    .mockResolvedValue([]);
 });
 
 describe("/lives/[id]/analytics route", () => {
@@ -85,8 +135,8 @@ describe("/lives/[id]/analytics route", () => {
       select: { eventType: true, visitorId: true },
       distinct: ["eventType", "visitorId"],
     });
-    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id } });
-    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED" } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id, form: { vendorId: "vendor-current" } } });
+    expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: "vendor-current" } } });
     expect(html).toMatch(/播放 session<\/p><p[^>]*>40<\/p>/);
     expect(html).toMatch(/商品點擊<\/p><p[^>]*>8<\/p>/);
     expect(html).toMatch(/CTA 點擊<\/p><p[^>]*>6<\/p>/);
@@ -157,7 +207,8 @@ describe("/lives/[id]/analytics route", () => {
     mocks.analyticsFindMany
       .mockReset()
       .mockResolvedValueOnce(verifiedAnalyticsSessions)
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([]);
 
     const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
 
@@ -167,10 +218,11 @@ describe("/lives/[id]/analytics route", () => {
 
   it("shows an empty state when there are no affiliate sources", async () => {
     mocks.liveFindFirst.mockResolvedValue({ ...live, affiliateClicks: [] });
+    mocks.queryRaw.mockResolvedValue([]);
 
     const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
 
-    expect(html).toContain("目前沒有聯盟來源資料。");
+    expect(html).toContain("目前沒有推廣夥伴歸因資料。");
     expect(html).not.toContain("summer-partner");
   });
 });
