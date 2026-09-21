@@ -40,6 +40,11 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
         ],
       },
+      {
+        // Only the authenticated studio document may request capture permissions.
+        source: "/lives/:id/presenter",
+        headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(self), display-capture=(self), geolocation=(), browsing-topics=()" }],
+      },
     ];
   },
 };

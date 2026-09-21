@@ -523,6 +523,8 @@ model Live {
   replayEnabled                  Boolean                  @default(true)
   streamMode                     String                   @default("vod")
   cloudflareLiveInputUid         String?
+  /// Layout affects the single composited browser broadcast, never an existing VOD.
+  presenterLayout                Json?
   quotaPolicy                    Json?
   /// Activity-wide public card danmaku switch and generation; never stores private messages.
   danmakuState                   Json?
@@ -565,6 +567,7 @@ model Live {
   interactionRuns            LiveInteractionRun[]
   interactionResponses       LiveInteractionResponse[]
   notificationRules          LiveNotificationRule[]
+  mediaSessions              LiveMediaSession[]
   landingPages               LandingPage[]        @relation("LandingPageDraftLive")
   landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
 
@@ -572,6 +575,24 @@ model Live {
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
   @@index([vendorId, projectId, status])
+}
+
+/// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.
+model LiveMediaSession {
+  id           String   @id @default(cuid())
+  vendorId     String
+  liveId       String
+  principal    String
+  direction    String
+  resourcePath String
+  closing      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  live         Live     @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, liveId, principal, direction])
+  @@index([vendorId, liveId, principal])
+  @@index([expiresAt])
 }
 
 /// Tenant-owned image upload metadata. Object keys are generated server-side

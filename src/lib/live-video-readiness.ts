@@ -22,6 +22,7 @@ export function liveReadyVideoWhere(vendorId: string, id?: string): Prisma.Video
         cloudflareLiveInputUid: { not: null },
         liveInputStatus: "created",
       },
+      { sourceType: "browser_live", status: "ready" },
     ],
   };
 }
@@ -37,6 +38,7 @@ export function isLiveVideoReady(video: LiveVideoReadiness | null | undefined) {
       && Boolean(video.cloudflareLiveInputUid)
       && video.liveInputStatus === "created";
   }
+  if (video.sourceType === "browser_live") return video.status === "ready";
   return false;
 }
 
@@ -53,5 +55,6 @@ export function isExistingLiveVideoReady(video: LiveVideoReadiness | null | unde
   if (video.sourceType === "cloudflare_live") {
     return Boolean(video.cloudflareLiveInputUid) && video.liveInputStatus === "created";
   }
+  if (video.sourceType === "browser_live") return video.status === "ready";
   return false;
 }
