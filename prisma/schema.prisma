@@ -121,6 +121,8 @@ model Vendor {
   usageLimit                       VendorUsageLimit?
   subscriptions                    VendorSubscription[]
   invoices                         Invoice[]
+  electronicInvoices               ElectronicInvoice[]
+  electronicInvoiceAllowances      ElectronicInvoiceAllowance[]
   settlements                      Settlement[]
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
@@ -1527,6 +1529,9 @@ model CommerceOrder {
   buyerMaskedPhone            String?
   shippingEncryptedEnvelope   String?
   shippingMaskedSummary       String?
+  invoiceType                     String?
+  invoiceBuyerDisplay             String?
+  invoiceRequestEncryptedEnvelope String?
   paidAt                      DateTime?
   failedAt                    DateTime?
   refundedAt                  DateTime?
@@ -1542,6 +1547,7 @@ model CommerceOrder {
   supportRefundHandoffs     SupportRefundHandoff[]
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
+  electronicInvoice         ElectronicInvoice?
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
@@ -1631,7 +1637,8 @@ model CommerceOrderRefund {
   paymentTransaction  PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
   refundRecord        RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
   supportHandoff      SupportRefundHandoff?        @relation("SupportRefundCompletion")
-  supportHandoffLinks SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
+  supportHandoffLinks        SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
+  electronicInvoiceAllowance ElectronicInvoiceAllowance?
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderId, id])
@@ -1641,6 +1648,68 @@ model CommerceOrderRefund {
   @@index([vendorId, paymentTransactionId])
 }
 
+enum ElectronicInvoiceStatus {
+  queued
+  issued
+  allowance
+  voided
+}
+
+model ElectronicInvoice {
+  id                       String                  @id @default(cuid())
+  vendorId                 String
+  orderId                  String
+  invoiceNumber            String?                 @unique
+  randomCode               String?
+  invoiceType              String
+  buyerDisplay             String
+  requestEncryptedEnvelope String
+  currency                 String                  @default("TWD")
+  amountCents              Int
+  pretaxAmountCents        Int
+  taxAmountCents           Int
+  status                   ElectronicInvoiceStatus @default(queued)
+  attemptCount             Int                     @default(0)
+  nextAttemptAt            DateTime                @default(now())
+  lastAttemptAt            DateTime?
+  lastErrorCode            String?
+  processingStartedAt      DateTime?
+  issuedAt                 DateTime?
+  voidedAt                 DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+
+  vendor     Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order      CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
+  allowances ElectronicInvoiceAllowance[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, orderId])
+  @@index([vendorId, status, nextAttemptAt, processingStartedAt])
+  @@index([vendorId, issuedAt])
+}
+
+model ElectronicInvoiceAllowance {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  electronicInvoiceId String
+  commerceRefundId    String
+  allowanceNumber     String
+  amountCents         Int
+  pretaxAmountCents   Int
+  taxAmountCents      Int
+  issuedAt            DateTime
+  createdAt           DateTime @default(now())
+
+  vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  invoice        ElectronicInvoice   @relation(fields: [vendorId, electronicInvoiceId], references: [vendorId, id], onDelete: Restrict)
+  commerceRefund CommerceOrderRefund @relation(fields: [vendorId, commerceRefundId], references: [vendorId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, commerceRefundId])
+  @@unique([vendorId, allowanceNumber])
+  @@index([vendorId, electronicInvoiceId, issuedAt])
+}
 enum SupportCaseStatus {
   open
   in_progress
