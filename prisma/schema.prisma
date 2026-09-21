@@ -370,6 +370,11 @@ model Product {
   imageAssetId                   String?
   checkoutUrl                    String?
   customCheckoutFields           Json?
+  /// Server-configured post-purchase offer relationship. These IDs are
+  /// tenant-qualified and never accepted from the browser decision payload.
+  upsellProductId                String?
+  upsellDiscountCents            Int?
+  downsellProductId              String?
   inventory                      Int                     @default(0)
   isActive                       Boolean                 @default(true)
   commerceDomain                 String                  @default("merchant")
@@ -393,12 +398,18 @@ model Product {
   commerceOrderItems          CommerceOrderItem[]
   deliveryConfig              ProductDeliveryConfig?
   automationVoucherGrants     AutomationVoucherGrant[]
+  upsellProduct               Product?                        @relation("ProductUpsell", fields: [vendorId, upsellProductId], references: [vendorId, id], onDelete: Restrict)
+  upsellForProducts            Product[]                       @relation("ProductUpsell")
+  downsellProduct              Product?                        @relation("ProductDownsell", fields: [vendorId, downsellProductId], references: [vendorId, id], onDelete: Restrict)
+  downsellForProducts           Product[]                       @relation("ProductDownsell")
   salesProjectLinks           SalesProjectProduct[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
   @@index([vendorId, fulfillmentType, isActive])
+  @@index([vendorId, upsellProductId])
+  @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
 }
 
