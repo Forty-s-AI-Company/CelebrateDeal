@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 const database = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 vi.mock("@/lib/db", () => ({ getDb: () => database.current }));
 
-import { aggregateCustomerJourney, listCustomers, maskEmail, maskPhone } from "./customer-crm";
+import { automationCustomerKeyHash } from "./automation-workflow";
+import { aggregateCustomerJourney, getCustomerProfile, listCustomers, maskEmail, maskPhone } from "./customer-crm";
 
 describe("customer CRM aggregation", () => {
   it("merges multiple sources into a newest-first timeline", () => {
@@ -24,6 +25,9 @@ describe("customer CRM aggregation", () => {
   it("masks PII without exposing the original address or phone", () => {
     expect(maskEmail("student@example.com")).toBe("st*****@example.com");
     expect(maskPhone("0912 345 678")).toBe("091***678");
+    expect(maskEmail("local-only")).toBe("***");
+    expect(maskPhone(undefined)).toBe("—");
+    expect(maskPhone("12345")).toBe("***");
   });
 
   it("includes append-only consultant notes with actor attribution", () => {
@@ -40,6 +44,29 @@ describe("customer CRM aggregation", () => {
     expect(result.timeline.map((event) => event.kind)).toEqual(["prize", "chat", "registration"]);
     expect(result.timeline.at(-1)?.detail).toContain("UTM facebook / paid / launch");
     expect(result.timeline[0]?.detail).toContain("已領取");
+  });
+
+  it("keeps source fallback details and formats secondary event variants", () => {
+    const result = aggregateCustomerJourney({ vendorId: "vendor", customerKeyHash: "hash",
+      registrations: [
+        { id: "r1", createdAt: new Date("2026-01-01T00:00:00Z"), formName: "表單", source: "legacy", attribution: { utm: [] } },
+        { id: "r2", createdAt: new Date("2026-01-02T00:00:00Z"), formName: "表單", attribution: { utm: {} } },
+      ],
+      watches: [{ id: "w", capturedAt: new Date("2026-01-03T00:00:00Z"), liveTitle: "直播", seconds: 10, entryCount: 2 }],
+      prizes: [{ id: "p", createdAt: new Date("2026-01-04T00:00:00Z"), liveTitle: "直播", title: "獎品", claimed: false }],
+      invoices: [{ id: "i", occurredAt: new Date("2026-01-05T00:00:00Z"), amountCents: 100 }],
+      vouchers: [
+        { id: "v1", createdAt: new Date("2026-01-06T00:00:00Z"), discountType: "percentage", discountValue: 10, redeemedAt: new Date("2026-01-07T00:00:00Z") },
+        { id: "v2", createdAt: new Date("2026-01-08T00:00:00Z"), discountType: "fixed", discountValue: 500 },
+      ],
+      automations: [{ id: "a", createdAt: new Date("2026-01-09T00:00:00Z"), trigger: "follow_up", status: "completed" }],
+    });
+    expect(result.timeline.find((event) => event.id === "registration:r1")?.detail).toBe("legacy");
+    expect(result.timeline.find((event) => event.id === "registration:r2")?.detail).toBeUndefined();
+    expect(result.timeline.find((event) => event.id === "watch:w")?.detail).toContain("2 次進場");
+    expect(result.timeline.find((event) => event.id === "invoice:i")?.title).toBe("發票 處理中");
+    expect(result.timeline.find((event) => event.id === "voucher:v1")?.detail).toContain("已兌換");
+    expect(result.timeline.find((event) => event.id === "voucher:v2")?.detail).toContain("NT$5");
   });
 
   it("builds a tenant-qualified union from hash-only CRM sources without a row cap", async () => {
@@ -86,5 +113,55 @@ describe("customer CRM aggregation", () => {
     expect(formFind).toHaveBeenCalledWith(expect.objectContaining({
       where: { form: { vendorId: "vendor-a", projectId: "project-a" }, customerKeyHash: { in: ["member-hash"] } },
     }));
+  });
+
+  it("returns no rows when a project has no canonical memberships", async () => {
+    database.current = { salesProjectCustomer: { findMany: vi.fn().mockResolvedValue([]) } };
+    await expect(listCustomers("vendor-a", "", "", "empty-project")).resolves.toEqual([]);
+  });
+
+  it("loads a complete profile with scoped activity and derived metrics", async () => {
+    const createdAt = new Date("2026-01-01T00:00:00Z");
+    const later = new Date("2026-01-02T00:00:00Z");
+    database.current = {
+      salesProjectCustomer: { findUnique: vi.fn().mockResolvedValue({ id: "membership-1" }) },
+      formSubmission: { findMany: vi.fn().mockResolvedValue([{ id: "submission-1", name: "王小明", email: "wang@example.com", phone: "0912345678", source: "web", attribution: null, createdAt, form: { name: "活動報名" } }]) },
+      consultationBooking: { findMany: vi.fn().mockResolvedValue([{ id: "booking-1", clientName: "王小明", clientEmail: "wang@example.com", clientPhone: "0912345678", status: "scheduled", createdAt, startTime: later, answers: { goal: "成交" }, event: { title: "顧問諮詢" } }]) },
+      streamUsageLedgerEntry: { findMany: vi.fn().mockResolvedValue([
+        { id: "watch-1", liveId: "live-1", viewerKeyHash: "viewer-1", capturedAt: createdAt, watchSeconds: 30, live: { title: "直播一", video: { durationSec: 60 } } },
+        { id: "watch-2", liveId: "live-1", viewerKeyHash: "viewer-2", capturedAt: later, watchSeconds: 40, live: { title: "直播一", video: { durationSec: 60 } } },
+      ]) },
+      liveChatMessage: { findMany: vi.fn().mockResolvedValue([{ id: "chat-1", createdAt: later, body: "想了解", live: { title: "直播一" } }]) },
+      liveInteractionResponse: { findMany: vi.fn().mockResolvedValue([{ id: "response-1", createdAt: later, winnerClaimedAt: later, live: { title: "直播一" }, run: { title: "抽獎", winnerResponseId: "response-1" } }]) },
+      commerceOrder: { findMany: vi.fn().mockResolvedValue([{ id: "order-1", orderNumber: "CD-1", paidAmountCents: 10000, refundedAmountCents: 1000, paidAt: later, createdAt, items: [{ productName: "方案" }], electronicInvoice: { id: "invoice-1", issuedAt: later, createdAt, invoiceNumber: "AB-1", amountCents: 9000 }, primaryPaymentTransaction: { providerName: "demo" } }]) },
+      customerTagAssignment: { findMany: vi.fn().mockResolvedValue([{ id: "tag-1", createdAt: later, tag: "高意向" }]) },
+      automationVoucherGrant: { findMany: vi.fn().mockResolvedValue([{ id: "voucher-1", createdAt: later, discountType: "fixed", discountValue: 500 }]) },
+      automationExecutionLog: { findMany: vi.fn().mockResolvedValue([{ id: "automation-1", createdAt: later, trigger: "follow_up", status: "completed" }]) },
+      customerCrmRecord: { findUnique: vi.fn().mockResolvedValue({ consultationStatus: "scheduled", notes: [{ id: "note-1", createdAt: later, actorLabel: "owner", body: "追蹤" }] }) },
+    };
+
+    const result = await getCustomerProfile("vendor-a", "customer-hash", "project-a");
+    expect(result).toMatchObject({ name: "王小明", consultationStatus: "scheduled", lifetimeValueCents: 9000, watchSeconds: 70, watchCompletionRate: 100, entryCount: 2, bookingAnswers: { goal: "成交" } });
+    expect(result?.timeline.map((event) => event.kind)).toEqual(expect.arrayContaining(["registration", "watch", "chat", "prize", "consultation", "order", "invoice", "tag", "voucher", "automation", "note"]));
+  });
+
+  it("falls back to legacy unhashed registration rows", async () => {
+    vi.stubEnv("CSRF_SECRET", "customer-crm-test-secret-012345678901234567890123456789");
+    const customerKeyHash = automationCustomerKeyHash("vendor-a", "legacy@example.com");
+    const empty = () => vi.fn().mockResolvedValue([]);
+    database.current = {
+      formSubmission: { findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "legacy-1", name: "舊資料", email: "legacy@example.com", phone: null, source: null, attribution: null, createdAt: new Date("2026-01-01Z"), form: { name: "舊表單" } }]) },
+      consultationBooking: { findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]) },
+      streamUsageLedgerEntry: { findMany: empty() },
+      liveChatMessage: { findMany: empty() },
+      liveInteractionResponse: { findMany: empty() },
+      commerceOrder: { findMany: empty() },
+      customerTagAssignment: { findMany: empty() },
+      automationVoucherGrant: { findMany: empty() },
+      automationExecutionLog: { findMany: empty() },
+      customerCrmRecord: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    await expect(getCustomerProfile("vendor-a", customerKeyHash)).resolves.toMatchObject({ name: "舊資料", maskedEmail: "le****@example.com" });
+    vi.unstubAllEnvs();
   });
 });

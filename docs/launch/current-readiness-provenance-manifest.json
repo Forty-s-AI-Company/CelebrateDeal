@@ -3,11 +3,11 @@
   "sourceSnapshot": {
     "json": {
       "path": "docs/launch/current-readiness-snapshot-20260802.json",
-      "sha256": "sha256:f67a42235d3dda97e3fc9d2d78e0e579a96492cce6b3ca2d48ae147ff0d843ad"
+      "sha256": "sha256:d4c6a845feb39fb730601b9fab0eaf426c80f02565fa9dde5bd0d3f8001e0bce"
     },
     "markdown": {
       "path": "docs/launch/current-readiness-snapshot-20260802.md",
-      "sha256": "sha256:69b77429682b3a0f622670add32b805fc6d5c621fc320b0ae56762b3c07c538d"
+      "sha256": "sha256:d35233aa9d316523af43ec8143b1990b9b21c304f06c11fe282f74ddb71167b0"
     }
   },
   "runtimeArtifacts": [
