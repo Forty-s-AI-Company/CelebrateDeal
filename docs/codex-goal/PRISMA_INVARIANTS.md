@@ -8,8 +8,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 118 |
-| Migration directories | 77 |
+| Prisma models | 119 |
+| Migration directories | 78 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -20,7 +20,7 @@
 | 類別 | 數量 | Models |
 |---|---:|---|
 | Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 22 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
+| Content／live／lead | 23 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveMediaSession`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
 | Affiliate／billing／payment／ops | 33 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
@@ -113,6 +113,7 @@
 | `20260908230000_evergreen_webinar_vendor_settings` | per-live evergreen scheduling, timeline anchors and merchant preview controls |
 | `20260911070000_live_danmaku` | public danmaku state on Live |
 | `20260911080000_live_interaction_tenant_integrity` | fail-closed run/live and registration/live composite ownership |
+| `20260911020000_presenter_layout` | versioned presenter layout JSON and tenant-scoped private WHIP/WHEP session leases |
 
 ## 已由資料庫強制的主要 invariants
 
