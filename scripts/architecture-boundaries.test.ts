@@ -175,9 +175,11 @@ describe("architecture boundaries", () => {
     expect(violations).toEqual([]);
   });
 
+  // The graph is intentionally repository-wide; keep the assertion intact
+  // while allowing the growing route/domain surface to parse on CI runners.
   it("has no runtime import cycles inside src", () => {
     expect(findRuntimeCycles(buildRuntimeGraph())).toEqual([]);
-  });
+  }, 15_000);
 
   it("ratchets the legacy root server-action module while new domains are extracted", () => {
     const rootActions = path.join(sourceRoot, "app", "actions.ts");
