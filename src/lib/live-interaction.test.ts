@@ -15,6 +15,7 @@ import {
   maskCustomerName,
   pickLuckyDrawWinner,
   pollPercentages,
+  resolveEligibleAutomationVoucherClaim,
   resolveEligibleVoucherClaim,
 } from "./live-interaction";
 
@@ -94,6 +95,34 @@ describe("advanced live interaction algorithms", () => {
       currency: "TWD",
       now: new Date("2026-09-06T00:00:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("resolves automation vouchers with tenant, product, currency and bounded-price checks", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "grant-1",
+      vendorId: "vendor-1",
+      productId: "product-1",
+      claimTokenHash: "ignored",
+      discountType: "percentage",
+      discountValue: 15,
+      currency: "TWD",
+      usedOrderId: null,
+      expiresAt: new Date("2026-09-07T00:00:00.000Z"),
+    });
+    const db = { automationVoucherGrant: { findUnique } } as unknown as PrismaClient;
+    const input = {
+      vendorId: "vendor-1",
+      productId: "product-1",
+      priceCents: 9_900,
+      currency: "TWD",
+      now: new Date("2026-09-06T00:00:00.000Z"),
+    };
+
+    await expect(resolveEligibleAutomationVoucherClaim(db, "A".repeat(43), input))
+      .resolves.toEqual({ id: "grant-1", source: "automation", discountAmountCents: 1_400 });
+    await expect(resolveEligibleAutomationVoucherClaim(db, "A".repeat(43), { ...input, currency: "USD" }))
+      .resolves.toBeNull();
+    await expect(resolveEligibleAutomationVoucherClaim(db, "invalid", input)).resolves.toBeNull();
   });
 
   it("masks customer names cleanly for real-time broadcasts without leaking plaintext PII", () => {

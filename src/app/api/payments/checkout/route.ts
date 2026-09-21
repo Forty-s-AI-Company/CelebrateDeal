@@ -53,6 +53,10 @@ import { allowsLegacyAffiliateAttribution } from "@/lib/live-quota-policy";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import {
+  AUTOMATION_VOUCHER_COOKIE,
+  resolveEligibleAutomationVoucherClaim,
+} from "@/lib/live-interaction";
+import {
   ATTRIBUTION_TTL_SECONDS,
   attributionCookieFromRequest,
   normalizeReferralCode,
@@ -66,6 +70,14 @@ const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
 });
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+
+class VoucherClaimConflictError extends Error {}
+
+type EligibleAutomationVoucherClaim = {
+  id: string;
+  source: "automation";
+  discountAmountCents: number;
+} | null;
 
 type CheckoutRequestData = z.infer<typeof CheckoutRequest>;
 type CheckoutAdmission = NonNullable<ReturnType<typeof verifyCheckoutAdmission>>;
@@ -115,6 +127,45 @@ function metadataObject(value: unknown) {
     : {};
 }
 
+function requestCookie(request: Request, name: string) {
+  for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
+    const separator = segment.indexOf("=");
+    if (separator <= 0 || segment.slice(0, separator).trim() !== name) continue;
+    const value = segment.slice(separator + 1).trim();
+    return /^[A-Za-z0-9_-]{43}$/u.test(value) ? value : null;
+  }
+  return null;
+}
+
+async function eligibleAutomationVoucherClaim(
+  request: Request,
+  input: { vendorId: string; productId: string; priceCents: number; currency: string },
+): Promise<EligibleAutomationVoucherClaim> {
+  return resolveEligibleAutomationVoucherClaim(
+    getDb(),
+    requestCookie(request, AUTOMATION_VOUCHER_COOKIE),
+    input,
+  );
+}
+
+async function consumeAutomationVoucherClaim(
+  tx: Prisma.TransactionClient,
+  claim: EligibleAutomationVoucherClaim,
+  input: { vendorId: string; orderId: string; now: Date },
+) {
+  if (!claim) return;
+  const consumed = await tx.automationVoucherGrant.updateMany({
+    where: {
+      id: claim.id,
+      vendorId: input.vendorId,
+      usedOrderId: null,
+      expiresAt: { gt: input.now },
+    },
+    data: { usedOrderId: input.orderId, redeemedAt: input.now },
+  });
+  if (consumed.count !== 1) throw new VoucherClaimConflictError();
+}
+
 function hasReadyProductDelivery(product: {
   fulfillmentType: string;
   deliveryConfig: { status: string; fulfillmentType: string } | null;
@@ -149,6 +200,9 @@ function checkoutTransactionMetadata(input: {
   formSubmissionId?: string;
   /** Only assigned from a server-validated, verified registration. */
   sourceLiveId?: string;
+  voucherClaimId?: string;
+  discountAmountCents?: number;
+  checkoutAmountCents?: number;
   funnel?: ResolvedFunnelCheckout;
 }) {
   return {
@@ -164,6 +218,9 @@ function checkoutTransactionMetadata(input: {
     ...(input.affiliateClickId ? { affiliateClickId: input.affiliateClickId } : {}),
     ...(input.formSubmissionId ? { formSubmissionId: input.formSubmissionId } : {}),
     ...(input.sourceLiveId ? { sourceLiveId: input.sourceLiveId } : {}),
+    ...(input.voucherClaimId ? { voucherClaimId: input.voucherClaimId } : {}),
+    ...(input.discountAmountCents ? { discountAmountCents: input.discountAmountCents } : {}),
+    ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
     ...(input.funnel ? {
       funnel: {
         slug: input.funnel.reference.slug,
@@ -438,7 +495,9 @@ async function existingCheckoutResponse({
   if (
     transaction.vendorId !== product.vendorId
     || metadata.productId !== product.id
-    || transaction.grossAmountCents !== product.priceCents
+    || transaction.grossAmountCents !== (
+      typeof metadata.checkoutAmountCents === "number" ? metadata.checkoutAmountCents : product.priceCents
+    )
     || transaction.currency !== product.currency
   ) {
     return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
@@ -570,6 +629,14 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
+  const voucherClaim = await eligibleAutomationVoucherClaim(request, {
+    vendorId: parsed.data.vendorId,
+    productId: product.id,
+    priceCents: product.priceCents,
+    currency: product.currency,
+  });
+  const discountAmountCents = voucherClaim?.discountAmountCents ?? 0;
+  const checkoutAmountCents = product.priceCents - discountAmountCents;
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
     productName: product.name,
@@ -578,6 +645,9 @@ export async function POST(request: Request) {
     affiliateClickId: affiliateAttribution?.affiliateClickId,
     formSubmissionId,
     sourceLiveId,
+    voucherClaimId: voucherClaim?.id,
+    discountAmountCents,
+    checkoutAmountCents,
     funnel,
   });
 
@@ -596,8 +666,8 @@ export async function POST(request: Request) {
         providerName: provider.id,
         orderNumber: order,
         paymentMode: "platform",
-        grossAmountCents: product.priceCents,
-        netAmountCents: product.priceCents,
+        grossAmountCents: checkoutAmountCents,
+        netAmountCents: checkoutAmountCents,
         currency: product.currency,
         status: "pending",
         metadata: transactionMetadata,
@@ -610,11 +680,17 @@ export async function POST(request: Request) {
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
-          totalAmountCents: product.priceCents,
+          totalAmountCents: checkoutAmountCents,
+          discountAmountCents,
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
           customCheckoutAnswers: customCheckout.answers,
+        });
+        await consumeAutomationVoucherClaim(tx, voucherClaim, {
+          vendorId: parsed.data.vendorId,
+          orderId: commerceOrder.id,
+          now: new Date(),
         });
         commerceOrderId = commerceOrder.id;
       },
@@ -632,6 +708,9 @@ export async function POST(request: Request) {
     }
     if (error instanceof ProductChangedError) {
       return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
+    }
+    if (error instanceof VoucherClaimConflictError) {
+      return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
     }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }

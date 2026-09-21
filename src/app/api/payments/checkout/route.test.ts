@@ -30,6 +30,7 @@ const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }))
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
+const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
@@ -50,6 +51,10 @@ vi.mock("@/lib/buyer-support-access", () => ({
 }));
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
 vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
+vi.mock("@/lib/live-interaction", () => ({
+  AUTOMATION_VOUCHER_COOKIE: "celebratedeal_automation_voucher",
+  resolveEligibleAutomationVoucherClaim: liveInteractionMocks.resolveEligibleAutomationVoucherClaim,
+}));
 
 import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
@@ -139,6 +144,7 @@ beforeEach(() => {
   db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", liveId: "live-1" });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   funnelMocks.resolvePublishedFunnelCheckout.mockReset();
+  liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValue(null);
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -164,7 +170,11 @@ beforeEach(() => {
     },
   ) => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
-    if (createCommerceOrder) await createCommerceOrder({ transaction: true }, transaction);
+    if (createCommerceOrder) {
+      await createCommerceOrder({
+        automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      }, transaction);
+    }
     return transaction;
   });
   inventoryMocks.failPendingCheckoutAndReleaseInventory.mockImplementation(
@@ -199,6 +209,33 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("applies a server-resolved automation voucher and consumes it in the reservation transaction", async () => {
+    liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValueOnce({
+      id: "grant-1",
+      source: "automation",
+      discountAmountCents: 300,
+    });
+
+    const response = await POST(checkoutRequest(`celebratedeal_automation_voucher=${"A".repeat(43)}`));
+
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ grossAmountCents: 900, netAmountCents: 900 }),
+    }));
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      totalAmountCents: 900,
+      discountAmountCents: 300,
+    }));
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data?.metadata).toMatchObject({
+      voucherClaimId: "grant-1",
+      discountAmountCents: 300,
+      checkoutAmountCents: 900,
+    });
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      transactionData: expect.objectContaining({ grossAmountCents: 900 }),
+    }));
+  });
+
   it("re-resolves Funnel scope and persists only the server-derived project", async () => {
     funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution());
     const response = await POST(checkoutRequest(undefined, {

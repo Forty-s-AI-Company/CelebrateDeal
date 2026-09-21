@@ -4,6 +4,7 @@ import { normalizeInteractionEventDraft, type AdvancedInteractionMetadata } from
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 export const FLASH_VOUCHER_COOKIE = "celebratedeal_flash_voucher";
+export const AUTOMATION_VOUCHER_COOKIE = "celebratedeal_automation_voucher";
 export const FLASH_VOUCHER_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export function hashInteractionBearer(value: string) {
@@ -153,5 +154,37 @@ export async function resolveEligibleVoucherClaim(
   if (!normalized.success || normalized.data.metadata?.kind !== "flash_voucher") return null;
   const discountAmountCents = calculateVoucherDiscount(input.priceCents, normalized.data.metadata, input.currency);
   return discountAmountCents > 0 ? { id: claim.id, discountAmountCents } : null;
+}
+
+/** Resolves an automation-issued voucher without trusting browser-supplied price or tenant data. */
+export async function resolveEligibleAutomationVoucherClaim(
+  db: PrismaClient,
+  bearer: string | null | undefined,
+  input: { vendorId: string; productId: string; priceCents: number; currency: string; now?: Date },
+) {
+  if (!bearer || !/^[A-Za-z0-9_-]{43}$/u.test(bearer)) return null;
+  const now = input.now ?? new Date();
+  const grant = await db.automationVoucherGrant.findUnique({
+    where: { claimTokenHash: hashInteractionBearer(bearer) },
+  });
+  if (
+    !grant
+    || grant.vendorId !== input.vendorId
+    || grant.productId !== input.productId
+    || grant.usedOrderId
+    || grant.expiresAt <= now
+    || grant.currency !== input.currency
+  ) return null;
+
+  const rawDiscount = grant.discountType === "percentage"
+    ? Math.floor(input.priceCents * grant.discountValue / 100)
+    : grant.discountValue;
+  const boundedDiscount = Math.max(0, Math.min(input.priceCents - 1, rawDiscount));
+  const discountAmountCents = input.currency === "TWD"
+    ? Math.floor(boundedDiscount / 100) * 100
+    : boundedDiscount;
+  return discountAmountCents > 0
+    ? { id: grant.id, source: "automation" as const, discountAmountCents }
+    : null;
 }
 

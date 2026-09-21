@@ -193,6 +193,40 @@ describe("commerce orders database service", () => {
     }
   });
 
+  it("persists server-authorized voucher discount separately from the product subtotal", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValue(product("physical"));
+
+    await createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 900,
+      discountAmountCents: 300,
+    });
+
+    expect(tx.commerceOrder.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ subtotalAmountCents: 1_200, totalAmountCents: 900 }),
+    }));
+    expect(tx.commerceOrderItem.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        nonSensitiveSnapshot: expect.objectContaining({ discountAmountCents: 300 }),
+      }),
+    }));
+    expect(tx.commerceOrderEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ sanitizedData: expect.objectContaining({ subtotalAmountCents: 1_200, discountAmountCents: 300, totalAmountCents: 900 }) }),
+    }));
+  });
+
+  it("rejects a discount that is not the server-derived product total", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValue(product("physical"));
+    await expect(createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput,
+      totalAmountCents: 800,
+      discountAmountCents: 300,
+    })).rejects.toBeInstanceOf(CommerceOrderValidationError);
+    expect(tx.commerceOrder.create).not.toHaveBeenCalled();
+  });
+
   it("recomputes the checkout identity from transaction-validated custom answers without persisting plaintext", async () => {
     vi.stubEnv("CSRF_SECRET", "commerce-orders-test-secret-that-is-at-least-32-bytes");
     const tx = transaction();
