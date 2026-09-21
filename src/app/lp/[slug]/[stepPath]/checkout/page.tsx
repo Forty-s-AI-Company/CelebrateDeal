@@ -33,6 +33,7 @@ export default async function FunnelCheckoutPage({ params }: { params: Promise<{
           <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
             <p className="font-semibold">訂單摘要</p>
             <div className="mt-2 flex items-center justify-between gap-4"><span>{checkout.product.name} × 1</span><span className="font-bold">{formatPrice(checkout.product.priceCents, checkout.product.currency)}</span></div>
+            {checkout.orderBump ? <p className="mt-3 text-xs leading-5 text-slate-500">可在下一步選擇加購：{checkout.orderBump.name}。</p> : null}
           </div>
         </section>
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="checkout-form-title">
@@ -45,7 +46,11 @@ export default async function FunnelCheckoutPage({ params }: { params: Promise<{
             fulfillmentType={fulfillmentType}
             customCheckoutFields={checkout.product.customCheckoutFields}
             recoveryOnly={checkout.product.inventory <= 0}
-            funnel={{ ...checkout.reference, expectedVersion: checkout.version, expectedProductRevision: checkout.product.revision }}
+            priceCents={checkout.product.priceCents}
+            currency={checkout.product.currency}
+            formMode={checkout.binding.formMode}
+            {...(checkout.orderBump ? { orderBump: { productId: checkout.orderBump.id, title: checkout.orderBump.name, description: checkout.orderBump.description ?? "", priceCents: checkout.orderBump.priceCents } } : {})}
+            funnel={{ ...checkout.reference, expectedVersion: checkout.version, expectedProductRevision: checkout.product.revision, ...(checkout.orderBump ? { expectedOrderBumpRevision: checkout.orderBump.revision } : {}) }}
             agreementLabel={checkout.binding.agreement?.label}
           />
         </section>

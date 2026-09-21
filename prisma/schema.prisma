@@ -2098,6 +2098,7 @@ model InventoryReservation {
   productId            String
   paymentTransactionId String    @unique
   quantity             Int       @default(1)
+  items                Json?
   status               String    @default("reserved")
   expiresAt            DateTime
   committedAt          DateTime?

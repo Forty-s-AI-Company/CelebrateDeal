@@ -1,9 +1,10 @@
 "use client";
 
+import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
+
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
 import {
   CommerceCheckoutAdmissionResponseSchema,
   checkoutErrorMessage,
@@ -25,15 +26,30 @@ import {
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
 type CommerceCheckoutFormProps = {
+  funnel?: FunnelCheckoutReference;
+  agreementLabel?: string;
+  formMode?: "single" | "two_step";
   vendorId: string;
   productId: string;
   productName: string;
   fulfillmentType: CommerceCheckoutFulfillmentType;
   customCheckoutFields?: CustomCheckoutFields;
   recoveryOnly?: boolean;
-  funnel?: FunnelCheckoutReference;
-  agreementLabel?: string;
+  priceCents?: number;
+  currency?: string;
+  orderBump?: {
+    title: string;
+    description: string;
+    priceCents: number;
+    productId?: string;
+    sku?: string;
+    badge?: string;
+  };
 };
+
+function formatCheckoutPrice(priceCents: number, currency: string) {
+  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+}
 
 function submitProviderForm(action: string, payload: Record<string, string>) {
   const form = document.createElement("form");
@@ -55,14 +71,6 @@ function submitProviderForm(action: string, payload: Record<string, string>) {
 
 function fieldClassName() {
   return "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 shadow-sm placeholder:text-slate-400 focus:border-blue-500";
-}
-
-function checkoutInvoice(formData: FormData) {
-  const text = (name: string) => String(formData.get(name) ?? "").trim();
-  const type = text("invoiceType");
-  if (type === "company") return { type, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") };
-  if (type === "donation") return { type, donationCode: text("invoiceDonationCode") };
-  return { type: "personal", carrier: text("invoiceCarrier") || "member", ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
 }
 
 function CheckoutCustomFields({ fields, disabled }: { fields: CustomCheckoutFields; disabled: boolean }) {
@@ -95,6 +103,78 @@ function CheckoutContactFields({ requiresPhone, disabled }: { requiresPhone: boo
   );
 }
 
+function CheckoutShippingFields({ disabled }: { disabled: boolean }) {
+  return (
+        <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={disabled}>
+          <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-800">
+              收件人
+              <input name="recipientName" autoComplete="shipping name" required maxLength={120} className={fieldClassName()} />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              收件電話
+              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} className={fieldClassName()} />
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
+            <label className="text-sm font-semibold text-slate-800">
+              國家
+              <select name="countryCode" autoComplete="shipping country" defaultValue="TW" required className={fieldClassName()}>
+                <option value="TW">台灣</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              縣市
+              <input name="administrativeArea" autoComplete="shipping address-level1" required maxLength={120} className={fieldClassName()} />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              鄉鎮市區
+              <input name="locality" autoComplete="shipping address-level2" required maxLength={120} className={fieldClassName()} />
+            </label>
+          </div>
+          <label className="text-sm font-semibold text-slate-800">
+            郵遞區號（選填）
+            <input name="postalCode" inputMode="numeric" autoComplete="shipping postal-code" maxLength={24} className={fieldClassName()} />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            地址
+            <input name="addressLine1" autoComplete="shipping address-line1" required maxLength={240} className={fieldClassName()} />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            樓層、公司或其他補充（選填）
+            <input name="addressLine2" autoComplete="shipping address-line2" maxLength={240} className={fieldClassName()} />
+          </label>
+        </fieldset>
+  );
+}
+
+function CheckoutProgress({ mode, step, disabled, onBack }: { mode: "single" | "two_step"; step: 1 | 2; disabled: boolean; onBack: () => void }) {
+  if (mode !== "two_step") return null;
+  return <nav aria-label="結帳進度" className="flex items-center justify-between gap-3 text-sm font-semibold"><span aria-current={step === 1 ? "step" : undefined}>1. 聯絡資料</span><span aria-current={step === 2 ? "step" : undefined}>2. 訂單確認</span>{step === 2 ? <button type="button" disabled={disabled} className="text-blue-700 underline" onClick={onBack}>返回聯絡資料</button> : null}</nav>;
+}
+
+function CheckoutOrderBump({ offer, selected, disabled, currency, onChange }: { offer?: CommerceCheckoutFormProps["orderBump"]; selected: boolean; disabled: boolean; currency: string; onChange: (selected: boolean) => void }) {
+  if (!offer) return null;
+  return <label className="relative flex cursor-pointer items-start gap-4 overflow-hidden rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-[0_0_28px_rgba(251,191,36,0.24)]">
+    <span className="absolute right-3 top-3 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">{offer.badge ?? "加購商品"}</span>
+    <input type="checkbox" name="orderBumpSelected" checked={selected} onChange={(event) => onChange(event.currentTarget.checked)} disabled={disabled} className="mt-1 h-5 w-5 shrink-0 accent-orange-600" />
+    <span className="min-w-0 pr-20"><span className="block text-base font-black text-slate-950">加購推薦：{offer.title}</span><span className="mt-1 block text-sm leading-6 text-slate-700">{offer.description}</span><span className="mt-2 block font-black text-orange-700">只要 {formatCheckoutPrice(offer.priceCents, currency)}</span></span>
+  </label>;
+}
+
+function checkoutFunnelFields(funnel: FunnelCheckoutReference | undefined, agreementLabel: string | undefined, formData: FormData) {
+  return funnel ? { funnel, agreementAccepted: agreementLabel ? formData.get("funnelAgreement") === "on" : false } : {};
+}
+
+function checkoutInvoice(formData: FormData) {
+  const text = (name: string) => String(formData.get(name) ?? "").trim();
+  const type = text("invoiceType");
+  if (type === "company") return { type, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") };
+  if (type === "donation") return { type, donationCode: text("invoiceDonationCode") };
+  return { type: "personal", carrier: text("invoiceCarrier"), ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
+}
+
 export function CommerceCheckoutForm({
   vendorId,
   productId,
@@ -102,17 +182,25 @@ export function CommerceCheckoutForm({
   fulfillmentType,
   customCheckoutFields = [],
   recoveryOnly = false,
+  priceCents,
+  currency = "TWD",
+  orderBump,
   funnel,
   agreementLabel,
+  formMode = "single",
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
+  const [orderBumpSelected, setOrderBumpSelected] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
+  const contactStep = formMode === "two_step" && checkoutStep === 1;
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
   const requiresShipping = checkoutRequiresShipping(fulfillmentType);
   const requiresPhone = checkoutRequiresPhone(fulfillmentType);
   const isPending = phase === "submitting" || phase === "redirecting";
+  const fieldsDisabled = isPending || phase === "success";
   function checkoutIdempotencyKey() {
     try {
       return getOrCreateCheckoutIdempotencyKey(
@@ -161,6 +249,11 @@ export function CommerceCheckoutForm({
     if (isPending || phase === "success") return;
 
     const form = event.currentTarget;
+    // Step one is local UI only: no admission, order or inventory reservation.
+    if (contactStep) {
+      if (form.reportValidity()) setCheckoutStep(2);
+      return;
+    }
     const formData = new FormData(form);
     const text = (name: string) => String(formData.get(name) ?? "").trim();
     const buyer = {
@@ -233,8 +326,14 @@ export function CommerceCheckoutForm({
           buyer,
           shipping,
           invoice,
-          ...(funnel ? { funnel, ...(agreementLabel ? { agreementAccepted: formData.get("funnelAgreement") === "on" } : {}) } : {}),
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
+          ...(orderBumpSelected && orderBump ? {
+            orderBump: {
+              ...(orderBump.productId ? { productId: orderBump.productId } : {}),
+              ...(orderBump.sku ? { sku: orderBump.sku } : {}),
+            },
+          } : {}),
+          ...checkoutFunnelFields(funnel, agreementLabel, formData),
         }),
         signal: controller.signal,
       });
@@ -314,54 +413,29 @@ export function CommerceCheckoutForm({
       aria-busy={isPending}
       aria-describedby="checkout-payment-notice checkout-live-status"
     >
-      <CheckoutContactFields requiresPhone={requiresPhone} disabled={isPending || phase === "success"} />
+      <CheckoutProgress mode={formMode} step={checkoutStep} disabled={fieldsDisabled} onBack={() => setCheckoutStep(1)} />
+      <div hidden={formMode === "two_step" && checkoutStep === 2}>
+        <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} />
+      </div>
+      {contactStep ? <button type="submit" className="min-h-12 rounded-xl bg-blue-700 px-5 py-3 font-bold text-white">下一步：確認訂單</button> : null}
+      <fieldset disabled={contactStep} hidden={contactStep} className={contactStep ? "hidden" : "grid gap-6"}>
+
+      <CheckoutInvoiceFields disabled={fieldsDisabled} />
 
       {requiresShipping ? (
-        <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={isPending || phase === "success"}>
-          <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-semibold text-slate-800">
-              收件人
-              <input name="recipientName" autoComplete="shipping name" required maxLength={120} className={fieldClassName()} />
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              收件電話
-              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} className={fieldClassName()} />
-            </label>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
-            <label className="text-sm font-semibold text-slate-800">
-              國家
-              <select name="countryCode" autoComplete="shipping country" defaultValue="TW" required className={fieldClassName()}>
-                <option value="TW">台灣</option>
-              </select>
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              縣市
-              <input name="administrativeArea" autoComplete="shipping address-level1" required maxLength={120} className={fieldClassName()} />
-            </label>
-            <label className="text-sm font-semibold text-slate-800">
-              鄉鎮市區
-              <input name="locality" autoComplete="shipping address-level2" required maxLength={120} className={fieldClassName()} />
-            </label>
-          </div>
-          <label className="text-sm font-semibold text-slate-800">
-            郵遞區號（選填）
-            <input name="postalCode" inputMode="numeric" autoComplete="shipping postal-code" maxLength={24} className={fieldClassName()} />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            地址
-            <input name="addressLine1" autoComplete="shipping address-line1" required maxLength={240} className={fieldClassName()} />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            樓層、公司或其他補充（選填）
-            <input name="addressLine2" autoComplete="shipping address-line2" maxLength={240} className={fieldClassName()} />
-          </label>
-        </fieldset>
+        <CheckoutShippingFields disabled={fieldsDisabled} />
       ) : null}
 
-      <CheckoutInvoiceFields disabled={isPending || phase === "success"} />
-      <CheckoutCustomFields fields={customCheckoutFields} disabled={isPending || phase === "success"} />
+      <CheckoutCustomFields fields={customCheckoutFields} disabled={fieldsDisabled} />
+
+      <CheckoutOrderBump offer={orderBump} selected={orderBumpSelected} disabled={fieldsDisabled} currency={currency} onChange={setOrderBumpSelected} />
+
+      {typeof priceCents === "number" ? (
+        <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
+          <span className="font-semibold">本次結帳總額</span>
+          <strong className="text-xl">{formatCheckoutPrice(priceCents + (orderBumpSelected ? orderBump?.priceCents ?? 0 : 0), currency)}</strong>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
         <p id="checkout-payment-notice" className="flex items-start gap-2 font-semibold">
@@ -371,7 +445,7 @@ export function CommerceCheckoutForm({
       </div>
 
       <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-        <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={isPending || phase === "success"} />
+        <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={fieldsDisabled} />
         <span>
           我已閱讀目前的 <Link href="/policies/terms" className="font-semibold text-blue-700 underline">使用條款</Link>、
           <Link href="/policies/privacy" className="font-semibold text-blue-700 underline">隱私通知</Link> 與
@@ -379,21 +453,19 @@ export function CommerceCheckoutForm({
         </span>
       </label>
 
-      {agreementLabel ? <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
-        <input type="checkbox" name="funnelAgreement" required className="mt-1 h-4 w-4" disabled={isPending || phase === "success"} />
-        <span>{agreementLabel}</span>
-      </label> : null}
+      {agreementLabel ? <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" name="funnelAgreement" required disabled={fieldsDisabled} className="mt-1 h-4 w-4" /><span>{agreementLabel}</span></label> : null}
 
       <button
         type="submit"
-        disabled={isPending || phase === "success"}
-        aria-disabled={isPending || phase === "success"}
+        disabled={fieldsDisabled}
+        aria-disabled={fieldsDisabled}
         aria-busy={isPending}
         className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-base font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? <LoaderCircle className="animate-spin" size={20} aria-hidden="true" /> : <PackageCheck size={20} aria-hidden="true" />}
         {phase === "submitting" ? "正在建立訂單…" : phase === "redirecting" ? "正在前往付款…" : phase === "success" ? "訂單已建立" : `購買「${productName}」`}
       </button>
+      </fieldset>
 
       <p
         ref={statusRef}

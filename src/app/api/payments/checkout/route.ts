@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -205,6 +206,8 @@ function checkoutTransactionMetadata(input: {
   voucherClaimId?: string;
   discountAmountCents?: number;
   checkoutAmountCents?: number;
+  orderBumpProductId?: string;
+  orderBumpPriceCents?: number;
   funnel?: ResolvedFunnelCheckout;
 }) {
   return {
@@ -223,6 +226,8 @@ function checkoutTransactionMetadata(input: {
     ...(input.voucherClaimId ? { voucherClaimId: input.voucherClaimId } : {}),
     ...(input.discountAmountCents ? { discountAmountCents: input.discountAmountCents } : {}),
     ...(input.checkoutAmountCents ? { checkoutAmountCents: input.checkoutAmountCents } : {}),
+    ...(input.orderBumpProductId ? { orderBumpProductId: input.orderBumpProductId } : {}),
+    ...(input.orderBumpPriceCents ? { orderBumpPriceCents: input.orderBumpPriceCents } : {}),
     ...(input.funnel ? {
       funnel: {
         slug: input.funnel.reference.slug,
@@ -230,6 +235,7 @@ function checkoutTransactionMetadata(input: {
         pageId: input.funnel.pageId,
         version: input.funnel.version,
         productRevision: input.funnel.product.revision,
+        ...(input.funnel.orderBump ? { orderBumpRevision: input.funnel.orderBump.revision } : {}),
         ...(input.funnel.binding.agreement ? { agreementLabel: input.funnel.binding.agreement.label } : {}),
       },
     } : {}),
@@ -251,20 +257,59 @@ async function resolveFunnelCheckoutRequest(
   if (!funnel) return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout is no longer available" }, { status: 409 }) };
   const requestMatchesBinding = data.vendorId === funnel.vendorId
     && data.productId === funnel.product.id
+    && (!data.orderBump || Boolean(funnel.orderBump && data.orderBump.productId === funnel.orderBump.id))
     && (!funnel.binding.agreement || data.agreementAccepted === true);
   const snapshotMatches = data.funnel.expectedVersion === funnel.version
-    && data.funnel.expectedProductRevision === funnel.product.revision;
+    && data.funnel.expectedProductRevision === funnel.product.revision
+    && (!data.orderBump || data.funnel.expectedOrderBumpRevision === funnel.orderBump?.revision);
   if (!requestMatchesBinding || (existing?.status !== "pending" && !snapshotMatches)) {
     return { ok: false as const, response: NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 }) };
   }
   return { ok: true as const, funnel };
 }
 
+async function resolveCheckoutOrderBump(
+  database: ReturnType<typeof getDb>,
+  data: CheckoutRequestData,
+  product: { id: string; currency: string; fulfillmentType: CommerceCheckoutFulfillmentType },
+  projectId?: string,
+) {
+  const requested = data.orderBump;
+  if (!requested) return { ok: true as const, orderBumpProduct: null };
+  const orderBumpProduct = await database.product.findFirst({
+    where: {
+      vendorId: data.vendorId,
+      ...(requested.productId ? { id: requested.productId } : { slug: requested.sku }),
+      isActive: true,
+      fulfillmentTypeConfirmed: true,
+      priceCents: { gt: 0 },
+      ...(projectId ? { salesProjectLinks: { some: { vendorId: data.vendorId, projectId } } } : {}),
+    },
+    include: { deliveryConfig: { select: { status: true, fulfillmentType: true } } },
+  });
+  if (
+    !orderBumpProduct
+    || orderBumpProduct.id === product.id
+    || orderBumpProduct.currency !== product.currency
+    || (product.fulfillmentType !== "physical" && orderBumpProduct.fulfillmentType === "physical")
+    || unavailableCheckoutProductResponse(orderBumpProduct)
+  ) {
+    return { ok: false as const, response: NextResponse.json({ error: "Order bump not available" }, { status: 409 }) };
+  }
+  return { ok: true as const, orderBumpProduct };
+}
+
 function funnelProductSnapshotResponse(
   funnel: ResolvedFunnelCheckout | undefined,
   product: { id: string; revision: number },
+  orderBumpProduct: { id: string; revision: number } | null,
 ) {
   if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision)) {
+    return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
+  }
+  if (funnel && orderBumpProduct && (!funnel.orderBump
+    || funnel.orderBump.id !== orderBumpProduct.id
+    || funnel.orderBump.revision !== orderBumpProduct.revision)) {
     return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
   }
   return null;
@@ -340,6 +385,12 @@ function validateCheckoutInvoice(
       ? baseCheckoutIdentityHash
       : createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection),
   };
+}
+
+function bindOrderBumpCheckoutIdentity(baseCheckoutIdentityHash: string, orderBumpProductId: string | null) {
+  return orderBumpProductId
+    ? createHash("sha256").update(`${baseCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProductId}`).digest("base64url")
+    : baseCheckoutIdentityHash;
 }
 
 function validateCustomCheckoutAnswersForProduct(definitions: unknown, input: unknown) {
@@ -493,6 +544,7 @@ async function existingCheckoutResponse({
   request,
   transaction,
   product,
+  orderBumpProduct,
   checkoutIdentityHash,
 }: {
   request: Request;
@@ -509,14 +561,19 @@ async function existingCheckoutResponse({
     primaryCommerceOrder: { id: string; checkoutIdentityHash: string } | null;
   };
   product: { id: string; vendorId: string; priceCents: number; currency: string };
+  orderBumpProduct: { id: string; priceCents: number } | null;
   checkoutIdentityHash: string;
 }) {
   const metadata = metadataObject(transaction.metadata);
+  const expectedCheckoutAmount = product.priceCents
+    + (orderBumpProduct?.priceCents ?? 0)
+    - (typeof metadata.discountAmountCents === "number" ? metadata.discountAmountCents : 0);
   if (
     transaction.vendorId !== product.vendorId
     || metadata.productId !== product.id
+    || metadata.orderBumpProductId !== (orderBumpProduct?.id ?? undefined)
     || transaction.grossAmountCents !== (
-      typeof metadata.checkoutAmountCents === "number" ? metadata.checkoutAmountCents : product.priceCents
+      typeof metadata.checkoutAmountCents === "number" ? metadata.checkoutAmountCents : expectedCheckoutAmount
     )
     || transaction.currency !== product.currency
   ) {
@@ -604,6 +661,9 @@ export async function POST(request: Request) {
   }
   const unavailableProductResponse = unavailableCheckoutProductResponse(product);
   if (unavailableProductResponse) return unavailableProductResponse;
+  const orderBumpResult = await resolveCheckoutOrderBump(db, parsed.data, product, funnel?.projectId);
+  if (!orderBumpResult.ok) return orderBumpResult.response;
+  const { orderBumpProduct } = orderBumpResult;
 
   // Use the database definition, never a definition supplied by the browser.
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);
@@ -621,16 +681,17 @@ export async function POST(request: Request) {
   const { pii: checkoutPii, checkoutIdentityHash: baseCheckoutIdentityHash } = identity;
   const invoice = validateCheckoutInvoice(parsed.data, baseCheckoutIdentityHash);
   if (!invoice.ok) return invoice.response;
-  const { invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = invoice;
+  const { invoiceSelection, hasExplicitInvoiceSelection } = invoice;
+  const checkoutIdentityHash = bindOrderBumpCheckoutIdentity(invoice.checkoutIdentityHash, orderBumpProduct?.id ?? null);
 
   if (existing) {
-    return await existingCheckoutResponse({ request, transaction: existing, product, checkoutIdentityHash });
+    return await existingCheckoutResponse({ request, transaction: existing, product, orderBumpProduct, checkoutIdentityHash });
   }
 
   if (admission.productRevision !== product.revision) {
     return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
   }
-  const funnelSnapshotResponse = funnelProductSnapshotResponse(funnel, product);
+  const funnelSnapshotResponse = funnelProductSnapshotResponse(funnel, product, orderBumpProduct);
   if (funnelSnapshotResponse) return funnelSnapshotResponse;
 
   const admittedProvider = admittedCheckoutProvider();
@@ -659,7 +720,7 @@ export async function POST(request: Request) {
     currency: product.currency,
   });
   const discountAmountCents = voucherClaim?.discountAmountCents ?? 0;
-  const checkoutAmountCents = product.priceCents - discountAmountCents;
+  const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
     productName: product.name,
@@ -671,6 +732,7 @@ export async function POST(request: Request) {
     voucherClaimId: voucherClaim?.id,
     discountAmountCents,
     checkoutAmountCents,
+    ...(orderBumpProduct ? { orderBumpProductId: orderBumpProduct.id, orderBumpPriceCents: orderBumpProduct.priceCents } : {}),
     funnel,
   });
 
@@ -682,6 +744,7 @@ export async function POST(request: Request) {
       vendorId: parsed.data.vendorId,
       productId: product.id,
       expectedProductRevision: product.revision,
+      ...(orderBumpProduct ? { additionalProducts: [{ productId: orderBumpProduct.id, expectedProductRevision: orderBumpProduct.revision }] } : {}),
       checkoutIdempotencyKey: parsed.data.idempotencyKey,
       transactionData: {
         vendorId: parsed.data.vendorId,
@@ -705,6 +768,7 @@ export async function POST(request: Request) {
           paymentTransactionId: createdTransaction.id,
           totalAmountCents: checkoutAmountCents,
           discountAmountCents,
+          ...(orderBumpProduct ? { orderBumpProductId: orderBumpProduct.id } : {}),
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
@@ -725,7 +789,7 @@ export async function POST(request: Request) {
         where: { id: error.transactionId },
         include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
       });
-      if (winner) return await existingCheckoutResponse({ request, transaction: winner, product, checkoutIdentityHash });
+      if (winner) return await existingCheckoutResponse({ request, transaction: winner, product, orderBumpProduct, checkoutIdentityHash });
     }
     if (error instanceof InventoryUnavailableError) {
       return NextResponse.json({ error: "Product is sold out" }, { status: 409 });

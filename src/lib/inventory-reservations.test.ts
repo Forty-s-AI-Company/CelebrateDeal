@@ -56,6 +56,36 @@ afterEach(async () => {
 });
 
 describe("inventory reservations", () => {
+  it("reserves and releases the primary product and order bump atomically", async () => {
+    const { db, vendor, product, suffix } = await createFixture(2);
+    const bump = await db.product.create({
+      data: {
+        vendorId: vendor.id,
+        name: `Inventory Bump ${suffix}`,
+        slug: `inventory-bump-${suffix}`,
+        priceCents: 300,
+        inventory: 1,
+      },
+    });
+    const transaction = await createReservedPaymentTransaction({
+      vendorId: vendor.id,
+      productId: product.id,
+      expectedProductRevision: product.revision,
+      additionalProducts: [{ productId: bump.id, expectedProductRevision: bump.revision }],
+      transactionData: { ...transactionData(vendor.id, product.id, suffix), grossAmountCents: 1_500, netAmountCents: 1_500 },
+    });
+
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 1, revision: 2 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: bump.id } })).toMatchObject({ inventory: 0, revision: 2 });
+    expect(await db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: transaction.id } })).toMatchObject({
+      items: [{ productId: product.id, quantity: 1 }, { productId: bump.id, quantity: 1 }],
+    });
+
+    await failPendingCheckoutAndReleaseInventory({ vendorId: vendor.id, transactionId: transaction.id, reason: "provider_checkout_failed" });
+    expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ inventory: 2, revision: 3 });
+    expect(await db.product.findUniqueOrThrow({ where: { id: bump.id } })).toMatchObject({ inventory: 1, revision: 3 });
+  });
+
   it("rejects a stale checkout snapshot without reserving stock", async () => {
     const { db, vendor, product, suffix } = await createFixture(2);
     await db.product.update({ where: { id: product.id }, data: { priceCents: 1_500, revision: { increment: 1 } } });

@@ -5,11 +5,19 @@ import {
   checkoutRequiresShipping,
   CommerceCheckoutRequestSchema,
   CommerceCheckoutResponseSchema,
+  CommerceOrderBumpSelectionSchema,
   isAllowedCheckoutDestination,
   shouldDiscardCheckoutAdmission,
 } from "@/lib/commerce-checkout";
 
 describe("commerce checkout contract", () => {
+  it("accepts a bounded order bump selector and rejects an empty or forged selector", () => {
+    expect(CommerceOrderBumpSelectionSchema.safeParse({ productId: "bump-1" }).success).toBe(true);
+    expect(CommerceOrderBumpSelectionSchema.safeParse({ sku: "bump-sku" }).success).toBe(true);
+    expect(CommerceOrderBumpSelectionSchema.safeParse({}).success).toBe(false);
+    expect(CommerceOrderBumpSelectionSchema.safeParse({ productId: "bump-1", priceCents: 1 }).success).toBe(false);
+  });
+
   it("accepts only a bounded server-validatable request envelope", () => {
     expect(CommerceCheckoutRequestSchema.safeParse({
       vendorId: "vendor-1",
