@@ -72,8 +72,6 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   const originalHeadline = await headline.innerText();
   const editedHeadline = `TEST ONLY Webinar 修改標題 ${suffix}`;
   await headline.click();
-  console.log(JSON.stringify({ selected: await page.locator('[data-funnel-selected="true"]').evaluateAll(nodes => nodes.map(node => ({ type: node.getAttribute('data-funnel-node-type'), id: node.getAttribute('data-funnel-node-id') }))), inspectorCount: await page.locator('[data-funnel-element-inspector]').count(), pageErrors: errors }));
-  await page.screenshot({ path: shot("webinar-inspector.png"), fullPage: true, timeout: 10_000 });
   await page.locator("[data-funnel-element-inspector]").getByRole("textbox", { name: "標題", exact: true }).fill(editedHeadline);
   await expect(headline).toHaveText(editedHeadline);
   const toolbar = page.getByLabel("Funnel 編輯器工具列", { exact: true });
@@ -98,6 +96,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.getByLabel("Webinar 結束時間（UTC）", { exact: true }).fill("2030-08-01T03:00:00.000Z");
   await page.getByLabel("重播截止時間（UTC）", { exact: true }).fill("2030-08-08T03:00:00.000Z");
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: /草稿已儲存/u }).first()).toBeVisible();
   await expect(page).toHaveURL(/\/landing-pages\/(?!new$)[^/?]+\?step=[^#]+$/u);
   const editorPath = new URL(page.url()).pathname;
   const id = editorPath.split("/").at(-1)!;
