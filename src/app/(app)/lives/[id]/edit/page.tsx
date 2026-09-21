@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
@@ -24,6 +25,43 @@ type LiveEditorTemplateCandidate = {
   subject: string | null;
   body: string;
 };
+
+type EvergreenLiveCandidate = {
+  isEvergreen?: boolean;
+  evergreenScheduleMode?: string;
+  evergreenIntervalMinutes?: number;
+  evergreenDailyTimes?: string[];
+  evergreenSessionStartAt?: Date | null;
+  evergreenPitchAtSeconds?: number | null;
+  evergreenConsultationAtSeconds?: number | null;
+  evergreenPreviewEnabled?: boolean;
+  evergreenPreviewRate?: number;
+};
+
+function prepareEvergreenSettings(live: EvergreenLiveCandidate, timeZone: string): EvergreenWebinarSettingsValue {
+  const scheduleMode = ["just_in_time", "recurring_daily", "on_demand"].includes(live.evergreenScheduleMode ?? "")
+    ? live.evergreenScheduleMode as EvergreenWebinarSettingsValue["evergreenScheduleMode"]
+    : "just_in_time";
+  const intervalMinutes = [5, 15, 30].includes(live.evergreenIntervalMinutes ?? 15)
+    ? live.evergreenIntervalMinutes as EvergreenWebinarSettingsValue["evergreenIntervalMinutes"]
+    : 15;
+  const previewRate = [0.5, 1, 1.25, 1.5, 2].includes(live.evergreenPreviewRate ?? 1)
+    ? live.evergreenPreviewRate as EvergreenWebinarSettingsValue["evergreenPreviewRate"]
+    : 1;
+  return {
+    isEvergreen: live.isEvergreen ?? false,
+    evergreenScheduleMode: scheduleMode,
+    evergreenIntervalMinutes: intervalMinutes,
+    evergreenDailyTimes: live.evergreenDailyTimes ?? [],
+    evergreenSessionStartAt: live.evergreenSessionStartAt
+      ? formatZonedDateTimeLocal(live.evergreenSessionStartAt, timeZone)
+      : "",
+    evergreenPitchAtSeconds: live.evergreenPitchAtSeconds ?? null,
+    evergreenConsultationAtSeconds: live.evergreenConsultationAtSeconds ?? null,
+    evergreenPreviewEnabled: live.evergreenPreviewEnabled ?? false,
+    evergreenPreviewRate: previewRate,
+  };
+}
 
 function prepareLiveEditorResources(input: {
   live: { videoId: string | null; formId: string | null; products: Array<{ productId: string }> };
@@ -164,6 +202,8 @@ export default async function EditLivePage({
   ]);
   if (!live) notFound();
 
+  const evergreenSettings = prepareEvergreenSettings(live, vendor.timezone);
+
   const preparedResources = prepareLiveEditorResources({ live, videos, products, formCandidates, templateCandidates });
   const { forms, templates } = preparedResources;
   const notificationRules = live.notificationRules ?? [];
@@ -254,6 +294,13 @@ export default async function EditLivePage({
         hasUnavailableTemplate={hasUnavailableTemplate}
         hasUnavailableReminderTemplate={hasUnavailableReminderTemplate}
         hasUnavailableNotificationRuleTemplate={hasUnavailableNotificationRuleTemplate}
+      />
+      <EvergreenWebinarSettings
+        liveId={live.id}
+        csrfToken={csrfToken}
+        error={error}
+        notice={notice}
+        value={evergreenSettings}
       />
       <LiveStepperForm
         videos={videos}
