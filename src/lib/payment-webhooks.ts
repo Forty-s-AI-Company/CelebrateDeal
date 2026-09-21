@@ -30,6 +30,7 @@ import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
+import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -1196,6 +1197,21 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     // commission invariants in one serializable boundary. Prisma's 5s default
     // is too short for that deliberate scope over a regional connection.
     timeout: 15_000,
+  });
+
+  // Fiscal issuance is deliberately outside the payment transaction. An
+  // adapter or queue outage must never roll back an already-successful payment.
+  await reconcileElectronicInvoiceAfterPayment(db, {
+    vendorId: vendor.id,
+    paymentTransactionId: transaction.id,
+    eventType: payload.eventType,
+    occurredAt,
+    refund: commerceOrderRefund ? {
+      id: commerceOrderRefund.refundId,
+      orderId: commerceOrderRefund.orderId,
+      amountCents: payload.refundAmountCents,
+      cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + payload.refundAmountCents,
+    } : null,
   });
 
   await writeAuditLog({

@@ -37,6 +37,8 @@ import {
 import { coursePolicySnapshotFromProduct } from "@/lib/course-policy-snapshot";
 import { isExplicitLocalE2eRuntime } from "@/lib/app-url";
 import { getPaymentProvider } from "@/lib/payment-providers";
+import { parseCheckoutInvoiceSelection } from "@/lib/taiwan-invoice-validator";
+import { createInvoiceCheckoutIdentityHash } from "@/lib/taiwan-invoice-request";
 import {
   checkoutReadinessAllowsNewTransaction,
   checkoutSessionHasUsableDestination,
@@ -322,6 +324,24 @@ function validateCheckoutIdentity(
   }
 }
 
+function validateCheckoutInvoice(
+  data: CheckoutRequestData,
+  baseCheckoutIdentityHash: string,
+) {
+  const invoiceSelection = parseCheckoutInvoiceSelection(data.invoice ?? { type: "personal", carrier: "member" });
+  if (!invoiceSelection) {
+    return { ok: false as const, response: NextResponse.json({ error: "Invalid invoice selection" }, { status: 400 }) };
+  }
+  return {
+    ok: true as const,
+    invoiceSelection,
+    hasExplicitInvoiceSelection: data.invoice !== undefined,
+    checkoutIdentityHash: data.invoice === undefined
+      ? baseCheckoutIdentityHash
+      : createInvoiceCheckoutIdentityHash(baseCheckoutIdentityHash, invoiceSelection),
+  };
+}
+
 function validateCustomCheckoutAnswersForProduct(definitions: unknown, input: unknown) {
   try {
     const fields = parseCustomCheckoutFields(definitions);
@@ -598,7 +618,10 @@ export async function POST(request: Request) {
     customCheckout.answers,
   );
   if (!identity.ok) return identity.response;
-  const { pii: checkoutPii, checkoutIdentityHash } = identity;
+  const { pii: checkoutPii, checkoutIdentityHash: baseCheckoutIdentityHash } = identity;
+  const invoice = validateCheckoutInvoice(parsed.data, baseCheckoutIdentityHash);
+  if (!invoice.ok) return invoice.response;
+  const { invoiceSelection, hasExplicitInvoiceSelection, checkoutIdentityHash } = invoice;
 
   if (existing) {
     return await existingCheckoutResponse({ request, transaction: existing, product, checkoutIdentityHash });
@@ -686,6 +709,7 @@ export async function POST(request: Request) {
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
           customCheckoutAnswers: customCheckout.answers,
+          ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
         await consumeAutomationVoucherClaim(tx, voucherClaim, {
           vendorId: parsed.data.vendorId,

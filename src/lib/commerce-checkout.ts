@@ -16,6 +16,8 @@ export const CommerceCheckoutRequestSchema = z.object({
   buyer: z.unknown(),
   shipping: z.unknown().nullable().optional(),
   customCheckoutAnswers: z.unknown().optional(),
+  /** Optional server-validated Taiwan electronic-invoice selection. */
+  invoice: z.unknown().optional(),
   /** A locator only; the server re-resolves the published Funnel before any write. */
   funnel: FunnelCheckoutReferenceSchema.optional(),
   agreementAccepted: z.boolean().optional(),

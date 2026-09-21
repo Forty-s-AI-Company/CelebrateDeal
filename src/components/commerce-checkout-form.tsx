@@ -15,6 +15,7 @@ import {
   shouldDiscardCheckoutAdmission,
 } from "@/lib/commerce-checkout";
 import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+import { CheckoutInvoiceFields } from "@/components/checkout-invoice-fields";
 import {
   clearCheckoutIdempotencyKey,
   getOrCreateCheckoutIdempotencyKey,
@@ -54,6 +55,14 @@ function submitProviderForm(action: string, payload: Record<string, string>) {
 
 function fieldClassName() {
   return "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 shadow-sm placeholder:text-slate-400 focus:border-blue-500";
+}
+
+function checkoutInvoice(formData: FormData) {
+  const text = (name: string) => String(formData.get(name) ?? "").trim();
+  const type = text("invoiceType");
+  if (type === "company") return { type, businessId: text("invoiceBusinessId"), companyName: text("invoiceCompanyName") };
+  if (type === "donation") return { type, donationCode: text("invoiceDonationCode") };
+  return { type: "personal", carrier: text("invoiceCarrier") || "member", ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
 }
 
 function CheckoutCustomFields({ fields, disabled }: { fields: CustomCheckoutFields; disabled: boolean }) {
@@ -173,6 +182,7 @@ export function CommerceCheckoutForm({
       field.key,
       field.type === "checkbox" ? formData.get(`custom_${field.key}`) === "on" : text(`custom_${field.key}`),
     ]));
+    const invoice = checkoutInvoice(formData);
 
     setPhase("submitting");
     setMessage("正在確認商品與安全結帳資格，接著會建立訂單並保留庫存。");
@@ -222,6 +232,7 @@ export function CommerceCheckoutForm({
           admissionToken: admission.current.admissionToken,
           buyer,
           shipping,
+          invoice,
           ...(funnel ? { funnel, ...(agreementLabel ? { agreementAccepted: formData.get("funnelAgreement") === "on" } : {}) } : {}),
           ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
         }),
@@ -349,6 +360,7 @@ export function CommerceCheckoutForm({
         </fieldset>
       ) : null}
 
+      <CheckoutInvoiceFields disabled={isPending || phase === "success"} />
       <CheckoutCustomFields fields={customCheckoutFields} disabled={isPending || phase === "success"} />
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
