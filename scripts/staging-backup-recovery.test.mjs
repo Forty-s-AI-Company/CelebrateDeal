@@ -4,16 +4,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { BACKUP_SOURCE_SHA, createInitialReceipt, sourceInventory } from "./secure-staging-runner.mjs";
-import { BACKUP_SOURCE, attestBackupRun, validateBackupRun } from "./staging-backup-recovery-source.mjs";
+import { BACKUP_SOURCE, attestBackupRun, validateBackupRun, verifyBackupSource } from "./staging-backup-recovery-source.mjs";
 import { createRecoveryReceipt, runRecoveryDrill, validateRecoveryReceipt, verifyDownloadedBackup } from "./staging-backup-recovery.mjs";
 
 const hash = (value) => `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
 
 function backupRun() {
   return {
-    id: 12345, head_sha: BACKUP_SOURCE.backupCommit, head_branch: "master", path: BACKUP_SOURCE.workflow,
+    id: 12345, head_sha: BACKUP_SOURCE.minimumBackupCommit, head_branch: "master", path: BACKUP_SOURCE.workflow,
     event: "workflow_dispatch", status: "completed", conclusion: "success",
     repository: { full_name: BACKUP_SOURCE.repository }, head_repository: { full_name: BACKUP_SOURCE.repository },
     inputs: { task: "wp2-readonly-restore", source_sha: BACKUP_SOURCE.sourceSha, deployment_host: "safe-preview.vercel.app" },
@@ -39,15 +40,29 @@ function backupReceipt(archive) {
   return receipt;
 }
 
-test("only one successful protected #288 run with both fixed artifacts is accepted", async () => {
+test("only a protected master backup run with both fixed artifacts is accepted", async () => {
   assert.equal(validateBackupRun(backupRun(), artifacts(), "12345"), true);
-  assert.equal(validateBackupRun({ ...backupRun(), head_sha: "a".repeat(40) }, artifacts(), "12345"), false);
+  assert.equal(validateBackupRun({ ...backupRun(), head_sha: "not-a-sha" }, artifacts(), "12345"), false);
   assert.equal(validateBackupRun({ ...backupRun(), head_branch: "feature" }, artifacts(), "12345"), false);
   assert.equal(validateBackupRun(backupRun(), { ...artifacts(), artifacts: artifacts().artifacts.slice(0, 1) }, "12345"), false);
   assert.equal(validateBackupRun(backupRun(), { ...artifacts(), artifacts: artifacts().artifacts.map((artifact) => ({ ...artifact, expired: true })) }, "12345"), false);
   const responses = [new Response(JSON.stringify(backupRun()), { status: 200 }), new Response(JSON.stringify(artifacts()), { status: 200 })];
   assert.equal(await attestBackupRun("12345", "synthetic", async () => responses.shift()), true);
   assert.equal(await attestBackupRun("invalid", "synthetic", async () => { throw new Error("should not fetch"); }), false);
+});
+
+test("approved backup blobs remain valid after a later master merge", () => {
+  const current = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal(verifyBackupSource(BACKUP_SOURCE.minimumBackupCommit), true);
+  assert.equal(verifyBackupSource(current), true);
+  assert.equal(verifyBackupSource("a".repeat(40)), false);
+  const wrongBlob = (command, args, options) => {
+    if (args[0] === "rev-parse" && args[1].endsWith(":scripts/staging-retained-backup.mjs")) {
+      return { status: 0, stdout: `${"f".repeat(40)}\n` };
+    }
+    return spawnSync(command, args, options);
+  };
+  assert.equal(verifyBackupSource(current, wrongBlob), false);
 });
 
 test("downloaded ciphertext must match the fixed receipt digest and path", () => {

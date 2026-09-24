@@ -1,10 +1,11 @@
 # 固定 Staging 加密備份的隔離回復演練
 
-固定備份 runner 的受保護 master SHA 是
+固定備份 runner 的最早受保護 master SHA 是
 `e13084f37edf9669f47c02351e646972201ae211`（PR #288）。
-此來源只用於核對該版本執行的備份；後續其他版本須另行審查與 pin。
+後續 master 執行的備份仍須驗證該 SHA 的後代關係，且備份 workflow、
+runner 與加密／artifact 驗證程式的 Git blob 必須符合已審查的固定清單。
 
-這個 workflow 只接受固定 SHA 在受保護 `master` 執行的
+這個 workflow 只接受符合上述來源檢查、在受保護 `master` 執行的
 `Secure staging validation` 備份 run ID。它先用 GitHub API
 核對成功的 workflow、commit、分支與兩個固定 artifact，再下載 SHA
 `9193326824b8b6bf774bdfa28e4783a1a1b8f304` 的加密備份與 sanitized receipt。
