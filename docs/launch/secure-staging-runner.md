@@ -3,7 +3,7 @@
 ## 目的
 
 此 runner 讓受保護的 GitHub Actions job 使用 staging database credential，完成
-WP2 的唯讀 migration status 與隔離 backup/restore。Secret 不會交給 Codex、寫入
+目前 RC staging DB `public` schema 的唯讀 migration history 查核與隔離 backup/restore。Secret 不會交給 Codex、寫入
 repository、command arguments、log、receipt 或 artifact。
 
 它不授權 Production、付款、退款、migration write、deployment、alias mutation、
@@ -17,15 +17,21 @@ Workflow 只有在以下條件全部成立時才會執行：
    `master`。
 2. GitHub 回報該分支受保護（`github.ref_protected == true`）。
 3. Job 綁定 GitHub Environment `Preview – celebrate-deal-staging`。
-4. GitHub deployment receipt 唯一對應輸入的完整 source SHA、Preview hostname、
+4. GitHub deployment receipt 唯一對應固定 source SHA `9193326824b8b6bf774bdfa28e4783a1a1b8f304`、Preview hostname、
    成功狀態與 non-Production environment。
 5. `STAGING_DATABASE_URL` 與 `NEXT_PUBLIC_SUPABASE_URL` 對應同一個 Supabase
    project identity。
 6. 固定 task 為 `wp2-readonly-restore`。
 
 Feature branch 無法透過修改 workflow 或 runner 取得 Secret。Trusted runner
-只會從 exact source commit 讀取 migration SQL inventory，不會執行該 commit 的
+只會從上述 exact source commit 讀取 migration SQL inventory，不會執行該 commit 的
 產品程式或任意 script。
+
+Migration manifest 的數量、名稱與 checksum 由該 commit 的 `prisma/migrations`
+逐一讀取並核對；不預設 staging 已套用數量。已套用的 migration 必須是此 manifest
+的有效子集，且不得有未解決失敗或未知 checksum。當資料庫尚未追平 manifest 時，
+receipt 的 migration status 為 `BACKUP_READY_MIGRATIONS_PENDING`。此時整體
+`PASS` 僅證明目前資料庫的備份、隔離還原及查核成功，不能當作 migration 完成驗收。
 
 ## GitHub Environment 設定
 
@@ -45,12 +51,11 @@ Secret-aware step 只允許連線：
 - exact Vercel Preview hostname（TCP 443）
 - staging Supabase database hostname 與指定 port
 
-Runner 的 OUTPUT policy 在 child process 執行期間為 fail-closed；來源 database
+Runner 的 IPv4/IPv6 OUTPUT policy 在 child process 執行期間為 fail-closed；來源 database
 工具使用 host network，隔離 restore container 使用 `--network none`、tmpfs 與
 一次性 ownership label。
 
-來源 database 的第一個 transaction 是 `BEGIN READ ONLY`，且 `PGOPTIONS` 強制
-`default_transaction_read_only=on`。允許的 staging 操作只有 SELECT 與 `pg_dump`；
+來源 database 的第一個 transaction 是 `BEGIN READ ONLY`。允許的 staging 操作只有 SELECT 與 `pg_dump`；
 所有 restore writes 只發生在 disposable PostgreSQL。
 
 ## Receipt

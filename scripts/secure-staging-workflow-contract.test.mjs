@@ -24,6 +24,27 @@ test("secure staging workflow is valid YAML and protected-default-branch only", 
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read" });
 });
 
+test("WP2 pins the RC source and closes IPv6 before staging secret use", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const sourceCheckout = steps.find((step) => step.name === "Checkout exact WP2 RC migration source before secret injection");
+  const sourceImport = steps.find((step) => step.name === "Import and verify exact WP2 RC migration source before secret injection");
+  const sourceGate = steps.find((step) => step.name === "Validate exact WP2 RC source before secret injection");
+  const execute = steps.find((step) => step.id === "execute-wp2");
+  assert.ok(steps.indexOf(sourceCheckout) < steps.indexOf(sourceImport));
+  assert.ok(steps.indexOf(sourceImport) < steps.indexOf(sourceGate));
+  assert.ok(steps.indexOf(sourceGate) < steps.indexOf(execute));
+  assert.equal(sourceCheckout.with.ref, "refs/pull/277/head");
+  assert.equal(sourceCheckout.with["fetch-depth"], 0);
+  assert.equal(sourceCheckout.with["persist-credentials"], false);
+  assert.match(sourceImport.run, /git fetch --no-tags \.\/verified-wp2-source/u);
+  assert.deepEqual(Object.keys(sourceGate.env), ["CELEBRATEDEAL_SOURCE_SHA"]);
+  assert.match(sourceGate.run, /9193326824b8b6bf774bdfa28e4783a1a1b8f304/u);
+  assert.equal(execute.env.STAGING_DATABASE_URL, "${{ secrets.STAGING_DATABASE_URL }}");
+  assert.match(execute.run, /ip6tables -P OUTPUT DROP/u);
+  assert.match(execute.run, /ip6tables-restore/u);
+});
+
 test("workflow exposes only fixed allowlisted tasks with pinned actions", () => {
   const source = fs.readFileSync(workflowPath, "utf8");
   const workflow = yaml.load(source);
@@ -51,7 +72,7 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
   assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
   assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
-  assert.equal(actionUses.length, 8);
+  assert.equal(actionUses.length, 9);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
 });
 
@@ -100,7 +121,7 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.match(source, /npx playwright install --with-deps chromium/u);
   assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 7);
-  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 5);
+  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 6);
   assert.match(source, /api\.github\.com/u);
   assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
   assert.match(source, /getent ahostsv4/u);
@@ -122,6 +143,18 @@ test("required PostgreSQL concurrency gate fails closed instead of hanging indef
     /timeout --preserve-status 10m npm run test:db:concurrency/u,
   );
   assert.doesNotMatch(source, /test:db:concurrency[^\n]*(?:--exclude|--skip|--passWithNoTests)/u);
+});
+
+test("quality imports the non-ancestor RC commit before source-aware contract tests", () => {
+  const workflow = yaml.load(fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8"));
+  const steps = workflow.jobs.quality.steps;
+  const checkout = steps.find((step) => step.name === "Checkout");
+  const sourceImport = steps.find((step) => step.name === "Import fixed Preview source for staging contract tests");
+  const contracts = steps.find((step) => step.name === "Node TAP contract tests");
+  assert.equal(checkout.with["fetch-depth"], 0);
+  assert.ok(steps.indexOf(sourceImport) < steps.indexOf(contracts));
+  assert.match(sourceImport.run, /refs\/pull\/277\/head:refs\/remotes\/origin\/verified-wp2-source/u);
+  assert.match(sourceImport.run, /9193326824b8b6bf774bdfa28e4783a1a1b8f304/u);
 });
 
 test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute arbitrary commands", () => {
