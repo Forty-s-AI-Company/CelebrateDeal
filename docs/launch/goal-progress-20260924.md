@@ -43,6 +43,6 @@
 
 ## 下一步與 handoff
 
-- 確認 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 的最終結果，不能把候選 CI 結果充作新 SHA 的獨立執行。PR #210/#211 尚有衝突及獨有功能，依 [下一輪清單](NEXT-CYCLE.md) 按功能、Auth/tenant/schema 風險處置，不直接合舊樹。
+- PR #274 的程式版 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 已 success。文件 PR #275 合併後 master 為 `f8c9f53abf2058df91cd4469f206ab69faebafc4`，其獨立 [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996) 亦 success。PR #210/#211 尚有衝突及獨有功能，依 [下一輪清單](NEXT-CYCLE.md) 按功能、Auth/tenant/schema 風險處置，不直接合舊樹。
 - staging Preview 必須透過核准的平台 Secret provider 補齊固定非 Production 的 DB／Supabase／公開 host 綁定，重新部署 master 對應 SHA、驗證 lineage 與主要操作，再切指定 alias；目前不得把 HTTP 200 或 PayUni Sandbox env flag 升級為核心／金流 PASS。不讀 `.env*`、不輸出值或 raw log。
-- requested/effective team=`ai-team-pro`；Plan Opus `INVALID_REVIEW`／scratch path failure 後由獨立 Sol xhigh 唯讀複審。產品 runner 有一次 reviewer helper 唯讀 dispatch，2 個 MAJOR 經修正與複核；實際 observed model／effort 無 receipt 記為 unknown。ownership：主代理單一 writer；helper dispatch 1/4，depth 1/1。下一步：master CI 結果、staging 非 Production 綁定與實際 Sandbox 成功訂單證據；Goal acceptance 尚未成立。
+- requested/effective team=`ai-team-pro`；Plan Opus `INVALID_REVIEW`／scratch path failure 後由獨立 Sol xhigh 唯讀複審。產品 runner 有一次 reviewer helper 唯讀 dispatch，2 個 MAJOR 經修正與複核；實際 observed model／effort 無 receipt 記為 unknown。ownership：主代理單一 writer；helper dispatch 1/4，depth 1/1。下一步：staging 非 Production 綁定與實際 Sandbox 成功訂單證據；Goal acceptance 尚未成立。
