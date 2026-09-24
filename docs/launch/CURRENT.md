@@ -4,7 +4,7 @@
 
 ## 來源與站台
 
-- 最新 `master`：`0f1fc3e84b524edd46bb1a6946b852cf9ef74742`，由受保護 PR [#274](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/274) squash 合併。合併前 `235b496a442c18139d581db59c3b41d5eb61687f` 的兩次 `quality` run `35995602557`／`35995607497` 均 success；master 自身 [CI run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 的結論應由 GitHub 即時狀態判定，不能預先記 PASS。合併後兩者 Git tree 相同。
+- 本輪程式提交 `0f1fc3e84b524edd46bb1a6946b852cf9ef74742` 由受保護 PR [#274](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/274) squash 合併；文件提交 `f8c9f53abf2058df91cd4469f206ab69faebafc4` 由 [#275](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/275) 合併。程式候選的兩次 `quality` run `35995602557`／`35995607497`、程式版 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 與文件版 master [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996) 均 success。這些結果只證明各自提交的 CI，不代表指定 staging alias 已更新。
 - 本輪整合分支 `codex/launch-integration-20260924` 從原 master 建立；原 `codex/one-stop-webinar-flow` dirty 工作目錄未重設或覆寫。
 - PR #210 與 #211 目前皆為 CONFLICTING。將 #210 對 master 做唯讀 `git merge-tree`，有 376 個衝突路徑，其中 296 個在 `src`。先逐項對齊現有 master，不直接合併舊樹。
 - 指定 staging 網址的首頁與 `/api/health` 曾於 2026-09-24 回應 200；Vercel `inspect` 顯示 alias 所指 deployment `dpl_Dtp88X6L4iD7a6fWAKXFfqLycp6N`、target `preview`、state `READY`、建立時間 2026-09-03。該 inspect 回應沒有 Git source SHA。故這個 200 不是新版程式證明。
@@ -16,7 +16,7 @@
 
 | 範圍 | 狀態 | 可用證據與下一個 Gate |
 |---|---|---|
-| master CI | 合併候選兩次 `quality` PASS；master 自身結果以 GitHub 為準 | run `35995602557`／`35995607497` 對相同 Git tree；master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) |
+| master CI | 程式版與文件版 master 的完整 `quality` 均 PASS | 程式版 [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044)、文件版 [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996)；staging 另行驗收 |
 | 核心功能 | 本機與 CI 主要測試已通過；staging 操作未驗收 | Auth／checkout／order 等目標測試、本機 Funnel browser 與完整 CI browser 已通過；仍需固定 staging 的登入、資料寫入與 Sandbox 訂單證據 |
 | Git 整合 | PR #274 已合併；舊 PR 仍未處置 | #210/#211 有衝突及未移植功能；對照 [Git inventory](integration-inventory-20260924.md) 後留下一輪按功能分批處理，不能宣稱「全部合完」 |
 | 指定 staging | 新 immutable Preview 已 READY，alias 仍是舊部署 | 新 Preview 有 source SHA 與 HTTP 200；需補 Preview 環境隔離、核心操作驗證及 alias 切換 |
