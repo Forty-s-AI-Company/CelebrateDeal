@@ -68,6 +68,11 @@ Canonical validator 會拒絕 symlink、Runner temp 外路徑、額外 schema �
 credential、raw rows、raw dump、staging database writes 與超出 budget 的 side
 effects。Artifact 保留七天。
 
+原始 dump 只在這次 runner 的隔離暫存區存活，結束時會清除；PASS 證明當次
+`public` schema 的邏輯備份可以還原到一次性 PostgreSQL，**不會留下可供日後回復
+staging 的備份檔**。真正套用 pending migration 前，仍須另外證明當下可保留的
+非 Production 備份與回復路徑，不能只引用這份 receipt。
+
 ## 啟用順序
 
 1. 透過 PR 將 workflow、runner、tests 與本文件合併到 `master`。

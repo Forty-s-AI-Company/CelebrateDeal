@@ -23,7 +23,7 @@
 | PayUni Sandbox 買家訂單 | **NOT_PROVEN** | 同一固定部署上一筆成功付款、callback、持久化訂單、使用者可見狀態及重複 callback 冪等性；退款／對帳屬更完整的財務閉環 |
 | Sandbox runner 前置關卡 | 已修復並通過 | PR #279 將 Prisma Client 生成移到所有 task 共用前置步驟；[受保護綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042545323) 已通過，不顯示測試卡或 Secret 值 |
 | 固定 Sandbox 交易嘗試 | **BLOCKED_BEFORE_PAYMENT** | [受保護 run 36042691222](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042691222) 的 validated sanitized receipt 為 `FIXTURE_HTTP_REJECTED`；`checkoutPosts=0`、`payments=0`、`refunds=0`。須先唯讀診斷 migration 與 fixture 前置狀態，不重送付款 |
-| staging Prisma migration | **DRIFT：58／79** | [受保護唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36051276197) 發現 21 個差額；尚需確認精確名稱、套用順序及目前版本的備份／隔離還原能力，不能用舊版固定 58 的備份 gate 視為修復許可 |
+| staging Prisma migration | **DRIFT：58／79** | [受保護唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36051276197) 發現 21 個差額；尚需確認精確名稱、套用順序、隔離還原能力及可保留的回復備份。一次性還原演練不會留下可用於事後回復的 dump，不能單憑演練 PASS 套用 migration |
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
