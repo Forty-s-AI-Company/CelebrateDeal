@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
@@ -86,6 +87,25 @@ function identityHash(
     definitions,
     answers,
   });
+}
+
+function orderSnapshot(checkoutIdentityHash: string, customCheckoutFields: unknown = []) {
+  return {
+    id: "order-1",
+    vendorId: "vendor-1",
+    checkoutIdempotencyKey: idempotencyKey,
+    checkoutIdentityHash,
+    totalAmountCents: 1200,
+    currency: "TWD",
+    items: [{
+      productId: "product-1",
+      productSlug: "test-product",
+      lineIndex: 0,
+      fulfillmentType: "physical",
+      unitPriceCents: 1200,
+      nonSensitiveSnapshot: { customCheckoutFields },
+    }],
+  };
 }
 
 function checkoutRequest(cookie?: string, body: Record<string, unknown> = {}) {
@@ -550,7 +570,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: {
         productId: "product-1",
         checkoutSession: {
@@ -575,6 +595,126 @@ describe("successful checkout response", () => {
     expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
+  it("replays a pending session from its order snapshot after the product is deactivated", async () => {
+    db.product.findFirst.mockResolvedValue(null);
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "payuni",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: orderSnapshot(identityHash()),
+      metadata: {
+        productId: "product-1",
+        checkoutSession: {
+          provider: "payuni",
+          mode: "form_post",
+          formAction: "https://sandbox.payuni.com.tw/checkout",
+          formMethod: "POST",
+          formPayload: { MerID: "synthetic-merchant", TradeInfo: "synthetic-payload" },
+          nextAction: "submit_provider_form",
+          externalRequired: true,
+        },
+      },
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      transactionId: "transaction-existing",
+      formAction: "https://sandbox.payuni.com.tw/checkout",
+      formMethod: "POST",
+    });
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("replays an unchanged buyer request after the published Funnel and custom fields change", async () => {
+    const originalFields = [{ key: "engraving", label: "刻字內容", type: "text", required: true }];
+    db.product.findFirst.mockResolvedValue(null);
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValue(null);
+    db.paymentTransaction.findUnique.mockResolvedValueOnce({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1200,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: orderSnapshot(
+        identityHash({ buyer, shipping }, originalFields, { engraving: "原本內容" }),
+        originalFields,
+      ),
+      metadata: {
+        productId: "product-1",
+        funnel: { slug: "offer", stepId: "order_form", version: 2, productRevision: 4, agreementLabel: "我同意" },
+        checkoutSession: {
+          provider: "demo", mode: "manual", nextAction: "demo_checkout_transaction_created", externalRequired: false,
+        },
+      },
+    });
+
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+      agreementAccepted: true,
+      customCheckoutAnswers: { engraving: "原本內容" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(funnelMocks.resolvePublishedFunnelCheckout).not.toHaveBeenCalled();
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("replays the saved bump terms without looking up a changed bump product", async () => {
+    const bumpId = "bump-1";
+    const boundIdentity = createHash("sha256")
+      .update(`${identityHash()}\u0000order-bump\u0000${bumpId}`)
+      .digest("base64url");
+    const order = orderSnapshot(boundIdentity);
+    order.totalAmountCents = 1500;
+    order.items.push({
+      productId: bumpId,
+      productSlug: "original-bonus",
+      lineIndex: 1,
+      fulfillmentType: "digital",
+      unitPriceCents: 300,
+      nonSensitiveSnapshot: { customCheckoutFields: [] },
+    });
+    db.product.findFirst.mockResolvedValue(null);
+    db.paymentTransaction.findUnique.mockResolvedValue({
+      id: "transaction-existing",
+      vendorId: "vendor-1",
+      providerName: "demo",
+      checkoutIdempotencyKey: idempotencyKey,
+      orderNumber: "CD-20260807120000-ABC123",
+      grossAmountCents: 1500,
+      currency: "TWD",
+      status: "pending",
+      primaryCommerceOrder: order,
+      metadata: {
+        productId: "product-1",
+        orderBumpProductId: bumpId,
+        checkoutAmountCents: 1500,
+        checkoutSession: {
+          provider: "demo", mode: "manual", nextAction: "demo_checkout_transaction_created", externalRequired: false,
+        },
+      },
+    });
+
+    const replay = await POST(checkoutRequest(undefined, { orderBump: { sku: "original-bonus" } }));
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ amountCents: 1500 });
+    const changedBump = await POST(checkoutRequest(undefined, { orderBump: { sku: "different-bonus" } }));
+    expect(changedBump.status).toBe(409);
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+  });
+
   it("returns a bounded finished response when a paid checkout is retried", async () => {
     db.paymentTransaction.findUnique.mockResolvedValueOnce({
       id: "transaction-paid",
@@ -585,7 +725,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "paid",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: { productId: "product-1" },
     });
 
@@ -607,7 +747,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: {
         productId: "product-1",
         checkoutSession: {
@@ -638,7 +778,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: { productId: "another-product" },
     });
 
@@ -659,7 +799,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: { productId: "product-1" },
     });
 
@@ -687,9 +827,10 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: {
-        checkoutIdentityHash: identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
-      },
+      primaryCommerceOrder: orderSnapshot(
+        identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
+        customCheckoutFields,
+      ),
       metadata: { productId: "product-1" },
     });
 
@@ -720,9 +861,10 @@ describe("successful checkout response", () => {
         grossAmountCents: 1200,
         currency: "TWD",
         status: "pending",
-        primaryCommerceOrder: {
-          checkoutIdentityHash: identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
-        },
+        primaryCommerceOrder: orderSnapshot(
+          identityHash({ buyer, shipping }, customCheckoutFields, { engraving: "原本內容" }),
+          customCheckoutFields,
+        ),
         metadata: { productId: "product-1" },
       });
 
@@ -743,7 +885,7 @@ describe("successful checkout response", () => {
       grossAmountCents: 1200,
       currency: "TWD",
       status: "pending",
-      primaryCommerceOrder: { checkoutIdentityHash: identityHash() },
+      primaryCommerceOrder: orderSnapshot(identityHash()),
       metadata: { productId: "product-1" },
     });
 
@@ -797,7 +939,7 @@ describe("successful checkout response", () => {
         grossAmountCents: 1200,
         currency: "TWD",
         status: "pending",
-        primaryCommerceOrder: { id: "order-1", checkoutIdentityHash: identityHash() },
+        primaryCommerceOrder: orderSnapshot(identityHash()),
         metadata: {
           productId: "product-1",
           checkoutSession: {

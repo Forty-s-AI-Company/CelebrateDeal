@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   checkoutIdempotencyStorageKey,
   clearCheckoutIdempotencyKey,
+  clearCheckoutRecoveryRecord,
   getOrCreateCheckoutIdempotencyKey,
   readCheckoutIdempotencyKey,
+  readCheckoutRecoveryRecord,
+  saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
 
 const FIRST = "11111111-1111-4111-8111-111111111111";
@@ -57,5 +60,15 @@ describe("checkout idempotency persistence", () => {
 
     storage.setItem(checkoutIdempotencyStorageKey("vendor-1", "product-1"), FIRST);
     expect(readCheckoutIdempotencyKey(storage, "vendor-1", "product-1")).toBe(FIRST);
+  });
+
+  it("keeps non-sensitive recovery locators scoped to their checkout path", () => {
+    const storage = memoryStorage();
+    const record = { vendorId: "vendor-1", productId: "product-1", idempotencyKey: FIRST };
+    saveCheckoutRecoveryRecord(storage, "/checkout/vendor-1/product-1", record);
+    expect(readCheckoutRecoveryRecord(storage, "/checkout/vendor-1/product-1")).toEqual(record);
+    expect(readCheckoutRecoveryRecord(storage, "/checkout/vendor-1/product-2")).toBeNull();
+    clearCheckoutRecoveryRecord(storage, "/checkout/vendor-1/product-1");
+    expect(readCheckoutRecoveryRecord(storage, "/checkout/vendor-1/product-1")).toBeNull();
   });
 });
