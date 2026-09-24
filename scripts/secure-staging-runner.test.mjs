@@ -3,6 +3,7 @@ import os from "node:os";
 import test from "node:test";
 
 import {
+  BACKUP_SOURCE_SHA,
   classifyPostgresFailure,
   classifyRestoreFailure,
   createInitialReceipt,
@@ -11,6 +12,7 @@ import {
   isolatedRestoreArgs,
   parseExtensionPlacements,
   readOnlySql,
+  sourceInventory,
   REQUIRED_CONFIG_KEYS,
   REQUIRED_SECRET_KEYS,
   validateInvocation,
@@ -19,7 +21,7 @@ import {
   verifyTrustedMigrationTree,
 } from "./secure-staging-runner.mjs";
 
-const sha = "e65485d5fd5f54d2c6bb9fe8231f55eac809376e";
+const sha = BACKUP_SOURCE_SHA;
 
 function environment() {
   return {
@@ -33,11 +35,12 @@ function environment() {
 }
 
 function completePassReceipt() {
+  // The current staging snapshot has 58 applied migrations while this RC contains 79.
   const receipt = createInitialReceipt(sha);
   receipt.result = "PASS";
   receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true, deploymentDigest: `sha256:${"a".repeat(64)}` };
   receipt.database = { connectionAttempts: 1, firstTransactionReadOnly: true, identityMatched: true, readQueries: 6, disconnected: true };
-  receipt.migration = { expectedCount: 58, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 1, completedCounterpartCount: 1, exactChecksumCount: 57, formatVarianceCount: 1, unknownMismatchCount: 0, status: "UP_TO_DATE_FORMAT_VARIANCE" };
+  receipt.migration = { expectedCount: sourceInventory(sha).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 1, completedCounterpartCount: 1, exactChecksumCount: 57, formatVarianceCount: 1, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
   receipt.backup = { attempts: 1, result: "PASS", byteBucket: "1_to_10mib", digest: `sha256:${"b".repeat(64)}` };
   receipt.restore = { attempts: 1, result: "PASS", migrationCount: 58, schemaMatched: true, extensionsMatched: true, aggregateMatched: true, isolated: true };
   receipt.sideEffects.backupWrites = 1;
@@ -49,9 +52,16 @@ test("only the fixed WP2 task and complete allowlisted bindings are accepted", (
   const source = environment();
   assert.equal(validateInvocation("wp2-readonly-restore", source).ok, true);
   assert.equal(validateInvocation("arbitrary-command", source).reason, "TASK_NOT_ALLOWLISTED");
+  assert.equal(validateInvocation("wp2-readonly-restore", { ...source, CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40) }).reason, "SOURCE_SHA_INVALID");
   for (const key of [...REQUIRED_SECRET_KEYS, ...REQUIRED_CONFIG_KEYS]) {
     assert.equal(validateInvocation("wp2-readonly-restore", { ...source, [key]: "" }).ok, false, key);
   }
+});
+
+test("backup manifest is read from the fixed RC commit", () => {
+  const manifest = sourceInventory(sha);
+  assert.equal(manifest.size, 79);
+  assert.throws(() => sourceInventory("a".repeat(40)), /SOURCE_COMMIT_UNAVAILABLE|SOURCE_MIGRATION_COUNT_INVALID/u);
 });
 
 test("cross-project database identity and non-Preview hosts fail closed", () => {
@@ -366,6 +376,9 @@ test("sanitized current-source PASS receipt satisfies the full gate", () => {
   const receipt = completePassReceipt();
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
   assert.doesNotMatch(JSON.stringify(receipt), /postgres|https?:|password|token|cookie/iu);
+  assert.equal(receipt.migration.status, "BACKUP_READY_MIGRATIONS_PENDING");
+  receipt.migration.status = "UP_TO_DATE";
+  assert.equal(validateReceipt(receipt).errors.includes("PASS_GATE_INCOMPLETE"), true);
 });
 
 test("receipt validation rejects extra fields, writes and secret-bearing text", () => {

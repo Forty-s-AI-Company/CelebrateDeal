@@ -15,7 +15,7 @@ function blocked(reason) {
   return {
     result: "BLOCKED",
     reason,
-    migrations: { status: "NOT_RUN", expected: null, applied: null, failed: null, checksumMismatch: null },
+    migrations: { status: "NOT_RUN", expected: null, applied: null, failed: null, checksumMismatch: null, prefix: null, pending: [], unexpectedApplied: null },
     fixture: "NOT_RUN",
     sideEffects: { databaseWrites: 0, paymentSubmissions: 0, productionOperations: 0 },
   };
@@ -53,7 +53,7 @@ export async function diagnoseStagingFixture({ sourceSha, host, jobSecret, datab
   });
   if (!identity.all_passed) return blocked("DATABASE_IDENTITY_MISMATCH");
   const report = blocked("DIAGNOSTIC_INCOMPLETE");
-  const expected = [...migrationChecksums.keys()].sort();
+  const expected = [...migrationChecksums.keys()].sort((left, right) => left.localeCompare(right));
   if (expected.length === 0 || expected.some((name) => !MIGRATION_NAME.test(name))) {
     return blocked("INVALID_MIGRATION_SET");
   }
@@ -64,11 +64,16 @@ export async function diagnoseStagingFixture({ sourceSha, host, jobSecret, datab
       .sort((left, right) => left.migration_name.localeCompare(right.migration_name));
     const failed = rows.filter((row) => row.finished_at === null && row.rolled_back_at === null).length;
     const checksumMismatch = applied.filter((row) => !migrationChecksums.get(row.migration_name)?.has(row.checksum)).length;
+    const appliedNames = new Set(applied.map((row) => row.migration_name));
+    const pending = expected.filter((name) => !appliedNames.has(name));
+    const unexpectedApplied = applied.filter((row) => !migrationChecksums.has(row.migration_name)).length;
+    const prefix = applied.length <= expected.length
+      && applied.every((row, index) => row.migration_name === expected[index]);
     const matches = failed === 0 && applied.length === expected.length
-      && checksumMismatch === 0 && applied.every((row, index) => row.migration_name === expected[index]);
-    report.migrations = { status: matches ? "UP_TO_DATE" : "DRIFT", expected: expected.length, applied: applied.length, failed, checksumMismatch };
+      && checksumMismatch === 0 && prefix;
+    report.migrations = { status: matches ? "UP_TO_DATE" : "DRIFT", expected: expected.length, applied: applied.length, failed, checksumMismatch, prefix, pending, unexpectedApplied };
   } catch {
-    report.migrations = { status: "QUERY_FAILED", expected: expected.length, applied: null, failed: null, checksumMismatch: null };
+    report.migrations = { status: "QUERY_FAILED", expected: expected.length, applied: null, failed: null, checksumMismatch: null, prefix: null, pending: [], unexpectedApplied: null };
   }
 
   try {

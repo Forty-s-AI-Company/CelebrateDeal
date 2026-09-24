@@ -43,6 +43,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import fixed Preview source for staging contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/277/head:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
 
       - name: Setup Node
         uses: actions/setup-node@v4

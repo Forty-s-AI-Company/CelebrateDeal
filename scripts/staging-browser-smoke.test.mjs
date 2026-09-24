@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classifySessionStatus, runBrowserSmoke, validateBrowserSmokeBinding } from "./staging-browser-smoke.mjs";
+import { classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, runBrowserSmoke, validateBrowserSmokeBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -58,6 +58,7 @@ test("synthetic session failure does not visit pages or expose the secret to Chr
   assert.equal(report.session, "FIXTURE_UNAVAILABLE");
   assert.equal(report.sideEffects.syntheticSessionCreated, 0);
   assert.equal(report.browser.unsafeRequestsBlocked, 1);
+  assert.equal(report.browser.unsafeRequestCategories.api, 1);
   assert.equal(unsafeRequestAborted, true);
   assert.equal(report.browser.webSocketsBlocked, 1);
   assert.equal(webSocketClosed, true);
@@ -73,4 +74,17 @@ test("session status categories remain bounded", () => {
   assert.equal(classifySessionStatus(401), "UNAUTHORIZED");
   assert.equal(classifySessionStatus(503), "SERVICE_UNAVAILABLE");
   assert.equal(classifySessionStatus(302), "HTTP_REJECTED");
+});
+
+test("final URLs and blocked requests are reduced to fixed, non-sensitive categories", () => {
+  const alias = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  assert.equal(classifyFinalPath(`${alias}/dashboard?private=synthetic`, "/dashboard"), "EXPECTED");
+  assert.equal(classifyFinalPath(`${alias}/login?next=/dashboard`, "/dashboard"), "AUTH_REDIRECT");
+  assert.equal(classifyFinalPath(`${alias}/products`, "/dashboard"), "OTHER_SAME_HOST");
+  assert.equal(classifyFinalPath("https://other.example.test/login?secret=synthetic", "/dashboard"), "OFF_HOST");
+  assert.equal(classifyFinalPath("bad-url", "/dashboard"), "INVALID_URL");
+  assert.equal(classifyUnsafeRequestPath("/_next/server-action"), "next");
+  assert.equal(classifyUnsafeRequestPath("/api/auth/session"), "api");
+  assert.equal(classifyUnsafeRequestPath("/dashboard"), "page");
+  assert.equal(classifyUnsafeRequestPath("/unlisted/sensitive-id"), "other");
 });

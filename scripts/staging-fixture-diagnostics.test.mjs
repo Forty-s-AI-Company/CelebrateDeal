@@ -36,7 +36,7 @@ test("exact staging identity and migration history produce only bounded readines
     }),
   });
   assert.equal(result.result, "PASS");
-  assert.deepEqual(result.migrations, { status: "UP_TO_DATE", expected: 2, applied: 2, failed: 0, checksumMismatch: 0 });
+  assert.deepEqual(result.migrations, { status: "UP_TO_DATE", expected: 2, applied: 2, failed: 0, checksumMismatch: 0, prefix: true, pending: [], unexpectedApplied: 0 });
   assert.equal(result.fixture, "READY");
   assert.equal(JSON.stringify(result).includes("synthetic-password"), false);
   assert.equal(JSON.stringify(result).includes(INPUT.jobSecret), false);
@@ -64,6 +64,9 @@ test("pending migration and fixture failure remain blocked without leaking respo
   });
   assert.equal(result.result, "BLOCKED");
   assert.equal(result.migrations.status, "DRIFT");
+  assert.equal(result.migrations.prefix, true);
+  assert.deepEqual(result.migrations.pending, ["20260102000000_second"]);
+  assert.equal(result.migrations.unexpectedApplied, 0);
   assert.equal(result.fixture, "FIXTURE_UNAVAILABLE");
   assert.equal(exitCodeForReport(result), 2);
   assert.equal(JSON.stringify(result).includes("postgresql://"), false);
@@ -82,6 +85,38 @@ test("same migration name with changed SQL checksum cannot pass", async () => {
   assert.equal(result.migrations.status, "DRIFT");
   assert.equal(result.migrations.checksumMismatch, 1);
   assert.equal(exitCodeForReport(result), 2);
+});
+
+test("a non-prefix or unknown applied migration is exposed without leaking database rows", async () => {
+  const db = { $queryRaw: async () => [
+    { migration_name: "20260102000000_second", checksum: "b".repeat(64), finished_at: new Date(), rolled_back_at: null },
+    { migration_name: "20260103000000_unknown", checksum: "d".repeat(64), finished_at: new Date(), rolled_back_at: null },
+  ] };
+  const result = await diagnoseStagingFixture({
+    ...INPUT, db, fetchImpl: async () => fixtureResponse(200, null, {
+      ready: true, buyerOrder: true, platformSubscription: true, invoicePayment: true,
+    }),
+  });
+  assert.equal(result.result, "BLOCKED");
+  assert.equal(result.migrations.prefix, false);
+  assert.deepEqual(result.migrations.pending, ["20260101000000_first"]);
+  assert.equal(result.migrations.unexpectedApplied, 1);
+  assert.equal(JSON.stringify(result).includes("20260103000000_unknown"), false);
+});
+
+test("mixed 12- and 14-digit migration names use the same ordering on both sides", async () => {
+  const names = ["20260101000000_first", "202601010000_second"];
+  const migrationChecksums = new Map(names.map((name) => [name, new Set(["a".repeat(64)])]));
+  const db = { $queryRaw: async () => names.map((migration_name) => ({
+    migration_name, checksum: "a".repeat(64), finished_at: new Date(), rolled_back_at: null,
+  })) };
+  const result = await diagnoseStagingFixture({
+    ...INPUT, migrationChecksums, db, fetchImpl: async () => fixtureResponse(200, null, {
+      ready: true, buyerOrder: true, platformSubscription: true, invoicePayment: true,
+    }),
+  });
+  assert.equal(result.migrations.prefix, true);
+  assert.equal(result.result, "PASS");
 });
 
 test("rolled-back history does not count as active but unresolved failure blocks", async () => {
