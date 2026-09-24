@@ -32,3 +32,19 @@
 | MINOR | 平台READY就先切alias，browser smoke太晚 | 先在immutable URL完成可執行的核心smoke，再切alias重驗；固定callback於切後驗證並保留rollback |
 
 本輪僅計畫與review，產品code review、測試、Git整合、部署均尚未執行。Plan路徑存在性已檢查，無缺失的既有路徑引用；本輪不使用產品READY gate偽裝產品驗收。
+
+## 2026-09-25：AGY Opus 主要章節補充複審
+
+使用者指定的 `claude-opus-4-6-thinking` 已由 AGY CLI 明示選用；沒有 provider 實際模型 metadata，observed model/effort 仍記 `unknown`。第一次將 Plan 與 CURRENT 全文內嵌的嘗試於 3 分鐘上限只回開場文字，無 findings，不能算複審。之後以**兩個不重疊章節**分段內嵌，均取得實質 findings（conversation `2f0b9357-9a1a-4fa6-9af1-1885b6b220f3`、`e51d2439-d9d1-4678-affb-0dbfb9077fd1`）；這是 Plan 主要目標、WP 與驗收段落的 bounded 文字審查，不是 runtime 或產品 code review。
+
+| 原 finding | 主代理核對與處置 |
+| --- | --- |
+| MAJOR：schema 不相容時引用不存在的相容回復方案 | 接受；WP-E/F 改為沒有具體方案與可用備份證據就停止切換／migration，不假稱已有方案。CURRENT 也明示一次性演練不留下回復檔 |
+| MAJOR：WP-C 高風險修復未明訂最終 diff 獨立 review gate | 接受；WP-E/F merge gate 明列 Auth／permission／tenant／payment 的最終 diff review 與受影響回歸 |
+| MAJOR：alias 切換缺獨立最低 gate | 接受；新增 `STAGING_CUTOVER_GATE` 的 immutable 來源、核心頁面與回復點條件；切後 callback 仍單獨驗證。這是後續規則，不能回頭把既有 alias 切換記成已符合新 gate |
+| MINOR：長測試 receipt 介接信任條件不足 | 接受；驗收段落明訂當次 source/tree、受保護 run、固定 schema 與 validated sanitized artifact |
+| MINOR：60 分鐘 CI／部署預留未驗證可行性 | 接受風險；四小時為調度預算，時間不足時停止擴 scope 並真實交接，不省略必需 gate 或宣稱完成 |
+| MINOR：外部 provider discovery 與 P0 依賴順序不明 | 接受；WP-A/B 先從程式引用盤點實際 provider，WP-C 明訂 Auth／schema blocker 的短路與獨立項目繼續驗證 |
+| NIT：Opus fallback 對 `INVALID_REVIEW` 只處理路徑 | 本次用內嵌文字分段後取得有效輸出；原 `INVALID_REVIEW` 根因仍未證實，不將先前失敗改寫為成功，既有 Sol fallback 記錄保留 |
+
+第二段因只提供 WP 中段，Opus 將「WP-E/F 沒內容」列為 BLOCKER；核對完整 Plan 後，WP-E/F 原本就有六項內容，故此 finding **不成立**。它對「沒有任何替代 guardrail」及「部署沒有回復 gate」的描述也忽略其他章節與 AGENTS 規則，降為以上可採納的明確性修訂，不視為已證實的安全失守。所有複審僅改善 Plan 定義；`CORE_STAGING_READY` 的現況仍依 [CURRENT](CURRENT.md) 的實測收據判斷。
