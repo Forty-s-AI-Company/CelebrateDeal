@@ -1,8 +1,8 @@
 # 固定 Staging 加密備份的隔離回復演練
 
-**啟用阻擋：**目前程式 pin 的 `d1fbc07ece9c827ee542cd7753460006653a9adf`
-是 #288 的分支 SHA，不是受保護 `master` 的合併 SHA。#288 合併後必須改 pin
-實際 master SHA，並重新驗證；在此之前任何 run 都會因來源檢查而 `BLOCKED`。
+固定備份 runner 的受保護 master SHA 是
+`e13084f37edf9669f47c02351e646972201ae211`（PR #288）。
+此來源只用於核對該版本執行的備份；後續其他版本須另行審查與 pin。
 
 這個 workflow 只接受固定 SHA 在受保護 `master` 執行的
 `Secure staging validation` 備份 run ID。它先用 GitHub API
@@ -13,9 +13,10 @@
 `8204bf3ce05a309035f55b2f90aaffb18aed05c8`，並逐一重讀 migration blobs；
 後續 master 新增 migration 不會使保留期限內的既有備份失去驗證能力。
 
-受保護 GitHub Environment `Preview – celebrate-deal-staging` 需新增一個 **尚未配置**
-的 secret：`STAGING_BACKUP_AGE_IDENTITY`。其內容是與備份時 staging 專用公鑰
-配對的 age 私鑰。由授權持有者安全配置；不可放進 repository、workflow input、
+受保護 GitHub Environment `Preview – celebrate-deal-staging` 需新增 **尚未配置**
+的 variable `STAGING_BACKUP_AGE_RECIPIENT` 與 secret `STAGING_BACKUP_AGE_IDENTITY`。
+前者是新的 staging 專用 age 公鑰，後者是配對私鑰。由授權持有者安全配置；
+私鑰不可放進 repository、workflow input、
 issue、log 或 artifact。本 workflow 不建立、不讀取現有 secret，也不連接 Staging DB。
 
 私鑰僅在 recovery step 注入 process environment，立即寫入 runner 的 `/dev/shm`

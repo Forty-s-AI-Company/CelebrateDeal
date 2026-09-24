@@ -4,7 +4,7 @@ import path from "node:path";
 const REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const BACKUP_WORKFLOW = ".github/workflows/secure-staging-validation.yml";
 // Launch blocker: #288 的此分支 SHA 尚非受保護 master 的 merge SHA；合併後須改 pin 實際 SHA。
-const BACKUP_COMMIT = "d1fbc07ece9c827ee542cd7753460006653a9adf";
+const BACKUP_COMMIT = "e13084f37edf9669f47c02351e646972201ae211";
 const SOURCE_SHA = "9193326824b8b6bf774bdfa28e4783a1a1b8f304";
 const ARCHIVE_ARTIFACT = `secure-staging-encrypted-backup-${SOURCE_SHA}`;
 const RECEIPT_ARTIFACT = `secure-staging-wp2-readonly-restore-${SOURCE_SHA}`;
