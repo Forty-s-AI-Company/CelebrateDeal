@@ -1,5 +1,7 @@
 # CelebrateDeal current release owner action packet
 
+> 2026-08-22 歷史 owner packet。當時未授權/待辦結論不限制本輪已獲使用者授權的非 Production 工作。現行授權及仍需處理的項目見 [CURRENT.md](CURRENT.md) 與 [Goal Plan](goal-plan-20260924.md)。
+
 ## 目的
 
 這份 packet 把 current source RC `5fd1c61` 從 local `PASS_LOCAL_ONLY` 推進到可驗證的 non-Production staging／release readiness。它不授權 Production、正式付款、正式退款、正式寄信、正式資料刪除或正式部署。

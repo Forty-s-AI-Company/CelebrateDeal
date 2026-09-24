@@ -1,5 +1,7 @@
 # CelebrateDeal current release completion audit
 
+> 2026-08-21 歷史 audit；數字與 readiness 只適用下列 source RC。現行狀態請見 [CURRENT.md](CURRENT.md)，不得將舊 PASS 或 blocker 原封套用至新候選。
+
 稽核時間：2026-08-21（Asia/Taipei）  
 Source RC：`5fd1c61`
 CI／documentation checkpoint：`5fd1c61`

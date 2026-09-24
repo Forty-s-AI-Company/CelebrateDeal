@@ -1,0 +1,274 @@
+{
+  "version": "6.0",
+  "router": {
+    "mode": "recommendation_only",
+    "external_execution": false,
+    "reasoning_selection": "adaptive_lowest_sufficient",
+    "allowed_tools": [
+      "router_status",
+      "route_task",
+      "assess_task",
+      "snapshot_task",
+      "goal_bootstrap",
+      "goal_get_state",
+      "goal_checkpoint",
+      "goal_resume",
+      "goal_finalize"
+    ]
+  },
+  "git_policy": {
+    "auto_push": {
+      "enabled": true,
+      "allowed_branch_pattern": "codex/*",
+      "force_push": false,
+      "direct_default_branch_push": false
+    },
+    "auto_merge": {
+      "enabled": true,
+      "mechanism": "protected_pr_only",
+      "require_branch_protection": true,
+      "require_green_ci": true,
+      "required_checks": [
+        "Lint",
+        "Typecheck",
+        "AI Team router and resilience tests",
+        "Unit tests and coverage thresholds"
+      ],
+      "allow_merge_conflicts": false
+    },
+    "production_deploy": {
+      "enabled": false,
+      "approval": "manual",
+      "workflow_dispatch_only": true,
+      "auto_trigger_from_merge": false
+    }
+  },
+  "models": {
+    "luna": {
+      "slug": "gpt-6-luna",
+      "provider": "codex",
+      "minimum_team": "ai-team-lite"
+    },
+    "sol": {
+      "slug": "gpt-6-sol",
+      "provider": "codex",
+      "minimum_team": "ai-team"
+    },
+    "astra": {
+      "slug": "gpt-6-astra",
+      "provider": "codex",
+      "minimum_team": "ai-team-pro"
+    },
+    "gemini_medium": {
+      "provider": "gemini",
+      "minimum_team": "ai-team-lite",
+      "discovery_pattern": "(?<![\\w.-])(gemini-3[.-]8-flash-medium)(?![\\w.-])",
+      "effort": "medium"
+    },
+    "gemini_high": {
+      "provider": "gemini",
+      "minimum_team": "ai-team",
+      "discovery_pattern": "(?<![\\w.-])(gemini-3[.-]8-flash-high)(?![\\w.-])",
+      "effort": "high"
+    },
+    "sonnet": {
+      "provider": "claude",
+      "minimum_team": "ai-team",
+      "discovery_pattern": "(?<![\\w.-])(claude-sonnet-4-6)(?![\\w.-])",
+      "effort": "model-default"
+    },
+    "opus": {
+      "provider": "claude",
+      "minimum_team": "ai-team-pro",
+      "discovery_pattern": "(?<![\\w.-])(claude-opus-4[.-]6-thinking)(?![\\w.-])",
+      "effort": "model-default"
+    }
+  },
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "codex_efforts": {
+    "luna": ["low", "medium", "high", "xhigh", "max"],
+    "sol": ["low", "medium", "high", "xhigh", "max"],
+    "astra": ["low", "medium", "high", "xhigh", "max"]
+  },
+  "astra_reasons": [
+    "sol_insufficient",
+    "unresolved_architecture",
+    "major_reviewer_conflict",
+    "critical_review_no_equivalent",
+    "exceptional_cross_system_problem"
+  ],
+  "size_thresholds": {
+    "context_size": [
+      20000,
+      80000
+    ],
+    "expected_duration": [
+      30,
+      120
+    ],
+    "code_surface_area": [
+      4,
+      12
+    ]
+  },
+  "task_keywords": {
+    "copy": "文案|錯字|typo|copy[ _-](?:only|edit)|文字修改",
+    "architecture": "architecture|大型架構",
+    "business_review": "business.logic.review|商業邏輯審查",
+    "deep_review": "deep.review|深度審查",
+    "broad_review": "large.diff|大型.diff",
+    "review": "review|審查",
+    "cross_module": "cross.module|跨模組",
+    "crud": "crud",
+    "api": "\\bapi\\b",
+    "docs": "文件|documentation",
+    "ui": "\\bcss\\b|\\bui\\b"
+  },
+  "risk_categories": {
+    "payment": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\bpayment\\b|\\brefund\\b|\\bpayout\\b|金流|付款|退款|撥款"
+    },
+    "billing": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\bbilling\\b|帳務|計費"
+    },
+    "auth": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\bauth\\b|\\bauthentication\\b|\\bauthorization\\b|\\boauth(?:2)?\\b|\\bjwt\\b|\\bmfa\\b|\\bsso\\b|\\bsession[ _-]validation\\b|\\blogin[ _-]security\\b|\\btoken[ _-]validation\\b|登入|驗證身分"
+    },
+    "tenant_isolation": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\btenant[ _-]isolation\\b|\\bcross[ _-]tenant\\b|\\brls\\b|租戶隔離|跨租戶"
+    },
+    "subscription_entitlement": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\bsubscription[ _-]entitlement\\b|訂閱權益"
+    },
+    "permission": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\brbac\\b|\\bpermissions?\\b|\\bprivileges?\\b|\\baccess[ _-]control\\b|\\brole[ _-]based[ _-]access\\b|\\bauthorization[ _-]middleware\\b|權限"
+    },
+    "security": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "\\bsecurity\\b|\\bcredentials?\\b|\\bsecrets?\\b|\\bencryption\\b|\\bsecurity[ _-]middleware\\b|\\bcsrf\\b|\\bxss\\b|\\b(?:sql|command|code|prompt)[ _-]injection\\b|資安|安全邊界"
+    },
+    "production_data": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "production[_ ]data|正式資料"
+    },
+    "migration": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "migration|資料庫遷移"
+    },
+    "revenue_sharing": {
+      "weight": 3,
+      "critical": true,
+      "pattern": "revenue[_ ]sharing|分潤"
+    },
+    "webhook": {
+      "weight": 2,
+      "critical": false,
+      "pattern": "webhook"
+    },
+    "concurrency": {
+      "weight": 2,
+      "critical": false,
+      "pattern": "concurrency|並行控制|競態"
+    },
+    "cross_module": {
+      "weight": 2,
+      "critical": false,
+      "pattern": "cross[_ -]module|跨模組"
+    },
+    "breaking_api": {
+      "weight": 2,
+      "critical": false,
+      "pattern": "breaking[_ ]api|破壞性 API"
+    },
+    "large_refactor": {
+      "weight": 2,
+      "critical": false,
+      "pattern": "large[_ ]refactor|大型重構"
+    },
+    "dependency_upgrade": {
+      "weight": 1,
+      "critical": false,
+      "pattern": "dependency[_ ]upgrade|依賴升級"
+    },
+    "ui_only": {
+      "weight": 0,
+      "critical": false,
+      "pattern": "ui[_ -]only"
+    },
+    "copy_only": {
+      "weight": 0,
+      "critical": false,
+      "pattern": "copy[_ -]only"
+    }
+  },
+  "MODEL_ROUTING": {
+    "engineering": {
+      "low": "luna",
+      "medium": "luna",
+      "high": "sol",
+      "very_high": "sol"
+    },
+    "manager": "luna"
+  },
+  "MODEL_FALLBACK": {
+    "engineering": {
+      "luna": ["sol"],
+      "sol": [],
+      "astra": []
+    },
+    "senior_review": {
+      "sonnet": [
+        "sol",
+        "astra"
+      ]
+    },
+    "critical_review": {
+      "opus": [
+        "astra",
+        "sol"
+      ]
+    },
+    "broad_review": {
+      "gemini_medium": ["luna", "sol"],
+      "gemini_high": ["sol"]
+    },
+    "qa": {
+      "gemini_medium": ["luna"],
+      "gemini_high": ["sol", "luna"]
+    },
+    "arbiter": {
+      "astra": []
+    }
+  },
+  "fallback_reasons": [
+    "unavailable",
+    "quota_exhausted",
+    "cli_failure",
+    "model_unavailable",
+    "repeated_failure"
+  ]
+}

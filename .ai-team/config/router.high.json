@@ -1,0 +1,6 @@
+{
+  "version": "6.0",
+  "active_mode": "high",
+  "active_mode_id": "ai-team",
+  "policy": "routing-policy.json"
+}

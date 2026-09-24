@@ -104,12 +104,6 @@ next-env.d.ts
 /.ai-team/scripts/Invoke-WP13LegacyProbe.ps1
 /.ai-team/scripts/Invoke-WP14CommissionAccountingReview.ps1
 /.ai-team/scripts/Invoke-WP14OpeningSnapshotProbe.ps1
-/.codex/agents/analyst.toml
-/.codex/agents/explorer.toml
-/.codex/agents/planner.toml
-/.codex/agents/reviewer.toml
-/.codex/agents/worker-deep.toml
-/.codex/agents/worker.toml
 /GOAL-AI-TEAM-PROMPT.md
 /docs/ai-team/current-work-package.md
 /docs/ai-team/recovery-audit-20260727.md

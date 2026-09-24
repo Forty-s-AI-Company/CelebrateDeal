@@ -29,3 +29,9 @@ GitHub master CI run `35674751757` success，PR #210 的舊 `quality` 仍 failur
 | `consultation-booking` | 3 | 3 | 3 | 路徑已有，仍需內容比對 |
 
 本輪先修可重現的 Funnel 名單感謝頁缺陷，再按核心使用路徑與資料/權限風險選擇下一個垂直切片。上述未整合項目保持待驗證，不以文件標成完成。
+
+PR #211 相對 #210 本身還有 376 個路徑差異，包含刪除 50 個 `src` 檔案、2 份 migration、108 份文件，並修改 158 個 `src` 檔案。故它不是可視為 #210 的單純增量；需以功能需求逐項 review，尤其不能誤刪 master 的 Funnel operations。
+
+初步追溯的候選垂直切片：學員入口起於 `5fe50e1a`，後有 `36e7a1cd` 與 `3c9b7989` 修正，包含 schema/migration、權限、頁面與通知；LINE 圖文選單起於 `2016893f`，後有 `3c9b7989` 修正；聯盟入口起於 `0ca60bb8`。這些 commit 是搜尋入口，不可整筆 cherry-pick 到新 master。學員/聯盟涉及 Auth、tenant 與 DB，整合後需獨立高風險 review 及一次性 DB 驗證。
+
+原本 dirty 分支的路由 guard 修改不直接移植：目前 master 的三個 Landing Pages 入口已明確呼叫 `requireVendorManager()`，service 亦用 `requireVendorManagerContext()`；舊 patch 主要是改用另一個同族 guard，並非當前缺失。master 的編輯器也已在一般保存時不傳 `templateId`，因此只補 commerce 不變式測試即可。

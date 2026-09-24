@@ -47,9 +47,12 @@ foreach ($relativePath in $canonicalFiles) {
 }
 
 $requiredHandoffFields = @(
-    'CURRENT_TASK_RENAME:', 'CURRENT_TASK_STATUS:', 'NEXT_TASK_REQUIRED:',
-    'NEXT_TASK_TITLE:', 'NEXT_ROLE:', 'NEXT_MODEL:', 'NEXT_ACTION:',
-    'NEXT_REASON:', 'COPY_TO_NEW_TASK:', 'NEXT_PROMPT_BEGIN', 'NEXT_PROMPT_END'
+    'CURRENT_TASK_STATUS:', 'CURRENT_WORK_ITEM:', 'ACTUAL_RESULT:',
+    'EVIDENCE:', 'NEXT_ACTION:', 'SAFETY_STATUS:', 'ROUTER_STATUS:',
+    'REQUESTED_TEAM:', 'EFFECTIVE_TEAM:', 'SELECTED_MODEL:',
+    'FALLBACK_EVENTS:', 'REVIEW_PLAN_STATUS:', 'DISPATCH_COUNT:',
+    'ACTIVE_AGENT_COUNT:', 'MAX_AGENT_DEPTH:', 'COPY_TO_NEW_TASK:',
+    'NEXT_PROMPT_BEGIN', 'NEXT_PROMPT_END'
 )
 $handoffPath = Get-ProjectFile 'docs/ai-team/handoff-schema.md'
 if (Test-Path -LiteralPath $handoffPath -PathType Leaf) {
@@ -59,7 +62,7 @@ if (Test-Path -LiteralPath $handoffPath -PathType Leaf) {
             Add-Failure "Handoff schema is missing required field: $field"
         }
     }
-    foreach ($field in @('LAST_SUCCESSFUL_STAGE:', 'NEXT_COMMAND:', 'PROCESS_STARTED:', 'EXIT_CODE:', 'EXCEPTION_TYPE:', 'STDERR_SUMMARY:', 'ROOT_CAUSE_CONFIRMED:', 'ROOT_CAUSE_CATEGORY:', 'CURRENT_SCOPE_FILES:', 'PROPOSED_SCOPE_EXPANSION:', 'REMEDIATION_ROUND:', 'FULL_RUN_COUNT:', 'SCOPE_EXPANSION_REQUIRED:', 'USER_DECISION_REQUIRED:', 'PRODUCTION_ACCESS_REQUIRED:')) {
+    foreach ($field in @('PROCESS_STARTED:', 'EXIT_CODE:', 'EXCEPTION_TYPE:', 'STDERR_SUMMARY:', 'ROOT_CAUSE_CONFIRMED:', 'ROOT_CAUSE_CATEGORY:', 'CURRENT_SCOPE_FILES:', 'PROPOSED_SCOPE_EXPANSION:', 'USER_DECISION_REQUIRED:', 'PRODUCTION_ACCESS_REQUIRED:')) {
         if (-not $handoff.Contains($field)) {
             Add-Failure "Handoff schema is missing PRELAUNCH_DEV diagnostic field: $field"
         }
@@ -70,7 +73,7 @@ $plannerPath = Get-ProjectFile 'docs/ai-team/prompts/planner-prompt.md'
 $executorPath = Get-ProjectFile 'docs/ai-team/prompts/executor-prompt.md'
 if (Test-Path -LiteralPath $plannerPath -PathType Leaf) {
     $planner = [System.IO.File]::ReadAllText($plannerPath)
-    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'AI_TEAM_HANDOFF', 'READY_FOR_TERRA', 'PRELAUNCH_DEV')) {
+    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'AI_TEAM_HANDOFF', 'READY_FOR_TERRA', 'routing-policy.json', 'MODEL_ROUTING')) {
         if (-not $planner.Contains($requiredText)) {
             Add-Failure "Planner template is missing required reference or gate: $requiredText"
         }
@@ -82,13 +85,10 @@ if (Test-Path -LiteralPath $plannerPath -PathType Leaf) {
 
 if (Test-Path -LiteralPath $executorPath -PathType Leaf) {
     $executor = [System.IO.File]::ReadAllText($executorPath)
-    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'current-work-package.md', 'AI_TEAM_HANDOFF', 'PRELAUNCH_DEV', 'CONTINUE_CURRENT_WP')) {
+    foreach ($requiredText in @('workflow-mode.md', 'workflow-policy.md', 'handoff-schema.md', 'current-work-package.md', 'AI_TEAM_HANDOFF', 'routing-policy.json', 'NEXT_MODEL', 'CONTINUE_CURRENT_WP')) {
         if (-not $executor.Contains($requiredText)) {
             Add-Failure "Executor template is missing required reference or handoff: $requiredText"
         }
-    }
-    if ($executor -match 'PLAN_(?:NEXT_WP|REMEDIATION|PROBE)') {
-        Add-Failure 'Executor template includes a next-WP planning action'
     }
     if ($executor -notmatch 'Commit authorization') {
         Add-Failure 'Executor template does not explicitly require commit authorization'

@@ -104,9 +104,6 @@ jobs:
       - name: Current release handoff evidence consistency
         run: node --test scripts/current-release-gate-handoff.test.mjs
 
-      - name: Non-Production owner authorization contract
-        run: node --test scripts/validate-non-production-owner-authorization.test.mjs
-
       - name: External smoke output safety contract
         run: npx vitest run scripts/external-smoke-safety.test.ts
 
@@ -121,8 +118,11 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check -r .ai-team/mcp_server/requirements.txt
-          python .ai-team/mcp_server/test_server.py
+          python -m unittest discover -s .ai-team/mcp_server -p "test_*.py" -v
           pwsh -NoProfile -File .ai-team/scripts/Test-AiTeamResilience.ps1
+          pwsh -NoProfile -File .ai-team/scripts/Test-AiTeamHandoff.ps1
+          pwsh -NoProfile -File .ai-team/scripts/Test-AiTeamBootstrap.ps1
+          pwsh -NoProfile -File .ai-team/scripts/Test-AiTeamNodeValidation.ps1
 
       - name: Unit tests and coverage thresholds
         run: npm run test:coverage

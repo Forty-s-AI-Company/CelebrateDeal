@@ -1,51 +1,29 @@
 # Goal Protocol
 
-## 長程 Goal
+Goal 是可持續的產品任務容器。主代理可以在同一 Goal 內完成多個 Work Package，但每個工作都必須先取得明確 scope、route decision、ownership 與可追溯 evidence。
 
-CelebrateDeal 的 Goal 是持續任務，不以固定時間或單一 Work Package 結束。主代理可依 roadmap 持續完成：
+## 任務與模型
 
-1. product feature closure
-2. product security hardening
-3. disposable／staging／sandbox verification
-4. quality and coverage improvement
-5. release evidence and scoring
+模型不由 Goal 固定。每個 Work Package 以結構化 signals 交給 `.ai-team/mcp_server/routing.py`：risk 會覆蓋 complexity，router 直接選最低足夠模型；模型故障、quota=0 或 CLI failure 才進 fallback。`ai-team-lite`、`ai-team`、`ai-team-pro` 只代表能力上限，Pro 也不會因 invocation 而強制 Astra/Opus。
 
-每完成一項就保存 checkpoint，然後自動挑選下一個已核准且有最高產品價值的工作。只有 Goal 的所有目標已完成，或遇到安全／授權阻擋，才停止。
+需要外部 review 時才執行一次 bounded `agy models` discovery；未登入、CLI 不存在、輸出截斷或 quota 不明都如實標記並走 Codex fallback。不存在固定的 Fast→Deep→Luna 全域階梯。
 
-## 自主執行
+## 安全與 ownership
 
-- Terra 可以掃描、規劃、修改、測試、建立 evidence、checkpoint 與本地 commit。
-- Sol 可以在需求改變、scope 擴大、根因改變或需要 acceptance 時重新規劃。
-- AGY Fast、AGY Deep 與 native Luna 可依需要自動使用，不要求固定順序或固定次數。
-- 同一檔案或資料資源維持單一 writer；不相交 scope 可並行。
-- 測試、coverage、Browser、Preview、staging、sandbox 與 disposable DB 依價值與風險選擇，不必每個 WP 全部執行。
+- 同一檔案、資料表或外部資源同一時間只有一個 writer；不相交 scope 才可並行。
+- Router/MCP 不 spawn、不呼叫 Codex CLI、不呼叫自己的 MCP。`AI_TEAM_CHILD=1`、`parent_depth>0` 或 dispatch budget 用盡立即阻止 child。
+- Reviewer 只輸出 BLOCKER/MAJOR/MINOR/NIT findings，不直接改 code；Developer 修正後只驗證受影響範圍，除非風險要求 full regression。
+- 禁止讀取或輸出 `.env*`、Token、Cookie、私鑰、正式 Secret、正式客戶或付款資料；禁止未授權 Production、正式 DB、付款、退款、寄信與破壞性 migration。
+- 測試、外部工具阻擋與 provider failure 必須保留真實狀態，不得把未執行標成 PASS。
 
-## 必須保留的安全規則
+## State 與 handoff
 
-- 禁止讀取或輸出 `.env*`、Token、Cookie、私鑰、正式 Secret、正式客戶資料或付款資料。
-- 禁止正式資料庫、正式付款、正式退款、正式寄信與正式服務操作；Production deploy 需明確授權。
-- 禁止未核准破壞性 migration、資料刪除、廣域 Docker cleanup 與不可逆操作。
-- 禁止偽造 evidence、虛報測試 PASS、降低 assertion／threshold 或以 skip／exclude 掩蓋失敗。
-- 必須保留使用者既有變更，不得使用 destructive Git 操作。
-- 外部與 disposable 操作必須有 ownership、最小 scope、cleanup 與 sanitized evidence。
+Goal state 位於 `.ai-team/state/goal-state.json`，進度可寫入 `.ai-team/logs/goal-progress.md`。路由與 handoff 至少記錄 requested/effective team、selected model、reasoning、fallback events、review plan、dispatch/depth limits 與下一步。
 
-## Goal state
+合法狀態包括 `IN_PROGRESS`、`WAITING_AUTHORIZATION`、`BLOCKED_ENVIRONMENT`、`COMPLETE`。若必要 review 受阻，使用 `REVIEW_BLOCKED` 或 `FALLBACK_HANDOFF_REQUIRED`，不以跳過審查偽造完成。只有所有必要 deterministic、integration、staging/sandbox（若適用）與安全 evidence 齊全，才能標 `COMPLETE`。
 
-Goal state 位於 `.ai-team/state/goal-state.json`；進度可記錄於 `.ai-team/logs/goal-progress.md`。這些是 control-plane metadata，可由主代理在每個 checkpoint 更新，不必等待 Sol 或停止 Goal。
+## 停止與回復
 
-建議狀態：`IN_PROGRESS`、`WAITING_AUTHORIZATION`、`BLOCKED_ENVIRONMENT`、`COMPLETE`。`BLOCKED` 只代表目前路徑停滯，主代理可以在保留證據後改走另一個已授權路徑。
+同一命令或根因沒有改善時停止重試，改用明確 fallback 或記錄 blocked。讀取最後 checkpoint 後從未完成的 scope 繼續，不建立重複 Goal，也不使用 reset、clean、stash、restore 或 checkout 丟棄既有變更。
 
-## 迴圈停止
-
-- 同一命令或根因沒有改善時，不重試原命令；改用不同診斷或轉往下一個產品工作。
-- `LOOP_DETECTED` 只標記該路徑，不阻止整個 Goal 持續推進。
-- AGY 工具阻擋不能偽造成 PASS，也不能觸發無限重試；可自動使用其他模型或 deterministic evidence。
-
-## 完成條件
-
-只有以下全部成立才可將長程 Goal 標記 `COMPLETE`：
-
-- 所有核准功能與必要產品風險已處理。
-- 所有指定 launch score 與 canonical CAT01～CAT10 達標，或明確記錄仍需人工／外部 owner 的部分。
-- 必要 deterministic、integration、staging、sandbox、監控與人工證據均可追溯。
-- 沒有未揭露的安全阻擋，且 release decision 已由授權 owner 作出。
+完整模型與 fallback 矩陣見 [`ROUTING.md`](ROUTING.md)，handoff 欄位見 [`handoff-schema.md`](handoff-schema.md)。

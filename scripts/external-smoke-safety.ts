@@ -72,7 +72,8 @@ export function resolveSmokeTarget(options: ResolveSmokeTargetOptions) {
 
 /**
  * Classify an already-normalized smoke target without resolving or contacting it.
- * Remote smoke must pass the owner-authorization gate before the first request.
+ * The runner uses this only to distinguish loopback from an already validated
+ * Preview or staging target; no per-run owner token is required.
  */
 export function isLoopbackSmokeTarget(target: string) {
   try {

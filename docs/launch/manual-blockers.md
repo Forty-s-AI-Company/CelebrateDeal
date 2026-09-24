@@ -1,5 +1,7 @@
 # Manual Blockers
 
+> 歷史 blocker 索引。本檔混合 2026-07 至 08 的 Production 準備與人工決策，不直接代表 2026-09-24 的 staging 障礙。現行來源與環境狀態見 [CURRENT.md](CURRENT.md)；舊項目須依新 source 與新證據重新判定。
+
 治理版本：`solo-founder-launch/v1`。每個仍可阻擋 release 的條件都必須符合 [Hard Blocker Provenance Rule](solo-founder-launch-standard.md#hard-blocker-provenance)。
 
 | ID | 分類 | Provenance | 阻擋／目前狀態 | 人工動作 | 完成證據 |
