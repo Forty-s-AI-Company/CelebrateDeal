@@ -119,6 +119,38 @@ test("mixed 12- and 14-digit migration names use the same ordering on both sides
   assert.equal(result.result, "PASS");
 });
 
+test("the authenticated layout column is checked without exposing schema rows", async () => {
+  const migrationName = "20260908090000_vendor_feature_toggles";
+  const migrationChecksums = new Map([[migrationName, new Set(["a".repeat(64)])]]);
+  const migrationRows = [{
+    migration_name: migrationName, checksum: "a".repeat(64), finished_at: new Date(), rolled_back_at: null,
+  }];
+  for (const scenario of [
+    { present: true, schema: "PRESENT", result: "PASS" },
+    { present: false, schema: "MISSING", result: "BLOCKED" },
+    { present: null, schema: "QUERY_FAILED", result: "BLOCKED" },
+  ]) {
+    let queryCount = 0;
+    const db = { $queryRaw: async () => {
+      queryCount += 1;
+      if (queryCount === 1) return migrationRows;
+      if (scenario.present === null) throw new Error("synthetic private database detail");
+      return [{ present: scenario.present }];
+    } };
+    const result = await diagnoseStagingFixture({
+      ...INPUT, migrationChecksums, db,
+      fetchImpl: async () => fixtureResponse(200, null, {
+        ready: true, buyerOrder: true, platformSubscription: true, invoicePayment: true,
+      }),
+    });
+    assert.equal(queryCount, 2);
+    assert.equal(result.schema.vendorFeatureModules, scenario.schema);
+    assert.equal(result.result, scenario.result);
+    assert.equal(JSON.stringify(result).includes("synthetic private database detail"), false);
+    assert.equal(JSON.stringify(result).includes("synthetic-password"), false);
+  }
+});
+
 test("rolled-back history does not count as active but unresolved failure blocks", async () => {
   const rows = [
     { migration_name: "20260101000000_first", checksum: "a".repeat(64), finished_at: new Date(), rolled_back_at: null },
