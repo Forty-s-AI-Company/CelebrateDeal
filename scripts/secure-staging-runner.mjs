@@ -107,7 +107,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
   };
 }
 
-export function validateReceipt(receipt) {
+export function validateReceipt(receipt, { pinnedMigrationTreeSha = null } = {}) {
   const errors = [];
   if (!exactKeys(receipt, RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
   for (const [key, keys] of Object.entries(RECEIPT_NESTED_KEYS)) {
@@ -131,7 +131,7 @@ export function validateReceipt(receipt) {
     // The validator independently loads the exact source manifest. A missing
     // commit or an untrusted migration tree must fail the receipt closed.
     let manifestCount = 0;
-    try { manifestCount = sourceInventory(BACKUP_SOURCE_SHA).size; } catch { errors.push("SOURCE_MANIFEST_UNVERIFIED"); }
+    try { manifestCount = sourceInventory(BACKUP_SOURCE_SHA, spawnSync, pinnedMigrationTreeSha).size; } catch { errors.push("SOURCE_MANIFEST_UNVERIFIED"); }
     const complete = receipt.lineage?.deploymentMatched === true && receipt.lineage?.sourceMatched === true && receipt.lineage?.preview === true && receipt.lineage?.ready === true && receipt.lineage?.healthStatus === 200 && receipt.lineage?.noRedirect === true
       && receipt.database?.firstTransactionReadOnly === true && receipt.database?.identityMatched === true && receipt.database?.disconnected === true
       && receipt.sourceCommit === BACKUP_SOURCE_SHA && manifestCount > 0 && migration.expectedCount === manifestCount
@@ -300,12 +300,18 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   return { host, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, deploymentDigest: digest("deployment", deploymentId), reads };
 }
 
-export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync) {
+export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync, pinnedMigrationTreeSha = null) {
   const execute = (args, encoding = "utf8") => {
     const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     return { code: child.status ?? 1, stdout: child.stdout ?? (encoding ? "" : Buffer.alloc(0)) };
   };
   if (execute(["cat-file", "-e", `${sourceCommit}^{commit}`]).code !== 0) throw new Error("SOURCE_COMMIT_UNAVAILABLE");
+  if (pinnedMigrationTreeSha !== null) {
+    if (sourceCommit !== BACKUP_SOURCE_SHA || !SAFE_SHA.test(pinnedMigrationTreeSha)) throw new Error("PINNED_SOURCE_INVALID");
+    const sourceTree = execute(["rev-parse", `${sourceCommit}:prisma/migrations`]);
+    if (sourceTree.code !== 0 || String(sourceTree.stdout).trim() !== pinnedMigrationTreeSha) throw new Error("PINNED_SOURCE_TREE_MISMATCH");
+    return { mode: "pinned-recovery" };
+  }
   if (execute(["merge-base", "--is-ancestor", sourceCommit, "HEAD"]).code === 0) return { mode: "ancestor" };
 
   // Squash merges intentionally remove feature-branch ancestry. In that case the
@@ -322,12 +328,12 @@ export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync) 
   return { mode: "squash-equivalent" };
 }
 
-export function sourceInventory(sourceCommit, spawnImpl = spawnSync) {
+export function sourceInventory(sourceCommit, spawnImpl = spawnSync, pinnedMigrationTreeSha = null) {
   const execute = (args, encoding = "utf8") => {
     const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     return { code: child.status ?? 1, stdout: child.stdout ?? (encoding ? "" : Buffer.alloc(0)) };
   };
-  verifyTrustedMigrationTree(sourceCommit, spawnImpl);
+  verifyTrustedMigrationTree(sourceCommit, spawnImpl, pinnedMigrationTreeSha);
   const listed = execute(["ls-tree", "-r", "--name-only", sourceCommit, "--", "prisma/migrations"]);
   if (listed.code !== 0) throw new Error("SOURCE_MIGRATION_INVENTORY_FAILED");
   const files = String(listed.stdout).split(/\r?\n/u).filter((item) => item.endsWith("/migration.sql"));
