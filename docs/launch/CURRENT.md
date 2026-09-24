@@ -4,7 +4,7 @@
 
 ## 來源與站台
 
-- 最新 master 為 `367382d35e6a67a1ff6270d3db74ac499c8408e0`（受保護 PR #274–#279）。PR #279 兩條完整 `quality` [run 36039658683](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36039658683)／[run 36039702788](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36039702788) 成功；合併後 master CI 尚須依當次 run 查核。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 最新 master 為 `367382d35e6a67a1ff6270d3db74ac499c8408e0`（受保護 PR #274–#279）。PR #279 兩條完整 `quality` [run 36039658683](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36039658683)／[run 36039702788](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36039702788) 成功；[合併後 master CI run 36042525599](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042525599) 亦成功。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
@@ -24,6 +24,6 @@
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
-依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版，PR #279 品質檢查通過；合併後 master CI 仍在執行。固定站核心操作和 Sandbox 成功訂單證據仍缺，Codex Goal 不應標為 complete。
+依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版，PR #279 與合併後 master CI 通過。固定站核心操作和 Sandbox 成功訂單證據仍缺，Codex Goal 不應標為 complete。
 
 下一步先用固定來源、受保護、唯讀的診斷流程查明 fixture 拒絕原因；只有根因修正且狀態明確後才考慮下一次 Sandbox 交易。另須建立固定 staging 的登入後核心瀏覽器收據，將 Sandbox 成功付款與訂單 DB readback／callback replay 串在同一個 lineage 綁定驗收。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
