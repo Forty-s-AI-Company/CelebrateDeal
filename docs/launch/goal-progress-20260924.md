@@ -28,6 +28,12 @@
 - 固定非 Production 的 smoke 與 PayUni Sandbox runner 移除逐次 owner token；仍保留精確環境／host 限制、Sandbox preflight、獨立 provider 執行開關及遮罩化輸出。退役舊 validator 的程式與 CI step，更新 runbook。正式部署、資料與付款的授權邊界不變。
 - Python `unittest discover` 41/41 PASS；AI Team routing、resilience、handoff、bootstrap、tracked snapshot PowerShell checks PASS；外部 smoke safety 14/14、PayUni Sandbox QA 30/30 PASS；`npm run typecheck` PASS；`npm run lint` PASS（既有 3 個 `<img>` warning）。首次以 `node --test` 執行 Vitest 檔案屬 runner 選錯，改用 `npx vitest run` 後 30/30 PASS。未執行外部 Sandbox 交易，因 staging 綁定仍未證明。
 
+## Checkpoint 5：核心路徑與瀏覽器回歸（進行中）
+
+- Auth、checkout admission／idempotency、commerce order／checkout、PayUni provider 與 payment routes 的 8 個 Vitest 檔案，195/195 PASS。
+- 租戶帳本的 4 個 DB tests 首次因本機 `celebratedeal_test` 不存在而未通過；建立固定 disposable PostgreSQL DB、套用 79 份既有 migration 後，4/4 PASS。這是測試環境準備缺口，不是產品斷言失敗。
+- 舊候選 CI 的 browser gate 在 `tests/e2e/landing-page-flow.spec.ts` 超時。隔離本機 production-mode browser 重現時，完整旅程已走到公開感謝頁，但舊測試標題與新文案不一致；已更新文案斷言，並對此完整旅程設定 90 秒時限。重跑結果仍待確認，不能列為 PASS。
+
 ## 下一步與 handoff
 
 - 依 [Plan](goal-plan-20260924.md) 繼續盤點舊 PR 獨有功能，先檢查核心 checkout/order 與 Auth/tenant，並讓 PR #274 的 `quality` 完成；不可把舊 PR 整棵樹覆寫 master。
