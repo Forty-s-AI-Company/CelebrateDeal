@@ -9,6 +9,7 @@ import { verifyTrustedMigrationTree } from "./secure-staging-runner.mjs";
 const SOURCE_SHA = "9193326824b8b6bf774bdfa28e4783a1a1b8f304";
 const PREVIEW_HOST = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
 const MIGRATION_NAME = /^\d{12,14}_[a-z0-9_]+$/u;
+const VENDOR_FEATURE_MIGRATION = "20260908090000_vendor_feature_toggles";
 const PREFLIGHT_OUTCOMES = new Set(["EXECUTOR_DISABLED", "FIXTURE_UNAVAILABLE"]);
 
 function blocked(reason) {
@@ -16,6 +17,7 @@ function blocked(reason) {
     result: "BLOCKED",
     reason,
     migrations: { status: "NOT_RUN", expected: null, applied: null, failed: null, checksumMismatch: null, prefix: null, pending: [], unexpectedApplied: null },
+    schema: { vendorFeatureModules: "NOT_CHECKED" },
     fixture: "NOT_RUN",
     sideEffects: { databaseWrites: 0, paymentSubmissions: 0, productionOperations: 0 },
   };
@@ -76,6 +78,26 @@ export async function diagnoseStagingFixture({ sourceSha, host, jobSecret, datab
     report.migrations = { status: "QUERY_FAILED", expected: expected.length, applied: null, failed: null, checksumMismatch: null, prefix: null, pending: [], unexpectedApplied: null };
   }
 
+  // This column is used by the authenticated app layout. Only emit its presence,
+  // never table contents or database error text.
+  if (expected.includes(VENDOR_FEATURE_MIGRATION)) {
+    try {
+      const columns = await db.$queryRaw`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'Vendor'
+            AND column_name = 'enabledFeatureModules'
+        ) AS present
+      `;
+      report.schema.vendorFeatureModules = columns.length === 1 && typeof columns[0]?.present === "boolean"
+        ? columns[0].present ? "PRESENT" : "MISSING"
+        : "QUERY_FAILED";
+    } catch {
+      report.schema.vendorFeatureModules = "QUERY_FAILED";
+    }
+  }
+
   try {
     const response = await fetchImpl(`https://${host}/api/admin/ops/payuni/wp4-preflight`, {
       method: "POST",
@@ -92,7 +114,9 @@ export async function diagnoseStagingFixture({ sourceSha, host, jobSecret, datab
   } catch {
     report.fixture = "REQUEST_FAILED";
   }
-  report.result = report.migrations.status === "UP_TO_DATE" && report.fixture === "READY" ? "PASS" : "BLOCKED";
+  report.result = report.migrations.status === "UP_TO_DATE" && report.fixture === "READY"
+    && (report.schema.vendorFeatureModules === "PRESENT" || report.schema.vendorFeatureModules === "NOT_CHECKED")
+    ? "PASS" : "BLOCKED";
   report.reason = report.result === "PASS" ? "NONE" : "STAGING_FIXTURE_NOT_READY";
   return report;
 }
