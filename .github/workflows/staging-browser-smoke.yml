@@ -1,0 +1,57 @@
+name: Staging browser smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  browser-smoke:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+      CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+    steps:
+      - name: Checkout protected browser runner
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies and Chromium before secret injection
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+
+      - name: Test fixed browser contract before secret injection
+        run: node --test scripts/staging-browser-smoke.test.mjs
+
+      - name: Verify exact Preview lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      # The owner session is short-lived and belongs only to the fixed synthetic fixture.
+      - name: Check authenticated staging pages with synthetic owner
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/staging-browser-smoke.mjs
+
+      - name: Upload sanitized browser receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celebratedeal-staging-browser-smoke
+          path: ${{ runner.temp }}/celebratedeal-staging-browser-smoke.json
+          if-no-files-found: ignore
+          retention-days: 7
