@@ -39,9 +39,11 @@ export function createGoalFunnelStepPages(input: FunnelFlowInput): FunnelStepPag
       next.pages[step.id] = instantiateFunnelTemplate(step.template.templateId, page.id);
       continue;
     }
+    // Both sales and audience thank-you steps must confirm a completed submission.
+    const isThankYouPage = step.type === "thank_you_page" || step.type === "opt_in_thank_you_page";
     page.root = step.isSystem
       ? informationalRoot(step.id, "此 Funnel 暫時無法使用", "這是系統停用頁。恢復 Funnel 後，訪客會回到正常流程。")
-      : informationalRoot(step.id, step.type === "thank_you_page" ? "謝謝你完成這一步" : step.name, step.type === "thank_you_page" ? "你提供的資料已送出。接下來可在這裡說明後續流程。" : "請在編輯器中補上這個步驟的內容。");
+      : informationalRoot(step.id, isThankYouPage ? "謝謝你完成這一步" : step.name, isThankYouPage ? "你提供的資料已送出。接下來可在這裡說明後續流程。" : "請在編輯器中補上這個步驟的內容。");
   }
   return parseFunnelStepPages(next);
 }
