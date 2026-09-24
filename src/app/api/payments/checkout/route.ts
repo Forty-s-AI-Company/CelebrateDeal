@@ -84,6 +84,30 @@ type EligibleAutomationVoucherClaim = {
 
 type CheckoutRequestData = z.infer<typeof CheckoutRequest>;
 type CheckoutAdmission = NonNullable<ReturnType<typeof verifyCheckoutAdmission>>;
+const existingCheckoutInclude = {
+  primaryCommerceOrder: {
+    select: {
+      id: true,
+      vendorId: true,
+      checkoutIdempotencyKey: true,
+      checkoutIdentityHash: true,
+      totalAmountCents: true,
+      currency: true,
+      items: {
+        select: {
+          productId: true,
+          productSlug: true,
+          lineIndex: true,
+          fulfillmentType: true,
+          unitPriceCents: true,
+          nonSensitiveSnapshot: true,
+        },
+        orderBy: { lineIndex: "asc" },
+      },
+    },
+  },
+} as const satisfies Prisma.PaymentTransactionInclude;
+type ExistingCheckoutTransaction = Prisma.PaymentTransactionGetPayload<{ include: typeof existingCheckoutInclude }>;
 type CheckoutAdmissionResult =
   | { ok: true; admission: CheckoutAdmission }
   | { ok: false; response: NextResponse };
@@ -540,50 +564,107 @@ function checkoutResponse({
   return response;
 }
 
+type ExistingCheckoutOrder = NonNullable<ExistingCheckoutTransaction["primaryCommerceOrder"]>;
+type ExistingCheckoutOrderItem = ExistingCheckoutOrder["items"][number];
+
+function replayBumpMatches(
+  data: CheckoutRequestData,
+  bumpId: string | null,
+  bumpItem: ExistingCheckoutOrderItem | undefined,
+) {
+  if (bumpId === null) return data.orderBump === undefined;
+  const requested = data.orderBump;
+  return Boolean(
+    requested
+    && bumpItem?.productId === bumpId
+    && (requested.productId === undefined || requested.productId === bumpId)
+    && (requested.sku === undefined || requested.sku === bumpItem.productSlug),
+  );
+}
+
+function replayOrderSnapshotMatches(
+  transaction: ExistingCheckoutTransaction,
+  order: ExistingCheckoutOrder,
+  primaryItem: ExistingCheckoutOrderItem | undefined,
+  data: CheckoutRequestData,
+  bumpId: string | null,
+  metadata: Record<string, unknown>,
+) {
+  return order.vendorId === data.vendorId
+    && order.checkoutIdempotencyKey === data.idempotencyKey
+    && order.totalAmountCents === transaction.grossAmountCents
+    && order.currency === transaction.currency
+    && (typeof metadata.checkoutAmountCents !== "number" || metadata.checkoutAmountCents === order.totalAmountCents)
+    && order.items.length === (bumpId ? 2 : 1)
+    && primaryItem?.productId === data.productId;
+}
+
+function replayFunnelMatches(data: CheckoutRequestData, metadata: Record<string, unknown>, bumpId: string | null) {
+  if (!metadata.funnel) return data.funnel === undefined;
+  if (!data.funnel) return false;
+  const stored = metadataObject(metadata.funnel);
+  return data.funnel.slug === stored.slug
+    && data.funnel.stepId === stored.stepId
+    && data.funnel.expectedVersion === stored.version
+    && data.funnel.expectedProductRevision === stored.productRevision
+    && (bumpId === null || data.funnel.expectedOrderBumpRevision === stored.orderBumpRevision)
+    && (typeof stored.agreementLabel !== "string" || data.agreementAccepted === true);
+}
+
 async function existingCheckoutResponse({
   request,
   transaction,
-  product,
-  orderBumpProduct,
-  checkoutIdentityHash,
+  data,
 }: {
   request: Request;
-  transaction: {
-    id: string;
-    vendorId: string;
-    providerName: string;
-    checkoutIdempotencyKey: string | null;
-    orderNumber: string | null;
-    grossAmountCents: number;
-    currency: string;
-    status: string;
-    metadata: unknown;
-    primaryCommerceOrder: { id: string; checkoutIdentityHash: string } | null;
-  };
-  product: { id: string; vendorId: string; priceCents: number; currency: string };
-  orderBumpProduct: { id: string; priceCents: number } | null;
-  checkoutIdentityHash: string;
+  transaction: ExistingCheckoutTransaction;
+  data: CheckoutRequestData;
 }) {
   const metadata = metadataObject(transaction.metadata);
-  const expectedCheckoutAmount = product.priceCents
-    + (orderBumpProduct?.priceCents ?? 0)
-    - (typeof metadata.discountAmountCents === "number" ? metadata.discountAmountCents : 0);
+  const order = transaction.primaryCommerceOrder;
+  const primaryItem = order?.items.find((item) => item.lineIndex === 0);
+  const bumpItem = order?.items.find((item) => item.lineIndex === 1);
+  const bumpId = typeof metadata.orderBumpProductId === "string" ? metadata.orderBumpProductId : null;
   if (
-    transaction.vendorId !== product.vendorId
-    || metadata.productId !== product.id
-    || metadata.orderBumpProductId !== (orderBumpProduct?.id ?? undefined)
-    || transaction.grossAmountCents !== (
-      typeof metadata.checkoutAmountCents === "number" ? metadata.checkoutAmountCents : expectedCheckoutAmount
-    )
-    || transaction.currency !== product.currency
+    transaction.vendorId !== data.vendorId
+    || transaction.checkoutIdempotencyKey !== data.idempotencyKey
+    || metadata.productId !== data.productId
+    || !replayBumpMatches(data, bumpId, bumpItem)
   ) {
     return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
   }
 
-  if (!transaction.primaryCommerceOrder) {
+  if (!order) {
     return NextResponse.json({ error: "Checkout already in progress" }, { status: 425 });
   }
-  if (transaction.primaryCommerceOrder.checkoutIdentityHash !== checkoutIdentityHash) {
+  if (!replayOrderSnapshotMatches(transaction, order, primaryItem, data, bumpId, metadata) || !primaryItem) {
+    return NextResponse.json({ error: "Checkout snapshot unavailable" }, { status: 503 });
+  }
+
+  // Replays use the immutable order snapshot. A merchant may edit or deactivate
+  // the product, bump, delivery settings, or Funnel after the session was saved.
+  const snapshot = metadataObject(primaryItem.nonSensitiveSnapshot);
+  if (!Array.isArray(snapshot.customCheckoutFields)) {
+    return NextResponse.json({ error: "Checkout snapshot unavailable" }, { status: 503 });
+  }
+  if (!replayFunnelMatches(data, metadata, bumpId)) {
+    return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
+  }
+  const customCheckout = validateCustomCheckoutAnswersForProduct(snapshot.customCheckoutFields, data.customCheckoutAnswers);
+  if (!customCheckout.ok) return customCheckout.response;
+  const identity = validateCheckoutIdentity(
+    data,
+    data.vendorId,
+    primaryItem.fulfillmentType,
+    data.productId,
+    customCheckout.fields,
+    customCheckout.answers,
+  );
+  if (!identity.ok) return identity.response;
+  const invoice = validateCheckoutInvoice(data, identity.checkoutIdentityHash);
+  if (!invoice.ok) return invoice.response;
+  const checkoutIdentityHash = bindOrderBumpCheckoutIdentity(invoice.checkoutIdentityHash, bumpId);
+  if (order.checkoutIdentityHash !== checkoutIdentityHash) {
     return NextResponse.json({ error: "Idempotency key already used for another checkout" }, { status: 409 });
   }
 
@@ -591,7 +672,7 @@ async function existingCheckoutResponse({
   if (transaction.status !== "pending") {
     return NextResponse.json({ error: "Checkout request already finished" }, { status: 409 });
   }
-  if (!checkoutSession) {
+  if (!checkoutSession || checkoutSession.provider !== transaction.providerName) {
     return NextResponse.json({ error: "Checkout already in progress" }, { status: 425 });
   }
   const formSubmissionId = typeof metadata.formSubmissionId === "string" ? metadata.formSubmissionId : null;
@@ -599,9 +680,16 @@ async function existingCheckoutResponse({
     const buyerSupportCookie = await issueBuyerSupportGrant(getDb(), {
       request,
       vendorId: transaction.vendorId,
-      orderId: transaction.primaryCommerceOrder.id,
+      orderId: order.id,
     });
-    return checkoutResponse({ request, transaction, product, checkoutSession, formSubmissionId, buyerSupportCookie });
+    return checkoutResponse({
+      request,
+      transaction,
+      product: { priceCents: primaryItem.unitPriceCents, currency: order.currency },
+      checkoutSession,
+      formSubmissionId,
+      buyerSupportCookie,
+    });
   } catch {
     return NextResponse.json({ error: "Checkout support access unavailable" }, { status: 503 });
   }
@@ -635,8 +723,9 @@ export async function POST(request: Request) {
         checkoutIdempotencyKey: parsed.data.idempotencyKey,
       },
     },
-    include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
+    include: existingCheckoutInclude,
   });
+  if (existing) return await existingCheckoutResponse({ request, transaction: existing, data: parsed.data });
   const funnelResult = await resolveFunnelCheckoutRequest(db, parsed.data, existing);
   if (!funnelResult.ok) return funnelResult.response;
   const funnel = funnelResult.funnel;
@@ -682,11 +771,6 @@ export async function POST(request: Request) {
   const invoice = validateCheckoutInvoice(parsed.data, baseCheckoutIdentityHash);
   if (!invoice.ok) return invoice.response;
   const { invoiceSelection, hasExplicitInvoiceSelection } = invoice;
-  const checkoutIdentityHash = bindOrderBumpCheckoutIdentity(invoice.checkoutIdentityHash, orderBumpProduct?.id ?? null);
-
-  if (existing) {
-    return await existingCheckoutResponse({ request, transaction: existing, product, orderBumpProduct, checkoutIdentityHash });
-  }
 
   if (admission.productRevision !== product.revision) {
     return NextResponse.json({ error: "Product changed; reload checkout" }, { status: 409 });
@@ -787,9 +871,9 @@ export async function POST(request: Request) {
     if (error instanceof CheckoutIdempotencyConflictError) {
       const winner = await db.paymentTransaction.findUnique({
         where: { id: error.transactionId },
-        include: { primaryCommerceOrder: { select: { id: true, checkoutIdentityHash: true } } },
+        include: existingCheckoutInclude,
       });
-      if (winner) return await existingCheckoutResponse({ request, transaction: winner, product, orderBumpProduct, checkoutIdentityHash });
+      if (winner) return await existingCheckoutResponse({ request, transaction: winner, data: parsed.data });
     }
     if (error instanceof InventoryUnavailableError) {
       return NextResponse.json({ error: "Product is sold out" }, { status: 409 });

@@ -19,13 +19,15 @@ import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { CheckoutInvoiceFields } from "@/components/checkout-invoice-fields";
 import {
   clearCheckoutIdempotencyKey,
+  clearCheckoutRecoveryRecord,
   getOrCreateCheckoutIdempotencyKey,
   readCheckoutIdempotencyKey,
+  saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
 
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
-type CommerceCheckoutFormProps = {
+export type CommerceCheckoutFormProps = {
   funnel?: FunnelCheckoutReference;
   agreementLabel?: string;
   formMode?: "single" | "two_step";
@@ -35,6 +37,7 @@ type CommerceCheckoutFormProps = {
   fulfillmentType: CommerceCheckoutFulfillmentType;
   customCheckoutFields?: CustomCheckoutFields;
   recoveryOnly?: boolean;
+  initialOrderBumpSelected?: boolean;
   priceCents?: number;
   currency?: string;
   orderBump?: {
@@ -182,8 +185,8 @@ export function CommerceCheckoutForm({
   fulfillmentType,
   customCheckoutFields = [],
   recoveryOnly = false,
-  priceCents,
-  currency = "TWD",
+  initialOrderBumpSelected = false,
+  priceCents, currency = "TWD",
   orderBump,
   funnel,
   agreementLabel,
@@ -192,7 +195,7 @@ export function CommerceCheckoutForm({
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [message, setMessage] = useState("");
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
-  const [orderBumpSelected, setOrderBumpSelected] = useState(false);
+  const [orderBumpSelected, setOrderBumpSelected] = useState(initialOrderBumpSelected);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const contactStep = formMode === "two_step" && checkoutStep === 1;
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
@@ -218,8 +221,23 @@ export function CommerceCheckoutForm({
   function clearPersistedCheckoutIdentity() {
     try {
       clearCheckoutIdempotencyKey(window.sessionStorage, vendorId, productId);
+      clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("resume");
+      window.history.replaceState(window.history.state, "", currentUrl);
     } catch {
       // A storage cleanup failure must not block a known checkout response.
+    }
+  }
+  function rememberCheckoutAttempt(idempotencyKey: string) {
+    try {
+      // This path locator contains no buyer, shipping, invoice or custom answers.
+      saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, { vendorId, productId, idempotencyKey });
+      const resumeUrl = new URL(window.location.href);
+      resumeUrl.searchParams.set("resume", "1");
+      window.history.replaceState(window.history.state, "", resumeUrl);
+    } catch {
+      // In-memory retries still work when browser storage is unavailable.
     }
   }
   useEffect(() => {
@@ -283,8 +301,9 @@ export function CommerceCheckoutForm({
     const timeout = window.setTimeout(() => controller.abort(), 30_000);
 
     try {
+      const idempotencyKey = admission.current?.idempotencyKey ?? checkoutIdempotencyKey();
+      rememberCheckoutAttempt(idempotencyKey);
       if (!admission.current) {
-        const idempotencyKey = checkoutIdempotencyKey();
         const admissionResponse = await fetch("/api/payments/checkout/admission", {
           method: "POST",
           headers: {
@@ -341,7 +360,9 @@ export function CommerceCheckoutForm({
       if (!response.ok) {
         if (shouldDiscardCheckoutAdmission(response.status)) {
           admission.current = null;
-          clearPersistedCheckoutIdentity();
+          // A recovery mismatch can be corrected by the buyer. Keep the saved
+          // key so the next submission still targets the original order.
+          if (!recoveryOnly) clearPersistedCheckoutIdentity();
         }
         setPhase("error");
         setMessage(checkoutErrorMessage(response.status));
@@ -365,7 +386,8 @@ export function CommerceCheckoutForm({
         setPhase("redirecting");
         setMessage("訂單已建立，正在前往安全付款頁面。");
         admission.current = null;
-        clearPersistedCheckoutIdentity();
+        // Keep the pending identity until payment actually finishes. Back/reload
+        // can then recover this same provider form instead of opening a new order.
         submitProviderForm(checkout.formAction, checkout.formPayload);
         return;
       }
@@ -379,7 +401,7 @@ export function CommerceCheckoutForm({
         setPhase("redirecting");
         setMessage("訂單已建立，正在前往安全付款頁面。");
         admission.current = null;
-        clearPersistedCheckoutIdentity();
+        // Provider navigation is not payment completion; retain recovery state.
         window.location.assign(checkout.checkoutUrl);
         return;
       }
@@ -399,8 +421,8 @@ export function CommerceCheckoutForm({
   if (!canCheckout) {
     return (
       <div role="status" aria-live="polite" className="rounded-xl border border-orange-200 bg-orange-50 p-5 text-sm leading-6 text-orange-900">
-        <p className="font-bold">目前已售完或名額已滿</p>
-        <p className="mt-1">系統沒有建立新訂單，也不會進入付款。請回到活動頁查看其他商品。</p>
+        <p className="font-bold">目前無法建立新訂單</p>
+        <p className="mt-1">若先前已開始付款，請在原本的瀏覽器分頁重新整理以恢復訂單；否則請回到活動頁查看其他商品。</p>
       </div>
     );
   }

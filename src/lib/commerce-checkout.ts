@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { allowedPaymentUrl } from "@/lib/payment-checkout-presentation";
 import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
+import { CustomCheckoutFieldsSchema } from "@/lib/commerce-custom-checkout-fields";
 
 export const COMMERCE_FULFILLMENT_TYPES = ["physical", "digital", "service", "course"] as const;
 export type CommerceCheckoutFulfillmentType = (typeof COMMERCE_FULFILLMENT_TYPES)[number];
@@ -54,6 +55,28 @@ export const CommerceCheckoutResponseSchema = z.object({
 }).strict();
 
 export type CommerceCheckoutResponse = z.infer<typeof CommerceCheckoutResponseSchema>;
+
+// Contains only non-sensitive order terms. Buyer, shipping and custom answers
+// remain encrypted in the order and must be re-entered by the buyer.
+export const CommerceCheckoutRecoveryResponseSchema = z.object({
+  vendorId: checkoutText,
+  productId: checkoutText,
+  productName: z.string().trim().min(1).max(500),
+  fulfillmentType: z.enum(COMMERCE_FULFILLMENT_TYPES),
+  customCheckoutFields: CustomCheckoutFieldsSchema,
+  priceCents: z.number().int().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/u),
+  orderBump: z.object({
+    productId: checkoutText,
+    sku: checkoutText,
+    title: z.string().trim().min(1).max(500),
+    description: z.string(),
+    priceCents: z.number().int().nonnegative(),
+  }).optional(),
+  funnel: FunnelCheckoutReferenceSchema.optional(),
+  agreementLabel: z.string().min(1).max(500).optional(),
+  initialOrderBumpSelected: z.boolean(),
+}).strict();
 
 export function checkoutRequiresShipping(fulfillmentType: CommerceCheckoutFulfillmentType) {
   return fulfillmentType === "physical";
