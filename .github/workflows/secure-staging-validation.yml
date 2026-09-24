@@ -68,8 +68,8 @@ jobs:
         if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         run: npx playwright install --with-deps chromium
 
-      - name: Generate Prisma client before LINE secret injection
-        if: ${{ inputs.task == 'line-notifications-e2e' }}
+      # The shared contract imports Prisma even for tasks that never query the DB.
+      - name: Generate Prisma client before secret injection
         run: npx prisma generate
 
       - name: Verify secure runner contract
