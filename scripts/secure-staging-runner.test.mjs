@@ -30,6 +30,7 @@ function environment() {
     NEXT_PUBLIC_SUPABASE_URL: "https://projectref.supabase.co",
     CELEBRATEDEAL_SOURCE_SHA: sha,
     CELEBRATEDEAL_DEPLOYMENT_HOST: "safe-preview.vercel.app",
+    STAGING_BACKUP_AGE_RECIPIENT: `age1${"a".repeat(58)}`,
     RUNNER_TEMP: os.tmpdir(),
   };
 }
@@ -43,6 +44,7 @@ function completePassReceipt() {
   receipt.migration = { expectedCount: sourceInventory(sha).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 1, completedCounterpartCount: 1, exactChecksumCount: 57, formatVarianceCount: 1, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
   receipt.backup = { attempts: 1, result: "PASS", byteBucket: "1_to_10mib", digest: `sha256:${"b".repeat(64)}` };
   receipt.restore = { attempts: 1, result: "PASS", migrationCount: 58, schemaMatched: true, extensionsMatched: true, aggregateMatched: true, isolated: true };
+  receipt.retention = { status: "ENCRYPTED", archiveDigest: `sha256:${"c".repeat(64)}`, recipientDigest: `sha256:${"d".repeat(64)}`, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" };
   receipt.sideEffects.backupWrites = 1;
   receipt.sideEffects.isolatedRestoreWrites = 1;
   return receipt;
@@ -53,6 +55,7 @@ test("only the fixed WP2 task and complete allowlisted bindings are accepted", (
   assert.equal(validateInvocation("wp2-readonly-restore", source).ok, true);
   assert.equal(validateInvocation("arbitrary-command", source).reason, "TASK_NOT_ALLOWLISTED");
   assert.equal(validateInvocation("wp2-readonly-restore", { ...source, CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40) }).reason, "SOURCE_SHA_INVALID");
+  assert.equal(validateInvocation("wp2-readonly-restore", { ...source, STAGING_BACKUP_AGE_RECIPIENT: "invalid" }).reason, "STAGING_RECIPIENT_INVALID");
   for (const key of [...REQUIRED_SECRET_KEYS, ...REQUIRED_CONFIG_KEYS]) {
     assert.equal(validateInvocation("wp2-readonly-restore", { ...source, [key]: "" }).ok, false, key);
   }
@@ -377,6 +380,10 @@ test("sanitized current-source PASS receipt satisfies the full gate", () => {
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
   assert.doesNotMatch(JSON.stringify(receipt), /postgres|https?:|password|token|cookie/iu);
   assert.equal(receipt.migration.status, "BACKUP_READY_MIGRATIONS_PENDING");
+  assert.equal(receipt.retention.recoverability, "NOT_PROVEN");
+  receipt.retention.migrationAuthorization = "READY";
+  assert.equal(validateReceipt(receipt).errors.includes("RECOVERY_NOT_PROVEN"), true);
+  receipt.retention.migrationAuthorization = "BLOCKED";
   receipt.migration.status = "UP_TO_DATE";
   assert.equal(validateReceipt(receipt).errors.includes("PASS_GATE_INCOMPLETE"), true);
 });

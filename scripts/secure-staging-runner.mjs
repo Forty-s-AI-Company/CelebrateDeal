@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { parseProductionRecipient, retainEncryptedBackup, validateStagingRecipient } from "./staging-retained-backup.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TASK = "wp2-readonly-restore";
@@ -23,16 +24,18 @@ const SAFE_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z
 const SAFE_MIGRATION = /^\d{12,14}_[a-z0-9_]+$/u;
 const SAFE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const RECEIPT_NAME = "wp2-readonly-restore-receipt.json";
+const PRODUCTION_RECIPIENT = parseProductionRecipient(fs.readFileSync(path.join(ROOT, "ops", "backup", "keys", "production-backup.agepub"), "utf8"));
 
 export const REQUIRED_SECRET_KEYS = Object.freeze(["STAGING_DATABASE_URL", "GITHUB_TOKEN"]);
-export const REQUIRED_CONFIG_KEYS = Object.freeze(["NEXT_PUBLIC_SUPABASE_URL", "CELEBRATEDEAL_SOURCE_SHA", "CELEBRATEDEAL_DEPLOYMENT_HOST", "RUNNER_TEMP"]);
-const RECEIPT_KEYS = Object.freeze(["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "database", "migration", "backup", "restore", "network", "safety", "sideEffects", "failureCategory"]);
+export const REQUIRED_CONFIG_KEYS = Object.freeze(["NEXT_PUBLIC_SUPABASE_URL", "CELEBRATEDEAL_SOURCE_SHA", "CELEBRATEDEAL_DEPLOYMENT_HOST", "RUNNER_TEMP", "STAGING_BACKUP_AGE_RECIPIENT"]);
+const RECEIPT_KEYS = Object.freeze(["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "database", "migration", "backup", "restore", "retention", "network", "safety", "sideEffects", "failureCategory"]);
 const RECEIPT_NESTED_KEYS = Object.freeze({
   lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect", "deploymentDigest"],
   database: ["connectionAttempts", "firstTransactionReadOnly", "identityMatched", "readQueries", "disconnected"],
   migration: ["expectedCount", "appliedCount", "unresolvedFailedCount", "rollbackEntryCount", "completedCounterpartCount", "exactChecksumCount", "formatVarianceCount", "unknownMismatchCount", "status"],
   backup: ["attempts", "result", "byteBucket", "digest"],
   restore: ["attempts", "result", "migrationCount", "schemaMatched", "extensionsMatched", "aggregateMatched", "isolated"],
+  retention: ["status", "archiveDigest", "recipientDigest", "recoverability", "migrationAuthorization"],
   network: ["policy", "githubDeployments", "stagingPreview", "supabaseStaging", "arbitraryOutbound"],
   safety: ["sanitized", "envFilesRead", "envEnumerated", "secretValuesPrinted", "secretValuesPersisted", "rawOutputPersisted", "rawDumpPersisted", "rawDatabaseRowsPersisted", "customerDataPersisted"],
   sideEffects: ["databaseWrites", "migrationWrites", "backupWrites", "isolatedRestoreWrites", "deployments", "aliasMutations", "productionOperations"],
@@ -67,6 +70,8 @@ export function validateInvocation(task, source = process.env) {
   if (task !== TASK) return { ok: false, reason: "TASK_NOT_ALLOWLISTED" };
   if (![...REQUIRED_SECRET_KEYS, ...REQUIRED_CONFIG_KEYS].every((key) => hasValue(source, key))) return { ok: false, reason: "REQUIRED_BINDING_MISSING" };
   if (source.CELEBRATEDEAL_SOURCE_SHA !== BACKUP_SOURCE_SHA) return { ok: false, reason: "SOURCE_SHA_INVALID" };
+  const recipientFailure = validateStagingRecipient(source.STAGING_BACKUP_AGE_RECIPIENT, PRODUCTION_RECIPIENT);
+  if (recipientFailure) return { ok: false, reason: recipientFailure };
   if (!SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST) || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return { ok: false, reason: "DEPLOYMENT_HOST_INVALID" };
   try {
     const database = new URL(source.STAGING_DATABASE_URL);
@@ -94,6 +99,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     migration: { expectedCount: 0, appliedCount: 0, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 0, formatVarianceCount: 0, unknownMismatchCount: 0, status: "NOT_RUN" },
     backup: { attempts: 0, result: "NOT_RUN", byteBucket: "not_run", digest: null },
     restore: { attempts: 0, result: "NOT_RUN", migrationCount: 0, schemaMatched: false, extensionsMatched: false, aggregateMatched: false, isolated: true },
+    retention: { status: "NOT_RUN", archiveDigest: null, recipientDigest: null, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" },
     network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: true, arbitraryOutbound: false },
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDumpPersisted: false, rawDatabaseRowsPersisted: false, customerDataPersisted: false },
     sideEffects: { databaseWrites: 0, migrationWrites: 0, backupWrites: 0, isolatedRestoreWrites: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
@@ -117,6 +123,7 @@ export function validateReceipt(receipt) {
   if (effects.databaseWrites !== 0 || effects.migrationWrites !== 0 || effects.deployments !== 0 || effects.aliasMutations !== 0 || effects.productionOperations !== 0) errors.push("FORBIDDEN_SIDE_EFFECTS");
   if (!Number.isInteger(effects.backupWrites) || effects.backupWrites < 0 || effects.backupWrites > 1 || !Number.isInteger(effects.isolatedRestoreWrites) || effects.isolatedRestoreWrites < 0 || effects.isolatedRestoreWrites > 1) errors.push("SIDE_EFFECT_BUDGET");
   if (receipt?.network?.arbitraryOutbound !== false || receipt?.network?.policy !== "fixed-host-egress") errors.push("NETWORK_POLICY");
+  if (receipt?.retention?.recoverability !== "NOT_PROVEN" || receipt?.retention?.migrationAuthorization !== "BLOCKED") errors.push("RECOVERY_NOT_PROVEN");
   const serialized = JSON.stringify(receipt);
   if (/(?:postgres(?:ql)?:\/\/|https?:\/\/|Bearer\s+|BEGIN\s+(?:RSA|OPENSSH|EC)\s+PRIVATE\s+KEY|set-cookie|ocbugvgojrunvenozsbx)/iu.test(serialized)) errors.push("FORBIDDEN_TEXT");
   if (receipt?.result === "PASS") {
@@ -134,6 +141,7 @@ export function validateReceipt(receipt) {
       && migration.status === (migration.appliedCount < migration.expectedCount ? "BACKUP_READY_MIGRATIONS_PENDING" : (migration.formatVarianceCount === 0 ? "UP_TO_DATE" : "UP_TO_DATE_FORMAT_VARIANCE"))
       && receipt.backup?.attempts === 1 && receipt.backup?.result === "PASS" && /^sha256:[a-f0-9]{64}$/u.test(receipt.backup?.digest ?? "")
       && receipt.restore?.attempts === 1 && receipt.restore?.result === "PASS" && receipt.restore?.migrationCount === migration.appliedCount && receipt.restore?.schemaMatched === true && receipt.restore?.extensionsMatched === true && receipt.restore?.aggregateMatched === true && receipt.restore?.isolated === true
+      && receipt.retention?.status === "ENCRYPTED" && /^sha256:[a-f0-9]{64}$/u.test(receipt.retention?.archiveDigest ?? "") && /^sha256:[a-f0-9]{64}$/u.test(receipt.retention?.recipientDigest ?? "")
       && effects.backupWrites === 1 && effects.isolatedRestoreWrites === 1;
     if (!complete) errors.push("PASS_GATE_INCOMPLETE");
   }
@@ -579,6 +587,8 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     const targetSnapshot = snapshot((sql) => targetPsql(containerId, sql));
     receipt.restore = { attempts: 1, result: "PASS", migrationCount: targetSnapshot.migrationCount, schemaMatched: sourceSnapshot.tableCount === targetSnapshot.tableCount && sourceSnapshot.columnCount === targetSnapshot.columnCount, extensionsMatched: sourceSnapshot.extensionDigest === targetSnapshot.extensionDigest, aggregateMatched: sourceSnapshot.aggregateDigest === targetSnapshot.aggregateDigest, isolated: true };
     if (receipt.restore.migrationCount !== active.length || !receipt.restore.schemaMatched || !receipt.restore.extensionsMatched || !receipt.restore.aggregateMatched) throw new Error("ISOLATED_RESTORE_MISMATCH");
+    const retained = await retainEncryptedBackup({ dumpPath, runnerTemp, recipient: source.STAGING_BACKUP_AGE_RECIPIENT, spawnImpl: dependencies.ageSpawnImpl ?? spawnSync });
+    receipt.retention = { status: "ENCRYPTED", archiveDigest: retained.archiveDigest, recipientDigest: retained.recipientDigest, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" };
     receipt.database.disconnected = true;
     receipt.result = "PASS";
   } catch (error) {

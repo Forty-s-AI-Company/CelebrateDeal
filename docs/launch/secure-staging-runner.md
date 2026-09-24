@@ -39,6 +39,7 @@ receipt 的 migration status 為 `BACKUP_READY_MIGRATIONS_PENDING`。此時整�
 
 - Secret：`STAGING_DATABASE_URL`
 - Variable：`NEXT_PUBLIC_SUPABASE_URL`
+- Variable：`STAGING_BACKUP_AGE_RECIPIENT`，獨立 staging age 公鑰；不得使用 repo 的 Production recipient。
 
 Lineage 使用 workflow 的短效、唯讀 `GITHUB_TOKEN`，不需要 Vercel Token。
 
@@ -60,32 +61,45 @@ Runner 的 IPv4/IPv6 OUTPUT policy 在 child process 執行期間為 fail-closed
 
 ## Receipt
 
-唯一可上傳檔案為：
+WP2 僅允許上傳這兩種固定檔案：
 
 `$RUNNER_TEMP/celebratedeal-secure-receipts/wp2-readonly-restore-receipt.json`
 
+`$RUNNER_TEMP/celebratedeal-secure-receipts/wp2-readonly-restore.dump.age`
+
 Canonical validator 會拒絕 symlink、Runner temp 外路徑、額外 schema 欄位、URL、
 credential、raw rows、raw dump、staging database writes 與超出 budget 的 side
-effects。Artifact 保留七天。
+effects。WP2 receipt 與加密 archive 的 artifact 都保留 30 天。
+
+WP2 會在原始 dump 刪除前，以獨立 staging recipient 加密，驗證密文格式與
+SHA-256，另將固定 `.dump.age` 檔上傳為 30 天的加密 artifact。密文上傳前會再次
+核對固定路徑、receipt digest 與 age 格式；不會上傳原始 dump。receipt 的
+`retention.recoverability` 固定為 `NOT_PROVEN`，`migrationAuthorization` 固定為
+`BLOCKED`：公鑰加密與 artifact 上傳無法證明離線私鑰仍可解密。必須由授權持有者
+下載密文、以對應私鑰離線解密並在隔離 PostgreSQL 實際還原、核對 checksum 和
+資料摘要，另形成可審查的 recovery evidence，才可討論 staging migration。
 
 原始 dump 只在這次 runner 的隔離暫存區存活，結束時會清除；PASS 證明當次
-`public` schema 的邏輯備份可以還原到一次性 PostgreSQL，**不會留下可供日後回復
-staging 的備份檔**。真正套用 pending migration 前，仍須另外證明當下可保留的
-非 Production 備份與回復路徑，不能只引用這份 receipt。
+`public` schema 的邏輯備份可以還原到一次性 PostgreSQL，並留下加密備份。
+真正套用 pending migration 前，仍須證明密文可由離線私鑰解密並重新還原，
+不能只引用這份 receipt。
 
 ## 啟用順序
 
 1. 透過 PR 將 workflow、runner、tests 與本文件合併到 `master`。
-2. 啟用 `master` branch protection，禁止未經 review 的直接推送。
-3. 將 GitHub Environment 限制為 protected branches；方案允許時加入 required
-   reviewer。
-4. 由真人在 GitHub Settings 設定上述一個 Secret 與一個 Variable，值不得貼入
-   task。
+2. 沿用既有 `master` branch protection 與受保護 Preview Environment；既有
+   staging DB／Supabase 綁定已由受保護 run 驗證，不要求重新提供。
+3. 為此新 gate 確認有獨立的 `STAGING_BACKUP_AGE_RECIPIENT` 公鑰 Variable，
+   且對應私鑰由授權持有者安全保管；不得把私鑰貼入 task 或 repository。
+4. 確認可從既有受保護 Environment 注入上述 DB Secret 與公開 URL Variable，
+   只記錄綁定檢查結果，不列舉或輸出值。
 5. 從 `master` 執行 `Secure staging validation`，輸入固定 task、完整 source SHA
    與 exact Preview deployment hostname。
-6. 只檢視 sanitized receipt artifact。
+6. 檢視 sanitized receipt，核對加密 artifact 的 SHA-256；由授權持有者完成離線解密及還原證明。
 
-步驟 1～4 尚未完成前，workflow 會故意保持不可執行，不得視為 release evidence。
+新公鑰綁定未驗證或解密還原尚未實測時，保留備份 gate 不得成為 migration
+授權。舊的隔離還原演練 [run 36059754159](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059754159)
+已通過，但當時會刪原始 dump，不能替代這份新密文的回復證據。
 
 ## 無 Secret 的本機驗證
 
