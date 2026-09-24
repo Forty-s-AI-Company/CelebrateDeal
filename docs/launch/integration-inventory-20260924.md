@@ -35,3 +35,5 @@ PR #211 相對 #210 本身還有 376 個路徑差異，包含刪除 50 個 `src`
 初步追溯的候選垂直切片：學員入口起於 `5fe50e1a`，後有 `36e7a1cd` 與 `3c9b7989` 修正，包含 schema/migration、權限、頁面與通知；LINE 圖文選單起於 `2016893f`，後有 `3c9b7989` 修正；聯盟入口起於 `0ca60bb8`。這些 commit 是搜尋入口，不可整筆 cherry-pick 到新 master。學員/聯盟涉及 Auth、tenant 與 DB，整合後需獨立高風險 review 及一次性 DB 驗證。
 
 原本 dirty 分支的路由 guard 修改不直接移植：目前 master 的三個 Landing Pages 入口已明確呼叫 `requireVendorManager()`，service 亦用 `requireVendorManagerContext()`；舊 patch 主要是改用另一個同族 guard，並非當前缺失。master 的編輯器也已在一般保存時不傳 `templateId`，因此只補 commerce 不變式測試即可。
+
+2026-09-24 整合處置：PR #274 已從乾淨 master 基底合入 Funnel 感謝頁修正、commerce 不變式測試、AI Team vNext 與固定非 Production runner／文件；兩次候選 `quality` success，squash 後 master `0f1fc3e84b524edd46bb1a6946b852cf9ef74742` 與候選 Git tree 相同。PR #210/#211 未直接合併；上表學員、LINE rich menu、聯盟等獨有功能留待下一輪按功能與資料風險處置，不能視為已完成。
