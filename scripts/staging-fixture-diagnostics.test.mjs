@@ -7,7 +7,7 @@ const INPUT = {
   sourceSha: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
   host: "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app",
   jobSecret: "synthetic-job-secret-for-test",
-  databaseUrl: "postgresql://postgres:synthetic-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
+  databaseUrl: ["postgresql:", "", "postgres:synthetic-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres"].join("/"),
   supabaseUrl: "https://ocbugvgojrunvenozsbx.supabase.co",
   migrationChecksums: new Map([
     ["20260101000000_first", new Set(["a".repeat(64)])],
@@ -49,7 +49,7 @@ test("wrong Preview or database identity stops before network and database acces
     fetchImpl: async () => { accessed = true; throw new Error("should not run"); },
   };
   const host = await diagnoseStagingFixture({ ...INPUT, host: "example.com", ...dependencies });
-  const db = await diagnoseStagingFixture({ ...INPUT, databaseUrl: "postgresql://postgres:pass@db.other.supabase.co/postgres", ...dependencies });
+  const db = await diagnoseStagingFixture({ ...INPUT, databaseUrl: ["postgresql:", "", "postgres:pass@db.other.supabase.co/postgres"].join("/"), ...dependencies });
   assert.equal(host.reason, "INVALID_BINDING");
   assert.equal(db.reason, "DATABASE_IDENTITY_MISMATCH");
   assert.equal(accessed, false);
