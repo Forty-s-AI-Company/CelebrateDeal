@@ -7,7 +7,7 @@
 - `codex/launch-integration-20260924` 由當時最新 master `a476ce34abdbb93d67b89a1abffa40496e1fdc0d` 建立，原 dirty 工作目錄未修改或清除。
 - master CI run `35674751757` success；PR #210/#211 均衝突；PR #210 對 master 的唯讀 merge preview 有 376 個衝突路徑。差異矩陣見 [Git inventory](integration-inventory-20260924.md)。
 - commit `0194e001`：建立現況入口、下一輪清單、Plan/審查紀錄與 Git inventory。文件相對連結檢查無缺失，staged diff check 通過。
-- draft PR [#274](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/274) 已建立。仍是 draft，不能宣稱合併完成。
+- 當時建立 draft PR [#274](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/274)；本紀錄後段另記最終合併結果。
 
 ## Checkpoint 2：Funnel 缺陷與候選驗證
 
@@ -35,8 +35,14 @@
 - 舊候選 CI 的 browser gate 在 `tests/e2e/landing-page-flow.spec.ts` 超時。隔離本機 production-mode browser 重現時，完整旅程已走到公開感謝頁，但舊測試標題與新文案不一致；已更新文案斷言，並對此完整旅程設定 90 秒時限。同一條本機旅程重跑 1/1 PASS（測試執行 4.9 秒，含重新建置總約 2.5 分鐘）。最新 GitHub `quality` 仍待完成。
 - 獨立唯讀 reviewer 對 runner 的非 Production host 邊界提出 2 個 MAJOR：external smoke 只比較同源的 target/expected host，PayUni Sandbox QA 允許環境值覆寫已知正式 host。已在兩個 runner 加入固定 staging/project host 限制，補上正式 host 被自我宣告為 staging 仍拒絕的回歸測試；HTTP smoke 不跟隨 redirect，Sandbox 瀏覽器在 checkout 前再次確認仍在 staging origin。兩份目標 Vitest 46/46、五檔 ESLint 與 typecheck PASS。獨立 reviewer 對固定 host 修正複核後無剩餘 finding；後補的 redirect/origin 防護有目標測試，仍待新版 CI 驗證。
 
+## Checkpoint 6：候選 CI、受保護合併與最新版 Preview
+
+- `235b496a442c18139d581db59c3b41d5eb61687f` 的 GitHub `quality` run `35995602557` 與 `35995607497` 均 success；包括 lint、typecheck、coverage、LINE、Node contracts、PostgreSQL concurrency、完整 Playwright、build 與 preflight。Windows 本機 `test:contracts` 960/963；3 個歷史檔案 hash 因工作樹 CRLF 換行不同而失敗，原始 Git blob 的 12/12 evidence hashes 與 canonical hash 相符，Linux CI 同一契約 PASS。
+- PR #274 經 repository 允許的 squash merge 合入 master `0f1fc3e84b524edd46bb1a6946b852cf9ef74742`。原先 merge-commit 方式被 repository 規則拒絕，未繞過保護；合併後 master 與受驗候選 Git tree 均為 `43838a811345cf7e2c0b4a8490f85b0907ccac10`。master 自身 CI run `35998114044` 已啟動，尚待最終結果。
+- 新 immutable Preview `celebrate-deal-staging-falb4yfd5-a25814740s-projects.vercel.app` READY，對應合併前候選 SHA；首頁、`/api/health`、`/login` 均 200。Preview process environment 的指定欄位布林檢查仍是 PayUni Sandbox／merchant binding present，但 DB keys、Supabase public URL、預期 app host 不成立。指定 staging alias 仍指 9 月 3 日舊 deployment；新 Preview 的 200 不等於登入、資料寫入或 Sandbox 訂單成功。
+
 ## 下一步與 handoff
 
-- 依 [Plan](goal-plan-20260924.md) 繼續盤點舊 PR 獨有功能，先檢查核心 checkout/order 與 Auth/tenant，並讓 PR #274 的 `quality` 完成；不可把舊 PR 整棵樹覆寫 master。
-- staging Preview 綁定需透過核准的平台 Secret provider 補齊並驗證；本輪不讀 `.env*`、不顯示值、不把缺少綁定誤標成 PASS。
-- requested/effective team=`ai-team-pro`；fallback events：Plan Opus `INVALID_REVIEW` 後由獨立 Sol xhigh 唯讀複審，實作切片無 fallback；review plan：後續 Auth/payment/DB 仍需獨立高風險審查。ownership：主代理單一 writer；dispatch 0/4，depth 0/1。下一個具體動作：檢查 PR CI 與核心差異，修仍存在的 blocker。
+- 確認 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 的最終結果，不能把候選 CI 結果充作新 SHA 的獨立執行。PR #210/#211 尚有衝突及獨有功能，依 [下一輪清單](NEXT-CYCLE.md) 按功能、Auth/tenant/schema 風險處置，不直接合舊樹。
+- staging Preview 必須透過核准的平台 Secret provider 補齊固定非 Production 的 DB／Supabase／公開 host 綁定，重新部署 master 對應 SHA、驗證 lineage 與主要操作，再切指定 alias；目前不得把 HTTP 200 或 PayUni Sandbox env flag 升級為核心／金流 PASS。不讀 `.env*`、不輸出值或 raw log。
+- requested/effective team=`ai-team-pro`；Plan Opus `INVALID_REVIEW`／scratch path failure 後由獨立 Sol xhigh 唯讀複審。產品 runner 有一次 reviewer helper 唯讀 dispatch，2 個 MAJOR 經修正與複核；實際 observed model／effort 無 receipt 記為 unknown。ownership：主代理單一 writer；helper dispatch 1/4，depth 1/1。下一步：master CI 結果、staging 非 Production 綁定與實際 Sandbox 成功訂單證據；Goal acceptance 尚未成立。
