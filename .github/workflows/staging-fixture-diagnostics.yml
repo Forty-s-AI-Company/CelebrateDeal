@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: refs/pull/277/head
+          fetch-depth: 0
           path: verified-preview-source
           persist-credentials: false
 
