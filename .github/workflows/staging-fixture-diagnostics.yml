@@ -1,0 +1,77 @@
+name: Staging fixture diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  diagnose:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+      CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+    steps:
+      - name: Checkout protected diagnostic code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact Preview source without retaining credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          path: verified-preview-source
+          persist-credentials: false
+
+      - name: Import and verify Preview source before secret injection
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git -C verified-preview-source rev-parse HEAD)"
+          test "$actual_sha" = "$CELEBRATEDEAL_SOURCE_SHA"
+          git fetch --no-tags ./verified-preview-source HEAD:refs/remotes/origin/verified-preview-source
+          test "$(git rev-parse refs/remotes/origin/verified-preview-source)" = "$CELEBRATEDEAL_SOURCE_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client before secret injection
+        run: npx prisma generate
+
+      - name: Test fixed diagnostic contract before secret injection
+        run: node --import tsx --test scripts/staging-fixture-diagnostics.test.mjs
+
+      - name: Verify exact Preview lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      # Only named staging bindings enter this read-only step; the script emits fixed categories.
+      - name: Inspect staging migration and fixture readiness
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node --import tsx scripts/staging-fixture-diagnostics.mjs
+
+      - name: Upload sanitized diagnostic only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celebratedeal-staging-fixture-diagnostic
+          path: ${{ runner.temp }}/celebratedeal-staging-fixture-diagnostic.json
+          if-no-files-found: ignore
+          retention-days: 7
