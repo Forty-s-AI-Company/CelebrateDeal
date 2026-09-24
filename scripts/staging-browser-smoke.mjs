@@ -21,7 +21,10 @@ function emptyReport(reason = "NOT_RUN") {
     reason,
     session: "NOT_RUN",
     journeys: [],
-    browser: { pageErrors: 0, sameHost5xx: 0, externalRequestsBlocked: 0, unsafeRequestsBlocked: 0, webSocketsBlocked: 0 },
+    browser: {
+      pageErrors: 0, sameHost5xx: 0, externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
+      unsafeRequestCategories: { next: 0, api: 0, page: 0, other: 0 }, webSocketsBlocked: 0,
+    },
     sideEffects: { syntheticSessionCreated: 0, checkoutPosts: 0, paymentSubmissions: 0, uploads: 0, emails: 0 },
   };
 }
@@ -39,6 +42,27 @@ export function classifySessionStatus(status) {
   if (status === 404) return "FIXTURE_UNAVAILABLE";
   if (status === 503) return "SERVICE_UNAVAILABLE";
   return "HTTP_REJECTED";
+}
+
+/** Persist only a fixed category; redirected URLs may contain private query data. */
+export function classifyFinalPath(url, expectedPath) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== STAGING_ALIAS) return "OFF_HOST";
+    if (parsed.pathname === expectedPath) return "EXPECTED";
+    if (/^\/(?:login|mfa)(?:\/|$)/u.test(parsed.pathname)) return "AUTH_REDIRECT";
+    return "OTHER_SAME_HOST";
+  } catch {
+    return "INVALID_URL";
+  }
+}
+
+/** Group blocked requests without logging paths, bodies, headers, or cookies. */
+export function classifyUnsafeRequestPath(pathname) {
+  if (pathname.startsWith("/_next/")) return "next";
+  if (pathname.startsWith("/api/")) return "api";
+  if (pathname === "/" || ROUTES.some((route) => pathname === route.path)) return "page";
+  return "other";
 }
 
 function browserEnvironment() {
@@ -94,6 +118,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           }
           if (!["GET", "HEAD"].includes(route.request().method())) {
             report.browser.unsafeRequestsBlocked += 1;
+            report.browser.unsafeRequestCategories[classifyUnsafeRequestPath(requestUrl.pathname)] += 1;
             return route.abort();
           }
           return route.continue();
@@ -139,14 +164,16 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
               && await visible(page.locator('[data-dashboard-scope="details"]'))
               && await page.getByRole("alert").count() === 0
             : true;
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible });
+          const finalPath = classifyFinalPath(page.url(), route.path);
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible });
         }
       } finally {
         await context.close();
       }
     }
     const routesPass = report.journeys.length === ROUTES.length * 2
-      && report.journeys.every((item) => item.status === 200 && item.headingVisible && item.productVisible && item.checkoutLinkVisible && item.dashboardDataVisible);
+      && report.journeys.every((item) => item.status === 200 && item.finalPath === "EXPECTED"
+        && item.headingVisible && item.productVisible && item.checkoutLinkVisible && item.dashboardDataVisible);
     report.result = routesPass && report.browser.pageErrors === 0 && report.browser.sameHost5xx === 0
       && report.browser.unsafeRequestsBlocked === 0 && report.browser.webSocketsBlocked === 0 ? "PASS" : "BLOCKED";
     report.reason = report.result === "PASS" ? "NONE" : "BROWSER_JOURNEY_FAILED";
