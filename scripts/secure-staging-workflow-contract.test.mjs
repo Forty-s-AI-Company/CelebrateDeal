@@ -58,12 +58,13 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
 test("LINE task verifies lineage before receiving fixed staging bindings", () => {
   const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
   const steps = workflow.jobs["trusted-runner"].steps;
-  const preload = steps.find((step) => step.name === "Generate Prisma client before LINE secret injection");
+  const preload = steps.find((step) => step.name === "Generate Prisma client before secret injection");
   const lineage = steps.find((step) => step.name === "Validate fixed LINE dispatch identity before secret injection");
   const execute = steps.find((step) => step.id === "execute-line");
   const validate = steps.find((step) => step.name === "Validate sanitized LINE receipt");
   const enforce = steps.find((step) => step.name === "Enforce fixed LINE task success");
   assert.equal(preload.run, "npx prisma generate");
+  assert.equal(preload.if, undefined);
   assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
   assert.match(lineage.run, /--verify-lineage/u);
   assert.deepEqual(Object.keys(execute.env).sort(), [

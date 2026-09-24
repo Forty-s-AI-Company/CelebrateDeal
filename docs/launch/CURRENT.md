@@ -1,31 +1,27 @@
 # CelebrateDeal 目前版本與上線缺口
 
-更新：2026-09-24（Asia/Taipei）。這是本輪 Goal 的現況入口；驗收狀態以對應 source 與部署的當次證據為準。歷史完成紀錄不能直接升級成新版驗收。
+更新：2026-09-25（Asia/Taipei）。本頁是目前 staging 驗收的入口；每項 PASS 必須對應當次部署與執行證據。過去的工作紀錄保留原始結論，不自動升級為新版驗收。
 
 ## 來源與站台
 
-- 本輪程式提交 `0f1fc3e84b524edd46bb1a6946b852cf9ef74742` 由受保護 PR [#274](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/274) squash 合併；文件提交 `f8c9f53abf2058df91cd4469f206ab69faebafc4` 由 [#275](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/275) 合併。程式候選的兩次 `quality` run `35995602557`／`35995607497`、程式版 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 與文件版 master [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996) 均 success。這些結果只證明各自提交的 CI，不代表指定 staging alias 已更新。
-- 本輪整合分支 `codex/launch-integration-20260924` 從原 master 建立；原 `codex/one-stop-webinar-flow` dirty 工作目錄未重設或覆寫。
-- PR #210 與 #211 目前皆為 CONFLICTING。將 #210 對 master 做唯讀 `git merge-tree`，有 376 個衝突路徑，其中 296 個在 `src`。先逐項對齊現有 master，不直接合併舊樹。
-- 指定 staging 網址的首頁與 `/api/health` 曾於 2026-09-24 回應 200；Vercel `inspect` 顯示 alias 所指 deployment `dpl_Dtp88X6L4iD7a6fWAKXFfqLycp6N`、target `preview`、state `READY`、建立時間 2026-09-03。該 inspect 回應沒有 Git source SHA。故這個 200 不是新版程式證明。
-- 最新候選的 immutable Preview `celebrate-deal-staging-falb4yfd5-a25814740s-projects.vercel.app` 已 READY；Vercel list metadata 對應合併前 source `235b496a442c18139d581db59c3b41d5eb61687f`，其首頁、`/api/health` 與 `/login` 均回應 200。此 candidate 與新 master Git tree 相同，但 deployment SHA 不是 squash 後的 master SHA。它尚未切到指定 staging alias，也沒有通過登入、資料寫入或 Sandbox 訂單驗收。
-- 對 `celebrate-deal-staging` 專案的 Preview process environment 做指定欄位、只輸出布林結果的檢查：PayUni 為 Sandbox 且商家綁定存在；`DATABASE_URL`、`DIRECT_URL`、`STAGING_DATABASE_URL` 未同時存在，`NEXT_PUBLIC_SUPABASE_URL` 未出現，`NEXT_PUBLIC_APP_URL` 未對上指定 staging host。資料、登入及外部操作的非 Production 隔離尚未證明，故不切 alias、不執行 mutation。
-- staging Vercel 專案 `celebrate-deal-staging` 與一般專案 `celebrate-deal` 為兩個不同 project。`vercel.json` 對 master 設定不自動部署；合併與 staging 更新分別驗收。master branch protection 要求 `quality` 綠燈，禁止跳過。
+- 最新 master 為 `b02254d375d7cfcd2166a95668972f6fcf98c9af`（受保護 PR #274–#278）。[合併後完整 CI](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035404400) 成功；[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
+- 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
+- PayUni 保持 Sandbox。尚未證明目前部署的商家綁定、實際成功買家訂單與 callback 閉環；不得把環境旗標或健康檢查當成外部交易成功。
+- `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
-## 目前判定
+## 驗收狀態
 
-| 範圍 | 狀態 | 可用證據與下一個 Gate |
-|---|---|---|
-| master CI | 程式版與文件版 master 的完整 `quality` 均 PASS | 程式版 [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044)、文件版 [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996)；staging 另行驗收 |
-| 核心功能 | 本機與 CI 主要測試已通過；staging 操作未驗收 | Auth／checkout／order 等目標測試、本機 Funnel browser 與完整 CI browser 已通過；仍需固定 staging 的登入、資料寫入與 Sandbox 訂單證據 |
-| Git 整合 | PR #274 已合併；舊 PR 仍未處置 | #210/#211 有衝突及未移植功能；對照 [Git inventory](integration-inventory-20260924.md) 後留下一輪按功能分批處理，不能宣稱「全部合完」 |
-| 指定 staging | 新 immutable Preview 已 READY，alias 仍是舊部署 | 新 Preview 有 source SHA 與 HTTP 200；需補 Preview 環境隔離、核心操作驗證及 alias 切換 |
-| PayUni | Sandbox，外部閉環未證明 | 至少一筆合成成功付款→callback→持久化訂單與重複 callback 冪等性；退款／對帳另列完整財務閉環 |
-| Production | 未進入本輪 | 正式環境、正式付款、正式資料與寄信另行處理 |
+| 範圍 | 狀態 | 尚需的證據 |
+| --- | --- | --- |
+| master 與部署來源 | 已驗證 | PR、CI、GitHub Deployment lineage、Vercel alias／deployment 對應如上；後續新部署須重驗 |
+| DB／Supabase project identity | 已驗證 | 受保護 Preview 身分檢查通過；Auth、Storage 等實際使用資源仍須各自核對 |
+| 固定 staging 核心瀏覽器旅程 | **NOT_PROVEN** | 合成資料的登入、Funnel 建立／保存／發布與公開表單、商品、影片、行動版與關鍵 console／5xx；本機 Playwright CI 不能替代固定站驗收 |
+| PayUni Sandbox 買家訂單 | **NOT_PROVEN** | 同一固定部署上一筆成功付款、callback、持久化訂單、使用者可見狀態及重複 callback 冪等性；退款／對帳屬更完整的財務閉環 |
+| Sandbox runner 前置關卡 | **BLOCKED_BY_RUNNER** | [本次受保護執行](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36038828678) 在 Secret 注入前的 contract test 失敗；根因為 `npm ci --ignore-scripts` 後未替所有 task 產生 Prisma Client。修正與複核待合併，再重跑綁定檢查；這次失敗不能推論 Secret 缺失 |
+| 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
+| Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
-## 本輪工作與下一輪
+依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版與 master CI 成功是實際進度，但缺少固定站核心操作和 Sandbox 成功訂單證據；Codex Goal 不應標為 complete。
 
-執行順序、驗收及權限見 [Goal Plan](goal-plan-20260924.md)，目前整合差異見 [Git inventory](integration-inventory-20260924.md)。細節與未完成新功能收斂到 [下一輪清單](NEXT-CYCLE.md)。
-本輪 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
-
-舊的 release audit、owner packet、scorecard 與 WP 文件保留作當時的歷史證據。若它們與此頁的當次 source/deployment 證據不同，以較新的同源驗證為準；不得直接改寫舊紀錄。
+本次候選 diff 已修正 runner contract 的 Prisma Client 生成順序，尚待受保護合併與重新執行。下一步重跑 Sandbox 綁定前置關卡並依新 receipt 更新狀態；再建立固定 staging 的核心瀏覽器收據，將 Sandbox 成功付款與訂單 DB readback／callback replay 串在同一個 lineage 綁定驗收。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
