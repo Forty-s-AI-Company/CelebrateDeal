@@ -1,0 +1,37 @@
+name: Staging Preview preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  attest:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    environment: Preview – celebrate-deal-staging
+    timeout-minutes: 5
+    steps:
+      - name: Checkout protected attestation code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Test bounded attestation contract before secret injection
+        run: node --test scripts/staging-preview-preflight-attestation.test.mjs
+
+      - name: Verify exact deployment lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Reviewed PR #277 head; its staging Preview deployment is immutable.
+          CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+          CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Check staging runtime identity without logging secret values
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+        run: node scripts/staging-preview-preflight-attestation.mjs
