@@ -56,20 +56,28 @@ test("Sandbox QA requires an explicit non-production Staging host allowlist", ()
     () => resolvePayUniStagingAppUrl({
       PAYUNI_TEST_APP_URL: "https://celebratedeal.carry-digital-nomad.in.net",
       PAYUNI_STAGING_ALLOWED_HOST: "celebratedeal.carry-digital-nomad.in.net",
+      PAYUNI_PRODUCTION_APP_HOST: "different-production.example.test",
     }),
     /禁止使用 Production host/,
   );
   assert.throws(
     () => resolvePayUniStagingAppUrl({
       PAYUNI_TEST_APP_URL: "https://preview.example.test",
-      PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+      PAYUNI_STAGING_ALLOWED_HOST: "celebrate-deal-staging.carry-digital-nomad.in.net",
     }),
     /不在核准的 Staging host 白名單/,
   );
+  assert.throws(
+    () => resolvePayUniStagingAppUrl({
+      PAYUNI_TEST_APP_URL: "https://staging.example.test",
+      PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+    }),
+    /必須是固定 Staging host/,
+  );
   assert.equal(resolvePayUniStagingAppUrl({
-    PAYUNI_TEST_APP_URL: "https://staging.example.test/live/ignored",
-    PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
-  }), "https://staging.example.test");
+    PAYUNI_TEST_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net/live/ignored",
+    PAYUNI_STAGING_ALLOWED_HOST: "celebrate-deal-staging.carry-digital-nomad.in.net",
+  }), "https://celebrate-deal-staging.carry-digital-nomad.in.net");
 });
 
 test("Sandbox execution preflight is process-env-only and missing values fail before any network stage", () => {
@@ -113,6 +121,10 @@ test("PayUni Sandbox runner validates its fixed Sandbox environment before the c
 
   assert.ok(sandboxGate >= 0);
   assert.ok(callbackHostProbe > sandboxGate);
+  const postNavigationOriginGate = source.indexOf("new URL(page.url()).origin === appUrl");
+  const checkoutClick = source.indexOf('getByRole("button", { name: "立即搶購" })');
+  assert.ok(postNavigationOriginGate >= 0);
+  assert.ok(checkoutClick > postNavigationOriginGate);
   assert.equal(source.includes("assertNonProductionOwnerAuthorization"), false);
 });
 

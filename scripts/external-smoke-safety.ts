@@ -18,6 +18,8 @@ type ResolveSmokeTargetOptions = {
 };
 
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const STAGING_HOSTNAME = "celebrate-deal-staging.carry-digital-nomad.in.net";
+const STAGING_PREVIEW_HOSTNAME = /^celebrate-deal-staging-[a-z0-9-]+-a25814740s-projects\.vercel\.app$/u;
 
 /**
  * Fail closed before an external smoke test can contact a remote application.
@@ -65,6 +67,15 @@ export function resolveSmokeTarget(options: ResolveSmokeTargetOptions) {
   }
   if (expectedHostname !== url.hostname.toLowerCase()) {
     throw new Error("TARGET_APP_URL does not match SMOKE_EXPECTED_HOSTNAME.");
+  }
+
+  // The expected hostname is supplied by the caller, so equality alone is
+  // insufficient to prove that the remote target is non-Production.
+  const approvedHost = environment === "staging"
+    ? expectedHostname === STAGING_HOSTNAME
+    : STAGING_PREVIEW_HOSTNAME.test(expectedHostname);
+  if (!approvedHost) {
+    throw new Error("Remote smoke target is not an approved non-Production host.");
   }
 
   return normalizeBaseUrl(url);

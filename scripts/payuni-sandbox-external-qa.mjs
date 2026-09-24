@@ -27,6 +27,7 @@ const QA_ARTIFACT_FAILURE_CATEGORIES = new Set([
 ]);
 const QA_ARTIFACT_SIGNER_ROLES = new Set(["delivery-qa", "platform-admin", "release-manager"]);
 const KNOWN_PRODUCTION_APP_HOST = "celebratedeal.carry-digital-nomad.in.net";
+const KNOWN_STAGING_APP_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const PAYUNI_HOST = "sandbox-api.payuni.com.tw";
 const PAYUNI_API_ORIGIN = `https://${PAYUNI_HOST}`;
 const DEFAULT_LIVE_PATH = "/live/summer-glow-live";
@@ -316,9 +317,7 @@ function assertExactHttpsHost(rawUrl, expectedHost, label) {
 function resolvePayUniStagingAppUrl(source = process.env) {
   const rawUrl = String(source.PAYUNI_TEST_APP_URL ?? "").trim();
   const allowedHost = String(source.PAYUNI_STAGING_ALLOWED_HOST ?? "").trim().toLowerCase();
-  const productionHost = String(
-    source.PAYUNI_PRODUCTION_APP_HOST ?? KNOWN_PRODUCTION_APP_HOST,
-  ).trim().toLowerCase();
+  const additionalProductionHost = String(source.PAYUNI_PRODUCTION_APP_HOST ?? "").trim().toLowerCase();
 
   assert(rawUrl, "PAYUNI_TEST_APP_URL 必須明確指定 Staging HTTPS 網址。");
   assert(allowedHost, "PAYUNI_STAGING_ALLOWED_HOST 必須明確指定核准的 Staging host。");
@@ -328,8 +327,12 @@ function resolvePayUniStagingAppUrl(source = process.env) {
     url.protocol === "https:" && !url.username && !url.password && !url.port,
     "CelebrateDeal Staging 必須使用無憑證、無自訂連接埠的 HTTPS 網址。",
   );
+  // Keep the known Production host and the sole Staging host independent of
+  // caller-provided environment values before any callback or checkout call.
+  assert(url.hostname.toLowerCase() !== KNOWN_PRODUCTION_APP_HOST, "PayUni Sandbox QA 禁止使用 Production host。");
+  assert(url.hostname.toLowerCase() !== additionalProductionHost, "PayUni Sandbox QA 禁止使用 Production host。");
+  assert(allowedHost === KNOWN_STAGING_APP_HOST, "PAYUNI_STAGING_ALLOWED_HOST 必須是固定 Staging host。");
   assert(url.hostname.toLowerCase() === allowedHost, "PAYUNI_TEST_APP_URL 不在核准的 Staging host 白名單。 ");
-  assert(url.hostname.toLowerCase() !== productionHost, "PayUni Sandbox QA 禁止使用 Production host。");
   return url.origin;
 }
 
@@ -1135,6 +1138,9 @@ async function runCheckout(appUrl) {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
     });
+    // The health probe rejects redirects; enforce the same origin after the
+    // live-page navigation before any checkout button can be clicked.
+    assert(new URL(page.url()).origin === appUrl, "Staging 直播頁導向未核准的應用 host。");
     let checkout = null;
     await page.route(`${appUrl}/api/payments/checkout`, async (route) => {
       const response = await route.fetch();

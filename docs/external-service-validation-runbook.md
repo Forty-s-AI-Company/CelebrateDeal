@@ -48,7 +48,7 @@ npm run preflight
 npm run external:smoke
 ```
 
-`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true` 與完全相符的 `SMOKE_EXPECTED_HOSTNAME`。固定非 Production smoke 不需要逐次 owner authorization。各 provider 的 mutation 仍由個別 `RUN_*` 開關明確啟用；不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
+`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true` 與完全相符的 `SMOKE_EXPECTED_HOSTNAME`，並通過程式內固定的 staging 網域或 staging Vercel project Preview 網域檢查。呼叫者自行填入兩個相同的正式網域不會通過。固定非 Production smoke 不需要逐次 owner authorization。各 provider 的 mutation 仍由個別 `RUN_*` 開關明確啟用；不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
 
 Smoke runner 會在記憶體內讀取 response 以判斷結果，但 stdout 只輸出固定的 HTTP／transport／payload／application 分類與布林狀態，不輸出 raw provider response、URL、UID、stream key、order number、email、Token 或錯誤訊息。可保存的輸出仍只代表 sanitized local／non-Production evidence，不能直接升格為 provider PASS。
 

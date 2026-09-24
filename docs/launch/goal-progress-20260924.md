@@ -32,7 +32,8 @@
 
 - Auth、checkout admission／idempotency、commerce order／checkout、PayUni provider 與 payment routes 的 8 個 Vitest 檔案，195/195 PASS。
 - 租戶帳本的 4 個 DB tests 首次因本機 `celebratedeal_test` 不存在而未通過；建立固定 disposable PostgreSQL DB、套用 79 份既有 migration 後，4/4 PASS。這是測試環境準備缺口，不是產品斷言失敗。
-- 舊候選 CI 的 browser gate 在 `tests/e2e/landing-page-flow.spec.ts` 超時。隔離本機 production-mode browser 重現時，完整旅程已走到公開感謝頁，但舊測試標題與新文案不一致；已更新文案斷言，並對此完整旅程設定 90 秒時限。重跑結果仍待確認，不能列為 PASS。
+- 舊候選 CI 的 browser gate 在 `tests/e2e/landing-page-flow.spec.ts` 超時。隔離本機 production-mode browser 重現時，完整旅程已走到公開感謝頁，但舊測試標題與新文案不一致；已更新文案斷言，並對此完整旅程設定 90 秒時限。同一條本機旅程重跑 1/1 PASS（測試執行 4.9 秒，含重新建置總約 2.5 分鐘）。最新 GitHub `quality` 仍待完成。
+- 獨立唯讀 reviewer 對 runner 的非 Production host 邊界提出 2 個 MAJOR：external smoke 只比較同源的 target/expected host，PayUni Sandbox QA 允許環境值覆寫已知正式 host。已在兩個 runner 加入固定 staging/project host 限制，補上正式 host 被自我宣告為 staging 仍拒絕的回歸測試；HTTP smoke 不跟隨 redirect，Sandbox 瀏覽器在 checkout 前再次確認仍在 staging origin。兩份目標 Vitest 46/46、五檔 ESLint 與 typecheck PASS。獨立 reviewer 對固定 host 修正複核後無剩餘 finding；後補的 redirect/origin 防護有目標測試，仍待新版 CI 驗證。
 
 ## 下一步與 handoff
 

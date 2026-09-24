@@ -2,6 +2,8 @@
 
 AI Team 的 `delivery-qa` 可針對固定非 Production staging 與 PayUni Sandbox 重複執行。測試使用 headless Playwright 操作 staging 直播頁，並驗證：
 
+Runner 的應用 host 固定為 `celebrate-deal-staging.carry-digital-nomad.in.net`；`PAYUNI_STAGING_ALLOWED_HOST` 必須與它一致。已知 Production host 不可由 `PAYUNI_PRODUCTION_APP_HOST` 覆寫後放行。這些 host 檢查仍不代替資料庫、Auth 與 Storage 的非 Production 綁定證明。
+
 1. PayUni Sandbox 結帳與付款回呼
 2. PayUni 查詢結果與 CelebrateDeal 訂單對帳
 3. 由 CelebrateDeal 財務後台發起 Sandbox 退款、退款狀態回查，以及 `PaymentTransaction=refunded`、單筆 `RefundRecord=processed` 的冪等性驗收

@@ -48,6 +48,8 @@ async function request(path: string, init?: RequestInit) {
 
   return fetch(`${baseUrl}${path}`, {
     ...init,
+    // A staging redirect must not forward a smoke request to another origin.
+    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       ...(jobSecret ? { Authorization: `Bearer ${jobSecret}` } : {}),

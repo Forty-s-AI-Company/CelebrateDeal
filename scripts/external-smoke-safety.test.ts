@@ -74,12 +74,30 @@ describe("external smoke safety", () => {
   it("accepts a fully confirmed staging target and removes paths, queries, and fragments", () => {
     expect(
       resolveSmokeTarget({
-        targetAppUrl: "https://staging.example.test/app/?debug=true#section",
+        targetAppUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net/app/?debug=true#section",
         smokeEnvironment: "staging",
         allowStagingSmoke: "true",
-        expectedHostname: "staging.example.test",
+        expectedHostname: "celebrate-deal-staging.carry-digital-nomad.in.net",
       }),
-    ).toBe("https://staging.example.test");
+    ).toBe("https://celebrate-deal-staging.carry-digital-nomad.in.net");
+  });
+
+  it("accepts a preview from the staging Vercel project", () => {
+    expect(resolveSmokeTarget({
+      targetAppUrl: "https://celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app",
+      smokeEnvironment: "preview",
+      allowStagingSmoke: "true",
+      expectedHostname: "celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app",
+    })).toBe("https://celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app");
+  });
+
+  it("rejects a production host even when every caller-supplied flag claims staging", () => {
+    expect(() => resolveSmokeTarget({
+      targetAppUrl: "https://celebratedeal.carry-digital-nomad.in.net",
+      smokeEnvironment: "staging",
+      allowStagingSmoke: "true",
+      expectedHostname: "celebratedeal.carry-digital-nomad.in.net",
+    })).toThrow("not an approved non-Production host");
   });
 
   it("summarizes an untrusted provider payload without exposing its values", () => {
@@ -126,6 +144,7 @@ describe("external smoke safety", () => {
     expect(runnerSource).toContain("summarizeSmokeResponse");
     expect(runnerSource).toContain("summarizeSmokeFailure");
     expect(runnerSource).toContain("RUN_EXTERNAL_PROVIDER_SMOKE");
+    expect(runnerSource).toContain('redirect: "error"');
     expect(runnerSource.indexOf("RUN_EXTERNAL_PROVIDER_SMOKE")).toBeLessThan(
       runnerSource.indexOf('checkJson("resend test email"'),
     );
