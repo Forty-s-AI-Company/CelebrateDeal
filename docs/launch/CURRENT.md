@@ -9,6 +9,7 @@
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
 - [受保護唯讀診斷 run 36059197795](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059197795) 證實 staging DB 的 58 個已完成 Prisma migration 是固定來源 79 個的完整前綴，缺最後 21 個；無 unresolved failure、未知已套用項或 checksum mismatch。WP4 fixture 的唯讀 preflight 為 `READY`。這尚不能證明 fixture POST 503 的唯一根因。
+- 程式碼推論：登入後共用版型讀取 `Vendor.enabledFeatureModules`，而該欄位由尚未套用的 `20260908090000_vendor_feature_toggles` 新增；`getCurrentAuth()` 的 Vendor include 可能因此在頁面載入時失敗。合成 session API 只查 membership，故「session 已建立、頁面內容未出現」與此相符。仍須對 staging 做唯讀欄位存在性查核，不能把推論寫成已證實的 runtime 例外。
 - PayUni 保持 Sandbox。尚未證明目前部署的商家綁定、實際成功買家訂單與 callback 閉環；不得把環境旗標或健康檢查當成外部交易成功。
 - `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
@@ -30,4 +31,4 @@
 
 依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版，PR #283 的完整 CI 通過；固定站登入後內容未通過，Sandbox 成功訂單與 callback／持久化／冪等性證據仍缺，Codex Goal 不應標為 complete。
 
-下一步先確認可保留的非 Production 回復備份或明確的 disposable staging 資料邊界，針對 21 個 pending migration 做資料相容性 preflight，再用受保護流程修復 staging schema；既有隔離演練不會留下 dump，不能單獨充當回復方案。修復後重跑同一來源的登入後核心瀏覽器旅程，並區分 fixture 503 是部署 source SHA 設定還是寫入例外。只有 fixture 根因解決後才考慮下一次 Sandbox 交易，且需將成功付款、callback、訂單 DB readback／重複 callback 冪等性串在同一 lineage。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
+下一步先唯讀確認 `Vendor.enabledFeatureModules` 等 pending 欄位現況，並確認可保留的非 Production 回復備份或明確的 disposable staging 資料邊界；針對 21 個 pending migration 做資料相容性 preflight，再用受保護流程修復 staging schema。既有隔離演練不會留下 dump，不能單獨充當回復方案。修復後重跑同一來源的登入後核心瀏覽器旅程，並區分 fixture 503 是部署 source SHA 設定還是寫入例外。只有 fixture 根因解決後才考慮下一次 Sandbox 交易，且需將成功付款、callback、訂單 DB readback／重複 callback 冪等性串在同一 lineage。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
