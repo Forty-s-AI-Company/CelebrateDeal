@@ -24,9 +24,11 @@ function Limit-AiTeamText {
 function Add-AiTeamBoundedLine {
     param(
         [AllowEmptyCollection()]
+        [AllowEmptyString()]
         [Parameter(Mandatory)]
         [System.Collections.Generic.List[string]]$Buffer,
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Line,
         [Parameter(Mandatory)]
         [ValidateRange(10, 1000)]
@@ -74,12 +76,22 @@ function Get-AiTeamFailureClassification {
         [AllowNull()][int]$ExitCode,
         [bool]$WasKilled,
         [bool]$TimedOut,
-        [bool]$HadOutput
+        [bool]$HadOutput,
+        [bool]$IsAgy = $false
     )
 
     $combined = "$Stdout`n$Stderr"
-    if ($combined -match '(?i)(login required|not authenticated|not logged in|sign[ -]?in required|authentication required)') {
+    if ($combined -match '(?i)(access is denied|permission denied|permissionerror|eacces|eperm|unauthorized access|failed to redirect output|cannot open .*access)') {
+        return 'HOST_PERMISSION_BLOCKED'
+    }
+    if ($combined -match '(?i)(tool (?:execution |call )?(?:denied|rejected|blocked)|shell (?:execution |command )?(?:denied|rejected|blocked)|auto-denied|headless mode cannot prompt|no output produced.{0,160}permission)') {
+        return 'TOOL_DENIED'
+    }
+    if ($combined -match '(?i)(login required|not authenticated|not logged in|sign[ -]?in required|please sign[ -]?in|sign[ -]?in to (?:view|continue|use)|authentication required)') {
         return 'AUTH_REQUIRED'
+    }
+    if ($IsAgy -and $combined -match '(?i)(model not found|model unavailable|unknown model|unsupported model|no such model|model .*does not exist|available models.*empty)') {
+        return 'MODEL_UNAVAILABLE'
     }
     if ($combined -match '(?i)(rate limit|too many requests|\b429\b)') {
         return 'RATE_LIMITED'
@@ -90,7 +102,7 @@ function Get-AiTeamFailureClassification {
     if ($TimedOut) { return 'HARD_TIMEOUT' }
     if ($WasKilled) { return 'PROCESS_CRASHED' }
     if (-not $HadOutput -and $ExitCode -eq 0) { return 'NO_STDOUT' }
-    if ($ExitCode -ne 0) { return 'PROCESS_CRASHED' }
+    if ($ExitCode -ne 0) { return $(if ($IsAgy) { 'AGY_RUNTIME_ERROR' } else { 'PROCESS_CRASHED' }) }
     if (-not $HadOutput) { return 'NO_STDOUT' }
     return 'SUCCESS'
 }
@@ -161,7 +173,9 @@ function Invoke-AiTeamProcess {
         [ValidateRange(100, 120000)]
         [int]$MaxOutputChars = 6000,
         [ValidateRange(10, 1000)]
-        [int]$MaxOutputLines = 80
+        [int]$MaxOutputLines = 80,
+        [string]$StandardInputText = '',
+        [switch]$MarkAsChild
     )
 
     $startedAt = [DateTime]::UtcNow
@@ -184,7 +198,10 @@ function Invoke-AiTeamProcess {
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
         $startInfo.RedirectStandardError = $true
+        $startInfo.RedirectStandardInput = -not [string]::IsNullOrEmpty($StandardInputText)
         $startInfo.CreateNoWindow = $true
+        # Child wrappers cannot route or spawn another AI Team.
+        if ($MarkAsChild) { $startInfo.Environment['AI_TEAM_CHILD'] = '1' }
         Set-AiTeamProcessArguments -StartInfo $startInfo -ArgumentList $ArgumentList
 
         $process = [System.Diagnostics.Process]::new()
@@ -195,6 +212,10 @@ function Invoke-AiTeamProcess {
         if (-not $started) { throw 'process_start_returned_false' }
         $processStarted = $true
         $processId = $process.Id
+        if ($startInfo.RedirectStandardInput) {
+            $process.StandardInput.Write($StandardInputText)
+            $process.StandardInput.Close()
+        }
         if ($startWatch.Elapsed.TotalSeconds -gt $StartupTimeoutSeconds) {
             $startupTimedOut = $true
             throw 'process_start_timeout'
@@ -303,7 +324,8 @@ function Invoke-AiTeamProcess {
     $stderr = ($stderrLines -join "`n")
     $out = Limit-AiTeamText -Value $stdout -Limit $MaxOutputChars
     $err = Limit-AiTeamText -Value $stderr -Limit $MaxOutputChars
-    $classification = Get-AiTeamFailureClassification -Stdout $stdout -Stderr $stderr -ExitCode $exitCode -WasKilled $wasKilled -TimedOut $timedOut -HadOutput ($stdoutLines.Count -gt 0 -or $stderrLines.Count -gt 0)
+    $agyProfiles = @('model-discovery', 'broad_review', 'senior_review', 'critical_review', 'qa', 'deep_review', 'plan_review')
+    $classification = Get-AiTeamFailureClassification -Stdout $stdout -Stderr $stderr -ExitCode $exitCode -WasKilled $wasKilled -TimedOut $timedOut -HadOutput ($stdoutLines.Count -gt 0 -or $stderrLines.Count -gt 0) -IsAgy ($agyProfiles -contains $Profile)
     if ($null -ne $timeoutStatus) { $classification = $timeoutStatus }
 
     return [pscustomobject]@{

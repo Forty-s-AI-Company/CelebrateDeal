@@ -6,8 +6,6 @@ import {
   summarizeSmokeFailure,
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 describe("external smoke safety", () => {
   it("defaults to the local smoke server without extra authorization", () => {
@@ -76,12 +74,30 @@ describe("external smoke safety", () => {
   it("accepts a fully confirmed staging target and removes paths, queries, and fragments", () => {
     expect(
       resolveSmokeTarget({
-        targetAppUrl: "https://staging.example.test/app/?debug=true#section",
+        targetAppUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net/app/?debug=true#section",
         smokeEnvironment: "staging",
         allowStagingSmoke: "true",
-        expectedHostname: "staging.example.test",
+        expectedHostname: "celebrate-deal-staging.carry-digital-nomad.in.net",
       }),
-    ).toBe("https://staging.example.test");
+    ).toBe("https://celebrate-deal-staging.carry-digital-nomad.in.net");
+  });
+
+  it("accepts a preview from the staging Vercel project", () => {
+    expect(resolveSmokeTarget({
+      targetAppUrl: "https://celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app",
+      smokeEnvironment: "preview",
+      allowStagingSmoke: "true",
+      expectedHostname: "celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app",
+    })).toBe("https://celebrate-deal-staging-i6bawqmuo-a25814740s-projects.vercel.app");
+  });
+
+  it("rejects a production host even when every caller-supplied flag claims staging", () => {
+    expect(() => resolveSmokeTarget({
+      targetAppUrl: "https://celebratedeal.carry-digital-nomad.in.net",
+      smokeEnvironment: "staging",
+      allowStagingSmoke: "true",
+      expectedHostname: "celebratedeal.carry-digital-nomad.in.net",
+    })).toThrow("not an approved non-Production host");
   });
 
   it("summarizes an untrusted provider payload without exposing its values", () => {
@@ -127,33 +143,21 @@ describe("external smoke safety", () => {
 
     expect(runnerSource).toContain("summarizeSmokeResponse");
     expect(runnerSource).toContain("summarizeSmokeFailure");
-    expect(runnerSource).toContain("blocked_before_provider_request");
-    expect(runnerSource.indexOf("blocked_before_provider_request")).toBeLessThan(
+    expect(runnerSource).toContain("RUN_EXTERNAL_PROVIDER_SMOKE");
+    expect(runnerSource).toContain('redirect: "error"');
+    expect(runnerSource.indexOf("RUN_EXTERNAL_PROVIDER_SMOKE")).toBeLessThan(
       runnerSource.indexOf('checkJson("resend test email"'),
     );
+    expect(runnerSource).not.toContain("validateNonProductionOwnerAuthorization");
     expect(runnerSource).not.toContain("formatPayload");
     expect(runnerSource).not.toContain("JSON.stringify(payload)");
     expect(runnerSource).not.toContain("error.message");
   });
 
-  it("blocks remote smoke before the first network request when owner authorization is missing", () => {
-    const runner = fileURLToPath(new URL("./external-smoke.ts", import.meta.url));
-    const child = spawnSync(process.execPath, ["--import", "tsx", runner], {
-      cwd: process.cwd(),
-      env: {
-        PATH: process.env.PATH,
-        NODE_ENV: "test",
-        TARGET_APP_URL: "https://staging.example.test",
-        SMOKE_ENVIRONMENT: "staging",
-        ALLOW_STAGING_SMOKE: "true",
-        SMOKE_EXPECTED_HOSTNAME: "staging.example.test",
-      },
-      encoding: "utf8",
-      timeout: 30_000,
-    });
-
-    expect(child.status).toBe(1);
-    expect(child.stdout).toBe("[FAIL] non-Production owner authorization: blocked_before_network\n");
-    expect(child.stderr).toBe("");
+  it("does not require a per-run owner token for fixed non-Production smoke", () => {
+    const runnerSource = readFileSync(new URL("./external-smoke.ts", import.meta.url), "utf8");
+    expect(runnerSource).not.toContain("AI_TEAM_AUTHORIZATION_RECORD_REF");
+    expect(runnerSource).not.toContain("OWNER_AUTHORIZATION_REQUIRED");
+    expect(runnerSource).toContain("RUN_EXTERNAL_PROVIDER_SMOKE");
   });
 });

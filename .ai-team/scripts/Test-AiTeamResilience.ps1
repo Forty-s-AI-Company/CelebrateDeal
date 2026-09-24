@@ -22,9 +22,10 @@ $pwsh = Get-Command pwsh -ErrorAction Stop
 $helperPath = Join-Path $scriptsRoot 'Invoke-AiTeamProcess.ps1'
 $fastPath = Join-Path $scriptsRoot 'Invoke-AgyFast.ps1'
 $deepPath = Join-Path $scriptsRoot 'Invoke-AgyDeep.ps1'
+$planReviewPath = Join-Path $scriptsRoot 'Invoke-AgyPlanReview.ps1'
 $runnerPath = Join-Path $scriptsRoot 'Invoke-AiTeamReadOnlyFailover.ps1'
 
-foreach ($path in @($helperPath, $fastPath, $deepPath, $runnerPath)) {
+foreach ($path in @($helperPath, $fastPath, $deepPath, $planReviewPath, $runnerPath)) {
     $parseErrors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
         (Resolve-Path -LiteralPath $path),
@@ -40,6 +41,20 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptsRoot)
 $ciPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $ciSource = Get-Content -LiteralPath $ciPath -Raw
 Assert-AiTeam ($ciSource -match 'pip install[^\r\n]*\.ai-team/mcp_server/requirements\.txt') 'CI does not install MCP requirements'
+Assert-AiTeam ($ciSource -match '(?m)^  push:\s*$' -and $ciSource -match 'npm run lint' -and $ciSource -match 'npm run test:coverage') 'push CI does not run lint and unit coverage tests'
+Assert-AiTeam ($ciSource -notmatch '(?i)vercel\s+deploy[^\r\n]*--prod') 'push CI contains an automatic Vercel Production deploy'
+$routerPath = Join-Path $repoRoot '.ai-team/config/router.json'
+$selector = Get-Content -LiteralPath $routerPath -Raw | ConvertFrom-Json
+$routerConfig = Get-Content -LiteralPath (Join-Path $repoRoot '.ai-team/config/routing-policy.json') -Raw | ConvertFrom-Json
+Assert-AiTeam ($selector.version -eq '6.0') 'selector version is unsupported'
+Assert-AiTeam ($routerConfig.git_policy.auto_push.enabled -and $routerConfig.git_policy.auto_merge.enabled) 'controlled Git promotion policy missing'
+Assert-AiTeam (-not $routerConfig.git_policy.auto_push.force_push -and -not $routerConfig.git_policy.auto_push.direct_default_branch_push) 'unsafe Git promotion policy'
+Assert-AiTeam (-not $routerConfig.git_policy.production_deploy.enabled -and $routerConfig.git_policy.production_deploy.approval -eq 'manual') 'Production deployment must require manual approval'
+Assert-AiTeam (-not $routerConfig.limits.automatic_spawn -and $routerConfig.limits.max_agent_depth -eq 1) 'recursion guard missing'
+$taskSource = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Invoke-AiTeamTask.ps1') -Raw
+Assert-AiTeam ($taskSource -match "--mode', 'plan" -and $taskSource -match "--sandbox") 'review must remain read-only'
+Assert-AiTeam ($taskSource -notmatch 'dangerously-skip-permissions') 'permission bypass is prohibited'
+Assert-AiTeam ($taskSource -match 'validate_review' -and $taskSource -match 'accepted=\$false') 'process success must not become review acceptance'
 
 $continuous = Invoke-AiTeamProcess `
     -FilePath $pwsh.Source `
@@ -53,6 +68,15 @@ $continuous = Invoke-AiTeamProcess `
 Assert-AiTeam ($continuous.status -eq 'SUCCESS') 'continuous output should complete'
 Assert-AiTeam ($null -ne $continuous.firstOutputAt) 'first output timestamp missing'
 Assert-AiTeam ($null -ne $continuous.lastActivityAt) 'last activity timestamp missing'
+
+# AGY can emit blank lines on either stream; preserve them without a binding failure.
+$blankLines = Invoke-AiTeamProcess `
+    -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs '[Console]::Out.WriteLine(""); [Console]::Error.WriteLine(""); [Console]::Out.WriteLine("ready")') `
+    -Profile 'synthetic' -Model 'synthetic-child' -ReasoningEffort 'none' `
+    -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10
+Assert-AiTeam ($blankLines.status -eq 'SUCCESS' -and $blankLines.stdout.Contains('ready')) 'blank stdout/stderr interrupted process collection'
+Assert-AiTeam ($blankLines.cleanupResult -eq 'process_exited') 'blank-line process did not exit normally'
 
 $hardTimeout = Invoke-AiTeamProcess `
     -FilePath $pwsh.Source `
@@ -101,67 +125,30 @@ $authFailure = Invoke-AiTeamProcess `
     -HardTimeoutSeconds 10
 Assert-AiTeam ($authFailure.status -eq 'AUTH_REQUIRED') 'explicit authentication failure was not classified'
 
-$temporaryConfig = Join-Path ([IO.Path]::GetTempPath()) ("ai-team-resilience-{0}.json" -f ([guid]::NewGuid().ToString('N')))
-try {
-    $config = [ordered]@{
-        gemini_profiles = [ordered]@{
-            fast = [ordered]@{ model = 'synthetic-fast'; reasoning_effort = 'high'; wrapper = 'missing-fast.ps1' }
-            deep = [ordered]@{ model = 'synthetic-deep'; reasoning_effort = 'high'; wrapper = 'missing-deep.ps1' }
-        }
-        codex_profiles = [ordered]@{
-            luna = [ordered]@{
-                model = 'gpt-5.6-luna'; reasoning_effort = 'high'; reasoning_minimum = 'high'; reasoning_maximum = 'max'
-                reasoning_selection = 'adaptive_lowest_sufficient'; sandbox_mode = 'read-only'
-                availability = 'runtime_dependent'; invocation = 'native_agent_handoff_only'
-            }
-        }
-        fallback_chains = [ordered]@{
-            gemini_fast = [ordered]@{
-                max_total_attempts = 2
-                profiles = @(
-                    [ordered]@{ profile = 'gemini_fast'; max_attempts = 1 }
-                    [ordered]@{ profile = 'gemini_deep'; max_attempts = 1 }
-                    [ordered]@{ profile = 'codex_luna'; max_attempts = 0 }
-                )
-            }
-        }
-    }
-    $config.fallback_chains.gemini_fast.profiles = @(
-        [ordered]@{ profile = 'gemini_fast'; max_attempts = 1 }
-        [ordered]@{ profile = 'gemini_deep'; max_attempts = 1 }
-    )
-    $config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporaryConfig -Encoding utf8
-    $allFailedOutput = & $pwsh.Source -NoProfile -File $runnerPath -Prompt 'safe synthetic task' -ConfigPath $temporaryConfig 2>$null | Out-String
-    $allFailed = $allFailedOutput | ConvertFrom-Json
-    Assert-AiTeam ($allFailed.status -eq 'ALL_APPROVED_MODELS_FAILED') 'fallback did not stop at total attempt limit'
-    Assert-AiTeam (@($allFailed.attempts).Count -eq 2) 'fallback exceeded total attempt limit'
-
-    $config.fallback_chains.gemini_fast.profiles = @(
-        [ordered]@{ profile = 'gemini_fast'; max_attempts = 1 }
-        [ordered]@{ profile = 'gemini_deep'; max_attempts = 1 }
-        [ordered]@{ profile = 'codex_luna'; max_attempts = 0 }
-    )
-    $config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporaryConfig -Encoding utf8
-    $fullChainOutput = & $pwsh.Source -NoProfile -File $runnerPath -Prompt 'safe synthetic task' -ConfigPath $temporaryConfig 2>$null | Out-String
-    $fullChain = $fullChainOutput | ConvertFrom-Json
-    Assert-AiTeam ($fullChain.status -eq 'FALLBACK_HANDOFF_REQUIRED') 'full fallback chain did not reach Luna handoff'
-    Assert-AiTeam ($fullChain.finalModel -eq 'gpt-5.6-luna') 'full fallback chain Luna model missing'
-    Assert-AiTeam ($fullChain.handoff.reasoningEffort -eq 'high') 'Luna balanced default reasoning missing'
-    Assert-AiTeam ($fullChain.handoff.reasoningMinimum -eq 'high' -and $fullChain.handoff.reasoningMaximum -eq 'max') 'Luna reasoning bounds missing'
-    Assert-AiTeam (@($fullChain.attempts).Count -eq 2) 'full fallback chain exceeded approved model attempts'
-
-    $config.fallback_chains.gemini_fast.profiles = @(
-        [ordered]@{ profile = 'codex_luna'; max_attempts = 0 }
-    )
-    $config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporaryConfig -Encoding utf8
-    $handoffOutput = & $pwsh.Source -NoProfile -File $runnerPath -Prompt 'safe synthetic task' -ConfigPath $temporaryConfig 2>$null | Out-String
-    $handoff = $handoffOutput | ConvertFrom-Json
-    Assert-AiTeam ($handoff.status -eq 'FALLBACK_HANDOFF_REQUIRED') 'Luna handoff status missing'
-    Assert-AiTeam ($handoff.finalModel -eq 'gpt-5.6-luna') 'Luna handoff model missing'
-    Assert-AiTeam ($handoff.handoff.reasoningSelection -eq 'adaptive_lowest_sufficient') 'Luna adaptive reasoning policy missing'
-} finally {
-    if (Test-Path -LiteralPath $temporaryConfig) { Remove-Item -LiteralPath $temporaryConfig -Force }
+# AGY models can report a sign-in requirement without the older "login required" wording.
+foreach ($authText in @('Error: Please sign in to view available models.', 'You are not logged into Antigravity.')) {
+    $classification = Get-AiTeamFailureClassification -Stdout $authText -Stderr '' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true
+    Assert-AiTeam ($classification -eq 'AUTH_REQUIRED') 'AGY model-list authentication failure was misclassified'
 }
+
+$hostPermission = Get-AiTeamFailureClassification -Stdout '' -Stderr 'Error: Access is denied while opening the Antigravity CLI log.' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($hostPermission -eq 'HOST_PERMISSION_BLOCKED') 'Access Denied was incorrectly classified as authentication failure'
+$hostPermissionWithAuthText = Get-AiTeamFailureClassification -Stdout '' -Stderr 'authentication required: Access is denied by host policy.' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($hostPermissionWithAuthText -eq 'HOST_PERMISSION_BLOCKED') 'host Access Denied was overridden by authentication wording'
+$modelUnavailable = Get-AiTeamFailureClassification -Stdout 'Error: model not found' -Stderr '' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($modelUnavailable -eq 'MODEL_UNAVAILABLE') 'missing AGY model was not classified as MODEL_UNAVAILABLE'
+$agyRuntime = Get-AiTeamFailureClassification -Stdout '' -Stderr 'unexpected provider failure' -ExitCode 1 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($agyRuntime -eq 'AGY_RUNTIME_ERROR') 'generic AGY failure was not classified as AGY_RUNTIME_ERROR'
+$toolDenied = Get-AiTeamFailureClassification -Stdout '{"status":"completed"}' -Stderr 'shell command denied by host policy' -ExitCode 0 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($toolDenied -eq 'TOOL_DENIED') 'exit 0 with denied required tool cannot pass QA'
+$actualHeadlessDenial = Get-AiTeamFailureClassification -Stdout 'jetski: no output produced - a tool required the command permission that headless mode cannot prompt for, so it was auto-denied.' -Stderr '' -ExitCode 0 -WasKilled $false -TimedOut $false -HadOutput $true -IsAgy $true
+Assert-AiTeam ($actualHeadlessDenial -eq 'TOOL_DENIED') 'actual AGY headless permission denial was misclassified'
+
+
+# Capability-preserving fallback, attempt budgets and compatibility wrappers are exercised
+# by Test-AiTeamRouting.ps1 with isolated synthetic providers, never live accounts.
+& (Join-Path $scriptsRoot 'Test-AiTeamRouting.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'routing integration failed' }
 
 $sensitiveOutput = & $pwsh.Source -NoProfile -File $runnerPath -Prompt 'token: do-not-process' 2>$null | Out-String
 $sensitive = $sensitiveOutput | ConvertFrom-Json

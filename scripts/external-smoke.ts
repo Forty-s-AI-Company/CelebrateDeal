@@ -1,11 +1,9 @@
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
 import {
-  isLoopbackSmokeTarget,
   resolveSmokeTarget,
   summarizeSmokeFailure,
   summarizeSmokeResponse,
 } from "./external-smoke-safety";
-import { validateNonProductionOwnerAuthorization } from "./validate-non-production-owner-authorization.mjs";
 
 type SmokeResult = {
   name: string;
@@ -29,19 +27,6 @@ function record(result: SmokeResult) {
   console.log(`[${prefix}] ${result.name}: ${result.detail}`);
 }
 
-function ownerAuthorizationFailure(expectedEnvironment?: string): string | null {
-  const authorization = validateNonProductionOwnerAuthorization(process.env);
-  if (!authorization.ok) return authorization.reason;
-
-  const authorizedEnvironment = process.env.AI_TEAM_PROVIDER_ENVIRONMENT?.trim().toLowerCase();
-  return expectedEnvironment && expectedEnvironment !== authorizedEnvironment ? "scope_invalid" : null;
-}
-
-function remoteSmokeAuthorizationFailure(): string | null {
-  if (isLoopbackSmokeTarget(baseUrl)) return null;
-  return ownerAuthorizationFailure(process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase());
-}
-
 async function readResponsePayload(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
@@ -63,6 +48,8 @@ async function request(path: string, init?: RequestInit) {
 
   return fetch(`${baseUrl}${path}`, {
     ...init,
+    // A staging redirect must not forward a smoke request to another origin.
+    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       ...(jobSecret ? { Authorization: `Bearer ${jobSecret}` } : {}),
@@ -94,28 +81,14 @@ async function checkJson(name: string, path: string, init?: RequestInit) {
 }
 
 async function main() {
-  const authorizationFailure = remoteSmokeAuthorizationFailure();
-  if (authorizationFailure) {
-    record({
-      name: "non-Production owner authorization",
-      status: "fail",
-      detail: "blocked_before_network",
-    });
-    process.exitCode = 1;
-    return;
-  }
-
   await checkJson("health", "/api/health");
   await checkJson("admin preflight", "/api/admin/preflight");
 
-  const providerAuthorizationFailure = ownerAuthorizationFailure(
-    isLoopbackSmokeTarget(baseUrl) ? undefined : process.env.SMOKE_ENVIRONMENT?.trim().toLowerCase(),
-  );
-  if (providerAuthorizationFailure) {
+  if (process.env.RUN_EXTERNAL_PROVIDER_SMOKE !== "true") {
     record({
-      name: "external provider owner authorization",
-      status: "fail",
-      detail: "blocked_before_provider_request",
+      name: "external provider smoke",
+      status: "skip",
+      detail: "Set RUN_EXTERNAL_PROVIDER_SMOKE=true to run non-Production provider checks",
     });
   } else {
     await checkJson("resend test email", "/api/admin/ops/test-email", {

@@ -22,6 +22,17 @@ describe("goal funnel initial documents", () => {
     expect(flatten(state.pages[state.flow.steps[0]!.id]!.root)).toEqual([]);
   });
 
+  it("名單感謝頁確認資料已送出，而不是顯示待編輯提示", () => {
+    const state = createGoalFunnelStepPages({ id: "audience_thanks", name: "名單", goal: "audience", domain: "audience-thanks" });
+    expect(state).not.toBeNull();
+    if (!state) return;
+    const thankYouStep = state.flow.steps.find((step) => step.type === "opt_in_thank_you_page");
+    expect(thankYouStep).toBeDefined();
+    const copy = flatten(state.pages[thankYouStep!.id]!.root).map((node) => node.props.text);
+    expect(copy).toContain("謝謝你完成這一步");
+    expect(copy).toContain("你提供的資料已送出。接下來可在這裡說明後續流程。");
+  });
+
   it("銷售 Funnel 的第一步等待選擇模板，避免建立後直接假裝已有結帳頁", () => {
     const state = createGoalFunnelStepPages({ id: "sell", name: "銷售", goal: "sell", domain: "sell" });
     expect(state).not.toBeNull();

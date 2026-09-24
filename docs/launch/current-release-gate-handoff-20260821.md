@@ -1,5 +1,7 @@
 # CelebrateDeal current release gate handoff
 
+> 2026-08-21 歷史 handoff，僅對當時 source RC 有效。2026-09-24 起的整合、staging 與 PayUni Sandbox 狀態見 [CURRENT.md](CURRENT.md)。此處的舊授權敘述不取代使用者本輪已提供的非 Production 授權。
+
 日期：2026-08-21（Asia/Taipei）  
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
 Source RC：`dbbffcf`

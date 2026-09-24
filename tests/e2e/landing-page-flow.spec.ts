@@ -26,6 +26,9 @@ function screenshotPath(testInfo: TestInfo, filename: string) {
 }
 
 test("owner creates, edits, publishes and reloads a structured Funnel page", async ({ page }, testInfo) => {
+  // This single test runs the complete create-to-public journey, including
+  // screenshots and several database writes, on a production-mode server.
+  test.setTimeout(90_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   const suffix = runKey.replace(/-/g, "").slice(-12).toLowerCase();
@@ -101,8 +104,10 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-public-mobile.png"), fullPage: true });
   await page.goto(`/lp/${slug}/thank-you`);
-  await expect(page.getByRole("heading", { name: "感謝／下載頁" })).toBeVisible();
+  // The public thank-you page should confirm the submitted data to the visitor.
+  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
+  await expect(page.getByText("你提供的資料已送出。", { exact: false })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "感謝／下載頁" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "謝謝你完成這一步" })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });

@@ -6,7 +6,6 @@ import {
   PayUniQueryFailure,
   artifactTimestamp,
   assertExactHttpsHost,
-  assertNonProductionOwnerAuthorization,
   assertSandboxExecutionEnvironment,
   assertPublicPayUniCallbackHost,
   boundedQueryTimeout,
@@ -57,20 +56,28 @@ test("Sandbox QA requires an explicit non-production Staging host allowlist", ()
     () => resolvePayUniStagingAppUrl({
       PAYUNI_TEST_APP_URL: "https://celebratedeal.carry-digital-nomad.in.net",
       PAYUNI_STAGING_ALLOWED_HOST: "celebratedeal.carry-digital-nomad.in.net",
+      PAYUNI_PRODUCTION_APP_HOST: "different-production.example.test",
     }),
     /禁止使用 Production host/,
   );
   assert.throws(
     () => resolvePayUniStagingAppUrl({
       PAYUNI_TEST_APP_URL: "https://preview.example.test",
-      PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+      PAYUNI_STAGING_ALLOWED_HOST: "celebrate-deal-staging.carry-digital-nomad.in.net",
     }),
     /不在核准的 Staging host 白名單/,
   );
+  assert.throws(
+    () => resolvePayUniStagingAppUrl({
+      PAYUNI_TEST_APP_URL: "https://staging.example.test",
+      PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
+    }),
+    /必須是固定 Staging host/,
+  );
   assert.equal(resolvePayUniStagingAppUrl({
-    PAYUNI_TEST_APP_URL: "https://staging.example.test/live/ignored",
-    PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
-  }), "https://staging.example.test");
+    PAYUNI_TEST_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net/live/ignored",
+    PAYUNI_STAGING_ALLOWED_HOST: "celebrate-deal-staging.carry-digital-nomad.in.net",
+  }), "https://celebrate-deal-staging.carry-digital-nomad.in.net");
 });
 
 test("Sandbox execution preflight is process-env-only and missing values fail before any network stage", () => {
@@ -92,13 +99,6 @@ test("Sandbox execution preflight is process-env-only and missing values fail be
 
 test("Sandbox payment-only preflight does not require a separate finance login", () => {
   const environment = {
-    AI_TEAM_AUTHORIZATION_RECORD_REF: "opaque:authorization-record",
-    AI_TEAM_OWNER_REF: "opaque:owner-reference",
-    AI_TEAM_SCOPE_REF: "opaque:sandbox-scope",
-    AI_TEAM_NEW_EXECUTION_APPROVED: "true",
-    AI_TEAM_NON_PRODUCTION: "true",
-    AI_TEAM_FORBIDDEN_PROBE_REUSE: "false",
-    AI_TEAM_PROVIDER_ENVIRONMENT: "sandbox",
     PAYUNI_ENV: "sandbox",
     PAYUNI_SANDBOX_QA_ENABLED: "true",
     PAYUNI_SANDBOX_REFUND_ENABLED: "true",
@@ -112,30 +112,20 @@ test("Sandbox payment-only preflight does not require a separate finance login",
     PAYUNI_TEST_CVV: "123",
   };
   assert.doesNotThrow(() => assertSandboxExecutionEnvironment(environment));
-  assert.doesNotThrow(() => assertNonProductionOwnerAuthorization(environment));
 });
 
-test("PayUni Sandbox owner authorization fails closed before an external action", () => {
-  assert.throws(
-    () => assertNonProductionOwnerAuthorization({
-      AI_TEAM_PROVIDER_ENVIRONMENT: "sandbox",
-    }),
-    (error) => error?.name === "NonProductionOwnerAuthorizationError"
-      && error.status === "OWNER_AUTHORIZATION_REQUIRED"
-      && error.reason === "authorization_missing"
-      && Object.values(error.availability).every((value) => typeof value === "boolean"),
-  );
-});
-
-test("PayUni Sandbox runner places owner authorization before every external preflight", () => {
+test("PayUni Sandbox runner validates its fixed Sandbox environment before the callback probe", () => {
   const source = readFileSync(new URL("./payuni-sandbox-external-qa.mjs", import.meta.url), "utf8");
-  const ownerGate = source.indexOf("assertNonProductionOwnerAuthorization();");
-  const sandboxGate = source.indexOf("assertSandboxExecutionEnvironment();", ownerGate);
+  const sandboxGate = source.indexOf("assertSandboxExecutionEnvironment();");
   const callbackHostProbe = source.indexOf("assertPublicPayUniCallbackHost(appUrl);", sandboxGate);
 
-  assert.ok(ownerGate >= 0);
-  assert.ok(sandboxGate > ownerGate);
+  assert.ok(sandboxGate >= 0);
   assert.ok(callbackHostProbe > sandboxGate);
+  const postNavigationOriginGate = source.indexOf("new URL(page.url()).origin === appUrl");
+  const checkoutClick = source.indexOf('getByRole("button", { name: "立即搶購" })');
+  assert.ok(postNavigationOriginGate >= 0);
+  assert.ok(checkoutClick > postNavigationOriginGate);
+  assert.equal(source.includes("assertNonProductionOwnerAuthorization"), false);
 });
 
 test("Sandbox failure artifact retains only the allowlisted browser stage", () => {

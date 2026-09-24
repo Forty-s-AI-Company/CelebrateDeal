@@ -9,11 +9,19 @@
 - Handoff schema：`handoff-schema.md`
 - Goal protocol：`GOAL-PROTOCOL.md`
 - Goal state：`.ai-team/state/goal-state.json`
+- Router config：`.ai-team/config/router.json`
+- Optional Claude plan review：`.ai-team/scripts/Invoke-AgyPlanReview.ps1`
 - Evidence：`.ai-team/reports/` 與 `docs/launch/evidence-index.md`
+- vNext implementation plan：`../ai-team-vnext-plan.md`
+- vNext routing policy：`../../.ai-team/config/routing-policy.json`
+- vNext routing tests：`../../.ai-team/mcp_server/test_routing.py`、`../../.ai-team/scripts/Test-AiTeamRouting.ps1`
+- Task acceptance：MCP `assess_task`／`.ai-team/mcp_server/route_cli.py` 的 `assess_acceptance` action；必要檢查收據由 `.ai-team/mcp_server/validation_runner.py` 產生。
 
 ## 目前模式
 
-`PRELAUNCH_DEV_AUTONOMOUS` 允許長程 Goal 連續推進、多代理協作、本機／staging／sandbox 驗證、精確 local checkpoint commit，以及依產品價值選擇測試與驗收。流程不再以固定 Work Package 時間或固定代理順序阻擋進度。
+`PRELAUNCH_DEV_AUTONOMOUS` 允許長程 Goal 連續推進、多代理協作、本機／staging／sandbox 驗證、精確 local checkpoint commit，以及依產品價值選擇測試與驗收。可自動 push `codex/*` 分支並透過受保護 PR merge；Production deployment 仍需獨立 workflow 與人工核准。流程不再以固定 Work Package 時間或固定代理順序阻擋進度。
+
+固定非 Production 的本機、Preview、staging、disposable PostgreSQL 與 Sandbox 開發驗證不需要逐次 owner authorization，也不受歷史 WP 的 no-rerun／single-attempt 限制。歷史 evidence 只記錄當時結果；新工作以目前程式、環境分類與新證據判斷。Production、正式資料與正式金流仍維持獨立授權。
 
 ## 文件分類
 
