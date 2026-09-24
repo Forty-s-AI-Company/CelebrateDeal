@@ -19,7 +19,7 @@
 | master 與部署來源 | 已驗證 | PR、CI、GitHub Deployment lineage、Vercel alias／deployment 對應如上；後續新部署須重驗 |
 | DB／Supabase project identity | 已驗證 | 受保護 Preview 身分檢查通過；Auth、Storage 等實際使用資源仍須各自核對 |
 | 固定 staging 核心瀏覽器旅程 | **NOT_PROVEN** | 合成資料的登入、Funnel 建立／保存／發布與公開表單、商品、影片、行動版與關鍵 console／5xx；本機 Playwright CI 不能替代固定站驗收 |
-| 固定 staging 登入後頁面煙測 | 執行中 | [受保護 run 36054693775](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36054693775) 將檢查固定網址的 Dashboard／Products／商品預覽／Billing Plans 桌機與手機；此檢查不涵蓋正常登入、Funnel 保存或付款 |
+| 固定 staging 登入後頁面煙測 | **BLOCKED** | [受保護 run 36054693775](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36054693775) 的 sanitized receipt：合成 session 已建立、桌機／手機共 8 個路由皆 200，沒有 page error／同站 5xx；預期內容未出現，runner 同時擋下 47 個非 GET 請求。尚無法判定為網站缺陷或驗收工具阻擋載入，需查明最終路徑與請求類別；此檢查不涵蓋正常登入、Funnel 保存或付款 |
 | PayUni Sandbox 買家訂單 | **NOT_PROVEN** | 同一固定部署上一筆成功付款、callback、持久化訂單、使用者可見狀態及重複 callback 冪等性；退款／對帳屬更完整的財務閉環 |
 | Sandbox runner 前置關卡 | 已修復並通過 | PR #279 將 Prisma Client 生成移到所有 task 共用前置步驟；[受保護綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042545323) 已通過，不顯示測試卡或 Secret 值 |
 | 固定 Sandbox 交易嘗試 | **BLOCKED_BEFORE_PAYMENT** | [受保護 run 36042691222](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042691222) 的 validated sanitized receipt 為 `FIXTURE_HTTP_REJECTED`；`checkoutPosts=0`、`payments=0`、`refunds=0`。須先唯讀診斷 migration 與 fixture 前置狀態，不重送付款 |
