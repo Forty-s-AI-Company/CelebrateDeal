@@ -79,6 +79,10 @@ jobs:
         if: ${{ inputs.task == 'wp2-readonly-restore' }}
         run: docker pull postgres:17-alpine
 
+      - name: Preload age encryption tooling before secret injection
+        if: ${{ inputs.task == 'wp2-readonly-restore' }}
+        run: sudo apt-get update -qq && sudo apt-get install -y age
+
       # Browser binaries are fetched before the secret-aware WP4 step. The
       # execution step below is therefore the only step that can receive the
       # Sandbox test bindings.
@@ -117,6 +121,7 @@ jobs:
         shell: bash
         env:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_BACKUP_AGE_RECIPIENT: ${{ vars.STAGING_BACKUP_AGE_RECIPIENT }}
           GITHUB_TOKEN: ${{ github.token }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -667,6 +672,14 @@ jobs:
           SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore-receipt.json
         run: node --import tsx scripts/validate-secure-staging-receipt.mjs "$SECURE_RECEIPT_PATH"
 
+      - name: Validate encrypted WP2 archive without decrypting
+        if: ${{ inputs.task == 'wp2-readonly-restore' && steps.execute-wp2.outcome == 'success' }}
+        id: validate-retained-wp2
+        env:
+          SECURE_RECEIPT_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore-receipt.json
+          ENCRYPTED_ARCHIVE_PATH: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore.dump.age
+        run: node scripts/validate-staging-retained-backup.mjs "$ENCRYPTED_ARCHIVE_PATH" "$SECURE_RECEIPT_PATH"
+
       - name: Execute fixed LINE notification task with bounded egress
         if: ${{ inputs.task == 'line-notifications-e2e' }}
         id: execute-line
@@ -792,13 +805,32 @@ jobs:
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-subscription-receipt
 
       - name: Upload sanitized receipt only
-        if: ${{ inputs.task == 'wp2-readonly-restore' || inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp2-readonly-restore' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/celebratedeal-secure-receipts/${{ inputs.task }}-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload sanitized WP4 reconciliation receipt only
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
           path: ${{ runner.temp }}/celebratedeal-secure-receipts/${{ inputs.task }}-receipt.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload encrypted WP2 archive only
+        if: ${{ inputs.task == 'wp2-readonly-restore' && steps.validate-retained-wp2.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: secure-staging-encrypted-backup-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/celebratedeal-secure-receipts/wp2-readonly-restore.dump.age
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
       - name: Upload sanitized existing-refund recovery receipt only
         if: ${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}

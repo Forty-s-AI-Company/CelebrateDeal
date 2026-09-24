@@ -41,8 +41,22 @@ test("WP2 pins the RC source and closes IPv6 before staging secret use", () => {
   assert.deepEqual(Object.keys(sourceGate.env), ["CELEBRATEDEAL_SOURCE_SHA"]);
   assert.match(sourceGate.run, /9193326824b8b6bf774bdfa28e4783a1a1b8f304/u);
   assert.equal(execute.env.STAGING_DATABASE_URL, "${{ secrets.STAGING_DATABASE_URL }}");
+  assert.equal(execute.env.STAGING_BACKUP_AGE_RECIPIENT, "${{ vars.STAGING_BACKUP_AGE_RECIPIENT }}");
   assert.match(execute.run, /ip6tables -P OUTPUT DROP/u);
   assert.match(execute.run, /ip6tables-restore/u);
+  const agePreload = steps.find((step) => step.name === "Preload age encryption tooling before secret injection");
+  const archiveValidation = steps.find((step) => step.id === "validate-retained-wp2");
+  const archiveUpload = steps.find((step) => step.name === "Upload encrypted WP2 archive only");
+  const wp2ReceiptUpload = steps.find((step) => step.name === "Upload sanitized receipt only");
+  const wp4ReceiptUpload = steps.find((step) => step.name === "Upload sanitized WP4 reconciliation receipt only");
+  assert.ok(steps.indexOf(agePreload) < steps.indexOf(execute));
+  assert.ok(steps.indexOf(execute) < steps.indexOf(archiveValidation));
+  assert.ok(steps.indexOf(archiveValidation) < steps.indexOf(archiveUpload));
+  assert.match(archiveUpload.with.path, /wp2-readonly-restore\.dump\.age$/u);
+  assert.equal(archiveUpload.with["retention-days"], 30);
+  assert.equal(archiveUpload.if, "${{ inputs.task == 'wp2-readonly-restore' && steps.validate-retained-wp2.outcome == 'success' }}");
+  assert.equal(wp2ReceiptUpload.with["retention-days"], 30);
+  assert.equal(wp4ReceiptUpload.with["retention-days"], 7);
 });
 
 test("workflow exposes only fixed allowlisted tasks with pinned actions", () => {
@@ -72,7 +86,7 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
   assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
   assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
-  assert.equal(actionUses.length, 9);
+  assert.equal(actionUses.length, 11);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
 });
 
