@@ -738,18 +738,18 @@ function assertFixtureResponse(response) {
   return response.status === 200
     && exactKeys(response.body, ["ready", "createdCount", "reusedCount"])
     && response.body.ready === true
-    && boundedInteger(response.body.createdCount, 5)
-    && boundedInteger(response.body.reusedCount, 5)
-    && response.body.createdCount + response.body.reusedCount === 5;
+    && boundedInteger(response.body.createdCount, 6)
+    && boundedInteger(response.body.reusedCount, 6)
+    && response.body.createdCount + response.body.reusedCount === 6;
 }
 
 function assertSubscriptionFixtureResponse(response) {
   return response.status === 200
     && exactKeys(response.body, ["ready", "createdCount", "reusedCount"])
     && response.body.ready === true
-    && boundedInteger(response.body.createdCount, 5)
-    && boundedInteger(response.body.reusedCount, 5)
-    && response.body.createdCount + response.body.reusedCount === 5;
+    && boundedInteger(response.body.createdCount, 6)
+    && boundedInteger(response.body.reusedCount, 6)
+    && response.body.createdCount + response.body.reusedCount === 6;
 }
 
 function assertAdmissionResponse(response) {
