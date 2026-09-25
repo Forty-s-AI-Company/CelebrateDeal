@@ -13,6 +13,7 @@ vi.mock("@/lib/wp4-sandbox-fixture", async (importOriginal) => {
 
 import {
   Wp4SandboxFixtureConflictError,
+  Wp4SandboxFixtureDatabaseError,
 } from "@/lib/wp4-sandbox-fixture";
 import { POST } from "./route";
 
@@ -136,6 +137,17 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("x-celebratedeal-wp4-fixture")).toBe("UNCLASSIFIED_FAILURE");
+    await expect(response.json()).resolves.toEqual({ error: "Service unavailable" });
+  });
+
+  it("returns only a bounded fixture database category after authorized failure", async () => {
+    mocks.ensureFixture.mockRejectedValueOnce(new Wp4SandboxFixtureDatabaseError("PRODUCT", { code: "P2022", detail: "private" }));
+
+    const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-celebratedeal-wp4-fixture")).toBe("DB_PRODUCT_P2022");
     await expect(response.json()).resolves.toEqual({ error: "Service unavailable" });
   });
 });

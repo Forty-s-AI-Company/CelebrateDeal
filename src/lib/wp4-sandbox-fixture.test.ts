@@ -4,6 +4,7 @@ import {
   ensureWp4SandboxFixture,
   WP4_SANDBOX_FIXTURE,
   Wp4SandboxFixtureConflictError,
+  Wp4SandboxFixtureDatabaseError,
 } from "./wp4-sandbox-fixture";
 
 function fixtureDb(overrides: Record<string, unknown> = {}) {
@@ -23,6 +24,19 @@ function fixtureDb(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ensureWp4SandboxFixture", () => {
+  it("classifies a failing fixture stage without exposing database details", async () => {
+    const { db, transactionDb } = fixtureDb();
+    transactionDb.vendor.findFirst.mockRejectedValueOnce({ code: "P2022", detail: "private column" });
+
+    await expect(ensureWp4SandboxFixture(db)).rejects.toMatchObject({
+      name: "Wp4SandboxFixtureDatabaseError",
+      outcome: "DB_VENDOR_P2022",
+    });
+    expect(transactionDb.user.findFirst).not.toHaveBeenCalled();
+    expect(new Wp4SandboxFixtureDatabaseError("PRODUCT", { code: "raw-private-code" }).outcome)
+      .toBe("DB_PRODUCT_OTHER");
+  });
+
   it("creates only the six deterministic synthetic fixture identities", async () => {
     const { db, transactionDb } = fixtureDb();
 

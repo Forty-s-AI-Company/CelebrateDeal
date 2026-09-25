@@ -5,6 +5,7 @@ import { requestHasNonEmptyBody } from "@/lib/http-request-body";
 import {
   ensureWp4SandboxFixture,
   Wp4SandboxFixtureConflictError,
+  Wp4SandboxFixtureDatabaseError,
 } from "@/lib/wp4-sandbox-fixture";
 import {
   resolveWp4ExpectedSourceSha,
@@ -61,9 +62,15 @@ export async function POST(request: Request) {
         { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
+    if (error instanceof Wp4SandboxFixtureDatabaseError) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        { status: 503, headers: { "Cache-Control": "no-store", [FIXTURE_OUTCOME_HEADER]: error.outcome } },
+      );
+    }
     return NextResponse.json(
       { error: "Service unavailable" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: { "Cache-Control": "no-store", [FIXTURE_OUTCOME_HEADER]: "UNCLASSIFIED_FAILURE" } },
     );
   }
 }

@@ -211,7 +211,7 @@ function successfulDependencies(calls = []) {
   return {
     async request(request) {
       calls.push(request);
-      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
       if (request.url.endsWith("/checkout/admission")) {
         return {
           status: 200,
@@ -276,7 +276,7 @@ function successfulSubscriptionDependencies(calls = []) {
   return {
     async request(request) {
       calls.push(request);
-      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
       if (request.url.endsWith("/wp4-session")) {
         return { status: 204, sessionCookie: "celebrate_session=opaque-owner-session" };
       }
@@ -387,8 +387,8 @@ test("buyer browser captures only the exact signed Return POST after the real 30
     contentType: "application/x-www-form-urlencoded" });
 });
 
-test("buyer fixture contract rejects retired six-entity and invalid counts", async () => {
-  for (const createdCount of [6, 4]) {
+test("buyer fixture contract rejects stale five-entity and invalid counts", async () => {
+  for (const createdCount of [5, 4]) {
     let browserCalled = false;
     const receipt = await runMvpPayUniSandboxE2E(validInput, {
       request: async () => response(200, { ready: true, createdCount, reusedCount: 0 }),
@@ -397,6 +397,16 @@ test("buyer fixture contract rejects retired six-entity and invalid counts", asy
     assert.equal(receipt.failure, "FIXTURE_HTTP_REJECTED");
     assert.equal(browserCalled, false);
   }
+});
+
+test("buyer fixture accepts the six deterministic server rows before admission", async () => {
+  const receipt = await runMvpPayUniSandboxE2E(validInput, {
+    request: async () => response(200, { ready: true, createdCount: 2, reusedCount: 4 }),
+  });
+  assert.equal(receipt.checks.fixtureReady, true);
+  assert.equal(receipt.sideEffects.admissionPosts, 1);
+  assert.equal(receipt.failure, "ADMISSION_REJECTED");
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
 test("uses the native fixed plan browser flow once without treating the return page as subscription payment proof", async () => {
@@ -1011,7 +1021,13 @@ test("preserves only allowlisted fixture failure classifications in the sanitize
     [404, "SOURCE_MISMATCH", "FIXTURE_SOURCE_MISMATCH"],
     [404, "BODY_REJECTED", "FIXTURE_BODY_REJECTED"],
     [409, null, "FIXTURE_CONFLICT"],
-    [503, "untrusted-detail", "FIXTURE_HTTP_REJECTED"],
+    [503, "DB_PRODUCT_P2022", "FIXTURE_DB_PRODUCT_P2022"],
+    [503, "DB_TRANSACTION_OTHER", "FIXTURE_DB_TRANSACTION_OTHER"],
+    [503, "UNCLASSIFIED_FAILURE", "FIXTURE_UNCLASSIFIED_FAILURE"],
+    [503, "DB_PRODUCT_PRIVATE", "FIXTURE_HTTP_503"],
+    [503, "untrusted-detail", "FIXTURE_HTTP_503"],
+    [403, null, "FIXTURE_HTTP_403"],
+    [502, null, "FIXTURE_HTTP_502"],
   ];
   for (const [status, outcome, expected] of cases) {
     const receipt = await runMvpPayUniSandboxE2E(validInput, {
