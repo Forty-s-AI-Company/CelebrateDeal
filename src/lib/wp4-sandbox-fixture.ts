@@ -21,6 +21,31 @@ export class Wp4SandboxFixtureConflictError extends Error {
   }
 }
 
+const FIXTURE_DB_CODES = ["P2022", "P2021", "P2002", "P2003", "P1001"] as const;
+type FixtureStage = "VENDOR" | "OWNER" | "MEMBERSHIP" | "PRODUCT" | "PLAN" | "INVOICE" | "TRANSACTION";
+
+/** Only a fixed stage and an allowlisted Prisma code may leave the server. */
+export class Wp4SandboxFixtureDatabaseError extends Error {
+  readonly outcome: string;
+
+  constructor(stage: FixtureStage, error: unknown) {
+    super("WP4 synthetic fixture database operation failed.");
+    this.name = "Wp4SandboxFixtureDatabaseError";
+    const rawCode = typeof error === "object" && error !== null && "code" in error ? error.code : null;
+    const code = FIXTURE_DB_CODES.find((candidate) => candidate === rawCode) ?? "OTHER";
+    this.outcome = `DB_${stage}_${code}`;
+  }
+}
+
+async function fixtureStep<T>(stage: FixtureStage, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof Wp4SandboxFixtureConflictError) throw error;
+    throw new Wp4SandboxFixtureDatabaseError(stage, error);
+  }
+}
+
 type FixtureDb = Prisma.TransactionClient | PrismaClient;
 
 function assertIdentity(condition: boolean) {
@@ -260,16 +285,21 @@ async function ensureInvoice(db: FixtureDb) {
  * Any identity collision fails closed before an existing row can be repurposed.
  */
 export async function ensureWp4SandboxFixture(db: PrismaClient) {
-  return db.$transaction(async (tx) => {
-    const outcomes = [
-      await ensureVendor(tx),
-      await ensureOwner(tx),
-      await ensureMembership(tx),
-      await ensureProduct(tx),
-      await ensurePlan(tx),
-      await ensureInvoice(tx),
-    ];
-    const createdCount = outcomes.filter(Boolean).length;
-    return { createdCount, reusedCount: outcomes.length - createdCount };
-  });
+  try {
+    return await db.$transaction(async (tx) => {
+      const outcomes = [
+        await fixtureStep("VENDOR", () => ensureVendor(tx)),
+        await fixtureStep("OWNER", () => ensureOwner(tx)),
+        await fixtureStep("MEMBERSHIP", () => ensureMembership(tx)),
+        await fixtureStep("PRODUCT", () => ensureProduct(tx)),
+        await fixtureStep("PLAN", () => ensurePlan(tx)),
+        await fixtureStep("INVOICE", () => ensureInvoice(tx)),
+      ];
+      const createdCount = outcomes.filter(Boolean).length;
+      return { createdCount, reusedCount: outcomes.length - createdCount };
+    });
+  } catch (error) {
+    if (error instanceof Wp4SandboxFixtureConflictError || error instanceof Wp4SandboxFixtureDatabaseError) throw error;
+    throw new Wp4SandboxFixtureDatabaseError("TRANSACTION", error);
+  }
 }

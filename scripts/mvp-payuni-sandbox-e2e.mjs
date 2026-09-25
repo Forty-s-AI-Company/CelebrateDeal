@@ -149,6 +149,13 @@ const FAILURE_CODES = new Set([
   "NETWORK_REJECTED",
   "INTERNAL_REJECTED",
 ]);
+// The server emits only fixed fixture stages and allowlisted Prisma categories.
+// Enumerate the corresponding receipt values so no arbitrary header is trusted.
+for (const stage of ["VENDOR", "OWNER", "MEMBERSHIP", "PRODUCT", "PLAN", "INVOICE", "TRANSACTION"]) {
+  for (const code of ["P2022", "P2021", "P2002", "P2003", "P1001", "OTHER"]) {
+    FAILURE_CODES.add(`FIXTURE_DB_${stage}_${code}`);
+  }
+}
 const PAYUNI_UPP_URL = "https://sandbox-api.payuni.com.tw/api/upp";
 const PAYUNI_PAYMENT_HOST = new URL(PAYUNI_UPP_URL).hostname;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -905,6 +912,10 @@ function fixtureFailure(response) {
     BODY_REJECTED: "FIXTURE_BODY_REJECTED",
   };
   if (typeof response.outcome === "string" && outcomes[response.outcome]) return outcomes[response.outcome];
+  if (typeof response.outcome === "string" && response.outcome.startsWith("DB_")
+    && FAILURE_CODES.has(`FIXTURE_${response.outcome}`)) {
+    return `FIXTURE_${response.outcome}`;
+  }
   if (response.status === 409) return "FIXTURE_CONFLICT";
   return "FIXTURE_HTTP_REJECTED";
 }
