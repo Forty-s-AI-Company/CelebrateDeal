@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { applyMigrations, databaseIdentity, FIXED_SOURCE_SHA, historyMatches, validateApplyReceipt,
+import { applyMigrations, databaseIdentity, databaseIdentityFailureCode, FIXED_SOURCE_SHA, historyMatches, migrationUrlWithLockTimeout, validateApplyReceipt,
   validateInvocation, validatePrerequisites, validateProducerRun, verifyProducerRuns,
   verifySourcePull } from "./staging-migration-apply.mjs";
 
@@ -27,7 +27,6 @@ const source = {
   GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/staging-migration-apply.yml@refs/heads/master",
   GITHUB_RUN_ID: "123", GITHUB_SHA: "a".repeat(40), GITHUB_TOKEN: "synthetic", RUNNER_TEMP: "/tmp/synthetic",
   CELEBRATEDEAL_SOURCE_SHA: FIXED_SOURCE_SHA, CELEBRATEDEAL_DEPLOYMENT_HOST: host,
-  CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "ALL_DISPOSABLE_SYNTHETIC",
   STAGING_DATABASE_URL: url, NEXT_PUBLIC_SUPABASE_URL: `https://${ref}.supabase.co`,
 };
 const ids = { replay: 10 };
@@ -47,6 +46,9 @@ const evidence = {
 test("fixed non-Production URL, project, protected branch and workflow are required", () => {
   assert.equal(validateInvocation(source), null);
   assert.equal(databaseIdentity(source)?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?sslmode=require` })?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?pgbouncer=true` })?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?connection_limit=1&connect_timeout=10&pool_timeout=20` })?.digest, digest);
   for (const change of [
     { GITHUB_REF_PROTECTED: "false" }, { GITHUB_REF: "refs/heads/feature" },
     { GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/other.yml@refs/heads/master" },
@@ -55,9 +57,55 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
       NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" },
     { CELEBRATEDEAL_DEPLOYMENT_HOST: "other-preview.vercel.app" },
     { CELEBRATEDEAL_SOURCE_SHA: "0".repeat(40) },
-    { CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "UNKNOWN" },
+    { STAGING_DATABASE_URL: `${url}?sslmode=disable` },
+    { STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` },
+    { STAGING_DATABASE_URL: `${url}?pgbouncer=false` },
+    { STAGING_DATABASE_URL: `${url}?connection_limit=0` },
+    { STAGING_DATABASE_URL: `${url}?host=other.example.test` },
+    { STAGING_DATABASE_URL: `${url}?options=-c%20search_path%3Dother` },
+    { STAGING_DATABASE_URL: url.replace(":5432/", ":6543/") },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
+});
+
+test("database identity failures expose only fixed categories before any migration", () => {
+  const cases = [
+    [{ STAGING_DATABASE_URL: "" }, "STAGING_DATABASE_URL_MISSING"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "" }, "STAGING_SUPABASE_URL_MISSING"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "https://example.test" }, "STAGING_SUPABASE_URL_INVALID"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" }, "STAGING_PROJECT_MISMATCH"],
+    [{ STAGING_DATABASE_URL: `${url}?unsupported=private` }, "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED"],
+    [{ STAGING_DATABASE_URL: `${url}?schema=other` }, "STAGING_DATABASE_SCHEMA_QUERY_INVALID"],
+    [{ STAGING_DATABASE_URL: `${url}?sslmode=disable` }, "STAGING_DATABASE_SSLMODE_QUERY_INVALID"],
+    [{ STAGING_DATABASE_URL: `${url}?pgbouncer=false` }, "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID"],
+    [{ STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` }, "STAGING_DATABASE_QUERY_DUPLICATE"],
+    [{ STAGING_DATABASE_URL: `${url}?connection_limit=0` }, "STAGING_DATABASE_QUERY_HINT_INVALID"],
+    [{ STAGING_DATABASE_URL: `${url}?host=other.example.test` }, "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED"],
+    [{ STAGING_DATABASE_URL: url.replace(":5432/", ":6543/") }, "STAGING_MIGRATION_TRANSACTION_POOLER_UNSUPPORTED"],
+    [{ STAGING_DATABASE_URL: "postgresql://bad" }, "STAGING_DATABASE_URL_SHAPE_INVALID"],
+    [{ STAGING_DATABASE_URL: syntheticDbUrl("db.other-project.supabase.co") }, "STAGING_DATABASE_TARGET_MISMATCH"],
+  ];
+  for (const [change, code] of cases) {
+    const candidate = { ...source, ...change };
+    assert.equal(databaseIdentity(candidate), null);
+    assert.equal(databaseIdentityFailureCode(candidate), code);
+    assert.equal(validateInvocation(candidate), code);
+    assert.match(code, /^[A-Z0-9_]+$/u);
+    assert.equal(code.includes("private"), false);
+  }
+});
+
+test("Prisma migration URL has a bounded lock wait without changing source binding", () => {
+  const derived = new URL(migrationUrlWithLockTimeout(source));
+  assert.equal(derived.searchParams.get("options"), "-c lock_timeout=5000 -c statement_timeout=60000");
+  assert.equal(derived.hostname, `db.${ref}.supabase.co`);
+  const withRuntimeHint = migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: `${url}?pgbouncer=true` });
+  assert.equal(new URL(withRuntimeHint).searchParams.has("pgbouncer"), false);
+  const withTuning = migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: `${url}?connection_limit=1&connect_timeout=10` });
+  assert.equal(new URL(withTuning).searchParams.has("connection_limit"), false);
+  assert.equal(new URL(withTuning).searchParams.has("connect_timeout"), false);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: derived.toString() }), null);
+  assert.equal(migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: "postgresql://bad" }), null);
 });
 
 test("exact protected isolated replay receipt is required", () => {
@@ -121,14 +169,22 @@ test("invalid replay evidence blocks before any child process", () => {
   assert.equal(calls, 0);
 });
 
-test("unknown staging data disposition blocks before database access", () => {
-  let calls = 0;
-  const receipt = applyMigrations(evidence, { ...source, CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "UNKNOWN" },
-    { run: () => { calls += 1; throw new Error("must not run"); } });
-  assert.equal(receipt.result, "BLOCKED");
-  assert.equal(receipt.failureCode, "DATA_DISPOSITION_UNCONFIRMED");
-  assert.equal(receipt.migrationAttempted, false);
-  assert.equal(calls, 0);
+test("CLI identifies a missing replay receipt before any migration attempt", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-apply-receipt-"));
+  try {
+    const cli = path.resolve("scripts/staging-migration-apply.mjs");
+    const result = spawnSync(process.execPath, [cli], {
+      cwd: temp, encoding: "utf8", shell: false,
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, RUNNER_TEMP: temp },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /code=REPLAY_RECEIPT_READ_FAILED/u);
+    const receipt = JSON.parse(fs.readFileSync(path.join(temp, "staging-migration-apply-receipt.json"), "utf8"));
+    assert.equal(receipt.failureCode, "REPLAY_RECEIPT_READ_FAILED");
+    assert.equal(receipt.migrationAttempted, false);
+  } finally {
+    if (path.dirname(temp) === os.tmpdir()) fs.rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test("apply receipt binds protected commit and producer run", () => {

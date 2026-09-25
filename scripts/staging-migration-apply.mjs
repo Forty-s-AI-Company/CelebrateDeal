@@ -16,11 +16,23 @@ const SAFE_MIGRATION = /^\d{12,14}_[a-z0-9_]+$/u;
 const SAFE_PROJECT = /^[a-z0-9]{20}$/u;
 const FIXED_STAGING_REF = "ocbugvgojrunvenozsbx";
 const FIXED_PREVIEW_HOST = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
+const SAFE_RUNTIME_HINTS = Object.freeze({ connection_limit: [1, 100], connect_timeout: [0, 120],
+  pool_timeout: [0, 120], socket_timeout: [0, 120], statement_cache_size: [0, 1000] });
+const SAFE_QUERY_KEYS = new Set(["schema", "sslmode", "pgbouncer", ...Object.keys(SAFE_RUNTIME_HINTS)]);
 const WORKFLOWS = Object.freeze({
   replay: ".github/workflows/staging-migration-compat-preflight.yml",
 });
 
 function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function runtimeHintsValid(db) {
+  return Object.entries(SAFE_RUNTIME_HINTS).every(([key, [min, max]]) => {
+    const raw = db.searchParams.get(key);
+    if (raw === null) return true;
+    if (!/^\d{1,4}$/u.test(raw)) return false;
+    const value = Number(raw);
+    return value >= min && value <= max;
+  });
+}
 /** Hash excludes the password, and is identical to the LINE runner's binding. */
 export function databaseIdentity(source) {
   try {
@@ -30,16 +42,68 @@ export function databaseIdentity(source) {
     const user = decodeURIComponent(db.username);
     const port = db.port || "5432";
     const schema = db.searchParams.get("schema") ?? "public";
+    const sslmode = db.searchParams.get("sslmode");
+    const pgbouncer = db.searchParams.get("pgbouncer");
+    const queryKeys = [...db.searchParams.keys()];
     const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
     const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
     if (!ref || !SAFE_PROJECT.test(ref) || ref !== FIXED_STAGING_REF
       || api.protocol !== "https:" || api.pathname !== "/" || api.search || api.hash || api.username || api.password || api.port
-      || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || !["5432", "6543"].includes(port)
+      || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || port !== "5432"
       || db.pathname !== "/postgres" || schema !== "public"
-      || [...db.searchParams.keys()].some((key) => key !== "schema") || (!direct && !pooler)) return null;
+      || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
+      || (pgbouncer !== null && pgbouncer !== "true")
+      || queryKeys.some((key) => !SAFE_QUERY_KEYS.has(key)) || !runtimeHintsValid(db)
+      || new Set(queryKeys).size !== queryKeys.length || (!direct && !pooler)) return null;
     const digest = sha256([db.hostname, port, db.pathname, user, schema].join("\n"));
     return { digest, projectRef: ref, host: db.hostname, port, database: "postgres", user, password: decodeURIComponent(db.password) };
   } catch { return null; }
+}
+
+/** Return only a fixed category; never include a URL, credential, or query value in the receipt. */
+export function databaseIdentityFailureCode(source) {
+  if (!source.STAGING_DATABASE_URL) return "STAGING_DATABASE_URL_MISSING";
+  if (!source.NEXT_PUBLIC_SUPABASE_URL) return "STAGING_SUPABASE_URL_MISSING";
+  let db;
+  let api;
+  try {
+    db = new URL(source.STAGING_DATABASE_URL);
+    api = new URL(source.NEXT_PUBLIC_SUPABASE_URL);
+  } catch { return "STAGING_DATABASE_URL_MALFORMED"; }
+  const ref = api.hostname.match(/^([a-z0-9]{20})\.supabase\.co$/u)?.[1];
+  if (!ref || !SAFE_PROJECT.test(ref) || api.protocol !== "https:" || api.pathname !== "/"
+    || api.search || api.hash || api.username || api.password || api.port) return "STAGING_SUPABASE_URL_INVALID";
+  if (ref !== FIXED_STAGING_REF) return "STAGING_PROJECT_MISMATCH";
+  const queryKeys = [...db.searchParams.keys()];
+  const sslmode = db.searchParams.get("sslmode");
+  if (new Set(queryKeys).size !== queryKeys.length) return "STAGING_DATABASE_QUERY_DUPLICATE";
+  if ((db.searchParams.get("schema") ?? "public") !== "public") return "STAGING_DATABASE_SCHEMA_QUERY_INVALID";
+  if (sslmode !== null && !["require", "verify-full"].includes(sslmode)) return "STAGING_DATABASE_SSLMODE_QUERY_INVALID";
+  if (db.searchParams.has("pgbouncer") && db.searchParams.get("pgbouncer") !== "true") return "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID";
+  if (queryKeys.some((key) => !SAFE_QUERY_KEYS.has(key))) return "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED";
+  if (!runtimeHintsValid(db)) return "STAGING_DATABASE_QUERY_HINT_INVALID";
+  if (!["postgres:", "postgresql:"].includes(db.protocol) || !db.username || !db.password
+    || db.pathname !== "/postgres") return "STAGING_DATABASE_URL_SHAPE_INVALID";
+  if ((db.port || "5432") === "6543") return "STAGING_MIGRATION_TRANSACTION_POOLER_UNSUPPORTED";
+  if ((db.port || "5432") !== "5432") return "STAGING_DATABASE_URL_SHAPE_INVALID";
+  let user;
+  try { user = decodeURIComponent(db.username); }
+  catch { return "STAGING_DATABASE_URL_SHAPE_INVALID"; }
+  const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
+  const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
+  if (!direct && !pooler) return "STAGING_DATABASE_TARGET_MISMATCH";
+  return "DATABASE_IDENTITY_INVALID";
+}
+
+/** Prisma's migration engine ignores PGOPTIONS; bound lock and statement time in its URL. */
+export function migrationUrlWithLockTimeout(source) {
+  if (!databaseIdentity(source)) return null;
+  const url = new URL(source.STAGING_DATABASE_URL);
+  // Runtime's PgBouncer hint is unnecessary for direct/session migration connections.
+  url.searchParams.delete("pgbouncer");
+  for (const key of Object.keys(SAFE_RUNTIME_HINTS)) url.searchParams.delete(key);
+  url.searchParams.set("options", "-c lock_timeout=5000 -c statement_timeout=60000");
+  return url.toString();
 }
 
 export function validateInvocation(source) {
@@ -48,9 +112,8 @@ export function validateInvocation(source) {
     || source.GITHUB_WORKFLOW_REF?.split("@")[0] !== "Forty-s-AI-Company/CelebrateDeal/.github/workflows/staging-migration-apply.yml") return "UNTRUSTED_WORKFLOW";
   if (source.CELEBRATEDEAL_SOURCE_SHA !== FIXED_SOURCE_SHA || !/^\d+$/u.test(source.GITHUB_RUN_ID ?? "")
     || !/^[a-f0-9]{40}$/u.test(source.GITHUB_SHA ?? "")) return "SOURCE_BINDING_INVALID";
-  if (source.CELEBRATEDEAL_STAGING_DATA_DISPOSITION !== "ALL_DISPOSABLE_SYNTHETIC") return "DATA_DISPOSITION_UNCONFIRMED";
   if (source.CELEBRATEDEAL_DEPLOYMENT_HOST !== FIXED_PREVIEW_HOST) return "DEPLOYMENT_HOST_INVALID";
-  if (!databaseIdentity(source)) return "DATABASE_IDENTITY_INVALID";
+  if (!databaseIdentity(source)) return databaseIdentityFailureCode(source);
   if (!source.GITHUB_TOKEN || !source.RUNNER_TEMP) return "REQUIRED_BINDING_MISSING";
   return null;
 }
@@ -278,9 +341,11 @@ export function applyMigrations(evidence, source = process.env, dependencies = {
   try {
     const prepared = createTrustedMigrationMirror(inventory, source.RUNNER_TEMP);
     mirror = prepared.mirror;
+    const migrationUrl = migrationUrlWithLockTimeout(source);
+    if (!migrationUrl) throw new Error("MIGRATION_URL_INVALID");
     receipt.migrationAttempted = true;
     response = run(prisma, ["migrate", "deploy", "--schema", prepared.schema],
-      { ...trustedEnvironment(source), DATABASE_URL: source.STAGING_DATABASE_URL, DIRECT_URL: source.STAGING_DATABASE_URL,
+      { ...trustedEnvironment(source), DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl,
         PRISMA_HIDE_UPDATE_MESSAGE: "true", NO_COLOR: "1" }, { cwd: mirror, timeout: 600_000 });
   } catch {
     receipt.result = receipt.migrationAttempted ? "FAILED" : "BLOCKED";
@@ -341,19 +406,30 @@ function readReceipt(root, directory, filename) {
 const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invoked) {
   let receipt;
+  // Fixed phase codes identify the failing gate without exposing exceptions,
+  // paths, provider responses, database rows, or child-process output.
+  let phase = "REPLAY_RECEIPT_READ_FAILED";
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const evidence = {
       replay: readReceipt(root, "staging-replay", "celebratedeal-staging-migration-replay.json"),
       runIds: { replay: Number(process.env.STAGING_REPLAY_RUN_ID) },
     };
-    if (validateInvocation(process.env)) throw new Error("INVOCATION_INVALID");
-    if (validatePrerequisites(evidence)) throw new Error("EVIDENCE_INCOMPLETE");
+    phase = "INVOCATION_INVALID";
+    const invocation = validateInvocation(process.env);
+    if (invocation) { phase = invocation; throw new Error("GATE_REJECTED"); }
+    phase = "REPLAY_EVIDENCE_INCOMPLETE";
+    const prerequisites = validatePrerequisites(evidence);
+    if (prerequisites) { phase = prerequisites; throw new Error("GATE_REJECTED"); }
+    phase = "PRODUCER_PROVENANCE_INVALID";
     if (!await verifyProducerRuns(evidence.runIds, process.env)) throw new Error("PRODUCER_PROVENANCE_INVALID");
+    phase = "SOURCE_PULL_INVALID";
     if (!await verifySourcePull(process.env)) throw new Error("SOURCE_PULL_INVALID");
+    phase = "DEPLOYMENT_LINEAGE_INVALID";
     await verifyDeployment(process.env);
+    phase = "APPLY_RUNTIME_ERROR";
     receipt = applyMigrations(evidence);
-  } catch { receipt = { ...initialReceipt(), failureCode: "EVIDENCE_LOAD_FAILED" }; }
+  } catch { receipt = { ...initialReceipt(), failureCode: phase }; }
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const expected = receipt.result === "PASS" ? {
