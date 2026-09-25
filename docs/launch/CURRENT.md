@@ -33,6 +33,6 @@
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
-依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版；master 的文件與診斷修正尚未重新部署至固定 staging。固定站登入後內容未通過，Sandbox 成功訂單與 callback／持久化／冪等性證據仍缺，Codex Goal 不應標為 complete。
+依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。固定 staging 仍指向 PR #277 的舊部署，master 的文件與診斷修正尚未重新部署至固定 staging。固定站登入後內容未通過，Sandbox 成功訂單與 callback／持久化／冪等性證據仍缺，Codex Goal 不應標為 complete。
 
 下一步先確認可保留的非 Production 回復備份或明確的 disposable staging 資料邊界，再用受保護流程修復 staging schema。已通過的隔離重播不會留下 dump，不能單獨充當回復方案。本機預備的 `codex/staging-migration-apply-gate` 尚未推送或執行，複審發現它誤拒真正的 staging project、producer workflow／artifact 名稱不符、缺 master migration tree 比對與備份後資料變動防護；修正並重新審查前不能使用。schema 修復後重跑同一來源的登入後核心瀏覽器旅程，並區分 fixture 503 是部署 source SHA 設定還是寫入例外。只有 fixture 根因解決後才考慮下一次 Sandbox 交易，且需將成功付款、callback、訂單 DB readback／重複 callback 冪等性串在同一 lineage。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
