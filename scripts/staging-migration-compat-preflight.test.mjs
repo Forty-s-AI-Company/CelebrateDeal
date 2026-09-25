@@ -40,7 +40,11 @@ test("source mismatch and a new baseline unique index or unsafe non-null column 
 });
 
 test("the fixed 58/79 prefix requires trusted checksums and no unresolved failure", () => {
-  assert.equal(inspectMigrationHistory(history, inventory), true);
-  assert.equal(inspectMigrationHistory(history.slice(1), inventory), false);
-  assert.equal(inspectMigrationHistory([...history, { migration_name: "failed", finished_at: null, rolled_back_at: null }], inventory), false);
+  assert.equal(inspectMigrationHistory(history, inventory), false);
+  const completedCounterpart = { ...history[0], finished_at: null, rolled_back_at: new Date() };
+  assert.equal(inspectMigrationHistory([...history, completedCounterpart], inventory), true);
+  assert.equal(inspectMigrationHistory([...history, { ...completedCounterpart, checksum: "b".repeat(64) }], inventory), false);
+  assert.equal(inspectMigrationHistory([...history, completedCounterpart, completedCounterpart], inventory), false);
+  assert.equal(inspectMigrationHistory([...history.slice(1), completedCounterpart], inventory), false);
+  assert.equal(inspectMigrationHistory([...history, completedCounterpart, { migration_name: "failed", finished_at: null, rolled_back_at: null }], inventory), false);
 });
