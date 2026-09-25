@@ -34,6 +34,8 @@ function payUniEnvelope(payload: Record<string, unknown>) {
   const tag = cipher.getAuthTag().toString("base64");
   const encryptInfo = Buffer.from(`${encrypted}:::${tag}`).toString("hex");
   return new URLSearchParams({
+    MerID: "TESTMER",
+    Version: "2.0",
     EncryptInfo: encryptInfo,
     HashInfo: createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase(),
   }).toString();
@@ -456,6 +458,56 @@ describe("PayUni provider", () => {
     expect(normalized.payload.referralCode).toBe("DEMOREF");
     expect(normalized.payload.metadata).toBeUndefined();
     expect(duplicate.payload.eventId).toBe(normalized.payload.eventId);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["non-numeric", "garbage"],
+    ["zero", "0"],
+    ["numeric prefix", "1990junk"],
+  ])("rejects a signed paid callback with %s trade amount", async (_label, tradeAmount) => {
+    stubPayUniEnv();
+    const body = payUniEnvelope({
+      MerID: "TESTMER",
+      EventId: "payuni-invalid-amount-001",
+      EventType: "paid",
+      MerTradeNo: "CD-INVALID-AMOUNT-001",
+      ...(tradeAmount === undefined ? {} : { TradeAmt: tradeAmount }),
+    });
+
+    await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
+    await expect(payUniPaymentProvider.normalizePayload(body)).rejects.toThrow("Invalid PayUni trade amount.");
+  });
+
+  it.each([1990, "1990", "1990.00"])("keeps signed PayUni trade amount %s compatible", async (tradeAmount) => {
+    stubPayUniEnv();
+    const body = payUniEnvelope({
+      MerID: "TESTMER",
+      EventId: "payuni-valid-amount-001",
+      EventType: "paid",
+      MerTradeNo: "CD-VALID-AMOUNT-001",
+      TradeAmt: tradeAmount,
+    });
+
+    await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
+    const normalized = await payUniPaymentProvider.normalizePayload(body);
+    expect(normalized.payload.grossAmountCents).toBe(199_000);
+  });
+
+  it("keeps a signed refund callback without an original trade amount compatible", async () => {
+    stubPayUniEnv();
+    const body = payUniEnvelope({
+      MerID: "TESTMER",
+      EventId: "payuni-refund-no-trade-amount-001",
+      EventType: "refunded",
+      MerTradeNo: "CD-REFUND-NO-TRADE-001",
+      RefundAmount: "1990",
+    });
+
+    await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
+    const normalized = await payUniPaymentProvider.normalizePayload(body);
+    expect(normalized.payload.grossAmountCents).toBe(0);
+    expect(normalized.payload.refundAmountCents).toBe(199_000);
   });
 
   it("keeps decrypted callback fields out of durable transaction metadata", async () => {

@@ -662,6 +662,17 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
+    const eventType = normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus);
+    const tradeAmount = rawPayload.Amount ?? rawPayload.TradeAmt;
+    const parsedTradeAmountCents = queryAmountCents(tradeAmount);
+    // Paid callbacks require signed proof of the full order amount. Refund
+    // callbacks may omit the original trade amount; their refund amount is
+    // checked against the stored transaction later in the webhook pipeline.
+    if ((eventType === "paid" && (!parsedTradeAmountCents || parsedTradeAmountCents <= 0))
+      || (tradeAmount !== undefined && tradeAmount !== null && tradeAmount !== "" && parsedTradeAmountCents === undefined)) {
+      throw new Error("Invalid PayUni trade amount.");
+    }
+    const grossAmountCents = parsedTradeAmountCents ?? 0;
     const orderNumber = rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber;
     const eventId = rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber;
     const normalizedOrderNumber = requiredPayloadText(orderNumber, "order number");
@@ -669,13 +680,13 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     const normalized = {
       provider: "payuni",
       eventId: normalizedEventId,
-      eventType: normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus),
+      eventType,
       vendorSlug: optionalPayloadText(rawPayload.VendorSlug),
       vendorId: optionalPayloadText(rawPayload.VendorId),
       orderNumber: normalizedOrderNumber,
       providerTradeNo: optionalPayloadText(rawPayload.TradeNo),
       paymentMode: "platform",
-      grossAmountCents: cents(rawPayload.Amount ?? rawPayload.TradeAmt),
+      grossAmountCents,
       gatewayFeeCents: cents(rawPayload.GatewayFee),
       platformFeeCents: cents(rawPayload.PlatformFee),
       netAmountCents: cents(rawPayload.NetAmount),
