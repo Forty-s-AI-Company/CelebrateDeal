@@ -1,0 +1,126 @@
+name: Staging isolated migration replay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: staging-isolated-migration-replay
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+      CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+    steps:
+      - name: Checkout protected preflight code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact Preview source before binding staging credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          fetch-depth: 0
+          path: verified-preview-source
+          persist-credentials: false
+
+      - name: Verify exact Preview source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C verified-preview-source rev-parse HEAD)" = "$CELEBRATEDEAL_SOURCE_SHA"
+          git fetch --no-tags ./verified-preview-source HEAD:refs/remotes/origin/verified-preview-source
+          test "$(git rev-parse refs/remotes/origin/verified-preview-source)" = "$CELEBRATEDEAL_SOURCE_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preload isolated PostgreSQL tooling before staging credential binding
+        run: docker pull postgres:17-alpine@sha256:aa90e97ee862e558111d34cfb8b2c4bec768c2b039fb791341686928560263b3
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Test preflight contract before staging credential binding
+        run: node --import tsx --test scripts/staging-migration-compat-preflight.test.mjs scripts/staging-migration-isolated-replay.test.mjs
+
+      - name: Verify fixed deployment lineage before staging credential binding
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      # Source is read-only; dump bytes stay in memory, and restore/replay runs in network-none tmpfs.
+      - name: Replay 21 migrations on isolated staging restore
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          firewall_backup="$RUNNER_TEMP/migration-replay-iptables.rules"
+          firewall6_backup="$RUNNER_TEMP/migration-replay-ip6tables.rules"
+          hosts_backup="$RUNNER_TEMP/migration-replay-hosts.original"
+          destinations="$RUNNER_TEMP/migration-replay-egress.tsv"
+          hosts_file="$RUNNER_TEMP/migration-replay-hosts"
+          node <<'NODE' > "$destinations"
+          const value = process.env.STAGING_DATABASE_URL;
+          if (!value) process.exit(2);
+          const database = new URL(value);
+          const project = 'ocbugvgojrunvenozsbx';
+          const direct = database.hostname === `db.${project}.supabase.co` && database.username === 'postgres';
+          const pooler = database.hostname.endsWith('.pooler.supabase.com') && database.username === `postgres.${project}`;
+          if (!['postgres:', 'postgresql:'].includes(database.protocol) || database.pathname !== '/postgres' || (!direct && !pooler)) process.exit(2);
+          const port = database.port || '5432';
+          if (!/^\d{2,5}$/.test(port)) process.exit(2);
+          process.stdout.write(`api.github.com\t443\n${database.hostname}\t${port}\n`);
+          NODE
+          : > "$hosts_file"
+          while IFS=$'\t' read -r host port; do
+            mapfile -t addresses < <(getent ahostsv4 "$host" | awk '{print $1}' | sort -u)
+            if (( ${#addresses[@]} == 0 )); then exit 2; fi
+            for address in "${addresses[@]}"; do printf '%s\t%s\t%s\n' "$host" "$address" "$port" >> "$hosts_file"; done
+          done < "$destinations"
+          sudo iptables-save > "$firewall_backup"
+          sudo ip6tables-save > "$firewall6_backup"
+          sudo cp /etc/hosts "$hosts_backup"
+          restore_network() {
+            sudo iptables-restore < "$firewall_backup"
+            sudo ip6tables-restore < "$firewall6_backup"
+            sudo cp "$hosts_backup" /etc/hosts
+            rm -f "$firewall_backup" "$firewall6_backup" "$hosts_backup" "$destinations" "$hosts_file"
+          }
+          trap restore_network EXIT
+          while IFS=$'\t' read -r host address _port; do printf '%s %s\n' "$address" "$host" | sudo tee -a /etc/hosts > /dev/null; done < "$hosts_file"
+          sudo iptables -F OUTPUT
+          sudo iptables -P OUTPUT DROP
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          while IFS=$'\t' read -r _host address port; do sudo iptables -A OUTPUT -p tcp -d "$address" --dport "$port" -j ACCEPT; done < "$hosts_file"
+          node --import tsx scripts/staging-migration-isolated-replay.mjs
+
+      - name: Upload sanitized preflight result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celebratedeal-staging-isolated-migration-replay
+          path: ${{ runner.temp }}/celebratedeal-staging-migration-replay.json
+          if-no-files-found: ignore
+          retention-days: 7
