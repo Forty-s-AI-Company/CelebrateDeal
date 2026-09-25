@@ -137,6 +137,7 @@ describe("POST /api/admin/ops/payuni/wp4-fixture", () => {
     const response = await POST(request({ authorization: `Bearer ${jobSecret}` }));
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("x-celebratedeal-wp4-fixture")).toBe("UNCLASSIFIED_FAILURE");
     await expect(response.json()).resolves.toEqual({ error: "Service unavailable" });
   });
 

@@ -1013,8 +1013,11 @@ test("preserves only allowlisted fixture failure classifications in the sanitize
     [409, null, "FIXTURE_CONFLICT"],
     [503, "DB_PRODUCT_P2022", "FIXTURE_DB_PRODUCT_P2022"],
     [503, "DB_TRANSACTION_OTHER", "FIXTURE_DB_TRANSACTION_OTHER"],
-    [503, "DB_PRODUCT_PRIVATE", "FIXTURE_HTTP_REJECTED"],
-    [503, "untrusted-detail", "FIXTURE_HTTP_REJECTED"],
+    [503, "UNCLASSIFIED_FAILURE", "FIXTURE_UNCLASSIFIED_FAILURE"],
+    [503, "DB_PRODUCT_PRIVATE", "FIXTURE_HTTP_503"],
+    [503, "untrusted-detail", "FIXTURE_HTTP_503"],
+    [403, null, "FIXTURE_HTTP_403"],
+    [502, null, "FIXTURE_HTTP_502"],
   ];
   for (const [status, outcome, expected] of cases) {
     const receipt = await runMvpPayUniSandboxE2E(validInput, {

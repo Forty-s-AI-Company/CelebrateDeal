@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(
       { error: "Service unavailable" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: { "Cache-Control": "no-store", [FIXTURE_OUTCOME_HEADER]: "UNCLASSIFIED_FAILURE" } },
     );
   }
 }
