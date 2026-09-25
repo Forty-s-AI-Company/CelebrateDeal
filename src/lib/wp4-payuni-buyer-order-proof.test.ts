@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { readWp4PayUniBuyerOrderProof } from "@/lib/wp4-payuni-buyer-order-proof";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const sourceSha = "a".repeat(40);
+const keyHex = createHash("sha256").update(`celebratedeal-mvp-payuni:${sourceSha}`, "utf8").digest("hex").slice(0, 32);
+const checkoutKey = `${keyHex.slice(0, 8)}-${keyHex.slice(8, 12)}-4${keyHex.slice(13, 16)}-8${keyHex.slice(17, 20)}-${keyHex.slice(20)}`;
 
 function fixture() {
   const payment = {
     id: "synthetic-payment", status: "paid", orderNumber: "synthetic-order", grossAmountCents: 100,
-    currency: "TWD", checkoutIdempotencyKey: "synthetic-checkout-key",
+    currency: "TWD", checkoutIdempotencyKey: checkoutKey,
     metadata: { wp4SourceCommit: sourceSha, billingPurpose: "buyer_order", productId: WP4_SANDBOX_FIXTURE.productId },
   };
   const order = {
@@ -82,6 +85,12 @@ describe("fixed PayUni buyer order proof", () => {
     tx.paymentTransaction.findMany.mockResolvedValueOnce([{ ...payment, currency: "USD" }]);
     expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toEqual({ status: "STATE_MISMATCH" });
     tx.inventoryReservation.findMany.mockResolvedValueOnce([{ status: "committed", productId: WP4_SANDBOX_FIXTURE.productId, quantity: 2 }]);
+    expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toEqual({ status: "STATE_MISMATCH" });
+  });
+
+  it("rejects a paid order made with a different checkout identity", async () => {
+    const { db, tx, payment } = fixture();
+    tx.paymentTransaction.findMany.mockResolvedValueOnce([{ ...payment, checkoutIdempotencyKey: "other-checkout-key" }]);
     expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toEqual({ status: "STATE_MISMATCH" });
   });
 
