@@ -68,6 +68,7 @@ function observedRecord(consoleInfo: ReturnType<typeof vi.spyOn>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.webhookEventUpdateMany.mockReset().mockResolvedValue({ count: 1 });
   vi.stubEnv("PAYMENT_PROVIDER", "demo");
   vi.stubEnv("NODE_ENV", "test");
   mocks.getDb.mockReturnValue({
@@ -225,7 +226,7 @@ describe("payment webhook provider selection", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=pending");
-    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(2);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
   });
 
@@ -370,7 +371,7 @@ describe("payment webhook provider selection", () => {
   });
 
   it("stores and returns only a closed failure code when processing throws an unknown exception", async () => {
-    const event = { id: "webhook-event-1", status: "received" };
+    const event = { id: "webhook-event-1", status: "received", retryCount: 0 };
     const normalizedPayload = {
       provider: "demo",
       eventId: "provider-event-1",
@@ -392,7 +393,7 @@ describe("payment webhook provider selection", () => {
       eventId: event.id,
     });
     expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: event.id, status: { not: "processed" } },
+      where: { id: event.id, status: "retrying", retryCount: event.retryCount },
       data: expect.objectContaining({
         errorMessage: "Payment webhook processing failed (processing_failed).",
       }),
@@ -417,9 +418,10 @@ describe("payment webhook provider selection", () => {
       .mockResolvedValueOnce(receivedEvent)
       .mockResolvedValueOnce(receivedEvent)
       .mockResolvedValueOnce({ ...receivedEvent, status: "processed" });
-    mocks.processPaymentWebhook
-      .mockResolvedValueOnce({ vendor: { id: "vendor-race" }, transaction: { id: "transaction-race" } })
-      .mockRejectedValueOnce(new Error("付款 webhook 事件處理權已變更。"));
+    mocks.webhookEventUpdateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    mocks.processPaymentWebhook.mockResolvedValueOnce({ vendor: { id: "vendor-race" }, transaction: { id: "transaction-race" } });
 
     const first = await POST(webhookRequest("?provider=demo&source=return"));
     const second = await POST(webhookRequest("?provider=demo&source=notify"));
@@ -431,8 +433,121 @@ describe("payment webhook provider selection", () => {
       duplicate: true,
       eventId: receivedEvent.id,
     });
-    expect(mocks.webhookEventUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(2);
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledTimes(1);
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("converges a first-create ReturnURL and NotifyURL unique-key race", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    const event = { id: "webhook-event-first-race", status: "received", retryCount: 0 };
+    const normalizedPayload = {
+      provider: "payuni",
+      eventId: "provider-event-first-race",
+      eventType: "paid",
+      orderNumber: "CD-FIRST-RACE",
+    };
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: normalizedPayload, rawPayload: {} });
+    // Both callbacks observe no event before either create completes.
+    mocks.webhookEventFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...event, status: "processed" });
+    mocks.webhookEventCreate
+      .mockResolvedValueOnce(event)
+      .mockRejectedValueOnce(Object.assign(new Error("duplicate event"), { code: "P2002" }));
+    mocks.processPaymentWebhook.mockResolvedValue({
+      vendor: { id: "vendor-first-race" },
+      transaction: { id: "transaction-first-race" },
+    });
+
+    const [payerReturn, notification] = await Promise.all([
+      POST(webhookRequest("?provider=payuni&source=return")),
+      POST(webhookRequest("?provider=payuni&source=notify")),
+    ]);
+
+    expect(payerReturn.status).toBe(303);
+    expect(payerReturn.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+    expect(notification.status).toBe(200);
+    await expect(notification.json()).resolves.toMatchObject({
+      ok: true,
+      duplicate: true,
+      eventId: event.id,
+    });
+    expect(mocks.webhookEventCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledTimes(1);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves an in-flight first callback untouched when the losing payer return sees a received event", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    const event = { id: "webhook-event-in-flight", status: "received", retryCount: 0 };
+    const normalizedPayload = {
+      provider: "payuni",
+      eventId: "provider-event-in-flight",
+      eventType: "paid",
+      orderNumber: "CD-IN-FLIGHT",
+    };
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: normalizedPayload, rawPayload: {} });
+    mocks.webhookEventFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(event)
+      .mockResolvedValueOnce({ ...event, status: "retrying" });
+    mocks.webhookEventCreate.mockResolvedValueOnce(event);
+    mocks.webhookEventUpdateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    let finishProcessing!: (result: { vendor: { id: string }; transaction: { id: string } }) => void;
+    mocks.processPaymentWebhook.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve; }));
+
+    const notification = POST(webhookRequest("?provider=payuni&source=notify"));
+    await vi.waitFor(() => expect(mocks.processPaymentWebhook).toHaveBeenCalledTimes(1));
+    const payerReturn = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    expect(payerReturn.status).toBe(303);
+    expect(payerReturn.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=pending");
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledTimes(1);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(2);
+
+    finishProcessing({ vendor: { id: "vendor-in-flight" }, transaction: { id: "transaction-in-flight" } });
+    const notificationResponse = await notification;
+    expect(notificationResponse.status).toBe(200);
+    await expect(notificationResponse.json()).resolves.toMatchObject({ ok: true, eventId: event.id });
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets a signed provider redelivery atomically retry a failed event", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    const event = { id: "webhook-event-redelivery", status: "received", retryCount: 0, maxRetries: 5 };
+    const normalizedPayload = {
+      provider: "payuni",
+      eventId: "provider-event-redelivery",
+      eventType: "paid",
+      orderNumber: "CD-REDELIVERY",
+    };
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: normalizedPayload, rawPayload: {} });
+    mocks.webhookEventFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...event, status: "retrying" })
+      .mockResolvedValueOnce({ ...event, status: "failed", retryCount: 1 });
+    mocks.webhookEventCreate.mockResolvedValueOnce(event);
+    mocks.processPaymentWebhook
+      .mockRejectedValueOnce(new Error("temporary database failure"))
+      .mockResolvedValueOnce({ vendor: { id: "vendor-redelivery" }, transaction: { id: "transaction-redelivery" } });
+
+    const first = await POST(webhookRequest("?provider=payuni&source=notify"));
+    const second = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+    expect(first.status).toBe(500);
+    expect(second.status).toBe(200);
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledTimes(2);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: event.id, status: "failed", retryCount: 1 },
+      data: expect.objectContaining({ status: "retrying", retryCount: { increment: 1 } }),
+    }));
   });
 
   it.each([
@@ -456,7 +571,7 @@ describe("payment webhook provider selection", () => {
       code: "processing_claim_lost",
     });
     expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: receivedEvent.id, status: { not: "processed" } },
+      where: { id: receivedEvent.id, status: "retrying", retryCount: receivedEvent.retryCount },
     }));
   });
 
@@ -520,7 +635,7 @@ describe("payment webhook provider selection", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({ code: "processing_failed" });
-    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledTimes(2);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
   });
 
