@@ -107,6 +107,7 @@ const FAILURE_CODES = new Set([
   "FIXTURE_SOURCE_MISMATCH",
   "FIXTURE_BODY_REJECTED",
   "FIXTURE_CONFLICT",
+  "FIXTURE_UNCLASSIFIED_FAILURE",
   "FIXTURE_HTTP_REJECTED",
   "ADMISSION_REJECTED",
   "CHECKOUT_REJECTED",
@@ -149,6 +150,9 @@ const FAILURE_CODES = new Set([
   "NETWORK_REJECTED",
   "INTERNAL_REJECTED",
 ]);
+const FIXTURE_HTTP_STATUSES = new Set([400, 403, 404, 429, 500, 502, 503, 504]);
+for (const status of FIXTURE_HTTP_STATUSES) FAILURE_CODES.add(`FIXTURE_HTTP_${status}`);
+FAILURE_CODES.add("FIXTURE_HTTP_OTHER");
 // The server emits only fixed fixture stages and allowlisted Prisma categories.
 // Enumerate the corresponding receipt values so no arbitrary header is trusted.
 for (const stage of ["VENDOR", "OWNER", "MEMBERSHIP", "PRODUCT", "PLAN", "INVOICE", "TRANSACTION"]) {
@@ -912,12 +916,14 @@ function fixtureFailure(response) {
     BODY_REJECTED: "FIXTURE_BODY_REJECTED",
   };
   if (typeof response.outcome === "string" && outcomes[response.outcome]) return outcomes[response.outcome];
+  if (response.outcome === "UNCLASSIFIED_FAILURE") return "FIXTURE_UNCLASSIFIED_FAILURE";
   if (typeof response.outcome === "string" && response.outcome.startsWith("DB_")
     && FAILURE_CODES.has(`FIXTURE_${response.outcome}`)) {
     return `FIXTURE_${response.outcome}`;
   }
   if (response.status === 409) return "FIXTURE_CONFLICT";
-  return "FIXTURE_HTTP_REJECTED";
+  if (response.status === 200) return "FIXTURE_HTTP_REJECTED";
+  return FIXTURE_HTTP_STATUSES.has(response.status) ? `FIXTURE_HTTP_${response.status}` : "FIXTURE_HTTP_OTHER";
 }
 
 function guardedHeaders(invocation) {
