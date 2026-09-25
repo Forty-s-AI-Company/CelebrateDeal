@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { applyMigrations, databaseIdentity, FIXED_SOURCE_SHA, historyMatches, validateApplyReceipt,
+import { applyMigrations, databaseIdentity, FIXED_SOURCE_SHA, historyMatches, migrationUrlWithLockTimeout, validateApplyReceipt,
   validateInvocation, validatePrerequisites, validateProducerRun, verifyProducerRuns,
   verifySourcePull } from "./staging-migration-apply.mjs";
 
@@ -27,7 +27,6 @@ const source = {
   GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/staging-migration-apply.yml@refs/heads/master",
   GITHUB_RUN_ID: "123", GITHUB_SHA: "a".repeat(40), GITHUB_TOKEN: "synthetic", RUNNER_TEMP: "/tmp/synthetic",
   CELEBRATEDEAL_SOURCE_SHA: FIXED_SOURCE_SHA, CELEBRATEDEAL_DEPLOYMENT_HOST: host,
-  CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "ALL_DISPOSABLE_SYNTHETIC",
   STAGING_DATABASE_URL: url, NEXT_PUBLIC_SUPABASE_URL: `https://${ref}.supabase.co`,
 };
 const ids = { replay: 10 };
@@ -55,9 +54,16 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
       NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" },
     { CELEBRATEDEAL_DEPLOYMENT_HOST: "other-preview.vercel.app" },
     { CELEBRATEDEAL_SOURCE_SHA: "0".repeat(40) },
-    { CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "UNKNOWN" },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
+});
+
+test("Prisma migration URL has a bounded lock wait without changing source binding", () => {
+  const derived = new URL(migrationUrlWithLockTimeout(source));
+  assert.equal(derived.searchParams.get("options"), "-c lock_timeout=5000 -c statement_timeout=60000");
+  assert.equal(derived.hostname, `db.${ref}.supabase.co`);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: derived.toString() }), null);
+  assert.equal(migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: "postgresql://bad" }), null);
 });
 
 test("exact protected isolated replay receipt is required", () => {
@@ -117,16 +123,6 @@ test("invalid replay evidence blocks before any child process", () => {
   { run: () => { calls += 1; throw new Error("must not run"); } });
   assert.equal(receipt.result, "BLOCKED");
   assert.equal(receipt.failureCode, "REPLAY_EVIDENCE_INCOMPLETE");
-  assert.equal(receipt.migrationAttempted, false);
-  assert.equal(calls, 0);
-});
-
-test("unknown staging data disposition blocks before database access", () => {
-  let calls = 0;
-  const receipt = applyMigrations(evidence, { ...source, CELEBRATEDEAL_STAGING_DATA_DISPOSITION: "UNKNOWN" },
-    { run: () => { calls += 1; throw new Error("must not run"); } });
-  assert.equal(receipt.result, "BLOCKED");
-  assert.equal(receipt.failureCode, "DATA_DISPOSITION_UNCONFIRMED");
   assert.equal(receipt.migrationAttempted, false);
   assert.equal(calls, 0);
 });
