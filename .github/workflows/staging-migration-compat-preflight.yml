@@ -1,0 +1,80 @@
+name: Staging migration data compatibility preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: staging-migration-compat-preflight
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+      CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+    steps:
+      - name: Checkout protected preflight code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact Preview source before binding staging credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          fetch-depth: 0
+          path: verified-preview-source
+          persist-credentials: false
+
+      - name: Verify exact Preview source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C verified-preview-source rev-parse HEAD)" = "$CELEBRATEDEAL_SOURCE_SHA"
+          git fetch --no-tags ./verified-preview-source HEAD:refs/remotes/origin/verified-preview-source
+          test "$(git rev-parse refs/remotes/origin/verified-preview-source)" = "$CELEBRATEDEAL_SOURCE_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Test preflight contract before staging credential binding
+        run: node --import tsx --test scripts/staging-migration-compat-preflight.test.mjs
+
+      - name: Verify fixed deployment lineage before staging credential binding
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      # The code opens a read-only transaction and persists only fixed categories.
+      - name: Inspect existing staging data against pending migration constraints
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: node --import tsx scripts/staging-migration-compat-preflight.mjs
+
+      - name: Upload sanitized preflight result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: celebratedeal-staging-migration-compat-preflight
+          path: ${{ runner.temp }}/celebratedeal-migration-compat-preflight.json
+          if-no-files-found: ignore
+          retention-days: 7
