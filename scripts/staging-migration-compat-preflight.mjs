@@ -80,7 +80,13 @@ export function inspectMigrationHistory(rows, inventory) {
   const expected = [...inventory.keys()].sort();
   const active = rows.filter((row) => row?.finished_at != null && row?.rolled_back_at == null)
     .sort((a, b) => String(a.migration_name).localeCompare(String(b.migration_name)));
-  if (active.length !== APPLIED_COUNT || rows.length !== APPLIED_COUNT) return false;
+  const rolledBack = rows.filter((row) => row?.rolled_back_at != null);
+  // The fixed staging baseline has one historic rollback with an exact
+  // completed counterpart. It must not be mistaken for an unresolved failure.
+  if (active.length !== APPLIED_COUNT || rolledBack.length !== 1
+    || rows.length !== active.length + rolledBack.length) return false;
+  if (!rolledBack.every((row) => active.some((completed) => completed.migration_name === row.migration_name
+    && completed.checksum === row.checksum))) return false;
   return active.every((row, index) => {
     const trusted = inventory.get(row.migration_name);
     return row.migration_name === expected[index]

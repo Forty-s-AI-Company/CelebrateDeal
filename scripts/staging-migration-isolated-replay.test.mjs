@@ -12,7 +12,10 @@ const names = (await readdir("prisma/migrations", { withFileTypes: true }))
 const sqlByName = new Map(await Promise.all(names.slice(-21).map(async (name) => [name, await readFile(`prisma/migrations/${name}/migration.sql`)])));
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const inventory = new Map(names.map((name) => [name, { exact: sqlByName.has(name) ? digest(sqlByName.get(name)) : "a".repeat(64), alternatives: new Set() }]));
-const history = names.slice(0, 58).map((name) => `${name}|${"a".repeat(64)}|true|false`).join("\n");
+const history = [
+  ...names.slice(0, 58).map((name) => `${name}|${"a".repeat(64)}|true|false`),
+  `${names[0]}|${"a".repeat(64)}|false|true`,
+].join("\n");
 const binding = {
   CELEBRATEDEAL_SOURCE_SHA: SOURCE_SHA,
   CELEBRATEDEAL_DEPLOYMENT_HOST: PREVIEW_HOST,
