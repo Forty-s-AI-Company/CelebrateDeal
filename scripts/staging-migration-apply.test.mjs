@@ -127,6 +127,24 @@ test("invalid replay evidence blocks before any child process", () => {
   assert.equal(calls, 0);
 });
 
+test("CLI identifies a missing replay receipt before any migration attempt", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-apply-receipt-"));
+  try {
+    const cli = path.resolve("scripts/staging-migration-apply.mjs");
+    const result = spawnSync(process.execPath, [cli], {
+      cwd: temp, encoding: "utf8", shell: false,
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, RUNNER_TEMP: temp },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /code=REPLAY_RECEIPT_READ_FAILED/u);
+    const receipt = JSON.parse(fs.readFileSync(path.join(temp, "staging-migration-apply-receipt.json"), "utf8"));
+    assert.equal(receipt.failureCode, "REPLAY_RECEIPT_READ_FAILED");
+    assert.equal(receipt.migrationAttempted, false);
+  } finally {
+    if (path.dirname(temp) === os.tmpdir()) fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("apply receipt binds protected commit and producer run", () => {
   const receipt = {
     schemaVersion: "celebratedeal-staging-migration-apply/v1", result: "PASS",

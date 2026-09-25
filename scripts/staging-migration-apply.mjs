@@ -350,19 +350,30 @@ function readReceipt(root, directory, filename) {
 const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invoked) {
   let receipt;
+  // Fixed phase codes identify the failing gate without exposing exceptions,
+  // paths, provider responses, database rows, or child-process output.
+  let phase = "REPLAY_RECEIPT_READ_FAILED";
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const evidence = {
       replay: readReceipt(root, "staging-replay", "celebratedeal-staging-migration-replay.json"),
       runIds: { replay: Number(process.env.STAGING_REPLAY_RUN_ID) },
     };
-    if (validateInvocation(process.env)) throw new Error("INVOCATION_INVALID");
-    if (validatePrerequisites(evidence)) throw new Error("EVIDENCE_INCOMPLETE");
+    phase = "INVOCATION_INVALID";
+    const invocation = validateInvocation(process.env);
+    if (invocation) { phase = invocation; throw new Error("GATE_REJECTED"); }
+    phase = "REPLAY_EVIDENCE_INCOMPLETE";
+    const prerequisites = validatePrerequisites(evidence);
+    if (prerequisites) { phase = prerequisites; throw new Error("GATE_REJECTED"); }
+    phase = "PRODUCER_PROVENANCE_INVALID";
     if (!await verifyProducerRuns(evidence.runIds, process.env)) throw new Error("PRODUCER_PROVENANCE_INVALID");
+    phase = "SOURCE_PULL_INVALID";
     if (!await verifySourcePull(process.env)) throw new Error("SOURCE_PULL_INVALID");
+    phase = "DEPLOYMENT_LINEAGE_INVALID";
     await verifyDeployment(process.env);
+    phase = "APPLY_RUNTIME_ERROR";
     receipt = applyMigrations(evidence);
-  } catch { receipt = { ...initialReceipt(), failureCode: "EVIDENCE_LOAD_FAILED" }; }
+  } catch { receipt = { ...initialReceipt(), failureCode: phase }; }
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const expected = receipt.result === "PASS" ? {
