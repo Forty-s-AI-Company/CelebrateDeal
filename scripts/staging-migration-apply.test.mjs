@@ -48,6 +48,7 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
   assert.equal(databaseIdentity(source)?.digest, digest);
   assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?sslmode=require` })?.digest, digest);
   assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?pgbouncer=true` })?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?connection_limit=1&connect_timeout=10&pool_timeout=20` })?.digest, digest);
   for (const change of [
     { GITHUB_REF_PROTECTED: "false" }, { GITHUB_REF: "refs/heads/feature" },
     { GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/other.yml@refs/heads/master" },
@@ -59,6 +60,9 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
     { STAGING_DATABASE_URL: `${url}?sslmode=disable` },
     { STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` },
     { STAGING_DATABASE_URL: `${url}?pgbouncer=false` },
+    { STAGING_DATABASE_URL: `${url}?connection_limit=0` },
+    { STAGING_DATABASE_URL: `${url}?host=other.example.test` },
+    { STAGING_DATABASE_URL: `${url}?options=-c%20search_path%3Dother` },
     { STAGING_DATABASE_URL: url.replace(":5432/", ":6543/") },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
@@ -75,6 +79,8 @@ test("database identity failures expose only fixed categories before any migrati
     [{ STAGING_DATABASE_URL: `${url}?sslmode=disable` }, "STAGING_DATABASE_SSLMODE_QUERY_INVALID"],
     [{ STAGING_DATABASE_URL: `${url}?pgbouncer=false` }, "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID"],
     [{ STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` }, "STAGING_DATABASE_QUERY_DUPLICATE"],
+    [{ STAGING_DATABASE_URL: `${url}?connection_limit=0` }, "STAGING_DATABASE_QUERY_HINT_INVALID"],
+    [{ STAGING_DATABASE_URL: `${url}?host=other.example.test` }, "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED"],
     [{ STAGING_DATABASE_URL: url.replace(":5432/", ":6543/") }, "STAGING_MIGRATION_TRANSACTION_POOLER_UNSUPPORTED"],
     [{ STAGING_DATABASE_URL: "postgresql://bad" }, "STAGING_DATABASE_URL_SHAPE_INVALID"],
     [{ STAGING_DATABASE_URL: syntheticDbUrl("db.other-project.supabase.co") }, "STAGING_DATABASE_TARGET_MISMATCH"],
@@ -95,6 +101,9 @@ test("Prisma migration URL has a bounded lock wait without changing source bindi
   assert.equal(derived.hostname, `db.${ref}.supabase.co`);
   const withRuntimeHint = migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: `${url}?pgbouncer=true` });
   assert.equal(new URL(withRuntimeHint).searchParams.has("pgbouncer"), false);
+  const withTuning = migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: `${url}?connection_limit=1&connect_timeout=10` });
+  assert.equal(new URL(withTuning).searchParams.has("connection_limit"), false);
+  assert.equal(new URL(withTuning).searchParams.has("connect_timeout"), false);
   assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: derived.toString() }), null);
   assert.equal(migrationUrlWithLockTimeout({ ...source, STAGING_DATABASE_URL: "postgresql://bad" }), null);
 });

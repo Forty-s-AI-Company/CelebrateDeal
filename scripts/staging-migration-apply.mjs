@@ -16,11 +16,23 @@ const SAFE_MIGRATION = /^\d{12,14}_[a-z0-9_]+$/u;
 const SAFE_PROJECT = /^[a-z0-9]{20}$/u;
 const FIXED_STAGING_REF = "ocbugvgojrunvenozsbx";
 const FIXED_PREVIEW_HOST = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
+const SAFE_RUNTIME_HINTS = Object.freeze({ connection_limit: [1, 100], connect_timeout: [0, 120],
+  pool_timeout: [0, 120], socket_timeout: [0, 120], statement_cache_size: [0, 1000] });
+const SAFE_QUERY_KEYS = new Set(["schema", "sslmode", "pgbouncer", ...Object.keys(SAFE_RUNTIME_HINTS)]);
 const WORKFLOWS = Object.freeze({
   replay: ".github/workflows/staging-migration-compat-preflight.yml",
 });
 
 function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function runtimeHintsValid(db) {
+  return Object.entries(SAFE_RUNTIME_HINTS).every(([key, [min, max]]) => {
+    const raw = db.searchParams.get(key);
+    if (raw === null) return true;
+    if (!/^\d{1,4}$/u.test(raw)) return false;
+    const value = Number(raw);
+    return value >= min && value <= max;
+  });
+}
 /** Hash excludes the password, and is identical to the LINE runner's binding. */
 export function databaseIdentity(source) {
   try {
@@ -41,7 +53,7 @@ export function databaseIdentity(source) {
       || db.pathname !== "/postgres" || schema !== "public"
       || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
       || (pgbouncer !== null && pgbouncer !== "true")
-      || queryKeys.some((key) => !["schema", "sslmode", "pgbouncer"].includes(key))
+      || queryKeys.some((key) => !SAFE_QUERY_KEYS.has(key)) || !runtimeHintsValid(db)
       || new Set(queryKeys).size !== queryKeys.length || (!direct && !pooler)) return null;
     const digest = sha256([db.hostname, port, db.pathname, user, schema].join("\n"));
     return { digest, projectRef: ref, host: db.hostname, port, database: "postgres", user, password: decodeURIComponent(db.password) };
@@ -68,7 +80,8 @@ export function databaseIdentityFailureCode(source) {
   if ((db.searchParams.get("schema") ?? "public") !== "public") return "STAGING_DATABASE_SCHEMA_QUERY_INVALID";
   if (sslmode !== null && !["require", "verify-full"].includes(sslmode)) return "STAGING_DATABASE_SSLMODE_QUERY_INVALID";
   if (db.searchParams.has("pgbouncer") && db.searchParams.get("pgbouncer") !== "true") return "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID";
-  if (queryKeys.some((key) => !["schema", "sslmode", "pgbouncer"].includes(key))) return "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED";
+  if (queryKeys.some((key) => !SAFE_QUERY_KEYS.has(key))) return "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED";
+  if (!runtimeHintsValid(db)) return "STAGING_DATABASE_QUERY_HINT_INVALID";
   if (!["postgres:", "postgresql:"].includes(db.protocol) || !db.username || !db.password
     || db.pathname !== "/postgres") return "STAGING_DATABASE_URL_SHAPE_INVALID";
   if ((db.port || "5432") === "6543") return "STAGING_MIGRATION_TRANSACTION_POOLER_UNSUPPORTED";
@@ -88,6 +101,7 @@ export function migrationUrlWithLockTimeout(source) {
   const url = new URL(source.STAGING_DATABASE_URL);
   // Runtime's PgBouncer hint is unnecessary for direct/session migration connections.
   url.searchParams.delete("pgbouncer");
+  for (const key of Object.keys(SAFE_RUNTIME_HINTS)) url.searchParams.delete(key);
   url.searchParams.set("options", "-c lock_timeout=5000 -c statement_timeout=60000");
   return url.toString();
 }
