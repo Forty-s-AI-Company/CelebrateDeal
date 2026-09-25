@@ -1,5 +1,7 @@
 # CelebrateDeal Goal 執行紀錄
 
+> 2026-09-24 的歷史 checkpoint 與當時 handoff；下列「目前」「下一步」僅代表記錄當下。2026-09-25 的固定 staging 來源、資料庫、瀏覽器、PayUni Sandbox 與 provider 狀態以 [CURRENT.md](CURRENT.md) 為準。
+
 開始：2026-09-24 19:07（Asia/Taipei）。Codex thread Goal status：active；專案舊 `CELEBRATEDEAL-M2-M7` state 仍為 IN_PROGRESS，最後更新在 9 月初，本輪沒有覆寫。Plan 的四小時上限為 23:07；Codex usage 工具所示重置時間為 21:26，若按重置前交接，預留 15 分鐘的交接點為 21:11。此時間資訊不代表 Goal 已完成或自動暫停。
 
 ## Checkpoint 1：來源與 Git
@@ -41,7 +43,7 @@
 - PR #274 經 repository 允許的 squash merge 合入 master `0f1fc3e84b524edd46bb1a6946b852cf9ef74742`。原先 merge-commit 方式被 repository 規則拒絕，未繞過保護；合併後 master 與受驗候選 Git tree 均為 `43838a811345cf7e2c0b4a8490f85b0907ccac10`。master 自身 CI run `35998114044` 已啟動，尚待最終結果。
 - 新 immutable Preview `celebrate-deal-staging-falb4yfd5-a25814740s-projects.vercel.app` READY，對應合併前候選 SHA；首頁、`/api/health`、`/login` 均 200。Preview process environment 的指定欄位布林檢查仍是 PayUni Sandbox／merchant binding present，但 DB keys、Supabase public URL、預期 app host 不成立。指定 staging alias 仍指 9 月 3 日舊 deployment；新 Preview 的 200 不等於登入、資料寫入或 Sandbox 訂單成功。
 
-## 下一步與 handoff
+## 當時的下一步與 handoff（歷史）
 
 - PR #274 的程式版 master [run `35998114044`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/35998114044) 已 success。文件 PR #275 合併後 master 為 `f8c9f53abf2058df91cd4469f206ab69faebafc4`，其獨立 [run `36001231996`](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36001231996) 亦 success。PR #210/#211 尚有衝突及獨有功能，依 [下一輪清單](NEXT-CYCLE.md) 按功能、Auth/tenant/schema 風險處置，不直接合舊樹。
 - staging Preview 必須透過核准的平台 Secret provider 補齊固定非 Production 的 DB／Supabase／公開 host 綁定，重新部署 master 對應 SHA、驗證 lineage 與主要操作，再切指定 alias；目前不得把 HTTP 200 或 PayUni Sandbox env flag 升級為核心／金流 PASS。不讀 `.env*`、不輸出值或 raw log。
