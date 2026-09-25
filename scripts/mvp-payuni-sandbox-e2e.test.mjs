@@ -1011,6 +1011,9 @@ test("preserves only allowlisted fixture failure classifications in the sanitize
     [404, "SOURCE_MISMATCH", "FIXTURE_SOURCE_MISMATCH"],
     [404, "BODY_REJECTED", "FIXTURE_BODY_REJECTED"],
     [409, null, "FIXTURE_CONFLICT"],
+    [503, "DB_PRODUCT_P2022", "FIXTURE_DB_PRODUCT_P2022"],
+    [503, "DB_TRANSACTION_OTHER", "FIXTURE_DB_TRANSACTION_OTHER"],
+    [503, "DB_PRODUCT_PRIVATE", "FIXTURE_HTTP_REJECTED"],
     [503, "untrusted-detail", "FIXTURE_HTTP_REJECTED"],
   ];
   for (const [status, outcome, expected] of cases) {
