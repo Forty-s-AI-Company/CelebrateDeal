@@ -12,7 +12,14 @@ import { applyMigrations, databaseIdentity, FIXED_SOURCE_SHA, historyMatches, va
 
 const ref = "ocbugvgojrunvenozsbx";
 const host = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
-const url = `postgresql://postgres:synthetic@db.${ref}.supabase.co:5432/postgres`;
+function syntheticDbUrl(hostname) {
+  const parsed = new URL("postgresql://localhost:5432/postgres");
+  parsed.hostname = hostname;
+  parsed.username = "postgres";
+  parsed.password = "synthetic";
+  return parsed.href;
+}
+const url = syntheticDbUrl(`db.${ref}.supabase.co`);
 const digest = crypto.createHash("sha256").update([`db.${ref}.supabase.co`, "5432", "/postgres", "postgres", "public"].join("\n")).digest("hex");
 const source = {
   GITHUB_REF: "refs/heads/master", GITHUB_REF_PROTECTED: "true",
@@ -43,8 +50,8 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
   for (const change of [
     { GITHUB_REF_PROTECTED: "false" }, { GITHUB_REF: "refs/heads/feature" },
     { GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/other.yml@refs/heads/master" },
-    { STAGING_DATABASE_URL: "postgresql://postgres:synthetic@db.production.supabase.co/postgres" },
-    { STAGING_DATABASE_URL: "postgresql://postgres:synthetic@db.abcdefghijklmnopqrst.supabase.co/postgres",
+    { STAGING_DATABASE_URL: syntheticDbUrl("db.production.supabase.co") },
+    { STAGING_DATABASE_URL: syntheticDbUrl("db.abcdefghijklmnopqrst.supabase.co"),
       NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" },
     { CELEBRATEDEAL_DEPLOYMENT_HOST: "other-preview.vercel.app" },
     { CELEBRATEDEAL_SOURCE_SHA: "0".repeat(40) },
@@ -154,8 +161,8 @@ test("Prisma uses the isolated mirror without loading repository config", () => 
     const result = spawnSync(process.execPath, [cli, "validate", "--schema", schema], {
       cwd: mirror, encoding: "utf8", timeout: 30_000, shell: false,
       env: { PATH: process.env.PATH ?? "", SystemRoot: process.env.SystemRoot ?? "",
-        DATABASE_URL: "postgresql://postgres:synthetic@localhost:5432/postgres",
-        DIRECT_URL: "postgresql://postgres:synthetic@localhost:5432/postgres" },
+        DATABASE_URL: syntheticDbUrl("localhost"),
+        DIRECT_URL: syntheticDbUrl("localhost") },
     });
     assert.equal(result.status, 0, "mirror schema must validate");
     assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /Loaded Prisma config from|Prisma config detected/iu);
