@@ -13,7 +13,10 @@ const SAFE_SHA = /^[a-f0-9]{40}$/u;
 // Backup code must match an independently reviewed version. A fixed run SHA
 // would become unusable as soon as the recovery workflow is merged to master.
 const APPROVED_BACKUP_BLOBS = Object.freeze({
-  [BACKUP_WORKFLOW]: ["3fb8088ae786e21dd520df8e9fc03788f355901d"],
+  [BACKUP_WORKFLOW]: [
+    "3fb8088ae786e21dd520df8e9fc03788f355901d", // Original task-scoped source checkout.
+    "a8d9e09bd4f3179d7abec116e5aeb6a05a9b4fb6", // #312: same pinned source checkout now applies to every task.
+  ],
   "scripts/staging-retained-backup.mjs": ["acf26bf628903feef3d549e4500b5c478e7e4312"],
   "scripts/validate-staging-retained-backup.mjs": ["8c1a8cdc551264b2121a9b075725eaa5770701e4"],
   "scripts/secure-staging-runner.mjs": [

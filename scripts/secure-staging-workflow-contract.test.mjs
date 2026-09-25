@@ -35,6 +35,9 @@ test("WP2 pins the RC source and closes IPv6 before staging secret use", () => {
   assert.ok(steps.indexOf(sourceImport) < steps.indexOf(sourceGate));
   assert.ok(steps.indexOf(sourceGate) < steps.indexOf(execute));
   assert.equal(sourceCheckout.with.ref, "refs/pull/277/head");
+  // Every task runs the shared contract before secrets, and that contract reads this fixed source.
+  assert.equal(sourceCheckout.if, undefined);
+  assert.equal(sourceImport.if, undefined);
   assert.equal(sourceCheckout.with["fetch-depth"], 0);
   assert.equal(sourceCheckout.with["persist-credentials"], false);
   assert.match(sourceImport.run, /git fetch --no-tags \.\/verified-wp2-source/u);
