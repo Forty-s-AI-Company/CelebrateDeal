@@ -47,27 +47,41 @@ export function validateBrowserSmokeBinding(env) {
     && env.JOB_SECRET.length >= 16;
 }
 
-/** Compare trusted Vercel alias metadata with the exact immutable Preview deployment. */
-export async function verifyStagingAliasBinding(env, fetchImpl = fetch) {
+function vercelApiFailure(response, resource) {
+  if (response.status === 401) return `${resource}_AUTH_REJECTED`;
+  if (response.status === 403) return `${resource}_PERMISSION_DENIED`;
+  if (response.status === 404) return `${resource}_NOT_FOUND`;
+  return `${resource}_API_ERROR`;
+}
+
+/** Return only a fixed reason code; never include the token or provider response. */
+export async function diagnoseStagingAliasBinding(env, fetchImpl = fetch) {
   if (!SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
-    || !PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
-    || typeof env.VERCEL_TOKEN !== "string" || env.VERCEL_TOKEN.length === 0) return false;
+    || !PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")) return "SOURCE_BINDING_INVALID";
+  if (typeof env.VERCEL_TOKEN !== "string" || env.VERCEL_TOKEN.length === 0) return "VERCEL_TOKEN_MISSING";
   const headers = { Authorization: `Bearer ${env.VERCEL_TOKEN}` };
   const options = { headers, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(10_000) };
   try {
     const aliasResponse = await fetchImpl(`https://api.vercel.com/v4/aliases/${STAGING_ALIAS}?slug=${VERCEL_SCOPE}`, options);
-    if (aliasResponse.status !== 200) return false;
+    if (aliasResponse.status !== 200) return vercelApiFailure(aliasResponse, "ALIAS");
     const alias = await aliasResponse.json();
-    if (alias.alias !== STAGING_ALIAS || alias.redirect || alias.deletedAt || !/^dpl_[a-zA-Z0-9]+$/u.test(alias.deploymentId)) return false;
+    if (alias.alias !== STAGING_ALIAS || alias.redirect || alias.deletedAt || !/^dpl_[a-zA-Z0-9]+$/u.test(alias.deploymentId)) return "ALIAS_METADATA_INVALID";
     const deploymentResponse = await fetchImpl(`https://api.vercel.com/v13/deployments/${env.CELEBRATEDEAL_DEPLOYMENT_HOST}?slug=${VERCEL_SCOPE}`, options);
-    if (deploymentResponse.status !== 200) return false;
+    if (deploymentResponse.status !== 200) return vercelApiFailure(deploymentResponse, "DEPLOYMENT");
     const deployment = await deploymentResponse.json();
-    return alias.deploymentId === deployment.id && alias.projectId === deployment.projectId
-      && deployment.url === env.CELEBRATEDEAL_DEPLOYMENT_HOST
-      && deployment.name === VERCEL_PROJECT && deployment.target === null && deployment.readyState === "READY";
+    if (alias.deploymentId !== deployment.id) return "ALIAS_DEPLOYMENT_MISMATCH";
+    if (alias.projectId !== deployment.projectId) return "ALIAS_PROJECT_MISMATCH";
+    if (deployment.url !== env.CELEBRATEDEAL_DEPLOYMENT_HOST
+      || deployment.name !== VERCEL_PROJECT || deployment.target !== null || deployment.readyState !== "READY") return "DEPLOYMENT_METADATA_INVALID";
+    return "VERIFIED";
   } catch {
-    return false;
+    return "VERCEL_API_EXCEPTION";
   }
+}
+
+/** Compare trusted Vercel alias metadata with the exact immutable Preview deployment. */
+export async function verifyStagingAliasBinding(env, fetchImpl = fetch) {
+  return await diagnoseStagingAliasBinding(env, fetchImpl) === "VERIFIED";
 }
 
 /** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
@@ -336,9 +350,13 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
 
 async function main() {
   if (process.argv[2] === "--verify-alias") {
-    const verified = await verifyStagingAliasBinding(process.env);
-    process.stdout.write(`${JSON.stringify({ aliasBinding: verified ? "VERIFIED" : "NOT_VERIFIED" })}\n`);
-    process.exitCode = verified ? 0 : 2;
+    const reason = await diagnoseStagingAliasBinding(process.env);
+    process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason })}\n`);
+    if (reason !== "VERIFIED" && process.env.RUNNER_TEMP) {
+      const report = emptyReport(reason, process.env.CELEBRATEDEAL_SOURCE_SHA);
+      await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-browser-smoke.json`, `${JSON.stringify(report)}\n`, { mode: 0o600 });
+    }
+    process.exitCode = reason === "VERIFIED" ? 0 : 2;
     return;
   }
   const report = await runBrowserSmoke();

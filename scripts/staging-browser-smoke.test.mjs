@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -58,6 +58,10 @@ test("fixed alias must resolve to the exact immutable Preview before a session i
   );
   assert.equal(await verifyStagingAliasBinding(INPUT, probe("dpl_fixture")), true);
   assert.equal(await verifyStagingAliasBinding(INPUT, probe("dpl_old")), false);
+  assert.equal(await diagnoseStagingAliasBinding(INPUT, probe("dpl_old")), "ALIAS_DEPLOYMENT_MISMATCH");
+  assert.equal(await diagnoseStagingAliasBinding({ ...INPUT, VERCEL_TOKEN: "" }), "VERCEL_TOKEN_MISSING");
+  assert.equal(await diagnoseStagingAliasBinding(INPUT, async () => ({ status: 403 })), "ALIAS_PERMISSION_DENIED");
+  assert.equal(await diagnoseStagingAliasBinding(INPUT, async () => ({ status: 401 })), "ALIAS_AUTH_REJECTED");
   let sessionRequested = false;
   const report = await runBrowserSmoke(INPUT, {
     verifyLineage: async () => true,
