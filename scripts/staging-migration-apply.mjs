@@ -46,6 +46,37 @@ export function databaseIdentity(source) {
   } catch { return null; }
 }
 
+/** Return only a fixed category; never include a URL, credential, or query value in the receipt. */
+export function databaseIdentityFailureCode(source) {
+  if (!source.STAGING_DATABASE_URL) return "STAGING_DATABASE_URL_MISSING";
+  if (!source.NEXT_PUBLIC_SUPABASE_URL) return "STAGING_SUPABASE_URL_MISSING";
+  let db;
+  let api;
+  try {
+    db = new URL(source.STAGING_DATABASE_URL);
+    api = new URL(source.NEXT_PUBLIC_SUPABASE_URL);
+  } catch { return "STAGING_DATABASE_URL_MALFORMED"; }
+  const ref = api.hostname.match(/^([a-z0-9]{20})\.supabase\.co$/u)?.[1];
+  if (!ref || !SAFE_PROJECT.test(ref) || api.protocol !== "https:" || api.pathname !== "/"
+    || api.search || api.hash || api.username || api.password || api.port) return "STAGING_SUPABASE_URL_INVALID";
+  if (ref !== FIXED_STAGING_REF) return "STAGING_PROJECT_MISMATCH";
+  const queryKeys = [...db.searchParams.keys()];
+  const sslmode = db.searchParams.get("sslmode");
+  if (queryKeys.some((key) => !["schema", "sslmode"].includes(key))
+    || new Set(queryKeys).size !== queryKeys.length
+    || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
+    || (db.searchParams.get("schema") ?? "public") !== "public") return "STAGING_DATABASE_QUERY_INVALID";
+  if (!["postgres:", "postgresql:"].includes(db.protocol) || !db.username || !db.password
+    || db.pathname !== "/postgres" || !["5432", "6543"].includes(db.port || "5432")) return "STAGING_DATABASE_URL_SHAPE_INVALID";
+  let user;
+  try { user = decodeURIComponent(db.username); }
+  catch { return "STAGING_DATABASE_URL_SHAPE_INVALID"; }
+  const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
+  const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
+  if (!direct && !pooler) return "STAGING_DATABASE_TARGET_MISMATCH";
+  return "DATABASE_IDENTITY_INVALID";
+}
+
 /** Prisma's migration engine ignores PGOPTIONS; bound lock and statement time in its URL. */
 export function migrationUrlWithLockTimeout(source) {
   if (!databaseIdentity(source)) return null;
@@ -61,7 +92,7 @@ export function validateInvocation(source) {
   if (source.CELEBRATEDEAL_SOURCE_SHA !== FIXED_SOURCE_SHA || !/^\d+$/u.test(source.GITHUB_RUN_ID ?? "")
     || !/^[a-f0-9]{40}$/u.test(source.GITHUB_SHA ?? "")) return "SOURCE_BINDING_INVALID";
   if (source.CELEBRATEDEAL_DEPLOYMENT_HOST !== FIXED_PREVIEW_HOST) return "DEPLOYMENT_HOST_INVALID";
-  if (!databaseIdentity(source)) return "DATABASE_IDENTITY_INVALID";
+  if (!databaseIdentity(source)) return databaseIdentityFailureCode(source);
   if (!source.GITHUB_TOKEN || !source.RUNNER_TEMP) return "REQUIRED_BINDING_MISSING";
   return null;
 }

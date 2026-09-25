@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { applyMigrations, databaseIdentity, FIXED_SOURCE_SHA, historyMatches, migrationUrlWithLockTimeout, validateApplyReceipt,
+import { applyMigrations, databaseIdentity, databaseIdentityFailureCode, FIXED_SOURCE_SHA, historyMatches, migrationUrlWithLockTimeout, validateApplyReceipt,
   validateInvocation, validatePrerequisites, validateProducerRun, verifyProducerRuns,
   verifySourcePull } from "./staging-migration-apply.mjs";
 
@@ -59,6 +59,26 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
     { STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
+});
+
+test("database identity failures expose only fixed categories before any migration", () => {
+  const cases = [
+    [{ STAGING_DATABASE_URL: "" }, "STAGING_DATABASE_URL_MISSING"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "" }, "STAGING_SUPABASE_URL_MISSING"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "https://example.test" }, "STAGING_SUPABASE_URL_INVALID"],
+    [{ NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" }, "STAGING_PROJECT_MISMATCH"],
+    [{ STAGING_DATABASE_URL: `${url}?unsupported=private` }, "STAGING_DATABASE_QUERY_INVALID"],
+    [{ STAGING_DATABASE_URL: "postgresql://bad" }, "STAGING_DATABASE_URL_SHAPE_INVALID"],
+    [{ STAGING_DATABASE_URL: syntheticDbUrl("db.other-project.supabase.co") }, "STAGING_DATABASE_TARGET_MISMATCH"],
+  ];
+  for (const [change, code] of cases) {
+    const candidate = { ...source, ...change };
+    assert.equal(databaseIdentity(candidate), null);
+    assert.equal(databaseIdentityFailureCode(candidate), code);
+    assert.equal(validateInvocation(candidate), code);
+    assert.match(code, /^[A-Z0-9_]+$/u);
+    assert.equal(code.includes("private"), false);
+  }
 });
 
 test("Prisma migration URL has a bounded lock wait without changing source binding", () => {
