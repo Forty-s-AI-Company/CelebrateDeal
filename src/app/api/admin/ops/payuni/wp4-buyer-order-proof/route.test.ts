@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
   vi.stubEnv("VERCEL_GIT_COMMIT_SHA", sourceSha);
-  mocks.proof.mockResolvedValue({ status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1, paidEventCount: 1, reservationStatus: "committed", remainingInventory: 2 });
+  mocks.proof.mockResolvedValue({ status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1, paidEventCount: 1, orderEventCount: 1, reservationStatus: "committed", remainingInventory: 2 });
 });
 afterEach(() => vi.unstubAllEnvs());
 

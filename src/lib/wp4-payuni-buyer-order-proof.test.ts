@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readWp4PayUniBuyerOrderProof, verifyWp4PayUniDuplicateCallback } from "@/lib/wp4-payuni-buyer-order-proof";
+import { readWp4PayUniBuyerOrderProof } from "@/lib/wp4-payuni-buyer-order-proof";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const sourceSha = "a".repeat(40);
@@ -30,7 +30,7 @@ describe("fixed PayUni buyer order proof", () => {
     const afterDuplicate = await readWp4PayUniBuyerOrderProof(db as never, sourceSha);
     expect(first).toEqual({
       status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1,
-      paidEventCount: 1, reservationStatus: "committed", remainingInventory: 2,
+      paidEventCount: 1, orderEventCount: 1, reservationStatus: "committed", remainingInventory: 2,
     });
     expect(afterDuplicate).toEqual(first);
     expect(JSON.stringify(first)).not.toContain("synthetic-order");
@@ -58,16 +58,4 @@ describe("fixed PayUni buyer order proof", () => {
     expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toEqual({ status: "STATE_MISMATCH" });
   });
 
-  it("requires the same callback event acknowledgement and unchanged persisted state", async () => {
-    const { db } = fixture();
-    const before = await readWp4PayUniBuyerOrderProof(db as never, sourceSha);
-    const after = await readWp4PayUniBuyerOrderProof(db as never, sourceSha);
-    const firstAck = { ok: true, eventId: "synthetic-event" };
-    const replayAck = { ok: true, duplicate: true, eventId: "synthetic-event" };
-    expect(verifyWp4PayUniDuplicateCallback(before, after, firstAck, replayAck)).toBe("VERIFIED");
-    expect(verifyWp4PayUniDuplicateCallback(before, after, firstAck, { ...replayAck, eventId: "other-event" })).toBe("NOT_PROVEN");
-    expect(verifyWp4PayUniDuplicateCallback(before, after, firstAck, { ...replayAck, duplicate: false })).toBe("NOT_PROVEN");
-    expect(verifyWp4PayUniDuplicateCallback(before, { ...after, remainingInventory: 1 }, firstAck, replayAck)).toBe("NOT_PROVEN");
-    expect(verifyWp4PayUniDuplicateCallback(before, { status: "STATE_MISMATCH" }, firstAck, replayAck)).toBe("NOT_PROVEN");
-  });
 });

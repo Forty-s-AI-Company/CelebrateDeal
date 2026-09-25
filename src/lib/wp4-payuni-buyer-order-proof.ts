@@ -12,25 +12,10 @@ export type BuyerOrderProof =
       orderStatus: "paid";
       orderCount: 1;
       paidEventCount: 1;
+      orderEventCount: number;
       reservationStatus: "committed";
       remainingInventory: number;
     };
-
-/** Only a second acknowledged delivery of the same signed event plus unchanged DB state proves replay idempotency. */
-export function verifyWp4PayUniDuplicateCallback(
-  first: BuyerOrderProof,
-  afterReplay: BuyerOrderProof,
-  firstAcknowledgement: unknown,
-  replayAcknowledgement: unknown,
-): "VERIFIED" | "NOT_PROVEN" {
-  if (first.status !== "VERIFIED" || afterReplay.status !== "VERIFIED") return "NOT_PROVEN";
-  const initial = firstAcknowledgement as Record<string, unknown> | null;
-  const replay = replayAcknowledgement as Record<string, unknown> | null;
-  if (!initial || !replay || initial.ok !== true || replay.ok !== true || replay.duplicate !== true
-    || typeof initial.eventId !== "string" || initial.eventId.length === 0
-    || initial.eventId !== replay.eventId) return "NOT_PROVEN";
-  return JSON.stringify(first) === JSON.stringify(afterReplay) ? "VERIFIED" : "NOT_PROVEN";
-}
 
 /** Read only the exact deployment-owned synthetic buyer transaction. No IDs or PII leave this boundary. */
 export async function readWp4PayUniBuyerOrderProof(db: ProofDb, sourceSha: string): Promise<BuyerOrderProof> {
@@ -63,17 +48,21 @@ export async function readWp4PayUniBuyerOrderProof(db: ProofDb, sourceSha: strin
   if (orders.length !== 1 || reservations.length !== 1 || !product) return { status: "STATE_MISMATCH" };
   const order = orders[0]!;
   const reservation = reservations[0]!;
-  const paidEventCount = await db.commerceOrderEvent.count({
-    where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: order.id, eventType: "payment.paid" },
-  });
+  const [paidEventCount, orderEventCount] = await Promise.all([
+    db.commerceOrderEvent.count({
+      where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: order.id, eventType: "payment.paid" },
+    }),
+    db.commerceOrderEvent.count({ where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: order.id } }),
+  ]);
   if (payment.status !== "paid" || order.status !== "paid" || order.orderNumber !== payment.orderNumber
     || order.totalAmountCents !== payment.grossAmountCents || order.paidAmountCents !== payment.grossAmountCents
     || reservation.status !== "committed" || reservation.productId !== WP4_SANDBOX_FIXTURE.productId
-    || paidEventCount !== 1 || !Number.isSafeInteger(product.inventory) || product.inventory < 0) {
+    || paidEventCount !== 1 || !Number.isSafeInteger(orderEventCount) || orderEventCount < 1
+    || !Number.isSafeInteger(product.inventory) || product.inventory < 0) {
     return { status: "STATE_MISMATCH" };
   }
   return {
     status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1,
-    paidEventCount: 1, reservationStatus: "committed", remainingInventory: product.inventory,
+    paidEventCount: 1, orderEventCount, reservationStatus: "committed", remainingInventory: product.inventory,
   };
 }
