@@ -4,14 +4,14 @@
 
 ## 來源與站台
 
-- 受保護 PR #274–#283、#286–#294 已合進 master；[PR #294](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/294) merge SHA 為 `b44c94c822e6b12a52b9d2fd6be36e57a16539a4`，合併前兩條 `quality` 與 Vercel 檢查通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 受保護 PR #274–#283、#286–#297 已合進 master；[PR #297](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/297) merge SHA 為 `d17ca716172fc3aeca38b215a89da1ddec62e797`，合併前兩條 `quality` 與 Vercel 檢查通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
 - [受保護唯讀診斷 run 36059197795](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059197795) 證實 staging DB 的 58 個已完成 Prisma migration 是固定來源 79 個的完整前綴，缺最後 21 個；無 unresolved failure、未知已套用項或 checksum mismatch。WP4 fixture 的唯讀 preflight 為 `READY`。這尚不能證明 fixture POST 503 的唯一根因。
 - [受保護唯讀診斷 run 36068519165](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 已確認 `Vendor.enabledFeatureModules` 在固定 staging DB **不存在**，且仍缺精確的最後 21 個 migration；fixture preflight 仍為 `READY`。登入後共用版型讀取該欄位，故這是內容缺失的明確 schema 阻擋；實際 runtime 例外與 Sandbox fixture 503 的唯一根因仍未單獨證明。
 - [首次受保護隔離重播 run 36082790275](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36082790275) 在已知歷史 rollback 的基準檢查安全停止；[第二次 run 36085141048](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36085141048) 在還原後摘要比對停下。PR #293／#294 分別修正精確 rollback 基準與跨 PostgreSQL 排序規則的表筆數比對。[第三次受保護 run 36086949395](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36086949395) 的 sanitized receipt 為 `PASS`：58 筆來源 history 與還原摘要相符，21 個 pending SQL 在無網路的一次性容器全部重播，目標 schema 與原 history 通過；來源 staging `databaseWrites=0`。這證明本次快照的 SQL 相容性，不代表固定 staging 已套用 migration，也不是可保留回復備份。
-- PayUni 保持 Sandbox。[受保護固定 Preview 設定綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 已通過：目前執行中的 app 選用 PayUni、`PAYUNI_ENV` 符合 Preview 的 Sandbox 邊界，三項商家設定欄位均存在；收據只輸出布林值。這尚未證明商家憑證可用於外部交易，也未證明成功買家訂單與 callback 閉環。
+- PayUni 保持 Sandbox。[受保護固定 Preview 設定綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 已通過：目前執行中的 app 選用 PayUni、`PAYUNI_ENV` 符合 Preview 的 Sandbox 邊界，三項商家設定欄位均存在；收據只輸出布林值。master 的 [PR #296](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/296) 已修正 callback 缺失／畸形付款金額，[PR #297](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/297) 已修正首次雙回呼事件競爭與失敗重送；固定 staging 尚未部署這些修正，也尚未證明商家憑證可用於外部交易或成功買家訂單與 callback 閉環。
 - `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
 ## 驗收狀態
@@ -33,6 +33,6 @@
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
-依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。staging 已換新版；master 的文件與診斷修正尚未重新部署至固定 staging。固定站登入後內容未通過，Sandbox 成功訂單與 callback／持久化／冪等性證據仍缺，Codex Goal 不應標為 complete。
+依 [Goal Plan](goal-plan-20260924.md)，本輪必需的 `CORE_STAGING_READY` **尚未成立**。固定 staging 仍指向 PR #277 的舊部署，master 的文件與診斷修正尚未重新部署至固定 staging。固定站登入後內容未通過，Sandbox 成功訂單與 callback／持久化／冪等性證據仍缺，Codex Goal 不應標為 complete。
 
 下一步先確認可保留的非 Production 回復備份或明確的 disposable staging 資料邊界，再用受保護流程修復 staging schema。已通過的隔離重播不會留下 dump，不能單獨充當回復方案。本機預備的 `codex/staging-migration-apply-gate` 尚未推送或執行，複審發現它誤拒真正的 staging project、producer workflow／artifact 名稱不符、缺 master migration tree 比對與備份後資料變動防護；修正並重新審查前不能使用。schema 修復後重跑同一來源的登入後核心瀏覽器旅程，並區分 fixture 503 是部署 source SHA 設定還是寫入例外。只有 fixture 根因解決後才考慮下一次 Sandbox 交易，且需將成功付款、callback、訂單 DB readback／重複 callback 冪等性串在同一 lineage。未證實的項目保持 `NOT_PROVEN`。較細的未製作功能見 [下一輪清單](NEXT-CYCLE.md)；歷史 checkpoint 見 [執行紀錄](goal-progress-20260924.md)。
