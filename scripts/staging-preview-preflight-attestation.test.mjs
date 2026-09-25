@@ -5,7 +5,12 @@ import { attestStagingPreview } from "./staging-preview-preflight-attestation.mj
 const host = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
 const secret = "synthetic-staging-job-secret";
 const ready = {
-  environment: { ok: true }, database_reachable: true, all_passed: true,
+  environment: { ok: true, checks: [
+    { key: "PAYUNI_ENV", status: "pass", message: "PayUni environment 與 sandbox deployment boundary 一致" },
+    { key: "PAYUNI_HASH_KEY", status: "pass", message: "configured" },
+    { key: "PAYUNI_HASH_IV", status: "pass", message: "configured" },
+    { key: "PAYUNI_MERCHANT_ID", status: "pass", message: "configured" },
+  ] }, database_reachable: true, all_passed: true,
   supabase_url_match: true, database_url_match: true, direct_url_match: true,
   staging_database_url_match: true,
 };
@@ -25,7 +30,28 @@ test("attests only the fixed staging Preview and redacts the bearer credential",
   } });
   assert.equal(called, true);
   assert.equal(result.result, "PASS");
+  assert.deepEqual(result.paymentBinding, {
+    providerSelected: true, sandboxEnvironment: true, merchantCredentialsConfigured: true,
+  });
   assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test("reports missing or duplicate PayUni checks as unproven without disclosing messages", async () => {
+  for (const environmentChecks of [
+    [],
+    [...ready.environment.checks, ready.environment.checks[0]],
+    ready.environment.checks.map((item) => item.key === "PAYUNI_ENV" ? { ...item, status: "fail" } : item),
+    ready.environment.checks.filter((item) => item.key !== "PAYUNI_MERCHANT_ID"),
+  ]) {
+    const result = await attestStagingPreview({ host, jobSecret: secret, fetchImpl: async () => response({
+      ...ready,
+      environment: { ok: true, checks: environmentChecks },
+    }) });
+    assert.equal(result.result, "BLOCKED");
+    assert.equal(Object.values(result.paymentBinding).every(Boolean), false);
+    assert.equal(JSON.stringify(result).includes("configured"), false);
+    assert.equal(JSON.stringify(result).includes("PAYUNI_MERCHANT_ID"), false);
+  }
 });
 
 test("rejects another host before sending the credential", async () => {
