@@ -30,13 +30,17 @@ export function databaseIdentity(source) {
     const user = decodeURIComponent(db.username);
     const port = db.port || "5432";
     const schema = db.searchParams.get("schema") ?? "public";
+    const sslmode = db.searchParams.get("sslmode");
+    const queryKeys = [...db.searchParams.keys()];
     const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
     const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
     if (!ref || !SAFE_PROJECT.test(ref) || ref !== FIXED_STAGING_REF
       || api.protocol !== "https:" || api.pathname !== "/" || api.search || api.hash || api.username || api.password || api.port
       || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || !["5432", "6543"].includes(port)
       || db.pathname !== "/postgres" || schema !== "public"
-      || [...db.searchParams.keys()].some((key) => key !== "schema") || (!direct && !pooler)) return null;
+      || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
+      || queryKeys.some((key) => !["schema", "sslmode"].includes(key))
+      || new Set(queryKeys).size !== queryKeys.length || (!direct && !pooler)) return null;
     const digest = sha256([db.hostname, port, db.pathname, user, schema].join("\n"));
     return { digest, projectRef: ref, host: db.hostname, port, database: "postgres", user, password: decodeURIComponent(db.password) };
   } catch { return null; }

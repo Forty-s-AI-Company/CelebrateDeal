@@ -46,6 +46,7 @@ const evidence = {
 test("fixed non-Production URL, project, protected branch and workflow are required", () => {
   assert.equal(validateInvocation(source), null);
   assert.equal(databaseIdentity(source)?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?sslmode=require` })?.digest, digest);
   for (const change of [
     { GITHUB_REF_PROTECTED: "false" }, { GITHUB_REF: "refs/heads/feature" },
     { GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/other.yml@refs/heads/master" },
@@ -54,6 +55,8 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
       NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" },
     { CELEBRATEDEAL_DEPLOYMENT_HOST: "other-preview.vercel.app" },
     { CELEBRATEDEAL_SOURCE_SHA: "0".repeat(40) },
+    { STAGING_DATABASE_URL: `${url}?sslmode=disable` },
+    { STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
 });
