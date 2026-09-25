@@ -4,13 +4,13 @@
 
 ## 來源與站台
 
-- 受保護 PR #274–#283、#286–#289 已合進 master；加密備份程式的 PR #288 merge SHA 為 `e13084f37edf9669f47c02351e646972201ae211`，更新分支後的兩條 `quality` 與 Vercel 檢查通過。這些 CI 證據只適用於各 PR commit，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 受保護 PR #274–#283、#286–#291 已合進 master；[PR #291](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/291) merge SHA 為 `d67afe611825db9daef25c9f9042b8732bfcd7d0`，該 PR 的 required checks 與合併後 master CI 均通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
 - [受保護唯讀診斷 run 36059197795](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059197795) 證實 staging DB 的 58 個已完成 Prisma migration 是固定來源 79 個的完整前綴，缺最後 21 個；無 unresolved failure、未知已套用項或 checksum mismatch。WP4 fixture 的唯讀 preflight 為 `READY`。這尚不能證明 fixture POST 503 的唯一根因。
 - [受保護唯讀診斷 run 36068519165](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 已確認 `Vendor.enabledFeatureModules` 在固定 staging DB **不存在**，且仍缺精確的最後 21 個 migration；fixture preflight 仍為 `READY`。登入後共用版型讀取該欄位，故這是內容缺失的明確 schema 阻擋；實際 runtime 例外與 Sandbox fixture 503 的唯一根因仍未單獨證明。
-- PayUni 保持 Sandbox。尚未證明目前部署的商家綁定、實際成功買家訂單與 callback 閉環；不得把環境旗標或健康檢查當成外部交易成功。
+- PayUni 保持 Sandbox。[受保護固定 Preview 設定綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 已通過：目前執行中的 app 選用 PayUni、`PAYUNI_ENV` 符合 Preview 的 Sandbox 邊界，三項商家設定欄位均存在；收據只輸出布林值。這尚未證明商家憑證可用於外部交易，也未證明成功買家訂單與 callback 閉環。
 - `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
 ## 驗收狀態
@@ -19,6 +19,7 @@
 | --- | --- | --- |
 | master 與部署來源 | 已驗證 | PR、CI、GitHub Deployment lineage、Vercel alias／deployment 對應如上；後續新部署須重驗 |
 | DB／Supabase project identity | 已驗證 | 受保護 Preview 身分檢查通過；Auth、Storage 等實際使用資源仍須各自核對 |
+| 固定 Preview PayUni Sandbox 設定綁定 | **已驗證設定存在** | [受保護 run 36080495339](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 確認 app 選用 PayUni Sandbox 且必要商家欄位均已設定；外部商家憑證有效性與交易成功仍未證實 |
 | 固定 staging 核心瀏覽器旅程 | **NOT_PROVEN** | 合成資料的登入、Funnel 建立／保存／發布與公開表單、商品、影片、行動版與關鍵 console／5xx；本機 Playwright CI 不能替代固定站驗收 |
 | 固定 staging 登入後頁面煙測 | **BLOCKED** | [受保護 run 36059209829](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059209829)：合成 session 已建立；桌機／手機共 8 個路由皆 200 且最後停在預期路徑，沒有 page error／同站 5xx，但預期標題／資料未出現。runner 擋下 47 個非 GET 請求（API 8、其他 39）；不能把 200 視為頁面可用。[唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 確認共用版型所需欄位不存在，尚未重跑修復後瀏覽器驗收 |
 | PayUni Sandbox 買家訂單 | **NOT_PROVEN** | 同一固定部署上一筆成功付款、callback、持久化訂單、使用者可見狀態及重複 callback 冪等性；退款／對帳屬更完整的財務閉環 |
