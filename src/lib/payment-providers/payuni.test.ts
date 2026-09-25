@@ -494,6 +494,22 @@ describe("PayUni provider", () => {
     expect(normalized.payload.grossAmountCents).toBe(199_000);
   });
 
+  it("keeps a signed refund callback without an original trade amount compatible", async () => {
+    stubPayUniEnv();
+    const body = payUniEnvelope({
+      MerID: "TESTMER",
+      EventId: "payuni-refund-no-trade-amount-001",
+      EventType: "refunded",
+      MerTradeNo: "CD-REFUND-NO-TRADE-001",
+      RefundAmount: "1990",
+    });
+
+    await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
+    const normalized = await payUniPaymentProvider.normalizePayload(body);
+    expect(normalized.payload.grossAmountCents).toBe(0);
+    expect(normalized.payload.refundAmountCents).toBe(199_000);
+  });
+
   it("keeps decrypted callback fields out of durable transaction metadata", async () => {
     stubPayUniEnv();
     const privateEmail = "buyer-private@example.test";
