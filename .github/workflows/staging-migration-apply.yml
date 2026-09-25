@@ -7,6 +7,10 @@ on:
         description: Successful protected replay workflow run ID
         required: true
         type: string
+      data_disposition_confirmation:
+        description: Confirm fixed staging contains only disposable synthetic test data (enter ALL_DISPOSABLE_SYNTHETIC)
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -74,7 +78,7 @@ jobs:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
-          CELEBRATEDEAL_STAGING_DATA_DISPOSITION: ${{ vars.STAGING_DATA_DISPOSITION }}
+          CELEBRATEDEAL_STAGING_DATA_DISPOSITION: ${{ inputs.data_disposition_confirmation }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
           STAGING_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
           GITHUB_TOKEN: ${{ github.token }}
