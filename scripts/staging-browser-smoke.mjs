@@ -309,6 +309,11 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         }
         await context.close();
       }
+      if (cleanupFailed) {
+        report.result = "BLOCKED";
+        report.reason = "SESSION_CLEANUP_FAILED";
+        return report;
+      }
     }
     const routesPass = report.journeys.length === ROUTES.length * 2
       && report.journeys.every((item) => item.status === 200 && item.finalPath === "EXPECTED"
