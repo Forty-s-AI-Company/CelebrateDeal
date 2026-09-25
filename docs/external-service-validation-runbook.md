@@ -264,6 +264,8 @@ node scripts/validate-external-provider-evidence.mjs docs/ai-team/evidence/exter
 
 CLI 只接受 `docs/ai-team/evidence` 或 `.ai-team/reports` 下、檔名含 `receipt` 或 `evidence` 的 JSON；它只輸出 receipt schema validation 結果，不會把驗證結果升格成 provider readiness。`PASS` 只適用於已證明的 non-Production environment 與 provider environment。synthetic fixture、local health check、歷史 smoke 或 provider unavailable 都必須維持 `PENDING_EXTERNAL`、`FAILED` 或 `BLOCKED`，不可手動改成 `PASS`。
 
+固定 Preview 部署可用 `GET /api/admin/ops/provider-runtime`（`Authorization: Bearer <JOB_SECRET>`）讀取該 Next.js runtime 的 R2／Cloudflare Stream 設定存在性，以及 R2 account＋bucket、Stream account 的 HMAC opaque digest。路由只在 `VERCEL_ENV=preview` 且授權成功時回傳，沒有 provider request；回應固定標示 `runtime_configuration_only`、`providerProbe: not_run` 與 `nonProductionScope: unverified`。呼叫端應綁定部署 revision 與受控 Preview host，僅保存必要的 sanitized evidence。Digest 可比對同一資源設定是否變動，但不能獨立證明 account、bucket、token scope 或 non-Production 身分；要將外部驗證 receipt 記為 `PASS`，仍需另外取得可信的固定資源身分與 scope 證據。
+
 ## 10. Staging migration sanitized receipt
 
 受控 staging migration status 執行完成後，只能把已去識別的 migration facts 轉成 `scripts/staging-migration-evidence.mjs` schema，再用 read-only CLI 驗證。CLI 不執行 migration、不連資料庫、不讀取 environment、不寫入 receipt；`BLOCKED` 或 `FAILED` receipt 可以通過 schema validation，但不能升格為 staging readiness。
