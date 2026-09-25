@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { requestHasNonEmptyBody } from "@/lib/http-request-body";
 import {
@@ -8,6 +9,7 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { cookies } from "next/headers";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import {
   resolveWp4ExpectedSourceSha,
@@ -89,6 +91,38 @@ export async function POST(request: Request) {
       sessionCookieOptions(expiresAt, WP4_PREVIEW_SESSION_TTL_SECONDS),
     );
     return response;
+  } catch {
+    return unavailableConfigurationResponse();
+  }
+}
+
+/** Revoke only the fixed synthetic owner session created for this Preview run. */
+export async function DELETE(request: Request) {
+  if (!requireJobSecret(request)) return unauthorizedJson();
+  if (process.env.VERCEL_ENV !== "preview"
+    || process.env.PAYUNI_ENV !== "sandbox"
+    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true") return unavailableResponse();
+  const deploymentSha = resolveWp4ExpectedSourceSha();
+  if (!deploymentSha) return unavailableConfigurationResponse();
+  if (!wp4SourceMatchesRequest(request, deploymentSha) || await requestHasNonEmptyBody(request)) {
+    return unavailableResponse();
+  }
+  const token = (await cookies()).get(AUTH_COOKIE)?.value;
+  if (!token) return unavailableResponse();
+  try {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const result = await getDb().userSession.updateMany({
+      where: {
+        tokenHash,
+        userId: WP4_SANDBOX_FIXTURE.userId,
+        vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+    return result.count === 1
+      ? new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } })
+      : unavailableResponse();
   } catch {
     return unavailableConfigurationResponse();
   }

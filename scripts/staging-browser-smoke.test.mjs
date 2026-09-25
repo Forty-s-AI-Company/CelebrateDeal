@@ -1,25 +1,71 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, runBrowserSmoke, validateBrowserSmokeBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
   CELEBRATEDEAL_DEPLOYMENT_HOST: "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app",
   JOB_SECRET: "synthetic-owner-session-secret",
+  GITHUB_TOKEN: "synthetic-github-token",
+  VERCEL_TOKEN: "synthetic-vercel-token",
   PATH: "synthetic-path",
 };
 
-test("fixed source and host are required before launching a browser", async () => {
+test("protected dispatch takes a deployment binding and verifies it before owner secret injection", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/staging-browser-smoke.yml", import.meta.url), "utf8");
+  assert.match(workflow, /source_sha:\s*\n\s*description:[^\n]*\n\s*required: true/u);
+  assert.match(workflow, /deployment_host:\s*\n\s*description:[^\n]*\n\s*required: true/u);
+  assert.match(workflow, /CELEBRATEDEAL_SOURCE_SHA: \$\{\{ inputs\.source_sha \}\}/u);
+  assert.match(workflow, /CELEBRATEDEAL_DEPLOYMENT_HOST: \$\{\{ inputs\.deployment_host \}\}/u);
+  assert.ok(workflow.indexOf("Verify exact Preview lineage before secret injection") < workflow.indexOf("Check authenticated staging pages with synthetic owner"));
+  assert.ok(workflow.indexOf("Verify fixed staging alias before owner secret injection") < workflow.indexOf("Check authenticated staging pages with synthetic owner"));
+  assert.match(workflow, /github\.ref_protected/u);
+});
+
+test("validated source and immutable Preview host are required before launching a browser", async () => {
   assert.equal(validateBrowserSmokeBinding(INPUT), true);
   assert.equal(validateBrowserSmokeBinding({ ...INPUT, CELEBRATEDEAL_DEPLOYMENT_HOST: "other.example.test" }), false);
   assert.equal(validateBrowserSmokeBinding({ ...INPUT, JOB_SECRET: "" }), false);
+  assert.equal(validateBrowserSmokeBinding({ ...INPUT, CELEBRATEDEAL_SOURCE_SHA: "bad" }), false);
   const report = await runBrowserSmoke({ ...INPUT, CELEBRATEDEAL_SOURCE_SHA: "different" }, {
     playwright: { chromium: { launch: () => { throw new Error("browser must not launch"); } } },
   });
   assert.equal(report.result, "BLOCKED");
   assert.equal(report.reason, "INVALID_BINDING");
   assert.equal(report.sideEffects.syntheticSessionCreated, 0);
+});
+
+test("failed lineage blocks before browser launch or owner session", async () => {
+  const report = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => false,
+    playwright: { chromium: { launch: () => { throw new Error("browser must not launch"); } } },
+  });
+  assert.equal(report.result, "BLOCKED");
+  assert.equal(report.reason, "LINEAGE_NOT_VERIFIED");
+  assert.equal(report.lineage, "NOT_VERIFIED");
+});
+
+test("fixed alias must resolve to the exact immutable Preview before a session is sent", async () => {
+  const deployment = { id: "dpl_fixture", projectId: "prj_fixture", url: INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST,
+    name: "celebrate-deal-staging", target: null, readyState: "READY" };
+  const response = (body) => ({ status: 200, json: async () => body });
+  const probe = (aliasDeploymentId) => (_url) => Promise.resolve(
+    _url.includes("/v4/aliases/")
+      ? response({ alias: "celebrate-deal-staging.carry-digital-nomad.in.net", deploymentId: aliasDeploymentId, projectId: "prj_fixture" })
+      : response(deployment),
+  );
+  assert.equal(await verifyStagingAliasBinding(INPUT, probe("dpl_fixture")), true);
+  assert.equal(await verifyStagingAliasBinding(INPUT, probe("dpl_old")), false);
+  let sessionRequested = false;
+  const report = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => false,
+    playwright: { chromium: { launch: () => { sessionRequested = true; throw new Error("browser must not launch"); } } },
+  });
+  assert.equal(report.reason, "ALIAS_NOT_VERIFIED");
+  assert.equal(sessionRequested, false);
 });
 
 test("synthetic session failure does not visit pages or expose the secret to Chromium", async () => {
@@ -49,6 +95,8 @@ test("synthetic session failure does not visit pages or expose the secret to Chr
     close: async () => {},
   };
   const report = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
     playwright: { chromium: { launch: async (options) => {
       launchOptions = options;
       return { newContext: async () => context, close: async () => {} };
@@ -65,8 +113,158 @@ test("synthetic session failure does not visit pages or expose the secret to Chr
   assert.equal(pageCreated, false);
   assert.equal(launchOptions.env.JOB_SECRET, undefined);
   assert.equal(JSON.stringify(report).includes(INPUT.JOB_SECRET), false);
+  assert.equal(JSON.stringify(report).includes(INPUT.GITHUB_TOKEN), false);
   assert.equal(sessionRequest.url, "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session");
   assert.equal(sessionRequest.options.maxRedirects, 0);
+});
+
+test("only the exact empty-body attribution reset is allowed among browser POSTs", () => {
+  const request = (path, method = "POST", headers = {}, body = null) => ({
+    url: () => `https://celebrate-deal-staging.carry-digital-nomad.in.net${path}`,
+    method: () => method,
+    headers: () => headers,
+    postData: () => body,
+  });
+  const safeHeaders = { "x-celebratedeal-client": "web", "content-type": "application/json" };
+  assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry", "POST", safeHeaders)), "ATTRIBUTION_RESET");
+  assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry?x=1", "POST", safeHeaders)), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry", "POST", safeHeaders, "{}")), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/api/payments/checkout", "POST", safeHeaders)), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/dashboard", "POST", { "next-action": "some-action" })), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/dashboard", "GET")), "READ");
+  assert.equal(classifyBrowserRequest({ ...request("/dashboard"), url: () => "https://evil.example.test/dashboard" }), "EXTERNAL");
+});
+
+test("a rendered journey remains blocked when an unexpected browser POST occurs", async () => {
+  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  let unsafeAborts = 0;
+  let localNoOps = 0;
+  let cleanupStatus = 204;
+  let triggerUnsafePost = true;
+  let triggerChunk404 = false;
+  let triggerChunkNetworkFailure = false;
+  const browser = {
+    newContext: async () => {
+      let handler;
+      let currentUrl = origin;
+      const locator = { first: () => locator, waitFor: async () => {}, count: async () => 0,
+        click: async () => { currentUrl = `${origin}/products`; } };
+      return {
+        route: async (_pattern, callback) => { handler = callback; },
+        routeWebSocket: async () => {},
+        request: {
+          post: async () => ({ status: () => 204, dispose: async () => {} }),
+          delete: async () => ({ status: () => cleanupStatus, dispose: async () => {} }),
+        },
+        newPage: async () => {
+          let onResponse = () => {};
+          let onRequestFailed = () => {};
+          return {
+          on: (event, callback) => {
+            if (event === "response") onResponse = callback;
+            if (event === "requestfailed") onRequestFailed = callback;
+          },
+          goto: async (url) => {
+            currentUrl = url;
+            if (url.endsWith("/dashboard") && triggerChunk404) onResponse({
+              url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
+              request: () => ({ resourceType: () => "script" }),
+            });
+            if (url.endsWith("/dashboard") && triggerChunkNetworkFailure) onRequestFailed({
+              url: () => `${origin}/_next/static/chunks/app.js`, resourceType: () => "script",
+            });
+            if (url.endsWith("/billing/plans")) {
+              await handler({
+                request: () => ({ url: () => `${origin}/api/affiliate-attribution/direct-entry`, method: () => "POST", headers: () => ({ "x-celebratedeal-client": "web", "content-type": "application/json" }), postData: () => null }),
+                fulfill: async () => { localNoOps += 1; },
+              });
+            }
+            if (url.endsWith("/dashboard") && triggerUnsafePost) {
+              await handler({
+                request: () => ({ url: () => `${origin}/api/payments/checkout`, method: () => "POST", headers: () => ({}), postData: () => "{}" }),
+                abort: async () => { unsafeAborts += 1; },
+              });
+            }
+            return { status: () => 200 };
+          },
+          getByRole: () => locator,
+          getByLabel: () => ({ selectOption: async () => {} }),
+          getByText: () => locator,
+          locator: () => locator,
+          waitForURL: async () => {},
+          url: () => currentUrl,
+        }; },
+        close: async () => {},
+      };
+    },
+    close: async () => {},
+  };
+  const report = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(report.journeys.length, 10);
+  assert.equal(report.result, "BLOCKED");
+  assert.equal(report.browser.unsafeRequestsBlocked, 2);
+  assert.equal(report.browser.safeAttributionResets, 2);
+  assert.equal(report.sideEffects.syntheticSessionCreated, 2);
+  assert.equal(report.sideEffects.syntheticSessionRevoked, 2);
+  assert.equal(unsafeAborts, 2);
+  assert.equal(localNoOps, 2);
+  cleanupStatus = 404;
+  const cleanupFailure = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(cleanupFailure.result, "BLOCKED");
+  assert.equal(cleanupFailure.reason, "SESSION_CLEANUP_FAILED");
+  assert.equal(cleanupFailure.sideEffects.syntheticSessionRevoked, 0);
+  cleanupStatus = 204;
+  triggerUnsafePost = false;
+  triggerChunk404 = true;
+  const missingChunk = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(missingChunk.browser.unsafeRequestsBlocked, 0);
+  assert.equal(missingChunk.browser.criticalResourceFailures, 2);
+  assert.equal(missingChunk.browser.navigationInteractionsPassed, 2);
+  assert.equal(missingChunk.browser.hydrationInteractionsPassed, 2);
+  assert.equal(missingChunk.result, "BLOCKED");
+  triggerChunk404 = false;
+  triggerChunkNetworkFailure = true;
+  const networkFailure = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(networkFailure.browser.criticalResourceFailures, 2);
+  assert.equal(networkFailure.result, "BLOCKED");
+  triggerChunkNetworkFailure = false;
+  let aliasChecks = 0;
+  const aliasDriftAfterSession = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => ++aliasChecks < 3,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(aliasDriftAfterSession.result, "BLOCKED");
+  assert.equal(aliasDriftAfterSession.reason, "SESSION_CLEANUP_FAILED");
+  assert.equal(aliasDriftAfterSession.sideEffects.syntheticSessionCreated, 1);
+  assert.equal(aliasDriftAfterSession.sideEffects.syntheticSessionRevoked, 0);
+});
+
+test("a failed JavaScript chunk invalidates an otherwise rendered journey", () => {
+  const response = (status, resourceType) => ({
+    url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/_next/static/chunks/app.js",
+    status: () => status, request: () => ({ resourceType: () => resourceType }),
+  });
+  assert.equal(isCriticalResourceFailure(response(404, "script")), true);
+  assert.equal(isCriticalResourceFailure(response(200, "script")), false);
+  assert.equal(isCriticalResourceFailure(response(404, "image")), false);
+  assert.equal(isFailedCriticalResourceRequest({ url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script" }), true);
 });
 
 test("session status categories remain bounded", () => {
@@ -74,6 +272,14 @@ test("session status categories remain bounded", () => {
   assert.equal(classifySessionStatus(401), "UNAUTHORIZED");
   assert.equal(classifySessionStatus(503), "SERVICE_UNAVAILABLE");
   assert.equal(classifySessionStatus(302), "HTTP_REJECTED");
+});
+
+test("desktop and mobile journeys target the visible app shell navigation", () => {
+  const shell = readFileSync(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
+  assert.equal(appNavigationSelectorForViewport("desktop"), 'nav[aria-label="主要導覽"]:visible');
+  assert.equal(appNavigationSelectorForViewport("mobile"), 'nav[aria-label="行動版主要導覽"]:visible');
+  assert.match(shell, /aria-label="主要導覽"/u);
+  assert.match(shell, /aria-label="行動版主要導覽"/u);
 });
 
 test("final URLs and blocked requests are reduced to fixed, non-sensitive categories", () => {

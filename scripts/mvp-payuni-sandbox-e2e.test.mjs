@@ -246,6 +246,15 @@ function successfulDependencies(calls = []) {
       if (request.url.endsWith("/wp4-payment-attempt")) {
         return response(200, { status: "SUBMIT_ALLOWED", reservationCreated: true });
       }
+      if (request.url.endsWith("/wp4-buyer-order-proof")) {
+        return response(200, { status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1,
+          paidEventCount: 1, orderEventCount: 1, reservationStatus: "committed", remainingInventory: 2 });
+      }
+      if (request.url.endsWith("/api/webhooks/payments?provider=payuni&source=notify")) {
+        assert.deepEqual(request.body, Buffer.from("signed-synthetic-callback"));
+        assert.deepEqual(request.headers, { "content-type": "application/x-www-form-urlencoded" });
+        return response(200, { ok: true, duplicate: true, eventId: "synthetic-event" });
+      }
       if (request.url.endsWith("/wp4-refund")) {
         return response(200, { status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true });
       }
@@ -256,7 +265,8 @@ function successfulDependencies(calls = []) {
       calls.push({ browserInput });
       assert.equal(browserInput.previewHost, previewHost);
       assert.equal(browserInput.transactionId, "wp4-transaction-v1");
-      return true;
+      assert.equal(browserInput.captureReturnCallback, true);
+      return { mapped: true, firstStatus: 303, signedReturnBody: Buffer.from("signed-synthetic-callback"), contentType: "application/x-www-form-urlencoded" };
     },
   };
 }
@@ -342,6 +352,39 @@ test("buyer browser submission uses a fixed environment and fails closed on conf
     ? ["PATH", "SystemRoot", "TEMP", "TMP"].sort()
     : ["HOME", "PATH", "TMPDIR"].sort());
   assert.equal(postOptions.maxRedirects, 0);
+});
+
+test("buyer browser captures only the exact signed Return POST after the real 303 callback", async () => {
+  class TimeoutError extends Error {}
+  const listeners = new Map();
+  const signed = Buffer.from("signed-synthetic-callback");
+  const callbackUrl = `https://${previewHost}/api/webhooks/payments?provider=payuni&source=return`;
+  const page = {
+    on(name, listener) { listeners.set(name, listener); },
+    async goto() {}, async route() {}, async waitForURL() {},
+    getByText() { return { async click() {} }; },
+    getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
+    getByRole(_role, options) {
+      if (options.name === "確認送出") return { async click() {
+        listeners.get("request")({ url: () => callbackUrl, method: () => "POST", postDataBuffer: () => signed,
+          headers: () => ({ "content-type": "application/x-www-form-urlencoded" }) });
+        listeners.get("response")({ url: () => callbackUrl, status: () => 303, request: () => ({ method: () => "POST" }) });
+      } };
+      if (options.name === "確定") return { async waitFor() { throw new TimeoutError(); } };
+      throw new Error("unexpected role");
+    },
+    locator(selector) { return selector === "body"
+      ? { async innerText() { return "CD-20300101000000-WP4A1 付款完成"; } }
+      : { async check() {} }; },
+  };
+  const browser = { async newContext() { return { async addCookies() {}, async newPage() { return page; },
+    request: { async post() { return { status: () => 200, ok: () => true }; } } }; }, async close() {} };
+  const result = await defaultBrowserSubmit({ previewHost, cardNumber: "4147631000000001", cardExpiry: "1230",
+    cardCvv: "123", formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic",
+    orderNumber: "CD-20300101000000-WP4A1", captureReturnCallback: true,
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+  assert.deepEqual(result, { mapped: true, firstStatus: 303, signedReturnBody: signed,
+    contentType: "application/x-www-form-urlencoded" });
 });
 
 test("buyer fixture contract rejects retired six-entity and invalid counts", async () => {
@@ -1107,6 +1150,65 @@ test("stops before refund and reconciliation when return callback cannot map to 
   assert.equal(receipt.sideEffects.reconcilePosts, 0);
   assert.equal(calls.some((call) => call.url?.endsWith("/wp4-refund")), false);
   assert.equal(calls.some((call) => call.url?.endsWith("/wp4-reconcile")), false);
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("a browser success boolean cannot forge a signed Return callback capture", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  dependencies.browserSubmit = async () => true;
+  const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "RETURN_CALLBACK_PROOF_REQUIRED");
+  assert.equal(receipt.sideEffects.callbackReplays, 0);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(calls.some((call) => call.url?.endsWith("/wp4-buyer-order-proof")), false);
+});
+
+test("a callback 200 without duplicate acknowledgement cannot pass or trigger refund", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  const originalRequest = dependencies.request;
+  dependencies.request = async (request) => request.url.endsWith("/api/webhooks/payments?provider=payuni&source=notify")
+    ? response(200, { ok: true, duplicate: false, eventId: "synthetic-event" })
+    : originalRequest(request);
+  const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "CALLBACK_REPLAY_REJECTED");
+  assert.equal(receipt.sideEffects.callbackReplays, 1);
+  assert.equal(receipt.sideEffects.orderProofPosts, 1);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
+});
+
+test("successful buyer receipt contains only closed proof flags and counters", async () => {
+  const receipt = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.checks.orderPersisted, true);
+  assert.equal(receipt.checks.duplicateCallbackVerified, true);
+  assert.equal(receipt.sideEffects.orderProofPosts, 2);
+  assert.equal(receipt.sideEffects.callbackReplays, 1);
+  assert.equal(JSON.stringify(receipt).includes("signed-synthetic-callback"), false);
+  assert.equal(JSON.stringify(receipt).includes("synthetic-event"), false);
+});
+
+test("a changed persisted inventory snapshot after replay cannot pass or trigger refund", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  const originalRequest = dependencies.request;
+  let proofReads = 0;
+  dependencies.request = async (request) => {
+    if (request.url.endsWith("/wp4-buyer-order-proof") && ++proofReads === 2) {
+      return response(200, { status: "VERIFIED", paymentStatus: "paid", orderStatus: "paid", orderCount: 1,
+        paidEventCount: 1, orderEventCount: 1, reservationStatus: "committed", remainingInventory: 1 });
+    }
+    return originalRequest(request);
+  };
+  const receipt = await runMvpPayUniSandboxE2E(validInput, dependencies);
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "DUPLICATE_PROOF_REJECTED");
+  assert.equal(receipt.sideEffects.orderProofPosts, 2);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
   assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 

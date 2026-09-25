@@ -1,4 +1,4 @@
-name: Staging browser smoke
+name: Staging provider read-only probe
 
 on:
   workflow_dispatch:
@@ -17,16 +17,16 @@ permissions:
   deployments: read
 
 jobs:
-  browser-smoke:
+  provider-probe:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     environment: Preview – celebrate-deal-staging
     env:
       CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
       CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
     steps:
-      - name: Checkout protected browser runner
+      - name: Checkout protected read-only probe
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -35,40 +35,25 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install locked dependencies and Chromium before secret injection
-        run: |
-          npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
-
-      - name: Test fixed browser contract before secret injection
-        run: node --test scripts/staging-browser-smoke.test.mjs
+      - name: Test provider probe contract before secret injection
+        run: node --test scripts/staging-provider-readonly-probe.test.mjs
 
       - name: Verify exact Preview lineage before secret injection
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
-      - name: Verify fixed staging alias before owner secret injection
+      - name: Probe deployed Preview providers read only
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: node scripts/staging-browser-smoke.mjs --verify-alias
-
-      # The owner session is short-lived and belongs only to the fixed synthetic fixture.
-      - name: Check authenticated staging pages with synthetic owner
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-        run: node scripts/staging-browser-smoke.mjs
+        run: node scripts/staging-provider-readonly-probe.mjs
 
-      - name: Upload sanitized browser receipt
+      - name: Upload sanitized provider receipt
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: celebratedeal-staging-browser-smoke
-          path: ${{ runner.temp }}/celebratedeal-staging-browser-smoke.json
+          name: celebratedeal-staging-provider-readonly-probe
+          path: ${{ runner.temp }}/celebratedeal-staging-provider-readonly-probe.json
           if-no-files-found: ignore
           retention-days: 7
