@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, WebhookEvent } from "@prisma/client";
 import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
@@ -98,6 +98,33 @@ export async function HEAD(request: Request) {
   return new NextResponse(null, { status: 405, headers: { Allow: "POST" } });
 }
 
+async function claimWebhookEvent(db: ReturnType<typeof getDb>, event: WebhookEvent) {
+  if (event.status === "processed") return { status: "processed" as const, event };
+  if (event.status !== "received" && event.status !== "failed") return { status: "pending" as const, event };
+  if (event.status === "failed" && event.retryCount >= event.maxRetries) return { status: "pending" as const, event };
+
+  // A created event is visible before its first callback finishes. Claim it
+  // atomically; a later signed provider retry may reclaim only a failed event.
+  const isRetry = event.status === "failed";
+  const claimed = await db.webhookEvent.updateMany({
+    where: { id: event.id, status: event.status, retryCount: event.retryCount },
+    data: {
+      status: "retrying",
+      retryCount: isRetry ? { increment: 1 } : undefined,
+      nextRetryAt: null,
+    },
+  });
+  if (claimed.count !== 1) {
+    const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
+    return { status: latestEvent?.status === "processed" ? "processed" as const : "pending" as const, event };
+  }
+  return {
+    status: "claimed" as const,
+    event: { ...event, status: "retrying", retryCount: event.retryCount + (isRetry ? 1 : 0) },
+    isRetry,
+  };
+}
+
 export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
   let adapter: PaymentProviderAdapter;
@@ -155,28 +182,43 @@ export async function POST(request: Request) {
 
   const payload = normalized.payload;
   const db = getDb();
-  const existing = await db.webhookEvent.findUnique({
-    where: { provider_eventId: { provider: payload.provider, eventId: payload.eventId } },
-  });
-
-  if (existing?.status === "processed") {
-    return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: existing.id });
+  const eventKey = { provider_eventId: { provider: payload.provider, eventId: payload.eventId } };
+  let event = await db.webhookEvent.findUnique({ where: eventKey });
+  if (!event) {
+    try {
+      event = await db.webhookEvent.create({
+        data: {
+          provider: payload.provider,
+          eventId: payload.eventId,
+          eventType: payload.eventType,
+          status: "received",
+          maxRetries: 5,
+          payload: {
+            raw: redactedJsonSnapshot(normalized.rawPayload),
+            normalized: redactedJsonSnapshot(payload),
+            diagnostics: redactedJsonSnapshot(diagnostics),
+          } as Prisma.InputJsonObject,
+        },
+      });
+    } catch (error) {
+      // ReturnURL and NotifyURL can both miss the first read. Only converge a
+      // unique-key race when the same provider event is visible after the loss.
+      if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") {
+        throw error;
+      }
+      event = await db.webhookEvent.findUnique({ where: eventKey });
+      if (!event) throw error;
+    }
   }
 
-  const event = existing ?? await db.webhookEvent.create({
-    data: {
-      provider: payload.provider,
-      eventId: payload.eventId,
-      eventType: payload.eventType,
-      status: "received",
-      maxRetries: 5,
-      payload: {
-        raw: redactedJsonSnapshot(normalized.rawPayload),
-        normalized: redactedJsonSnapshot(payload),
-        diagnostics: redactedJsonSnapshot(diagnostics),
-      } as Prisma.InputJsonObject,
-    },
-  });
+  const claim = await claimWebhookEvent(db, event);
+  if (claim.status === "processed") {
+    return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
+  }
+  if (claim.status === "pending") {
+    return webhookResponse(requestUrl, 503, { error: "Payment webhook processing pending", eventId: event.id });
+  }
+  event = claim.event;
 
   try {
     const result = await processPaymentWebhook(payload, event);
@@ -200,11 +242,11 @@ export async function POST(request: Request) {
     observePaymentWebhookFailure(requestUrl, errorCode);
     const message = paymentWebhookFailureMessage(errorCode);
     await db.webhookEvent.updateMany({
-      where: { id: event.id, status: { not: "processed" } },
+      where: { id: event.id, status: "retrying", retryCount: event.retryCount },
       data: {
         status: "failed",
         errorMessage: message,
-        retryCount: { increment: 1 },
+        retryCount: claim.isRetry ? undefined : { increment: 1 },
         nextRetryAt: new Date(Date.now() + 1000 * 60 * 15),
       },
     });
