@@ -211,7 +211,7 @@ function successfulDependencies(calls = []) {
   return {
     async request(request) {
       calls.push(request);
-      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
       if (request.url.endsWith("/checkout/admission")) {
         return {
           status: 200,
@@ -276,7 +276,7 @@ function successfulSubscriptionDependencies(calls = []) {
   return {
     async request(request) {
       calls.push(request);
-      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 5, reusedCount: 0 });
+      if (request.url.endsWith("/wp4-fixture")) return response(200, { ready: true, createdCount: 6, reusedCount: 0 });
       if (request.url.endsWith("/wp4-session")) {
         return { status: 204, sessionCookie: "celebrate_session=opaque-owner-session" };
       }
@@ -387,8 +387,8 @@ test("buyer browser captures only the exact signed Return POST after the real 30
     contentType: "application/x-www-form-urlencoded" });
 });
 
-test("buyer fixture contract rejects retired six-entity and invalid counts", async () => {
-  for (const createdCount of [6, 4]) {
+test("buyer fixture contract rejects stale five-entity and invalid counts", async () => {
+  for (const createdCount of [5, 4]) {
     let browserCalled = false;
     const receipt = await runMvpPayUniSandboxE2E(validInput, {
       request: async () => response(200, { ready: true, createdCount, reusedCount: 0 }),
@@ -397,6 +397,16 @@ test("buyer fixture contract rejects retired six-entity and invalid counts", asy
     assert.equal(receipt.failure, "FIXTURE_HTTP_REJECTED");
     assert.equal(browserCalled, false);
   }
+});
+
+test("buyer fixture accepts the six deterministic server rows before admission", async () => {
+  const receipt = await runMvpPayUniSandboxE2E(validInput, {
+    request: async () => response(200, { ready: true, createdCount: 2, reusedCount: 4 }),
+  });
+  assert.equal(receipt.checks.fixtureReady, true);
+  assert.equal(receipt.sideEffects.admissionPosts, 1);
+  assert.equal(receipt.failure, "ADMISSION_REJECTED");
+  assert.deepEqual(validateMvpPayUniReceipt(receipt), { ok: true, errors: [] });
 });
 
 test("uses the native fixed plan browser flow once without treating the return page as subscription payment proof", async () => {
