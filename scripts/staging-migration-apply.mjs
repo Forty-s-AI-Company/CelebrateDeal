@@ -31,15 +31,17 @@ export function databaseIdentity(source) {
     const port = db.port || "5432";
     const schema = db.searchParams.get("schema") ?? "public";
     const sslmode = db.searchParams.get("sslmode");
+    const pgbouncer = db.searchParams.get("pgbouncer");
     const queryKeys = [...db.searchParams.keys()];
     const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
     const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
     if (!ref || !SAFE_PROJECT.test(ref) || ref !== FIXED_STAGING_REF
       || api.protocol !== "https:" || api.pathname !== "/" || api.search || api.hash || api.username || api.password || api.port
-      || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || !["5432", "6543"].includes(port)
+      || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || port !== "5432"
       || db.pathname !== "/postgres" || schema !== "public"
       || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
-      || queryKeys.some((key) => !["schema", "sslmode"].includes(key))
+      || (pgbouncer !== null && pgbouncer !== "true")
+      || queryKeys.some((key) => !["schema", "sslmode", "pgbouncer"].includes(key))
       || new Set(queryKeys).size !== queryKeys.length || (!direct && !pooler)) return null;
     const digest = sha256([db.hostname, port, db.pathname, user, schema].join("\n"));
     return { digest, projectRef: ref, host: db.hostname, port, database: "postgres", user, password: decodeURIComponent(db.password) };
@@ -62,12 +64,15 @@ export function databaseIdentityFailureCode(source) {
   if (ref !== FIXED_STAGING_REF) return "STAGING_PROJECT_MISMATCH";
   const queryKeys = [...db.searchParams.keys()];
   const sslmode = db.searchParams.get("sslmode");
-  if (queryKeys.some((key) => !["schema", "sslmode"].includes(key))
-    || new Set(queryKeys).size !== queryKeys.length
-    || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
-    || (db.searchParams.get("schema") ?? "public") !== "public") return "STAGING_DATABASE_QUERY_INVALID";
+  if (new Set(queryKeys).size !== queryKeys.length) return "STAGING_DATABASE_QUERY_DUPLICATE";
+  if ((db.searchParams.get("schema") ?? "public") !== "public") return "STAGING_DATABASE_SCHEMA_QUERY_INVALID";
+  if (sslmode !== null && !["require", "verify-full"].includes(sslmode)) return "STAGING_DATABASE_SSLMODE_QUERY_INVALID";
+  if (db.searchParams.has("pgbouncer") && db.searchParams.get("pgbouncer") !== "true") return "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID";
+  if (queryKeys.some((key) => !["schema", "sslmode", "pgbouncer"].includes(key))) return "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED";
   if (!["postgres:", "postgresql:"].includes(db.protocol) || !db.username || !db.password
-    || db.pathname !== "/postgres" || !["5432", "6543"].includes(db.port || "5432")) return "STAGING_DATABASE_URL_SHAPE_INVALID";
+    || db.pathname !== "/postgres") return "STAGING_DATABASE_URL_SHAPE_INVALID";
+  if ((db.port || "5432") === "6543") return "STAGING_MIGRATION_TRANSACTION_POOLER_UNSUPPORTED";
+  if ((db.port || "5432") !== "5432") return "STAGING_DATABASE_URL_SHAPE_INVALID";
   let user;
   try { user = decodeURIComponent(db.username); }
   catch { return "STAGING_DATABASE_URL_SHAPE_INVALID"; }
@@ -81,6 +86,8 @@ export function databaseIdentityFailureCode(source) {
 export function migrationUrlWithLockTimeout(source) {
   if (!databaseIdentity(source)) return null;
   const url = new URL(source.STAGING_DATABASE_URL);
+  // Runtime's PgBouncer hint is unnecessary for direct/session migration connections.
+  url.searchParams.delete("pgbouncer");
   url.searchParams.set("options", "-c lock_timeout=5000 -c statement_timeout=60000");
   return url.toString();
 }
