@@ -662,6 +662,12 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
+    // Keep the provider's signed amount explicit. A missing or malformed
+    // amount must not become zero and bypass an existing order's amount check.
+    const grossAmountCents = queryAmountCents(rawPayload.Amount ?? rawPayload.TradeAmt);
+    if (grossAmountCents === undefined || grossAmountCents <= 0) {
+      throw new Error("Invalid PayUni trade amount.");
+    }
     const orderNumber = rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber;
     const eventId = rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber;
     const normalizedOrderNumber = requiredPayloadText(orderNumber, "order number");
@@ -675,7 +681,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       orderNumber: normalizedOrderNumber,
       providerTradeNo: optionalPayloadText(rawPayload.TradeNo),
       paymentMode: "platform",
-      grossAmountCents: cents(rawPayload.Amount ?? rawPayload.TradeAmt),
+      grossAmountCents,
       gatewayFeeCents: cents(rawPayload.GatewayFee),
       platformFeeCents: cents(rawPayload.PlatformFee),
       netAmountCents: cents(rawPayload.NetAmount),
