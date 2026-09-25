@@ -100,6 +100,7 @@
 | 75 | `POST /api/checkout/upsell` | buyer support grant cookie + same-origin/client marker + 12/min rate limit | strict grantId、`accept|decline` decision 與 `upsell|downsell` kind JSON | grant、paid source order、source item 與目前 offer 都由 server-side tenant lookup 驗證 | append-only source-order decision event 以 decision/kind/offer key 重送收斂；accept 僅簽發短效 checkout handoff，不建立付款 | 400／403／404／429／503，或 private no-store 下一步／checkout handoff | 同路徑 route unit + checkout redemption regression |
 | 76 | `GET /(app)/billing/electronic-invoices/export` | authenticated vendor finance context | 無 body | export query 固定目前 vendor；不存在與拒絕存取不洩漏資料 | 只讀 CSV；公式字元 neutralization、`private, no-store` 與 attachment headers | CSV attachment 或安全授權錯誤 | 同路徑 route unit |
 | 77 | `POST /api/jobs/electronic-invoices` | timing-safe `JOB_SECRET` Bearer token | 無 body | job 只處理 server-owned tenant invoice queue；不接受 caller identity | bounded invoice issue／allowance／void reconciliation；adapter unavailable 保留 queued，錯誤回 sanitized monitoring | 401、202 queued 或 200 bounded counts；失敗 503 safe code | 同路徑 route/job unit |
+| 83 | `GET /api/admin/ops/provider-runtime` | timing-safe `JOB_SECRET`，僅 `VERCEL_ENV=preview`；唯讀探測另需部署 source SHA 相符 | 可選 `probe=read-only` 與 `x-celebratedeal-source-sha` | 預設只讀 runtime 設定存在性與 HMAC 資源摘要；探測時各執行一次 R2 HeadBucket 與 Stream list `limit=1` | 無 DB 或 provider 寫入；探測結果僅固定 enum，不能證明 token scope／非正式資源身分 | 200 bounded presence／digest／probe enum，401／403 泛化錯誤；`no-store` | 同路徑 route unit＋合成 provider probe unit；實際非正式資源 scope 仍待外部證據 |
 
 ## 已確認的 contract 缺口
 
@@ -113,8 +114,8 @@
 
 ## 驗收判定
 
-- Static inventory：71/71 route handlers 已登錄。
-- Same-path test：71/71。
+- Static inventory：由 `api-contract-registry.test.ts` 逐一核對 route method 與本表登錄項。
+- Same-path test：同一檢查逐一要求 route 旁的測試檔。
 - Runtime input validation：所有 JSON/form write route 已使用 Zod 或明確 bounded raw-body parser。
 - Auth／tenant：與 `AUTHORIZATION_MATRIX.md` 一致。
 - 完成度：registry 已建立；API-C01～C05 尚未關閉，因此 Q08 不能標為 100。
