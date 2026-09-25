@@ -2,6 +2,15 @@ name: Staging browser smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit of the immutable Preview deployment
+        required: true
+        type: string
+      deployment_host:
+        description: Immutable Preview host recorded by the protected GitHub deployment
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,8 +23,8 @@ jobs:
     timeout-minutes: 15
     environment: Preview – celebrate-deal-staging
     env:
-      CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
-      CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+      CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+      CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
     steps:
       - name: Checkout protected browser runner
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -41,9 +50,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
+      - name: Verify fixed staging alias before owner secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/staging-browser-smoke.mjs --verify-alias
+
       # The owner session is short-lived and belongs only to the fixed synthetic fixture.
       - name: Check authenticated staging pages with synthetic owner
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
         run: node scripts/staging-browser-smoke.mjs
 
