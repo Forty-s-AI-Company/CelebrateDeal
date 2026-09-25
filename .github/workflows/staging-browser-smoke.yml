@@ -50,10 +50,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
+      - name: Verify fixed staging alias before owner secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/staging-browser-smoke.mjs --verify-alias
+
       # The owner session is short-lived and belongs only to the fixed synthetic fixture.
       - name: Check authenticated staging pages with synthetic owner
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
         run: node scripts/staging-browser-smoke.mjs
 
