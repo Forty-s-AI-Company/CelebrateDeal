@@ -4,7 +4,7 @@
 
 ## 來源與站台
 
-- 受保護 PR #274–#283、#286–#298 已合進 master；最新 [PR #298](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/298) 的 merge SHA 為 `a2969b0523cf6bb15284c669699a5f9b7f76120e`，[該 SHA 的 CI](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36094533079) 已通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 受保護 PR #274–#283、#286–#298 已合進 master；本次盤點的應用程式基準 [PR #298](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/298) 的 merge SHA 為 `a2969b0523cf6bb15284c669699a5f9b7f76120e`，[該 SHA 的 CI](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36094533079) 已通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
