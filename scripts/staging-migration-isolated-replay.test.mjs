@@ -4,7 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 import { PREVIEW_HOST, SOURCE_SHA } from "./staging-migration-compat-preflight.mjs";
-import { IMAGE, replayArgs, runIsolatedReplay, validateBindings } from "./staging-migration-isolated-replay.mjs";
+import { canonicalTableCounts, IMAGE, replayArgs, runIsolatedReplay, validateBindings } from "./staging-migration-isolated-replay.mjs";
 
 const names = (await readdir("prisma/migrations", { withFileTypes: true }))
   .filter((entry) => entry.isDirectory() && /^\d{12,14}_[a-z0-9_]+$/u.test(entry.name))
@@ -24,6 +24,15 @@ const binding = {
   STAGING_DATABASE_URL: ["postgresql:", "", "postgres:synthetic-password@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres"].join("/"),
   NEXT_PUBLIC_SUPABASE_URL: "https://ocbugvgojrunvenozsbx.supabase.co",
 };
+
+test("table count snapshot ignores PostgreSQL collation order without dropping any table", () => {
+  const names = ["Vendor", "auditLog"];
+  assert.equal(canonicalTableCounts("Vendor|2\nauditLog|0\n", names), canonicalTableCounts("auditLog|0\nVendor|2\n", names));
+  assert.throws(() => canonicalTableCounts("Vendor|2\n", names), /SNAPSHOT_COUNTS_INVALID/u);
+  assert.throws(() => canonicalTableCounts("Vendor|2\nVendor|2\n", names), /SNAPSHOT_COUNTS_INVALID/u);
+  assert.throws(() => canonicalTableCounts("Vendor|2\nunknown|0\n", names), /SNAPSHOT_COUNTS_INVALID/u);
+  assert.notEqual(canonicalTableCounts("Vendor|2\nauditLog|0\n", names), canonicalTableCounts("Vendor|3\nauditLog|0\n", names));
+});
 
 test("invalid binding and container ID fail before any database action", async () => {
   assert.equal(IMAGE, "postgres:17-alpine@sha256:aa90e97ee862e558111d34cfb8b2c4bec768c2b039fb791341686928560263b3");
@@ -50,9 +59,11 @@ test("synthetic source is restored in network-none tmpfs and all 21 migrations r
     if (text.includes("SELECT migration_name,checksum")) return { code: 0, stdout: `${history}\n`, stderr: "" };
     if (text.includes("SELECT extension.extname")) return { code: 0, stdout: "pg_trgm|public\npgcrypto|public\n", stderr: "" };
     if (sql.includes("to_regtype(format")) return { code: 0, stdout: "true\n", stderr: "" };
-    if (sql.includes("information_schema.tables") && sql.includes("information_schema.columns")) return { code: 0, stdout: "58|1|1\n", stderr: "" };
-    if (sql.includes("SELECT table_name FROM information_schema.tables")) return { code: 0, stdout: "Vendor\n", stderr: "" };
-    if (sql.includes("SELECT 'Vendor'::text AS table_name")) return { code: 0, stdout: "Vendor|2\n", stderr: "" };
+    if (sql.includes("information_schema.tables") && sql.includes("information_schema.columns")) return { code: 0, stdout: "58|2|2\n", stderr: "" };
+    if (sql.includes("SELECT table_name FROM information_schema.tables")) return { code: 0, stdout: args[0] === "run" ? "Vendor\nauditLog\n" : "auditLog\nVendor\n", stderr: "" };
+    if (sql.includes("SELECT 'Vendor'::text AS table_name") || sql.includes("SELECT 'auditLog'::text AS table_name")) {
+      return { code: 0, stdout: args[0] === "run" ? "Vendor|2\nauditLog|0\n" : "auditLog|0\nVendor|2\n", stderr: "" };
+    }
     return { code: 0, stdout: "", stderr: "" };
   };
   const dependencies = {

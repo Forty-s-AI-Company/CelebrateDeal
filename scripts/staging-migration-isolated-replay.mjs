@@ -21,6 +21,9 @@ function sanitizedReceipt(result, stage, extra = {}) {
     expectedMigrationCount: 79,
     pendingMigrationCount: 21,
     replayedMigrationCount: extra.replayedMigrationCount ?? 0,
+    sourceMetadataMatched: extra.sourceMetadataMatched ?? false,
+    sourceTableCountsMatched: extra.sourceTableCountsMatched ?? false,
+    sourceExtensionsMatched: extra.sourceExtensionsMatched ?? false,
     sourceAggregateMatched: extra.sourceAggregateMatched ?? false,
     postReplaySchemaVerified: extra.postReplaySchemaVerified ?? false,
     postReplayHistoryUnchanged: extra.postReplayHistoryUnchanged ?? false,
@@ -59,6 +62,21 @@ function databaseEnvironment(source) {
   };
 }
 
+/** Canonicalize table counts across source/restore PostgreSQL collations. */
+export function canonicalTableCounts(output, tableNames) {
+  if (!Array.isArray(tableNames) || tableNames.length === 0 || new Set(tableNames).size !== tableNames.length
+    || tableNames.some((name) => !NAME.test(name))) throw new Error("SNAPSHOT_TABLE_LIST_INVALID");
+  const rows = String(output).split(/\r?\n/u).filter(Boolean);
+  const seen = new Set();
+  if (rows.length !== tableNames.length || rows.some((row) => {
+    const match = row.match(/^([A-Za-z_][A-Za-z0-9_]*)\|(\d+)$/u);
+    if (!match || !tableNames.includes(match[1]) || seen.has(match[1])) return true;
+    seen.add(match[1]);
+    return false;
+  })) throw new Error("SNAPSHOT_COUNTS_INVALID");
+  return digest(rows.sort().join("\n"));
+}
+
 function snapshot(query) {
   const metadata = query("SELECT (SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text,(SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE')::text,(SELECT count(*) FROM information_schema.columns WHERE table_schema='public')::text;");
   if (metadata.code !== 0) throw new Error("SNAPSHOT_METADATA_FAILED");
@@ -67,11 +85,11 @@ function snapshot(query) {
   const tables = query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name;");
   if (tables.code !== 0) throw new Error("SNAPSHOT_TABLE_LIST_FAILED");
   const names = String(tables.stdout).split(/\r?\n/u).filter(Boolean);
-  if (names.length === 0 || names.some((name) => !NAME.test(name))) throw new Error("SNAPSHOT_TABLE_LIST_INVALID");
+  if (names.length === 0 || Number(fields[1]) !== names.length || names.some((name) => !NAME.test(name))) throw new Error("SNAPSHOT_TABLE_LIST_INVALID");
   const sql = names.map((name) => `SELECT '${name}'::text AS table_name,count(*)::text AS row_count FROM public."${name}"`).join(" UNION ALL ") + " ORDER BY table_name;";
   const counts = query(sql);
-  if (counts.code !== 0 || !String(counts.stdout).split(/\r?\n/u).filter(Boolean).every((line) => /^[A-Za-z_][A-Za-z0-9_]*\|\d+$/u.test(line))) throw new Error("SNAPSHOT_COUNTS_INVALID");
-  return { metadata: fields.join("|"), counts: digest(String(counts.stdout).trim()) };
+  if (counts.code !== 0) throw new Error("SNAPSHOT_COUNTS_INVALID");
+  return { metadata: fields.join("|"), counts: canonicalTableCounts(counts.stdout, names) };
 }
 
 function parseHistory(output) {
@@ -126,6 +144,9 @@ export async function runIsolatedReplay(source = process.env, dependencies = {})
   let runId = null;
   let replayed = 0;
   let restoredWrites = 0;
+  let sourceMetadataMatched = false;
+  let sourceTableCountsMatched = false;
+  let sourceExtensionsMatched = false;
   let sourceAggregateMatched = false;
   let postReplaySchemaVerified = false;
   let postReplayHistoryUnchanged = false;
@@ -192,8 +213,10 @@ export async function runIsolatedReplay(source = process.env, dependencies = {})
     };
     const afterRestore = snapshot(targetQueryWith);
     const restoredExtensions = targetQueryWith(extensionQuery);
-    if (before.metadata !== afterRestore.metadata || before.counts !== afterRestore.counts
-      || String(extensions.stdout).trim() !== String(restoredExtensions.stdout).trim()) throw new Error("ISOLATED_RESTORE_MISMATCH");
+    sourceMetadataMatched = before.metadata === afterRestore.metadata;
+    sourceTableCountsMatched = before.counts === afterRestore.counts;
+    sourceExtensionsMatched = String(extensions.stdout).trim() === String(restoredExtensions.stdout).trim();
+    if (!sourceMetadataMatched || !sourceTableCountsMatched || !sourceExtensionsMatched) throw new Error("ISOLATED_RESTORE_MISMATCH");
     sourceAggregateMatched = true;
     for (const name of [...inventory.keys()].sort().slice(-21)) {
       const replay = execute("docker", replayArgs(containerId), { input: sqlByName.get(name) });
@@ -207,10 +230,10 @@ export async function runIsolatedReplay(source = process.env, dependencies = {})
     if (String(finalHistoryOutput).trim() !== String(sourceHistoryOutput).trim()
       || !inspectMigrationHistory(parseHistory(finalHistoryOutput), inventory)) throw new Error("POST_REPLAY_HISTORY_CHANGED");
     postReplayHistoryUnchanged = true;
-    result = sanitizedReceipt("PASS", "ISOLATED_SQL_REPLAY_COMPLETE", { replayedMigrationCount: replayed, sourceAggregateMatched, postReplaySchemaVerified, postReplayHistoryUnchanged, isolatedWrites: replayed + restoredWrites });
+    result = sanitizedReceipt("PASS", "ISOLATED_SQL_REPLAY_COMPLETE", { replayedMigrationCount: replayed, sourceMetadataMatched, sourceTableCountsMatched, sourceExtensionsMatched, sourceAggregateMatched, postReplaySchemaVerified, postReplayHistoryUnchanged, isolatedWrites: replayed + restoredWrites });
   } catch (error) {
     result = sanitizedReceipt("BLOCKED", /^[A-Z0-9_]+$/u.test(error?.message ?? "") ? error.message : "ISOLATED_REPLAY_FAILED",
-      { replayedMigrationCount: replayed, sourceAggregateMatched, postReplaySchemaVerified, postReplayHistoryUnchanged, isolatedWrites: replayed + restoredWrites });
+      { replayedMigrationCount: replayed, sourceMetadataMatched, sourceTableCountsMatched, sourceExtensionsMatched, sourceAggregateMatched, postReplaySchemaVerified, postReplayHistoryUnchanged, isolatedWrites: replayed + restoredWrites });
   } finally {
     if (containerId) {
       const owned = execute("docker", ["inspect", "--format", "{{index .Config.Labels \"celebratedeal.migration-replay\"}}", containerId]);
