@@ -25,7 +25,7 @@
     "external:smoke": "node --import tsx scripts/external-smoke.ts",
     "payuni:fixture": "node --import tsx scripts/payuni-webhook-fixtures.ts",
     "qa:payuni:sandbox": "node scripts/payuni-sandbox-external-qa.mjs",
-    "secure:staging:contract": "node --import tsx --test scripts/secure-staging-runner.test.mjs scripts/staging-retained-backup.test.mjs scripts/secure-staging-wp4-payuni.test.mjs scripts/secure-staging-line-notifications.test.mjs scripts/secure-staging-workflow-contract.test.mjs scripts/validate-secure-staging-receipt.test.mjs scripts/validate-secure-staging-wp4-receipt.test.mjs scripts/validate-secure-staging-line-receipt.test.mjs scripts/mvp-payuni-sandbox-e2e.test.mjs",
+    "secure:staging:contract": "node --import tsx --test scripts/secure-staging-runner.test.mjs scripts/staging-retained-backup.test.mjs scripts/staging-backup-recovery.test.mjs scripts/staging-backup-recovery-workflow.test.mjs scripts/secure-staging-wp4-payuni.test.mjs scripts/secure-staging-line-notifications.test.mjs scripts/secure-staging-workflow-contract.test.mjs scripts/validate-secure-staging-receipt.test.mjs scripts/validate-secure-staging-wp4-receipt.test.mjs scripts/validate-secure-staging-line-receipt.test.mjs scripts/mvp-payuni-sandbox-e2e.test.mjs",
     "secure:staging:wp2": "node --import tsx scripts/secure-staging-runner.mjs wp2-readonly-restore",
     "secure:staging:wp4": "node scripts/mvp-payuni-sandbox-e2e.mjs",
     "secure:staging:line": "node --import tsx scripts/secure-staging-line-notifications.mjs",

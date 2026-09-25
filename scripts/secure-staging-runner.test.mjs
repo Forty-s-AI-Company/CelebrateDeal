@@ -297,6 +297,20 @@ test("squash-merged sources require an exact protected migration tree", () => {
   assert.throws(() => verifyTrustedMigrationTree(sha, mismatchedSpawn), /SOURCE_MIGRATION_TREE_UNTRUSTED/u);
 });
 
+test("retained recovery pins its immutable source tree independently of future HEAD", () => {
+  const pinnedTree = "8204bf3ce05a309035f55b2f90aaffb18aed05c8";
+  const pinnedSpawn = (_command, args) => {
+    const key = args.join(" ");
+    if (key.startsWith("cat-file -e ")) return { status: 0, stdout: "" };
+    if (key === `rev-parse ${sha}:prisma/migrations`) return { status: 0, stdout: `${pinnedTree}\n` };
+    throw new Error(`Unexpected current-tree read: ${key}`);
+  };
+  assert.deepEqual(verifyTrustedMigrationTree(sha, pinnedSpawn, pinnedTree), { mode: "pinned-recovery" });
+  assert.throws(() => verifyTrustedMigrationTree(sha, pinnedSpawn, "b".repeat(40)), /PINNED_SOURCE_TREE_MISMATCH/u);
+  assert.throws(() => verifyTrustedMigrationTree("a".repeat(40), pinnedSpawn, pinnedTree), /PINNED_SOURCE_INVALID/u);
+  assert.equal(sourceInventory(sha, undefined, pinnedTree).size, 79);
+});
+
 test("source queries begin an explicit read-only transaction without startup PGOPTIONS", () => {
   const wrapped = readOnlySql("SELECT current_setting('transaction_read_only')");
   assert.equal(wrapped, "BEGIN READ ONLY; SELECT current_setting('transaction_read_only'); COMMIT;");

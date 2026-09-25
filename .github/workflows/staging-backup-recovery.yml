@@ -1,0 +1,104 @@
+name: Staging encrypted backup recovery drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_run_id:
+        description: Successful protected #288 Secure staging validation run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: staging-backup-recovery
+  cancel-in-progress: false
+
+jobs:
+  isolated-recovery:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected recovery code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact RC migration source before private key injection
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          fetch-depth: 0
+          path: verified-wp2-source
+          persist-credentials: false
+
+      - name: Import and verify exact RC migration source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C verified-wp2-source rev-parse HEAD)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+          git fetch --no-tags ./verified-wp2-source HEAD:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
+      - name: Preload isolated PostgreSQL and age tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull postgres:17-alpine
+          sudo apt-get update -qq
+          sudo apt-get install -y age
+
+      - name: Attest fixed protected backup run and artifacts
+        shell: bash
+        env:
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/staging-backup-recovery-source.mjs
+
+      - name: Download fixed encrypted backup artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: secure-staging-encrypted-backup-9193326824b8b6bf774bdfa28e4783a1a1b8f304
+          run-id: ${{ inputs.backup_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/staging-recovery-input/archive
+
+      - name: Download fixed sanitized backup receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: secure-staging-wp2-readonly-restore-9193326824b8b6bf774bdfa28e4783a1a1b8f304
+          run-id: ${{ inputs.backup_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/staging-recovery-input/receipt
+
+      - name: Verify downloaded receipt and ciphertext before private key injection
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/staging-backup-recovery.mjs preflight
+
+      - name: Decrypt and restore only inside isolated PostgreSQL
+        id: recover
+        continue-on-error: true
+        env:
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          RUNNER_TEMP: ${{ runner.temp }}
+          STAGING_BACKUP_AGE_IDENTITY: ${{ secrets.STAGING_BACKUP_AGE_IDENTITY }}
+        run: node scripts/staging-backup-recovery.mjs recover
+
+      - name: Upload sanitized recovery receipt only
+        if: ${{ steps.recover.outcome == 'success' || steps.recover.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-backup-recovery-${{ inputs.backup_run_id }}
+          path: ${{ runner.temp }}/staging-backup-recovery-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce recovery drill success
+        if: ${{ steps.recover.outcome != 'success' }}
+        run: exit 2

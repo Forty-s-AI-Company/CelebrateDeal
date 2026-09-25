@@ -4,7 +4,7 @@
 
 ## 來源與站台
 
-- 最新已合併 master 為 `6895bf9c7ab0038d5f88d7a9baf1b6cc3551c3fe`（受保護 PR #274–#283、#286–#287）。#287 的兩條完整 `quality` 與兩個 Vercel Preview 檢查通過；合併前的證據只適用於該 PR commit。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 受保護 PR #274–#283、#286–#289 已合進 master；加密備份程式的 PR #288 merge SHA 為 `e13084f37edf9669f47c02351e646972201ae211`，更新分支後的兩條 `quality` 與 Vercel 檢查通過。這些 CI 證據只適用於各 PR commit，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
@@ -25,7 +25,7 @@
 | Sandbox runner 前置關卡 | 已修復並通過 | PR #279 將 Prisma Client 生成移到所有 task 共用前置步驟；[受保護綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042545323) 已通過，不顯示測試卡或 Secret 值 |
 | 固定 Sandbox 交易嘗試 | **BLOCKED_BEFORE_PAYMENT** | [受保護 run 36042691222](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042691222) 的 validated sanitized receipt 為 `FIXTURE_HTTP_REJECTED`；`checkoutPosts=0`、`payments=0`、`refunds=0`。須先唯讀診斷 migration 與 fixture 前置狀態，不重送付款 |
 | staging Prisma migration | **DRIFT：58／79** | [最新受保護唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 證實精確缺最後 21 個、`Vendor.enabledFeatureModules` 不存在；完整前綴且 checksum 相符，沒有套用 migration。SQL 初步靜態掃描未見頂層 DROP／DELETE／TRUNCATE／UPDATE，但約束與既有資料相容性仍需隔離演練 |
-| staging `public` schema 隔離還原 | **演練 PASS，無保留備份** | [第一次 run 36059227552](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059227552) 與合成 session 並行，筆數摘要不符；[單獨重跑 36059754159](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059754159) 的 sanitized receipt 證實 dump／隔離還原的 schema、extensions、58 筆 migration 與各表筆數一致，staging 寫入為 0。原始 dump 隨 runner 清除，不能當事後回復備份 |
+| staging `public` schema 隔離還原 | **演練 PASS，無保留備份** | [第一次 run 36059227552](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059227552) 與合成 session 並行，筆數摘要不符；[單獨重跑 36059754159](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059754159) 的 sanitized receipt 證實 dump／隔離還原的 schema、extensions、58 筆 migration 與各表筆數一致，staging 寫入為 0。PR #288 已提供加密保留備份程式，但新的 staging age 公鑰 variable／私鑰 secret 尚未配置，也未產生加密 artifact；舊 dump 已清除，不能當事後回復備份 |
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
 
