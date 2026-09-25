@@ -46,6 +46,7 @@ const evidence = {
 test("fixed non-Production URL, project, protected branch and workflow are required", () => {
   assert.equal(validateInvocation(source), null);
   assert.equal(databaseIdentity(source)?.digest, digest);
+  assert.equal(databaseIdentity({ ...source, STAGING_DATABASE_URL: `${url}?sslmode=require` })?.digest, digest);
   for (const change of [
     { GITHUB_REF_PROTECTED: "false" }, { GITHUB_REF: "refs/heads/feature" },
     { GITHUB_WORKFLOW_REF: "Forty-s-AI-Company/CelebrateDeal/.github/workflows/other.yml@refs/heads/master" },
@@ -54,6 +55,8 @@ test("fixed non-Production URL, project, protected branch and workflow are requi
       NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co" },
     { CELEBRATEDEAL_DEPLOYMENT_HOST: "other-preview.vercel.app" },
     { CELEBRATEDEAL_SOURCE_SHA: "0".repeat(40) },
+    { STAGING_DATABASE_URL: `${url}?sslmode=disable` },
+    { STAGING_DATABASE_URL: `${url}?sslmode=require&sslmode=require` },
     { GITHUB_SHA: "invalid" },
   ]) assert.notEqual(validateInvocation({ ...source, ...change }), null);
 });
@@ -125,6 +128,24 @@ test("invalid replay evidence blocks before any child process", () => {
   assert.equal(receipt.failureCode, "REPLAY_EVIDENCE_INCOMPLETE");
   assert.equal(receipt.migrationAttempted, false);
   assert.equal(calls, 0);
+});
+
+test("CLI identifies a missing replay receipt before any migration attempt", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-apply-receipt-"));
+  try {
+    const cli = path.resolve("scripts/staging-migration-apply.mjs");
+    const result = spawnSync(process.execPath, [cli], {
+      cwd: temp, encoding: "utf8", shell: false,
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, RUNNER_TEMP: temp },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /code=REPLAY_RECEIPT_READ_FAILED/u);
+    const receipt = JSON.parse(fs.readFileSync(path.join(temp, "staging-migration-apply-receipt.json"), "utf8"));
+    assert.equal(receipt.failureCode, "REPLAY_RECEIPT_READ_FAILED");
+    assert.equal(receipt.migrationAttempted, false);
+  } finally {
+    if (path.dirname(temp) === os.tmpdir()) fs.rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test("apply receipt binds protected commit and producer run", () => {

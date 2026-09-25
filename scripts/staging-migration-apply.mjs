@@ -30,13 +30,17 @@ export function databaseIdentity(source) {
     const user = decodeURIComponent(db.username);
     const port = db.port || "5432";
     const schema = db.searchParams.get("schema") ?? "public";
+    const sslmode = db.searchParams.get("sslmode");
+    const queryKeys = [...db.searchParams.keys()];
     const direct = db.hostname === `db.${ref}.supabase.co` && user === "postgres";
     const pooler = db.hostname.endsWith(".pooler.supabase.com") && user === `postgres.${ref}`;
     if (!ref || !SAFE_PROJECT.test(ref) || ref !== FIXED_STAGING_REF
       || api.protocol !== "https:" || api.pathname !== "/" || api.search || api.hash || api.username || api.password || api.port
       || !["postgres:", "postgresql:"].includes(db.protocol) || !db.password || !["5432", "6543"].includes(port)
       || db.pathname !== "/postgres" || schema !== "public"
-      || [...db.searchParams.keys()].some((key) => key !== "schema") || (!direct && !pooler)) return null;
+      || (sslmode !== null && !["require", "verify-full"].includes(sslmode))
+      || queryKeys.some((key) => !["schema", "sslmode"].includes(key))
+      || new Set(queryKeys).size !== queryKeys.length || (!direct && !pooler)) return null;
     const digest = sha256([db.hostname, port, db.pathname, user, schema].join("\n"));
     return { digest, projectRef: ref, host: db.hostname, port, database: "postgres", user, password: decodeURIComponent(db.password) };
   } catch { return null; }
@@ -350,19 +354,30 @@ function readReceipt(root, directory, filename) {
 const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invoked) {
   let receipt;
+  // Fixed phase codes identify the failing gate without exposing exceptions,
+  // paths, provider responses, database rows, or child-process output.
+  let phase = "REPLAY_RECEIPT_READ_FAILED";
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const evidence = {
       replay: readReceipt(root, "staging-replay", "celebratedeal-staging-migration-replay.json"),
       runIds: { replay: Number(process.env.STAGING_REPLAY_RUN_ID) },
     };
-    if (validateInvocation(process.env)) throw new Error("INVOCATION_INVALID");
-    if (validatePrerequisites(evidence)) throw new Error("EVIDENCE_INCOMPLETE");
+    phase = "INVOCATION_INVALID";
+    const invocation = validateInvocation(process.env);
+    if (invocation) { phase = invocation; throw new Error("GATE_REJECTED"); }
+    phase = "REPLAY_EVIDENCE_INCOMPLETE";
+    const prerequisites = validatePrerequisites(evidence);
+    if (prerequisites) { phase = prerequisites; throw new Error("GATE_REJECTED"); }
+    phase = "PRODUCER_PROVENANCE_INVALID";
     if (!await verifyProducerRuns(evidence.runIds, process.env)) throw new Error("PRODUCER_PROVENANCE_INVALID");
+    phase = "SOURCE_PULL_INVALID";
     if (!await verifySourcePull(process.env)) throw new Error("SOURCE_PULL_INVALID");
+    phase = "DEPLOYMENT_LINEAGE_INVALID";
     await verifyDeployment(process.env);
+    phase = "APPLY_RUNTIME_ERROR";
     receipt = applyMigrations(evidence);
-  } catch { receipt = { ...initialReceipt(), failureCode: "EVIDENCE_LOAD_FAILED" }; }
+  } catch { receipt = { ...initialReceipt(), failureCode: phase }; }
   try {
     const root = fs.realpathSync(process.env.RUNNER_TEMP ?? "");
     const expected = receipt.result === "PASS" ? {
