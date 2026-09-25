@@ -1,11 +1,9 @@
-# 固定 staging migration 資料相容性 preflight
+# 固定 staging 隔離 migration 重播
 
-此 workflow 只在受保護 `master` 的 `Preview – celebrate-deal-staging` environment 手動執行，綁定目前已驗證的 Preview source `9193326824b8b6bf774bdfa28e4783a1a1b8f304` 與固定 host。執行前先核對 deployment lineage；僅在精確 staging DB 身分吻合時連線。**目前尚未執行此 workflow，沒有 staging 資料相容性 PASS 證據。**
+受保護 `master` workflow 以已驗證的 Preview source `9193326824b8b6bf774bdfa28e4783a1a1b8f304` 和固定 staging DB 身分為輸入。先確認 migration 來源、58／79 完整前綴及 checksum；來源 PostgreSQL 僅接受 read-only 查詢和 `pg_dump`。dump 僅留在 runner 記憶體與 `network=none` 容器的 tmpfs，不產生 raw dump artifact。
 
-前置條件是 `_prisma_migrations` 的 58 個已完成項目，必須是固定來源 79 個 migration 的完整前綴，checksum 相符，且沒有未解決失敗。任何基線變動都阻擋檢查；此 preflight 不會自行套用 migration。
+隔離容器還原後，先比較 migration／表／欄位數、extension 配置與各表筆數摘要；這是 aggregate 比對，**不證明每筆資料內容相同**。接著以單一 migration 交易逐一重播最後 21 個 SQL，核對預期的表、索引、約束、型別、欄位都存在，並確認原本 58 筆 migration history 未改寫。收據明確標示這是 SQL replay，沒有執行 Prisma migrate deploy。任何失敗只輸出固定錯誤類別與已成功重播數，不輸出 SQL、資料列、連線字串或資料庫錯誤原文。容器必須經 ownership label 核對後清理；清理失敗會把結果降為 `BLOCKED`。此驗證不寫 staging、不使用 Production，也不部署。
 
-已靜態檢視最後 21 個 migration：多數操作為建立新表、索引、型別，或對舊表新增 nullable／有 default 的欄位。`20260911080000_live_interaction_tenant_integrity` 對既有 `LiveInteractionResponse` 增加複合外鍵，且會在 SQL 內先對 run/live 與 registration/live ownership mismatch 拋錯。唯讀 preflight 對這兩種關係做包含孤兒參照的 aggregate 檢查；只輸出 `PASS`／`FAIL`，不輸出列值、身分、URL 或衝突筆數。
+已逐檔靜態檢視 21 個 pending SQL：既有表只有 nullable 欄位、帶 default 的 NOT NULL 欄位、一般索引，以及引用新 nullable 欄位的 FK。`20260911080000_live_interaction_tenant_integrity` 檢查的 `LiveInteractionRun`／`LiveInteractionResponse` 是前一批 pending migration 才建立，故 58-migration staging 基線不可能有這兩張表的既有資料衝突。隔離重播才是這批 SQL 的資料相容性證據。
 
-查詢在 `RepeatableRead` 交易的任何資料讀取前設定 `SET TRANSACTION READ ONLY`，並確認資料庫端 `transaction_read_only=on`。產物只記固定分類和讀取次數；不寫 staging、不進行 Production 操作。
-
-通過表示這兩項已知既有資料約束在當次 snapshot 內沒有衝突。它仍不能替代套用全部 21 個 migration 的隔離還原演練，也不能證明 schema migration 本身、線上並行寫入或後續部署必然成功。實際 migration 仍須先有可保留回復備份並走獨立受保護流程。
+本機使用完全合成的 disposable PostgreSQL 完成一次實際演練：來源容器套用前 58 個 SQL 與合成 migration history，製作 custom dump；隔離容器還原後重播後 21 個 SQL，schema catalog 與原 58 筆 history 檢查通過，兩個容器均清理。這只驗證合成資料與本機 Docker／psql 路徑，**尚未執行固定 staging workflow**。隔離重播成功也不等於已套用 staging migration，或已具備可保留的回復備份；實際 schema 修復仍須走獨立受保護流程。
