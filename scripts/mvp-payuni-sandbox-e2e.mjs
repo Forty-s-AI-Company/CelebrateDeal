@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const ADMISSION_TOKEN = /^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
 
-export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e2e/v1";
+export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e2e/v2";
 export const FIXED_PURPOSE = "buyer_order";
 export const FIXED_SUBSCRIPTION_PURPOSE = "platform_subscription";
 export const FIXED_PAYUNI_ENV = "sandbox";
@@ -33,6 +33,8 @@ export const SIDE_EFFECT_BUDGET = Object.freeze({
   transactionsCreated: 1,
   payments: 1,
   refunds: 1,
+  orderProofPosts: 2,
+  callbackReplays: 1,
 });
 const SUBSCRIPTION_SIDE_EFFECT_BUDGET = Object.freeze({
   fixturePosts: 1,
@@ -67,6 +69,8 @@ const CHECK_KEYS = Object.freeze([
   "paymentAttemptReserved",
   "payuniFormAccepted",
   "returnCallbackMapped",
+  "orderPersisted",
+  "duplicateCallbackVerified",
   "refundCompleted",
   "reconciled",
 ]);
@@ -136,6 +140,9 @@ const FAILURE_CODES = new Set([
   "RETURN_CALLBACK_UNMAPPED",
   "RETURN_RESULT_UNMAPPED",
   "RETURN_CALLBACK_PROOF_REQUIRED",
+  "ORDER_PROOF_REJECTED",
+  "CALLBACK_REPLAY_REJECTED",
+  "DUPLICATE_PROOF_REJECTED",
   "REFUND_REJECTED",
   "SUBSCRIPTION_STATE_REJECTED",
   "RECONCILE_REJECTED",
@@ -440,6 +447,8 @@ export function createReceipt(sourceSha = "0".repeat(40)) {
       paymentAttemptReserved: false,
       payuniFormAccepted: false,
       returnCallbackMapped: false,
+      orderPersisted: false,
+      duplicateCallbackVerified: false,
       refundCompleted: false,
       reconciled: false,
     },
@@ -455,6 +464,8 @@ export function createReceipt(sourceSha = "0".repeat(40)) {
       transactionsCreated: 0,
       payments: 0,
       refunds: 0,
+      orderProofPosts: 0,
+      callbackReplays: 0,
     },
     safety: {
       sanitized: true,
@@ -531,14 +542,19 @@ function completedPrefix(receipt) {
   if (checks.paymentAttemptReserved && (!checks.checkoutCreated || effects.paymentAttemptPosts !== 1)) return false;
   if (checks.payuniFormAccepted && (!checks.paymentAttemptReserved || effects.browserPaymentSubmissions !== effects.paymentReservationsCreated)) return false;
   if (checks.returnCallbackMapped && (!checks.payuniFormAccepted || effects.payments !== effects.paymentReservationsCreated)) return false;
-  if (checks.refundCompleted && (!checks.returnCallbackMapped || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
+  if (checks.orderPersisted && (!checks.returnCallbackMapped || effects.orderProofPosts < 1)) return false;
+  if (checks.duplicateCallbackVerified && (!checks.orderPersisted || effects.callbackReplays !== 1 || effects.orderProofPosts !== 2)) return false;
+  if (checks.refundCompleted && (!checks.duplicateCallbackVerified || effects.refundPosts !== 1 || effects.refunds !== 1)) return false;
   if (checks.reconciled && (!checks.refundCompleted || effects.reconcilePosts < 1)) return false;
   if (effects.admissionPosts > 0 && !checks.fixtureReady) return false;
   if (effects.checkoutPosts > 0 && !checks.sameOriginAdmission) return false;
   if (effects.paymentAttemptPosts > 0 && !checks.checkoutCreated) return false;
   if (effects.paymentReservationsCreated > 0 && !checks.paymentAttemptReserved) return false;
   if (effects.browserPaymentSubmissions > 0 && !checks.paymentAttemptReserved) return false;
-  if (effects.refundPosts > 0 && !checks.returnCallbackMapped) return false;
+  if (effects.orderProofPosts > 0 && !checks.returnCallbackMapped) return false;
+  if (effects.orderProofPosts === 2 && effects.callbackReplays !== 1) return false;
+  if (effects.callbackReplays > 0 && !checks.orderPersisted) return false;
+  if (effects.refundPosts > 0 && !checks.duplicateCallbackVerified) return false;
   if (effects.reconcilePosts > 0 && !checks.refundCompleted && receipt.failure !== "RECONCILE_REJECTED") return false;
   if (effects.transactionsCreated > 0 && !checks.checkoutCreated) return false;
   if (effects.payments > 0 && !checks.returnCallbackMapped) return false;
@@ -565,9 +581,9 @@ export function validateMvpPayUniReceipt(receipt) {
   if (receipt?.result === "PASS") {
     if (!completed || receipt.failure !== "NONE") errors.push("PASS_COMPLETENESS");
     const effects = receipt.sideEffects;
-    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds"];
+    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds", "callbackReplays"];
     const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
-    if (fixedOne.some((key) => effects[key] !== 1) || !currentExecution) errors.push("PASS_EFFECTS");
+    if (fixedOne.some((key) => effects[key] !== 1) || effects.orderProofPosts !== 2 || !currentExecution) errors.push("PASS_EFFECTS");
   } else if (receipt?.failure === "NONE" || completed) {
     errors.push("BLOCKED_COMPLETENESS");
   }
@@ -836,6 +852,32 @@ async function defaultRequest(request) {
   return parseFetchResponse(response, request.cookiePrefix, request.outcomeHeader);
 }
 
+const BUYER_ORDER_PROOF_KEYS = ["status", "paymentStatus", "orderStatus", "orderCount", "paidEventCount", "orderEventCount", "reservationStatus", "remainingInventory"];
+
+function validBuyerOrderProof(response) {
+  const body = response?.body;
+  return response?.status === 200 && exactKeys(body, BUYER_ORDER_PROOF_KEYS)
+    && body.status === "VERIFIED" && body.paymentStatus === "paid" && body.orderStatus === "paid"
+    && body.orderCount === 1 && body.paidEventCount === 1
+    && Number.isSafeInteger(body.orderEventCount) && body.orderEventCount >= 1
+    && body.reservationStatus === "committed"
+    && Number.isSafeInteger(body.remainingInventory) && body.remainingInventory >= 0;
+}
+
+function validSignedReturnCapture(capture) {
+  return capture?.mapped === true && capture.firstStatus === 303
+    && Buffer.isBuffer(capture.signedReturnBody)
+    && capture.signedReturnBody.length > 0 && capture.signedReturnBody.length <= 16_384
+    && typeof capture.contentType === "string"
+    && /^application\/x-www-form-urlencoded(?:;\s*charset=utf-8)?$/iu.test(capture.contentType);
+}
+
+function validDuplicateAcknowledgement(response) {
+  return response?.status === 200 && exactKeys(response.body, ["ok", "duplicate", "eventId"])
+    && response.body.ok === true && response.body.duplicate === true
+    && typeof response.body.eventId === "string" && response.body.eventId.length > 0;
+}
+
 function assertRefundRequiresReconciliation(response) {
   return response.status === 503
     && exactKeys(response.body, ["status", "purpose", "phase", "providerWriteAttempted"])
@@ -1092,17 +1134,32 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
   let apiStatus = null;
   let apiNetworkRejected = false;
   let apiNetworkFailure = "PAYMENT_API_NETWORK_REJECTED";
+  let signedReturnBody = null;
+  let signedReturnContentType = null;
+  let returnRequestCount = 0;
+  let returnStatus = null;
   try {
     page.on("request", (request) => {
       try {
         const url = new URL(request.url());
         if (url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw" && url.pathname === "/api/upp" && request.method() === "POST") apiPostSeen = true;
+        if (input.captureReturnCallback === true && url.origin === origin
+          && url.pathname === "/api/webhooks/payments" && url.search === "?provider=payuni&source=return"
+          && request.method() === "POST") {
+          returnRequestCount += 1;
+          const body = request.postDataBuffer();
+          signedReturnBody = Buffer.isBuffer(body) ? body : null;
+          signedReturnContentType = request.headers()["content-type"] ?? null;
+        }
       } catch {}
     });
     page.on("response", (response) => {
       try {
         const url = new URL(response.url());
         if (url.protocol === "https:" && url.hostname === "sandbox-api.payuni.com.tw" && url.pathname === "/api/upp") apiStatus = response.status();
+        if (input.captureReturnCallback === true && url.origin === origin
+          && url.pathname === "/api/webhooks/payments" && url.search === "?provider=payuni&source=return"
+          && response.request().method() === "POST") returnStatus = response.status();
       } catch {}
     });
     page.on("requestfailed", (request) => {
@@ -1170,7 +1227,15 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     ), { waitUntil: "domcontentloaded", timeout: 60_000 });
     stage = "RETURN_RESULT_UNMAPPED";
     const resultText = await page.locator("body").innerText();
-    return resultText.includes(input.orderNumber) && resultText.includes("付款完成");
+    if (!resultText.includes(input.orderNumber) || !resultText.includes("付款完成")) return false;
+    if (input.captureReturnCallback !== true) return true;
+    if (returnRequestCount !== 1 || returnStatus !== 303 || !Buffer.isBuffer(signedReturnBody)
+      || signedReturnBody.length === 0 || signedReturnBody.length > 16_384
+      || !/^application\/x-www-form-urlencoded(?:;\s*charset=utf-8)?$/iu.test(signedReturnContentType ?? "")) {
+      return "RETURN_CALLBACK_PROOF_REQUIRED";
+    }
+    // The signed provider body remains in process memory until one replay. It never enters a receipt.
+    return { mapped: true, firstStatus: 303, signedReturnBody, contentType: signedReturnContentType };
   } catch {
     if (stage !== "PAYMENT_PAGE_UNREACHED") return stage;
     if (!apiPostSeen) return "PAYMENT_FORM_NOT_SUBMITTED";
@@ -1383,16 +1448,46 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
       supportCookie: checkout.supportCookie,
       orderNumber: checkout.body.orderNumber,
       transactionId: checkout.body.transactionId,
+      captureReturnCallback: true,
     });
-    if (callbackMapped !== true) {
+    if (!validSignedReturnCapture(callbackMapped)) {
       const browserFailure = typeof callbackMapped === "string" && FAILURE_CODES.has(callbackMapped)
         ? callbackMapped
-        : "RETURN_CALLBACK_UNMAPPED";
+        : callbackMapped === false ? "RETURN_CALLBACK_UNMAPPED" : "RETURN_CALLBACK_PROOF_REQUIRED";
       return fail(receipt, browserFailure);
     }
     receipt.sideEffects.payments = 1;
     receipt.checks.payuniFormAccepted = true;
     receipt.checks.returnCallbackMapped = true;
+
+    receipt.sideEffects.orderProofPosts = 1;
+    const firstProof = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-order-proof"),
+      headers: guarded, body: undefined,
+    }));
+    if (!validBuyerOrderProof(firstProof)) return fail(receipt, "ORDER_PROOF_REJECTED");
+    receipt.checks.orderPersisted = true;
+
+    // Replay exactly the captured signed Return body once against the fixed Notify route.
+    // A caller cannot choose the callback URL, event, amount or payload.
+    receipt.sideEffects.callbackReplays = 1;
+    const duplicate = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/webhooks/payments?provider=payuni&source=notify"),
+      headers: { "content-type": callbackMapped.contentType },
+      body: callbackMapped.signedReturnBody,
+    }));
+    if (!validDuplicateAcknowledgement(duplicate)) return fail(receipt, "CALLBACK_REPLAY_REJECTED");
+
+    receipt.sideEffects.orderProofPosts = 2;
+    const afterReplay = responseJson(await request({
+      url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-buyer-order-proof"),
+      headers: guarded, body: undefined,
+    }));
+    if (!validBuyerOrderProof(afterReplay)
+      || JSON.stringify(firstProof.body) !== JSON.stringify(afterReplay.body)) {
+      return fail(receipt, "DUPLICATE_PROOF_REJECTED");
+    }
+    receipt.checks.duplicateCallbackVerified = true;
 
     receipt.sideEffects.refundPosts = 1;
     const refund = responseJson(await request({
