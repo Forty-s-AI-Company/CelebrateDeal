@@ -4,12 +4,13 @@
 
 ## 來源與站台
 
-- 受保護 PR #274–#283、#286–#291 已合進 master；[PR #291](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/291) merge SHA 為 `d67afe611825db9daef25c9f9042b8732bfcd7d0`，該 PR 的 required checks 與合併後 master CI 均通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
+- 受保護 PR #274–#283、#286–#293 已合進 master；[PR #293](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/293) merge SHA 為 `aa916642e86500fed27b12f68770b391a776211a`，合併前兩條 `quality` 與 Vercel 檢查通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
 - 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 於本次更新時指向 Ready 的 Preview deployment `dpl_3AjUwKJDVvQZmHgw4bC5txTd6EJA`，immutable host 為 `celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app`。GitHub Deployment lineage 對應 PR #277 的 source `9193326824b8b6bf774bdfa28e4783a1a1b8f304`；PR #278 僅增加驗證 workflow，沒有重新部署應用程式。
 - 固定網址的 `/`、`/login`、`/api/health` 回應 200，health 回報 `ok=true`、`database=ok`；未授權 `/api/admin/preflight` 回應 401。受保護 workflow 以既有 `JOB_SECRET` 對 immutable Preview 驗證 Supabase 公開 URL、執行期／migration／staging DB identity 與 DB 可連線，僅輸出布林結果，全部通過。這些證據不等於登入、Funnel 或付款旅程通過。
 - 匿名真實瀏覽器在桌機及手機對 `/`、`/login` 均取得 200，未觀察到 console error、page error 或 5xx；尚未涵蓋登入後頁面。
 - [受保護唯讀診斷 run 36059197795](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059197795) 證實 staging DB 的 58 個已完成 Prisma migration 是固定來源 79 個的完整前綴，缺最後 21 個；無 unresolved failure、未知已套用項或 checksum mismatch。WP4 fixture 的唯讀 preflight 為 `READY`。這尚不能證明 fixture POST 503 的唯一根因。
 - [受保護唯讀診斷 run 36068519165](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 已確認 `Vendor.enabledFeatureModules` 在固定 staging DB **不存在**，且仍缺精確的最後 21 個 migration；fixture preflight 仍為 `READY`。登入後共用版型讀取該欄位，故這是內容缺失的明確 schema 阻擋；實際 runtime 例外與 Sandbox fixture 503 的唯一根因仍未單獨證明。
+- [首次受保護隔離重播 run 36082790275](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36082790275) 在來源基準檢查安全停止，`databaseWrites=0`、`isolatedWrites=0`。PR #293 修正固定 staging 的一筆已知歷史 rollback 後，[第二次 run 36085141048](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36085141048) 越過基準並完成隔離還原，卻在摘要比對以 `ISOLATED_RESTORE_MISMATCH` 停下；來源寫入 0、SQL 重播 0。[PR #294](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/294) 正修正跨 PostgreSQL 排序規則的表筆數比對，並增加不含資料的分項結果；實際原因與 21 個 SQL 相容性仍待受保護重跑確認。
 - PayUni 保持 Sandbox。[受保護固定 Preview 設定綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 已通過：目前執行中的 app 選用 PayUni、`PAYUNI_ENV` 符合 Preview 的 Sandbox 邊界，三項商家設定欄位均存在；收據只輸出布林值。這尚未證明商家憑證可用於外部交易，也未證明成功買家訂單與 callback 閉環。
 - `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
@@ -20,12 +21,14 @@
 | master 與部署來源 | 已驗證 | PR、CI、GitHub Deployment lineage、Vercel alias／deployment 對應如上；後續新部署須重驗 |
 | DB／Supabase project identity | 已驗證 | 受保護 Preview 身分檢查通過；Auth、Storage 等實際使用資源仍須各自核對 |
 | 固定 Preview PayUni Sandbox 設定綁定 | **已驗證設定存在** | [受保護 run 36080495339](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36080495339) 確認 app 選用 PayUni Sandbox 且必要商家欄位均已設定；外部商家憑證有效性與交易成功仍未證實 |
+| R2／Cloudflare Stream 非正式資源綁定 | **NOT_PROVEN** | 目前沒有同一固定部署的 R2 bucket／Stream 資源身分與唯讀權限證據；GitHub 設定欄位相符或 bucket 名稱含 staging，均不能單獨證明實際 Vercel runtime 使用的是非正式資源 |
 | 固定 staging 核心瀏覽器旅程 | **NOT_PROVEN** | 合成資料的登入、Funnel 建立／保存／發布與公開表單、商品、影片、行動版與關鍵 console／5xx；本機 Playwright CI 不能替代固定站驗收 |
 | 固定 staging 登入後頁面煙測 | **BLOCKED** | [受保護 run 36059209829](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059209829)：合成 session 已建立；桌機／手機共 8 個路由皆 200 且最後停在預期路徑，沒有 page error／同站 5xx，但預期標題／資料未出現。runner 擋下 47 個非 GET 請求（API 8、其他 39）；不能把 200 視為頁面可用。[唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 確認共用版型所需欄位不存在，尚未重跑修復後瀏覽器驗收 |
 | PayUni Sandbox 買家訂單 | **NOT_PROVEN** | 同一固定部署上一筆成功付款、callback、持久化訂單、使用者可見狀態及重複 callback 冪等性；退款／對帳屬更完整的財務閉環 |
 | Sandbox runner 前置關卡 | 已修復並通過 | PR #279 將 Prisma Client 生成移到所有 task 共用前置步驟；[受保護綁定檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042545323) 已通過，不顯示測試卡或 Secret 值 |
 | 固定 Sandbox 交易嘗試 | **BLOCKED_BEFORE_PAYMENT** | [受保護 run 36042691222](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36042691222) 的 validated sanitized receipt 為 `FIXTURE_HTTP_REJECTED`；`checkoutPosts=0`、`payments=0`、`refunds=0`。須先唯讀診斷 migration 與 fixture 前置狀態，不重送付款 |
 | staging Prisma migration | **DRIFT：58／79** | [最新受保護唯讀診斷](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36068519165) 證實精確缺最後 21 個、`Vendor.enabledFeatureModules` 不存在；完整前綴且 checksum 相符，沒有套用 migration。SQL 初步靜態掃描未見頂層 DROP／DELETE／TRUNCATE／UPDATE，但約束與既有資料相容性仍需隔離演練 |
+| staging 隔離 migration 相容性 | **BLOCKED，尚未重播 21 個 SQL** | [第二次受保護 run 36085141048](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36085141048) 已越過 58 筆基準、完成隔離還原，摘要比對仍不符；[PR #294](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/294) 的修正尚待 CI、合併與固定站重跑 |
 | staging `public` schema 隔離還原 | **演練 PASS，無保留備份** | [第一次 run 36059227552](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059227552) 與合成 session 並行，筆數摘要不符；[單獨重跑 36059754159](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36059754159) 的 sanitized receipt 證實 dump／隔離還原的 schema、extensions、58 筆 migration 與各表筆數一致，staging 寫入為 0。PR #288 已提供加密保留備份程式，但新的 staging age 公鑰 variable／私鑰 secret 尚未配置，也未產生加密 artifact；舊 dump 已清除，不能當事後回復備份 |
 | 舊 PR #210／#211 | 待按功能整合 | 兩者仍有衝突及獨有功能；清單見 [Git 盤點](integration-inventory-20260924.md)，不能宣稱「全部合完」 |
 | Production | 未評定 | 正式部署、正式資料與正式金流不在本輪授權內 |
