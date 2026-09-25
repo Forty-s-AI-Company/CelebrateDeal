@@ -1,9 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
-// These values identify the already attested, immutable staging deployment.
-const SOURCE_SHA = "9193326824b8b6bf774bdfa28e4783a1a1b8f304";
-const PREVIEW_HOST = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
+const SOURCE_SHA = /^[a-f0-9]{40}$/u;
+const PREVIEW_HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/u;
 const STAGING_ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const PRODUCT_ID = "wp4_synthetic_product_v1";
 const ROUTES = [
@@ -13,27 +13,46 @@ const ROUTES = [
   { id: "billing_plans", path: "/billing/plans", heading: "方案" },
 ];
 
-function emptyReport(reason = "NOT_RUN") {
+function emptyReport(reason = "NOT_RUN", sourceSha = null) {
   return {
-    schemaVersion: "celebratedeal-staging-browser-smoke/v1",
-    sourceSha: SOURCE_SHA,
+    schemaVersion: "celebratedeal-staging-browser-smoke/v2",
+    sourceSha: SOURCE_SHA.test(sourceSha ?? "") ? sourceSha : null,
+    deploymentHost: null,
     result: "BLOCKED",
     reason,
+    lineage: "NOT_VERIFIED",
     session: "NOT_RUN",
     journeys: [],
     browser: {
       pageErrors: 0, sameHost5xx: 0, externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
+      safeAttributionResets: 0,
       unsafeRequestCategories: { next: 0, api: 0, page: 0, other: 0 }, webSocketsBlocked: 0,
     },
-    sideEffects: { syntheticSessionCreated: 0, checkoutPosts: 0, paymentSubmissions: 0, uploads: 0, emails: 0 },
+    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, checkoutPosts: 0, paymentSubmissions: 0, uploads: 0, emails: 0 },
   };
 }
 
 export function validateBrowserSmokeBinding(env) {
-  return env.CELEBRATEDEAL_SOURCE_SHA === SOURCE_SHA
-    && env.CELEBRATEDEAL_DEPLOYMENT_HOST === PREVIEW_HOST
+  return SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    && PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
+    && typeof env.GITHUB_TOKEN === "string" && env.GITHUB_TOKEN.length > 0
     && typeof env.JOB_SECRET === "string"
     && env.JOB_SECRET.length >= 16;
+}
+
+/** Only this mount-time attribution reset may receive a local no-op response. */
+export function classifyBrowserRequest(request) {
+  let url;
+  try { url = new URL(request.url()); } catch { return "EXTERNAL"; }
+  if (url.protocol !== "https:" || url.hostname !== STAGING_ALIAS) return "EXTERNAL";
+  if (["GET", "HEAD"].includes(request.method())) return "READ";
+  if (request.method() === "POST"
+    && url.pathname === "/api/affiliate-attribution/direct-entry"
+    && url.search === ""
+    && request.headers()["x-celebratedeal-client"] === "web"
+    && request.headers()["content-type"]?.startsWith("application/json")
+    && !request.postData()) return "ATTRIBUTION_RESET";
+  return "UNSAFE";
 }
 
 export function classifySessionStatus(status) {
@@ -82,11 +101,21 @@ async function visible(locator) {
 
 /** Exercise read-only owner pages with a fixed synthetic session, never a buyer checkout. */
 export async function runBrowserSmoke(env = process.env, dependencies = {}) {
-  const report = emptyReport();
+  const report = emptyReport("NOT_RUN", env.CELEBRATEDEAL_SOURCE_SHA);
   if (!validateBrowserSmokeBinding(env)) {
     report.reason = "INVALID_BINDING";
     return report;
   }
+  report.deploymentHost = env.CELEBRATEDEAL_DEPLOYMENT_HOST;
+  // Recheck immutable Preview lineage at execution time; an alias may have moved.
+  const verifyLineage = dependencies.verifyLineage ?? verifyMvpPayUniLineage;
+  let lineageVerified = false;
+  try { lineageVerified = await verifyLineage(env); } catch { /* A lookup failure is not attestation. */ }
+  if (!lineageVerified) {
+    report.reason = "LINEAGE_NOT_VERIFIED";
+    return report;
+  }
+  report.lineage = "VERIFIED";
   // Exercise the URL people actually open. The session endpoint checks the source SHA.
   const origin = `https://${STAGING_ALIAS}`;
   const { chromium } = dependencies.playwright ?? await import("playwright");
@@ -95,6 +124,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
     env: browserEnvironment(),
     args: ["--no-proxy-server", "--disable-quic"],
   });
+  let cleanupFailed = false;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
       const context = await browser.newContext({
@@ -102,24 +132,27 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         viewport: { width: viewport.width, height: viewport.height },
         serviceWorkers: "block",
       });
+      let sessionIssued = false;
       try {
         // Block third-party traffic while the synthetic owner is signed in.
         await context.route("**/*", (route) => {
-          let requestUrl;
-          try {
-            requestUrl = new URL(route.request().url());
-          } catch {
+          const request = route.request();
+          const requestClass = classifyBrowserRequest(request);
+          if (requestClass === "EXTERNAL") {
             report.browser.externalRequestsBlocked += 1;
             return route.abort();
           }
-          if (requestUrl.protocol !== "https:" || requestUrl.hostname !== STAGING_ALIAS) {
-            report.browser.externalRequestsBlocked += 1;
-            return route.abort();
-          }
-          if (!["GET", "HEAD"].includes(route.request().method())) {
+          if (requestClass === "UNSAFE") {
+            const requestUrl = new URL(request.url());
             report.browser.unsafeRequestsBlocked += 1;
             report.browser.unsafeRequestCategories[classifyUnsafeRequestPath(requestUrl.pathname)] += 1;
             return route.abort();
+          }
+          if (requestClass === "ATTRIBUTION_RESET") {
+            // This page-mount request clears cookies and touches the rate limiter.
+            // Fulfill it inside Chromium; no staging write is needed for this journey.
+            report.browser.safeAttributionResets += 1;
+            return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
           }
           return route.continue();
         });
@@ -131,7 +164,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         const session = await context.request.post(`${origin}/api/admin/ops/payuni/wp4-session`, {
           headers: {
             Authorization: `Bearer ${env.JOB_SECRET}`,
-            "x-celebratedeal-source-sha": SOURCE_SHA,
+            "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA,
           },
           maxRedirects: 0,
           timeout: 15_000,
@@ -144,6 +177,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           return report;
         }
         report.sideEffects.syntheticSessionCreated += 1;
+        sessionIssued = true;
         const page = await context.newPage();
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
         page.on("response", (response) => {
@@ -164,24 +198,45 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
               && await visible(page.locator('[data-dashboard-scope="details"]'))
               && await page.getByRole("alert").count() === 0
             : true;
+          const appNavigationVisible = await visible(page.locator('nav[aria-label="主要導覽"]:visible'));
+          const contentVisible = await visible(page.locator("#main-content"));
           const finalPath = classifyFinalPath(page.url(), route.path);
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible });
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, appNavigationVisible, contentVisible });
         }
       } finally {
+        if (sessionIssued) {
+          try {
+            const cleanup = await context.request.delete(`${origin}/api/admin/ops/payuni/wp4-session`, {
+              headers: {
+                Authorization: `Bearer ${env.JOB_SECRET}`,
+                "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA,
+              },
+              maxRedirects: 0,
+              timeout: 15_000,
+              failOnStatusCode: false,
+            });
+            if (cleanup.status() === 204) report.sideEffects.syntheticSessionRevoked += 1;
+            else cleanupFailed = true;
+            await cleanup.dispose();
+          } catch { cleanupFailed = true; }
+        }
         await context.close();
       }
     }
     const routesPass = report.journeys.length === ROUTES.length * 2
       && report.journeys.every((item) => item.status === 200 && item.finalPath === "EXPECTED"
-        && item.headingVisible && item.productVisible && item.checkoutLinkVisible && item.dashboardDataVisible);
+        && item.headingVisible && item.productVisible && item.checkoutLinkVisible && item.dashboardDataVisible
+        && item.appNavigationVisible && item.contentVisible);
     report.result = routesPass && report.browser.pageErrors === 0 && report.browser.sameHost5xx === 0
-      && report.browser.unsafeRequestsBlocked === 0 && report.browser.webSocketsBlocked === 0 ? "PASS" : "BLOCKED";
+      && report.browser.unsafeRequestsBlocked === 0 && report.browser.webSocketsBlocked === 0
+      && report.sideEffects.syntheticSessionCreated === report.sideEffects.syntheticSessionRevoked ? "PASS" : "BLOCKED";
     report.reason = report.result === "PASS" ? "NONE" : "BROWSER_JOURNEY_FAILED";
   } catch {
     report.reason = "BROWSER_EXECUTION_FAILED";
   } finally {
     await browser.close();
   }
+  if (cleanupFailed) { report.result = "BLOCKED"; report.reason = "SESSION_CLEANUP_FAILED"; }
   return report;
 }
 

@@ -4,17 +4,21 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   findMembership: vi.fn(),
   updateUser: vi.fn(),
+  revokeSession: vi.fn(),
+  cookies: vi.fn(),
 }));
+
+vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     vendorMember: { findFirst: mocks.findMembership },
-    userSession: { create: mocks.createSession },
+    userSession: { create: mocks.createSession, updateMany: mocks.revokeSession },
     user: { update: mocks.updateUser },
   }),
 }));
 
-import { POST } from "./route";
+import { DELETE, POST } from "./route";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 
 const jobSecret = "test-fixture-job-secret";
@@ -56,6 +60,44 @@ beforeEach(() => {
   mocks.findMembership.mockResolvedValue({ id: "member-1" });
   mocks.createSession.mockResolvedValue({ id: "session-1" });
   mocks.updateUser.mockResolvedValue({ id: "owner-preview" });
+  mocks.revokeSession.mockResolvedValue({ count: 1 });
+  mocks.cookies.mockResolvedValue({ get: () => ({ value: "synthetic-test-token" }) });
+});
+
+describe("DELETE /api/admin/ops/payuni/wp4-session", () => {
+  function deleteRequest(authorization?: string, sha = sourceSha) {
+    return new Request("https://app.example.test/api/admin/ops/payuni/wp4-session", {
+      method: "DELETE",
+      headers: { ...(authorization ? { authorization } : {}), "x-celebratedeal-source-sha": sha },
+    });
+  }
+
+  it("rejects callers without the job secret before reading the cookie", async () => {
+    expect((await DELETE(deleteRequest())).status).toBe(401);
+    expect(mocks.cookies).not.toHaveBeenCalled();
+    expect(mocks.revokeSession).not.toHaveBeenCalled();
+  });
+
+  it("revokes only the matching synthetic owner session", async () => {
+    const response = await DELETE(deleteRequest(`Bearer ${jobSecret}`));
+    expect(response.status).toBe(204);
+    expect(mocks.revokeSession).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        userId: WP4_SANDBOX_FIXTURE.userId,
+        vendorId: WP4_SANDBOX_FIXTURE.vendorId,
+        revokedAt: null,
+      },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it("rejects source mismatch and missing matching session", async () => {
+    expect((await DELETE(deleteRequest(`Bearer ${jobSecret}`, "b".repeat(40)))).status).toBe(404);
+    expect(mocks.revokeSession).not.toHaveBeenCalled();
+    mocks.revokeSession.mockResolvedValue({ count: 0 });
+    expect((await DELETE(deleteRequest(`Bearer ${jobSecret}`))).status).toBe(404);
+  });
 });
 
 afterEach(() => {
