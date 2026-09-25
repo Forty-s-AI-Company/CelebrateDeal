@@ -1,0 +1,94 @@
+name: Staging migration apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      replay_run_id:
+        description: Successful protected replay workflow run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+
+concurrency:
+  group: fixed-staging-migration-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact migration source as data
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          path: fixed-source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Preload Prisma schema engine before staging credentials
+        run: |
+          node node_modules/@prisma/engines/scripts/postinstall.js
+          node -e 'const fs = require("node:fs"); const dir = "node_modules/@prisma/engines"; if (!fs.readdirSync(dir).some((name) => /^schema-engine-/u.test(name) && fs.statSync(`${dir}/${name}`).isFile())) process.exit(1)'
+
+      - name: Install PostgreSQL client before secret injection
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Verify apply gate contract
+        run: node --test scripts/staging-migration-apply.test.mjs
+
+      # The replay artifact is accepted only from the protected master SHA
+      # checked out above, with its producer workflow and receipt verified.
+      - name: Download isolated SQL replay receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: celebratedeal-staging-isolated-migration-replay
+          run-id: ${{ inputs.replay_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/staging-replay
+
+      - name: Apply only after all immutable prerequisites pass
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
+          CELEBRATEDEAL_STAGING_DATA_DISPOSITION: ${{ vars.STAGING_DATA_DISPOSITION }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app
+          STAGING_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The runner checks exact DB, project and Preview lineage before any
+          # migration command. Its only stdout is a value-free result code.
+          node scripts/staging-migration-apply.mjs
+
+      - name: Upload sanitized receipt
+        if: ${{ always() && github.ref == 'refs/heads/master' && github.ref_protected }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-migration-apply-receipt
+          path: ${{ runner.temp }}/staging-migration-apply-receipt.json
+          if-no-files-found: error
+          retention-days: 7
