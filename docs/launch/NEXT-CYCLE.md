@@ -1,12 +1,9 @@
-# CelebrateDeal 下一輪清單
+# CelebrateDeal 下一輪工作
 
-更新：2026-09-26。此清單依目前 [staging 收據](CURRENT.md) 排序；未執行項目均非 PASS。
+更新：2026-09-27。狀態與精確部署來源以 [CURRENT.md](CURRENT.md) 為準；待做項目不等於已驗收。
 
-1. **固定站瀏覽器旅程**：同一來源兩次煙測各有一次 JavaScript／CSS 資源載入失敗；較新的 run `36221861858` 則在 desktop Dashboard 導頁逾時且尚未取得主文件階段證據。先區分主文件未回應、已回應但 DOM 未完成、實際資源 4xx／5xx 與導頁取消，再修正對應根因。未定位前維持 BLOCKED，不反覆重跑冒充 PASS。
-2. **PayUni Sandbox 未明交易**：先對 2026-09-26 那一次合成提交做唯讀狀態查詢，補齊缺少的固定買家查詢端點或等效安全路徑；確認沒有付款／退款在途後，再決定是否需要新的付款測試。接著驗證目前來源的 callback、持久化訂單與重複 callback 冪等性。SaaS checkout、退款、對帳與佣金結算另排，不把舊來源成功收據當作新版 PASS。
-3. **固定 staging 的完整核心旅程**：以合成資料實測 Funnel 建立、編輯保存、公開、表單提交到商品 checkout 的非付款階段；補圖片上傳後的公開讀取、影片處理與商家常用操作。先前通過的十頁瀏覽器煙測只涵蓋讀取與局部表單互動。
-4. **R2／Stream 資源範圍**：確認 R2 僅寫入 staging bucket、公開 r2.dev 只承載合成資料，並核實 Stream token 的非正式資源範圍；唯讀 provider 可連線收據不能代替端到端驗證。
-5. **舊 PR 的獨有功能**：PR #210/#211 仍有衝突及未移植的學員入口、LINE 圖文選單、聯盟入口與部分商品頁差異。依 [路徑與風險盤點](integration-inventory-20260924.md) 分批確認需求、租戶權限、schema 與測試，再用小型 PR 整合。
-6. **非核心功能與 Production 準備**：依實際使用優先修資料遺失、卡住或無法完成任務的問題，再處理視覺細節。正式服務設定、法務／客服、備份演練與正式金流另做獨立驗收。
-
-上述尚未完成的核心項目仍屬 [現況入口](CURRENT.md) 的上線缺口；列在下一輪不等於已驗收或可以忽略。
+1. **固定站 Funnel 核心旅程**：已合入的 [PR #337](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/337) 把編輯器與報表共用一次租戶檢查；[run 36267066749](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36267066749) 仍在管理頁載入卡住。[PR #338](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/338) 改為先渲染編輯器、報表獨立唯讀載入，本機檢查通過，但 staging Preview 遭 Vercel 部署頻率限制，需等待該檢查恢復。PR 綠燈合入並更新固定 staging 後，使用合成資料驗證建立、模板、保存、發布、匿名公開頁。若仍失敗，依新分類與收據查根因，不盲目重跑。
+2. **Dashboard 明細阻塞與 R2**：[目前來源瀏覽器 run 36270832094](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36270832094) 在 desktop Dashboard 逾時，HTML 回 2xx、外框與 KPI 可見，但明細未完成且 `DOMContentLoaded` 未發生；關鍵 JS／CSS 失敗和同站 5xx 為 0。[PR #340](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/340) 將明細改由租戶限定的唯讀 API 在頁面顯示後載入；本機刻意延遲明細 5 秒時，3 個隔離瀏覽器測試通過，導頁與 KPI 未被拖住。待 PR 受保護檢查綠燈、合入並更新固定 staging 後，重驗 desktop/mobile 五頁及互動；本機通過不等於固定站 PASS。[目前來源 R2 run 36270832220](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36270832220) 的合成圖片預簽、PUT、完成回報與公開讀取 **PASS**；來源再更新仍須重驗。
+3. **PayUni Sandbox 未明交易**：[唯讀 run 36260940732](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36260940732) 顯示本地 `PENDING`、provider `UNKNOWN`、無 callback、缺 provider 查單參考值。先在官方 Sandbox 後台唯讀核對原交易；釐清安全後才建立**新**合成付款，驗證 callback、持久化訂單與重複 callback 冪等性。不得重送原交易或退款；正式金流不在本輪。
+4. **Stream 隔離**：唯讀連線可用，但 Vercel 綁定的 Stream token 是否只觸及非正式資源仍未驗證。用可審查、無 Secret 輸出的權限證據或非正式資源探測補足；不可把 R2 staging bucket 的通過結果轉算為 Stream PASS。
+5. **舊 PR 與非核心功能**：[PR #210](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/210)／[#211](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/211) 仍有衝突。依[整合盤點](integration-inventory-20260924.md)逐功能核對學員入口、LINE 圖文選單、聯盟入口與商品差異，按租戶、Auth、schema 與測試風險分批整合。表單提交、checkout 非付款階段、影片處理及其他商家操作仍缺固定站證據；Production 準備另行驗收。
