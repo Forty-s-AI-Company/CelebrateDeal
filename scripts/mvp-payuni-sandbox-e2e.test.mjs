@@ -12,6 +12,7 @@ import {
   checkExistingWp4BuyerPayment,
   validateBuyerPaymentCheckReceipt,
   BUYER_PAYMENT_CHECK_SOURCE_SHA,
+  BUYER_CALLBACK_RETRY_SOURCE_SHA,
   writeBuyerPaymentCheckReceipt,
   validateWrittenBuyerPaymentCheckReceipt,
   classifyPayUniApiNetworkFailure,
@@ -67,7 +68,7 @@ test("fixed callback replay submits one empty request and validates persisted bo
   });
   assert.equal(calls, 1);
   assert.equal(receipt.result, "PASS");
-  assert.equal(receipt.transactionSourceSha, BUYER_PAYMENT_CHECK_SOURCE_SHA);
+  assert.equal(receipt.transactionSourceSha, BUYER_CALLBACK_RETRY_SOURCE_SHA);
   assert.equal(validateBuyerCallbackRetryReceipt(receipt).ok, true);
   for (const patch of [{ retryAttempts: 0 }, { queryAttempts: 1 }, { paymentSubmissions: 1 }, { refundSubmissions: 1 }, { raw: "secret" }, { failureCode: "unknown-raw" }, { transactionSourceSha: "b".repeat(40) }]) {
     assert.equal(validateBuyerCallbackRetryReceipt({ ...receipt, ...patch }).ok, false);
