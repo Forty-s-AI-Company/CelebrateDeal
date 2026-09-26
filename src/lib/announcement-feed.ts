@@ -4,7 +4,8 @@ export type Announcement = {
   publishedAt: string;
   title: string;
   summary: string;
-  progressPercent: number;
+  /** Historical milestones may have estimates; current staging validation has no honest percentage. */
+  progressPercent: number | null;
   completed: readonly string[];
   incomplete: readonly string[];
   changes: readonly string[];
@@ -21,16 +22,37 @@ export type StorageLike = Pick<Storage, "getItem" | "setItem">;
 export const ANNOUNCEMENT_SUPPRESSION_STORAGE_KEY =
   "celebratedeal.announcement-center.suppression.v1";
 
-/**
- * 進站公告的唯一靜態來源。98% 是本階段估算；本機一條龍已驗收，正式金流與 staging 仍不在本次範圍。
- */
+/** Current staging status leads; older milestones are explicitly historical. */
 export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
+  {
+    id: "staging-validation-2026-09-26-v1",
+    version: "2026-09-26-v1",
+    publishedAt: "2026-09-26",
+    title: "staging 測試站驗收中",
+    summary: "目前是開發測試站，主要頁面已可開啟；Dashboard 明細與完整沙盒流程尚未驗收完成。",
+    progressPercent: null,
+    completed: [
+      "測試站已更新，首頁與登入頁可正常開啟。",
+      "桌機與手機的主要管理頁已完成基本可見性檢查。",
+    ],
+    incomplete: [
+      "Dashboard 明細目前可能顯示暫時無法載入，仍需修復與重驗。",
+      "付款與媒體上傳等完整流程仍在沙盒驗證，請勿使用真實客戶資料。",
+    ],
+    changes: [
+      "更新測試站，並移除過時的完成率與部署說明。",
+    ],
+    nextSteps: [
+      "修復 Dashboard 明細並完成主要操作旅程驗證。",
+      "完成付款沙盒與圖片上傳檢查後更新此公告。",
+    ],
+  },
   {
     id: "goal-progress-2026-08-19-v13",
     version: "2026-08-19-v13",
     publishedAt: "2026-08-19",
-    title: "一條龍研討會本機驗收更新",
-    summary: "本機一條龍進度 98%：已用隔離 PostgreSQL 與系統 Chrome 實際通過報名、驗證信、直播、排程互動、商品浮窗、持續播放器、內部待付款訂單與課後通知；Vercel 今日額度已滿，本次不部署 staging。",
+    title: "歷史紀錄：一條龍研討會本機驗收更新",
+    summary: "2026/08/19 當時紀錄：本機一條龍進度估算 98%，隔離測試通過報名、驗證信、直播、排程互動、商品浮窗、持續播放器、內部待付款訂單與課後通知；當日未部署 staging。此為歷史里程碑，不代表目前 staging 驗收。",
     progressPercent: 98,
     completed: [
       "Email 模板可安全插入直播入口，驗證成功、開播提醒與課後通知都使用正確的公開直播網址。",
@@ -77,8 +99,8 @@ export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
     id: "goal-progress-2026-08-18-v5",
     version: "2026-08-18-v5",
     publishedAt: "2026-08-18",
-    title: "目前 Goal 進度更新",
-    summary: "本階段估算 95%：本機完整一條龍 E2E 已通過並部署 staging，現在等待使用者線上驗收報名、直播互動、持續播放器與結帳體驗。",
+    title: "歷史紀錄：當時 Goal 進度更新",
+    summary: "2026/08/18 當時紀錄：本機一條龍 E2E 通過並部署當時 staging，尚待線上驗收。此為歷史里程碑，不代表目前 staging 驗收。",
     progressPercent: 95,
     completed: [
       "核心報名流程已完成。",
