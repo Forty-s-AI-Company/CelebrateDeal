@@ -16,7 +16,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("./dashboard-kpis", () => ({ default: () => null }));
-vi.mock("./dashboard-details", () => ({ default: () => null }));
+vi.mock("./dashboard-details-client", () => ({ default: () => null }));
 
 import DashboardPage from "./page";
 

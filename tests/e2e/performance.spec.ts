@@ -291,6 +291,8 @@ test("authenticated dashboard stays within the release performance budget", asyn
     await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
   }
   const timing = await measurePage(page, detailsDiagnosticDelayMs > 0 ? undefined : "/dashboard");
+  // Details now load through a separate authenticated read after the document is interactive.
+  await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
   const lifecycle = await page.evaluate(() => {
     const value = (window as Window & {
       __dashboardLifecycle?: {
