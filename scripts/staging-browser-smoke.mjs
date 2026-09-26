@@ -29,6 +29,8 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
     journeys: [],
     browser: {
       pageErrors: 0, sameHost5xx: 0, criticalResourceFailures: 0, navigationInteractionsPassed: 0,
+      criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0 },
+      firstCriticalResourceFailure: null,
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
       safeAttributionResets: 0,
@@ -88,20 +90,33 @@ export async function verifyStagingAliasBinding(env, fetchImpl = fetch) {
   return await diagnoseStagingAliasBinding(env, fetchImpl) === "VERIFIED";
 }
 
-/** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
-export function isCriticalResourceFailure(response) {
+/** Emit only a fixed category; the failing resource URL and network error stay private. */
+export function classifyCriticalResourceResponse(response) {
   try {
     const url = new URL(response.url());
-    return url.hostname === STAGING_ALIAS && response.status() >= 400
-      && ["script", "stylesheet"].includes(response.request().resourceType());
-  } catch { return false; }
+    const type = response.request().resourceType();
+    if (url.hostname !== STAGING_ALIAS || response.status() < 400 || !["script", "stylesheet"].includes(type)) return null;
+    return `http${response.status() < 500 ? "4xx" : "5xx"}${type === "script" ? "Script" : "Stylesheet"}`;
+  } catch { return null; }
+}
+
+export function classifyCriticalResourceRequestFailure(request) {
+  try {
+    const type = request.resourceType();
+    if (new URL(request.url()).hostname !== STAGING_ALIAS || !["script", "stylesheet"].includes(type)) return null;
+    const failure = request.failure?.();
+    const aborted = typeof failure === "string" && failure.includes("net::ERR_ABORTED");
+    return `${aborted ? "aborted" : "network"}${type === "script" ? "Script" : "Stylesheet"}`;
+  } catch { return null; }
+}
+
+/** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
+export function isCriticalResourceFailure(response) {
+  return classifyCriticalResourceResponse(response) !== null;
 }
 
 export function isFailedCriticalResourceRequest(request) {
-  try {
-    return new URL(request.url()).hostname === STAGING_ALIAS
-      && ["script", "stylesheet"].includes(request.resourceType());
-  } catch { return false; }
+  return classifyCriticalResourceRequestFailure(request) !== null;
 }
 
 /** Permit only known same-host browser telemetry and the mount-time attribution reset as local no-ops. */
@@ -311,12 +326,21 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         report.browser.executionPhase = "PAGE_OPEN";
         const page = await context.newPage();
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
+        const recordCriticalResourceFailure = (category) => {
+          if (!category) return;
+          report.browser.criticalResourceFailures += 1;
+          report.browser.criticalResourceFailureCategories[category] += 1;
+          report.browser.firstCriticalResourceFailure ??= {
+            category, phase: report.browser.executionPhase,
+            viewport: report.browser.activeViewport, route: report.browser.activeRoute,
+          };
+        };
         page.on("response", (response) => {
           if (new URL(response.url()).hostname === STAGING_ALIAS && response.status() >= 500) report.browser.sameHost5xx += 1;
-          if (isCriticalResourceFailure(response)) report.browser.criticalResourceFailures += 1;
+          recordCriticalResourceFailure(classifyCriticalResourceResponse(response));
         });
         page.on("requestfailed", (request) => {
-          if (isFailedCriticalResourceRequest(request)) report.browser.criticalResourceFailures += 1;
+          recordCriticalResourceFailure(classifyCriticalResourceRequestFailure(request));
         });
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;
