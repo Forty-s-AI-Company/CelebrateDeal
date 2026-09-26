@@ -161,6 +161,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerChunk404 = false;
   let triggerChunkNetworkFailure = false;
   let triggerNavigationAbort = false;
+  let timeoutStage = null;
   const browser = {
     newContext: async () => {
       let handler;
@@ -177,13 +178,27 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
         newPage: async () => {
           let onResponse = () => {};
           let onRequestFailed = () => {};
+          let onRequest = () => {};
           return {
           on: (event, callback) => {
             if (event === "response") onResponse = callback;
             if (event === "requestfailed") onRequestFailed = callback;
+            if (event === "request") onRequest = callback;
           },
+          evaluate: async () => timeoutStage === "response" ? {
+            readyState: "loading", bodyPresent: true, dashboardShellPresent: true,
+            kpisReady: true, detailsReady: false,
+          } : null,
           goto: async (url) => {
             currentUrl = url;
+            if (url.endsWith("/dashboard") && timeoutStage) {
+              onRequest({ url: () => url, resourceType: () => "document" });
+              if (timeoutStage === "response") onResponse({
+                url: () => url, status: () => 200,
+                request: () => ({ resourceType: () => "document" }),
+              });
+              throw Object.assign(new Error(`Timeout at private URL ${INPUT.JOB_SECRET}`), { name: "TimeoutError" });
+            }
             if (triggerNavigationAbort) throw new Error(`page.goto: net::ERR_ABORTED at ${origin}/dashboard?private=${INPUT.JOB_SECRET}`);
             if (url.endsWith("/dashboard") && triggerChunk404) onResponse({
               url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
@@ -304,6 +319,33 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(abortedNavigation.browser.activeRoute, "dashboard");
   assert.equal(abortedNavigation.sideEffects.syntheticSessionRevoked, 1);
   assert.equal(JSON.stringify(abortedNavigation).includes(INPUT.JOB_SECRET), false);
+  triggerNavigationAbort = false;
+  timeoutStage = "request";
+  const noResponse = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(noResponse.browser.failureCategory, "TIMEOUT");
+  assert.deepEqual(noResponse.browser.navigationFailure, {
+    viewport: "desktop", route: "dashboard", documentRequestSeen: true,
+    documentResponseClass: "NONE", domContentLoadedSeen: false, finalPath: "EXPECTED", partialDom: null,
+  });
+  assert.equal(noResponse.sideEffects.syntheticSessionRevoked, 1);
+  timeoutStage = "response";
+  const noDom = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(noDom.browser.failureCategory, "TIMEOUT");
+  assert.equal(noDom.browser.navigationFailure.documentResponseClass, "2XX");
+  assert.equal(noDom.browser.navigationFailure.domContentLoadedSeen, false);
+  assert.deepEqual(noDom.browser.navigationFailure.partialDom, {
+    readyState: "loading", bodyPresent: true, dashboardShellPresent: true,
+    kpisReady: true, detailsReady: false,
+  });
+  assert.equal(JSON.stringify(noDom).includes(INPUT.JOB_SECRET), false);
 });
 
 test("browser failures expose only fixed categories", () => {

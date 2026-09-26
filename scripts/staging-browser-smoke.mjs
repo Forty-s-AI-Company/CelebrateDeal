@@ -31,6 +31,7 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       pageErrors: 0, sameHost5xx: 0, criticalResourceFailures: 0, navigationInteractionsPassed: 0,
       criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0 },
       firstCriticalResourceFailure: null,
+      navigationFailure: null,
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
       safeAttributionResets: 0,
@@ -162,6 +163,30 @@ export function classifyFinalPath(url, expectedPath) {
   } catch {
     return "INVALID_URL";
   }
+}
+
+/** Record only fixed DOM milestones after a timed-out document navigation. */
+async function capturePartialNavigation(page) {
+  try {
+    const snapshot = await Promise.race([
+      page.evaluate(() => ({
+        readyState: document.readyState,
+        bodyPresent: Boolean(document.body),
+        dashboardShellPresent: Boolean(document.querySelector('[data-dashboard-region="kpis"]')),
+        kpisReady: Boolean(document.querySelector('[data-dashboard-scope="kpis"]')),
+        detailsReady: Boolean(document.querySelector('[data-dashboard-scope="details"]')),
+      })),
+      new Promise((resolve) => setTimeout(() => resolve(null), 1_000)),
+    ]);
+    if (!snapshot) return null;
+    return {
+      readyState: ["loading", "interactive", "complete"].includes(snapshot.readyState) ? snapshot.readyState : "OTHER",
+      bodyPresent: snapshot.bodyPresent === true,
+      dashboardShellPresent: snapshot.dashboardShellPresent === true,
+      kpisReady: snapshot.kpisReady === true,
+      detailsReady: snapshot.detailsReady === true,
+    };
+  } catch { return null; }
 }
 
 /** Group blocked requests without logging paths, bodies, headers, or cookies. */
@@ -325,7 +350,16 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         sessionIssued = true;
         report.browser.executionPhase = "PAGE_OPEN";
         const page = await context.newPage();
+        let navigationProgress = null;
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
+        // Record only fixed milestones; document URLs and browser errors may contain private data.
+        page.on("request", (request) => {
+          if (navigationProgress && request.resourceType() === "document"
+            && new URL(request.url()).hostname === STAGING_ALIAS) navigationProgress.documentRequestSeen = true;
+        });
+        page.on("domcontentloaded", () => {
+          if (navigationProgress) navigationProgress.domContentLoadedSeen = true;
+        });
         const recordCriticalResourceFailure = (category) => {
           if (!category) return;
           report.browser.criticalResourceFailures += 1;
@@ -337,6 +371,12 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         };
         page.on("response", (response) => {
           if (new URL(response.url()).hostname === STAGING_ALIAS && response.status() >= 500) report.browser.sameHost5xx += 1;
+          if (navigationProgress && response.request().resourceType() === "document"
+            && new URL(response.url()).hostname === STAGING_ALIAS) {
+            const status = response.status();
+            navigationProgress.documentResponseClass = status >= 500 ? "5XX"
+              : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
+          }
           recordCriticalResourceFailure(classifyCriticalResourceResponse(response));
         });
         page.on("requestfailed", (request) => {
@@ -345,7 +385,20 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;
           report.browser.executionPhase = "PAGE_NAVIGATION";
-          const response = await page.goto(`${origin}${route.path}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+          navigationProgress = { documentRequestSeen: false, documentResponseClass: "NONE", domContentLoadedSeen: false };
+          let response;
+          try {
+            response = await page.goto(`${origin}${route.path}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+          } catch (error) {
+            report.browser.navigationFailure = {
+              viewport: viewport.id, route: route.id, ...navigationProgress,
+              finalPath: classifyFinalPath(page.url(), route.path),
+              partialDom: route.id === "dashboard" ? await capturePartialNavigation(page) : null,
+            };
+            throw error;
+          } finally {
+            navigationProgress = null;
+          }
           report.browser.executionPhase = "PAGE_ASSERTIONS";
           const status = response?.status() ?? 0;
           const headingVisible = await visible(page.getByRole("heading", { name: route.heading, exact: true }));
