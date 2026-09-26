@@ -17,6 +17,7 @@ function receipt(sourceSha) {
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
     projectCreated: false, create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
     projectDestination: "NOT_OBSERVED", createPageStatus: null, createPageRoute: "NOT_OBSERVED", projectStillMissing: false,
+    createActionStatus: null, createFeedbackKind: "NOT_OBSERVED", createDestination: "NOT_OBSERVED",
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -32,6 +33,17 @@ export function funnelRouteCategory(value) {
     if (path === "/login") return "LOGIN";
   } catch { return "INVALID_URL"; }
   return "OTHER";
+}
+
+/** Map only known product messages to fixed categories; never save raw text. */
+export function funnelCreateFeedbackKind(messages) {
+  if (messages.includes("草稿已建立。")) return "CREATED";
+  if (messages.includes("請先選擇一個銷售專案後再管理一頁式網站。")) return "SCOPE_REQUIRED";
+  if (messages.includes("頁面內容格式不正確或資料過大，請重新整理後再試。")) return "FORMAT_INVALID";
+  if (messages.includes("請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。")) return "BINDING_INVALID";
+  if (messages.includes("暫時無法完成操作；內容仍保留，請稍後再試。")) return "SERVER_FAILURE";
+  if (messages.includes("連線中斷，Funnel 尚未建立，請稍後再試。")) return "NETWORK_FAILURE";
+  return messages.length === 0 ? "NONE" : "OTHER";
 }
 
 function browserEnvironment() {
@@ -117,6 +129,14 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
 
     const page = await context.newPage();
     page.on("pageerror", () => { result.pageErrors += 1; });
+    page.on("response", (response) => {
+      const request = response.request();
+      if (request.method() !== "POST" || !request.headers()["next-action"]) return;
+      try {
+        const url = new URL(request.url());
+        if (url.hostname === ALIAS && url.pathname === "/landing-pages/new") result.createActionStatus = response.status();
+      } catch { /* The action status stays unknown. */ }
+    });
     const slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
     let createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
@@ -146,7 +166,12 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     await page.getByRole("button", { name: /建立名單/u }).click();
     await page.getByRole("button", { name: "儲存", exact: true }).click();
     try { await page.waitForURL((url) => FUNNEL_PATH.test(url.pathname) && url.pathname.endsWith("/operations"), { timeout: 20_000 }); }
-    catch { result.reason = "CREATE_FAILED"; return result; }
+    catch {
+      result.createDestination = funnelRouteCategory(page.url());
+      result.createFeedbackKind = funnelCreateFeedbackKind(await page.getByRole("status").allTextContents());
+      result.reason = "CREATE_FAILED";
+      return result;
+    }
     const funnelPath = new URL(page.url()).pathname.replace(/\/operations$/u, "");
     allowedFunnelPath = funnelPath;
     result.create = true;
