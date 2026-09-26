@@ -110,7 +110,7 @@ export function classifyBrowserRequest(request) {
   try { url = new URL(request.url()); } catch { return "EXTERNAL"; }
   if (url.protocol !== "https:" || url.hostname !== STAGING_ALIAS) return "EXTERNAL";
   if (["GET", "HEAD"].includes(request.method())) return "READ";
-  if (request.method() === "POST" && url.search === "" && url.pathname === "/monitoring") return "SENTRY_TUNNEL";
+  if (request.method() === "POST" && url.pathname === "/monitoring") return "SENTRY_TUNNEL";
   if (request.method() === "POST" && url.search === "" && url.pathname === "/api/security/csp-report") return "CSP_REPORT";
   if (request.method() === "POST"
     && url.pathname === "/api/affiliate-attribution/direct-entry"
@@ -171,6 +171,13 @@ export function classifyUnsafeRequestDetail(pathname) {
 function boundedDashboardReadCount(value, maxCount) {
   const count = Number(value);
   return value !== null && Number.isSafeInteger(count) && count >= 0 && count <= maxCount ? count : null;
+}
+
+/** Next's shadow-DOM route announcer is an accessibility alert, not a Dashboard error. */
+export function hasActionableDashboardAlert(totalAlerts, frameworkAlerts) {
+  if (!Number.isSafeInteger(totalAlerts) || !Number.isSafeInteger(frameworkAlerts)
+    || totalAlerts < 0 || frameworkAlerts < 0 || frameworkAlerts > totalAlerts) return true;
+  return totalAlerts > frameworkAlerts;
 }
 
 /** Keep browser errors in a fixed vocabulary; exception messages can contain URLs. */
@@ -328,8 +335,10 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             ? await visible(page.locator('[data-dashboard-scope="kpis"]')) : true;
           const dashboardDetailsVisible = route.id === "dashboard"
             ? await visible(page.locator('[data-dashboard-scope="details"]')) : true;
+          const dashboardFrameworkAlertCount = route.id === "dashboard"
+            ? await page.locator('next-route-announcer [role="alert"]').count() : 0;
           const dashboardAlertVisible = route.id === "dashboard"
-            ? await page.getByRole("alert").count() > 0 : false;
+            ? hasActionableDashboardAlert(await page.getByRole("alert").count(), dashboardFrameworkAlertCount) : false;
           const dashboardKpiAlertVisible = route.id === "dashboard" && dashboardKpisVisible
             ? await page.locator('[data-dashboard-scope="kpis"] [role="alert"]').count() > 0 : false;
           const dashboardDetailsAlertVisible = route.id === "dashboard" && dashboardDetailsVisible
@@ -348,7 +357,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const appNavigationVisible = await visible(page.locator(appNavigationSelectorForViewport(viewport.id)));
           const contentVisible = await visible(page.locator("#main-content"));
           const finalPath = classifyFinalPath(page.url(), route.path);
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, appNavigationVisible, contentVisible });
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardFrameworkAlertVisible: dashboardFrameworkAlertCount > 0, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
