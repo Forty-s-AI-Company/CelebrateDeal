@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { classifyBlockedRequest, isStagingR2UploadUrl, isSyntheticPublicR2Url, runStagingR2ImageSmoke } from "./staging-r2-image-smoke.mjs";
+import { classifyBlockedRequest, imageJourneyPassed, isStagingR2UploadUrl, isSyntheticPublicR2Url, runStagingR2ImageSmoke } from "./staging-r2-image-smoke.mjs";
 
 const input = {
   CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40),
@@ -38,6 +38,17 @@ test("blocked browser requests expose only fixed categories", () => {
   assert.equal(classifyBlockedRequest(request("https://celebrate-deal-staging.carry-digital-nomad.in.net/products/synthetic/edit", "POST", { "next-action": "synthetic" })), "NEXT_ACTION");
   assert.equal(classifyBlockedRequest(request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/other", "POST")), "SAME_HOST_WRITE");
   assert.equal(classifyBlockedRequest(request("invalid")), "INVALID_URL");
+});
+
+test("blocked external reads do not hide unsafe writes or weaken byte proof", () => {
+  const receipt = {
+    stagingBucket: "VERIFIED", browserErrors: 0, blockedExternalReads: 1, unsafeRequestsBlocked: 0,
+    sideEffects: { presignPosts: 1, r2Puts: 1, completePosts: 1 },
+  };
+  assert.equal(imageJourneyPassed(receipt, true), true);
+  assert.equal(imageJourneyPassed(receipt, false), false);
+  assert.equal(imageJourneyPassed({ ...receipt, unsafeRequestsBlocked: 1 }, true), false);
+  assert.equal(imageJourneyPassed({ ...receipt, sideEffects: { ...receipt.sideEffects, r2Puts: 0 } }, true), false);
 });
 
 test("invalid or drifting binding stops before any browser or session", async () => {
