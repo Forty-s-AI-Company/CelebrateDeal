@@ -165,6 +165,30 @@ export function classifyFinalPath(url, expectedPath) {
   }
 }
 
+/** Record only fixed DOM milestones after a timed-out document navigation. */
+async function capturePartialNavigation(page) {
+  try {
+    const snapshot = await Promise.race([
+      page.evaluate(() => ({
+        readyState: document.readyState,
+        bodyPresent: Boolean(document.body),
+        dashboardShellPresent: Boolean(document.querySelector('[data-dashboard-region="kpis"]')),
+        kpisReady: Boolean(document.querySelector('[data-dashboard-scope="kpis"]')),
+        detailsReady: Boolean(document.querySelector('[data-dashboard-scope="details"]')),
+      })),
+      new Promise((resolve) => setTimeout(() => resolve(null), 1_000)),
+    ]);
+    if (!snapshot) return null;
+    return {
+      readyState: ["loading", "interactive", "complete"].includes(snapshot.readyState) ? snapshot.readyState : "OTHER",
+      bodyPresent: snapshot.bodyPresent === true,
+      dashboardShellPresent: snapshot.dashboardShellPresent === true,
+      kpisReady: snapshot.kpisReady === true,
+      detailsReady: snapshot.detailsReady === true,
+    };
+  } catch { return null; }
+}
+
 /** Group blocked requests without logging paths, bodies, headers, or cookies. */
 export function classifyUnsafeRequestPath(pathname) {
   if (pathname.startsWith("/_next/")) return "next";
@@ -369,6 +393,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             report.browser.navigationFailure = {
               viewport: viewport.id, route: route.id, ...navigationProgress,
               finalPath: classifyFinalPath(page.url(), route.path),
+              partialDom: route.id === "dashboard" ? await capturePartialNavigation(page) : null,
             };
             throw error;
           } finally {

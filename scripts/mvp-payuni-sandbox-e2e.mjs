@@ -994,7 +994,8 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
   return receipt;
 }
 
-export const BUYER_PAYMENT_CHECK_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
+export const BUYER_PAYMENT_CHECK_SOURCE_SHA = "00099f7e3b3c8a7e923047e1ab72a827fcb78e4c";
+export const BUYER_CALLBACK_RETRY_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
 const buyerCheckStatuses = new Set(["VERIFIED", "MISSING", "AMBIGUOUS", "REFERENCE_UNAVAILABLE", "QUERY_REJECTED", "QUERY_FAILED", "STATE_MISMATCH"]);
 const buyerLocalStatuses = new Set(["UNKNOWN", "PENDING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED", "FAILED"]);
 const buyerProviderStatuses = new Set(["UNKNOWN", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"]);
@@ -1086,7 +1087,7 @@ export function validateBuyerCallbackRetryReceipt(receipt) {
   if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "status", "failureCode", "retryPosts", "retryAttempts", "queryAttempts", "paymentSubmissions", "refundSubmissions"])) errors.push("SCHEMA_KEYS");
   if (receipt?.schemaVersion !== "celebratedeal-wp4-buyer-callback-retry/v1" || receipt?.purpose !== FIXED_PURPOSE
     || receipt?.environment !== "sandbox" || !SOURCE_SHA.test(receipt?.sourceSha ?? "")
-    || receipt?.transactionSourceSha !== BUYER_PAYMENT_CHECK_SOURCE_SHA) errors.push("FIXED_IDENTITY");
+    || receipt?.transactionSourceSha !== BUYER_CALLBACK_RETRY_SOURCE_SHA) errors.push("FIXED_IDENTITY");
   if (!boundedInteger(receipt?.retryPosts, 1) || !boundedInteger(receipt?.retryAttempts, 1)
     || receipt?.queryAttempts !== 0 || receipt?.paymentSubmissions !== 0 || receipt?.refundSubmissions !== 0) errors.push("SIDE_EFFECT_BUDGET");
   if (!["PASS", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
@@ -1103,7 +1104,7 @@ export async function retryFixedWp4BuyerCallback(input, dependencies = {}) {
   const invocation = validateExistingRefundRecoveryInvocation(input);
   const receipt = {
     schemaVersion: "celebratedeal-wp4-buyer-callback-retry/v1", purpose: FIXED_PURPOSE,
-    sourceSha: invocation.ok ? invocation.sourceSha : "0".repeat(40), transactionSourceSha: BUYER_PAYMENT_CHECK_SOURCE_SHA,
+    sourceSha: invocation.ok ? invocation.sourceSha : "0".repeat(40), transactionSourceSha: BUYER_CALLBACK_RETRY_SOURCE_SHA,
     environment: "sandbox", result: "BLOCKED", status: "INPUT_REJECTED", failureCode: "UNKNOWN",
     retryPosts: 0, retryAttempts: 0, queryAttempts: 0, paymentSubmissions: 0, refundSubmissions: 0,
   };
