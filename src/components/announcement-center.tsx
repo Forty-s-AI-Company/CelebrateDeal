@@ -49,6 +49,8 @@ function hasExistingDialog() {
 }
 
 function AnnouncementProgress({ announcement }: { announcement: Announcement }) {
+  // Current staging validation has no meaningful completion percentage.
+  if (announcement.progressPercent === null) return null;
   return (
     <div className="mt-3 flex items-center gap-3">
       <div
@@ -299,7 +301,9 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
                         </span>
                         <span className="mt-1 block font-semibold text-slate-950">{announcement.title}</span>
                         <span className="mt-1 block text-sm leading-5 text-slate-600">{announcement.summary}</span>
-                        <span className="mt-2 block text-xs font-semibold text-blue-700">進度 {announcement.progressPercent}%</span>
+                        {announcement.progressPercent !== null ? (
+                          <span className="mt-2 block text-xs font-semibold text-blue-700">進度 {announcement.progressPercent}%</span>
+                        ) : null}
                       </button>
                     </li>
                   ))}
