@@ -4,16 +4,10 @@ import { redirect } from "next/navigation";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { requireVendorContext } from "@/lib/auth";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
-import DashboardDetails from "./dashboard-details";
-import DashboardDetailsLoading from "./dashboard-details-loading";
+import DashboardDetailsClient from "./dashboard-details-client";
+import { parseDashboardDetailsDiagnosticDelay } from "./dashboard-details-diagnostic";
 import DashboardKpis from "./dashboard-kpis";
 import DashboardKpisLoading from "./dashboard-kpis-loading";
-
-function parseDashboardDetailsDiagnosticDelay(value: string | undefined) {
-  if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return 0;
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, 10_000) : 0;
-}
 
 function parseDashboardDiagnosticFailureScope(value: string | undefined) {
   if (process.env.NODE_ENV === "production" && process.env.E2E_TEST_MODE !== "true") return null;
@@ -41,13 +35,6 @@ export default async function DashboardPage({ searchParams }: {
     Array.isArray(query?.e2eDashboardFailScope) ? query.e2eDashboardFailScope[0] : query?.e2eDashboardFailScope,
   );
   const isManager = memberRole === "owner" || memberRole === "admin" || memberRole === "manager";
-  const supportEmailConfigured = Boolean(vendor.supportEmail?.trim());
-  const trackingConfigured = Boolean(
-    vendor.tracking?.googleTagManagerId
-    || vendor.tracking?.facebookPixelId
-    || vendor.tracking?.tiktokPixelId,
-);
-
   return (
     <>
       <PageHeader
@@ -63,15 +50,7 @@ export default async function DashboardPage({ searchParams }: {
       </section>
 
       <section data-dashboard-region="details" aria-label="Dashboard 明細區域">
-        <Suspense fallback={<DashboardDetailsLoading />}>
-          <DashboardDetails
-            vendorId={vendor.id}
-          memberRole={memberRole}
-          supportEmailConfigured={supportEmailConfigured}
-          trackingConfigured={trackingConfigured}
-          diagnosticDelayMs={diagnosticDelayMs}
-        />
-        </Suspense>
+        <DashboardDetailsClient diagnosticDelayMs={diagnosticDelayMs} />
       </section>
     </>
   );
