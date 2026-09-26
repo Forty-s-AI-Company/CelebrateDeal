@@ -18,7 +18,7 @@ function receipt(sourceSha) {
     projectCreated: false, create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
     projectDestination: "NOT_OBSERVED", createPageStatus: null, createPageRoute: "NOT_OBSERVED", projectStillMissing: false,
     createActionStatus: null, createFeedbackKind: "NOT_OBSERVED", createDestination: "NOT_OBSERVED",
-    operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
+    operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFinished: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -138,6 +138,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       } catch { return false; }
     };
     page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
+    page.on("requestfinished", (request) => { if (isOperationsGet(request)) result.operationsGetFinished += 1; });
     page.on("requestfailed", (request) => { if (isOperationsGet(request)) result.operationsGetFailures += 1; });
     page.on("response", (response) => {
       const request = response.request();
