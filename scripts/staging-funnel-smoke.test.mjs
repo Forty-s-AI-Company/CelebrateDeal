@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, funnelRouteCategory, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
 
 function request(url, method = "GET", headers = {}, postData = null) {
   return { url: () => url, method: () => method, headers: () => headers, postData: () => postData };
@@ -20,6 +20,16 @@ test("only owner-side Funnel server actions may write", () => {
   assert.equal(classifyFunnelRequest(request(`${origin}/api/payments/refund`, "POST", headers)), "BLOCK");
   assert.equal(classifyFunnelRequest(request(`${origin}/api/email/send`, "POST", headers)), "BLOCK");
   assert.equal(classifyFunnelRequest(request("https://example.test/landing-pages/new", "POST", headers)), "EXTERNAL");
+});
+
+test("navigation evidence contains only fixed route categories", () => {
+  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  assert.equal(funnelRouteCategory(`${origin}/landing-pages/new?secret=hidden`), "FUNNEL_NEW");
+  assert.equal(funnelRouteCategory(`${origin}/onboarding`), "ONBOARDING");
+  assert.equal(funnelRouteCategory(`${origin}/projects/abc123`), "PROJECT");
+  assert.equal(funnelRouteCategory(`${origin}/login`), "LOGIN");
+  assert.equal(funnelRouteCategory(`${origin}/arbitrary/private`), "OTHER");
+  assert.equal(funnelRouteCategory("invalid"), "INVALID_URL");
 });
 
 test("invalid binding cannot issue a session or launch Chromium", async () => {
