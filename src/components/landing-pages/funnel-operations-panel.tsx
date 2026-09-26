@@ -46,12 +46,14 @@ function editableSteps(content: FunnelStepPages): Steps {
 // One management surface coordinates the seven tabs and atomic step actions;
 // splitting its state across sibling owners would make revision conflicts harder to guard.
 // eslint-disable-next-line complexity
-export function FunnelOperationsPanel({ initial, initialReports, initialStepId, csrfName, csrfToken }: { initial: FunnelOperationsEditor; initialReports: FunnelReports; initialStepId: string; csrfName: string; csrfToken: string }) {
+export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string }) {
   const router = useRouter();
   const initialContent = { ...initial.content, activeStepId: initialStepId };
   const [editor, setEditor] = useState(initial);
   const [content, setContent] = useState<FunnelStepPages>(initialContent);
-  const [reports, setReports] = useState(initialReports);
+  const [reports, setReports] = useState<FunnelReports | null>(null);
+  const [reportError, setReportError] = useState(false);
+  const [reportRequest, setReportRequest] = useState(0);
   const [tab, setTab] = useState<Tab>("Configuration");
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,6 +68,7 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [pending, setPending] = useState(false);
   const revisionRef = useRef(initial.revision);
+  const reportGeneration = useRef(0);
   const inFlight = useRef(false);
   const active = getActiveFunnelStepPage(content);
   const activeStepType = active?.step.type;
@@ -86,6 +89,23 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
+
+  useEffect(() => {
+    // Reports may be slow; fetch them independently of the editor and server actions.
+    const controller = new AbortController();
+    const generation = ++reportGeneration.current;
+    void fetch(`/api/funnel/operations/reports?pageId=${encodeURIComponent(initial.pageId)}`, {
+      cache: "no-store", credentials: "same-origin", signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) throw new Error("REPORT_UNAVAILABLE");
+      return await response.json() as FunnelReports;
+    }).then((loaded) => {
+      if (generation === reportGeneration.current) setReports(loaded);
+    }).catch(() => {
+      if (!controller.signal.aborted && generation === reportGeneration.current) setReportError(true);
+    });
+    return () => controller.abort();
+  }, [initial.pageId, reportRequest]);
 
   function change(patch: Partial<SettingsState>) { setEditor((value) => ({ ...value, ...patch })); setDirty(true); }
   function operations(next: FunnelOperations) { change({ operations: next }); }
@@ -131,8 +151,9 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
     runPending(async () => {
       try {
         const loaded = await readFunnelOperations(editor.pageId);
-        revisionRef.current = loaded.editor.revision;
-        setEditor(loaded.editor); setContent(loaded.editor.content); setReports(loaded.reports); setDirty(false); setMessage("已重新載入最新版本。");
+        revisionRef.current = loaded.revision;
+        reportGeneration.current++;
+        setEditor(loaded); setContent(loaded.content); setReports(null); setReportError(false); setReportRequest((value) => value + 1); setDirty(false); setMessage("已重新載入最新版本。");
       } catch { setMessage("無法重新載入，請稍後再試。"); }
     });
   }
@@ -150,8 +171,8 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
           setEditor((value) => ({ ...value, revision: result.revision, content: { ...content, flow: { ...content.flow, name: value.name, domain: value.slug, currency: value.currency } } }));
           setContent((value) => ({ ...value, flow: { ...value.flow, name: editor.name, domain: editor.slug, currency: editor.currency } }));
           setDirty(false); setSettingsOpen(false);
-          try { const loaded = await readFunnelOperations(editor.pageId); setReports(loaded.reports); }
-          catch { setMessage("設定已儲存，但報表尚未重新載入。"); }
+          reportGeneration.current++;
+          setReports(null); setReportError(false); setReportRequest((value) => value + 1);
         }
       } finally { inFlight.current = false; }
     });
@@ -210,7 +231,7 @@ export function FunnelOperationsPanel({ initial, initialReports, initialStepId, 
         <div className="p-5 sm:p-7">
           {tab === "Configuration" ? <ConfigurationPanel active={active} content={content} editor={editor} templates={templates} selectedTemplateId={effectiveSelectedTemplateId} needsTemplate={needsTemplate} changeTemplate={changeTemplate} disabled={pending} setContent={(next) => { setContent(next); setDirty(true); }} setSelectedTemplateId={setSelectedTemplateId} setChangeTemplate={setChangeTemplate} onBlur={saveActiveMetadata} onApply={applyTemplate} navigate={navigate} /> : null}
           {tab === "Automation Rules" ? <FunnelAutomationSettings pageId={editor.pageId} csrfName={csrfName} csrfToken={csrfToken} /> : null}
-          {tab !== "Configuration" && tab !== "Automation Rules" ? <fieldset disabled={pending} className="space-y-4"><legend className="mb-4 text-lg font-bold">{tab}</legend>{tab === "A/B test" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === "Deadline settings" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.steps} onChange={(deadline) => operations({ ...editor.operations, deadline })} /> : null}{tab === "Stats" || tab === "Leads" || tab === "Sales" ? <ReportSettings tab={tab} editor={editor} reports={reports} onChange={operations} /> : null}<SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></fieldset> : null}
+          {tab !== "Configuration" && tab !== "Automation Rules" ? <fieldset disabled={pending} className="space-y-4"><legend className="mb-4 text-lg font-bold">{tab}</legend>{tab === "A/B test" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === "Deadline settings" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.steps} onChange={(deadline) => operations({ ...editor.operations, deadline })} /> : null}{tab === "Stats" || tab === "Leads" || tab === "Sales" ? <ReportSettings tab={tab} editor={editor} reports={reports} reportError={reportError} retry={() => { setReports(null); setReportError(false); setReportRequest((value) => value + 1); }} onChange={operations} /> : null}<SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></fieldset> : null}
           {message ? <p role="status" className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{message}</p> : null}
         </div>
       </div>
@@ -287,14 +308,14 @@ function DeadlineSettings({ value, steps, onChange }: { value: FunnelOperations[
   </div>;
 }
 
-function ReportSettings({ tab, editor, reports, onChange }: { tab: "Stats" | "Leads" | "Sales"; editor: FunnelOperationsEditor; reports: FunnelReports; onChange: (operations: FunnelOperations) => void }) {
+function ReportSettings({ tab, editor, reports, reportError, retry, onChange }: { tab: "Stats" | "Leads" | "Sales"; editor: FunnelOperationsEditor; reports: FunnelReports | null; reportError: boolean; retry: () => void; onChange: (operations: FunnelOperations) => void }) {
   const key = tab.toLowerCase() as "stats" | "leads" | "sales";
   const filter = editor.operations.reports[key];
   function change(patch: Partial<typeof filter>) { onChange({ ...editor.operations, reports: { ...editor.operations.reports, [key]: { ...filter, ...patch } } }); }
   return <div className="space-y-4">
     <div className="flex flex-wrap gap-3"><label className="grid gap-1 text-sm">報表步驟<select className={control} value={filter.stepId} onChange={(event) => change({ stepId: event.target.value })}><option value="">全部步驟</option>{editor.steps.map((step) => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label><label className="grid gap-1 text-sm">最近天數<input className={control} type="number" min={1} max={90} value={filter.days} onChange={(event) => change({ days: Number(event.target.value) })} /></label></div>
-    <p className="text-sm text-slate-500">儲存後套用篩選條件。以下為已儲存條件的結果，更新時間：{reports.generatedAt}。來源紀錄唯讀。</p>
-    {tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} /> : <SalesReport reports={reports} />}
+    <p className="text-sm text-slate-500">儲存後套用篩選條件。來源紀錄唯讀。{reports ? `以下為已儲存條件的結果，更新時間：${reports.generatedAt}。` : null}</p>
+    {reports ? tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} /> : <SalesReport reports={reports} /> : reportError ? <p role="alert">報表暫時無法載入。<button type="button" className="ml-2 underline" onClick={retry}>重試</button></p> : <p role="status">報表載入中…</p>}
   </div>;
 }
 function StatsReport({ reports }: { reports: FunnelReports }) {
