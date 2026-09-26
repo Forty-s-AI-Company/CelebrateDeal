@@ -6,7 +6,7 @@ import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
 const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const BUCKET = "celebrate-deal-staging";
-const OBJECT_PATH = /^\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/u;
+const OBJECT_PATH = /^\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/u;
 const R2_UPLOAD_HOST = /^celebrate-deal-staging\.[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/u;
 const SYNTHETIC_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==", "base64");
 
@@ -69,6 +69,7 @@ export async function runStagingR2ImageSmoke(env = process.env, dependencies = {
   let sessionIssued = false;
   let cleanupFailed = false;
   let uploadedObjectPath = null;
+  let uploadedDigest = null;
   try {
     context = await browser.newContext({ locale: "zh-TW", viewport: { width: 1365, height: 768 }, serviceWorkers: "block" });
     await context.route("**/*", (route) => {
@@ -79,6 +80,8 @@ export async function runStagingR2ImageSmoke(env = process.env, dependencies = {
         receipt.sideEffects.r2Puts += 1;
         receipt.stagingBucket = "VERIFIED";
         uploadedObjectPath = url.pathname;
+        const body = request.postDataBuffer();
+        uploadedDigest = body ? createHash("sha256").update(body).digest("hex") : null;
         return route.continue();
       }
       if (R2_UPLOAD_HOST.test(url.hostname) && method === "OPTIONS" && OBJECT_PATH.test(url.pathname)) return route.continue();
@@ -135,16 +138,17 @@ export async function runStagingR2ImageSmoke(env = process.env, dependencies = {
       receipt.reason = "PUBLIC_URL_INVALID";
       return receipt;
     }
-    receipt.publicR2Dev = "VERIFIED";
-
     receipt.stage = "PUBLIC_READ";
     const publicResponse = await context.request.get(publicUrl, { maxRedirects: 0, timeout: 15_000, failOnStatusCode: false });
     receipt.sideEffects.publicReads += 1;
     const bytes = publicResponse.status() === 200 ? await publicResponse.body() : null;
     const contentType = publicResponse.headers()["content-type"] ?? "";
     await publicResponse.dispose();
-    const matches = bytes !== null && contentType.startsWith("image/png")
-      && createHash("sha256").update(bytes).digest("hex") === createHash("sha256").update(SYNTHETIC_PNG).digest("hex");
+    // The product UI converts the input PNG to JPEG before its signed PUT.
+    // Compare public bytes with the actual browser-uploaded payload, never a fixture hash.
+    const matches = bytes !== null && uploadedDigest !== null && contentType.startsWith("image/jpeg")
+      && createHash("sha256").update(bytes).digest("hex") === uploadedDigest;
+    if (matches) receipt.publicR2Dev = "VERIFIED";
     receipt.result = matches && receipt.stagingBucket === "VERIFIED" && receipt.browserErrors === 0
       && receipt.unsafeRequestsBlocked === 0 && receipt.sideEffects.presignPosts === 1
       && receipt.sideEffects.r2Puts === 1 && receipt.sideEffects.completePosts === 1 ? "PASS" : "BLOCKED";

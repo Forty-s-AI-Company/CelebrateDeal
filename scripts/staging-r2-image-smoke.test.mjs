@@ -8,7 +8,7 @@ const input = {
   CELEBRATEDEAL_DEPLOYMENT_HOST: "celebrate-deal-staging-fixed-a25814740s-projects.vercel.app",
   GITHUB_TOKEN: "synthetic-github-token", VERCEL_TOKEN: "synthetic-vercel-token", JOB_SECRET: "synthetic-job-secret",
 };
-const objectPath = "/images/12345678-1234-1234-1234-123456789abc.png";
+const objectPath = "/images/12345678-1234-1234-1234-123456789abc.jpg";
 const account = "0".repeat(32);
 
 test("only a signed PUT target for the fixed staging bucket is accepted", () => {
@@ -17,6 +17,7 @@ test("only a signed PUT target for the fixed staging bucket is accepted", () => 
   assert.equal(isStagingR2UploadUrl(safe.replace("celebrate-deal-staging", "celebrate-deal-production")), false);
   assert.equal(isStagingR2UploadUrl(safe.replace("https:", "http:")), false);
   assert.equal(isStagingR2UploadUrl(safe.replace("/images/", "/private/")), false);
+  assert.equal(isStagingR2UploadUrl(safe.replace(".jpg", ".png")), false);
   assert.equal(isStagingR2UploadUrl(safe.replace("?X-Amz-Signature=synthetic", "")), false);
   assert.equal(isStagingR2UploadUrl("https://attacker.test/image.png"), false);
 });
