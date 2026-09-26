@@ -192,7 +192,9 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     result.create = true;
 
     result.stage = "TEMPLATE";
-    await page.getByRole("button", { name: "套用模板", exact: true }).first().click({ timeout: 10_000 });
+    const templateButton = page.getByRole("button", { name: "套用模板", exact: true }).first();
+    if (!await visible(templateButton, 20_000)) { result.reason = "OPERATIONS_NOT_READY"; return result; }
+    await templateButton.click({ timeout: 10_000 });
     if (!await visible(page.getByRole("status").filter({ hasText: "模板已套用" }))) { result.reason = "TEMPLATE_FAILED"; return result; }
     result.template = true;
     await page.getByRole("button", { name: "Edit Page", exact: true }).click({ timeout: 10_000 });
