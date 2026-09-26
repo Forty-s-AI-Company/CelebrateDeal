@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -147,6 +147,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerUnsafePost = true;
   let triggerChunk404 = false;
   let triggerChunkNetworkFailure = false;
+  let triggerNavigationAbort = false;
   const browser = {
     newContext: async () => {
       let handler;
@@ -170,6 +171,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
           },
           goto: async (url) => {
             currentUrl = url;
+            if (triggerNavigationAbort) throw new Error(`page.goto: net::ERR_ABORTED at ${origin}/dashboard?private=${INPUT.JOB_SECRET}`);
             if (url.endsWith("/dashboard") && triggerChunk404) onResponse({
               url: () => `${origin}/_next/static/chunks/app.js`, status: () => 404,
               request: () => ({ resourceType: () => "script" }),
@@ -258,6 +260,25 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(aliasDriftAfterSession.reason, "SESSION_CLEANUP_FAILED");
   assert.equal(aliasDriftAfterSession.sideEffects.syntheticSessionCreated, 1);
   assert.equal(aliasDriftAfterSession.sideEffects.syntheticSessionRevoked, 0);
+  triggerNavigationAbort = true;
+  const abortedNavigation = await runBrowserSmoke(INPUT, {
+    verifyLineage: async () => true,
+    verifyAlias: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(abortedNavigation.reason, "BROWSER_EXECUTION_FAILED");
+  assert.equal(abortedNavigation.browser.executionPhase, "PAGE_NAVIGATION");
+  assert.equal(abortedNavigation.browser.failureCategory, "NAVIGATION_ABORTED");
+  assert.equal(abortedNavigation.browser.activeViewport, "desktop");
+  assert.equal(abortedNavigation.browser.activeRoute, "dashboard");
+  assert.equal(abortedNavigation.sideEffects.syntheticSessionRevoked, 1);
+  assert.equal(JSON.stringify(abortedNavigation).includes(INPUT.JOB_SECRET), false);
+});
+
+test("browser failures expose only fixed categories", () => {
+  assert.equal(classifyBrowserExecutionFailure(Object.assign(new Error("private URL"), { name: "TimeoutError" })), "TIMEOUT");
+  assert.equal(classifyBrowserExecutionFailure(new Error("page.goto: net::ERR_FAILED at private URL")), "NETWORK_FAILED");
+  assert.equal(classifyBrowserExecutionFailure(new Error("private URL")), "OTHER");
 });
 
 test("a failed JavaScript chunk invalidates an otherwise rendered journey", () => {

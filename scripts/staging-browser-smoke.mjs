@@ -33,6 +33,8 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
       safeAttributionResets: 0,
       unsafeRequestCategories: { next: 0, api: 0, page: 0, other: 0 }, webSocketsBlocked: 0,
+      executionPhase: "NOT_STARTED", failureCategory: "NONE",
+      activeViewport: "NONE", activeRoute: "NONE",
     },
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, checkoutPosts: 0, paymentSubmissions: 0, uploads: 0, emails: 0 },
   };
@@ -151,6 +153,16 @@ export function classifyUnsafeRequestPath(pathname) {
   return "other";
 }
 
+/** Keep browser errors in a fixed vocabulary; exception messages can contain URLs. */
+export function classifyBrowserExecutionFailure(error) {
+  if (!(error instanceof Error)) return "OTHER";
+  if (error.name === "TimeoutError" || /Timeout .*exceeded/iu.test(error.message)) return "TIMEOUT";
+  if (/net::ERR_ABORTED/iu.test(error.message)) return "NAVIGATION_ABORTED";
+  if (/net::ERR_FAILED/iu.test(error.message)) return "NETWORK_FAILED";
+  if (/TargetClosedError|Target page, context or browser has been closed/iu.test(error.message)) return "TARGET_CLOSED";
+  return "OTHER";
+}
+
 function browserEnvironment() {
   return process.platform === "win32"
     ? { PATH: "C:\\Windows\\System32;C:\\Windows", SystemRoot: "C:\\Windows", TEMP: "C:\\Windows\\Temp", TMP: "C:\\Windows\\Temp" }
@@ -202,6 +214,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
   let cleanupFailed = false;
   try {
     for (const viewport of [{ id: "desktop", width: 1365, height: 768 }, { id: "mobile", width: 390, height: 844 }]) {
+      report.browser.activeViewport = viewport.id;
+      report.browser.executionPhase = "CONTEXT_SETUP";
       const context = await browser.newContext({
         locale: "zh-TW",
         viewport: { width: viewport.width, height: viewport.height },
@@ -242,6 +256,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           report.reason = "ALIAS_NOT_VERIFIED";
           return report;
         }
+        report.browser.executionPhase = "SESSION_ISSUE";
         const session = await context.request.post(`${origin}/api/admin/ops/payuni/wp4-session`, {
           headers: {
             Authorization: `Bearer ${env.JOB_SECRET}`,
@@ -259,6 +274,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         }
         report.sideEffects.syntheticSessionCreated += 1;
         sessionIssued = true;
+        report.browser.executionPhase = "PAGE_OPEN";
         const page = await context.newPage();
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
         page.on("response", (response) => {
@@ -269,7 +285,10 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           if (isFailedCriticalResourceRequest(request)) report.browser.criticalResourceFailures += 1;
         });
         for (const route of ROUTES) {
+          report.browser.activeRoute = route.id;
+          report.browser.executionPhase = "PAGE_NAVIGATION";
           const response = await page.goto(`${origin}${route.path}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+          report.browser.executionPhase = "PAGE_ASSERTIONS";
           const status = response?.status() ?? 0;
           const headingVisible = await visible(page.getByRole("heading", { name: route.heading, exact: true }));
           const productVisible = route.id === "products" || route.id === "product_preview"
@@ -288,6 +307,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const finalPath = classifyFinalPath(page.url(), route.path);
           report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
+            report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
             await page.getByLabel("交付方式").selectOption("digital", { timeout: 8_000 });
             const deliverySettings = page.getByRole("group", { name: "付款後交付設定" });
@@ -298,6 +318,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           }
         }
         // This read-only navigation must work through the rendered app shell.
+        report.browser.executionPhase = "APP_NAVIGATION";
         await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
         const navigationPassed = classifyFinalPath(page.url(), "/products") === "EXPECTED"
@@ -329,6 +350,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         return report;
       }
     }
+    report.browser.executionPhase = "COMPLETE";
     const routesPass = report.journeys.length === ROUTES.length * 2
       && report.journeys.every((item) => item.status === 200 && item.finalPath === "EXPECTED"
         && item.headingVisible && item.productVisible && item.checkoutLinkVisible && item.dashboardDataVisible
@@ -339,8 +361,9 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
       && report.browser.unsafeRequestsBlocked === 0 && report.browser.webSocketsBlocked === 0
       && report.sideEffects.syntheticSessionCreated === report.sideEffects.syntheticSessionRevoked ? "PASS" : "BLOCKED";
     report.reason = report.result === "PASS" ? "NONE" : "BROWSER_JOURNEY_FAILED";
-  } catch {
+  } catch (error) {
     report.reason = "BROWSER_EXECUTION_FAILED";
+    report.browser.failureCategory = classifyBrowserExecutionFailure(error);
   } finally {
     await browser.close();
   }
