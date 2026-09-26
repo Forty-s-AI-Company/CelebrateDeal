@@ -1,0 +1,191 @@
+import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
+
+const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
+const FUNNEL_PATH = /^\/landing-pages\/[a-z0-9]+(?:\/operations)?$/u;
+const PUBLIC_PATH = /^\/lp\/staging-synthetic-[a-f0-9]{12}(?:\/[^/?#]+)?$/u;
+
+function receipt(sourceSha) {
+  return {
+    schemaVersion: "celebratedeal-staging-funnel-smoke/v1",
+    scope: "create_save_publish_public",
+    sourceSha: /^[a-f0-9]{40}$/u.test(sourceSha ?? "") ? sourceSha : null,
+    result: "BLOCKED", reason: "INVALID_BINDING", stage: "NOT_STARTED",
+    lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
+    create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
+    pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
+    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
+  };
+}
+
+function browserEnvironment() {
+  return process.platform === "win32"
+    ? { PATH: "C:\\Windows\\System32;C:\\Windows", SystemRoot: "C:\\Windows", TEMP: "C:\\Windows\\Temp", TMP: "C:\\Windows\\Temp" }
+    : { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", HOME: "/tmp", TMPDIR: "/tmp" };
+}
+
+/** Only the owner-side synthetic Funnel actions may mutate staging. */
+export function classifyFunnelRequest(request, allowedFunnelPath = null) {
+  let url;
+  try { url = new URL(request.url()); } catch { return "EXTERNAL"; }
+  if (url.protocol !== "https:" || url.hostname !== ALIAS) return "EXTERNAL";
+  if (["GET", "HEAD"].includes(request.method())) return "READ";
+  if (request.method() === "POST" && url.pathname === "/monitoring") return "TELEMETRY";
+  if (request.method() === "POST" && url.pathname === "/api/security/csp-report") return "TELEMETRY";
+  if (request.method() === "POST" && url.pathname === "/api/affiliate-attribution/direct-entry" && !request.postData()) return "ATTRIBUTION_RESET";
+  if (request.method() === "POST" && request.headers()["next-action"]
+    && (url.pathname === "/landing-pages/new" || (allowedFunnelPath && FUNNEL_PATH.test(url.pathname)
+      && [allowedFunnelPath, `${allowedFunnelPath}/operations`].includes(url.pathname)))) return "FUNNEL_WRITE";
+  return "BLOCK";
+}
+
+async function visible(locator, timeout = 10_000) {
+  try { await locator.waitFor({ state: "visible", timeout }); return true; } catch { return false; }
+}
+
+export async function runStagingFunnelSmoke(env = process.env, dependencies = {}) {
+  const result = receipt(env.CELEBRATEDEAL_SOURCE_SHA);
+  if (!validateBrowserSmokeBinding(env)) return result;
+  const verifyLineage = dependencies.verifyLineage ?? verifyMvpPayUniLineage;
+  const verifyAlias = dependencies.verifyAlias ?? verifyStagingAliasBinding;
+  try {
+    if (!await verifyLineage(env)) { result.reason = "LINEAGE_NOT_VERIFIED"; return result; }
+    result.lineage = "VERIFIED";
+    if (!await verifyAlias(env)) { result.reason = "ALIAS_NOT_VERIFIED"; return result; }
+    result.aliasBinding = "VERIFIED";
+  } catch { result.reason = "BINDING_CHECK_FAILED"; return result; }
+
+  const origin = `https://${ALIAS}`;
+  const { chromium } = dependencies.playwright ?? await import("playwright");
+  let browser;
+  try { browser = await chromium.launch({ headless: true, env: browserEnvironment(), args: ["--no-proxy-server", "--disable-quic"] }); }
+  catch { result.reason = "BROWSER_LAUNCH_FAILED"; return result; }
+  let context;
+  let publicContext;
+  let sessionIssued = false;
+  let cleanupFailed = false;
+  let allowedFunnelPath = null;
+  try {
+    context = await browser.newContext({ locale: "zh-TW", viewport: { width: 1365, height: 768 }, serviceWorkers: "block" });
+    await context.route("**/*", (route) => {
+      const kind = classifyFunnelRequest(route.request(), allowedFunnelPath);
+      if (kind === "READ") return route.continue();
+      if (kind === "FUNNEL_WRITE" && !(new URL(route.request().url()).pathname === "/landing-pages/new" && result.sideEffects.funnelCreates > 0)) {
+        result.sideEffects.funnelWrites += 1;
+        if (new URL(route.request().url()).pathname === "/landing-pages/new") result.sideEffects.funnelCreates += 1;
+        return route.continue();
+      }
+      if (kind === "TELEMETRY") return route.fulfill({ status: 204 });
+      if (kind === "ATTRIBUTION_RESET") return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+      if (kind === "EXTERNAL") result.blockedExternal += 1;
+      else result.blockedWrites += 1;
+      return route.abort();
+    });
+    await context.routeWebSocket("**/*", (socket) => socket.close());
+    if (!await verifyAlias(env)) { result.reason = "ALIAS_DRIFT"; return result; }
+    result.stage = "SESSION";
+    const session = await context.request.post(`${origin}/api/admin/ops/payuni/wp4-session`, {
+      headers: { Authorization: `Bearer ${env.JOB_SECRET}`, "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA },
+      maxRedirects: 0, timeout: 15_000, failOnStatusCode: false,
+    });
+    const issued = session.status() === 204;
+    await session.dispose();
+    if (!issued) { result.reason = "SESSION_NOT_ISSUED"; return result; }
+    sessionIssued = true;
+    result.sideEffects.syntheticSessionCreated = 1;
+
+    const page = await context.newPage();
+    page.on("pageerror", () => { result.pageErrors += 1; });
+    const slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    result.stage = "CREATE";
+    const createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    if (createResponse?.status() !== 200 || !await visible(page.getByRole("heading", { name: "建立新的 Funnel" }))) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
+    await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("Staging Synthetic Funnel");
+    await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
+    await page.getByRole("button", { name: /建立名單/u }).click();
+    await page.getByRole("button", { name: "儲存", exact: true }).click();
+    try { await page.waitForURL((url) => FUNNEL_PATH.test(url.pathname) && url.pathname.endsWith("/operations"), { timeout: 20_000 }); }
+    catch { result.reason = "CREATE_FAILED"; return result; }
+    const funnelPath = new URL(page.url()).pathname.replace(/\/operations$/u, "");
+    allowedFunnelPath = funnelPath;
+    result.create = true;
+
+    result.stage = "TEMPLATE";
+    await page.getByRole("button", { name: "套用模板", exact: true }).first().click({ timeout: 10_000 });
+    if (!await visible(page.getByRole("status").filter({ hasText: "模板已套用" }))) { result.reason = "TEMPLATE_FAILED"; return result; }
+    result.template = true;
+    await page.getByRole("button", { name: "Edit Page", exact: true }).click({ timeout: 10_000 });
+    try { await page.waitForURL((url) => url.pathname === funnelPath, { timeout: 15_000 }); }
+    catch { result.reason = "EDITOR_UNAVAILABLE"; return result; }
+
+    result.stage = "SAVE";
+    await page.getByRole("button", { name: "儲存草稿", exact: true }).click({ timeout: 10_000 });
+    if (!await visible(page.getByRole("status").filter({ hasText: "草稿已儲存" }))
+      || !await visible(page.getByRole("button", { name: "發布已儲存草稿", exact: true }))) { result.reason = "SAVE_FAILED"; return result; }
+    result.draft = true;
+    result.stage = "PUBLISH";
+    await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click({ timeout: 10_000 });
+    if (!await visible(page.getByRole("link", { name: /查看公開頁/u }))) { result.reason = "PUBLISH_FAILED"; return result; }
+    result.published = true;
+
+    // A separate cookie-free context proves the published page works for buyers.
+    publicContext = await browser.newContext({ locale: "zh-TW", viewport: { width: 1365, height: 768 }, serviceWorkers: "block" });
+    await publicContext.route("**/*", (route) => {
+      const kind = classifyFunnelRequest(route.request());
+      if (kind === "READ") return route.continue();
+      if (kind === "TELEMETRY") return route.fulfill({ status: 204 });
+      if (kind === "ATTRIBUTION_RESET") return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+      if (kind === "EXTERNAL") result.blockedExternal += 1;
+      else result.blockedWrites += 1;
+      return route.abort();
+    });
+    await publicContext.routeWebSocket("**/*", (socket) => socket.close());
+    const publicPage = await publicContext.newPage();
+    publicPage.on("pageerror", () => { result.pageErrors += 1; });
+    result.stage = "PUBLIC_DESKTOP";
+    const publicResponse = await publicPage.goto(`${origin}/lp/${slug}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    result.publicDesktop = publicResponse?.status() === 200 && PUBLIC_PATH.test(new URL(publicPage.url()).pathname)
+      && await visible(publicPage.locator("[data-funnel-renderer]"));
+    if (!result.publicDesktop) { result.reason = "PUBLIC_DESKTOP_FAILED"; return result; }
+    result.stage = "PUBLIC_MOBILE";
+    await publicPage.setViewportSize({ width: 390, height: 844 });
+    await publicPage.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });
+    result.publicMobile = PUBLIC_PATH.test(new URL(publicPage.url()).pathname)
+      && await visible(publicPage.locator("[data-funnel-renderer]"))
+      && await publicPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1);
+    result.stage = "COMPLETE";
+    result.result = result.publicMobile && result.pageErrors === 0 && result.blockedWrites === 0
+      && result.sideEffects.funnelCreates === 1 && result.sideEffects.funnelWrites >= 3 ? "PASS" : "BLOCKED";
+    result.reason = result.result === "PASS" ? "NONE" : "FUNNEL_JOURNEY_FAILED";
+  } catch { result.reason = "BROWSER_EXECUTION_FAILED"; }
+  finally {
+    if (sessionIssued && context) {
+      try {
+        const cleanup = await context.request.delete(`${origin}/api/admin/ops/payuni/wp4-session`, {
+          headers: { Authorization: `Bearer ${env.JOB_SECRET}`, "x-celebratedeal-source-sha": env.CELEBRATEDEAL_SOURCE_SHA },
+          maxRedirects: 0, timeout: 15_000, failOnStatusCode: false,
+        });
+        if (cleanup.status() === 204) result.sideEffects.syntheticSessionRevoked = 1;
+        else cleanupFailed = true;
+        await cleanup.dispose();
+      } catch { cleanupFailed = true; }
+    }
+    await publicContext?.close();
+    await context?.close();
+    await browser.close();
+    if (cleanupFailed) { result.result = "BLOCKED"; result.reason = "SESSION_CLEANUP_FAILED"; }
+  }
+  return result;
+}
+
+async function main() {
+  const result = await runStagingFunnelSmoke();
+  if (process.env.RUNNER_TEMP) await writeFile(`${process.env.RUNNER_TEMP}/celebratedeal-staging-funnel-smoke.json`, `${JSON.stringify(result)}\n`, { mode: 0o600 });
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.exitCode = result.result === "PASS" ? 0 : 2;
+}
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) await main();
