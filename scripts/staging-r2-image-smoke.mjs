@@ -5,7 +5,6 @@ import { classifyBrowserRequest, validateBrowserSmokeBinding, verifyStagingAlias
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
 const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
-const BUCKET = "celebrate-deal-staging";
 const OBJECT_PATH = /^\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/u;
 const R2_UPLOAD_HOST = /^celebrate-deal-staging\.[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/u;
 const SYNTHETIC_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==", "base64");
