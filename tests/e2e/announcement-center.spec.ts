@@ -25,7 +25,7 @@ test.describe("進站最新消息／開發進度公告中心", () => {
     await expect(dialog.getByTestId("announcement-section-incomplete")).toBeVisible();
     await expect(dialog.getByTestId("announcement-section-changes")).toBeVisible();
     await expect(dialog.getByTestId("announcement-section-nextSteps")).toBeVisible();
-    await expect(dialog.getByText("目前是開發測試站", { exact: false })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "staging 測試站驗收中" })).toBeVisible();
     await expect(dialog.getByRole("progressbar")).toHaveCount(0);
     await expect(page.getByTestId("announcement-center-close")).toBeFocused();
 
