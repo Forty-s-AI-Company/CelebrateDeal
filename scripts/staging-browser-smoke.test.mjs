@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -132,7 +132,7 @@ test("only fixed same-host telemetry and the exact attribution reset receive loc
   const safeHeaders = { "x-celebratedeal-client": "web", "content-type": "application/json" };
   assert.equal(classifyBrowserRequest(request("/monitoring", "POST", {}, "synthetic telemetry")), "SENTRY_TUNNEL");
   assert.equal(classifyBrowserRequest(request("/api/security/csp-report", "POST", {}, "{}")), "CSP_REPORT");
-  assert.equal(classifyBrowserRequest(request("/monitoring?other=1")), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/monitoring?other=1")), "SENTRY_TUNNEL");
   assert.equal(classifyBrowserRequest(request("/api/security/csp-report/extra")), "UNSAFE");
   assert.equal(classifyBrowserRequest(request("/monitoring", "PUT")), "UNSAFE");
   assert.equal(classifyBrowserRequest({ ...request("/monitoring"), url: () => "https://other.example.test/monitoring" }), "EXTERNAL");
@@ -143,6 +143,13 @@ test("only fixed same-host telemetry and the exact attribution reset receive loc
   assert.equal(classifyBrowserRequest(request("/dashboard", "POST", { "next-action": "some-action" })), "UNSAFE");
   assert.equal(classifyBrowserRequest(request("/dashboard", "GET")), "READ");
   assert.equal(classifyBrowserRequest({ ...request("/dashboard"), url: () => "https://evil.example.test/dashboard" }), "EXTERNAL");
+});
+
+test("the framework route announcer alone does not hide a real Dashboard alert", () => {
+  assert.equal(hasActionableDashboardAlert(1, 1), false);
+  assert.equal(hasActionableDashboardAlert(2, 1), true);
+  assert.equal(hasActionableDashboardAlert(1, 0), true);
+  assert.equal(hasActionableDashboardAlert(0, 1), true);
 });
 
 test("a rendered journey remains blocked when an unexpected browser POST occurs", async () => {
