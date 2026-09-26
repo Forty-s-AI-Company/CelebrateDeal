@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -264,6 +264,9 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   });
   assert.equal(missingChunk.browser.unsafeRequestsBlocked, 0);
   assert.equal(missingChunk.browser.criticalResourceFailures, 2);
+  assert.equal(missingChunk.browser.criticalResourceFailureCategories.http4xxScript, 2);
+  assert.deepEqual(missingChunk.browser.firstCriticalResourceFailure,
+    { category: "http4xxScript", phase: "PAGE_NAVIGATION", viewport: "desktop", route: "dashboard" });
   assert.equal(missingChunk.browser.navigationInteractionsPassed, 2);
   assert.equal(missingChunk.browser.hydrationInteractionsPassed, 2);
   assert.equal(missingChunk.result, "BLOCKED");
@@ -275,6 +278,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
     playwright: { chromium: { launch: async () => browser } },
   });
   assert.equal(networkFailure.browser.criticalResourceFailures, 2);
+  assert.equal(networkFailure.browser.criticalResourceFailureCategories.networkScript, 2);
   assert.equal(networkFailure.result, "BLOCKED");
   triggerChunkNetworkFailure = false;
   let aliasChecks = 0;
@@ -314,9 +318,12 @@ test("a failed JavaScript chunk invalidates an otherwise rendered journey", () =
     status: () => status, request: () => ({ resourceType: () => resourceType }),
   });
   assert.equal(isCriticalResourceFailure(response(404, "script")), true);
+  assert.equal(classifyCriticalResourceResponse(response(404, "script")), "http4xxScript");
+  assert.equal(classifyCriticalResourceResponse(response(503, "stylesheet")), "http5xxStylesheet");
   assert.equal(isCriticalResourceFailure(response(200, "script")), false);
   assert.equal(isCriticalResourceFailure(response(404, "image")), false);
   assert.equal(isFailedCriticalResourceRequest({ url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script" }), true);
+  assert.equal(classifyCriticalResourceRequestFailure({ url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script", failure: () => "net::ERR_ABORTED private-url" }), "abortedScript");
 });
 
 test("session status categories remain bounded", () => {
