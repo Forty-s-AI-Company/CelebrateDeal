@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { isStagingR2UploadUrl, isSyntheticPublicR2Url, runStagingR2ImageSmoke } from "./staging-r2-image-smoke.mjs";
+import { classifyBlockedRequest, isStagingR2UploadUrl, isSyntheticPublicR2Url, runStagingR2ImageSmoke } from "./staging-r2-image-smoke.mjs";
 
 const input = {
   CELEBRATEDEAL_SOURCE_SHA: "a".repeat(40),
@@ -28,6 +28,16 @@ test("public read must use the approved r2.dev image path", () => {
   assert.equal(isSyntheticPublicR2Url(safe.replace("r2.dev", "example.test")), false);
   assert.equal(isSyntheticPublicR2Url(`${safe}?token=hidden`), false);
   assert.equal(isSyntheticPublicR2Url(safe.replace("/images/", "/private/")), false);
+});
+
+test("blocked browser requests expose only fixed categories", () => {
+  const request = (url, method = "GET", headers = {}) => ({ url: () => url, method: () => method, headers: () => headers });
+  assert.equal(classifyBlockedRequest(request("https://third-party.example/path?secret=hidden")), "EXTERNAL_READ");
+  assert.equal(classifyBlockedRequest(request("https://third-party.example/path", "POST")), "EXTERNAL_WRITE");
+  assert.equal(classifyBlockedRequest(request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/affiliate-attribution/direct-entry", "POST")), "ATTRIBUTION_RESET");
+  assert.equal(classifyBlockedRequest(request("https://celebrate-deal-staging.carry-digital-nomad.in.net/products/synthetic/edit", "POST", { "next-action": "synthetic" })), "NEXT_ACTION");
+  assert.equal(classifyBlockedRequest(request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/other", "POST")), "SAME_HOST_WRITE");
+  assert.equal(classifyBlockedRequest(request("invalid")), "INVALID_URL");
 });
 
 test("invalid or drifting binding stops before any browser or session", async () => {
