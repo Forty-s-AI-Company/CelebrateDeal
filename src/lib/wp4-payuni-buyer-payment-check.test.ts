@@ -28,7 +28,7 @@ beforeEach(() => {
 
 describe("current fixed buyer payment check", () => {
   it("returns missing without querying", async () => {
-    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" });
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", referenceState: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" });
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
       take: 2,
       where: expect.objectContaining({
@@ -51,11 +51,20 @@ describe("current fixed buyer payment check", () => {
   });
   it("reports pending without a provider reference", async () => {
     mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
-    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", referenceState: "PROVIDER_MISSING", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
     expect(mocks.webhookFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ provider: "payuni", eventType: "paid", payload: { path: ["normalized", "orderNumber"], equals: "CD-20260905-ABC123" } }),
       select: { status: true, errorMessage: true }, take: 2,
     }));
+  });
+  it.each([
+    [{ orderNumber: null }, "ORDER_MISSING"],
+    [{ orderNumber: null, providerTradeNo: null }, "BOTH_MISSING"],
+    [{ orderNumber: "   ", providerTradeNo: "trade-current" }, "ORDER_MISSING"],
+  ])("classifies missing query references without exposing them", async (overrides, state) => {
+    mocks.findMany.mockResolvedValue([row("pending", overrides)]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toMatchObject({ status: "REFERENCE_UNAVAILABLE", referenceState: state, queryAttempts: 0 });
+    expect(mocks.queryPayment).not.toHaveBeenCalled();
   });
   it.each([
     [{ status: "received", errorMessage: null }, "RECEIVED", "NONE"],

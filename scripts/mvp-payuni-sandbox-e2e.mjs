@@ -999,14 +999,18 @@ export const BUYER_CALLBACK_RETRY_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c
 const buyerCheckStatuses = new Set(["VERIFIED", "MISSING", "AMBIGUOUS", "REFERENCE_UNAVAILABLE", "QUERY_REJECTED", "QUERY_FAILED", "STATE_MISMATCH"]);
 const buyerLocalStatuses = new Set(["UNKNOWN", "PENDING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED", "FAILED"]);
 const buyerProviderStatuses = new Set(["UNKNOWN", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"]);
+const buyerReferenceStates = new Set(["UNKNOWN", "AVAILABLE", "ORDER_MISSING", "PROVIDER_MISSING", "BOTH_MISSING"]);
 const buyerCallbackStatuses = new Set(["NOT_OBSERVED", "RECEIVED", "PROCESSED", "FAILED", "AMBIGUOUS", "UNKNOWN"]);
 const buyerCallbackFailures = new Set(["NONE", "SCOPE_MISSING", "SCOPE_INVALID", "SCOPE_MISMATCH", "ORDER_AMBIGUOUS", "AMOUNT_MISMATCH", "INVENTORY_CONFLICT", "PROCESSING_CLAIM_LOST", "PROCESSING_FAILED", "UNKNOWN"]);
 
 function validBuyerCheckBody(body) {
-  if (!exactKeys(body, ["status", "localStatus", "providerStatus", "queryAttempts", "callbackStatus", "callbackFailure"])
+  if (!exactKeys(body, ["status", "localStatus", "providerStatus", "referenceState", "queryAttempts", "callbackStatus", "callbackFailure"])
     || !buyerCheckStatuses.has(body.status) || !buyerLocalStatuses.has(body.localStatus)
-    || !buyerProviderStatuses.has(body.providerStatus) || !boundedInteger(body.queryAttempts, 1)
+    || !buyerProviderStatuses.has(body.providerStatus) || !buyerReferenceStates.has(body.referenceState) || !boundedInteger(body.queryAttempts, 1)
     || !buyerCallbackStatuses.has(body.callbackStatus) || !buyerCallbackFailures.has(body.callbackFailure)) return false;
+  if (body.status === "REFERENCE_UNAVAILABLE" && !["ORDER_MISSING", "PROVIDER_MISSING", "BOTH_MISSING"].includes(body.referenceState)) return false;
+  if (["MISSING", "AMBIGUOUS"].includes(body.status) && body.referenceState !== "UNKNOWN") return false;
+  if (!["REFERENCE_UNAVAILABLE", "MISSING", "AMBIGUOUS"].includes(body.status) && body.referenceState !== "AVAILABLE") return false;
   if (["NOT_OBSERVED", "RECEIVED", "PROCESSED"].includes(body.callbackStatus) && body.callbackFailure !== "NONE") return false;
   if (["UNKNOWN", "AMBIGUOUS"].includes(body.callbackStatus) && body.callbackFailure !== "UNKNOWN") return false;
   if (body.callbackStatus === "FAILED" && body.callbackFailure === "NONE") return false;
@@ -1017,8 +1021,8 @@ function validBuyerCheckBody(body) {
 
 export function validateBuyerPaymentCheckReceipt(receipt) {
   const errors = [];
-  if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "status", "localStatus", "providerStatus", "checkPosts", "queryAttempts", "paymentSubmissions", "refundSubmissions", "callbackStatus", "callbackFailure"])) errors.push("SCHEMA_KEYS");
-  if (receipt?.schemaVersion !== "celebratedeal-wp4-buyer-payment-check/v1" || receipt?.purpose !== FIXED_PURPOSE
+  if (!exactKeys(receipt, ["schemaVersion", "purpose", "sourceSha", "transactionSourceSha", "environment", "result", "status", "localStatus", "providerStatus", "referenceState", "checkPosts", "queryAttempts", "paymentSubmissions", "refundSubmissions", "callbackStatus", "callbackFailure"])) errors.push("SCHEMA_KEYS");
+  if (receipt?.schemaVersion !== "celebratedeal-wp4-buyer-payment-check/v2" || receipt?.purpose !== FIXED_PURPOSE
     || receipt?.environment !== "sandbox" || !SOURCE_SHA.test(receipt?.sourceSha ?? "")
     || receipt?.transactionSourceSha !== BUYER_PAYMENT_CHECK_SOURCE_SHA) errors.push("FIXED_IDENTITY");
   if (!boundedInteger(receipt?.checkPosts, 1) || !boundedInteger(receipt?.queryAttempts, 1)
@@ -1026,9 +1030,9 @@ export function validateBuyerPaymentCheckReceipt(receipt) {
   if (!["PASS", "BLOCKED"].includes(receipt?.result)) errors.push("RESULT");
   const transportFailure = ["INPUT_REJECTED", "NETWORK_REJECTED", "RESPONSE_INVALID"].includes(receipt?.status);
   if (transportFailure) {
-    if (receipt.result !== "BLOCKED" || receipt.queryAttempts !== (receipt.status === "INPUT_REJECTED" ? 0 : 1) || receipt.localStatus !== "UNKNOWN" || receipt.providerStatus !== "UNKNOWN" || receipt.callbackStatus !== "UNKNOWN" || receipt.callbackFailure !== "UNKNOWN"
+    if (receipt.result !== "BLOCKED" || receipt.queryAttempts !== (receipt.status === "INPUT_REJECTED" ? 0 : 1) || receipt.localStatus !== "UNKNOWN" || receipt.providerStatus !== "UNKNOWN" || receipt.referenceState !== "UNKNOWN" || receipt.callbackStatus !== "UNKNOWN" || receipt.callbackFailure !== "UNKNOWN"
       || receipt.checkPosts !== (receipt.status === "INPUT_REJECTED" ? 0 : 1)) errors.push("TRANSPORT_STATE");
-  } else if (!validBuyerCheckBody({ status: receipt?.status, localStatus: receipt?.localStatus, providerStatus: receipt?.providerStatus, queryAttempts: receipt?.queryAttempts, callbackStatus: receipt?.callbackStatus, callbackFailure: receipt?.callbackFailure })
+  } else if (!validBuyerCheckBody({ status: receipt?.status, localStatus: receipt?.localStatus, providerStatus: receipt?.providerStatus, referenceState: receipt?.referenceState, queryAttempts: receipt?.queryAttempts, callbackStatus: receipt?.callbackStatus, callbackFailure: receipt?.callbackFailure })
     || receipt?.checkPosts !== 1 || (receipt?.result === "PASS") !== (receipt?.status === "VERIFIED")) errors.push("OBSERVED_STATE");
   return { ok: errors.length === 0, errors };
 }
@@ -1037,9 +1041,9 @@ export function validateBuyerPaymentCheckReceipt(receipt) {
 export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
   const invocation = validateExistingRefundRecoveryInvocation(input);
   const receipt = {
-    schemaVersion: "celebratedeal-wp4-buyer-payment-check/v1", purpose: FIXED_PURPOSE,
+    schemaVersion: "celebratedeal-wp4-buyer-payment-check/v2", purpose: FIXED_PURPOSE,
     sourceSha: invocation.ok ? invocation.sourceSha : "0".repeat(40), transactionSourceSha: BUYER_PAYMENT_CHECK_SOURCE_SHA,
-    environment: "sandbox", result: "BLOCKED", status: "INPUT_REJECTED", localStatus: "UNKNOWN", providerStatus: "UNKNOWN",
+    environment: "sandbox", result: "BLOCKED", status: "INPUT_REJECTED", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", referenceState: "UNKNOWN",
     callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN",
     checkPosts: 0, queryAttempts: 0, paymentSubmissions: 0, refundSubmissions: 0,
   };
@@ -1059,6 +1063,7 @@ export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
     receipt.status = response.body.status;
     receipt.localStatus = response.body.localStatus;
     receipt.providerStatus = response.body.providerStatus;
+    receipt.referenceState = response.body.referenceState;
     receipt.queryAttempts = response.body.queryAttempts;
     receipt.callbackStatus = response.body.callbackStatus;
     receipt.callbackFailure = response.body.callbackFailure;

@@ -113,26 +113,27 @@ test("buyer payment check has one fixed read-only request and rejects forged rec
       calls++;
       assert.equal(request.url, "https://fixed-preview.vercel.app/api/admin/ops/payuni/wp4-buyer-payment-check");
       assert.equal(request.body, undefined);
-      return { status: 200, body: { status: "VERIFIED", localStatus: "PAID", providerStatus: "PAID", queryAttempts: 1, callbackStatus: "PROCESSED", callbackFailure: "NONE" } };
+      return { status: 200, body: { status: "VERIFIED", localStatus: "PAID", providerStatus: "PAID", referenceState: "AVAILABLE", queryAttempts: 1, callbackStatus: "PROCESSED", callbackFailure: "NONE" } };
     },
   });
   assert.equal(calls, 1);
   assert.equal(receipt.transactionSourceSha, BUYER_PAYMENT_CHECK_SOURCE_SHA);
   assert.equal(receipt.result, "PASS");
   assert.deepEqual(validateBuyerPaymentCheckReceipt(receipt), { ok: true, errors: [] });
-  for (const patch of [{ paymentSubmissions: 1 }, { refundSubmissions: 1 }, { queryAttempts: 2 }, { queryAttempts: 0 }, { localStatus: "PENDING" }, { transactionSourceSha: "a".repeat(40) }, { raw: "secret" }]) {
+  for (const patch of [{ paymentSubmissions: 1 }, { refundSubmissions: 1 }, { queryAttempts: 2 }, { queryAttempts: 0 }, { localStatus: "PENDING" }, { referenceState: "PROVIDER_MISSING" }, { transactionSourceSha: "a".repeat(40) }, { raw: "secret" }]) {
     assert.equal(validateBuyerPaymentCheckReceipt({ ...receipt, ...patch }).ok, false);
   }
 });
 
 test("buyer check records reference absence without a query and never leaks untrusted response", async () => {
   const input = { sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" };
-  const missing = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "FAILED", callbackFailure: "PROCESSING_FAILED" } }) });
+  const missing = await checkExistingWp4BuyerPayment(input, { request: async () => ({ status: 200, body: { status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", referenceState: "PROVIDER_MISSING", queryAttempts: 0, callbackStatus: "FAILED", callbackFailure: "PROCESSING_FAILED" } }) });
   assert.equal(missing.result, "BLOCKED");
   assert.equal(missing.queryAttempts, 0);
   assert.equal(missing.callbackStatus, "FAILED");
   assert.equal(missing.callbackFailure, "PROCESSING_FAILED");
-  for (const patch of [{ callbackStatus: "raw-event" }, { callbackFailure: "secret" }, { callbackFailure: "NONE" }]) {
+  assert.equal(missing.referenceState, "PROVIDER_MISSING");
+  for (const patch of [{ callbackStatus: "raw-event" }, { callbackFailure: "secret" }, { callbackFailure: "NONE" }, { referenceState: "AVAILABLE" }, { referenceState: "secret" }]) {
     assert.equal(validateBuyerPaymentCheckReceipt({ ...missing, ...patch }).ok, false);
   }
   assert.equal(validateBuyerPaymentCheckReceipt(missing).ok, true);
