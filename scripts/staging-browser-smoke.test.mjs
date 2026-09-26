@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -294,6 +294,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   });
   assert.equal(networkFailure.browser.criticalResourceFailures, 2);
   assert.equal(networkFailure.browser.criticalResourceFailureCategories.networkScript, 2);
+  assert.equal(networkFailure.browser.firstCriticalResourceFailureKind, "UNKNOWN");
   assert.equal(networkFailure.result, "BLOCKED");
   triggerChunkNetworkFailure = false;
   let aliasChecks = 0;
@@ -366,6 +367,12 @@ test("a failed JavaScript chunk invalidates an otherwise rendered journey", () =
   assert.equal(isCriticalResourceFailure(response(404, "image")), false);
   assert.equal(isFailedCriticalResourceRequest({ url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script" }), true);
   assert.equal(classifyCriticalResourceRequestFailure({ url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script", failure: () => "net::ERR_ABORTED private-url" }), "abortedScript");
+  const playwrightAbort = { url: () => "https://celebrate-deal-staging.carry-digital-nomad.in.net/app.js", resourceType: () => "script", failure: () => ({ errorText: "net::ERR_ABORTED" }) };
+  assert.equal(classifyCriticalResourceRequestFailure(playwrightAbort), "abortedScript");
+  assert.equal(classifyCriticalResourceFailureKind(playwrightAbort), "ABORTED");
+  const playwrightReset = { ...playwrightAbort, failure: () => ({ errorText: "net::ERR_CONNECTION_RESET" }) };
+  assert.equal(classifyCriticalResourceRequestFailure(playwrightReset), "networkScript");
+  assert.equal(classifyCriticalResourceFailureKind(playwrightReset), "CONNECTION_RESET");
 });
 
 test("session status categories remain bounded", () => {
