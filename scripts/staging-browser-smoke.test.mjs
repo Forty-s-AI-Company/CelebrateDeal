@@ -122,7 +122,7 @@ test("synthetic session failure does not visit pages or expose the secret to Chr
   assert.equal(sessionRequest.options.maxRedirects, 0);
 });
 
-test("only the exact empty-body attribution reset is allowed among browser POSTs", () => {
+test("only fixed same-host telemetry and the exact attribution reset receive local no-op responses", () => {
   const request = (path, method = "POST", headers = {}, body = null) => ({
     url: () => `https://celebrate-deal-staging.carry-digital-nomad.in.net${path}`,
     method: () => method,
@@ -130,6 +130,12 @@ test("only the exact empty-body attribution reset is allowed among browser POSTs
     postData: () => body,
   });
   const safeHeaders = { "x-celebratedeal-client": "web", "content-type": "application/json" };
+  assert.equal(classifyBrowserRequest(request("/monitoring", "POST", {}, "synthetic telemetry")), "SENTRY_TUNNEL");
+  assert.equal(classifyBrowserRequest(request("/api/security/csp-report", "POST", {}, "{}")), "CSP_REPORT");
+  assert.equal(classifyBrowserRequest(request("/monitoring?other=1")), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/api/security/csp-report/extra")), "UNSAFE");
+  assert.equal(classifyBrowserRequest(request("/monitoring", "PUT")), "UNSAFE");
+  assert.equal(classifyBrowserRequest({ ...request("/monitoring"), url: () => "https://other.example.test/monitoring" }), "EXTERNAL");
   assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry", "POST", safeHeaders)), "ATTRIBUTION_RESET");
   assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry?x=1", "POST", safeHeaders)), "UNSAFE");
   assert.equal(classifyBrowserRequest(request("/api/affiliate-attribution/direct-entry", "POST", safeHeaders, "{}")), "UNSAFE");
@@ -191,6 +197,14 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
                 abort: async () => { unsafeAborts += 1; },
               });
             }
+            if (url.endsWith("/dashboard")) {
+              for (const path of ["/monitoring", "/api/security/csp-report"]) {
+                await handler({
+                  request: () => ({ url: () => `${origin}${path}`, method: () => "POST" }),
+                  fulfill: async ({ status }) => { assert.equal(status, 204); localNoOps += 1; },
+                });
+              }
+            }
             return { status: () => 200 };
           },
           getByRole: () => locator,
@@ -214,6 +228,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(report.result, "BLOCKED");
   assert.equal(report.browser.unsafeRequestsBlocked, 2);
   assert.equal(report.browser.unsafeRequestDetails.otherApi, 2);
+  assert.deepEqual(report.browser.observabilitySuppressed, { sentryTunnel: 2, cspReportApi: 2 });
   assert.equal(report.journeys[0].dashboardReadOperationCount, 6);
   assert.equal(report.journeys[0].dashboardDetailsReadOperationCount, 6);
   assert.equal(report.journeys[0].dashboardKpiAlertVisible, false);
@@ -222,7 +237,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(report.sideEffects.syntheticSessionCreated, 2);
   assert.equal(report.sideEffects.syntheticSessionRevoked, 2);
   assert.equal(unsafeAborts, 2);
-  assert.equal(localNoOps, 2);
+  assert.equal(localNoOps, 6);
   cleanupStatus = 404;
   const cleanupFailure = await runBrowserSmoke(INPUT, {
     verifyLineage: async () => true,
