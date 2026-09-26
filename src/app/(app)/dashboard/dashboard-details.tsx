@@ -73,46 +73,54 @@ async function loadDashboardDetails({
 
   try {
     await applyDashboardDetailsDiagnosticDelay(diagnosticDelayMs ?? 0);
-    const liveCount = await measurement.measure("live.count", () => db.live.count({ where: { vendorId } }));
-    const productCount = await measurement.measure("product.count", () => db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true } }));
-    const recentLives = await measurement.measure("recent-live.select", () => db.live.findMany({
-      where: { vendorId },
-      orderBy: { scheduledAt: "desc" },
-      take: 5,
-      select: { id: true, title: true, status: true, scheduledAt: true },
-    }));
-    const recentLiveSubmissionCounts = await measurement.measure(
-      "recent-live-submission.grouped-count",
-      () => readDashboardLiveSubmissionCounts(db, vendorId, recentLives.map((live) => live.id)),
-    );
-    const upcomingLives = await measurement.measure("upcoming-live.select", () => db.live.findMany({
-      where: { vendorId, scheduledAt: { gte: now } },
-      orderBy: { scheduledAt: "asc" },
-      take: 3,
-      select: { id: true, title: true, scheduledAt: true },
-    }));
-    const affiliates = await measurement.measure("affiliate.count-select", () => db.affiliate.findMany({
-      where: { vendorId },
-      select: { code: true, name: true, _count: { select: { clicks: true } } },
-      take: 5,
-    }));
-    const usageLimit = await measurement.measure("usage.select", () => db.vendorUsageLimit.findUnique({
-      where: { vendorId },
-      select: { creditsUsed: true, creditsLimit: true, billingPlan: { select: { name: true } } },
-    }));
-    const scripts = await measurement.measure("published-script.count", () => db.interactionScript.count({ where: { vendorId, status: "published" } }));
-    const roles = await measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } }));
-    const verifiedPaymentMethodCount = await measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({
-      where: {
-        vendorId,
-        scopeType: "VENDOR",
-        membershipId: null,
-        status: "verified",
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-    }));
-    const formCount = await measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } }));
-    const registrationEmailTemplateCount = await measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } }));
+    // Bound concurrent database reads to avoid serial round trips delaying the
+    // final HTML chunk while keeping connection pressure predictable.
+    const [liveCount, productCount, recentLives, upcomingLives] = await Promise.all([
+      measurement.measure("live.count", () => db.live.count({ where: { vendorId } })),
+      measurement.measure("product.count", () => db.product.count({ where: { vendorId, isActive: true, fulfillmentTypeConfirmed: true } })),
+      measurement.measure("recent-live.select", () => db.live.findMany({
+        where: { vendorId },
+        orderBy: { scheduledAt: "desc" },
+        take: 5,
+        select: { id: true, title: true, status: true, scheduledAt: true },
+      })),
+      measurement.measure("upcoming-live.select", () => db.live.findMany({
+        where: { vendorId, scheduledAt: { gte: now } },
+        orderBy: { scheduledAt: "asc" },
+        take: 3,
+        select: { id: true, title: true, scheduledAt: true },
+      })),
+    ]);
+    const [recentLiveSubmissionCounts, affiliates, usageLimit, scripts] = await Promise.all([
+      measurement.measure(
+        "recent-live-submission.grouped-count",
+        () => readDashboardLiveSubmissionCounts(db, vendorId, recentLives.map((live) => live.id)),
+      ),
+      measurement.measure("affiliate.count-select", () => db.affiliate.findMany({
+        where: { vendorId },
+        select: { code: true, name: true, _count: { select: { clicks: true } } },
+        take: 5,
+      })),
+      measurement.measure("usage.select", () => db.vendorUsageLimit.findUnique({
+        where: { vendorId },
+        select: { creditsUsed: true, creditsLimit: true, billingPlan: { select: { name: true } } },
+      })),
+      measurement.measure("published-script.count", () => db.interactionScript.count({ where: { vendorId, status: "published" } })),
+    ]);
+    const [roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount] = await Promise.all([
+      measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } })),
+      measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({
+        where: {
+          vendorId,
+          scopeType: "VENDOR",
+          membershipId: null,
+          status: "verified",
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      })),
+      measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } })),
+      measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } })),
+    ]);
     const sellableLiveCandidates = await measurement.measure("sellable-live.select", () => db.live.findMany(sellableLiveReadinessQuery(vendorId)));
     const sellableLiveCount = countSellableLiveReadinessCandidates(sellableLiveCandidates);
     const isManager = isDashboardManagerRole(memberRole);
