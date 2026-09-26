@@ -185,6 +185,10 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
             if (event === "requestfailed") onRequestFailed = callback;
             if (event === "request") onRequest = callback;
           },
+          evaluate: async () => timeoutStage === "response" ? {
+            readyState: "loading", bodyPresent: true, dashboardShellPresent: true,
+            kpisReady: true, detailsReady: false,
+          } : null,
           goto: async (url) => {
             currentUrl = url;
             if (url.endsWith("/dashboard") && timeoutStage) {
@@ -325,7 +329,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(noResponse.browser.failureCategory, "TIMEOUT");
   assert.deepEqual(noResponse.browser.navigationFailure, {
     viewport: "desktop", route: "dashboard", documentRequestSeen: true,
-    documentResponseClass: "NONE", domContentLoadedSeen: false, finalPath: "EXPECTED",
+    documentResponseClass: "NONE", domContentLoadedSeen: false, finalPath: "EXPECTED", partialDom: null,
   });
   assert.equal(noResponse.sideEffects.syntheticSessionRevoked, 1);
   timeoutStage = "response";
@@ -337,6 +341,10 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(noDom.browser.failureCategory, "TIMEOUT");
   assert.equal(noDom.browser.navigationFailure.documentResponseClass, "2XX");
   assert.equal(noDom.browser.navigationFailure.domContentLoadedSeen, false);
+  assert.deepEqual(noDom.browser.navigationFailure.partialDom, {
+    readyState: "loading", bodyPresent: true, dashboardShellPresent: true,
+    kpisReady: true, detailsReady: false,
+  });
   assert.equal(JSON.stringify(noDom).includes(INPUT.JOB_SECRET), false);
 });
 
