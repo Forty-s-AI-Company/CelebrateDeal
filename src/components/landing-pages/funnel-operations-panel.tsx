@@ -160,6 +160,9 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   function saveSettings() {
     if (inFlight.current) return;
     inFlight.current = true;
+    // Clear the previous success before a new save, so the UI cannot report a
+    // stale success while this revision is still in flight.
+    setMessage("");
     runPending(async () => {
       try {
         const data = new FormData(); data.set(csrfName, csrfToken);
