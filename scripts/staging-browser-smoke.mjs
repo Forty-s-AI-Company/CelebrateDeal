@@ -32,6 +32,7 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
       safeAttributionResets: 0,
+      observabilitySuppressed: { sentryTunnel: 0, cspReportApi: 0 },
       unsafeRequestCategories: { next: 0, api: 0, page: 0, other: 0 }, webSocketsBlocked: 0,
       unsafeRequestDetails: { vercelTelemetry: 0, sentryTunnel: 0, cspReportApi: 0, analyticsApi: 0, authApi: 0, otherApi: 0, other: 0 },
       executionPhase: "NOT_STARTED", failureCategory: "NONE",
@@ -103,12 +104,14 @@ export function isFailedCriticalResourceRequest(request) {
   } catch { return false; }
 }
 
-/** Only this mount-time attribution reset may receive a local no-op response. */
+/** Permit only known same-host browser telemetry and the mount-time attribution reset as local no-ops. */
 export function classifyBrowserRequest(request) {
   let url;
   try { url = new URL(request.url()); } catch { return "EXTERNAL"; }
   if (url.protocol !== "https:" || url.hostname !== STAGING_ALIAS) return "EXTERNAL";
   if (["GET", "HEAD"].includes(request.method())) return "READ";
+  if (request.method() === "POST" && url.search === "" && url.pathname === "/monitoring") return "SENTRY_TUNNEL";
+  if (request.method() === "POST" && url.search === "" && url.pathname === "/api/security/csp-report") return "CSP_REPORT";
   if (request.method() === "POST"
     && url.pathname === "/api/affiliate-attribution/direct-entry"
     && url.search === ""
@@ -255,6 +258,12 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             report.browser.unsafeRequestDetails[classifyUnsafeRequestDetail(requestUrl.pathname)] += 1;
             return route.abort();
           }
+          if (requestClass === "SENTRY_TUNNEL" || requestClass === "CSP_REPORT") {
+            // Synthetic browser telemetry stays local; business writes remain blocked.
+            const category = requestClass === "SENTRY_TUNNEL" ? "sentryTunnel" : "cspReportApi";
+            report.browser.observabilitySuppressed[category] += 1;
+            return route.fulfill({ status: 204 });
+          }
           if (requestClass === "ATTRIBUTION_RESET") {
             // This page-mount request clears cookies and touches the rate limiter.
             // Fulfill it inside Chromium; no staging write is needed for this journey.
@@ -325,6 +334,10 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             ? await page.locator('[data-dashboard-scope="kpis"] [role="alert"]').count() > 0 : false;
           const dashboardDetailsAlertVisible = route.id === "dashboard" && dashboardDetailsVisible
             ? await page.locator('[data-dashboard-scope="details"] [role="alert"]').count() > 0 : false;
+          const dashboardRouteErrorVisible = route.id === "dashboard"
+            ? await page.getByRole("heading", { name: "營運資料暫時無法載入", exact: true }).count() > 0 : false;
+          const dashboardMainAlertVisible = route.id === "dashboard"
+            ? await page.locator('#main-content [role="alert"]').count() > 0 : false;
           const dashboardReadOperationCount = route.id === "dashboard" && dashboardKpisVisible
             ? boundedDashboardReadCount(await page.locator('[data-dashboard-scope="kpis"]').getAttribute("data-dashboard-read-operation-count"), 6)
             : null;
@@ -335,7 +348,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const appNavigationVisible = await visible(page.locator(appNavigationSelectorForViewport(viewport.id)));
           const contentVisible = await visible(page.locator("#main-content"));
           const finalPath = classifyFinalPath(page.url(), route.path);
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, appNavigationVisible, contentVisible });
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
