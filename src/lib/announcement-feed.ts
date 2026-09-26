@@ -25,26 +25,26 @@ export const ANNOUNCEMENT_SUPPRESSION_STORAGE_KEY =
 /** Current staging status leads; older milestones are explicitly historical. */
 export const ANNOUNCEMENT_FEED: readonly Announcement[] = [
   {
-    id: "staging-validation-2026-09-26-v1",
-    version: "2026-09-26-v1",
+    id: "staging-validation-2026-09-26-v2",
+    version: "2026-09-26-v2",
     publishedAt: "2026-09-26",
     title: "staging 測試站驗收中",
-    summary: "目前是開發測試站，主要頁面已可開啟；Dashboard 明細與完整沙盒流程尚未驗收完成。",
+    summary: "目前是開發測試站；Dashboard、商品與方案等主要頁面已通過桌機與手機煙測，完整交易與上傳流程仍待驗證。",
     progressPercent: null,
     completed: [
-      "測試站已更新，首頁與登入頁可正常開啟。",
-      "桌機與手機的主要管理頁已完成基本可見性檢查。",
+      "測試站已更新為與 master 相同內容，首頁、登入頁與健康檢查正常。",
+      "桌機與手機各五個主要頁面的資料顯示、導覽及局部編輯互動已通過合成帳號煙測。",
     ],
     incomplete: [
-      "Dashboard 明細目前可能顯示暫時無法載入，仍需修復與重驗。",
-      "付款與媒體上傳等完整流程仍在沙盒驗證，請勿使用真實客戶資料。",
+      "PayUni Sandbox 測試停在付款確認狀態未明，尚未證明本版付款、callback 或已付款訂單。",
+      "Funnel 建立與公開、圖片上傳後讀取、影片處理及寄信流程仍待完整驗證；請勿使用真實客戶資料。",
     ],
     changes: [
-      "更新測試站，並移除過時的完成率與部署說明。",
+      "更新測試站與驗收證據，修正過時的 Dashboard 阻擋說明；仍不使用無法證實的完成率。",
     ],
     nextSteps: [
-      "修復 Dashboard 明細並完成主要操作旅程驗證。",
-      "完成付款沙盒與圖片上傳檢查後更新此公告。",
+      "先唯讀釐清 Sandbox 未明交易，再驗證目前版本的付款與訂單閉環。",
+      "完成 Funnel 公開旅程、圖片上傳與 Stream 資源範圍檢查後更新此公告。",
     ],
   },
   {

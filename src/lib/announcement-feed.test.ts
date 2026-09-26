@@ -14,15 +14,15 @@ describe("announcement feed", () => {
     expect(ANNOUNCEMENT_FEED).toHaveLength(3);
     const [latest, ...history] = ANNOUNCEMENT_FEED;
     expect(latest).toMatchObject({
-      id: "staging-validation-2026-09-26-v1",
-      version: "2026-09-26-v1",
+      id: "staging-validation-2026-09-26-v2",
+      version: "2026-09-26-v2",
       publishedAt: "2026-09-26",
       progressPercent: null,
     });
-    expect(latest.summary).toContain("尚未驗收完成");
+    expect(latest.summary).toContain("已通過桌機與手機煙測");
     expect(latest.incomplete).toEqual(expect.arrayContaining([
-      expect.stringContaining("Dashboard 明細"),
-      expect.stringContaining("沙盒驗證"),
+      expect.stringContaining("付款確認狀態未明"),
+      expect.stringContaining("Funnel 建立與公開"),
     ]));
     expect(history.every((item) => item.title.startsWith("歷史紀錄：")
       && item.summary.includes("不代表目前 staging 驗收"))).toBe(true);
