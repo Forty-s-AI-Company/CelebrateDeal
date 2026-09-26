@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), reports: vi.fn(), csrf: vi.fn() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), csrf: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: vi.fn() }));
 vi.mock("@/lib/funnel-operations-service", () => ({
   FunnelOperationsError: class extends Error {},
-  loadFunnelOperations: mocks.load, loadFunnelReports: mocks.reports,
+  loadFunnelOperationsBundle: mocks.load,
 }));
 vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "csrf", getCsrfToken: mocks.csrf }));
 vi.mock("@/components/landing-pages/funnel-operations-panel", () => ({ FunnelOperationsPanel: () => <div>private editor</div> }));
@@ -20,7 +20,6 @@ it("renders a generic unavailable state without loading reports or exposing edit
   expect(html).toContain("無法開啟 Funnel");
   expect(html).not.toContain("foreign private name");
   expect(html).not.toContain("private editor");
-  expect(mocks.reports).not.toHaveBeenCalled();
   expect(mocks.csrf).not.toHaveBeenCalled();
 });
 
@@ -28,5 +27,4 @@ it("does not disguise an unexpected database failure as an unavailable resource"
   const failure = new Error("database unavailable");
   mocks.load.mockRejectedValue(failure);
   await expect(Page({ params: Promise.resolve({ id: "page" }), searchParams: Promise.resolve({}) })).rejects.toBe(failure);
-  expect(mocks.reports).not.toHaveBeenCalled();
 });

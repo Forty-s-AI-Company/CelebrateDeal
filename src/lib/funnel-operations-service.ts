@@ -27,8 +27,9 @@ async function scopedPage(pageId: string, database = getDb()) {
   return { page, state, operations };
 }
 
-export async function loadFunnelOperations(pageId: string) {
-  const { page, state, operations } = await scopedPage(pageId);
+type ScopedFunnelPage = Awaited<ReturnType<typeof scopedPage>>;
+
+function operationsFromScoped({ page, state, operations }: ScopedFunnelPage) {
   return {
     pageId: page.id,
     name: page.name,
@@ -43,7 +44,16 @@ export async function loadFunnelOperations(pageId: string) {
     steps: state.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })),
   };
 }
+export async function loadFunnelOperations(pageId: string) {
+  return operationsFromScoped(await scopedPage(pageId));
+}
 export type FunnelOperationsEditor = Awaited<ReturnType<typeof loadFunnelOperations>>;
+
+/** Load the editor and reports from one tenant-checked page snapshot. */
+export async function loadFunnelOperationsBundle(pageId: string, now = new Date()) {
+  const scoped = await scopedPage(pageId);
+  return { editor: operationsFromScoped(scoped), reports: await reportsFromScoped(scoped, now) };
+}
 
 function validateReferences(operations: FunnelOperations, state: NonNullable<ReturnType<typeof parseFunnelStepPages>>, published: ReturnType<typeof parseFunnelStepPages>) {
   const stepIds = new Set(state.flow.steps.filter((step) => !step.isSystem).map((step) => step.id));
@@ -99,7 +109,10 @@ export async function saveFunnelOperations(input: unknown) {
 const REPORT_LIMIT = 10_000;
 function period(days: number, now: Date) { return { gte: new Date(now.getTime() - days * 86_400_000), lte: now }; }
 export async function loadFunnelReports(pageId: string, now = new Date()) {
-  const { page, state, operations } = await scopedPage(pageId);
+  return reportsFromScoped(await scopedPage(pageId), now);
+}
+
+async function reportsFromScoped({ page, state, operations }: ScopedFunnelPage, now: Date) {
   const database = getDb();
   const { stats, leads, sales } = operations.reports;
   const source = { vendorId: page.vendorId, pageId: page.id };

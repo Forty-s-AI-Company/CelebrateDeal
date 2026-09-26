@@ -5,7 +5,7 @@ const mocks = vi.hoisted(()=>({find:vi.fn(),update:vi.fn(),products:vi.fn(),visi
 vi.mock("@/lib/auth",()=>({requireVendorManagerContext:mocks.auth}));
 vi.mock("@/lib/sales-project-scope",()=>({requireEditableSalesProjectScope:mocks.scope}));
 vi.mock("@/lib/db",()=>({getDb:()=>({landingPage:{findFirst:mocks.find,updateMany:mocks.update},product:{count:mocks.products},funnelVisit:{findMany:mocks.visits,count:mocks.assigned},funnelSubmission:{findMany:mocks.submissions},commerceOrder:{findMany:mocks.orders}})}));
-import {loadFunnelOperations,saveFunnelOperations,loadFunnelReports} from "./funnel-operations-service";
+import {loadFunnelOperations,loadFunnelOperationsBundle,saveFunnelOperations,loadFunnelReports} from "./funnel-operations-service";
 const content=createGoalFunnelStepPages({id:"funnel",name:"Example",domain:"example",goal:"audience",currency:"TWD"})!;
 function page(){return {id:"page1",vendorId:"vendor1",projectId:"project1",name:"Example",slug:"example",revision:4,status:"draft",draftContent:content,operations:null,publishedVersion:{content}};}
 function input(){return {pageId:"page1",revision:4,name:"Updated",slug:"updated",currency:"TWD",operations:defaultFunnelOperations()};}
@@ -62,6 +62,14 @@ describe("Funnel operations tenant/CAS boundary",()=>{
  });
 });
 describe("trusted report queries",()=>{
+ it("loads editor and reports from one tenant-checked page snapshot",async()=>{
+  const result=await loadFunnelOperationsBundle("page1");
+  expect(result.editor.pageId).toBe("page1");
+  expect(result.reports.sales).toEqual([]);
+  expect(mocks.auth).toHaveBeenCalledTimes(1);
+  expect(mocks.scope).toHaveBeenCalledTimes(1);
+  expect(mocks.find).toHaveBeenCalledTimes(1);
+ });
  it("scopes every source to tenant/page and uses paid order projection only",async()=>{
   const result=await loadFunnelReports("page1",new Date("2026-09-17T00:00:00Z"));
   expect(result.sales).toEqual([]);
