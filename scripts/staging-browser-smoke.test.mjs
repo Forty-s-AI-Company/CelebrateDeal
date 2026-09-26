@@ -215,6 +215,9 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(report.browser.unsafeRequestsBlocked, 2);
   assert.equal(report.browser.unsafeRequestDetails.otherApi, 2);
   assert.equal(report.journeys[0].dashboardReadOperationCount, 6);
+  assert.equal(report.journeys[0].dashboardDetailsReadOperationCount, 6);
+  assert.equal(report.journeys[0].dashboardKpiAlertVisible, false);
+  assert.equal(report.journeys[0].dashboardDetailsAlertVisible, false);
   assert.equal(report.browser.safeAttributionResets, 2);
   assert.equal(report.sideEffects.syntheticSessionCreated, 2);
   assert.equal(report.sideEffects.syntheticSessionRevoked, 2);
@@ -322,6 +325,8 @@ test("final URLs and blocked requests are reduced to fixed, non-sensitive catego
   assert.equal(classifyUnsafeRequestPath("/unlisted/sensitive-id"), "other");
   assert.equal(classifyUnsafeRequestDetail("/_vercel/insights/event"), "vercelTelemetry");
   assert.equal(classifyUnsafeRequestDetail("/__vercel/speed-insights/vitals"), "vercelTelemetry");
+  assert.equal(classifyUnsafeRequestDetail("/monitoring"), "sentryTunnel");
+  assert.equal(classifyUnsafeRequestDetail("/api/security/csp-report"), "cspReportApi");
   assert.equal(classifyUnsafeRequestDetail("/api/analytics"), "analyticsApi");
   assert.equal(classifyUnsafeRequestDetail("/api/auth/session"), "authApi");
   assert.equal(classifyUnsafeRequestDetail("/private/sensitive-id"), "other");

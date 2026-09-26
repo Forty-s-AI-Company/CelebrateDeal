@@ -1,8 +1,18 @@
 # CelebrateDeal 目前版本與上線缺口
 
-更新：2026-09-25（Asia/Taipei）。本頁是目前 staging 驗收的入口；每項 PASS 必須對應當次部署與執行證據。過去的工作紀錄保留原始結論，不自動升級為新版驗收。
+更新：2026-09-26（Asia/Taipei）。本頁是 staging 驗收入口；每項 PASS 必須對應當次部署與執行證據。下方 2026-09-25 快照只供追溯，不能當成目前待辦或新版驗收。
 
-## 來源與站台
+## 2026-09-26 現況
+
+- 指定 [staging 網址](https://celebrate-deal-staging.carry-digital-nomad.in.net) 現指向 immutable Preview `celebrate-deal-staging-45sfkq33d-a25814740s-projects.vercel.app`，GitHub Deployment source 為 `95d408e5bc9ecdb8827641b8bd0f97baf9121cf2`。受保護瀏覽器 runner 已核對來源 lineage 與 alias；`/api/health` 回應 200。診斷 runner 的 [PR #317](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/317) 經兩條 quality 與 Vercel Preview 檢查通過後合入 master `a484c0f7660d6e520f6b14d796bc36eb54f26668`。目前 staging 應用程式碼與 master 相同，診斷腳本的 Git tree 不同；後續若重新部署，需重新綁定來源與驗收。
+- GitHub staging Environment 已有 `VERCEL_TOKEN`，Vercel Preview 已有 R2 所需五項設定。使用者同意空的 `celebrate-deal-staging` bucket 啟用公開 r2.dev 開發網址，限合成 staging 資料。[受保護唯讀 provider run 36210653999](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36210653999) 對同一 Preview 得到 R2=`ok`、Stream=`ok`，八項設定存在；`nonProductionScope=unverified`。這只證明可連線，不是圖片上傳／公開讀取或 Stream 非正式範圍的端到端通過。
+- [受保護登入後瀏覽器 run 36212727504](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36212727504) 對同一來源完成 desktop/mobile 各五個主要頁面：HTTP 200、標題、商品、導覽與互動可見，page error、同站 5xx、關鍵資源失敗皆為 0，合成 session 2 次均已撤銷。整體仍為 `BLOCKED/BROWSER_JOURNEY_FAILED`：Dashboard KPI 和明細容器有顯示，KPI 6 個讀取完成，但頁面顯示 alert；44 個背景 POST 被安全攔截。測試沒有結帳、付款、上傳或寄信。
+- PayUni 仍限 Sandbox。舊 [買家訂單 run 36142862467](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36142862467) 已證明當時來源的付款、callback、持久化訂單與重複 callback 冪等性，但不能直接升級為目前 Preview 的 PASS。[目前唯讀檢查 run 36211458633](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36211458633) 為 `BLOCKED/NETWORK_REJECTED`；runner 指向的 `wp4-buyer-payment-check` API 在目前程式不存在，因此尚未查到原合成交易狀態。這不是新付款失敗的證據；沒有重送付款或退款。
+- 舊功能 [PR #210](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/210)／[#211](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/211) 仍有 conflicts 且 quality 失敗，保留逐功能整合；不能宣稱所有舊分支已合併。固定 staging 核心瀏覽器流程、目前來源的 Sandbox 買家訂單、R2 圖片讀寫及 Stream 範圍尚未全數驗證，`CORE_STAGING_READY` **未成立**，Goal 不應標 complete。
+
+## 2026-09-25 歷史快照
+
+### 來源與站台
 
 - 本輪應用程式基準為 [PR #316](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/316) 合併後的 `556e9ee54efa74c64657c0d1e576ba0c0fa34bec`；兩組受保護 `quality` 與 Preview 檢查通過。其中一條 CI 首次因一個 Playwright flaky 測試失敗，保留 `--fail-on-flaky-tests` 後僅重跑一次並通過。[staging migration apply](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36121750590) 已對同一固定資料庫完成 58→79 筆，目標欄位與 schema 核對通過；後續程式合併未新增 migration。
 - 受保護 PR #274–#283、#286–#298 已合進 master；本次盤點的應用程式基準 [PR #298](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/298) 的 merge SHA 為 `a2969b0523cf6bb15284c669699a5f9b7f76120e`，[該 SHA 的 CI](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36094533079) 已通過。[PR #304](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/304) 已將 staging 驗證工具合入 master，merge SHA 為 `1d8bac1cc5ed559a5b17428afae70cb4bbb21ec7`；兩條受保護 `quality` 與 Vercel Preview 檢查通過。這些 CI 證據只適用於對應 source，尚不代表指定 staging 已重新部署。[受保護 Preview 身分檢查](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36035415243) 成功。
@@ -16,7 +26,7 @@
 - [受保護 provider 唯讀 run 36144259044](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36144259044) 對目前固定 staging 的精確 immutable Preview source 探測：sanitized receipt 為 `BLOCKED/PROVIDER_NOT_REACHABLE`，五項 R2 欄位均未設定，Stream=`ok`、`nonProductionScope=unverified`；未執行 provider 寫入，也不能證明 Stream token 的非正式資源範圍。
 - `vercel env run` 無法讀回寫入後不可見的 Secret 值；先前文件由此推論資料庫設定缺失是錯誤的。以上受保護 runtime 檢查已取代那項推論，不要求使用者重提供既有 Secret。
 
-## 驗收狀態
+### 當時驗收狀態
 
 | 範圍 | 狀態 | 尚需的證據 |
 | --- | --- | --- |
