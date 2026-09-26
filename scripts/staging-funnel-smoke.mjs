@@ -18,6 +18,7 @@ function receipt(sourceSha) {
     projectCreated: false, create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
     projectDestination: "NOT_OBSERVED", createPageStatus: null, createPageRoute: "NOT_OBSERVED", projectStillMissing: false,
     createActionStatus: null, createFeedbackKind: "NOT_OBSERVED", createDestination: "NOT_OBSERVED",
+    operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -129,8 +130,21 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
 
     const page = await context.newPage();
     page.on("pageerror", () => { result.pageErrors += 1; });
+    // Record only counts/statuses for the post-create destination; never persist its ID or URL.
+    const isOperationsGet = (request) => {
+      try {
+        const url = new URL(request.url());
+        return request.method() === "GET" && url.hostname === ALIAS && /^\/landing-pages\/[a-z0-9]+\/operations$/u.test(url.pathname);
+      } catch { return false; }
+    };
+    page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
+    page.on("requestfailed", (request) => { if (isOperationsGet(request)) result.operationsGetFailures += 1; });
     page.on("response", (response) => {
       const request = response.request();
+      if (isOperationsGet(request)) {
+        result.operationsGetResponses += 1;
+        result.operationsGetLastStatus = response.status();
+      }
       if (request.method() !== "POST" || !request.headers()["next-action"]) return;
       try {
         const url = new URL(request.url());
