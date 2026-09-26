@@ -10,6 +10,7 @@ function request(url, method = "GET", headers = {}, postData = null) {
 test("only owner-side Funnel server actions may write", () => {
   const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
   const headers = { "next-action": "synthetic-action" };
+  assert.equal(classifyFunnelRequest(request(`${origin}/projects/new`, "POST")), "PROJECT_CREATE");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/new`, "POST", headers)), "FUNNEL_WRITE");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123/operations`, "POST", headers), "/landing-pages/abc123"), "FUNNEL_WRITE");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123`, "POST", headers), "/landing-pages/abc123"), "FUNNEL_WRITE");

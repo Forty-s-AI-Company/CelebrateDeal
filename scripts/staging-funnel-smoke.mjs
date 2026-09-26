@@ -15,9 +15,9 @@ function receipt(sourceSha) {
     sourceSha: /^[a-f0-9]{40}$/u.test(sourceSha ?? "") ? sourceSha : null,
     result: "BLOCKED", reason: "INVALID_BINDING", stage: "NOT_STARTED",
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
-    create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
+    projectCreated: false, create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
-    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
+    sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
 }
 
@@ -36,6 +36,7 @@ export function classifyFunnelRequest(request, allowedFunnelPath = null) {
   if (request.method() === "POST" && url.pathname === "/monitoring") return "TELEMETRY";
   if (request.method() === "POST" && url.pathname === "/api/security/csp-report") return "TELEMETRY";
   if (request.method() === "POST" && url.pathname === "/api/affiliate-attribution/direct-entry" && !request.postData()) return "ATTRIBUTION_RESET";
+  if (request.method() === "POST" && url.pathname === "/projects/new") return "PROJECT_CREATE";
   if (request.method() === "POST" && request.headers()["next-action"]
     && (url.pathname === "/landing-pages/new" || (allowedFunnelPath && FUNNEL_PATH.test(url.pathname)
       && [allowedFunnelPath, `${allowedFunnelPath}/operations`].includes(url.pathname)))) return "FUNNEL_WRITE";
@@ -73,6 +74,10 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     await context.route("**/*", (route) => {
       const kind = classifyFunnelRequest(route.request(), allowedFunnelPath);
       if (kind === "READ") return route.continue();
+      if (kind === "PROJECT_CREATE" && result.sideEffects.projectCreates === 0) {
+        result.sideEffects.projectCreates += 1;
+        return route.continue();
+      }
       if (kind === "FUNNEL_WRITE" && !(new URL(route.request().url()).pathname === "/landing-pages/new" && result.sideEffects.funnelCreates > 0)) {
         result.sideEffects.funnelWrites += 1;
         if (new URL(route.request().url()).pathname === "/landing-pages/new") result.sideEffects.funnelCreates += 1;
@@ -101,7 +106,22 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     page.on("pageerror", () => { result.pageErrors += 1; });
     const slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
-    const createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    let createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    if (await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 2_000)) {
+      result.stage = "PROJECT_CREATE";
+      const projectResponse = await page.goto(`${origin}/projects/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      if (projectResponse?.status() !== 200 || !await visible(page.getByRole("heading", { name: "建立銷售專案" }))) {
+        result.reason = "PROJECT_CREATE_UNAVAILABLE"; return result;
+      }
+      await page.getByLabel("專案名稱", { exact: true }).fill("Staging Synthetic Project");
+      await page.getByLabel("網址代稱", { exact: true }).fill(`${slug}-project`);
+      await page.getByRole("button", { name: "建立專案", exact: true }).click({ timeout: 10_000 });
+      try { await page.waitForURL((url) => url.pathname === "/onboarding" || /^\/projects\/[a-z0-9]+$/u.test(url.pathname), { timeout: 20_000 }); }
+      catch { result.reason = "PROJECT_CREATE_FAILED"; return result; }
+      result.projectCreated = true;
+      result.stage = "CREATE";
+      createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    }
     if (createResponse?.status() !== 200 || !await visible(page.getByRole("heading", { name: "建立新的 Funnel" }))) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
     await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("Staging Synthetic Funnel");
     await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
