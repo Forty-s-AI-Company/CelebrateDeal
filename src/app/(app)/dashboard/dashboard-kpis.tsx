@@ -39,13 +39,18 @@ async function loadDashboardKpis(vendorId: string, diagnosticFailureScope: strin
   const sevenDaysAgo = getDateDaysAgo(7);
 
   try {
-    const registrationCounts = await measurement.measure("registration.grouped-count", () => readDashboardRegistrationCounts(db, vendorId, sevenDaysAgo));
-    const viewerMessageCount = await measurement.measure("viewer-message.count", () => db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId, createdAtGte: sevenDaysAgo }) }));
-    const scheduledMessageCount = await measurement.measure("scheduled-message.count", () => db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId }) }));
+    // Keep database concurrency bounded while avoiding six serial round trips.
+    const [registrationCounts, viewerMessageCount, scheduledMessageCount] = await Promise.all([
+      measurement.measure("registration.grouped-count", () => readDashboardRegistrationCounts(db, vendorId, sevenDaysAgo)),
+      measurement.measure("viewer-message.count", () => db.liveChatMessage.count({ where: realViewerMessageWhere({ vendorId, createdAtGte: sevenDaysAgo }) })),
+      measurement.measure("scheduled-message.count", () => db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId }) })),
+    ]);
     if (diagnosticFailureScope === "analytics") throw new Error("dashboard_diagnostic_analytics_failure");
-    const analyticsCounts = await measurement.measure("analytics.aggregate", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo));
-    const orderCreatedCount = await measurement.measure("order.count", () => db.commerceOrder.count({ where: { vendorId, createdAt: { gte: sevenDaysAgo } } }));
-    const emailCounts = await measurement.measure("email.grouped-count", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo));
+    const [analyticsCounts, orderCreatedCount, emailCounts] = await Promise.all([
+      measurement.measure("analytics.aggregate", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo)),
+      measurement.measure("order.count", () => db.commerceOrder.count({ where: { vendorId, createdAt: { gte: sevenDaysAgo } } })),
+      measurement.measure("email.grouped-count", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo)),
+    ]);
     const funnel = calculateAnalyticsFunnel({
       views: analyticsCounts.views,
       productClicks: analyticsCounts.productClicks,

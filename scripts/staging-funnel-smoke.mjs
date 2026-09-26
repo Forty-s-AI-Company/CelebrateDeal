@@ -16,9 +16,35 @@ function receipt(sourceSha) {
     result: "BLOCKED", reason: "INVALID_BINDING", stage: "NOT_STARTED",
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
     projectCreated: false, create: false, template: false, draft: false, published: false, publicDesktop: false, publicMobile: false,
+    projectDestination: "NOT_OBSERVED", createPageStatus: null, createPageRoute: "NOT_OBSERVED", projectStillMissing: false,
+    createActionStatus: null, createFeedbackKind: "NOT_OBSERVED", createDestination: "NOT_OBSERVED",
+    operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFinished: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
+}
+
+/** Keep browser navigation evidence to fixed route categories, never full URLs. */
+export function funnelRouteCategory(value) {
+  try {
+    const path = new URL(value).pathname;
+    if (path === "/landing-pages/new") return "FUNNEL_NEW";
+    if (path === "/onboarding") return "ONBOARDING";
+    if (/^\/projects\/[a-z0-9]+$/u.test(path)) return "PROJECT";
+    if (path === "/login") return "LOGIN";
+  } catch { return "INVALID_URL"; }
+  return "OTHER";
+}
+
+/** Map only known product messages to fixed categories; never save raw text. */
+export function funnelCreateFeedbackKind(messages) {
+  if (messages.includes("草稿已建立。")) return "CREATED";
+  if (messages.includes("請先選擇一個銷售專案後再管理一頁式網站。")) return "SCOPE_REQUIRED";
+  if (messages.includes("頁面內容格式不正確或資料過大，請重新整理後再試。")) return "FORMAT_INVALID";
+  if (messages.includes("請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。")) return "BINDING_INVALID";
+  if (messages.includes("暫時無法完成操作；內容仍保留，請稍後再試。")) return "SERVER_FAILURE";
+  if (messages.includes("連線中斷，Funnel 尚未建立，請稍後再試。")) return "NETWORK_FAILURE";
+  return messages.length === 0 ? "NONE" : "OTHER";
 }
 
 function browserEnvironment() {
@@ -104,6 +130,28 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
 
     const page = await context.newPage();
     page.on("pageerror", () => { result.pageErrors += 1; });
+    // Record only counts/statuses for the post-create destination; never persist its ID or URL.
+    const isOperationsGet = (request) => {
+      try {
+        const url = new URL(request.url());
+        return request.method() === "GET" && url.hostname === ALIAS && /^\/landing-pages\/[a-z0-9]+\/operations$/u.test(url.pathname);
+      } catch { return false; }
+    };
+    page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
+    page.on("requestfinished", (request) => { if (isOperationsGet(request)) result.operationsGetFinished += 1; });
+    page.on("requestfailed", (request) => { if (isOperationsGet(request)) result.operationsGetFailures += 1; });
+    page.on("response", (response) => {
+      const request = response.request();
+      if (isOperationsGet(request)) {
+        result.operationsGetResponses += 1;
+        result.operationsGetLastStatus = response.status();
+      }
+      if (request.method() !== "POST" || !request.headers()["next-action"]) return;
+      try {
+        const url = new URL(request.url());
+        if (url.hostname === ALIAS && url.pathname === "/landing-pages/new") result.createActionStatus = response.status();
+      } catch { /* The action status stays unknown. */ }
+    });
     const slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
     let createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
@@ -119,22 +167,34 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       try { await page.waitForURL((url) => url.pathname === "/onboarding" || /^\/projects\/[a-z0-9]+$/u.test(url.pathname), { timeout: 20_000 }); }
       catch { result.reason = "PROJECT_CREATE_FAILED"; return result; }
       result.projectCreated = true;
+      result.projectDestination = funnelRouteCategory(page.url());
       result.stage = "CREATE";
       createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
     }
-    if (createResponse?.status() !== 200 || !await visible(page.getByRole("heading", { name: "建立新的 Funnel" }))) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
+    result.createPageStatus = createResponse?.status() ?? null;
+    result.createPageRoute = funnelRouteCategory(page.url());
+    const createHeadingVisible = await visible(page.getByRole("heading", { name: "建立新的 Funnel" }));
+    result.projectStillMissing = await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 1_000);
+    if (result.createPageStatus !== 200 || !createHeadingVisible) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
     await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("Staging Synthetic Funnel");
     await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
     await page.getByRole("button", { name: /建立名單/u }).click();
     await page.getByRole("button", { name: "儲存", exact: true }).click();
     try { await page.waitForURL((url) => FUNNEL_PATH.test(url.pathname) && url.pathname.endsWith("/operations"), { timeout: 20_000 }); }
-    catch { result.reason = "CREATE_FAILED"; return result; }
+    catch {
+      result.createDestination = funnelRouteCategory(page.url());
+      result.createFeedbackKind = funnelCreateFeedbackKind(await page.getByRole("status").allTextContents());
+      result.reason = "CREATE_FAILED";
+      return result;
+    }
     const funnelPath = new URL(page.url()).pathname.replace(/\/operations$/u, "");
     allowedFunnelPath = funnelPath;
     result.create = true;
 
     result.stage = "TEMPLATE";
-    await page.getByRole("button", { name: "套用模板", exact: true }).first().click({ timeout: 10_000 });
+    const templateButton = page.getByRole("button", { name: "套用模板", exact: true }).first();
+    if (!await visible(templateButton, 20_000)) { result.reason = "OPERATIONS_NOT_READY"; return result; }
+    await templateButton.click({ timeout: 10_000 });
     if (!await visible(page.getByRole("status").filter({ hasText: "模板已套用" }))) { result.reason = "TEMPLATE_FAILED"; return result; }
     result.template = true;
     await page.getByRole("button", { name: "Edit Page", exact: true }).click({ timeout: 10_000 });

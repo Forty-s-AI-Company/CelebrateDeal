@@ -31,6 +31,7 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       pageErrors: 0, sameHost5xx: 0, criticalResourceFailures: 0, navigationInteractionsPassed: 0,
       criticalResourceFailureCategories: { http4xxScript: 0, http4xxStylesheet: 0, http5xxScript: 0, http5xxStylesheet: 0, abortedScript: 0, abortedStylesheet: 0, networkScript: 0, networkStylesheet: 0 },
       firstCriticalResourceFailure: null,
+      firstCriticalResourceFailureKind: null,
       navigationFailure: null,
       hydrationInteractionsPassed: 0,
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
@@ -105,10 +106,21 @@ export function classifyCriticalResourceRequestFailure(request) {
   try {
     const type = request.resourceType();
     if (new URL(request.url()).hostname !== STAGING_ALIAS || !["script", "stylesheet"].includes(type)) return null;
-    const failure = request.failure?.();
-    const aborted = typeof failure === "string" && failure.includes("net::ERR_ABORTED");
+    const aborted = classifyCriticalResourceFailureKind(request) === "ABORTED";
     return `${aborted ? "aborted" : "network"}${type === "script" ? "Script" : "Stylesheet"}`;
   } catch { return null; }
+}
+
+/** Playwright returns { errorText }; persist only a fixed network-error class. */
+export function classifyCriticalResourceFailureKind(request) {
+  const failure = request.failure?.();
+  const errorText = typeof failure === "string" ? failure : failure?.errorText;
+  if (typeof errorText !== "string") return "UNKNOWN";
+  if (errorText.includes("net::ERR_ABORTED")) return "ABORTED";
+  if (errorText.includes("net::ERR_TIMED_OUT")) return "TIMEOUT";
+  if (errorText.includes("net::ERR_CONNECTION_RESET")) return "CONNECTION_RESET";
+  if (errorText.includes("net::ERR_NAME_NOT_RESOLVED")) return "DNS";
+  return "OTHER_NETWORK";
 }
 
 /** A failed same-host JavaScript or stylesheet request invalidates SSR-only success. */
@@ -380,7 +392,11 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           recordCriticalResourceFailure(classifyCriticalResourceResponse(response));
         });
         page.on("requestfailed", (request) => {
-          recordCriticalResourceFailure(classifyCriticalResourceRequestFailure(request));
+          const category = classifyCriticalResourceRequestFailure(request);
+          if (category && report.browser.firstCriticalResourceFailure === null) {
+            report.browser.firstCriticalResourceFailureKind = classifyCriticalResourceFailureKind(request);
+          }
+          recordCriticalResourceFailure(category);
         });
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;

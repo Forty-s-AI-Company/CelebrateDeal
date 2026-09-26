@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { FunnelOperationsError, loadFunnelOperations, loadFunnelReports, saveFunnelOperations } from "@/lib/funnel-operations-service";
+import { FunnelOperationsError, loadFunnelOperationsBundle, saveFunnelOperations } from "@/lib/funnel-operations-service";
 
 export async function readFunnelOperations(pageId: string) {
-  return { editor: await loadFunnelOperations(pageId), reports: await loadFunnelReports(pageId) };
+  return loadFunnelOperationsBundle(pageId);
 }
 
 export async function updateFunnelOperations(form: FormData) {
