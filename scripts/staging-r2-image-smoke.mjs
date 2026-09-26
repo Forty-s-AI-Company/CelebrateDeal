@@ -15,7 +15,7 @@ function emptyReceipt(sourceSha) {
     sourceSha: /^[a-f0-9]{40}$/u.test(sourceSha ?? "") ? sourceSha : null,
     result: "BLOCKED", reason: "INVALID_BINDING", lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
     stage: "NOT_STARTED", stagingBucket: "NOT_VERIFIED", publicR2Dev: "NOT_VERIFIED",
-    browserErrors: 0, unsafeRequestsBlocked: 0,
+    browserErrors: 0, blockedExternalReads: 0, unsafeRequestsBlocked: 0, blockedRequestKind: "NONE",
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, presignPosts: 0, r2Puts: 0, completePosts: 0, publicReads: 0 },
   };
 }
@@ -37,6 +37,25 @@ export function isSyntheticPublicR2Url(value) {
       && /^pub-[a-z0-9-]+\.r2\.dev$/u.test(url.hostname)
       && OBJECT_PATH.test(url.pathname) && !url.search && !url.hash;
   } catch { return false; }
+}
+
+/** Report only a fixed request category, never a URL, header, or signed query. */
+export function classifyBlockedRequest(request) {
+  let url;
+  try { url = new URL(request.url()); } catch { return "INVALID_URL"; }
+  if (url.protocol !== "https:" || url.hostname !== ALIAS) {
+    return ["GET", "HEAD"].includes(request.method()) ? "EXTERNAL_READ" : "EXTERNAL_WRITE";
+  }
+  if (url.pathname === "/api/affiliate-attribution/direct-entry") return "ATTRIBUTION_RESET";
+  if (request.headers()["next-action"]) return "NEXT_ACTION";
+  return "SAME_HOST_WRITE";
+}
+
+/** Blocked external reads do not invalidate verified staging R2 bytes. */
+export function imageJourneyPassed(receipt, matches) {
+  return matches && receipt.stagingBucket === "VERIFIED" && receipt.browserErrors === 0
+    && receipt.unsafeRequestsBlocked === 0 && receipt.sideEffects.presignPosts === 1
+    && receipt.sideEffects.r2Puts === 1 && receipt.sideEffects.completePosts === 1;
 }
 
 function safeBrowserEnvironment() {
@@ -97,7 +116,12 @@ export async function runStagingR2ImageSmoke(env = process.env, dependencies = {
       if (requestClass === "READ") return route.continue();
       if (requestClass === "SENTRY_TUNNEL" || requestClass === "CSP_REPORT") return route.fulfill({ status: 204 });
       if (requestClass === "ATTRIBUTION_RESET") return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
-      receipt.unsafeRequestsBlocked += 1;
+      const blockedKind = classifyBlockedRequest(request);
+      // External GETs stay blocked, but cannot mutate staging and are not part
+      // of the product-image upload or public-byte proof.
+      if (blockedKind === "EXTERNAL_READ") receipt.blockedExternalReads += 1;
+      else receipt.unsafeRequestsBlocked += 1;
+      if (receipt.blockedRequestKind === "NONE") receipt.blockedRequestKind = blockedKind;
       return route.abort();
     });
     await context.routeWebSocket("**/*", (socket) => socket.close());
@@ -148,9 +172,7 @@ export async function runStagingR2ImageSmoke(env = process.env, dependencies = {
     const matches = bytes !== null && uploadedDigest !== null && contentType.startsWith("image/jpeg")
       && createHash("sha256").update(bytes).digest("hex") === uploadedDigest;
     if (matches) receipt.publicR2Dev = "VERIFIED";
-    receipt.result = matches && receipt.stagingBucket === "VERIFIED" && receipt.browserErrors === 0
-      && receipt.unsafeRequestsBlocked === 0 && receipt.sideEffects.presignPosts === 1
-      && receipt.sideEffects.r2Puts === 1 && receipt.sideEffects.completePosts === 1 ? "PASS" : "BLOCKED";
+    receipt.result = imageJourneyPassed(receipt, matches) ? "PASS" : "BLOCKED";
     receipt.reason = receipt.result === "PASS" ? "NONE" : "IMAGE_JOURNEY_FAILED";
     receipt.stage = "COMPLETE";
   } catch {
