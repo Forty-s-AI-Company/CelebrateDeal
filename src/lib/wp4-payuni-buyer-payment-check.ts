@@ -12,6 +12,7 @@ export type BuyerPaymentCheckResult = {
   status: "VERIFIED" | "MISSING" | "AMBIGUOUS" | "REFERENCE_UNAVAILABLE" | "QUERY_REJECTED" | "QUERY_FAILED" | "STATE_MISMATCH";
   localStatus: "UNKNOWN" | "PENDING" | "PAID" | "PARTIALLY_REFUNDED" | "REFUNDED" | "FAILED";
   providerStatus: "UNKNOWN" | "PAID" | "PARTIALLY_REFUNDED" | "REFUNDED";
+  referenceState: "UNKNOWN" | "AVAILABLE" | "ORDER_MISSING" | "PROVIDER_MISSING" | "BOTH_MISSING";
   queryAttempts: 0 | 1;
   callbackStatus: "NOT_OBSERVED" | "RECEIVED" | "PROCESSED" | "FAILED" | "AMBIGUOUS" | "UNKNOWN";
   callbackFailure: "NONE" | "SCOPE_MISSING" | "SCOPE_INVALID" | "SCOPE_MISMATCH" | "ORDER_AMBIGUOUS" | "AMOUNT_MISMATCH" | "INVENTORY_CONFLICT" | "PROCESSING_CLAIM_LOST" | "PROCESSING_FAILED" | "UNKNOWN";
@@ -31,6 +32,16 @@ function localStatus(value: string): BuyerPaymentCheckResult["localStatus"] {
 
 function providerStatus(value: PaymentQueryResult["status"]): BuyerPaymentCheckResult["providerStatus"] {
   return value === "paid" ? "PAID" : value === "partially_refunded" ? "PARTIALLY_REFUNDED" : value === "refunded" ? "REFUNDED" : "UNKNOWN";
+}
+
+/** Reveal only which read-only query reference is missing, never its value. */
+function referenceState(orderNumber: string | null, providerTradeNo: string | null): BuyerPaymentCheckResult["referenceState"] {
+  const orderAvailable = Boolean(orderNumber?.trim());
+  const providerAvailable = Boolean(providerTradeNo?.trim());
+  if (!orderAvailable && !providerAvailable) return "BOTH_MISSING";
+  if (!orderAvailable) return "ORDER_MISSING";
+  if (!providerAvailable) return "PROVIDER_MISSING";
+  return "AVAILABLE";
 }
 
 function metadataObject(value: unknown): Record<string, unknown> | null {
@@ -93,26 +104,28 @@ export async function checkWp4PayUniBuyerPayment(db: CheckDb): Promise<BuyerPaym
       && metadata?.productId === WP4_SANDBOX_FIXTURE.productId
       && metadata.wp4PaymentSubmissionReserved === true;
   });
-  if (candidates.length === 0) return { status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" };
-  if (candidates.length > 1) return { status: "AMBIGUOUS", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" };
+  if (candidates.length === 0) return { status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", referenceState: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" };
+  if (candidates.length > 1) return { status: "AMBIGUOUS", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", referenceState: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" };
 
   const transaction = candidates[0]!;
   const local = localStatus(transaction.status);
+  const reference = referenceState(transaction.orderNumber, transaction.providerTradeNo);
   const callback = transaction.orderNumber ? await readCallbackEvidence(db, transaction.orderNumber) : { callbackStatus: "UNKNOWN" as const, callbackFailure: "UNKNOWN" as const };
-  if (!transaction.providerTradeNo || !transaction.orderNumber) {
-    return { status: "REFERENCE_UNAVAILABLE", localStatus: local, providerStatus: "UNKNOWN", queryAttempts: 0, ...callback };
+  if (reference !== "AVAILABLE") {
+    return { status: "REFERENCE_UNAVAILABLE", localStatus: local, providerStatus: "UNKNOWN", referenceState: reference, queryAttempts: 0, ...callback };
   }
 
   let snapshot: PaymentQueryResult;
   try {
     const provider = getPaymentProvider("payuni");
-    if (!provider.queryPayment) return { status: "QUERY_REJECTED", localStatus: local, providerStatus: "UNKNOWN", queryAttempts: 0, ...callback };
+    if (!provider.queryPayment) return { status: "QUERY_REJECTED", localStatus: local, providerStatus: "UNKNOWN", referenceState: reference, queryAttempts: 0, ...callback };
     snapshot = await provider.queryPayment({ transaction: transaction as PaymentTransaction });
   } catch (error) {
     return {
       status: error instanceof PaymentQueryProviderError && error.category === "request_contract" ? "QUERY_REJECTED" : "QUERY_FAILED",
       localStatus: local,
       providerStatus: "UNKNOWN",
+      referenceState: reference,
       queryAttempts: 1,
       ...callback,
     };
@@ -128,6 +141,7 @@ export async function checkWp4PayUniBuyerPayment(db: CheckDb): Promise<BuyerPaym
     status: matchingIdentity && matchingState ? "VERIFIED" : "STATE_MISMATCH",
     localStatus: local,
     providerStatus: providerState,
+    referenceState: reference,
     queryAttempts: 1,
     ...callback,
   };
