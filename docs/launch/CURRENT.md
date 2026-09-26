@@ -4,7 +4,7 @@
 
 ## 來源與驗收
 
-live master 為 `2702f4aa0cdba2309934ffd070f77ef1efc3cfeb`。固定站跟隨 `codex/staging-release-20260926` Preview 分支。最新已核對來源為 `1909c71a9c73d399ec1d8dd690ed7848947581c7`，Ready immutable host 為 `celebrate-deal-staging-7rwlta1x5-a25814740s-projects.vercel.app`。此來源包含已合入 master 的 [PR #337](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/337)。[Funnel run 36267066749](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36267066749) 已核對精確來源與固定 alias。[PR #338](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/338) 正將慢報表移出管理頁首次渲染，本機相關測試、ESLint、TypeScript 已過；`Vercel – celebrate-deal` Preview 已成功，但 `Vercel – celebrate-deal-staging` 回報「Deployment rate limited — retry in 24 hours」，故 PR 未合入、固定站尚未更新，下表結論不變。
+live master 為 `2702f4aa0cdba2309934ffd070f77ef1efc3cfeb`。固定站跟隨 `codex/staging-release-20260926` Preview 分支。最新已核對來源為 `1909c71a9c73d399ec1d8dd690ed7848947581c7`，Ready immutable host 為 `celebrate-deal-staging-7rwlta1x5-a25814740s-projects.vercel.app`。此來源包含已合入 master 的 [PR #337](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/337)。[Funnel run 36267066749](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36267066749) 已核對精確來源與固定 alias。[PR #338](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/338) 將慢報表移出 Funnel 管理頁首次渲染；[PR #340](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/340) 將 Dashboard 明細移出初始 HTML 串流。#340 的本機 production build、單元測試、型別、ESLint 及 3 個隔離瀏覽器測試已過：合成明細延遲 5 秒時 `DOMContentLoaded` 約 152ms、`load` 約 174ms。這些修復尚未部署；Vercel Preview 建置額度限制使受保護 PR 未能綠燈合入，下表固定站結論不變。
 
 | 範圍 | 狀態 | 最新可用證據與界線 |
 | --- | --- | --- |
