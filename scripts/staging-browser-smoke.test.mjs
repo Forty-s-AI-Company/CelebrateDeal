@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -152,7 +152,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
     newContext: async () => {
       let handler;
       let currentUrl = origin;
-      const locator = { first: () => locator, waitFor: async () => {}, count: async () => 0,
+      const locator = { first: () => locator, waitFor: async () => {}, count: async () => 0, getAttribute: async () => "6",
         click: async () => { currentUrl = `${origin}/products`; } };
       return {
         route: async (_pattern, callback) => { handler = callback; },
@@ -213,6 +213,8 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   assert.equal(report.journeys.length, 10);
   assert.equal(report.result, "BLOCKED");
   assert.equal(report.browser.unsafeRequestsBlocked, 2);
+  assert.equal(report.browser.unsafeRequestDetails.otherApi, 2);
+  assert.equal(report.journeys[0].dashboardReadOperationCount, 6);
   assert.equal(report.browser.safeAttributionResets, 2);
   assert.equal(report.sideEffects.syntheticSessionCreated, 2);
   assert.equal(report.sideEffects.syntheticSessionRevoked, 2);
@@ -318,4 +320,9 @@ test("final URLs and blocked requests are reduced to fixed, non-sensitive catego
   assert.equal(classifyUnsafeRequestPath("/api/auth/session"), "api");
   assert.equal(classifyUnsafeRequestPath("/dashboard"), "page");
   assert.equal(classifyUnsafeRequestPath("/unlisted/sensitive-id"), "other");
+  assert.equal(classifyUnsafeRequestDetail("/_vercel/insights/event"), "vercelTelemetry");
+  assert.equal(classifyUnsafeRequestDetail("/__vercel/speed-insights/vitals"), "vercelTelemetry");
+  assert.equal(classifyUnsafeRequestDetail("/api/analytics"), "analyticsApi");
+  assert.equal(classifyUnsafeRequestDetail("/api/auth/session"), "authApi");
+  assert.equal(classifyUnsafeRequestDetail("/private/sensitive-id"), "other");
 });

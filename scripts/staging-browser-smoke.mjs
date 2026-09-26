@@ -33,6 +33,7 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
       externalRequestsBlocked: 0, unsafeRequestsBlocked: 0,
       safeAttributionResets: 0,
       unsafeRequestCategories: { next: 0, api: 0, page: 0, other: 0 }, webSocketsBlocked: 0,
+      unsafeRequestDetails: { vercelTelemetry: 0, analyticsApi: 0, authApi: 0, otherApi: 0, other: 0 },
       executionPhase: "NOT_STARTED", failureCategory: "NONE",
       activeViewport: "NONE", activeRoute: "NONE",
     },
@@ -153,6 +154,20 @@ export function classifyUnsafeRequestPath(pathname) {
   return "other";
 }
 
+/** Only fixed route families are reported; never serialize a request URL. */
+export function classifyUnsafeRequestDetail(pathname) {
+  if (/^\/_+vercel\//u.test(pathname)) return "vercelTelemetry";
+  if (pathname === "/api/analytics") return "analyticsApi";
+  if (pathname.startsWith("/api/auth/")) return "authApi";
+  if (pathname.startsWith("/api/")) return "otherApi";
+  return "other";
+}
+
+function boundedDashboardReadCount(value) {
+  const count = Number(value);
+  return value !== null && Number.isSafeInteger(count) && count >= 0 && count <= 6 ? count : null;
+}
+
 /** Keep browser errors in a fixed vocabulary; exception messages can contain URLs. */
 export function classifyBrowserExecutionFailure(error) {
   if (!(error instanceof Error)) return "OTHER";
@@ -235,6 +250,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
             const requestUrl = new URL(request.url());
             report.browser.unsafeRequestsBlocked += 1;
             report.browser.unsafeRequestCategories[classifyUnsafeRequestPath(requestUrl.pathname)] += 1;
+            report.browser.unsafeRequestDetails[classifyUnsafeRequestDetail(requestUrl.pathname)] += 1;
             return route.abort();
           }
           if (requestClass === "ATTRIBUTION_RESET") {
@@ -297,15 +313,20 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const checkoutLinkVisible = route.id === "product_preview"
             ? await visible(page.locator(`a[href="/checkout/wp4_synthetic_vendor_v1/${PRODUCT_ID}"]`))
             : true;
-          const dashboardDataVisible = route.id === "dashboard"
-            ? await visible(page.locator('[data-dashboard-scope="kpis"]'))
-              && await visible(page.locator('[data-dashboard-scope="details"]'))
-              && await page.getByRole("alert").count() === 0
-            : true;
+          const dashboardKpisVisible = route.id === "dashboard"
+            ? await visible(page.locator('[data-dashboard-scope="kpis"]')) : true;
+          const dashboardDetailsVisible = route.id === "dashboard"
+            ? await visible(page.locator('[data-dashboard-scope="details"]')) : true;
+          const dashboardAlertVisible = route.id === "dashboard"
+            ? await page.getByRole("alert").count() > 0 : false;
+          const dashboardReadOperationCount = route.id === "dashboard" && dashboardKpisVisible
+            ? boundedDashboardReadCount(await page.locator('[data-dashboard-scope="kpis"]').getAttribute("data-dashboard-read-operation-count"))
+            : null;
+          const dashboardDataVisible = dashboardKpisVisible && dashboardDetailsVisible && !dashboardAlertVisible;
           const appNavigationVisible = await visible(page.locator(appNavigationSelectorForViewport(viewport.id)));
           const contentVisible = await visible(page.locator("#main-content"));
           const finalPath = classifyFinalPath(page.url(), route.path);
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, appNavigationVisible, contentVisible });
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardReadOperationCount, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
