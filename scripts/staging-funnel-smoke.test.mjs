@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelRouteCategory, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
 
 function request(url, method = "GET", headers = {}, postData = null) {
   return { url: () => url, method: () => method, headers: () => headers, postData: () => postData };
@@ -41,6 +41,16 @@ test("create feedback reveals only known fixed categories", () => {
   assert.equal(funnelCreateFeedbackKind(["暫時無法完成操作；內容仍保留，請稍後再試。"]), "SERVER_FAILURE");
   assert.equal(funnelCreateFeedbackKind(["連線中斷，Funnel 尚未建立，請稍後再試。"]), "NETWORK_FAILURE");
   assert.equal(funnelCreateFeedbackKind(["sensitive unknown message"]), "OTHER");
+});
+
+test("editor navigation reports only fixed request and dialog categories", () => {
+  assert.equal(funnelEditorNavigationKind({ dialogs: 1, requests: 0, responses: 0, finished: 0, failures: 0 }), "CONFIRMATION_DISMISSED");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 0, responses: 0, finished: 0, failures: 0 }), "NO_REQUEST");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 1, responses: 0, finished: 0, failures: 1 }), "REQUEST_FAILED");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 1, responses: 0, finished: 0, failures: 0 }), "NO_RESPONSE");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 1, responses: 1, finished: 0, failures: 1 }), "RESPONSE_ABORTED");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 1, responses: 1, finished: 0, failures: 0 }), "RESPONSE_UNFINISHED");
+  assert.equal(funnelEditorNavigationKind({ dialogs: 0, requests: 1, responses: 1, finished: 1, failures: 0 }), "RESPONSE_FINISHED_NO_ROUTE");
 });
 
 test("invalid binding cannot issue a session or launch Chromium", async () => {

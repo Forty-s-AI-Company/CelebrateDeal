@@ -10,7 +10,7 @@ const PUBLIC_PATH = /^\/lp\/staging-synthetic-[a-f0-9]{12}(?:\/[^/?#]+)?$/u;
 
 function receipt(sourceSha) {
   return {
-    schemaVersion: "celebratedeal-staging-funnel-smoke/v1",
+    schemaVersion: "celebratedeal-staging-funnel-smoke/v2",
     scope: "create_save_publish_public",
     sourceSha: /^[a-f0-9]{40}$/u.test(sourceSha ?? "") ? sourceSha : null,
     result: "BLOCKED", reason: "INVALID_BINDING", stage: "NOT_STARTED",
@@ -19,6 +19,8 @@ function receipt(sourceSha) {
     projectDestination: "NOT_OBSERVED", createPageStatus: null, createPageRoute: "NOT_OBSERVED", projectStillMissing: false,
     createActionStatus: null, createFeedbackKind: "NOT_OBSERVED", createDestination: "NOT_OBSERVED",
     operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFinished: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
+    editorGetRequests: 0, editorGetResponses: 0, editorGetFinished: 0, editorGetFailures: 0, editorGetLastStatus: null,
+    editorDialogs: 0, editorNavigation: "NOT_OBSERVED",
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -45,6 +47,15 @@ export function funnelCreateFeedbackKind(messages) {
   if (messages.includes("暫時無法完成操作；內容仍保留，請稍後再試。")) return "SERVER_FAILURE";
   if (messages.includes("連線中斷，Funnel 尚未建立，請稍後再試。")) return "NETWORK_FAILURE";
   return messages.length === 0 ? "NONE" : "OTHER";
+}
+
+/** A fixed category distinguishes a blocked click from a slow editor response. */
+export function funnelEditorNavigationKind({ dialogs, requests, responses, finished, failures }) {
+  if (dialogs > 0) return "CONFIRMATION_DISMISSED";
+  if (requests === 0) return "NO_REQUEST";
+  if (responses === 0) return failures > 0 ? "REQUEST_FAILED" : "NO_RESPONSE";
+  if (finished === 0) return failures > 0 ? "RESPONSE_ABORTED" : "RESPONSE_UNFINISHED";
+  return "RESPONSE_FINISHED_NO_ROUTE";
 }
 
 function browserEnvironment() {
@@ -131,20 +142,40 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     const page = await context.newPage();
     page.on("pageerror", () => { result.pageErrors += 1; });
     // Record only counts/statuses for the post-create destination; never persist its ID or URL.
+    let editorNavigationStarted = false;
     const isOperationsGet = (request) => {
       try {
         const url = new URL(request.url());
         return request.method() === "GET" && url.hostname === ALIAS && /^\/landing-pages\/[a-z0-9]+\/operations$/u.test(url.pathname);
       } catch { return false; }
     };
+    const isEditorGet = (request) => {
+      try {
+        const url = new URL(request.url());
+        return editorNavigationStarted && request.method() === "GET" && url.hostname === ALIAS
+          && allowedFunnelPath !== null && url.pathname === allowedFunnelPath;
+      } catch { return false; }
+    };
     page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
     page.on("requestfinished", (request) => { if (isOperationsGet(request)) result.operationsGetFinished += 1; });
     page.on("requestfailed", (request) => { if (isOperationsGet(request)) result.operationsGetFailures += 1; });
+    page.on("request", (request) => { if (isEditorGet(request)) result.editorGetRequests += 1; });
+    page.on("requestfinished", (request) => { if (isEditorGet(request)) result.editorGetFinished += 1; });
+    page.on("requestfailed", (request) => { if (isEditorGet(request)) result.editorGetFailures += 1; });
+    page.on("dialog", (dialog) => {
+      if (editorNavigationStarted) result.editorDialogs += 1;
+      // Preserve Playwright's default dismissal while recording only its count.
+      void dialog.dismiss().catch(() => {});
+    });
     page.on("response", (response) => {
       const request = response.request();
       if (isOperationsGet(request)) {
         result.operationsGetResponses += 1;
         result.operationsGetLastStatus = response.status();
+      }
+      if (isEditorGet(request)) {
+        result.editorGetResponses += 1;
+        result.editorGetLastStatus = response.status();
       }
       if (request.method() !== "POST" || !request.headers()["next-action"]) return;
       try {
@@ -197,9 +228,23 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     await templateButton.click({ timeout: 10_000 });
     if (!await visible(page.getByRole("status").filter({ hasText: "模板已套用" }))) { result.reason = "TEMPLATE_FAILED"; return result; }
     result.template = true;
+    editorNavigationStarted = true;
     await page.getByRole("button", { name: "Edit Page", exact: true }).click({ timeout: 10_000 });
     try { await page.waitForURL((url) => url.pathname === funnelPath, { timeout: 15_000 }); }
-    catch { result.reason = "EDITOR_UNAVAILABLE"; return result; }
+    catch {
+      result.editorNavigation = funnelEditorNavigationKind({
+        dialogs: result.editorDialogs, requests: result.editorGetRequests,
+        responses: result.editorGetResponses, finished: result.editorGetFinished, failures: result.editorGetFailures,
+      });
+      result.reason = "EDITOR_UNAVAILABLE";
+      return result;
+    }
+    result.editorNavigation = "ROUTE_REACHED";
+    if (!await visible(page.getByRole("button", { name: "儲存草稿", exact: true }))) {
+      result.reason = "EDITOR_NOT_READY";
+      return result;
+    }
+    result.editorNavigation = "EDITOR_READY";
 
     result.stage = "SAVE";
     await page.getByRole("button", { name: "儲存草稿", exact: true }).click({ timeout: 10_000 });

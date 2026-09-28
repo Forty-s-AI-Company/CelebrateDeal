@@ -16,6 +16,15 @@ const ROUTES = [
   { id: "billing_plans", path: "/billing/plans", heading: "方案" },
 ];
 
+/** Match only the fixed read-only Dashboard details endpoint; never persist the URL. */
+export function isDashboardDetailsGet(request) {
+  try {
+    const url = new URL(request.url());
+    return request.method() === "GET" && url.hostname === STAGING_ALIAS
+      && url.pathname === "/api/dashboard/details";
+  } catch { return false; }
+}
+
 function emptyReport(reason = "NOT_RUN", sourceSha = null) {
   return {
     schemaVersion: "celebratedeal-staging-browser-smoke/v2",
@@ -363,9 +372,11 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         report.browser.executionPhase = "PAGE_OPEN";
         const page = await context.newPage();
         let navigationProgress = null;
+        const dashboardDetailsNetwork = { requests: 0, responses: 0, finished: 0, failures: 0, lastStatusClass: "NONE" };
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
         // Record only fixed milestones; document URLs and browser errors may contain private data.
         page.on("request", (request) => {
+          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.requests += 1;
           if (navigationProgress && request.resourceType() === "document"
             && new URL(request.url()).hostname === STAGING_ALIAS) navigationProgress.documentRequestSeen = true;
         });
@@ -382,6 +393,12 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           };
         };
         page.on("response", (response) => {
+          if (isDashboardDetailsGet(response.request())) {
+            dashboardDetailsNetwork.responses += 1;
+            const status = response.status();
+            dashboardDetailsNetwork.lastStatusClass = status >= 500 ? "5XX"
+              : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
+          }
           if (new URL(response.url()).hostname === STAGING_ALIAS && response.status() >= 500) report.browser.sameHost5xx += 1;
           if (navigationProgress && response.request().resourceType() === "document"
             && new URL(response.url()).hostname === STAGING_ALIAS) {
@@ -392,11 +409,15 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           recordCriticalResourceFailure(classifyCriticalResourceResponse(response));
         });
         page.on("requestfailed", (request) => {
+          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.failures += 1;
           const category = classifyCriticalResourceRequestFailure(request);
           if (category && report.browser.firstCriticalResourceFailure === null) {
             report.browser.firstCriticalResourceFailureKind = classifyCriticalResourceFailureKind(request);
           }
           recordCriticalResourceFailure(category);
+        });
+        page.on("requestfinished", (request) => {
+          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.finished += 1;
         });
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;
@@ -450,7 +471,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const appNavigationVisible = await visible(page.locator(appNavigationSelectorForViewport(viewport.id)));
           const contentVisible = await visible(page.locator("#main-content"));
           const finalPath = classifyFinalPath(page.url(), route.path);
-          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardFrameworkAlertVisible: dashboardFrameworkAlertCount > 0, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, appNavigationVisible, contentVisible });
+          report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardFrameworkAlertVisible: dashboardFrameworkAlertCount > 0, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, dashboardDetailsNetwork: route.id === "dashboard" ? { ...dashboardDetailsNetwork } : null, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
             // React state alone reveals this fieldset; do not submit or persist the form.
